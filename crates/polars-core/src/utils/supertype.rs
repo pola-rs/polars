@@ -24,15 +24,17 @@ pub fn try_get_supertype_with_options(
     )
 }
 
-/// Returns a numeric supertype that `l` and `r` can be safely upcasted to if it exists.
+/// Returns the smallest numeric dtype that `l` and `r` can both be casted to without loss of data.
+/// If no such dtype exists, or `l` and `r` are already matching, returns `None`.
 pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
     use DataType::*;
 
-    if l == r || matches!(l, Unknown(_)) || matches!(r, Unknown(_)) {
+    if l.is_unknown() || r.is_unknown() || l.is_nested() || r.is_nested() || l == r {
         None
     } else if l.is_float() && r.is_float() {
         match (l, r) {
             (Float64, _) | (_, Float64) => Some(Float64),
+            (Float32, _) | (_, Float32) => Some(Float32),
             v => {
                 // Did we add a new float type?
                 if cfg!(debug_assertions) {
@@ -171,6 +173,8 @@ pub fn get_supertype_with_options(
             (Int8, UInt32) => Some(Int64),
             #[cfg(feature = "dtype-i8")]
             (Int8, UInt64) => Some(Float64), // Follow numpy
+            #[cfg(all(feature = "dtype-i8", feature = "dtype-f16"))]
+            (Int8, Float16) => Some(Float16),
             #[cfg(feature = "dtype-i8")]
             (Int8, Float32) => Some(Float32),
             #[cfg(feature = "dtype-i8")]
@@ -193,6 +197,8 @@ pub fn get_supertype_with_options(
             (Int16, UInt32) => Some(Int64),
             #[cfg(feature = "dtype-i16")]
             (Int16, UInt64) => Some(Float64), // Follow numpy
+            #[cfg(all(feature = "dtype-i16", feature = "dtype-f16"))]
+            (Int16, Float16) => Some(Float32),
             #[cfg(feature = "dtype-i16")]
             (Int16, Float32) => Some(Float32),
             #[cfg(feature = "dtype-i16")]
@@ -214,6 +220,8 @@ pub fn get_supertype_with_options(
             (Int32, UInt64) => Some(Float64), // Follow numpy
             #[cfg(feature = "bigidx")]
             (Int32, UInt64) => Some(Int64), // Needed for bigidx
+            #[cfg(feature = "dtype-f16")]
+            (Int32, Float16) => Some(Float64),
             (Int32, Float32) => Some(Float64), // Follow numpy
             (Int32, Float64) => Some(Float64),
 
@@ -233,6 +241,8 @@ pub fn get_supertype_with_options(
             (Int64, UInt64) => Some(Float64), // Follow numpy
             #[cfg(feature = "bigidx")]
             (Int64, UInt64) => Some(Int64), // Needed for bigidx
+            #[cfg(feature = "dtype-f16")]
+            (Int64, Float16) => Some(Float64), // Follow (Int64, Float32) case
             (Int64, Float32) => Some(Float64), // Follow numpy
             (Int64, Float64) => Some(Float64),
 
@@ -269,14 +279,21 @@ pub fn get_supertype_with_options(
             (Boolean, UInt32) => Some(UInt32),
             (Boolean, UInt64) => Some(UInt64),
 
+            #[cfg(all(feature = "dtype-f16", feature = "dtype-u8"))]
+            (Float16, UInt8) => Some(Float16),
+            #[cfg(all(feature = "dtype-f16", feature = "dtype-u16"))]
+            (Float16, UInt16) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, UInt32) => Some(Float64),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, UInt64) => Some(Float64),
+
             #[cfg(feature = "dtype-u8")]
             (Float32, UInt8) => Some(Float32),
             #[cfg(feature = "dtype-u16")]
             (Float32, UInt16) => Some(Float32),
             (Float32, UInt32) => Some(Float64),
             (Float32, UInt64) => Some(Float64),
-
-            (Float32, Float64) => Some(Float64),
 
             #[cfg(feature = "dtype-u8")]
             (Float64, UInt8) => Some(Float64),
@@ -285,6 +302,15 @@ pub fn get_supertype_with_options(
             (Float64, UInt32) => Some(Float64),
             (Float64, UInt64) => Some(Float64),
 
+            #[cfg(feature = "dtype-f16")]
+            (Float16, Float32) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float16, Float64) => Some(Float64),
+            (Float32, Float64) => Some(Float64),
+            #[cfg(feature = "dtype-f16")]
+            (Float32, Float16) => Some(Float32),
+            #[cfg(feature = "dtype-f16")]
+            (Float64, Float16) => Some(Float64),
             (Float64, Float32) => Some(Float64),
 
             // Time related dtypes
@@ -296,6 +322,8 @@ pub fn get_supertype_with_options(
             (Date, Int32) => Some(Int32),
             #[cfg(feature = "dtype-date")]
             (Date, Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-date", feature = "dtype-f16"))]
+            (Date, Float16) => Some(Float32),
             #[cfg(feature = "dtype-date")]
             (Date, Float32) => Some(Float32),
             #[cfg(feature = "dtype-date")]
@@ -311,6 +339,8 @@ pub fn get_supertype_with_options(
             (Datetime(_, _), Int32) => Some(Int64),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(_, _), Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-datetime", feature = "dtype-f16"))]
+            (Datetime(_, _), Float16) => Some(Float64),
             #[cfg(feature = "dtype-datetime")]
             (Datetime(_, _), Float32) => Some(Float64),
             #[cfg(feature = "dtype-datetime")]
@@ -318,6 +348,8 @@ pub fn get_supertype_with_options(
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
             (Datetime(tu, tz), Date) => Some(Datetime(*tu, tz.clone())),
 
+            #[cfg(feature = "dtype-f16")]
+            (Boolean, Float16) => Some(Float16),
             (Boolean, Float32) => Some(Float32),
             (Boolean, Float64) => Some(Float64),
 
@@ -329,6 +361,8 @@ pub fn get_supertype_with_options(
             (Duration(_), Int32) => Some(Int64),
             #[cfg(feature = "dtype-duration")]
             (Duration(_), Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-duration", feature = "dtype-f16"))]
+            (Duration(_), Float16) => Some(Float64),
             #[cfg(feature = "dtype-duration")]
             (Duration(_), Float32) => Some(Float64),
             #[cfg(feature = "dtype-duration")]
@@ -338,6 +372,8 @@ pub fn get_supertype_with_options(
             (Time, Int32) => Some(Int64),
             #[cfg(feature = "dtype-time")]
             (Time, Int64) => Some(Int64),
+            #[cfg(all(feature = "dtype-time", feature = "dtype-f16"))]
+            (Time, Float16) => Some(Float64),
             #[cfg(feature = "dtype-time")]
             (Time, Float32) => Some(Float64),
             #[cfg(feature = "dtype-time")]
@@ -450,6 +486,10 @@ pub fn get_supertype_with_options(
                             }
                         }
                     }
+                    UnknownKind::Int(v) if dt.is_bool() => {
+                        let int_dtype = materialize_dyn_int(*v).dtype();
+                        get_supertype(dt, &int_dtype)
+                    },
                     #[cfg(feature = "dtype-decimal")]
                     UnknownKind::Int(_) if dt.is_decimal() => {
                         let DataType::Decimal(_prec, scale) = dt else { unreachable!() };
@@ -475,6 +515,8 @@ pub fn get_supertype_with_options(
             (Decimal(p1, s1), Decimal(p2, s2)) => {
                 Some(Decimal((*p1).max(*p2), (*s1).max(*s2)))
             },
+            #[cfg(all(feature = "dtype-decimal", feature = "dtype-f16"))]
+            (Decimal(_, _), Float16) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]
             (Decimal(_, _), Float32 | Float64) => Some(Float64),
             #[cfg(feature = "dtype-decimal")]

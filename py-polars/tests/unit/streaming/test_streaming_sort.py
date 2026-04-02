@@ -33,7 +33,7 @@ def assert_df_sorted_by(
     # a0 < b0 || (a0 == b0 && (a1 < b1 || (a1 == b1 && ...))
     # Evaluating in reverse is easiest.
     ordered = equal[cols[-1]]
-    for c, desc in zip(cols[::-1], descending[::-1]):
+    for c, desc in zip(cols[::-1], descending[::-1], strict=True):
         ordered &= equal[c]
         if desc:
             ordered |= keycols[c].head(-1) > keycols[c].tail(-1)

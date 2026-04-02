@@ -68,7 +68,7 @@ def _protocol_df_chunk_to_polars(
     df: InterchangeDataFrame, *, allow_copy: bool
 ) -> DataFrame:
     columns = []
-    for column, name in zip(df.get_columns(), df.column_names()):
+    for column, name in zip(df.get_columns(), df.column_names(), strict=True):
         dtype = dtype_to_polars_dtype(column.dtype)
         if dtype == String:
             s = _string_column_to_series(column, allow_copy=allow_copy)

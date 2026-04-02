@@ -1,14 +1,13 @@
 use arrow::array::{FixedSizeBinaryArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
-use arrow::storage::SharedStorage;
 use arrow::types::{
     AlignedBytes, Bytes1Alignment1, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8,
     Bytes12Alignment4, Bytes16Alignment16, Bytes32Alignment16,
 };
 use bytemuck::Zeroable;
+use polars_buffer::{Buffer, SharedStorage};
 
 use super::Filter;
 use super::dictionary_encoded::append_validity;

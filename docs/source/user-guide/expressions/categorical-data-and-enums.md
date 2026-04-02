@@ -182,10 +182,6 @@ Otherwise, the order is inferred together with the values:
 {{code_block('user-guide/expressions/categoricals', 'stringcache-categorical-comparison-physical',
 ['StringCache', 'Categorical'])}}
 
-```python
---8<-- "python/user-guide/expressions/categoricals.py:stringcache-categorical-comparison-physical"
-```
-
 ```
 shape: (5,)
 Series: '' [bool]

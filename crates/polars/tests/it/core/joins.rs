@@ -41,11 +41,11 @@ fn create_frames() -> (DataFrame, DataFrame) {
     let s0 = Column::new("days".into(), &[0, 1, 2]);
     let s1 = Column::new("temp".into(), &[22.1, 19.9, 7.]);
     let s2 = Column::new("rain".into(), &[0.2, 0.1, 0.3]);
-    let temp = DataFrame::new(vec![s0, s1, s2]).unwrap();
+    let temp = DataFrame::new_infer_height(vec![s0, s1, s2]).unwrap();
 
     let s0 = Column::new("days".into(), &[1, 2, 3, 1]);
     let s1 = Column::new("rain".into(), &[0.1, 0.2, 0.3, 0.4]);
-    let rain = DataFrame::new(vec![s0, s1]).unwrap();
+    let rain = DataFrame::new_infer_height(vec![s0, s1]).unwrap();
     (temp, rain)
 }
 
@@ -62,7 +62,7 @@ fn test_inner_join() {
         let join_col_temp = Column::new("temp".into(), &[19.9, 7., 19.9]);
         let join_col_rain = Column::new("rain".into(), &[0.1, 0.3, 0.1]);
         let join_col_rain_right = Column::new("rain_right".into(), [0.1, 0.2, 0.4].as_ref());
-        let true_df = DataFrame::new(vec![
+        let true_df = DataFrame::new_infer_height(vec![
             join_col_days,
             join_col_temp,
             join_col_rain,
@@ -82,11 +82,11 @@ fn test_left_join() {
         unsafe { std::env::set_var("POLARS_MAX_THREADS", format!("{i}")) };
         let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
         let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
-        let temp = DataFrame::new(vec![s0, s1]).unwrap();
+        let temp = DataFrame::new_infer_height(vec![s0, s1]).unwrap();
 
         let s0 = Column::new("days".into(), &[1, 2]);
         let s1 = Column::new("rain".into(), &[0.1, 0.2]);
-        let rain = DataFrame::new(vec![s0, s1]).unwrap();
+        let rain = DataFrame::new_infer_height(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
         assert_eq!(
             (joined
@@ -104,11 +104,11 @@ fn test_left_join() {
         // test join on string
         let s0 = Column::new("days".into(), &["mo", "tue", "wed", "thu", "fri"]);
         let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
-        let temp = DataFrame::new(vec![s0, s1]).unwrap();
+        let temp = DataFrame::new_infer_height(vec![s0, s1]).unwrap();
 
         let s0 = Column::new("days".into(), &["tue", "wed"]);
         let s1 = Column::new("rain".into(), &[0.1, 0.2]);
-        let rain = DataFrame::new(vec![s0, s1]).unwrap();
+        let rain = DataFrame::new_infer_height(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
         assert_eq!(
             (joined
@@ -174,14 +174,14 @@ fn test_full_outer_join() -> PolarsResult<()> {
 fn test_join_with_nulls() {
     let dts = &[20, 21, 22, 23, 24, 25, 27, 28];
     let vals = &[1.2, 2.4, 4.67, 5.8, 4.4, 3.6, 7.6, 6.5];
-    let df = DataFrame::new(vec![
+    let df = DataFrame::new_infer_height(vec![
         Column::new("date".into(), dts),
         Column::new("val".into(), vals),
     ])
     .unwrap();
 
     let vals2 = &[Some(1.1), None, Some(3.3), None, None];
-    let df2 = DataFrame::new(vec![
+    let df2 = DataFrame::new_infer_height(vec![
         Column::new("date".into(), &dts[3..]),
         Column::new("val2".into(), vals2),
     ])
@@ -232,7 +232,7 @@ fn test_join_multiple_columns() {
         + df_a.column("b").unwrap().str().unwrap();
     s.rename("dummy".into());
 
-    df_a.with_column(s).unwrap();
+    df_a.with_column(s.into_column()).unwrap();
     let mut s = df_b
         .column("foo")
         .unwrap()
@@ -242,7 +242,7 @@ fn test_join_multiple_columns() {
         .unwrap()
         + df_b.column("bar").unwrap().str().unwrap();
     s.rename("dummy".into());
-    df_b.with_column(s).unwrap();
+    df_b.with_column(s.into_column()).unwrap();
 
     let joined = df_a.left_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let ham_col = joined.column("ham").unwrap();
@@ -372,13 +372,13 @@ fn test_join_categorical() {
 #[cfg_attr(miri, ignore)]
 fn test_empty_df_join() -> PolarsResult<()> {
     let empty: Vec<String> = vec![];
-    let empty_df = DataFrame::new(vec![
+    let empty_df = DataFrame::new_infer_height(vec![
         Column::new("key".into(), &empty),
         Column::new("eval".into(), &empty),
     ])
     .unwrap();
 
-    let df = DataFrame::new(vec![
+    let df = DataFrame::new_infer_height(vec![
         Column::new("key".into(), &["foo"]),
         Column::new("aval".into(), &[4]),
     ])
@@ -395,7 +395,7 @@ fn test_empty_df_join() -> PolarsResult<()> {
     df.full_join(&empty_df, ["key"], ["key"])?;
 
     let empty: Vec<String> = vec![];
-    let _empty_df = DataFrame::new(vec![
+    let _empty_df = DataFrame::new_infer_height(vec![
         Column::new("key".into(), &empty),
         Column::new("eval".into(), &empty),
     ])
@@ -408,7 +408,7 @@ fn test_empty_df_join() -> PolarsResult<()> {
 
     // https://github.com/pola-rs/polars/issues/1824
     let empty: Vec<i32> = vec![];
-    let empty_df = DataFrame::new(vec![
+    let empty_df = DataFrame::new_infer_height(vec![
         Column::new("key".into(), &empty),
         Column::new("1val".into(), &empty),
         Column::new("2val".into(), &empty),
@@ -658,7 +658,7 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
         .collect::<Int64Chunked>();
     left_a.rename("a".into());
     left_b.rename("b".into());
-    let left_df = DataFrame::new(vec![left_a.into_column(), left_b.into_column()])?;
+    let left_df = DataFrame::new_infer_height(vec![left_a.into_column(), left_b.into_column()])?;
 
     let i = 1;
     let len = 8;
@@ -670,7 +670,7 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
     right_a.rename("a".into());
     right_b.rename("b".into());
 
-    let right_df = DataFrame::new(vec![right_a.into_column(), right_b.into_column()])?;
+    let right_df = DataFrame::new_infer_height(vec![right_a.into_column(), right_b.into_column()])?;
     let out = JoinBuilder::new(left_df.lazy())
         .with(right_df.lazy())
         .on([col("a"), col("b")])

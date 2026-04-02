@@ -1,21 +1,21 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
-use std::sync::LazyLock;
 
 use either::Either;
+use polars_buffer::{Buffer, SharedStorage};
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt, get_bit_unchecked};
 use super::{IntoIter, MutableBitmap, chunk_iter_to_vec, num_intersections_with};
 use crate::array::Splitable;
+use crate::bitmap::BitmapBuilder;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
 };
 use crate::bitmap::utils::bytes_for;
 use crate::legacy::utils::FromTrustedLenIterator;
-use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 const UNKNOWN_BIT_COUNT: u64 = u64::MAX;
@@ -386,21 +386,8 @@ impl Bitmap {
     /// Initializes an new [`Bitmap`] filled with unset values.
     #[inline]
     pub fn new_zeroed(length: usize) -> Self {
-        // We intentionally leak 1MiB of zeroed memory once so we don't have to
-        // refcount it.
-        const GLOBAL_ZERO_SIZE: usize = 1024 * 1024;
-        static GLOBAL_ZEROES: LazyLock<SharedStorage<u8>> = LazyLock::new(|| {
-            let mut ss = SharedStorage::from_vec(vec![0; GLOBAL_ZERO_SIZE]);
-            ss.leak();
-            ss
-        });
-
         let bytes_needed = length.div_ceil(8);
-        let storage = if bytes_needed <= GLOBAL_ZERO_SIZE {
-            GLOBAL_ZEROES.clone()
-        } else {
-            SharedStorage::from_vec(vec![0; bytes_needed])
-        };
+        let storage = Buffer::zeroed(bytes_needed).into_storage();
         Self {
             storage,
             offset: 0,
@@ -647,6 +634,26 @@ impl FromTrustedLenIterator<bool> for Bitmap {
 }
 
 impl Bitmap {
+    /// Returns a bitmap from an iterator, returning None if all elements were true.
+    pub fn opt_from_iter<I: Iterator<Item = bool>>(mut iterator: I) -> Option<Self> {
+        let mut num_true = 0;
+        loop {
+            match iterator.next() {
+                Some(true) => num_true += 1,
+                Some(false) => break,
+                None => return None, // All true.
+            }
+        }
+
+        let mut bm = BitmapBuilder::with_capacity(num_true + 1 + iterator.size_hint().0);
+        bm.extend_constant(num_true, true);
+        bm.push(false);
+        for x in iterator {
+            bm.push(x);
+        }
+        bm.into_opt_validity()
+    }
+
     /// Creates a new [`Bitmap`] from an iterator of booleans.
     ///
     /// # Safety

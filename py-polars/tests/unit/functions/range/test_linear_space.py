@@ -249,7 +249,7 @@ def test_linear_spaces_values(interval: ClosedInterval) -> None:
 
     # We check each element against the output from pl.linear_space(), which is
     # validated above.
-    for row, start, end, ns in zip(out, starts, ends, num_samples):
+    for row, start, end, ns in zip(out, starts, ends, num_samples, strict=True):
         if start is None or end is None or ns is None:
             assert row is None
         else:

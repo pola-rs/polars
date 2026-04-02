@@ -47,6 +47,7 @@ def test_modulo() -> None:
     out = df.sql(
         """
         SELECT
+          ROW_NUMBER() AS idx,
           a % 2 AS a2,
           b % 3 AS b3,
           MOD(c, 4) AS c4,
@@ -58,11 +59,13 @@ def test_modulo() -> None:
         out,
         pl.DataFrame(
             {
+                "idx": [1, 2, 3, 4, 5],
                 "a2": [1.5, None, 1.0, 1 / 3, 1.0],
                 "b3": [0, 1, 2, 0, 1],
                 "c4": [3, 0, 1, 2, 3],
                 "d55": [0.0, 0.5, 2.0, None, 3.5],
-            }
+            },
+            schema_overrides={"idx": pl.UInt32},
         ),
     )
 
@@ -119,6 +122,31 @@ def test_round_ndigits(decimals: int, expected: list[float]) -> None:
             assert_series_equal(out["n"], pl.Series("n", values=expected))
 
         out = ctx.execute(f'SELECT ROUND("n",{decimals}) AS n FROM df')
+        assert_series_equal(out["n"], pl.Series("n", values=expected))
+
+
+@pytest.mark.parametrize(
+    ("decimals", "expected"),
+    [
+        (0, [-8192.0, -3.0, -1.0, 2.0, 3.0, 8192.0]),
+        (1, [-8192.4, -3.9, -1.5, 2.4, 3.5, 8192.5]),
+        (2, [-8192.49, -3.95, -1.54, 2.45, 3.59, 8192.50]),
+        (3, [-8192.499, -3.955, -1.543, 2.456, 3.599, 8192.5001]),
+    ],
+)
+def test_truncate_ndigits(decimals: int, expected: list[float]) -> None:
+    df = pl.DataFrame(
+        {"n": [-8192.499, -3.9550, -1.54321, 2.45678, 3.59901, 8192.5001]},
+    )
+    with pl.SQLContext(df=df, eager=True) as ctx:
+        if decimals == 0:
+            out = ctx.execute("SELECT TRUNCATE(n) AS n FROM df")
+            assert_series_equal(out["n"], pl.Series("n", values=expected))
+
+        out = ctx.execute(f'SELECT TRUNCATE("n",{decimals}) AS n FROM df')
+        assert_series_equal(out["n"], pl.Series("n", values=expected))
+
+        out = ctx.execute(f'SELECT TRUNC("n",{decimals}) AS n FROM df')
         assert_series_equal(out["n"], pl.Series("n", values=expected))
 
 

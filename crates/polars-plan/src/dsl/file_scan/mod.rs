@@ -23,7 +23,10 @@ use super::*;
 use crate::dsl::default_values::DefaultFieldValues;
 pub mod default_values;
 pub mod deletion;
-
+#[cfg(feature = "python")]
+pub mod python_delta_dv_provider;
+#[cfg(feature = "python")]
+pub use python_delta_dv_provider::{DELTA_DV_PROVIDER_VTABLE, DeltaDeletionVectorProviderVTable};
 #[cfg(feature = "python")]
 pub mod python_dataset;
 #[cfg(feature = "python")]
@@ -36,22 +39,34 @@ bitflags::bitflags! {
     }
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanDsl>() <= 100);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-// TODO: Arc<> some of the options and the cloud options.
+/// Note: This is cheaply cloneable.
 pub enum FileScanDsl {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv {
+        options: Arc<CsvReadOptions>,
+    },
 
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+    },
 
     #[cfg(feature = "parquet")]
-    Parquet { options: ParquetOptions },
+    Parquet {
+        options: ParquetOptions,
+    },
 
     #[cfg(feature = "ipc")]
-    Ipc { options: IpcScanOptions },
+    Ipc {
+        options: IpcScanOptions,
+    },
 
     #[cfg(feature = "python")]
     PythonDataset {
@@ -59,7 +74,13 @@ pub enum FileScanDsl {
     },
 
     #[cfg(feature = "scan_lines")]
-    Lines { name: PlSmallStr },
+    Lines {
+        name: PlSmallStr,
+    },
+
+    ExpandedPaths {
+        name: PlSmallStr,
+    },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -69,16 +90,24 @@ pub enum FileScanDsl {
     },
 }
 
+const _: () = {
+    assert!(std::mem::size_of::<FileScanIR>() <= 80);
+};
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-// TODO: Arc<> some of the options and the cloud options.
+/// Note: This is cheaply cloneable.
 pub enum FileScanIR {
     #[cfg(feature = "csv")]
-    Csv { options: CsvReadOptions },
+    Csv {
+        options: Arc<CsvReadOptions>,
+    },
 
     #[cfg(feature = "json")]
-    NDJson { options: NDJsonReadOptions },
+    NDJson {
+        options: NDJsonReadOptions,
+    },
 
     #[cfg(feature = "parquet")]
     Parquet {
@@ -101,7 +130,13 @@ pub enum FileScanIR {
     },
 
     #[cfg(feature = "scan_lines")]
-    Lines { name: PlSmallStr },
+    Lines {
+        name: PlSmallStr,
+    },
+
+    ExpandedPaths {
+        name: PlSmallStr,
+    },
 
     #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
     Anonymous {
@@ -173,9 +208,13 @@ pub struct CastColumnsPolicy {
     /// Allow casting when target dtype is lossless supertype
     pub integer_upcast: bool,
 
-    /// Allow Float32 -> Float64
+    /// Allow casting integers to floats.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub integer_to_float_cast: bool,
+
+    /// Allow upcasting from small floats to bigger floats
     pub float_upcast: bool,
-    /// Allow Float64 -> Float32
+    /// Allow downcasting from big floats to smaller floats
     pub float_downcast: bool,
 
     /// Allow datetime[ns] to be casted to any lower precision. Important for
@@ -201,6 +240,7 @@ impl CastColumnsPolicy {
     /// Configuration variant that defaults to raising on mismatch.
     pub const ERROR_ON_MISMATCH: Self = Self {
         integer_upcast: false,
+        integer_to_float_cast: false,
         float_upcast: false,
         float_downcast: false,
         datetime_nanoseconds_downcast: false,
@@ -302,6 +342,16 @@ pub struct UnifiedScanArgs {
     pub row_count: Option<(u64, u64)>,
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct PredicateFileSkip {
+    /// If `true` the predicate can be skipped at runtime.
+    pub no_residual_predicate: bool,
+    /// Number of files before skipping
+    pub original_len: usize,
+}
+
 impl UnifiedScanArgs {
     pub fn has_row_index_or_slice(&self) -> bool {
         self.row_index.is_some() || self.pre_slice.is_some()
@@ -341,7 +391,6 @@ mod _file_scan_eq_hash {
     use std::hash::{Hash, Hasher};
     use std::sync::Arc;
 
-    #[cfg(feature = "scan_lines")]
     use polars_utils::pl_str::PlSmallStr;
 
     use super::FileScanIR;
@@ -394,7 +443,13 @@ mod _file_scan_eq_hash {
         },
 
         #[cfg(feature = "scan_lines")]
-        Lines { name: &'a PlSmallStr },
+        Lines {
+            name: &'a PlSmallStr,
+        },
+
+        ExpandedPaths {
+            name: &'a PlSmallStr,
+        },
 
         Anonymous {
             options: &'a crate::dsl::AnonymousScanOptions,
@@ -438,6 +493,8 @@ mod _file_scan_eq_hash {
 
                 #[cfg(feature = "scan_lines")]
                 FileScanIR::Lines { name } => FileScanEqHashWrap::Lines { name },
+
+                FileScanIR::ExpandedPaths { name } => FileScanEqHashWrap::ExpandedPaths { name },
 
                 FileScanIR::Anonymous { options, function } => FileScanEqHashWrap::Anonymous {
                     options,
@@ -642,7 +699,9 @@ impl CastColumnsPolicy {
 
         if target_dtype.is_float() && incoming_dtype.is_float() {
             return match (target_dtype, incoming_dtype) {
-                (DataType::Float64, DataType::Float32) => {
+                (DataType::Float64, DataType::Float32)
+                | (DataType::Float64, DataType::Float16)
+                | (DataType::Float32, DataType::Float16) => {
                     if self.float_upcast {
                         Ok(true)
                     } else {
@@ -652,7 +711,9 @@ impl CastColumnsPolicy {
                     }
                 },
 
-                (DataType::Float32, DataType::Float64) => {
+                (DataType::Float16, DataType::Float32)
+                | (DataType::Float16, DataType::Float64)
+                | (DataType::Float32, DataType::Float64) => {
                     if self.float_downcast {
                         Ok(true)
                     } else {
@@ -663,6 +724,16 @@ impl CastColumnsPolicy {
                 },
 
                 _ => unreachable!(),
+            };
+        }
+
+        if target_dtype.is_float() && incoming_dtype.is_integer() {
+            return if !self.integer_to_float_cast {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
+            } else {
+                Ok(true)
             };
         }
 

@@ -78,6 +78,15 @@ impl Series {
             FillNullStrategy::Forward(None) if !physical_type.is_primitive_numeric() => {
                 fill_forward_gather(self)
             },
+
+            // Fast path to remove limit.
+            FillNullStrategy::Forward(Some(limit)) if limit >= nc as IdxSize => {
+                self.fill_null(FillNullStrategy::Forward(None))
+            },
+            FillNullStrategy::Backward(Some(limit)) if limit >= nc as IdxSize => {
+                self.fill_null(FillNullStrategy::Backward(None))
+            },
+
             FillNullStrategy::Forward(Some(limit)) => fill_forward_gather_limit(self, limit),
             FillNullStrategy::Backward(None) if !physical_type.is_primitive_numeric() => {
                 fill_backward_gather(self)

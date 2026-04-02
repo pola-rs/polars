@@ -2,7 +2,7 @@ use arrow::temporal_conversions::MICROSECONDS_IN_DAY;
 use polars_core::prelude::*;
 use polars_ops::series::{ClosedInterval, new_linear_space_f32, new_linear_space_f64};
 
-use super::utils::{build_nulls, ensure_range_bounds_contain_exactly_one_value};
+use super::utils::{build_nulls, ensure_items_contain_exactly_one_value};
 
 const CAPACITY_FACTOR: usize = 5;
 
@@ -12,7 +12,7 @@ pub(super) fn linear_space(s: &[Column], closed: ClosedInterval) -> PolarsResult
     let num_samples = &s[2];
     let name = start.name();
 
-    ensure_range_bounds_contain_exactly_one_value(start, end)?;
+    ensure_items_contain_exactly_one_value(&[start, end], &["start", "end"])?;
     polars_ensure!(
         num_samples.len() == 1,
         ComputeError: "`num_samples` must contain exactly one value, got {} values", num_samples.len()

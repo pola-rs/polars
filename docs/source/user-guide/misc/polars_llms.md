@@ -9,19 +9,17 @@ please raise a [pull request](https://github.com/pola-rs/polars/pulls).
 
 ## Polars MCP server
 
-The new remote Model Context Protocol (MCP) server for Polars provides access to the latest version
-of the official Polars and Polars Cloud documentation. The server enables LLMs to query the user
-guide and API references directly, making it easier to get more accurate answers about DataFrame
-operations, expressions, lazy evaluation, and cloud deployments. The MCP server delivers up-to-date
-documentation to help you rewrite existing queries from other libraries to Polars or work with
-Polars more efficiently.
+The new remote Model Context Protocol (MCP) server for Polars provides access to the official Polars
+and Polars Cloud documentation. The server enables LLMs to query the user guide and API references
+directly, making it easier to get more accurate answers about DataFrame operations, expressions,
+lazy evaluation, and cloud deployments.
 
 ```json
 {
   "mcpServers": {
     "ask_polars": {
       "command": "npx",
-      "args": ["mcp-remote", "https://mcp.polars.workers.dev/sse"]
+      "args": ["mcp-remote", "https://mcp.pola.rs/mcp"]
     }
   }
 }

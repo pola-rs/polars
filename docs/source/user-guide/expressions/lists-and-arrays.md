@@ -151,10 +151,54 @@ If you are unfamiliar with the namespace `str` or the notation `(?i)` in the reg
 time to
 [look at how to work with strings and regular expressions in Polars](strings.md#check-for-the-existence-of-a-pattern).
 
+### Aggregation & sorting
+
+Like `select` on data frames, the two related functions `eval` and `agg` can also be used to
+aggregate over or sort the list elements.
+
+We'll reuse a slightly modified version of the example data from the very beginning:
+
+{{code_block('user-guide/expressions/lists', 'children', ['List'])}}
+
+```python exec="on" result="text" session="expressions/lists"
+--8<-- "python/user-guide/expressions/lists.py:children"
+```
+
+Using `eval`, we can sort the list elements or compute some aggregations:
+
+{{code_block('user-guide/expressions/lists', 'list-sorting', ['list.eval', 'Expr.sort_by'])}}
+
+```python exec="on" result="text" session="expressions/lists"
+--8<-- "python/user-guide/expressions/lists.py:list-sorting"
+```
+
+`eval` will always return a list. Use `agg` to get `min_age` and `max_age` as scalar values instead
+of single-element lists:
+
+{{code_block('user-guide/expressions/lists', 'list-aggregation', ['list.agg'])}}
+
+```python exec="on" result="text" session="expressions/lists"
+--8<-- "python/user-guide/expressions/lists.py:list-aggregation"
+```
+
+If the evaluated expression is statically determined to return only one value, `agg` will
+automatically explode the resulting list into the inner values. This matches what
+`df.group_by(...).agg(...)` does, hence the name. This is in contrast with `eval`, which will not
+perform such unwrapping.
+
+While some aggregation functions like `.list.sum()` are directly available in the `list` namespace,
+you can access more exotic aggregations like `entropy` via `agg`/`eval` only:
+
+{{code_block('user-guide/expressions/lists', 'list-entropy', ['list.agg', 'Expr.entropy'])}}
+
+```python exec="on" result="text" session="expressions/lists"
+--8<-- "python/user-guide/expressions/lists.py:list-entropy"
+```
+
 ### Row-wise computations
 
-The function `eval` gives us access to the list elements and `pl.element` refers to each individual
-element, but we can also use `pl.all()` to refer to all of the elements of the list.
+`pl.all()` can be combined with `pl.concat_list(...)` to perform row-wise aggregations over a subset
+of columns.
 
 To show this in action, we will start by creating another dataframe with some more weather data:
 

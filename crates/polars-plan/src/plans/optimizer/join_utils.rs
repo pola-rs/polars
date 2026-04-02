@@ -47,7 +47,7 @@ impl ExprOrigin {
             |acc_origin, column_name| {
                 Ok(acc_origin
                     | Self::get_column_origin(
-                        &column_name,
+                        column_name,
                         left_schema,
                         right_schema,
                         suffix,
@@ -81,7 +81,7 @@ impl ExprOrigin {
             {
                 ExprOrigin::Right
             } else {
-                polars_bail!(ColumnNotFound: "{}", column_name)
+                polars_bail!(ColumnNotFound: "{column_name}")
             },
         )
     }

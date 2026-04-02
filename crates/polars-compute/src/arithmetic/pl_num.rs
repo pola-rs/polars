@@ -1,6 +1,7 @@
 use core::any::TypeId;
 
 use arrow::types::NativeType;
+use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 
 /// Implements basic arithmetic between scalars with the same behavior as `ArithmeticKernel`.
@@ -213,5 +214,6 @@ macro_rules! impl_float_pl_num_arith {
     };
 }
 
+impl_float_pl_num_arith!(pf16);
 impl_float_pl_num_arith!(f32);
 impl_float_pl_num_arith!(f64);

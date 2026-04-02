@@ -1,4 +1,4 @@
-use std::hash::BuildHasher;
+use std::hash::{Hash, Hasher};
 
 use hashbrown::hash_map::RawEntryMut;
 use polars_utils::unique_id::UniqueId;
@@ -6,53 +6,53 @@ use polars_utils::unique_id::UniqueId;
 use super::*;
 use crate::prelude::visitor::IRNode;
 
-mod identifier_impl {
-    use polars_utils::aliases::PlFixedStateQuality;
-    use polars_utils::hashing::_boost_hash_combine;
+struct Blake3Hasher {
+    hasher: blake3::Hasher,
+}
 
+impl Blake3Hasher {
+    fn new() -> Self {
+        Self {
+            hasher: blake3::Hasher::new(),
+        }
+    }
+
+    fn finalize(self) -> [u8; 32] {
+        self.hasher.finalize().into()
+    }
+}
+
+impl Hasher for Blake3Hasher {
+    fn finish(&self) -> u64 {
+        // Not used - we'll call finalize() instead
+        0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.hasher.update(bytes);
+    }
+}
+
+mod identifier_impl {
     use super::*;
-    /// Identifier that shows the sub-expression path.
-    /// Must implement hash and equality and ideally
-    /// have little collisions
-    /// We will do a full expression comparison to check if the
-    /// expressions with equal identifiers are truly equal
     #[derive(Clone)]
     pub(super) struct Identifier {
-        inner: Option<u64>,
-        last_node: Option<IRNode>,
-        hb: PlFixedStateQuality,
+        inner: Option<[u8; 32]>,
     }
 
     impl Identifier {
         pub fn hash(&self) -> u64 {
-            self.inner.unwrap_or(0)
+            self.inner
+                .map(|inner| u64::from_le_bytes(inner[0..8].try_into().unwrap()))
+                .unwrap_or(0)
         }
 
-        pub fn is_equal(
-            &self,
-            other: &Self,
-            lp_arena: &Arena<IR>,
-            expr_arena: &Arena<AExpr>,
-        ) -> bool {
-            self.inner == other.inner
-                && match (self.last_node, other.last_node) {
-                    (None, None) => true,
-                    (Some(l), Some(r)) => {
-                        // We ignore caches as they are inserted on the node locations.
-                        // In that case we don't want to cmp the cache (as we just inserted it),
-                        // but the input node of the cache.
-                        l.hashable_and_cmp(lp_arena, expr_arena).ignore_caches()
-                            == r.hashable_and_cmp(lp_arena, expr_arena).ignore_caches()
-                    },
-                    _ => false,
-                }
+        pub fn is_equal(&self, other: &Self) -> bool {
+            self.inner.map(blake3::Hash::from_bytes) == other.inner.map(blake3::Hash::from_bytes)
         }
+
         pub fn new() -> Self {
-            Self {
-                inner: None,
-                last_node: None,
-                hb: PlFixedStateQuality::with_seed(0),
-            }
+            Self { inner: None }
         }
 
         pub fn is_valid(&self) -> bool {
@@ -61,7 +61,12 @@ mod identifier_impl {
 
         pub fn combine(&mut self, other: &Identifier) {
             let inner = match (self.inner, other.inner) {
-                (Some(l), Some(r)) => _boost_hash_combine(l, r),
+                (Some(l), Some(r)) => {
+                    let mut h = blake3::Hasher::new();
+                    h.update(&l);
+                    h.update(&r);
+                    *h.finalize().as_bytes()
+                },
                 (None, Some(r)) => r,
                 (Some(l), None) => l,
                 _ => return,
@@ -75,16 +80,19 @@ mod identifier_impl {
             lp_arena: &Arena<IR>,
             expr_arena: &Arena<AExpr>,
         ) -> Self {
-            let hashed = self.hb.hash_one(alp.hashable_and_cmp(lp_arena, expr_arena));
-            let inner = Some(
-                self.inner
-                    .map_or(hashed, |l| _boost_hash_combine(l, hashed)),
-            );
-            Self {
-                inner,
-                last_node: Some(*alp),
-                hb: self.hb.clone(),
-            }
+            let mut h = Blake3Hasher::new();
+            alp.hashable_and_cmp(lp_arena, expr_arena)
+                .hash_as_equality()
+                .hash(&mut h);
+            let hashed = h.finalize();
+
+            let inner = Some(self.inner.map_or(hashed, |l| {
+                let mut h = blake3::Hasher::new();
+                h.update(&l);
+                h.update(&hashed);
+                *h.finalize().as_bytes()
+            }));
+            Self { inner }
         }
     }
 }
@@ -101,26 +109,16 @@ impl<V> IdentifierMap<V> {
         }
     }
 
-    fn get(&self, id: &Identifier, lp_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<&V> {
+    fn get(&self, id: &Identifier) -> Option<&V> {
         self.inner
             .raw_entry()
-            .from_hash(id.hash(), |k| k.is_equal(id, lp_arena, expr_arena))
+            .from_hash(id.hash(), |k| k.is_equal(id))
             .map(|(_k, v)| v)
     }
 
-    fn entry<F: FnOnce() -> V>(
-        &mut self,
-        id: Identifier,
-        v: F,
-        lp_arena: &Arena<IR>,
-        expr_arena: &Arena<AExpr>,
-    ) -> &mut V {
+    fn entry<F: FnOnce() -> V>(&mut self, id: Identifier, v: F) -> &mut V {
         let h = id.hash();
-        match self
-            .inner
-            .raw_entry_mut()
-            .from_hash(h, |k| k.is_equal(&id, lp_arena, expr_arena))
-        {
+        match self.inner.raw_entry_mut().from_hash(h, |k| k.is_equal(&id)) {
             RawEntryMut::Occupied(entry) => entry.into_mut(),
             RawEntryMut::Vacant(entry) => {
                 let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
@@ -135,7 +133,6 @@ impl<V> Default for IdentifierMap<V> {
         Self::new()
     }
 }
-
 /// Identifier maps to Expr Node and count.
 type SubPlanCount = IdentifierMap<(Node, u32)>;
 /// (post_visit_idx, identifier);
@@ -231,7 +228,7 @@ impl Visitor for LpIdentifierVisitor<'_> {
         let (pre_visit_idx, sub_plan_id) = self.pop_until_entered();
 
         // Create the Id of this node.
-        let id: Identifier = sub_plan_id.add_alp_node(node, &arena.0, &arena.1);
+        let id = sub_plan_id.add_alp_node(node, &arena.0, &arena.1);
 
         // Store the created id.
         self.identifier_array[pre_visit_idx] = (self.post_visit_idx, id.clone());
@@ -240,9 +237,7 @@ impl Visitor for LpIdentifierVisitor<'_> {
         // is available for the parent plan.
         self.visit_stack.push(VisitRecord::SubPlanId(id.clone()));
 
-        let (_, sp_count) = self
-            .sp_count
-            .entry(id, || (node.node(), 0), &arena.0, &arena.1);
+        let (_, sp_count) = self.sp_count.entry(id, || (node.node(), 0));
         *sp_count += 1;
         self.has_subplan |= *sp_count > 1;
         Ok(VisitRecursion::Continue)
@@ -303,7 +298,7 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
             return Ok(RewriteRecursion::NoMutateAndContinue);
         }
 
-        let Some((_, count)) = self.sp_count.get(id, &arena.0, &arena.1) else {
+        let Some((_, count)) = self.sp_count.get(id) else {
             self.visited_idx += 1;
             return Ok(RewriteRecursion::NoMutateAndContinue);
         };
@@ -343,10 +338,8 @@ impl RewritingVisitor for CommonSubPlanRewriter<'_> {
             self.visited_idx += 1;
         }
 
-        let cache_id = *self
-            .cache_id
-            .entry(id.clone(), UniqueId::new, &arena.0, &arena.1);
-        let cache_count = self.sp_count.get(id, &arena.0, &arena.1).unwrap().1;
+        let cache_id = *self.cache_id.entry(id.clone(), UniqueId::new);
+        let cache_count = self.sp_count.get(id).unwrap().1;
 
         let cache_node = IR::Cache {
             input: node.node(),
@@ -395,7 +388,6 @@ fn insert_caches(
 /// will never be used. So we prune caches that don't fit their count.
 ///
 /// `conctat([lf.select(), lf.select(), lf])`
-///
 fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
     for (count, nodes) in cid2c.values() {
         if *count == nodes.len() as u32 {
@@ -415,25 +407,11 @@ pub(super) fn elim_cmn_subplans(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> (Node, bool) {
+) -> (Node, bool, CacheId2Caches) {
     let (lp, changed, cid2c) = insert_caches(root, lp_arena, expr_arena);
     if changed {
         prune_unused_caches(lp_arena, &cid2c);
     }
-    // The CSPE only finds the longest trail duplicates, so we must recursively apply the
-    // optimization
-    // Below the inserted caches, might be more duplicates. So we recurse one time to find
-    // inner duplicates as well.
-    // TODO! reactivate this and recursively deal with projection/predicate pushdown.
-    //for (_, (_count, caches_nodes)) in cid2c.iter() {
-    //    // The last node seems the one traversed by the planners. This is validated by tests.
-    //    // We could traverse all nodes, but it would be duplicate work.
-    //    if let Some(cache) = caches_nodes.last() {
-    //        if let IR::Cache { input, id: _ } = lp_arena.get(*cache) {
-    //            let _ = elim_cmn_subplans(*input, lp_arena, expr_arena);
-    //        }
-    //    }
-    //}
 
-    (lp, changed)
+    (lp, changed, cid2c)
 }

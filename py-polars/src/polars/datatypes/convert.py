@@ -3,11 +3,10 @@ from __future__ import annotations
 import contextlib
 import functools
 import re
-import sys
 from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from polars._dependencies import numpy as np
 from polars._dependencies import pyarrow as pa
@@ -24,6 +23,7 @@ from polars.datatypes.classes import (
     Duration,
     Enum,
     Field,
+    Float16,
     Float32,
     Float64,
     Int8,
@@ -49,21 +49,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import dtype_str_repr as _dtype_str_repr
 
 
-OptionType = type(Optional[type])
-if sys.version_info >= (3, 10):
-    from types import NoneType, UnionType
-else:
-    # infer equivalent class
-    NoneType = type(None)
-    UnionType = type(Union[int, float])
-
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
+    from typing import TypeGuard
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeGuard
-    else:
-        from typing_extensions import TypeGuard
+    from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
 
 def is_polars_dtype(
@@ -149,6 +138,7 @@ class _DataTypeMappings:
             Datetime: "datetime",
             Decimal: "decimal",
             Duration: "duration",
+            Float16: "f16",
             Float32: "f32",
             Float64: "f64",
             Int8: "i8",
@@ -179,6 +169,7 @@ class _DataTypeMappings:
             Datetime: datetime,
             Decimal: PyDecimal,
             Duration: timedelta,
+            Float16: float,
             Float32: float,
             Float64: float,
             Int8: int,
@@ -209,7 +200,7 @@ class _DataTypeMappings:
             # (np.dtype().kind, np.dtype().itemsize)
             ("M", 8): Datetime,
             ("b", 1): Boolean,
-            ("f", 2): Float32,
+            ("f", 2): Float16,
             ("f", 4): Float32,
             ("f", 8): Float64,
             ("i", 1): Int8,

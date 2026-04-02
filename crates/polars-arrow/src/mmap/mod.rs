@@ -72,7 +72,7 @@ fn get_buffers_nodes(batch: RecordBatchRef) -> PolarsResult<(VecDeque<IpcBuffer>
     Ok((buffers, field_nodes))
 }
 
-pub(crate) unsafe fn mmap_record<T: AsRef<[u8]>>(
+pub(crate) unsafe fn mmap_record<T: AsRef<[u8]> + Send + Sync + 'static>(
     fields: &ArrowSchema,
     ipc_fields: &[IpcField],
     data: Arc<T>,
@@ -132,7 +132,7 @@ pub(crate) unsafe fn mmap_record<T: AsRef<[u8]>>(
 /// The caller must ensure that `data` contains a valid buffers, for example:
 /// * Offsets in variable-sized containers must be in-bounds and increasing
 /// * Utf8 data is valid
-pub unsafe fn mmap_unchecked<T: AsRef<[u8]>>(
+pub unsafe fn mmap_unchecked<T: AsRef<[u8]> + Send + Sync + 'static>(
     metadata: &FileMetadata,
     dictionaries: &Dictionaries,
     data: Arc<T>,
@@ -152,7 +152,7 @@ pub unsafe fn mmap_unchecked<T: AsRef<[u8]>>(
     )
 }
 
-unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
+unsafe fn mmap_dictionary<T: AsRef<[u8]> + Send + Sync + 'static>(
     schema: &ArrowSchema,
     ipc_fields: &[IpcField],
     data: Arc<T>,
@@ -164,7 +164,7 @@ unsafe fn mmap_dictionary<T: AsRef<[u8]>>(
     mmap_dictionary_from_batch(schema, ipc_fields, &data, batch, dictionaries, offset)
 }
 
-pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]>>(
+pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]> + Send + Sync + 'static>(
     schema: &ArrowSchema,
     ipc_fields: &[IpcField],
     data: &Arc<T>,
@@ -183,7 +183,7 @@ pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]>>(
         .ok_or_else(|| polars_err!(ComputeError: "out-of-spec {:?}", OutOfSpecKind::MissingData))?;
 
     let value_type = if let ArrowDataType::Dictionary(_, value_type, _) =
-        first_field.dtype.to_logical_type()
+        first_field.dtype.to_storage()
     {
         value_type.as_ref()
     } else {
@@ -212,7 +212,7 @@ pub(crate) unsafe fn mmap_dictionary_from_batch<T: AsRef<[u8]>>(
 /// The caller must ensure that `data` contains a valid buffers, for example:
 /// * Offsets in variable-sized containers must be in-bounds and increasing
 /// * Utf8 data is valid
-pub unsafe fn mmap_dictionaries_unchecked<T: AsRef<[u8]>>(
+pub unsafe fn mmap_dictionaries_unchecked<T: AsRef<[u8]> + Send + Sync + 'static>(
     metadata: &FileMetadata,
     data: Arc<T>,
 ) -> PolarsResult<Dictionaries> {
@@ -224,7 +224,7 @@ pub unsafe fn mmap_dictionaries_unchecked<T: AsRef<[u8]>>(
     )
 }
 
-pub(crate) unsafe fn mmap_dictionaries_unchecked2<T: AsRef<[u8]>>(
+pub(crate) unsafe fn mmap_dictionaries_unchecked2<T: AsRef<[u8]> + Send + Sync + 'static>(
     schema: &ArrowSchema,
     ipc_fields: &[IpcField],
     dictionaries: Option<&Vec<arrow_format::ipc::Block>>,

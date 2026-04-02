@@ -1,4 +1,5 @@
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 def test_hash_struct() -> None:
@@ -9,3 +10,32 @@ def test_hash_struct() -> None:
         15139341575481673729,
         12593759486533989774,
     ]
+
+
+def test_hash_cat_stable() -> None:
+    c1 = pl.Categories.random()
+    c2 = pl.Categories.random()
+
+    # Different insertion order.
+    s1 = pl.Series(["cow", "cat", "moo"], dtype=pl.Categorical(c1))
+    s2 = pl.Series(["cat", "moo", "cow"], dtype=pl.Categorical(c2))
+
+    # Same data should have same hash.
+    df1 = pl.DataFrame(
+        {"cat": ["cow", "cat", "moo"]}, schema={"cat": pl.Categorical(c1)}
+    )
+    df2 = pl.DataFrame(
+        {"cat": ["cow", "cat", "moo"]}, schema={"cat": pl.Categorical(c2)}
+    )
+    assert_frame_equal(
+        df1.select(pl.col.cat.hash()),
+        df2.select(pl.col.cat.hash()),
+    )
+
+    # Also stable in struct?
+    df1_struct = df1.select(struct=pl.struct(c=pl.col.cat, x=1))
+    df2_struct = df2.select(struct=pl.struct(c=pl.col.cat, x=1))
+    assert_frame_equal(
+        df1_struct.select(pl.col.struct.hash()),
+        df2_struct.select(pl.col.struct.hash()),
+    )

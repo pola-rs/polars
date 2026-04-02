@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 #[test]
 #[cfg(feature = "csv")]
@@ -24,7 +24,7 @@ fn iss_7437() -> PolarsResult<()> {
         .collect()?
         .sort(["category"], SortMultipleOptions::default())?;
 
-    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
+    let expected = LazyCsvReader::new(PlRefPath::new("../../examples/datasets/foods1.csv"))
         .finish()?
         .group_by(vec![col("category").alias("category")])
         .agg(vec![])
@@ -57,7 +57,7 @@ fn iss_7436() {
         .unwrap()
         .collect()
         .unwrap();
-    let expected = LazyCsvReader::new(PlPath::new("../../examples/datasets/foods1.csv"))
+    let expected = LazyCsvReader::new(PlRefPath::new("../../examples/datasets/foods1.csv"))
         .finish()
         .unwrap()
         .select(&[
@@ -127,21 +127,6 @@ fn iss_8419() {
     .unwrap()
     .lazy();
 
-    let expected = df
-        .clone()
-        .select(&[
-            col("Year"),
-            col("Country"),
-            col("Sales"),
-            col("Sales")
-                .sort(SortOptions::default().with_order_descending(true))
-                .cum_sum(false)
-                .alias("SalesCumulative"),
-        ])
-        .sort(["SalesCumulative"], Default::default())
-        .collect()
-        .unwrap();
-
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
 
@@ -156,7 +141,15 @@ fn iss_8419() {
     ORDER BY
         SalesCumulative
     "#;
+
     let df = ctx.execute(query).unwrap().collect().unwrap();
+    let expected = df! {
+      "Year"   => [2020, 2020, 2019, 2019, 2018, 2018],
+      "Country"=> ["UK", "US", "UK", "US", "UK", "US"],
+      "Sales"  => [6000, 5000, 4000, 3000, 2000, 1000],
+      "SalesCumulative" => [6000, 11000, 15000, 18000, 20000, 21000]
+    }
+    .unwrap();
 
     assert!(df.equals(&expected))
 }

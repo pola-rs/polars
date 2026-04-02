@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable
 
 import pytest
 
@@ -235,23 +235,19 @@ def test_eq_missing_lists_arrays_19153(
     cmp_eq_missing: Callable[[pl.Series, pl.Series], pl.Series],
     cmp_ne_missing: Callable[[pl.Series, pl.Series], pl.Series],
 ) -> None:
-    def assert_series_equal(
+    def assert_series_equal_wrap(
         left: pl.Series,
         right: pl.Series,
-        *,
-        assert_series_equal_impl: Callable[[pl.Series, pl.Series], None] = globals()[
-            "assert_series_equal"
-        ],
     ) -> None:
         # `assert_series_equal` also uses `ne_missing` underneath so we have
         # some extra checks here to be sure.
-        assert_series_equal_impl(left, right)
+        assert_series_equal(left, right)
         assert left.to_list() == right.to_list()
         assert left.null_count() == 0
         assert right.null_count() == 0
 
     # Broadcast NULL
-    assert_series_equal(
+    assert_series_equal_wrap(
         cmp_eq_missing(
             pl.Series([None], dtype=dtype),
             pl.Series([None, [1, None], [1, 1]], dtype=dtype),
@@ -259,7 +255,7 @@ def test_eq_missing_lists_arrays_19153(
         pl.Series([True, False, False]),
     )
 
-    assert_series_equal(
+    assert_series_equal_wrap(
         cmp_ne_missing(
             pl.Series([None], dtype=dtype),
             pl.Series([None, [1, None], [1, 1]], dtype=dtype),
@@ -268,7 +264,7 @@ def test_eq_missing_lists_arrays_19153(
     )
 
     # Non-broadcast full-NULL
-    assert_series_equal(
+    assert_series_equal_wrap(
         cmp_eq_missing(
             pl.Series(3 * [None], dtype=dtype),
             pl.Series([None, [1, None], [1, 1]], dtype=dtype),
@@ -276,7 +272,7 @@ def test_eq_missing_lists_arrays_19153(
         pl.Series([True, False, False]),
     )
 
-    assert_series_equal(
+    assert_series_equal_wrap(
         cmp_ne_missing(
             pl.Series(3 * [None], dtype=dtype),
             pl.Series([None, [1, None], [1, 1]], dtype=dtype),
@@ -285,7 +281,7 @@ def test_eq_missing_lists_arrays_19153(
     )
 
     # Broadcast valid
-    assert_series_equal(
+    assert_series_equal_wrap(
         cmp_eq_missing(
             pl.Series([[1, None]], dtype=dtype),
             pl.Series([None, [1, None], [1, 1]], dtype=dtype),
@@ -293,7 +289,7 @@ def test_eq_missing_lists_arrays_19153(
         pl.Series([False, True, False]),
     )
 
-    assert_series_equal(
+    assert_series_equal_wrap(
         cmp_ne_missing(
             pl.Series([[1, None]], dtype=dtype),
             pl.Series([None, [1, None], [1, 1]], dtype=dtype),
@@ -302,7 +298,7 @@ def test_eq_missing_lists_arrays_19153(
     )
 
     # Non-broadcast mixed
-    assert_series_equal(
+    assert_series_equal_wrap(
         cmp_eq_missing(
             pl.Series([None, [1, 1], [1, 1]], dtype=dtype),
             pl.Series([None, [1, None], [1, 1]], dtype=dtype),
@@ -310,7 +306,7 @@ def test_eq_missing_lists_arrays_19153(
         pl.Series([True, False, True]),
     )
 
-    assert_series_equal(
+    assert_series_equal_wrap(
         cmp_ne_missing(
             pl.Series([None, [1, 1], [1, 1]], dtype=dtype),
             pl.Series([None, [1, None], [1, 1]], dtype=dtype),

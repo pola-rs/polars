@@ -1,6 +1,6 @@
 use std::fmt;
 
-use polars_core::prelude::SortOptions;
+use polars_core::prelude::{ExplodeOptions, SortOptions};
 
 use super::FunctionExpr;
 
@@ -37,9 +37,7 @@ pub enum ArrayFunction {
     #[cfg(feature = "array_count")]
     CountMatches,
     Shift,
-    Explode {
-        skip_empty: bool,
-    },
+    Explode(ExplodeOptions),
     Concat,
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<super::DslNameGenerator>),

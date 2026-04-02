@@ -41,7 +41,7 @@ if TYPE_CHECKING:
 
 
 def _cluster(iterable: Iterable[Any], n: int = 2) -> Iterable[Any]:
-    return zip(*[iter(iterable)] * n)
+    return zip(*[iter(iterable)] * n, strict=True)
 
 
 _XL_DEFAULT_FLOAT_FORMAT_ = "#,##0.000;[Red]-#,##0.000"
@@ -556,6 +556,16 @@ def _xl_setup_table_options(
     return table_style, table_options
 
 
+@overload
+def _xl_worksheet_in_workbook(
+    wb: Workbook, ws: Worksheet, *, return_worksheet: Literal[False] = ...
+) -> bool: ...
+@overload
+def _xl_worksheet_in_workbook(
+    wb: Workbook, ws: Worksheet, *, return_worksheet: Literal[True]
+) -> Worksheet: ...
+
+
 def _xl_worksheet_in_workbook(
     wb: Workbook, ws: Worksheet, *, return_worksheet: bool = False
 ) -> bool | Worksheet:
@@ -568,6 +578,8 @@ def _xl_worksheet_in_workbook(
 def _xl_setup_workbook(
     workbook: Workbook | BytesIO | Path | str | None,
     worksheet: str | Worksheet | None = None,
+    *,
+    use_zip64: bool = False,
 ) -> tuple[Workbook, Worksheet, bool]:
     """Establish the target Excel workbook and worksheet."""
     from xlsxwriter import Workbook
@@ -588,6 +600,7 @@ def _xl_setup_workbook(
         raise TypeError(msg)
     else:
         workbook_options = {
+            "use_zip64": use_zip64,
             "nan_inf_to_errors": True,
             "strings_to_formulas": False,
             "default_date_format": _XL_DEFAULT_DTYPE_FORMATS_[Date],

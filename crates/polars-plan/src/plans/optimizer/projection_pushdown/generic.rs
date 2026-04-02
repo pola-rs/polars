@@ -9,6 +9,7 @@ pub(super) fn process_generic(
     ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
+    reset_count_star: bool,
 ) -> PolarsResult<IR> {
     let inputs = lp.get_inputs();
     let input_count = inputs.len();
@@ -19,6 +20,9 @@ pub(super) fn process_generic(
     let new_inputs = inputs
         .into_iter()
         .map(|node| {
+            if reset_count_star {
+                proj_pd.is_count_star = false;
+            }
             let alp = lp_arena.take(node);
             let mut alp = proj_pd.push_down(alp, ctx.clone(), lp_arena, expr_arena)?;
 

@@ -16,7 +16,7 @@ def test_categorical_lexical_sort() -> None:
     df = pl.DataFrame(
         {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
     ).with_columns(
-        pl.col("cats").cast(pl.Categorical("lexical")),
+        pl.col("cats").cast(pl.Categorical()),
     )
 
     out = df.sort(["cats"])
@@ -37,7 +37,7 @@ def test_categorical_lexical_sort() -> None:
     )
     assert_frame_equal(out.with_columns(pl.col("cats").cast(pl.String)), expected)
 
-    s = pl.Series(["a", "c", "a", "b", "a"], dtype=pl.Categorical("lexical"))
+    s = pl.Series(["a", "c", "a", "b", "a"], dtype=pl.Categorical())
     assert s.sort().cast(pl.String).to_list() == [
         "a",
         "a",
@@ -51,14 +51,14 @@ def test_categorical_lexical_ordering_after_concat() -> None:
     ldf1 = (
         pl.DataFrame([pl.Series("key1", [8, 5]), pl.Series("key2", ["fox", "baz"])])
         .lazy()
-        .with_columns(pl.col("key2").cast(pl.Categorical("lexical")))
+        .with_columns(pl.col("key2").cast(pl.Categorical()))
     )
     ldf2 = (
         pl.DataFrame(
             [pl.Series("key1", [6, 8, 6]), pl.Series("key2", ["fox", "foo", "bar"])]
         )
         .lazy()
-        .with_columns(pl.col("key2").cast(pl.Categorical("lexical")))
+        .with_columns(pl.col("key2").cast(pl.Categorical()))
     )
     df = pl.concat([ldf1, ldf2]).select(pl.col("key2")).collect()
 
@@ -70,7 +70,7 @@ def test_categorical_lexical_ordering_after_concat() -> None:
 def test_sort_categoricals_6014_lexical() -> None:
     # create lexically-ordered categorical
     df = pl.DataFrame({"key": ["bbb", "aaa", "ccc"]}).with_columns(
-        pl.col("key").cast(pl.Categorical("lexical"))
+        pl.col("key").cast(pl.Categorical())
     )
 
     out = df.sort("key")
@@ -88,18 +88,17 @@ def test_cat_to_local() -> None:
 
 
 def test_cat_uses_lexical_ordering() -> None:
-    s = pl.Series(["a", "b", None, "b"]).cast(pl.Categorical)
-    assert s.cat.uses_lexical_ordering()
+    with pytest.warns(DeprecationWarning, match="ordering parameter"):
+        physical_cat = pl.Categorical(ordering="physical")
 
-    s = s.cast(pl.Categorical("lexical"))
-    assert s.cat.uses_lexical_ordering()
+    for dtype in [pl.Categorical, pl.Categorical(), physical_cat]:
+        s = pl.Series(["a", "b", None, "b"]).cast(dtype)  # type: ignore[arg-type]
 
-    with pytest.warns(
-        DeprecationWarning,
-        match="ordering is now always lexical",
-    ):
-        s = s.cast(pl.Categorical("physical"))
-    assert s.cat.uses_lexical_ordering()
+        with pytest.warns(
+            DeprecationWarning,
+            match="Categoricals are now always ordered lexically",
+        ):
+            assert s.cat.uses_lexical_ordering()
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum])

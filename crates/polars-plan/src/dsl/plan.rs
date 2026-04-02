@@ -2,6 +2,8 @@ use std::fmt;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "pivot")]
+use polars_core::frame::PivotColumnNaming;
 use polars_utils::arena::Node;
 #[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
@@ -22,7 +24,7 @@ const DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 const DSL_SCHEMA_HASH: SchemaHash<'static> = SchemaHash::from_hash_file();
 
-#[derive(Debug)]
+#[derive(Debug, strum_macros::IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum DslPlan {
@@ -66,6 +68,7 @@ pub enum DslPlan {
     GroupBy {
         input: Arc<DslPlan>,
         keys: Vec<Expr>,
+        predicates: Vec<Expr>,
         aggs: Vec<Expr>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
@@ -101,8 +104,8 @@ pub enum DslPlan {
         extra_columns: ExtraColumnsPolicy,
     },
     PipeWithSchema {
-        input: Arc<DslPlan>,
-        callback: PlanCallback<(DslPlan, SchemaRef), DslPlan>,
+        input: Arc<[DslPlan]>,
+        callback: PlanCallback<(Vec<DslPlan>, Vec<SchemaRef>), DslPlan>,
     },
     #[cfg(feature = "pivot")]
     Pivot {
@@ -114,6 +117,7 @@ pub enum DslPlan {
         agg: Expr,
         maintain_order: bool,
         separator: PlSmallStr,
+        column_naming: PivotColumnNaming,
     },
     /// Remove duplicates from the table
     Distinct {
@@ -190,7 +194,7 @@ impl Clone for DslPlan {
             Self::Scan { sources,  unified_scan_args, scan_type, cached_ir } => Self::Scan { sources: sources.clone(), unified_scan_args: unified_scan_args.clone(), scan_type: scan_type.clone(), cached_ir: cached_ir.clone() },
             Self::DataFrameScan { df, schema, } => Self::DataFrameScan { df: df.clone(), schema: schema.clone(),  },
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
-            Self::GroupBy { input, keys, aggs,  apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
+            Self::GroupBy { input, keys, predicates, aggs, apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), predicates: predicates.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
             Self::Join { input_left, input_right, left_on, right_on, predicates, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone(), predicates: predicates.clone() },
             Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
             Self::MatchToSchema { input, match_schema, per_column, extra_columns } => Self::MatchToSchema { input: input.clone(), match_schema: match_schema.clone(), per_column: per_column.clone(), extra_columns: *extra_columns },
@@ -205,7 +209,7 @@ impl Clone for DslPlan {
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
             Self::SinkMultiple { inputs } => Self::SinkMultiple { inputs: inputs.clone() },
             #[cfg(feature = "pivot")]
-            Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order },
+            Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order, column_naming }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order, column_naming: *column_naming },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},

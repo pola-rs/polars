@@ -1,15 +1,16 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::read_basic::*;
 use super::super::{Compression, IpcBuffer, Node};
 use crate::array::BinaryArray;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
-use crate::offset::Offset;
+use crate::offset::{Offset, OffsetsBuffer};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_binary<O: Offset, R: Read + Seek>(
@@ -22,6 +23,7 @@ pub fn read_binary<O: Offset, R: Read + Seek>(
     compression: Option<Compression>,
     limit: Option<usize>,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<BinaryArray<O>> {
     let field_node = try_get_field_node(field_nodes, &dtype)?;
 
@@ -61,7 +63,18 @@ pub fn read_binary<O: Offset, R: Read + Seek>(
         scratch,
     )?;
 
-    BinaryArray::<O>::try_new(dtype, offsets.try_into()?, values, validity)
+    if *checked {
+        BinaryArray::<O>::try_new(dtype, offsets.try_into()?, values, validity)
+    } else {
+        // SAFETY:
+        // Invariant of the `checked` state that this is valid.
+        unsafe {
+            let offsets = OffsetsBuffer::new_unchecked(offsets);
+            Ok(BinaryArray::<O>::new_unchecked(
+                dtype, offsets, values, validity,
+            ))
+        }
+    }
 }
 
 pub fn skip_binary(

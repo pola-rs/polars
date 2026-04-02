@@ -7,26 +7,22 @@ use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float};
+#[cfg(feature = "simd")]
+use polars_utils::float16::pf16;
 
 const STRIPE: usize = 16;
 const PAIRWISE_RECURSION_LIMIT: usize = 128;
 
 // We want to be generic over both integers and floats, requiring this helper trait.
 #[cfg(feature = "simd")]
-pub trait SimdCastGeneric<const N: usize>
-where
-    LaneCount<N>: SupportedLaneCount,
-{
+pub trait SimdCastGeneric<const N: usize> {
     fn cast_generic<U: SimdCast>(self) -> Simd<U, N>;
 }
 
 macro_rules! impl_cast_custom {
     ($_type:ty) => {
         #[cfg(feature = "simd")]
-        impl<const N: usize> SimdCastGeneric<N> for Simd<$_type, N>
-        where
-            LaneCount<N>: SupportedLaneCount,
-        {
+        impl<const N: usize> SimdCastGeneric<N> for Simd<$_type, N> {
             fn cast_generic<U: SimdCast>(self) -> Simd<U, N> {
                 self.cast::<U>()
             }
@@ -94,7 +90,7 @@ where
             .chunks_exact(STRIPE)
             .enumerate()
             .map(|(i, a)| {
-                let m: Mask<_, STRIPE> = mask.get_simd(i * STRIPE);
+                let m: Mask<T::Mask, STRIPE> = mask.get_simd(i * STRIPE);
                 m.select(Simd::from_slice(a).cast_generic::<F>(), zero)
             })
             .sum::<Simd<F, STRIPE>>();
@@ -124,6 +120,24 @@ where
 impl<F> SumBlock<F> for [u128; PAIRWISE_RECURSION_LIMIT]
 where
     u128: AsPrimitive<F>,
+    F: Float + std::iter::Sum + 'static,
+{
+    fn sum_block_vectorized(&self) -> F {
+        self.iter().map(|x| x.as_()).sum()
+    }
+
+    fn sum_block_vectorized_with_mask(&self, mask: BitMask<'_>) -> F {
+        self.iter()
+            .enumerate()
+            .map(|(idx, x)| if mask.get(idx) { x.as_() } else { F::zero() })
+            .sum()
+    }
+}
+
+#[cfg(feature = "simd")]
+impl<F> SumBlock<F> for [pf16; PAIRWISE_RECURSION_LIMIT]
+where
+    pf16: AsPrimitive<F>,
     F: Float + std::iter::Sum + 'static,
 {
     fn sum_block_vectorized(&self) -> F {

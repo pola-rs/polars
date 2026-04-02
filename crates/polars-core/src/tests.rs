@@ -7,9 +7,9 @@ fn test_initial_empty_sort() -> PolarsResult<()> {
     let mut series = Column::new("data".into(), Vec::<f64>::new());
     let series2 = Column::new("data2".into(), data.clone());
     let series3 = Column::new("data3".into(), data);
-    let df = DataFrame::new(vec![series2, series3])?;
+    let df = DataFrame::new_infer_height(vec![series2, series3])?;
 
-    for column in df.get_columns().iter() {
+    for column in df.columns().iter() {
         series.append(column)?;
     }
     series.f64()?.sort(false);

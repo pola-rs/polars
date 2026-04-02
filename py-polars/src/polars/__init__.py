@@ -76,6 +76,7 @@ from polars.dataframe import DataFrame
 from polars.datatype_expr import DataTypeExpr
 from polars.datatypes import (
     Array,
+    BaseExtension,
     Binary,
     Boolean,
     Categorical,
@@ -86,7 +87,9 @@ from polars.datatypes import (
     Decimal,
     Duration,
     Enum,
+    Extension,
     Field,
+    Float16,
     Float32,
     Float64,
     Int8,
@@ -107,6 +110,11 @@ from polars.datatypes import (
     UInt128,
     Unknown,
     Utf8,
+)
+from polars.datatypes.extension import (
+    get_extension_type,
+    register_extension_type,
+    unregister_extension_type,
 )
 from polars.expr import Expr
 from polars.functions import (
@@ -203,12 +211,8 @@ from polars.functions import (
 )
 from polars.interchange import CompatLevel
 from polars.io import (
-    BasePartitionContext,
-    KeyedPartition,
-    KeyedPartitionContext,
-    PartitionByKey,
-    PartitionMaxSize,
-    PartitionParted,
+    FileProviderArgs,
+    PartitionBy,
     ScanCastOptions,
     defer,
     read_avro,
@@ -223,6 +227,7 @@ from polars.io import (
     read_ipc_schema,
     read_ipc_stream,
     read_json,
+    read_lines,
     read_ndjson,
     read_ods,
     read_parquet,
@@ -232,6 +237,7 @@ from polars.io import (
     scan_delta,
     scan_iceberg,
     scan_ipc,
+    scan_lines,
     scan_ndjson,
     scan_parquet,
     scan_pyarrow_dataset,
@@ -284,6 +290,7 @@ __all__ = [
     "DataTypeExpr",
     # datatypes
     "Array",
+    "BaseExtension",
     "Binary",
     "Boolean",
     "Categorical",
@@ -294,7 +301,9 @@ __all__ = [
     "Decimal",
     "Duration",
     "Enum",
+    "Extension",
     "Field",
+    "Float16",
     "Float32",
     "Float64",
     "Int8",
@@ -315,14 +324,14 @@ __all__ = [
     "UInt128",
     "Unknown",
     "Utf8",
+    # datatypes.extension
+    "register_extension_type",
+    "unregister_extension_type",
+    "get_extension_type",
     # polars.io
     "defer",
-    "KeyedPartition",
-    "BasePartitionContext",
-    "KeyedPartitionContext",
-    "PartitionByKey",
-    "PartitionMaxSize",
-    "PartitionParted",
+    "FileProviderArgs",
+    "PartitionBy",
     "ScanCastOptions",
     "read_avro",
     "read_clipboard",
@@ -336,6 +345,7 @@ __all__ = [
     "read_ipc_schema",
     "read_ipc_stream",
     "read_json",
+    "read_lines",
     "read_ndjson",
     "read_ods",
     "read_parquet",
@@ -345,6 +355,7 @@ __all__ = [
     "scan_delta",
     "scan_iceberg",
     "scan_ipc",
+    "scan_lines",
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",

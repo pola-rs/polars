@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -26,6 +26,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsIntegerType
 
 
@@ -332,16 +334,6 @@ def test_null_column_arithmetic(op: Any) -> None:
     # test broadcast left
     output_df = df.select(op(pl.Series("a", [None]), pl.col("a")))
     assert_frame_equal(expected_df, output_df)
-
-
-def test_bool_floordiv() -> None:
-    df = pl.DataFrame({"x": [True]})
-
-    with pytest.raises(
-        InvalidOperationError,
-        match="floor_div operation not supported for dtype `bool`",
-    ):
-        df.with_columns(pl.col("x").floordiv(2))
 
 
 def test_arithmetic_in_aggregation_3739() -> None:

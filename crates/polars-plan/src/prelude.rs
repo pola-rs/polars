@@ -11,6 +11,7 @@ pub(crate) use polars_time::prelude::*;
 pub use polars_utils::arena::{Arena, Node};
 
 pub use crate::callback::*;
+pub use crate::dsl::functions::*;
 pub use crate::dsl::*;
 #[cfg(feature = "debugging")]
 pub use crate::plans::debug::*;

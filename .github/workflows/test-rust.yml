@@ -33,7 +33,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Rust
         run: rustup show
@@ -43,9 +43,11 @@ jobs:
         with:
           save-if: ${{ github.ref_name == 'main' }}
 
+      # Note that we specify --lib, --bins etc
+      # to exclude the doc tests.
       - name: Compile tests
         run: >
-          cargo test --all-features --no-run
+          cargo test --lib --tests --bins --all-features --no-run
           -p polars-arrow
           -p polars-compute
           -p polars-core
@@ -62,7 +64,7 @@ jobs:
       - name: Run tests
         if: github.ref_name != 'main'
         run: >
-          cargo test --all-features
+          cargo test --lib --tests --bins --all-features
           -p polars-arrow
           -p polars-compute
           -p polars-core
@@ -84,7 +86,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Rust
         run: rustup show
@@ -104,7 +106,7 @@ jobs:
   check-features:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Rust
         run: rustup show
@@ -122,34 +124,10 @@ jobs:
       - name: Run cargo hack
         run: cargo hack check -p polars --each-feature --no-dev-deps && cargo check -p polars-stream
 
-  check-wasm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Rust
-        run: |
-          rustup target add wasm32-unknown-unknown
-          rustup show
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.ref_name == 'main' }}
-
-      - name: Install cargo hack
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-hack
-
-      - name: Check wasm
-        working-directory: crates
-        run: make check-wasm
-
   check-dsl-schema:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Rust
         run: rustup show

@@ -52,7 +52,7 @@ impl<T: chrono::TimeZone> Int8IsoWeek for chrono::DateTime<T> {}
 // `chrono::Datelike` methods on Arrays
 macro_rules! date_like {
     ($extract:ident, $array:ident, $dtype:path) => {
-        match $array.dtype().to_logical_type() {
+        match $array.dtype().to_storage() {
             ArrowDataType::Date32 | ArrowDataType::Date64 | ArrowDataType::Timestamp(_, None) => {
                 date_variants($array, $dtype, |x| x.$extract().try_into().unwrap())
             },
@@ -111,7 +111,7 @@ pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
 // `chrono::Timelike` methods on Arrays
 macro_rules! time_like {
     ($extract:ident, $array:ident, $dtype:path) => {
-        match $array.dtype().to_logical_type() {
+        match $array.dtype().to_storage() {
             ArrowDataType::Date32 | ArrowDataType::Date64 | ArrowDataType::Timestamp(_, None) => {
                 date_variants($array, $dtype, |x| x.$extract().try_into().unwrap())
             },
@@ -177,7 +177,7 @@ where
     O: NativeType,
     F: Fn(chrono::NaiveDateTime) -> O,
 {
-    match array.dtype().to_logical_type() {
+    match array.dtype().to_storage() {
         ArrowDataType::Date32 => {
             let array = array
                 .as_any()
@@ -220,7 +220,7 @@ where
     O: NativeType,
     F: Fn(chrono::NaiveTime) -> O,
 {
-    match array.dtype().to_logical_type() {
+    match array.dtype().to_storage() {
         ArrowDataType::Time32(TimeUnit::Second) => {
             let array = array
                 .as_any()

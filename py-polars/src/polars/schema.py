@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import contextlib
-import sys
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Literal, Union, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 from polars._typing import PythonDataType
 from polars._utils.unstable import unstable
 from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
+from polars.datatypes.convert import unpack_dtypes
 from polars.exceptions import DuplicateError
 from polars.interchange.protocol import CompatLevel
 
@@ -22,36 +22,22 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from typing import TypeAlias
 
     import pyarrow as pa
 
     from polars import DataFrame, LazyFrame
     from polars._typing import ArrowSchemaExportable
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 else:
     from polars._dependencies import pyarrow as pa
 
 
-if sys.version_info >= (3, 10):
-
-    def _required_init_args(tp: DataTypeClass) -> bool:
-        # note: this check is ~20% faster than the check for a
-        # custom "__init__", below, but is not available on py39
-        return bool(tp.__annotations__)
-else:
-
-    def _required_init_args(tp: DataTypeClass) -> bool:
-        # indicates override of the default __init__
-        # (eg: this type requires specific args)
-        return "__init__" in tp.__dict__
+def _required_init_args(tp: DataTypeClass) -> bool:
+    return bool(tp.__annotations__)
 
 
 BaseSchema = OrderedDict[str, DataType]
-SchemaInitDataType: TypeAlias = Union[DataType, DataTypeClass, PythonDataType]
+SchemaInitDataType: TypeAlias = DataType | DataTypeClass | PythonDataType
 
 __all__ = ["Schema"]
 
@@ -157,7 +143,7 @@ class Schema(BaseSchema):
             return False
         if len(self) != len(other):
             return False
-        for (nm1, tp1), (nm2, tp2) in zip(self.items(), other.items()):
+        for (nm1, tp1), (nm2, tp2) in zip(self.items(), other.items(), strict=True):
             if nm1 != nm2 or not tp1.is_(tp2):
                 return False
         return True
@@ -301,3 +287,30 @@ class Schema(BaseSchema):
         {'x': <class 'int'>, 'y':  <class 'str'>, 'z': <class 'datetime.timedelta'>}
         """
         return {name: tp.to_python() for name, tp in self.items()}
+
+    def contains_dtype(self, dtype: DataType, *, recursive: bool) -> bool:
+        """
+        Check if the schema contains the given data type.
+
+        Parameters
+        ----------
+        dtype
+            The data type to search for.
+        recursive
+            If False, only check top-level column dtypes.
+            If True, also search within nested types (List, Array, Struct).
+
+        Examples
+        --------
+        >>> s = pl.Schema({"x": pl.Int64(), "y": pl.List(pl.Float64)})
+        >>> s.contains_dtype(pl.Int64, recursive=False)
+        True
+        >>> s.contains_dtype(pl.Float64, recursive=False)
+        False
+        >>> s.contains_dtype(pl.Float64, recursive=True)
+        True
+        """
+        if not recursive:
+            return any(dt == dtype for dt in self.values())
+        else:
+            return dtype in unpack_dtypes(*self.values())

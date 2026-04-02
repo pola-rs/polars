@@ -223,14 +223,14 @@ where
             .downcast_ref::<PrimitiveScalar<T>>()
             .unwrap()
             .value()
-            .map(|x| x.as_())
+            .map(|x| x.as_().norm_min())
     });
     let max_value = max_value.and_then(|s| {
         s.as_any()
             .downcast_ref::<PrimitiveScalar<T>>()
             .unwrap()
             .value()
-            .map(|x| x.as_())
+            .map(|x| x.as_().norm_max())
     });
 
     PrimitiveStatistics::<P> {

@@ -36,7 +36,7 @@ pub(super) fn simplify_binary(
             }
 
             // x AND false -> false
-            // FIXME: we need an optimizer redesign to allow x & false to be optimized
+            // TODO: we need an optimizer redesign to allow x & false to be optimized
             // in general as we can forget the length of a series otherwise.
             // In filter we allow it as the length is not important there.
             if (is_scalar_ae(left, expr_arena) | in_filter)
@@ -71,7 +71,7 @@ pub(super) fn simplify_binary(
                 return Some(left_ae.clone());
             }
             // true OR x => true
-            // FIXME: we need an optimizer redesign to allow true | x to be optimized
+            // TODO: we need an optimizer redesign to allow true | x to be optimized
             // in general as we can forget the length of a series otherwise.
             // In filter we allow it as the length is not important there.
             if (is_scalar_ae(left, expr_arena) | in_filter)
@@ -84,7 +84,7 @@ pub(super) fn simplify_binary(
             }
 
             // x OR true => true
-            // FIXME: we need an optimizer redesign to allow true | x to be optimized
+            // TODO: we need an optimizer redesign to allow true | x to be optimized
             // in general as we can forget the length of a series otherwise.
             // In filter we allow it as the length is not important there.
             if matches!(

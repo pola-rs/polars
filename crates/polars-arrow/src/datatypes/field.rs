@@ -75,6 +75,10 @@ impl Field {
         }
     }
 
+    pub fn name(&self) -> &PlSmallStr {
+        &self.name
+    }
+
     /// Returns the [`Field`]'s [`ArrowDataType`].
     #[inline]
     pub fn dtype(&self) -> &ArrowDataType {
@@ -103,18 +107,12 @@ impl Field {
             .is_some_and(|md| md.contains_key(PARQUET_EMPTY_STRUCT))
     }
 
-    pub fn map_dtype(mut self, f: impl FnOnce(ArrowDataType) -> ArrowDataType) -> Self {
-        self.dtype = f(self.dtype);
-        self
-    }
-
-    pub fn map_dtype_mut(&mut self, f: impl FnOnce(&mut ArrowDataType)) {
-        f(&mut self.dtype);
-    }
-
     pub fn with_dtype(&self, dtype: ArrowDataType) -> Self {
-        let mut field = self.clone();
-        field.dtype = dtype;
-        field
+        Self {
+            name: self.name.clone(),
+            dtype,
+            is_nullable: self.is_nullable,
+            metadata: self.metadata.clone(),
+        }
     }
 }

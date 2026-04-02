@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import math
 from datetime import timedelta
-from typing import cast
 
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_corr() -> None:
@@ -21,9 +21,10 @@ def test_corr() -> None:
             "b": [-1, 23, 8],
         }
     )
-    result = df.corr()
+    result = df.corr(label="")
     expected = pl.DataFrame(
         {
+            "": ["a", "b"],
             "a": [1.0, 0.18898223650461357],
             "b": [0.1889822365046136, 1.0],
         }
@@ -67,7 +68,10 @@ def test_cov_corr_f32_type() -> None:
 def test_cov(fruits_cars: pl.DataFrame) -> None:
     ldf = fruits_cars.lazy()
     for cov_ab in (pl.cov(pl.col("A"), pl.col("B")), pl.cov("A", "B")):
-        assert cast("float", ldf.select(cov_ab).collect().item()) == -2.5
+        assert_series_equal(
+            ldf.select(cov_ab).collect().to_series(),
+            pl.Series("A", [-2.5], pl.Float64()),
+        )
 
 
 def test_std(fruits_cars: pl.DataFrame) -> None:
@@ -148,3 +152,11 @@ def test_kurtosis_same_vals() -> None:
 def test_correction_shape_mismatch_22080() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.select(pl.corr(pl.Series([1, 2]), pl.Series([2, 3, 5])))
+
+
+def test_corr_cov_lit_produces_zero_nan_26633() -> None:
+    df = pl.DataFrame({"a": [1, 3, 2]})
+    result_corr = df.select(pl.corr(pl.lit(1), "a"))
+    assert math.isnan(result_corr.item())
+    result_cov = df.select(pl.cov(pl.lit(1), "a"))
+    assert math.isclose(result_cov.item(), 0.0)

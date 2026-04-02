@@ -9,7 +9,7 @@ mod c_interface;
 #[cfg(feature = "pymethods")]
 mod comparison;
 #[cfg(feature = "pymethods")]
-mod construction;
+pub(crate) mod construction;
 #[cfg(feature = "pymethods")]
 mod export;
 #[cfg(feature = "pymethods")]
@@ -27,7 +27,7 @@ use parking_lot::RwLock;
 use polars::prelude::{Column, Series};
 use pyo3::pyclass;
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[repr(transparent)]
 pub struct PySeries {
     pub series: RwLock<Series>,

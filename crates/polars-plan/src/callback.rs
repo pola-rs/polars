@@ -2,15 +2,32 @@ use std::fmt;
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
+#[cfg(feature = "python")]
+use polars_utils::python_function::PythonObject;
 
 use crate::dsl::SpecialEq;
 
-#[derive(Eq, PartialEq, strum_macros::IntoStaticStr)]
+#[derive(strum_macros::IntoStaticStr)]
 pub enum PlanCallback<Args, Out> {
     #[cfg(feature = "python")]
     Python(SpecialEq<Arc<polars_utils::python_function::PythonFunction>>),
     Rust(SpecialEq<Arc<dyn Fn(Args) -> PolarsResult<Out> + Send + Sync>>),
 }
+
+impl<Args, Out> PartialEq for PlanCallback<Args, Out> {
+    fn eq(&self, other: &Self) -> bool {
+        use PlanCallback as C;
+
+        match (self, other) {
+            #[cfg(feature = "python")]
+            (C::Python(l), C::Python(r)) => SpecialEq::eq(l, r) || PythonObject::eq(l, r),
+            (C::Rust(l), C::Rust(r)) => l.eq(r),
+            _ => false,
+        }
+    }
+}
+
+impl<Args, Out> Eq for PlanCallback<Args, Out> {}
 
 impl<Args, Out> fmt::Debug for PlanCallback<Args, Out> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
@@ -104,7 +121,7 @@ mod _python {
     use std::sync::Arc;
 
     use polars_utils::pl_str::PlSmallStr;
-    use pyo3::types::{PyAnyMethods, PyTuple};
+    use pyo3::types::{PyAnyMethods, PyList, PyTuple};
     use pyo3::*;
 
     macro_rules! impl_pycb_type {
@@ -149,7 +166,7 @@ mod _python {
             impl super::PlanCallbackArgs for $type {
                 fn into_pyany<'py>(self, _py: Python<'py>) -> PyResult<Py<PyAny>> {
                     let registry = polars_utils::python_convert_registry::get_python_convert_registry();
-                    (registry.to_py.$to)(Box::new(self) as _)
+                    (registry.to_py.$to)(&self)
                 }
             }
 
@@ -207,7 +224,7 @@ mod _python {
             py: pyo3::Python<'py>,
         ) -> pyo3::PyResult<Self> {
             use pyo3::prelude::*;
-            let tuple = pyany.downcast_bound::<PyTuple>(py)?;
+            let tuple = pyany.cast_bound::<PyTuple>(py)?;
             Ok((
                 T::from_pyany(tuple.get_item(0)?.unbind(), py)?,
                 U::from_pyany(tuple.get_item(1)?.unbind(), py)?,
@@ -233,6 +250,17 @@ mod _python {
     impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Arc<T> {
         fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
             Arc::unwrap_or_clone(self).into_pyany(py)
+        }
+    }
+
+    impl<T: super::PlanCallbackArgs + Clone> super::PlanCallbackArgs for Vec<T> {
+        fn into_pyany<'py>(self, py: Python<'py>) -> PyResult<Py<PyAny>> {
+            let items: Vec<Py<PyAny>> = self
+                .into_iter()
+                .map(|v| v.into_pyany(py))
+                .collect::<PyResult<Vec<_>>>()?;
+
+            Ok(PyList::new(py, items)?.into())
         }
     }
 

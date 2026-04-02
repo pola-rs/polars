@@ -7,8 +7,8 @@ SHELL=/bin/bash
 
 install: .venv
 	unset CONDA_PREFIX && \
-	source .venv/bin/activate && maturin develop -m extend_polars/Cargo.toml
-	cd ../../../py-polars && maturin develop
+	source .venv/bin/activate && maturin develop -m extend_polars/Cargo.toml --uv
+	cd ../../../py-polars && maturin develop --uv
 
 clean:
 	-@rm -r .venv

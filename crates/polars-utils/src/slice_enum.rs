@@ -1,5 +1,6 @@
-use std::num::TryFromIntError;
 use std::ops::Range;
+
+use crate::IdxSize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -103,6 +104,17 @@ impl Slice {
             },
         }
     }
+
+    pub fn to_signed_offset_len(&self) -> (i64, IdxSize) {
+        let (offset, len) = match self {
+            Slice::Positive { offset, len } => (i64::try_from(*offset).unwrap(), *len),
+            Slice::Negative {
+                offset_from_end,
+                len,
+            } => (-i64::try_from(*offset_from_end).unwrap(), *len),
+        };
+        (offset, len.min(IdxSize::MAX as usize) as IdxSize)
+    }
 }
 
 impl From<(usize, usize)> for Slice {
@@ -124,20 +136,6 @@ impl From<(i64, usize)> for Slice {
                 len,
             }
         }
-    }
-}
-
-impl TryFrom<Slice> for (i64, usize) {
-    type Error = TryFromIntError;
-
-    fn try_from(value: Slice) -> Result<Self, Self::Error> {
-        Ok(match value {
-            Slice::Positive { offset, len } => (i64::try_from(offset)?, len),
-            Slice::Negative {
-                offset_from_end,
-                len,
-            } => (-i64::try_from(offset_from_end)?, len),
-        })
     }
 }
 
@@ -205,15 +203,31 @@ mod tests {
         assert_eq!(
             Slice::Negative {
                 offset_from_end: 3,
-                len: 1
+                len: 2
             }
             .restrict_to_bounds(4),
-            Slice::Positive { offset: 1, len: 1 },
+            Slice::Positive { offset: 1, len: 2 },
         );
         assert_eq!(
             Slice::Negative {
                 offset_from_end: 3,
-                len: 1
+                len: 2
+            }
+            .restrict_to_bounds(3),
+            Slice::Positive { offset: 0, len: 2 },
+        );
+        assert_eq!(
+            Slice::Negative {
+                offset_from_end: 3,
+                len: 2
+            }
+            .restrict_to_bounds(2),
+            Slice::Positive { offset: 0, len: 1 },
+        );
+        assert_eq!(
+            Slice::Negative {
+                offset_from_end: 3,
+                len: 2
             }
             .restrict_to_bounds(1),
             Slice::Positive { offset: 0, len: 0 },

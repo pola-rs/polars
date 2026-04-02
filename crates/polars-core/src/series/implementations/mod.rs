@@ -14,6 +14,8 @@ mod datetime;
 mod decimal;
 #[cfg(feature = "dtype-duration")]
 mod duration;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod floats;
 mod list;
 pub(crate) mod null;
@@ -40,6 +42,7 @@ use crate::chunked_array::ops::compare_inner::{
 };
 
 // Utility wrapper struct
+#[repr(transparent)]
 pub(crate) struct SeriesWrap<T>(pub T);
 
 impl<T: PolarsDataType> From<ChunkedArray<T>> for SeriesWrap<ChunkedArray<T>> {
@@ -136,6 +139,16 @@ macro_rules! impl_dyn_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
                 self.0.agg_max(groups)
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+                self.0.agg_arg_min(groups)
+            }
+
+            #[cfg(feature = "algorithm_group_by")]
+            unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+                self.0.agg_arg_max(groups)
             }
 
             #[cfg(feature = "algorithm_group_by")]
@@ -359,6 +372,10 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
+            fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+                ChunkUnique::unique_id(&self.0)
+            }
+
             fn is_null(&self) -> BooleanChunked {
                 self.0.is_null()
             }
@@ -400,12 +417,21 @@ macro_rules! impl_dyn_series {
             fn std_reduce(&self, ddof: u8) -> PolarsResult<Scalar> {
                 Ok(VarAggSeries::std_reduce(&self.0, ddof))
             }
+
             fn quantile_reduce(
                 &self,
                 quantile: f64,
                 method: QuantileMethod,
             ) -> PolarsResult<Scalar> {
                 QuantileAggSeries::quantile_reduce(&self.0, quantile, method)
+            }
+
+            fn quantiles_reduce(
+                &self,
+                quantiles: &[f64],
+                method: QuantileMethod,
+            ) -> PolarsResult<Scalar> {
+                QuantileAggSeries::quantiles_reduce(&self.0, quantiles, method)
             }
 
             #[cfg(feature = "bitwise")]

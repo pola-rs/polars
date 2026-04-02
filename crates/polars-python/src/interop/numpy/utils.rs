@@ -9,6 +9,10 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
+pub(super) fn get_numpy_module(py: Python) -> PyResult<Bound<PyModule>> {
+    PyModule::import(py, intern!(py, "numpy"))
+}
+
 /// Create a NumPy ndarray view of the data.
 pub(super) unsafe fn create_borrowed_np_array<I>(
     py: Python<'_>,
@@ -42,7 +46,7 @@ where
     std::mem::forget(owner);
     PY_ARRAY_API.PyArray_SetBaseObject(py, array as *mut PyArrayObject, owner_ptr);
 
-    Py::from_owned_ptr(py, array)
+    Bound::from_owned_ptr(py, array).into()
 }
 
 /// Returns whether the data type supports creating a NumPy view.

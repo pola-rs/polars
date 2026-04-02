@@ -1,22 +1,24 @@
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::ops::Neg;
 
 use polars::lazy::dsl;
 use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::series::IsSorted;
 use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
-use polars_plan::plans::{ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir};
+use polars_plan::plans::{
+    AExprSorted, ExprToIRContext, RowEncodingVariant, node_to_expr, to_expr_ir,
+};
 use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
 use super::datatype::PyDataTypeExpr;
 use super::selector::PySelector;
-use crate::PyExpr;
 use crate::conversion::{Wrap, parse_fill_null_strategy};
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
+use crate::{PyDataType, PyExpr};
 
 #[pymethods]
 impl PyExpr {
@@ -29,6 +31,12 @@ impl PyExpr {
             CompareOp::Ge => self.gt_eq(other),
             CompareOp::Le => self.lt_eq(other),
         }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut state = PlFixedStateQuality::with_seed(0).build_hasher();
+        Hash::hash(&self.inner, &mut state);
+        state.finish() as _
     }
 
     fn __add__(&self, rhs: Self) -> PyResult<Self> {
@@ -114,9 +122,19 @@ impl PyExpr {
     fn min(&self) -> Self {
         self.inner.clone().min().into()
     }
+
     fn max(&self) -> Self {
         self.inner.clone().max().into()
     }
+
+    fn min_by(&self, by: Self) -> Self {
+        self.inner.clone().min_by(by.inner).into()
+    }
+
+    fn max_by(&self, by: Self) -> Self {
+        self.inner.clone().max_by(by.inner).into()
+    }
+
     #[cfg(feature = "propagate_nans")]
     fn nan_max(&self) -> Self {
         self.inner.clone().nan_max().into()
@@ -146,17 +164,25 @@ impl PyExpr {
     fn unique_stable(&self) -> Self {
         self.inner.clone().unique_stable().into()
     }
-    fn first(&self) -> Self {
-        self.inner.clone().first().into()
+    fn first(&self, ignore_nulls: bool) -> Self {
+        if ignore_nulls {
+            self.inner.clone().first_non_null().into()
+        } else {
+            self.inner.clone().first().into()
+        }
     }
-    fn last(&self) -> Self {
-        self.inner.clone().last().into()
+    fn last(&self, ignore_nulls: bool) -> Self {
+        if ignore_nulls {
+            self.inner.clone().last_non_null().into()
+        } else {
+            self.inner.clone().last().into()
+        }
     }
     fn item(&self, allow_empty: bool) -> Self {
         self.inner.clone().item(allow_empty).into()
     }
-    fn implode(&self) -> Self {
-        self.inner.clone().implode().into()
+    fn implode(&self, maintain_order: bool) -> Self {
+        self.inner.clone().implode(maintain_order).into()
     }
     fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileMethod>) -> Self {
         self.inner
@@ -333,8 +359,9 @@ impl PyExpr {
         self.inner.clone().gather(idx.inner).into()
     }
 
-    fn get(&self, idx: Self) -> Self {
-        self.inner.clone().get(idx.inner).into()
+    #[pyo3(signature = (idx, null_on_oob=false))]
+    fn get(&self, idx: Self, null_on_oob: bool) -> Self {
+        self.inner.clone().get(idx.inner, null_on_oob).into()
     }
 
     fn sort_by(
@@ -439,8 +466,14 @@ impl PyExpr {
         self.inner.clone().is_last_distinct().into()
     }
 
-    fn explode(&self) -> Self {
-        self.inner.clone().explode().into()
+    fn explode(&self, empty_as_null: bool, keep_nulls: bool) -> Self {
+        self.inner
+            .clone()
+            .explode(ExplodeOptions {
+                empty_as_null,
+                keep_nulls,
+            })
+            .into()
     }
 
     fn gather_every(&self, n: usize, offset: usize) -> Self {
@@ -465,6 +498,10 @@ impl PyExpr {
 
     fn round_sig_figs(&self, digits: i32) -> Self {
         self.clone().inner.round_sig_figs(digits).into()
+    }
+
+    fn truncate(&self, decimals: u32) -> Self {
+        self.inner.clone().truncate(decimals).into()
     }
 
     fn floor(&self) -> Self {
@@ -699,11 +736,14 @@ impl PyExpr {
         self.inner.clone().dot(other.inner).into()
     }
 
-    fn reinterpret(&self, signed: bool) -> Self {
-        self.inner.clone().reinterpret(signed).into()
+    fn reinterpret(&self, signed: Option<bool>, dtype: Option<PyDataType>) -> Self {
+        self.inner
+            .clone()
+            .reinterpret(signed, dtype.map(|dt| dt.0))
+            .into()
     }
-    fn mode(&self) -> Self {
-        self.inner.clone().mode().into()
+    fn mode(&self, maintain_order: bool) -> Self {
+        self.inner.clone().mode(maintain_order).into()
     }
     fn interpolate(&self, method: Wrap<InterpolationMethod>) -> Self {
         self.inner.clone().interpolate(method.0).into()
@@ -866,13 +906,11 @@ impl PyExpr {
     fn hash(&self, seed: u64, seed_1: u64, seed_2: u64, seed_3: u64) -> Self {
         self.inner.clone().hash(seed, seed_1, seed_2, seed_3).into()
     }
-    fn set_sorted_flag(&self, descending: bool) -> Self {
-        let is_sorted = if descending {
-            IsSorted::Descending
-        } else {
-            IsSorted::Ascending
-        };
-        self.inner.clone().set_sorted_flag(is_sorted).into()
+    fn set_sorted_flag(&self, descending: bool, nulls_last: bool) -> Self {
+        let sortedness = AExprSorted::default()
+            .with_desc(Some(descending))
+            .with_nulls_last(Some(nulls_last));
+        self.inner.clone().set_sorted_flag(sortedness).into()
     }
 
     fn replace(&self, old: PyExpr, new: PyExpr) -> Self {
@@ -951,6 +989,7 @@ impl PyExpr {
             FunctionExpr::RowEncode(RowEncodingVariant::Ordered {
                 descending,
                 nulls_last,
+                broadcast_nulls: None,
             }),
             exprs.into_iter().map(|e| e.inner.clone()).collect(),
         )
@@ -991,6 +1030,7 @@ impl PyExpr {
                 RowEncodingVariant::Ordered {
                     descending,
                     nulls_last,
+                    broadcast_nulls: None,
                 },
             ))
             .into()

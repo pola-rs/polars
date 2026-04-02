@@ -185,6 +185,20 @@ def test_to_datetime_aware_values_aware_dtype() -> None:
 
 
 @pytest.mark.parametrize(
+    ("time_zone", "suggestion"),
+    [
+        ("Europe/Parts", "Europe/Paris"),
+        ("Europ/londn", "Europe/London"),
+        ("Africa/Kathmandu", "Asia/Kathmandu"),
+    ],
+)
+def test_to_datetime_tz_suggestion(time_zone: str, suggestion: str) -> None:
+    msg = f"Hint: did you mean '{suggestion}' instead?"
+    with pytest.raises(ComputeError, match=msg):
+        _ = pl.Series(["2020-01-01T00:00:00+00"]).str.to_datetime(time_zone=time_zone)
+
+
+@pytest.mark.parametrize(
     ("inputs", "format", "expected"),
     [
         ("01-01-69", "%d-%m-%y", date(2069, 1, 1)),  # Polars' parser

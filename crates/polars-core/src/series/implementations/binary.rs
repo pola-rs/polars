@@ -222,6 +222,10 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         ChunkUnique::arg_unique(&self.0)
     }
 
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(&self.0)
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
         Ok(ChunkApproxNUnique::approx_n_unique(&self.0))

@@ -2,6 +2,7 @@ use std::io::{Read, Seek};
 
 use arrow_format::ipc::planus::ReadAsRoot;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::CONTINUATION_MARKER;
 use super::common::*;
@@ -93,6 +94,7 @@ fn read_next<R: Read + Seek>(
     message_buffer: &mut Vec<u8>,
     projection: &Option<ProjectionInfo>,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<Option<StreamState>> {
     // determine metadata length
     let mut meta_length: [u8; 4] = [0; 4];
@@ -165,6 +167,7 @@ fn read_next<R: Read + Seek>(
                 &mut (&mut *reader).take(block_length as u64),
                 0,
                 scratch,
+                checked,
             );
 
             let new_pos = reader.stream_position()?;
@@ -194,6 +197,7 @@ fn read_next<R: Read + Seek>(
                 &mut (&mut *reader).take(block_length as u64),
                 0,
                 scratch,
+                checked,
             )?;
 
             let new_pos = reader.stream_position()?;
@@ -211,6 +215,7 @@ fn read_next<R: Read + Seek>(
                 message_buffer,
                 projection,
                 scratch,
+                checked,
             )
         },
         _ => polars_bail!(oos = OutOfSpecKind::UnexpectedMessageType),
@@ -231,6 +236,7 @@ pub struct StreamReader<R: Read> {
     message_buffer: Vec<u8>,
     projection: Option<ProjectionInfo>,
     scratch: Vec<u8>,
+    checked: UnsafeBool,
 }
 
 impl<R: Read + Seek> StreamReader<R> {
@@ -251,7 +257,18 @@ impl<R: Read + Seek> StreamReader<R> {
             message_buffer: Default::default(),
             projection,
             scratch: Default::default(),
+            checked: UnsafeBool::default(),
         }
+    }
+
+    /// # Safety
+    /// Don't do expensive checks.
+    /// This means the data source has to be trusted to be correct.
+    pub unsafe fn unchecked(mut self) -> Self {
+        unsafe {
+            self.checked = UnsafeBool::new_false();
+        }
+        self
     }
 
     /// Return the schema of the stream
@@ -283,6 +300,7 @@ impl<R: Read + Seek> StreamReader<R> {
             &mut self.message_buffer,
             &self.projection,
             &mut self.scratch,
+            self.checked,
         )?;
         if batch.is_none() {
             self.finished = true;

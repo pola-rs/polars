@@ -151,7 +151,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
             columns.extend([statistics.min, statistics.max, statistics.null_count]);
         }
 
-        let statistics_df = DataFrame::new_with_height(num_row_groups, columns)?;
+        let statistics_df = DataFrame::new(num_row_groups, columns)?;
 
         sbp.evaluate_with_stat_df(&statistics_df)
     })

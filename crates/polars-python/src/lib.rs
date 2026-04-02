@@ -10,8 +10,6 @@
 )] // Maybe be caused by some feature
 // combinations
 
-#[cfg(feature = "csv")]
-pub mod batched_csv;
 #[cfg(feature = "catalog")]
 pub mod catalog;
 #[cfg(feature = "polars_cloud_client")]
@@ -22,10 +20,12 @@ pub mod conversion;
 pub mod dataframe;
 pub mod dataset;
 pub mod datatypes;
+pub mod delta;
 pub mod error;
 pub mod exceptions;
 pub mod export;
 pub mod expr;
+pub mod extension;
 pub mod file;
 #[cfg(feature = "pymethods")]
 pub mod functions;

@@ -1,4 +1,4 @@
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 
 #[test]
 fn new() {
@@ -17,7 +17,7 @@ fn from_slice() {
 #[test]
 fn slice() {
     let buffer = Buffer::<i32>::from(vec![0, 1, 2, 3]);
-    let buffer = buffer.sliced(1, 2);
+    let buffer = buffer.sliced(1..3);
     assert_eq!(buffer.len(), 2);
     assert_eq!(buffer.as_slice(), &[1, 2]);
 }
@@ -32,7 +32,7 @@ fn from_iter() {
 #[test]
 fn debug() {
     let buffer = Buffer::<i32>::from(vec![0, 1, 2, 3]);
-    let buffer = buffer.sliced(1, 2);
+    let buffer = buffer.sliced(1..3);
     let a = format!("{buffer:?}");
     assert_eq!(a, "[1, 2]")
 }

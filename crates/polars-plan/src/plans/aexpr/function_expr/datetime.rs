@@ -110,12 +110,12 @@ impl IRTemporalFunction {
             WithTimeUnit(tu) | CastTimeUnit(tu) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Duration(_) => Ok(DataType::Duration(*tu)),
                 DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
-                dtype => polars_bail!(ComputeError: "expected duration or datetime, got {}", dtype),
+                dtype => polars_bail!(ComputeError: "expected duration or datetime, got {dtype}"),
             }),
             #[cfg(feature = "timezones")]
             ConvertTimeZone(tz) => mapper.try_map_dtype(|dt| match dt {
                 DataType::Datetime(tu, _) => Ok(DataType::Datetime(*tu, Some(tz.clone()))),
-                dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
+                dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
             }),
             TimeStamp(_) => mapper.with_dtype(DataType::Int64),
             IsLeapYear => mapper.with_dtype(DataType::Boolean),
@@ -125,7 +125,7 @@ impl IRTemporalFunction {
             Date => mapper.with_dtype(DataType::Date),
             Datetime => mapper.try_map_dtype(|dt| match dt {
                 DataType::Datetime(tu, _) => Ok(DataType::Datetime(*tu, None)),
-                dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
+                dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
             }),
             Truncate => mapper.with_same_dtype(),
             #[cfg(feature = "offset_by")]
@@ -153,7 +153,7 @@ impl IRTemporalFunction {
                 DataType::Datetime(_, tz) => Ok(DataType::Datetime(*tu, tz.clone())),
                 DataType::Date => Ok(DataType::Datetime(*tu, None)),
                 dtype => {
-                    polars_bail!(ComputeError: "expected Date or Datetime, got {}", dtype)
+                    polars_bail!(ComputeError: "expected Date or Datetime, got {dtype}")
                 },
             }),
         }

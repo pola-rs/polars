@@ -1,4 +1,4 @@
-use std::fmt;
+use std::fmt::{self, Write};
 
 use polars_core::error::*;
 use polars_utils::format_list_truncated;
@@ -25,15 +25,19 @@ impl fmt::Display for TreeFmtAExpr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self.0 {
             AExpr::Element => "element()",
-            AExpr::Explode {
-                expr: _,
-                skip_empty: false,
-            } => "explode",
-            AExpr::Explode {
-                expr: _,
-                skip_empty: true,
-            } => "explode(skip_empty)",
+            AExpr::Explode { expr: _, options } => {
+                f.write_str("explode(")?;
+                match (options.empty_as_null, options.keep_nulls) {
+                    (true, true) => {},
+                    (true, false) => f.write_str("keep_nulls=false")?,
+                    (false, true) => f.write_str("empty_as_null=false")?,
+                    (false, false) => f.write_str("empty_as_null=false, keep_nulls=false")?,
+                }
+                return f.write_char(')');
+            },
             AExpr::Column(name) => return write!(f, "col({name})"),
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructField(name) => return write!(f, "field({name})"),
             AExpr::Literal(lv) => return write!(f, "lit({lv:?})"),
             AExpr::BinaryExpr { op, .. } => return write!(f, "binary: {op}"),
             AExpr::Cast { dtype, options, .. } => {
@@ -71,10 +75,12 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             AExpr::AnonymousFunction { fmt_str, .. } => {
                 return write!(f, "anonymous_function: {fmt_str}");
             },
-            AExpr::AnonymousStreamingAgg { fmt_str, .. } => {
-                return write!(f, "anonymous_streaming_agg: {fmt_str}");
+            AExpr::AnonymousAgg { fmt_str, .. } => {
+                return write!(f, "anonymous_agg: {fmt_str}");
             },
             AExpr::Eval { .. } => "list.eval",
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructEval { .. } => "struct.with_fields",
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             #[cfg(feature = "dynamic_group_by")]
             AExpr::Rolling { .. } => "rolling",
@@ -165,7 +171,9 @@ impl<'a> TreeFmtNode<'a> {
     }
 
     fn node_data(&self) -> TreeFmtNodeData<'_> {
-        use {TreeFmtNodeContent as C, TreeFmtNodeData as ND, with_header as wh};
+        use TreeFmtNodeContent as C;
+        use TreeFmtNodeData as ND;
+        use with_header as wh;
 
         let lp = &self.lp;
         let h = &self.h;
@@ -347,7 +355,7 @@ impl<'a> TreeFmtNode<'a> {
                                 SinkTypeIR::Memory => "SINK (memory)",
                                 SinkTypeIR::Callback(..) => "SINK (callback)",
                                 SinkTypeIR::File { .. } => "SINK (file)",
-                                SinkTypeIR::Partition { .. } => "SINK (partition)",
+                                SinkTypeIR::Partitioned { .. } => "SINK (partition)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],

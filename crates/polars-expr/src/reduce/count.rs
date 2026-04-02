@@ -34,10 +34,11 @@ impl GroupedReduction for CountReduce {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         let mut count = values.len();
         if !self.include_nulls {
             count -= values.null_count();
@@ -48,11 +49,12 @@ impl GroupedReduction for CountReduce {
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
         let chunks = values.chunks();
@@ -150,21 +152,23 @@ impl GroupedReduction for NullCountReduce {
 
     fn update_group(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         group_idx: IdxSize,
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         self.counts[group_idx as usize] += values.null_count() as u64;
         Ok(())
     }
 
     unsafe fn update_groups_while_evicting(
         &mut self,
-        values: &Column,
+        values: &[&Column],
         subset: &[IdxSize],
         group_idxs: &[EvictIdx],
         _seq_id: u64,
     ) -> PolarsResult<()> {
+        let &[values] = values else { unreachable!() };
         assert!(subset.len() == group_idxs.len());
         let values = values.as_materialized_series(); // @scalar-opt
         let chunks = values.chunks();

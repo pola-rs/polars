@@ -124,3 +124,76 @@ def test_implode_explode_list_over_24616(col: list[Any]) -> None:
     expected = df
     assert_frame_equal(q.collect(), expected)
     assert_frame_equal(q_base.collect(), expected)
+
+
+def test_first_last_over() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2],
+            "b": pl.Series([1, 2, 3, None, None, 4, 5, 6], dtype=pl.Int32),
+        }
+    )
+
+    result = df.select(pl.col("b").first().over("a"))
+    expected = pl.DataFrame(
+        {"b": pl.Series([1, 1, 1, 1, None, None, None, None], dtype=pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").first(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame({"b": pl.Series([1, 1, 1, 1, 4, 4, 4, 4], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").last().over("a"))
+    expected = pl.DataFrame(
+        {"b": pl.Series([None, None, None, None, 6, 6, 6, 6], dtype=pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").last(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame({"b": pl.Series([3, 3, 3, 3, 6, 6, 6, 6], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+
+
+def test_nulls_last_over_24989() -> None:
+    lf = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [4, 5, 6], "c": [None, 7, 8], "i": [1, None, 2]}
+    )
+    out = (
+        lf.with_columns(
+            pl.col("b", "c")
+            .first()
+            .over("a", order_by="i", nulls_last=True)
+            .name.suffix("_first")
+        )
+        .sort("i")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 2],
+            "b": [5, 4, 6],
+            "c": [7, None, 8],
+            "i": [None, 1, 2],
+            "b_first": [4, 4, 6],
+            "c_first": [None, None, 8],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_over_duplicate_partition_by_26921() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.DuplicateError):
+        df.with_columns(pl.len().over("x", "x"))
+
+
+def test_count_over_aggregated_list_respects_inner_nulls_27031() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, None]})
+
+    result = df.with_columns(
+        pl.col("x").cum_sum().count().over("g").alias("x_count"),
+    )
+
+    assert result.get_column("x_count").to_list() == [2, 2, 2]

@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Literal,
     TypeVar,
     overload,
@@ -43,7 +42,13 @@ from polars.datatypes import (
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, MutableMapping, Reversible
+    from collections.abc import (
+        Callable,
+        Iterator,
+        MutableMapping,
+        Reversible,
+    )
+    from typing import ParamSpec, Protocol, TypeGuard
 
     from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
@@ -53,13 +58,13 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import TypeIs
 
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec, TypeGuard
-    else:
-        from typing_extensions import ParamSpec, TypeGuard
-
     P = ParamSpec("P")
     T = TypeVar("T")
+
+    class IdentityFunction(Protocol):
+        # Use as a return type for signature preserving decorators
+        def __call__(self, fn: Callable[P, T], /) -> Callable[P, T]: ...
+
 
 # note: reversed views don't match as instances of MappingView
 if sys.version_info >= (3, 11):
@@ -396,7 +401,7 @@ def _cast_repr_strings_with_schema(
                     .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
                     # check for scientific notation
                     .when(F.col(c).str.contains("[eE]"))
-                    .then(F.col(c).str.replace(r"[^eE\d]", "."))
+                    .then(F.col(c).str.replace(r"[^eE\d+-]", "."))
                     .otherwise(
                         # recombine sanitised integer/fractional components
                         pl.concat_str(
@@ -675,7 +680,8 @@ def display_dot_graph(
 
     output_type = (
         "svg"
-        if _in_notebook()
+        if (output_path is not None and str(output_path).endswith(".svg"))
+        or _in_notebook()
         or _in_marimo_notebook()
         or "POLARS_DOT_SVG_VIEWER" in os.environ
         else "png"

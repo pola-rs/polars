@@ -31,13 +31,12 @@ impl CommonSubPlanOptimizer {
         root: Node,
         ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
-        members: &mut MemberCollector,
         pushdown_maintain_errors: bool,
         opt_flags: &OptFlags,
         verbose: bool,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
-        let (root, inserted_cache) = cse::elim_cmn_subplans(root, ir_arena, expr_arena);
+        let (root, inserted_cache, _) = cse::elim_cmn_subplans(root, ir_arena, expr_arena);
 
         run_projection_predicate_pushdown(
             root,
@@ -47,7 +46,7 @@ impl CommonSubPlanOptimizer {
             opt_flags,
         )?;
 
-        if (members.has_joins_or_unions | members.has_sink_multiple) && inserted_cache {
+        if inserted_cache {
             // We only want to run this on cse inserted caches
             cse::set_cache_states(
                 root,

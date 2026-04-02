@@ -1,6 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use std::hint::unreachable_unchecked;
 
+use polars_buffer::SharedStorage;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::vec::PushUnchecked;
 
@@ -8,7 +9,6 @@ use super::bitmask::BitMask;
 use super::utils::{BitChunk, BitChunks, BitChunksExactMut, BitmapIter, count_zeros, fmt};
 use super::{Bitmap, intersects_with_mut};
 use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_in_byte};
-use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 /// A container of booleans. [`MutableBitmap`] is semantically equivalent
@@ -623,10 +623,8 @@ impl MutableBitmap {
             }
             // the iterator will not fill the last byte
             let byte = self.buffer.last_mut().unwrap();
-            let mut i = bit_offset;
-            for value in iterator {
+            for (i, value) in (bit_offset..).zip(iterator) {
                 *byte = set_bit_in_byte(*byte, i, value);
-                i += 1;
             }
             self.length += length;
             return;

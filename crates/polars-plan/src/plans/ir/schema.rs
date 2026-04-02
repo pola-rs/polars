@@ -39,7 +39,7 @@ impl IR {
                 SinkTypeIR::Memory => "sink (memory)",
                 SinkTypeIR::Callback(..) => "sink (callback)",
                 SinkTypeIR::File { .. } => "sink (file)",
-                SinkTypeIR::Partition { .. } => "sink (partition)",
+                SinkTypeIR::Partitioned { .. } => "sink (partition)",
             },
             SinkMultiple { .. } => "sink multiple",
             SimpleProjection { .. } => "simple_projection",

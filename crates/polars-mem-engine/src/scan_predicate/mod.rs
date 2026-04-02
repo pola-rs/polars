@@ -68,7 +68,7 @@ pub struct PhysicalExprWithConstCols {
 }
 
 impl PhysicalExpr for PhysicalExprWithConstCols {
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let mut df = df.clone();
         for (name, scalar) in &self.constants {
             df.with_column(Column::new_scalar(
@@ -81,7 +81,7 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
         self.child.evaluate(&df, state)
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

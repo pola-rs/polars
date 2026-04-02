@@ -58,10 +58,12 @@ impl StringNameSpace {
         patterns: Expr,
         replace_with: Expr,
         ascii_case_insensitive: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_ternary(
             StringFunction::ReplaceMany {
                 ascii_case_insensitive,
+                leftmost,
             },
             patterns,
             replace_with,
@@ -81,11 +83,13 @@ impl StringNameSpace {
         patterns: Expr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_binary(
             StringFunction::ExtractMany {
                 ascii_case_insensitive,
                 overlapping,
+                leftmost,
             },
             patterns,
         )
@@ -104,11 +108,13 @@ impl StringNameSpace {
         patterns: Expr,
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     ) -> Expr {
         self.0.map_binary(
             StringFunction::FindMany {
                 ascii_case_insensitive,
                 overlapping,
+                leftmost,
             },
             patterns,
         )
@@ -354,6 +360,31 @@ impl StringNameSpace {
     /// keeps the remainder of the string intact. The resulting dtype is [`DataType::Struct`].
     pub fn splitn(self, by: Expr, n: usize) -> Expr {
         self.0.map_binary(StringFunction::SplitN(n), by)
+    }
+
+    #[cfg(feature = "regex")]
+    /// Split the string by a regex pattern. The resulting dtype is `List<String>`.
+    pub fn split_regex(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_binary(
+            StringFunction::SplitRegex {
+                inclusive: false,
+                strict,
+            },
+            pat,
+        )
+    }
+
+    #[cfg(feature = "regex")]
+    /// Split the string by a regex pattern and keep the matched substrings.
+    /// The resulting dtype is `List<String>`.
+    pub fn split_regex_inclusive(self, pat: Expr, strict: bool) -> Expr {
+        self.0.map_binary(
+            StringFunction::SplitRegex {
+                inclusive: true,
+                strict,
+            },
+            pat,
+        )
     }
 
     #[cfg(feature = "regex")]

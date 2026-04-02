@@ -120,22 +120,29 @@ pub struct DataFrameStreamIterator {
     dtype: ArrowDataType,
     idx: usize,
     n_chunks: usize,
+    height: usize,
 }
 
 impl DataFrameStreamIterator {
     fn new(df: &DataFrame) -> Self {
         let schema = df.schema().to_arrow(CompatLevel::newest());
         let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
+        let n_chunks = if df.width() == 0 {
+            usize::from(df.height() > 0)
+        } else {
+            df.first_col_n_chunks()
+        };
 
         Self {
             columns: df
-                .get_columns()
+                .columns()
                 .iter()
                 .map(|v| v.as_materialized_series().clone())
                 .collect(),
             dtype,
             idx: 0,
-            n_chunks: df.first_col_n_chunks(),
+            n_chunks,
+            height: df.height(),
         }
     }
 
@@ -159,12 +166,9 @@ impl Iterator for DataFrameStreamIterator {
                 .collect::<Vec<_>>();
             self.idx += 1;
 
-            let array = arrow::array::StructArray::new(
-                self.dtype.clone(),
-                batch_cols[0].len(),
-                batch_cols,
-                None,
-            );
+            let col_len = batch_cols.first().map_or(self.height, |c| c.len());
+            let array =
+                arrow::array::StructArray::new(self.dtype.clone(), col_len, batch_cols, None);
             Some(Ok(Box::new(array)))
         }
     }

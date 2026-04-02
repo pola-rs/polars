@@ -19,10 +19,11 @@ pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
 #[cfg(feature = "python")]
 pub use expand_datasets::ExpandedPythonScan;
+mod collapse_sort;
 mod predicate_pushdown;
 mod projection_pushdown;
-pub mod set_order;
 mod simplify_expr;
+pub mod simplify_ordering;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod sortedness;
@@ -34,10 +35,13 @@ pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
-pub use predicate_pushdown::PredicatePushDown;
+pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, TrivialPredicateExpr};
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
+pub use sortedness::{
+    AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
+};
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
@@ -72,7 +76,16 @@ pub(super) fn run_projection_predicate_pushdown(
     pushdown_maintain_errors: bool,
     opt_flags: &OptFlags,
 ) -> PolarsResult<()> {
-    // Should be run before predicate pushdown.
+    // Should be run before projection pushdown.
+    // This allows columns only needed for filters to be dropped early.
+    if opt_flags.predicate_pushdown() {
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+        let ir = ir_arena.take(root);
+        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        ir_arena.replace(root, ir);
+    }
+
     if opt_flags.projection_pushdown() {
         let mut projection_pushdown_opt = ProjectionPushDown::new();
         let ir = ir_arena.take(root);
@@ -83,14 +96,6 @@ pub(super) fn run_projection_predicate_pushdown(
             let mut count_star_opt = CountStar::new();
             count_star_opt.optimize_plan(ir_arena, expr_arena, root)?;
         }
-    }
-
-    if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
-        let ir = ir_arena.take(root);
-        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
-        ir_arena.replace(root, ir);
     }
 
     Ok(())
@@ -179,7 +184,6 @@ pub fn optimize(
                     root,
                     ir_arena,
                     expr_arena,
-                    members,
                     pushdown_maintain_errors,
                     &opt_flags,
                     verbose,
@@ -196,6 +200,20 @@ pub fn optimize(
         true
     };
 
+    let mut repeat_slice_pd_after_filter_pd = false;
+
+    if opt_flags.slice_pushdown() {
+        let mut slice_pushdown_opt = SlicePushDown::new();
+        let ir = slice_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
+
+        ir_arena.replace(root, ir);
+
+        repeat_slice_pd_after_filter_pd = slice_pushdown_opt.slice_node_in_optimized_plan;
+
+        // Expressions use the stack optimizer.
+        rules.push(Box::new(slice_pushdown_opt));
+    }
+
     if run_pushdowns {
         run_projection_predicate_pushdown(
             root,
@@ -206,33 +224,18 @@ pub fn optimize(
         )?;
     }
 
-    // Make sure its before slice pushdown.
     if opt_flags.fast_projection() {
         rules.push(Box::new(SimpleProjectionAndCollapse::new(
             opt_flags.eager(),
         )));
     }
 
-    if !opt_flags.eager() {
-        rules.push(Box::new(DelayRechunk::new()));
+    if opt_flags.contains(OptFlags::SORT_COLLAPSE) {
+        rules.push(Box::new(collapse_sort::CollapseSort {}));
     }
 
-    if opt_flags.slice_pushdown() {
-        let mut slice_pushdown_opt = SlicePushDown::new(
-            // We don't maintain errors on slice as the behavior is much more predictable that way.
-            //
-            // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
-            // the new-streaming engine still may not error due to early-stopping.
-            false, // maintain_errors
-            opt_flags.new_streaming(),
-        );
-        let ir = ir_arena.take(root);
-        let ir = slice_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
-
-        ir_arena.replace(root, ir);
-
-        // Expressions use the stack optimizer.
-        rules.push(Box::new(slice_pushdown_opt));
+    if !opt_flags.eager() {
+        rules.push(Box::new(DelayRechunk::new()));
     }
 
     // This optimization removes branches, so we must do it when type coercion
@@ -247,14 +250,23 @@ pub fn optimize(
 
     root = opt.optimize_loop(&mut rules, expr_arena, ir_arena, root)?;
 
-    if opt_flags.cluster_with_columns() {
+    if repeat_slice_pd_after_filter_pd {
+        let mut slice_pushdown_opt = SlicePushDown::new();
+        let ir = slice_pushdown_opt.optimize(root, ir_arena, expr_arena)?;
+
+        ir_arena.replace(root, ir);
+    }
+
+    if opt_flags.cluster_with_columns() && get_or_init_members!().with_columns_count > 1 {
         cluster_with_columns::optimize(root, ir_arena, expr_arena)
     }
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
-        let mut optimizer = CommonSubExprOptimizer::new();
+        let mut optimizer = CommonSubExprOptimizer::new(
+            opt_flags.contains(OptFlags::NEW_STREAMING) | opt_flags.contains(OptFlags::GPU),
+        );
         let ir_node = IRNode::new_mutate(root);
 
         root = try_with_ir_arena(ir_arena, expr_arena, |arena| {
@@ -264,36 +276,29 @@ pub fn optimize(
     }
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
-        let members = get_or_init_members!();
-        if members.has_group_by
-            | members.has_sort
-            | members.has_distinct
-            | members.has_joins_or_unions
-        {
-            match ir_arena.get(root) {
-                IR::SinkMultiple { inputs } => {
-                    let mut roots = inputs.clone();
-                    for root in &mut roots {
-                        if !matches!(ir_arena.get(*root), IR::Sink { .. }) {
-                            *root = ir_arena.add(IR::Sink {
-                                input: *root,
-                                payload: SinkTypeIR::Memory,
-                            });
-                        }
-                    }
-                    set_order::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
-                },
-                ir => {
-                    let mut tmp_top = root;
-                    if !matches!(ir, IR::Sink { .. }) {
-                        tmp_top = ir_arena.add(IR::Sink {
-                            input: root,
+        match ir_arena.get(root) {
+            IR::SinkMultiple { inputs } => {
+                let mut roots = inputs.clone();
+                for root in &mut roots {
+                    if !matches!(ir_arena.get(*root), IR::Sink { .. }) {
+                        *root = ir_arena.add(IR::Sink {
+                            input: *root,
                             payload: SinkTypeIR::Memory,
                         });
                     }
-                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena)
-                },
-            }
+                }
+                simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
+            },
+            ir => {
+                let mut tmp_top = root;
+                if !matches!(ir, IR::Sink { .. }) {
+                    tmp_top = ir_arena.add(IR::Sink {
+                        input: root,
+                        payload: SinkTypeIR::Memory,
+                    });
+                }
+                simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
+            },
         }
     }
 

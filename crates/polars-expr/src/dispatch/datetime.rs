@@ -1,9 +1,11 @@
 #[cfg(feature = "timezones")]
 use arrow::legacy::time_zone::Tz;
 use polars_core::error::{PolarsResult, polars_bail};
-use polars_core::prelude::{ArithmeticChunked, Column, IntoColumn, LogicalType, TimeUnit};
+use polars_core::prelude::{
+    ArithmeticChunked, Column, DataType, IntoColumn, LogicalType, TimeUnit,
+};
 #[cfg(feature = "timezones")]
-use polars_core::prelude::{DataType, NonExistent, StringChunked, TimeZone};
+use polars_core::prelude::{NonExistent, StringChunked, TimeZone};
 use polars_time::prelude::*;
 use polars_time::replace_datetime;
 use polars_time::series::TemporalMethods;
@@ -79,7 +81,7 @@ pub(super) fn time(s: &Column) -> PolarsResult<Column> {
             .cast(&DataType::Time)
             .map(Column::from),
         DataType::Time => Ok(s.clone()),
-        dtype => polars_bail!(ComputeError: "expected Datetime or Time, got {}", dtype),
+        dtype => polars_bail!(ComputeError: "expected Datetime or Time, got {dtype}"),
     }
 }
 pub(super) fn date(s: &Column) -> PolarsResult<Column> {
@@ -109,7 +111,7 @@ pub(super) fn date(s: &Column) -> PolarsResult<Column> {
             .cast(&DataType::Date)
             .map(Column::from),
         DataType::Date => Ok(s.clone()),
-        dtype => polars_bail!(ComputeError: "expected Datetime or Date, got {}", dtype),
+        dtype => polars_bail!(ComputeError: "expected Datetime or Date, got {dtype}"),
     }
 }
 pub(super) fn datetime(s: &Column) -> PolarsResult<Column> {
@@ -128,7 +130,7 @@ pub(super) fn datetime(s: &Column) -> PolarsResult<Column> {
             .unwrap()
             .cast(&DataType::Datetime(*tu, None))
             .map(Column::from),
-        dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
+        dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
     }
 }
 pub(super) fn hour(s: &Column) -> PolarsResult<Column> {
@@ -274,7 +276,7 @@ pub(super) fn convert_time_zone(s: &Column, time_zone: &TimeZone) -> PolarsResul
             ca.set_time_zone(time_zone.clone())?;
             Ok(ca.into_column())
         },
-        dtype => polars_bail!(ComputeError: "expected Datetime, got {}", dtype),
+        dtype => polars_bail!(ComputeError: "expected Datetime, got {dtype}"),
     }
 }
 pub(super) fn with_time_unit(s: &Column, tu: TimeUnit) -> PolarsResult<Column> {

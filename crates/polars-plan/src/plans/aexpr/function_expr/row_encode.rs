@@ -6,5 +6,6 @@ pub enum RowEncodingVariant {
     Ordered {
         descending: Option<Vec<bool>>,
         nulls_last: Option<Vec<bool>>,
+        broadcast_nulls: Option<bool>,
     },
 }

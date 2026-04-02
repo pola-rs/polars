@@ -4,14 +4,26 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.35.1";
+pub static PYPOLARS_VERSION: &str = "1.39.3";
+
+// We allow multiple features to be set simultaneously so checking with all-features
+// is possible. In the case multiple are set or none at all, we set the repr to "unknown".
+#[cfg(all(feature = "rtcompat", not(any(feature = "rt32", feature = "rt64"))))]
+pub static RUNTIME_REPR: &str = "rtcompat";
+#[cfg(all(feature = "rt32", not(any(feature = "rt64", feature = "rtcompat"))))]
+pub static RUNTIME_REPR: &str = "rt32";
+#[cfg(all(feature = "rt64", not(any(feature = "rt32", feature = "rtcompat"))))]
+pub static RUNTIME_REPR: &str = "rt64";
+#[cfg(not(any(
+    all(feature = "rtcompat", not(any(feature = "rt32", feature = "rt64"))),
+    all(feature = "rt32", not(any(feature = "rt64", feature = "rtcompat"))),
+    all(feature = "rt64", not(any(feature = "rt32", feature = "rtcompat")))
+)))]
 pub static RUNTIME_REPR: &str = "unknown";
 
 use pyo3::prelude::*;
 use pyo3::{wrap_pyfunction, wrap_pymodule};
 
-#[cfg(feature = "csv")]
-use crate::batched_csv::PyBatchedCsv;
 #[cfg(feature = "catalog")]
 use crate::catalog::unity::PyCatalogClient;
 #[cfg(feature = "polars_cloud_client")]
@@ -26,14 +38,14 @@ use crate::expr::selector::PySelector;
 use crate::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
-use crate::lazyframe::{PyLazyFrame, PyOptFlags, PyPartitioning};
+use crate::lazyframe::{PyLazyFrame, PyOptFlags};
 use crate::lazygroupby::PyLazyGroupBy;
 use crate::series::PySeries;
 #[cfg(feature = "sql")]
 use crate::sql::PySQLContext;
-use crate::{datatypes, exceptions, functions, testing};
+use crate::{datatypes, exceptions, extension, functions, testing};
 
-#[pymodule]
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
 fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visitor::nodes::*;
     m.add_class::<PythonScan>().unwrap();
@@ -59,7 +71,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
 fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     use crate::lazyframe::visit::PyExprIR;
     use crate::lazyframe::visitor::expr_nodes::*;
@@ -80,6 +92,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Slice>().unwrap();
     m.add_class::<Len>().unwrap();
     m.add_class::<Window>().unwrap();
+    m.add_class::<Rolling>().unwrap();
     m.add_class::<PyOperator>().unwrap();
     m.add_class::<PyStringFunction>().unwrap();
     m.add_class::<PyBooleanFunction>().unwrap();
@@ -92,8 +105,8 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     Ok(())
 }
 
-#[pymodule]
-pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+#[pymodule(gil_used = false)] // gil_used = false will be default in PyO3 0.28.
+pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Classes
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
@@ -105,10 +118,7 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyDataTypeExpr>().unwrap();
     m.add_class::<PySelector>().unwrap();
-    m.add_class::<PyPartitioning>().unwrap();
     m.add_class::<PyStringCacheHolder>().unwrap();
-    #[cfg(feature = "csv")]
-    m.add_class::<PyBatchedCsv>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
@@ -184,6 +194,8 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::col)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::collect_all))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::collect_all_lazy))
+        .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::element)).unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::explain_all))
         .unwrap();
@@ -250,6 +262,10 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::py_get_engine_affinity))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::config_reload_env_vars))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::config_reload_env_var))
+        .unwrap();
 
     #[cfg(feature = "sql")]
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
@@ -311,6 +327,8 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "object")]
     m.add_wrapped(wrap_pyfunction!(functions::__register_startup_deps))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::gen_uuid_v7))
+        .unwrap();
 
     // Functions - random
     m.add_wrapped(wrap_pyfunction!(functions::set_random_seed))
@@ -328,10 +346,18 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(datatypes::_known_timezones))
         .unwrap();
 
+    // Extension type registry.
+    m.add_wrapped(wrap_pyfunction!(extension::_register_extension_type))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(extension::_unregister_extension_type))
+        .unwrap();
+
     // Testing
     m.add_wrapped(wrap_pyfunction!(testing::assert_series_equal_py))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(testing::assert_dataframe_equal_py))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(testing::assert_schema_equal_py))
         .unwrap();
 
     // Exceptions - Errors
@@ -438,6 +464,8 @@ pub fn _polars_runtime_64(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "allocator")]
     {
         m.add("_allocator", allocator::create_allocator_capsule(py)?)?;
+        m.add_wrapped(wrap_pyfunction!(allocator::_estimate_memory_usage))
+            .unwrap();
     }
 
     m.add("_debug", cfg!(debug_assertions))?;

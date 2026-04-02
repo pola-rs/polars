@@ -122,6 +122,12 @@ fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Column> {
         with_match_physical_integer_type!(base_dtype, |$native_type| {
             if exponent_dtype.is_float() {
                 match exponent_dtype {
+                    #[cfg(feature = "dtype-f16")]
+                    Float16 => {
+                        let ca = base.cast(&DataType::Float16)?;
+                        let exponent = exponent.strict_cast(&DataType::Float16)?;
+                        pow_on_floats(ca.f16().unwrap(), exponent.f16().unwrap())
+                    },
                     Float32 => {
                         let ca = base.cast(&DataType::Float32)?;
                         pow_on_floats(ca.f32().unwrap(), exponent.f32().unwrap())
@@ -144,6 +150,12 @@ fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Column> {
         })
     } else {
         match base_dtype {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                let ca = base.f16().unwrap();
+                let exponent = exponent.strict_cast(&DataType::Float16)?;
+                pow_on_floats(ca, exponent.f16().unwrap())
+            },
             DataType::Float32 => {
                 let ca = base.f32().unwrap();
                 let exponent = exponent.strict_cast(&DataType::Float32)?;
@@ -178,6 +190,11 @@ pub(super) fn pow(s: &mut [Column]) -> PolarsResult<Column> {
 
 pub(super) fn sqrt(base: &Column) -> PolarsResult<Column> {
     match base.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = base.f16().unwrap();
+            sqrt_on_floats(ca)
+        },
         DataType::Float32 => {
             let ca = base.f32().unwrap();
             sqrt_on_floats(ca)
@@ -204,6 +221,11 @@ where
 
 pub(super) fn cbrt(base: &Column) -> PolarsResult<Column> {
     match base.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = base.f16().unwrap();
+            cbrt_on_floats(ca)
+        },
         DataType::Float32 => {
             let ca = base.f32().unwrap();
             cbrt_on_floats(ca)

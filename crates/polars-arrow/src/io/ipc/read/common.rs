@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlHashMap;
+use polars_utils::bool::UnsafeBool;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::Dictionaries;
@@ -87,6 +88,7 @@ pub fn read_record_batch<R: Read + Seek>(
     reader: &mut R,
     block_offset: u64,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<RecordBatchT<Box<dyn Array>>> {
     assert_eq!(fields.len(), ipc_schema.fields.len());
     let buffers = batch
@@ -130,6 +132,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     limit,
                     version,
                     scratch,
+                    checked,
                 )?)),
                 ProjectionResult::NotSelected((field, _)) => {
                     skip(
@@ -164,6 +167,7 @@ pub fn read_record_batch<R: Read + Seek>(
                     limit,
                     version,
                     scratch,
+                    checked,
                 )
             })
             .collect::<PolarsResult<Vec<_>>>()?
@@ -190,7 +194,7 @@ fn find_first_dict_field_d<'a>(
     ipc_field: &'a IpcField,
 ) -> Option<(&'a Field, &'a IpcField)> {
     use ArrowDataType::*;
-    match dtype {
+    match dtype.to_storage() {
         Dictionary(_, inner, _) => find_first_dict_field_d(id, inner.as_ref(), ipc_field),
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
@@ -255,6 +259,7 @@ pub fn read_dictionary<R: Read + Seek>(
     reader: &mut R,
     block_offset: u64,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<()> {
     if batch
         .is_delta()
@@ -274,7 +279,7 @@ pub fn read_dictionary<R: Read + Seek>(
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingData))?;
 
     let value_type =
-        if let ArrowDataType::Dictionary(_, value_type, _) = first_field.dtype.to_logical_type() {
+        if let ArrowDataType::Dictionary(_, value_type, _) = first_field.dtype.to_storage() {
             value_type.as_ref()
         } else {
             polars_bail!(oos = OutOfSpecKind::InvalidIdDataType { requested_id: id })
@@ -301,6 +306,7 @@ pub fn read_dictionary<R: Read + Seek>(
         reader,
         block_offset,
         scratch,
+        checked,
     )?;
 
     dictionaries.insert(id, chunk.into_arrays().pop().unwrap());

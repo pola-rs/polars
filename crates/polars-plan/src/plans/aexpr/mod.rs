@@ -27,7 +27,7 @@ pub use traverse::*;
 mod properties;
 pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
-pub use evaluate::into_column;
+pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
 pub use schema::ToFieldContext;
 
@@ -47,15 +47,20 @@ pub enum IRAggExpr {
     },
     Median(Node),
     NUnique(Node),
-    First(Node),
-    Last(Node),
     Item {
         input: Node,
         /// Return a missing value if there are no values.
         allow_empty: bool,
     },
+    First(Node),
+    FirstNonNull(Node),
+    Last(Node),
+    LastNonNull(Node),
     Mean(Node),
-    Implode(Node),
+    Implode {
+        input: Node,
+        maintain_order: bool,
+    },
     Quantile {
         expr: Node,
         quantile: Node,
@@ -151,10 +156,12 @@ impl From<IRAggExpr> for GroupByMethod {
             Median(_) => GroupByMethod::Median,
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
+            FirstNonNull(_) => GroupByMethod::FirstNonNull,
             Last(_) => GroupByMethod::Last,
+            LastNonNull(_) => GroupByMethod::LastNonNull,
             Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
-            Implode(_) => GroupByMethod::Implode,
+            Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
             Sum(_) => GroupByMethod::Sum,
             Count {
                 input: _,
@@ -163,6 +170,7 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
+            // Multi-input aggregations.
             Quantile { .. } => unreachable!(),
         }
     }
@@ -178,9 +186,14 @@ pub enum AExpr {
     Element,
     Explode {
         expr: Node,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Column(PlSmallStr),
+    /// Struct field value in a `struct.with_fields` context.
+    ///
+    /// Equivalent of `pl.field(name)`.
+    #[cfg(feature = "dtype-struct")]
+    StructField(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -200,6 +213,7 @@ pub enum AExpr {
         expr: Node,
         idx: Node,
         returns_scalar: bool,
+        null_on_oob: bool,
     },
     SortBy {
         expr: Node,
@@ -216,8 +230,7 @@ pub enum AExpr {
         truthy: Node,
         falsy: Node,
     },
-    /// A streaming aggregation that can only run in the streaming engine.
-    AnonymousStreamingAgg {
+    AnonymousAgg {
         input: Vec<ExprIR>,
         fmt_str: Box<PlSmallStr>,
         function: OpaqueStreamingAgg,
@@ -239,6 +252,11 @@ pub enum AExpr {
         evaluation: Node,
 
         variant: EvalVariant,
+    },
+    #[cfg(feature = "dtype-struct")]
+    StructEval {
+        expr: Node,
+        evaluation: Vec<ExprIR>,
     },
     Function {
         /// Function arguments
@@ -282,7 +300,6 @@ impl AExpr {
     #[recursive::recursive]
     pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
         match self {
-            AExpr::AnonymousStreamingAgg { .. } => true,
             AExpr::Element => false,
             AExpr::Literal(lv) => lv.is_scalar(),
             AExpr::Function { options, input, .. }
@@ -309,21 +326,28 @@ impl AExpr {
                     && is_scalar_ae(*truthy, arena)
                     && is_scalar_ae(*falsy, arena)
             },
-            AExpr::Agg(_) | AExpr::Len => true,
+            AExpr::Agg(_) | AExpr::AnonymousAgg { .. } | AExpr::Len => true,
             AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_scalar_ae(*expr, arena)
             },
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructEval { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
             AExpr::Gather { returns_scalar, .. } => *returns_scalar,
             AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Over { function, .. } => is_scalar_ae(*function, arena),
+
+            // Over and Rolling implicitly zip with the context and thus are never scalars
+            AExpr::Over { .. } => false,
             #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { function, .. } => is_scalar_ae(*function, arena),
+            AExpr::Rolling { .. } => false,
+
             AExpr::Explode { .. }
             | AExpr::Column(_)
             | AExpr::Filter { .. }
             | AExpr::Slice { .. } => false,
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructField(_) => false,
         }
     }
 
@@ -354,10 +378,16 @@ impl AExpr {
         match self {
             AExpr::Element => true,
             AExpr::Column(_) => true,
-            AExpr::AnonymousStreamingAgg { .. }
-            | AExpr::Literal(_)
-            | AExpr::Agg(_)
-            | AExpr::Len => false,
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructField(_) => true,
+
+            // Over and Rolling implicitly zip with the context and thus should always be length
+            // preserving
+            AExpr::Over { mapping, .. } => !matches!(mapping, WindowMapping::Explode),
+            #[cfg(feature = "dynamic_group_by")]
+            AExpr::Rolling { .. } => true,
+
+            AExpr::AnonymousAgg { .. } | AExpr::Literal(_) | AExpr::Agg(_) | AExpr::Len => false,
             AExpr::Function { options, input, .. }
             | AExpr::AnonymousFunction { options, input, .. } => {
                 if options.flags.is_elementwise() {
@@ -380,19 +410,19 @@ impl AExpr {
             AExpr::Eval { expr, variant, .. } => {
                 variant.is_length_preserving() && is_length_preserving_ae(*expr, arena)
             },
+            #[cfg(feature = "dtype-struct")]
+            AExpr::StructEval { expr, .. } => is_length_preserving_ae(*expr, arena),
             AExpr::Sort { expr, .. } => is_length_preserving_ae(*expr, arena),
             AExpr::Gather {
                 expr: _,
                 idx,
                 returns_scalar,
+                null_on_oob: _,
             } => !returns_scalar && is_length_preserving_ae(*idx, arena),
             AExpr::SortBy { expr, by, .. } => broadcasting_input_length_preserving(
                 std::iter::once(*expr).chain(by.iter().copied()),
                 arena,
             ),
-            AExpr::Over { function, .. } => is_length_preserving_ae(*function, arena),
-            #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { function, .. } => is_length_preserving_ae(*function, arena),
 
             AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
         }
@@ -416,6 +446,8 @@ impl AExpr {
                     IRArrayFunction::Get(false) => true,
                     _ => false,
                 },
+                #[cfg(feature = "replace")]
+                IRFunctionExpr::ReplaceStrict { .. } => true,
                 #[cfg(all(feature = "strings", feature = "temporal"))]
                 IRFunctionExpr::StringExpr(f) => match f {
                     IRStringFunction::Strptime(_, strptime_options) => {

@@ -6,7 +6,7 @@ import random
 import string
 import sys
 from contextlib import contextmanager
-from typing import TYPE_CHECKING, Any, Callable, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pytest
@@ -15,7 +15,7 @@ import polars as pl
 from polars.testing.parametric import load_profile
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator
     from types import ModuleType
     from typing import Any
 
@@ -35,7 +35,7 @@ UNSIGNED_INTEGER_DTYPES = [
     pl.UInt128(),
 ]
 INTEGER_DTYPES = SIGNED_INTEGER_DTYPES + UNSIGNED_INTEGER_DTYPES
-FLOAT_DTYPES = [pl.Float32(), pl.Float64()]
+FLOAT_DTYPES = [pl.Float16(), pl.Float32(), pl.Float64()]
 NUMERIC_DTYPES = INTEGER_DTYPES + FLOAT_DTYPES
 
 DATETIME_DTYPES = [pl.Datetime("ms"), pl.Datetime("us"), pl.Datetime("ns")]

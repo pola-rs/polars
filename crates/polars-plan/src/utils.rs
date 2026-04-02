@@ -2,6 +2,7 @@ use std::fmt::Formatter;
 use std::iter::FlatMap;
 
 use polars_core::prelude::*;
+use polars_utils::format_pl_smallstr;
 
 use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
@@ -117,7 +118,7 @@ pub fn expr_output_name(expr: &Expr) -> PolarsResult<PlSmallStr> {
             Expr::KeepName(_) => polars_bail!(nyi = "`name.keep` is not allowed here"),
             Expr::RenameAlias { expr, function } => return function.call(&expr_output_name(expr)?),
             Expr::Len => return Ok(get_len_name()),
-            Expr::Literal(val) => return Ok(val.output_column_name().clone()),
+            Expr::Literal(val) => return Ok(val.output_column_name()),
 
             #[cfg(feature = "dtype-struct")]
             Expr::Function {
@@ -245,20 +246,16 @@ where
 
 pub fn aexpr_to_leaf_names_iter(
     node: Node,
-    arena: &Arena<AExpr>,
-) -> impl Iterator<Item = PlSmallStr> + '_ {
+    arena: &'_ Arena<AExpr>,
+) -> impl Iterator<Item = &'_ PlSmallStr> + '_ {
     aexpr_to_column_nodes_iter(node, arena).map(|node| match arena.get(node.0) {
-        AExpr::Column(name) => name.clone(),
+        AExpr::Column(name) => name,
         _ => unreachable!(),
     })
 }
 
 pub fn aexpr_to_leaf_names(node: Node, arena: &Arena<AExpr>) -> Vec<PlSmallStr> {
-    aexpr_to_leaf_names_iter(node, arena).collect()
-}
-
-pub fn aexpr_to_leaf_name(node: Node, arena: &Arena<AExpr>) -> PlSmallStr {
-    aexpr_to_leaf_names_iter(node, arena).next().unwrap()
+    aexpr_to_leaf_names_iter(node, arena).cloned().collect()
 }
 
 /// check if a selection/projection can be done on the downwards schema
@@ -280,21 +277,6 @@ pub(crate) fn check_input_column_node(
         // Invariant of `ColumnNode`
         _ => unreachable!(),
     }
-}
-
-pub(crate) fn aexprs_to_schema<I: IntoIterator<Item = K>, K: Into<Node>>(
-    expr: I,
-    schema: &Schema,
-    arena: &Arena<AExpr>,
-) -> Schema {
-    expr.into_iter()
-        .map(|node| {
-            arena
-                .get(node.into())
-                .to_field(&ToFieldContext::new(arena, schema))
-                .unwrap()
-        })
-        .collect()
 }
 
 pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
@@ -364,6 +346,38 @@ pub fn rename_columns(
 
     AexprNode::new(node)
         .rewrite(&mut RenameColumns(map), expr_arena)
+        .unwrap()
+        .node()
+}
+
+/// Rename any `StructField(x)` to its corresponding `Column(prefix_x)` using the provided prefix.
+#[cfg(feature = "dtype-struct")]
+pub fn structfield_to_column(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    prefix: &PlSmallStr,
+) -> Node {
+    struct MapStructFields<'a>(&'a PlSmallStr);
+    impl RewritingVisitor for MapStructFields<'_> {
+        type Node = AexprNode;
+        type Arena = Arena<AExpr>;
+
+        fn mutate(
+            &mut self,
+            node: Self::Node,
+            arena: &mut Self::Arena,
+        ) -> PolarsResult<Self::Node> {
+            if let AExpr::StructField(name) = arena.get(node.node()) {
+                let new_name = format_pl_smallstr!("{}{}", self.0, name);
+                return Ok(AexprNode::new(arena.add(AExpr::Column(new_name))));
+            }
+
+            Ok(node)
+        }
+    }
+
+    AexprNode::new(node)
+        .rewrite(&mut MapStructFields(prefix), expr_arena)
         .unwrap()
         .node()
 }

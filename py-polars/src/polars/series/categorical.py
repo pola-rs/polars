@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.unstable import unstable
+from polars._utils.deprecation import deprecated
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -37,6 +37,10 @@ class CatNameSpace:
         ]
         """
 
+    @deprecated(
+        "`cat.is_local()` is deprecated; Categoricals no longer have a local scope. "
+        "This method will be removed in Polars 2.0."
+    )
     def is_local(self) -> bool:
         """
         Return whether or not the column is a local categorical.
@@ -49,19 +53,20 @@ class CatNameSpace:
         """Simply returns the column as-is, local representations are deprecated."""
         return wrap_s(self._s.cat_to_local())
 
-    @unstable()
+    @deprecated(
+        "`cat.uses_lexical_ordering()` is deprecated; Categoricals are now always ordered lexically. "
+        "This method will be removed in Polars 2.0."
+    )
     def uses_lexical_ordering(self) -> bool:
         """
         Indicate whether the Series uses lexical ordering.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
+        Always returns true.
 
         Examples
         --------
         >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
-        >>> s.cat.uses_lexical_ordering()
+        >>> s.cat.uses_lexical_ordering()  # doctest: +SKIP
         True
         """
         return self._s.cat_uses_lexical_ordering()

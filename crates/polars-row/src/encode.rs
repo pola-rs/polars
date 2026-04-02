@@ -9,6 +9,7 @@ use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowDataType;
 use arrow::types::{NativeType, Offset};
 use polars_dtype::categorical::CatNative;
+use polars_utils::float16::pf16;
 
 use crate::fixed::numeric::FixedLengthEncoding;
 use crate::fixed::{boolean, decimal, numeric};
@@ -959,6 +960,7 @@ pub fn fixed_size(
             _ => unreachable!(),
         },
 
+        D::Float16 => pf16::ENCODED_LEN,
         D::Float32 => f32::ENCODED_LEN,
         D::Float64 => f64::ENCODED_LEN,
         D::FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), opt, dict)?,

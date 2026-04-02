@@ -16,7 +16,11 @@ const ITEM_NAME: &str = "item";
 pub fn infer(json: &BorrowedValue) -> PolarsResult<ArrowDataType> {
     Ok(match json {
         BorrowedValue::Static(StaticNode::Bool(_)) => ArrowDataType::Boolean,
-        BorrowedValue::Static(StaticNode::U64(_) | StaticNode::I64(_)) => ArrowDataType::Int64,
+        BorrowedValue::Static(StaticNode::I64(_)) => ArrowDataType::Int64,
+        BorrowedValue::Static(StaticNode::U64(x)) if *x <= i64::MAX as u64 => ArrowDataType::Int64,
+        BorrowedValue::Static(StaticNode::U64(_) | StaticNode::U128(_) | StaticNode::I128(_)) => {
+            ArrowDataType::Int128
+        },
         BorrowedValue::Static(StaticNode::F64(_)) => ArrowDataType::Float64,
         BorrowedValue::Static(StaticNode::Null) => ArrowDataType::Null,
         BorrowedValue::Array(array) => infer_array(array)?,

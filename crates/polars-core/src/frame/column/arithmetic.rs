@@ -10,8 +10,6 @@ fn num_op_with_broadcast<T: Num + NumCast, F: Fn(&Series, T) -> Series>(
 ) -> Column {
     match c {
         Column::Series(s) => op(s, n).into(),
-        // @partition-opt
-        Column::Partitioned(s) => op(s.as_materialized_series(), n).into(),
         Column::Scalar(s) => {
             ScalarColumn::from_single_value_series(op(&s.as_single_value_series(), n), s.len())
                 .into()

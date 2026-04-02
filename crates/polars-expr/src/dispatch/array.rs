@@ -1,5 +1,5 @@
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
-use polars_core::prelude::{Column, DataType, IntoColumn, SortOptions};
+use polars_core::prelude::{Column, DataType, ExplodeOptions, IntoColumn, SortOptions};
 use polars_ops::prelude::array::ArrayNameSpace;
 #[cfg(feature = "array_to_struct")]
 use polars_plan::dsl::DslNameGenerator;
@@ -39,7 +39,7 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         #[cfg(feature = "array_count")]
         CountMatches => map_as_slice!(count_matches),
         Shift => map_as_slice!(shift),
-        Explode { skip_empty } => map_as_slice!(explode, skip_empty),
+        Explode(options) => map_as_slice!(explode, options),
         Slice(offset, length) => map!(slice, offset, length),
         #[cfg(feature = "array_to_struct")]
         ToStruct(ng) => map!(arr_to_struct, ng.clone()),
@@ -200,8 +200,8 @@ pub(super) fn slice(s: &Column, offset: i64, length: i64) -> PolarsResult<Column
     ca.array_slice(offset, length).map(Column::from)
 }
 
-fn explode(c: &[Column], skip_empty: bool) -> PolarsResult<Column> {
-    c[0].explode(skip_empty)
+fn explode(c: &[Column], options: ExplodeOptions) -> PolarsResult<Column> {
+    c[0].explode(options)
 }
 
 fn concat_arr(args: &[Column]) -> PolarsResult<Column> {

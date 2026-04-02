@@ -1,4 +1,5 @@
 use super::*;
+use crate::dsl::functions::nth;
 use crate::plans::conversion::is_regex_projection;
 
 /// Specialized expressions for Struct dtypes.
@@ -84,7 +85,9 @@ impl StructNameSpace {
     }
 
     pub fn with_fields(self, fields: Vec<Expr>) -> Expr {
-        self.0
-            .map_n_ary(FunctionExpr::StructExpr(StructFunction::WithFields), fields)
+        Expr::StructEval {
+            expr: Arc::new(self.0),
+            evaluation: fields,
+        }
     }
 }

@@ -8,7 +8,7 @@ fn test_datelike_join() -> PolarsResult<()> {
     let mut s1 = s.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?;
     s1.rename("bar".into());
 
-    let df = DataFrame::new(vec![s, s1])?;
+    let df = DataFrame::new_infer_height(vec![s, s1])?;
 
     let out = df.left_join(&df.clone(), ["bar"], ["bar"])?;
     assert!(matches!(

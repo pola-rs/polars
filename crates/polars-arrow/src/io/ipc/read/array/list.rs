@@ -1,17 +1,18 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek};
 
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_err};
+use polars_utils::bool::UnsafeBool;
 
 use super::super::super::IpcField;
 use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::ListArray;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
-use crate::offset::Offset;
+use crate::offset::{Offset, OffsetsBuffer};
 
 #[allow(clippy::too_many_arguments)]
 pub fn read_list<O: Offset, R: Read + Seek>(
@@ -28,6 +29,7 @@ pub fn read_list<O: Offset, R: Read + Seek>(
     limit: Option<usize>,
     version: Version,
     scratch: &mut Vec<u8>,
+    checked: UnsafeBool,
 ) -> PolarsResult<ListArray<O>>
 where
     Vec<u8>: TryInto<O::Bytes>,
@@ -77,8 +79,17 @@ where
         Some(last_offset),
         version,
         scratch,
+        checked,
     )?;
-    ListArray::try_new(dtype, offsets.try_into()?, values, validity)
+
+    let offsets = if *checked {
+        offsets.try_into()?
+    } else {
+        // SAFETY:
+        // Invariant of the `checked` state that this is valid.
+        unsafe { OffsetsBuffer::new_unchecked(offsets) }
+    };
+    ListArray::try_new(dtype, offsets, values, validity)
 }
 
 pub fn skip_list<O: Offset>(

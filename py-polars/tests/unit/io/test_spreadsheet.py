@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date, datetime, time
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -20,7 +20,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars._typing import (
         ExcelSpreadsheetEngine,
@@ -515,7 +515,7 @@ def test_read_mixed_dtype_columns(
         "Employee ID": pl.Utf8(),
         "Employee Name": pl.Utf8(),
         "Date": pl.Date(),
-        "Details": pl.Categorical("lexical"),
+        "Details": pl.Categorical(),
         "Asset ID": pl.Utf8(),
     }
     df = read_spreadsheet(
@@ -636,7 +636,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     )
     df = pl.read_excel(
         path_xlsx,
-        sheet_name=["test4", "test4"],
+        sheet_name=("test4", "test4"),
         schema_overrides=overrides,
     )
     for col, dtype in overrides.items():
@@ -922,7 +922,7 @@ def test_excel_write_compound_types(
         xls.getbuffer(),
     ):
         xldf = pl.read_excel(
-            binary_data,
+            binary_data,  # type: ignore[arg-type]
             sheet_name="data",
             engine=engine,
             include_file_paths="wbook",
@@ -1471,3 +1471,26 @@ def test_excel_read_columns_nonlist_sequence(engine: ExcelSpreadsheetEngine) -> 
     xldf = pl.read_excel(xls, engine=engine, columns="colx")
     expected = df.select("colx")
     assert_frame_equal(xldf, expected)
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_ods, "path_ods", {}),
+    ],
+)
+def test_spreadsheet_no_resource_warning(
+    read_spreadsheet: Callable[..., pl.DataFrame],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    # ref: https://github.com/pola-rs/polars/issues/14466
+    spreadsheet_path = request.getfixturevalue(source)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        read_spreadsheet(spreadsheet_path, **params)
+        read_spreadsheet(spreadsheet_path, sheet_id=0, **params)

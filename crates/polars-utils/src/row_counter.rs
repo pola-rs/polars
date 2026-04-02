@@ -128,7 +128,6 @@ impl RowCounter {
     }
 
     /// Returns [`RowCounter::num_rows`] as a usize.
-    #[inline]
     pub fn num_rows_idxsize(&self) -> PolarsResult<IdxSize> {
         self.num_rows().and_then(|x| {
             IdxSize::try_from(x).map_err(|_| {

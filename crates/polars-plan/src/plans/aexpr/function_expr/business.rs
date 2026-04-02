@@ -10,19 +10,9 @@ use crate::prelude::FunctionFlags;
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum IRBusinessFunction {
-    BusinessDayCount {
-        week_mask: [bool; 7],
-        holidays: Vec<i32>,
-    },
-    AddBusinessDay {
-        week_mask: [bool; 7],
-        holidays: Vec<i32>,
-        roll: Roll,
-    },
-    IsBusinessDay {
-        week_mask: [bool; 7],
-        holidays: Vec<i32>,
-    },
+    BusinessDayCount { week_mask: [bool; 7] },
+    AddBusinessDay { week_mask: [bool; 7], roll: Roll },
+    IsBusinessDay { week_mask: [bool; 7] },
 }
 
 impl IRBusinessFunction {

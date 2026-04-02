@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from io import BytesIO, StringIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Literal, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 from polars._utils.various import normalize_filepath
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from io import IOBase
 
     from polars._typing import SerializationFormat

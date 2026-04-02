@@ -1,6 +1,5 @@
 use std::ops::{BitAnd, BitOr, BitXor};
 
-use arrow::compute;
 use arrow::compute::bitwise;
 use arrow::compute::utils::combine_validities_and;
 
@@ -90,7 +89,7 @@ impl BitOr for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary(self, rhs, compute::boolean_kleene::or)
+        arity::binary(self, rhs, polars_compute::boolean::or)
     }
 }
 
@@ -162,7 +161,7 @@ impl BitAnd for &BooleanChunked {
             _ => {},
         }
 
-        arity::binary(self, rhs, compute::boolean_kleene::and)
+        arity::binary(self, rhs, polars_compute::boolean::and)
     }
 }
 

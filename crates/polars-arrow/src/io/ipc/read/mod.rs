@@ -1,13 +1,15 @@
 //! APIs to read Arrow's IPC format.
 //!
-//! The two important structs here are the [`FileReader`](reader::FileReader),
+//! The two important File-based structs here are the [`FileReader`](reader::FileReader),
 //! which provides arbitrary access to any of its messages, and the
 //! [`StreamReader`](stream::StreamReader), which only supports reading
 //! data in the order it was written in.
+//! In addition, there is a Block-based struct [`BlockReader`](reader::BlockReader), which
+//! enabled random access to a standalone IPC Block.
 use crate::array::Array;
 
 mod array;
-mod common;
+pub mod common;
 mod deserialize;
 mod error;
 pub(crate) mod file;
@@ -23,10 +25,10 @@ pub use common::{ProjectionInfo, prepare_projection};
 pub use error::OutOfSpecKind;
 pub use file::{
     FileMetadata, deserialize_footer, get_row_count, get_row_count_from_blocks, read_batch,
-    read_file_dictionaries, read_file_metadata,
+    read_dictionary_block, read_file_dictionaries, read_file_metadata,
 };
 use polars_utils::aliases::PlHashMap;
-pub use reader::FileReader;
+pub use reader::{BlockReader, FileReader};
 pub use schema::deserialize_schema;
 pub use stream::{StreamMetadata, StreamReader, StreamState, read_stream_metadata};
 

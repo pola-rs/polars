@@ -6,6 +6,7 @@ use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, FooterRef, MessageHeaderRef};
 use futures::{Stream, StreamExt};
 use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_utils::bool::UnsafeBool;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use crate::datatypes::ArrowSchema;
@@ -277,6 +278,7 @@ pub struct FlightConsumer {
     dictionaries: Dictionaries,
     md: StreamMetadata,
     scratch: Vec<u8>,
+    checked: UnsafeBool,
 }
 
 impl FlightConsumer {
@@ -286,7 +288,18 @@ impl FlightConsumer {
             dictionaries: Default::default(),
             md,
             scratch: vec![],
+            checked: Default::default(),
         })
+    }
+
+    /// # Safety
+    /// Don't do expensive checks.
+    /// This means the data source has to be trusted to be correct.
+    pub unsafe fn unchecked(mut self) -> Self {
+        unsafe {
+            self.checked = UnsafeBool::new_false();
+        }
+        self
     }
 
     pub fn schema(&self) -> &ArrowSchema {
@@ -337,6 +350,7 @@ impl FlightConsumer {
                         &mut reader,
                         0,
                         &mut self.scratch,
+                        self.checked,
                     )
                     .map(Some)
                 } else {

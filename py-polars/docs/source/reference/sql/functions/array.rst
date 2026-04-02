@@ -342,7 +342,7 @@ Unnest/explode an array column into multiple rows.
 
     df = pl.DataFrame(
       {
-        "foo": [["a", "b"], ["c", "d", "e"]],
+        "foo": [["a", "b", "c"], ["d", "e"]],
         "bar": [[6, 7, 8], [9, 10]]
       }
     )

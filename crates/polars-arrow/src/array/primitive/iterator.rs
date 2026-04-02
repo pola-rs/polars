@@ -2,7 +2,6 @@ use super::{MutablePrimitiveArray, PrimitiveArray};
 use crate::array::{ArrayAccessor, MutableArray};
 use crate::bitmap::IntoIter as BitmapIntoIter;
 use crate::bitmap::utils::{BitmapIter, ZipValidity};
-use crate::buffer::IntoIter;
 use crate::types::NativeType;
 
 unsafe impl<'a, T: NativeType> ArrayAccessor<'a> for [T] {
@@ -21,7 +20,7 @@ unsafe impl<'a, T: NativeType> ArrayAccessor<'a> for [T] {
 
 impl<T: NativeType> IntoIterator for PrimitiveArray<T> {
     type Item = Option<T>;
-    type IntoIter = ZipValidity<T, IntoIter<T>, BitmapIntoIter>;
+    type IntoIter = ZipValidity<T, polars_buffer::buffer::IntoIter<T>, BitmapIntoIter>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {

@@ -4,6 +4,8 @@ use arrow::array::PrimitiveArray;
 use num_traits::Zero;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 
 use super::*;
 
@@ -28,6 +30,8 @@ impl_sum_cast!(
     i16 as i64
 );
 impl_sum_cast!(u32, u64, i32, i64, f32, f64);
+#[cfg(feature = "dtype-f16")]
+impl_sum_cast!(pf16);
 #[cfg(feature = "dtype-i128")]
 impl_sum_cast!(i128);
 #[cfg(feature = "dtype-u128")]

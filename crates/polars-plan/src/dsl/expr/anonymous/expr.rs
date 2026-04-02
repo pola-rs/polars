@@ -139,6 +139,25 @@ where
 }
 
 pub type OpaqueColumnUdf = LazySerde<SpecialEq<Arc<dyn AnonymousColumnsUdf>>>;
+
+impl Hash for OpaqueColumnUdf {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            Self::Deserialized(ptr) => ptr.hash(state),
+            Self::Bytes(b) => b.hash(state),
+            Self::Named {
+                name,
+                payload,
+                value: _,
+            } => {
+                name.hash(state);
+                payload.hash(state);
+            },
+        }
+    }
+}
+
 pub fn new_column_udf<F: AnonymousColumnsUdf + 'static>(func: F) -> OpaqueColumnUdf {
     LazySerde::Deserialized(SpecialEq::new(Arc::new(func)))
 }

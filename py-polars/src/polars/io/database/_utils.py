@@ -20,10 +20,17 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
     """Run asynchronous code as if it was synchronous."""
     import asyncio
 
-    import polars._utils.nest_asyncio
+    try:
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # no running loop; can use asyncio "as-is"
+        return asyncio.run(co)
+    else:
+        # inside running loop; use vendored `nest_asyncio` (for now)
+        import polars._utils.nest_asyncio
 
-    polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
-    return asyncio.run(co)
+        polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
+        return running_loop.run_until_complete(co)
 
 
 def _read_sql_connectorx(
@@ -139,7 +146,9 @@ def _import_optional_adbc_driver(
         err_suffix="driver not detected",
         install_message=(
             "If ADBC supports this database, please run: pip install "
-            f"{module_name.replace('_', '-')}"
+            # DuckDB distributes adbc_driver_duckdb as a module in the duckdb package
+            f"{'duckdb' if module_name == 'adbc_driver_duckdb' else module_name.replace('_', '-')} "
+            "or install the driver with the `dbc` command line tool (https://docs.columnar.tech/dbc/)"
         ),
     )
     if not dbapi_submodule:

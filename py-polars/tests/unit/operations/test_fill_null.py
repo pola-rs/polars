@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import datetime
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 
 def test_fill_null_minimal_upcast_4056() -> None:
@@ -121,3 +126,57 @@ def test_self_broadcast() -> None:
         pl.Series([None]).fill_null(pl.Series(range(3))),
         pl.Series(range(3)),
     )
+
+
+def test_forward_fill_chunking_25273() -> None:
+    df = pl.DataFrame(
+        {
+            "key": [0, 1, 1],
+            "a": [None, None, 0],
+        }
+    )
+
+    df = df.with_columns(a=pl.concat([pl.col.a.head(1), pl.col.a.tail(2)]))
+    df = df.select(pl.col.a.filter(pl.col.key == 1))
+    df = df.with_columns(ff=pl.col.a.forward_fill())
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": [None, 0],
+                "ff": [None, 0],
+            }
+        ),
+    )
+
+
+def test_forward_fill_is_length_preserving() -> None:
+    assert_series_equal(
+        pl.Series([[1]]).list.agg(pl.element().first().forward_fill()),
+        pl.Series([1]),
+    )
+
+
+@given(
+    s=series(allow_null=True),
+    limit=st.one_of(st.none(), st.integers(min_value=0, max_value=10)),
+)
+@pytest.mark.parametrize("fill", ["forward_fill", "backward_fill"])
+def test_fill_streaming_matches_in_memory(
+    fill: str, s: pl.Series, limit: int | None
+) -> None:
+    q = pl.LazyFrame({"a": s}).select(getattr(pl.col("a"), fill)(limit=limit))
+    expected = q.collect(engine="in-memory")
+    result = q.collect(engine="streaming")
+    assert_series_equal(result["a"], expected["a"])
+
+
+def test_fill_null_null_dtype_24451() -> None:
+    # Test that fill_null changes Null dtype to fill value's dtype and fills values
+    df = pl.DataFrame({"col1": [None, None, None], "col2": [None, None, None]})
+
+    result = df.fill_null("rabbit")
+    assert result.dtypes == [pl.String, pl.String]
+    # Values are filled with the fill value
+    assert result["col1"].to_list() == ["rabbit", "rabbit", "rabbit"]
+    assert result["col2"].to_list() == ["rabbit", "rabbit", "rabbit"]

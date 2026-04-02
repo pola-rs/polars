@@ -15,6 +15,7 @@ This page gives an overview of all public Polars expressions.
    categories
    columns
    computation
+   extension
    functions
    list
    modify_select

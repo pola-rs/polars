@@ -14,10 +14,10 @@
 
 use arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::offset::OffsetsBuffer;
 use arrow::types::NativeType;
 use polars::prelude::*;
+use polars_buffer::Buffer;
 use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -43,8 +43,10 @@ impl<'py> IntoPyObject<'py> for BufferInfo {
         (self.pointer, self.offset, self.length).into_pyobject(py)
     }
 }
-impl<'py> FromPyObject<'py> for BufferInfo {
-    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+impl<'a, 'py> FromPyObject<'a, 'py> for BufferInfo {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let (pointer, offset, length) = ob.extract()?;
         Ok(Self {
             pointer,

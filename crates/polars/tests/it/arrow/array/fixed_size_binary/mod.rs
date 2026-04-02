@@ -1,7 +1,7 @@
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, ExtensionType};
+use polars_buffer::Buffer;
 
 mod mutable;
 

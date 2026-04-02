@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from polars._dependencies import altair as alt
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Callable
 
     from altair.typing import EncodeKwds
 

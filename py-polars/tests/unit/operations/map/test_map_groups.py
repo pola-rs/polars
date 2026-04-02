@@ -72,6 +72,17 @@ def test_map_groups_empty() -> None:
     ):
         df.group_by("x").map_groups(lambda x: x)
 
+    schema = {"x": pl.Int64, "y": pl.Int64}
+    result = (
+        df.lazy()
+        .group_by("x")
+        .map_groups(lambda df: df.with_columns(pl.col("x").alias("y")), schema=schema)
+    )
+
+    expected = pl.LazyFrame(schema=schema)
+    assert_frame_equal(result, expected)
+    assert result.collect_schema() == expected.collect_schema()
+
 
 def test_map_groups_none() -> None:
     df = pl.DataFrame(
@@ -134,7 +145,7 @@ def test_map_groups_object_output() -> None:
     result = df.group_by("groups").agg(
         pl.map_groups(
             [pl.col("dates"), pl.col("names")],
-            lambda s: Foo(dict(zip(s[0], s[1]))),
+            lambda s: Foo(dict(zip(s[0], s[1], strict=True))),
             return_dtype=pl.Object,
             returns_scalar=True,
         )
@@ -243,9 +254,11 @@ def test_nested_query_with_streaming_dispatch_25172() -> None:
         import io
 
         pl.LazyFrame({}).sink_parquet(
-            pl.PartitionMaxSize("", file_path=lambda _: io.BytesIO(), max_size=1),
-            engine="in-memory",
+            pl.PartitionBy(
+                "", file_path_provider=lambda _: io.BytesIO(), max_rows_per_file=1
+            ),
         )
+
         return pl.Series([1])
 
     assert_frame_equal(
@@ -256,3 +269,30 @@ def test_nested_query_with_streaming_dispatch_25172() -> None:
         .sort("a"),
         pl.DataFrame({"a": ["A", "B"], "b": [1, 1]}, schema_overrides={"b": pl.Int64}),
     )
+
+
+def test_map_groups_with_slice_25805() -> None:
+    schema = {"a": pl.Int8, "b": pl.Int8}
+
+    df = (
+        pl.LazyFrame(
+            data={"a": [1, 1], "b": [1, 2]},
+            schema=schema,
+        )
+        .group_by("a", maintain_order=True)
+        .map_groups(lambda df: df, schema=schema)
+        .head(1)
+        .collect()
+    )
+    assert_frame_equal(df, pl.DataFrame({"a": [1], "b": [1]}, schema=schema))
+
+
+def test_map_groups_group_by_list_26672() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [4, 4, 5], "x": [1, 2, 3], "y": [4, 5, 6]})
+    result = df.group_by(["a", "b"]).map_groups(lambda df: df)
+    assert_frame_equal(result, df, check_row_order=False)
+
+
+def test_map_groups_udf_error_does_not_panic_26647() -> None:
+    with pytest.raises(ComputeError, match="UDF failed"):
+        pl.select(x=1).group_by("x").map_groups(lambda x, y: x)  # type: ignore[arg-type, misc]

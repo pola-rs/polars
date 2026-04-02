@@ -40,11 +40,11 @@ impl CategoricalPhysical {
     }
 
     pub fn smallest_physical(num_cats: usize) -> PolarsResult<Self> {
-        if num_cats < u8::MAX as usize {
+        if num_cats <= u8::MAX as usize {
             Ok(Self::U8)
-        } else if num_cats < u16::MAX as usize {
+        } else if num_cats <= u16::MAX as usize {
             Ok(Self::U16)
-        } else if num_cats < u32::MAX as usize {
+        } else if num_cats <= u32::MAX as usize {
             Ok(Self::U32)
         } else {
             polars_bail!(ComputeError: "attempted to insert more categories than the maximum allowed")
@@ -243,7 +243,7 @@ impl FrozenCategories {
         let strings = strings.into_iter();
         let hasher = FROZEN_CATEGORIES_HASHER.clone();
         let mut mapping = CategoricalMapping::with_hasher(usize::MAX, hasher);
-        let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8);
+        let mut builder = Utf8ViewArrayBuilder::new(ArrowDataType::Utf8View);
         builder.reserve(strings.size_hint().0);
 
         let mut combined_hasher = PlFixedStateQuality::default().build_hasher();

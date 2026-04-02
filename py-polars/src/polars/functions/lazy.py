@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import warnings
-from typing import TYPE_CHECKING, Any, Callable, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import polars._reexport as pl
 import polars.functions as F
@@ -36,7 +36,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Awaitable, Collection, Iterable, Sequence
+    from collections.abc import Awaitable, Callable, Collection, Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -268,7 +268,7 @@ def cum_count(*columns: str, reverse: bool = False) -> Expr:
     return F.col(*columns).cum_count(reverse=reverse)
 
 
-def implode(*columns: str) -> Expr:
+def implode(*columns: str, maintain_order: bool = True) -> Expr:
     """
     Aggregate all column values into a list.
 
@@ -278,6 +278,10 @@ def implode(*columns: str) -> Expr:
     ----------
     *columns
         One or more column names.
+
+    maintain_order
+        Whether to preserve the order of elements in the list. Setting this
+        to `False` can improve performance, especially within `group_by`.
 
     Examples
     --------
@@ -308,7 +312,7 @@ def implode(*columns: str) -> Expr:
     └───────────┴───────────────────────┘
 
     """
-    return F.col(*columns).implode()
+    return F.col(*columns).implode(maintain_order=maintain_order)
 
 
 def std(column: str, ddof: int = 1) -> Expr:
@@ -1277,9 +1281,9 @@ def map_groups(
     ...     df.group_by("group").agg(
     ...         pl.map_groups(
     ...             exprs=["a", "b"],
-    ...             function=lambda list_of_series: list_of_series[0]
-    ...             / list_of_series[0].sum()
-    ...             + list_of_series[1],
+    ...             function=lambda list_of_series: (
+    ...                 list_of_series[0] / list_of_series[0].sum() + list_of_series[1]
+    ...             ),
     ...             return_dtype=pl.Float64,
     ...         ).alias("my_custom_aggregation")
     ...     )
@@ -2009,8 +2013,7 @@ def arg_sort_by(
     )
 
 
-@deprecate_streaming_parameter()
-@forward_old_opt_flags()
+@overload
 def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
@@ -2026,7 +2029,49 @@ def collect_all(
     collapse_joins: bool = True,
     optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
     engine: EngineType = "auto",
-) -> list[DataFrame]:
+    lazy: Literal[False] = False,
+) -> list[DataFrame]: ...
+
+
+@overload
+def collect_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,
+    predicate_pushdown: bool = True,
+    projection_pushdown: bool = True,
+    simplify_expression: bool = True,
+    no_optimization: bool = False,
+    slice_pushdown: bool = True,
+    comm_subplan_elim: bool = True,
+    comm_subexpr_elim: bool = True,
+    cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
+    lazy: Literal[True],
+) -> LazyFrame: ...
+
+
+@deprecate_streaming_parameter()
+@forward_old_opt_flags()
+def collect_all(
+    lazy_frames: Iterable[LazyFrame],
+    *,
+    type_coercion: bool = True,  # noqa: ARG001
+    predicate_pushdown: bool = True,  # noqa: ARG001
+    projection_pushdown: bool = True,  # noqa: ARG001
+    simplify_expression: bool = True,  # noqa: ARG001
+    no_optimization: bool = False,  # noqa: ARG001
+    slice_pushdown: bool = True,  # noqa: ARG001
+    comm_subplan_elim: bool = True,  # noqa: ARG001
+    comm_subexpr_elim: bool = True,  # noqa: ARG001
+    cluster_with_columns: bool = True,  # noqa: ARG001
+    collapse_joins: bool = True,  # noqa: ARG001
+    optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+    engine: EngineType = "auto",
+    lazy: bool = False,
+) -> list[DataFrame] | LazyFrame:
     """
     Collect multiple LazyFrames at the same time.
 
@@ -2107,6 +2152,13 @@ def collect_all(
         .. note::
            The GPU engine does not support async, or running in the
            background. If either are enabled, then GPU execution is switched off.
+    lazy:
+        Return as LazyFrame that can be collected later.
+        This is only correct if all inputs sink to disk.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
     Returns
     -------
@@ -2114,10 +2166,20 @@ def collect_all(
         The collected DataFrames, returned in the same order as the input LazyFrames.
 
     """
-    if engine == "streaming":
-        issue_unstable_warning("streaming mode is considered unstable.")
-
     lfs = [lf._ldf for lf in lazy_frames]
+    if lazy:
+        msg = "the `lazy` parameter of `collect_all` is considered unstable."
+        issue_unstable_warning(msg)
+
+        from polars.lazyframe import LazyFrame
+
+        ldf = plr.collect_all_lazy(lfs, optimizations._pyoptflags)
+        lf = LazyFrame._from_pyldf(ldf)
+        return lf
+
+    from polars.lazyframe.frame import _select_engine
+
+    engine = _select_engine(engine)
     out = plr.collect_all(lfs, engine, optimizations._pyoptflags)
 
     # wrap the pydataframes into dataframe
@@ -2496,12 +2558,12 @@ def from_epoch(column: str | Expr, time_unit: EpochTimeUnit = ...) -> Expr: ...
 
 @overload
 def from_epoch(
-    column: Series | Sequence[int], time_unit: EpochTimeUnit = ...
+    column: Series | Sequence[int | float], time_unit: EpochTimeUnit = ...
 ) -> Series: ...
 
 
 def from_epoch(
-    column: str | Expr | Series | Sequence[int], time_unit: EpochTimeUnit = "s"
+    column: str | Expr | Series | Sequence[int | float], time_unit: EpochTimeUnit = "s"
 ) -> Expr | Series:
     """
     Utility function that parses an epoch timestamp (or Unix time) to Polars Date(time).
@@ -2509,25 +2571,25 @@ def from_epoch(
     Depending on the `time_unit` provided, this function will return a different dtype:
 
     - time_unit="d" returns pl.Date
-    - time_unit="s" returns pl.Datetime["us"] (pl.Datetime's default)
-    - time_unit="ms" returns pl.Datetime["ms"]
-    - time_unit="us" returns pl.Datetime["us"]
     - time_unit="ns" returns pl.Datetime["ns"]
+    - otherwise returns pl.Datetime["us"] (Polars' default time unit)
 
     Parameters
     ----------
     column
-        Series or expression to parse integers to pl.Datetime.
+        Series or Expression to parse to Datetime.
     time_unit
         The unit of time of the timesteps since epoch time.
 
     Examples
     --------
-    >>> df = pl.DataFrame({"timestamp": [1666683077, 1666683099]}).lazy()
-    >>> df.select(pl.from_epoch(pl.col("timestamp"), time_unit="s")).collect()
+    Convert from integer seconds:
+
+    >>> df = pl.LazyFrame({"ts": [1666683077, 1666683099]})
+    >>> df.select(pl.from_epoch(pl.col("ts"), time_unit="s")).collect()
     shape: (2, 1)
     ┌─────────────────────┐
-    │ timestamp           │
+    │ ts                  │
     │ ---                 │
     │ datetime[μs]        │
     ╞═════════════════════╡
@@ -2535,7 +2597,23 @@ def from_epoch(
     │ 2022-10-25 07:31:39 │
     └─────────────────────┘
 
-    The function can also be used in an eager context by passing a Series.
+    Convert from fractional seconds:
+
+    >>> df = pl.LazyFrame({"ts": [-609066.723456, 1066445333.8888, 3405071999.987654]})
+    >>> df.select(pl.from_epoch(pl.col("ts"), time_unit="s")).collect()
+    shape: (3, 1)
+    ┌────────────────────────────┐
+    │ ts                         │
+    │ ---                        │
+    │ datetime[μs]               │
+    ╞════════════════════════════╡
+    │ 1969-12-24 22:48:53.276544 │
+    │ 2003-10-18 02:48:53.888800 │
+    │ 2077-11-25 13:19:59.987654 │
+    └────────────────────────────┘
+
+    The function can also be used in an eager context by passing a Series
+    or sequence of int/float values.
 
     >>> s = pl.Series([12345, 12346])
     >>> pl.from_epoch(s, time_unit="d")
@@ -2549,17 +2627,23 @@ def from_epoch(
     if isinstance(column, str):
         column = F.col(column)
     elif not isinstance(column, (pl.Series, pl.Expr)):
-        column = pl.Series(column)  # Sequence input handled by Series constructor
+        column = pl.Series(column)
 
     if time_unit == "d":
         return column.cast(Date)
-    elif time_unit == "s":
-        return (column.cast(Int64) * 1_000_000).cast(Datetime("us"))
-    elif time_unit in DTYPE_TEMPORAL_UNITS:
-        return column.cast(Datetime(time_unit))
-    else:
-        msg = f"`time_unit` must be one of {{'ns', 'us', 'ms', 's', 'd'}}, got {time_unit!r}"
-        raise ValueError(msg)
+    if time_unit in (scale := {"s": 1_000_000, "ms": 1_000}):
+        if isinstance(column, pl.Expr):
+            column = column * F.lit(scale[time_unit], dtype=Int64)
+            return column.cast(Datetime("us"))
+        if column.dtype.is_integer():
+            column = column.cast(Int64)
+        return (column * scale[time_unit]).cast(Datetime("us"))
+    if time_unit in DTYPE_TEMPORAL_UNITS:
+        return column.cast(Datetime(time_unit))  # type: ignore[arg-type]
+
+    valid_units = "'ns', 'us', 'ms', 's', 'd'"
+    msg = f"`time_unit` must be one of {valid_units}, got {time_unit!r}"
+    raise ValueError(msg)
 
 
 @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
@@ -2636,9 +2720,17 @@ def rolling_corr(
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
-        Delta degrees of freedom. The divisor used in calculations
-        is `N - ddof`, where `N` represents the number of elements.
+        Has no effect, do not use.
+
+        .. deprecated:: 1.40.0
     """
+    if ddof != 1:
+        issue_deprecation_warning(
+            "the `ddof` parameter for `rolling_corr` is deprecated."
+            " Correlation is invariant of `ddof`.",
+            version="1.40.0",
+        )
+
     if min_samples is None:
         min_samples = window_size
     if isinstance(a, str):

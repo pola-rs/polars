@@ -7,6 +7,7 @@
 #[cfg(feature = "timezones")]
 mod base_utc_offset;
 pub mod chunkedarray;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 mod date_range;
 #[cfg(feature = "timezones")]
 mod dst_offset;
@@ -29,6 +30,7 @@ mod windows;
 
 #[cfg(feature = "timezones")]
 pub use base_utc_offset::*;
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 pub use date_range::*;
 #[cfg(feature = "timezones")]
 pub use dst_offset::*;

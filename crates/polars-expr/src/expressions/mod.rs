@@ -5,7 +5,10 @@ mod binary;
 mod cast;
 mod column;
 mod count;
+mod element;
 mod eval;
+#[cfg(feature = "dtype-struct")]
+mod field;
 mod filter;
 mod gather;
 mod group_iter;
@@ -15,6 +18,8 @@ mod rolling;
 mod slice;
 mod sort;
 mod sortby;
+#[cfg(feature = "dtype-struct")]
+mod structeval;
 mod ternary;
 mod window;
 
@@ -31,7 +36,10 @@ pub(crate) use binary::*;
 pub(crate) use cast::*;
 pub(crate) use column::*;
 pub(crate) use count::*;
+pub(crate) use element::*;
 pub(crate) use eval::*;
+#[cfg(feature = "dtype-struct")]
+pub(crate) use field::*;
 pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use literal::*;
@@ -43,6 +51,8 @@ pub(crate) use rolling::RollingExpr;
 pub(crate) use slice::*;
 pub(crate) use sort::*;
 pub(crate) use sortby::*;
+#[cfg(feature = "dtype-struct")]
+pub(crate) use structeval::*;
 pub(crate) use ternary::*;
 pub use window::window_function_format_order_by;
 pub(crate) use window::*;
@@ -87,6 +97,15 @@ impl AggState {
             | AggState::NotAggregated(s)
             | AggState::LiteralScalar(s)
             | AggState::AggregatedScalar(s) => s.name(),
+        }
+    }
+
+    pub fn rename(&mut self, name: PlSmallStr) {
+        match self {
+            AggState::AggregatedList(s)
+            | AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.rename(name),
         }
     }
 
@@ -157,13 +176,8 @@ impl<'a> AggregationContext<'a> {
                                 out
                             })
                             .collect();
-                        self.groups = Cow::Owned(
-                            GroupsType::Slice {
-                                groups,
-                                overlapping: false,
-                            }
-                            .into_sliceable(),
-                        )
+                        self.groups =
+                            Cow::Owned(GroupsType::new_slice(groups, false, true).into_sliceable())
                     },
                     // sliced groups are already in correct order,
                     // Update offsets in the case of overlapping groups
@@ -179,13 +193,8 @@ impl<'a> AggregationContext<'a> {
                                 new
                             })
                             .collect();
-                        self.groups = Cow::Owned(
-                            GroupsType::Slice {
-                                groups,
-                                overlapping: false,
-                            }
-                            .into_sliceable(),
-                        )
+                        self.groups =
+                            Cow::Owned(GroupsType::new_slice(groups, false, true).into_sliceable())
                     },
                 }
                 self.update_groups = UpdateGroups::No;
@@ -253,6 +262,10 @@ impl<'a> AggregationContext<'a> {
         self.state = agg_state;
     }
 
+    fn rename(&mut self, name: PlSmallStr) {
+        self.state.rename(name);
+    }
+
     fn from_agg_state(
         agg_state: AggState,
         groups: Cow<'a, GroupPositions>,
@@ -299,13 +312,8 @@ impl<'a> AggregationContext<'a> {
                         out
                     })
                     .collect_trusted();
-                self.groups = Cow::Owned(
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: false,
-                    }
-                    .into_sliceable(),
-                );
+                self.groups =
+                    Cow::Owned(GroupsType::new_slice(groups, false, true).into_sliceable());
             },
             _ => {
                 let groups = {
@@ -326,13 +334,8 @@ impl<'a> AggregationContext<'a> {
                         })
                         .collect_trusted()
                 };
-                self.groups = Cow::Owned(
-                    GroupsType::Slice {
-                        groups,
-                        overlapping: false,
-                    }
-                    .into_sliceable(),
-                );
+                self.groups =
+                    Cow::Owned(GroupsType::new_slice(groups, false, true).into_sliceable());
             },
         }
         self.update_groups = UpdateGroups::No;
@@ -513,7 +516,12 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedScalar(c) => (c, groups),
             AggState::LiteralScalar(c) => (c, groups),
             AggState::AggregatedList(c) => {
-                let flattened = c.explode(true).unwrap();
+                let flattened = c
+                    .explode(ExplodeOptions {
+                        empty_as_null: false,
+                        keep_nulls: true,
+                    })
+                    .unwrap();
                 let groups = groups.into_owned();
                 // unroll the possible flattened state
                 // say we have groups with overlapping windows:
@@ -556,10 +564,7 @@ impl<'a> AggregationContext<'a> {
                 if cfg!(debug_assertions) {
                     // Warning, so we find cases where we accidentally explode overlapping groups
                     // We don't want this as this can create a lot of data
-                    if let GroupsType::Slice {
-                        overlapping: true, ..
-                    } = self.groups.as_ref().as_ref()
-                    {
+                    if self.groups.is_overlapping() {
                         polars_warn!(
                             "performance - an aggregated list with overlapping groups may consume excessive memory"
                         )
@@ -567,7 +572,13 @@ impl<'a> AggregationContext<'a> {
                 }
 
                 // We should not insert nulls, otherwise the offsets in the groups will not be correct.
-                Cow::Owned(c.explode(true).unwrap())
+                Cow::Owned(
+                    c.explode(ExplodeOptions {
+                        empty_as_null: false,
+                        keep_nulls: true,
+                    })
+                    .unwrap(),
+                )
             },
             AggState::AggregatedScalar(c) => Cow::Borrowed(c),
             AggState::LiteralScalar(c) => Cow::Borrowed(c),
@@ -617,6 +628,7 @@ impl<'a> AggregationContext<'a> {
             GroupsType::Slice {
                 groups,
                 overlapping: true,
+                monotonic: _,
             } => {
                 // @NOTE: Slice groups are sorted by their `start` value.
                 let mut offset = 0;
@@ -632,6 +644,7 @@ impl<'a> AggregationContext<'a> {
             GroupsType::Slice {
                 groups,
                 overlapping: false,
+                monotonic: _,
             } => groups.iter().map(|[_, l]| *l as usize).sum::<usize>() == num_values,
         }
     }
@@ -643,24 +656,18 @@ impl<'a> AggregationContext<'a> {
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
             AggState::AggregatedScalar(c) => {
                 assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned(
-                    GroupsType::Slice {
-                        groups: (0..c.len() as IdxSize).map(|i| [i, 1]).collect(),
-                        overlapping: false,
-                    }
-                    .into_sliceable(),
-                );
+                self.groups = Cow::Owned({
+                    let groups = (0..c.len() as IdxSize).map(|i| [i, 1]).collect();
+                    GroupsType::new_slice(groups, false, true).into_sliceable()
+                });
             },
             AggState::LiteralScalar(c) => {
                 assert_eq!(c.len(), 1);
                 assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned(
-                    GroupsType::Slice {
-                        groups: vec![[0, 1]; self.groups.len()],
-                        overlapping: true,
-                    }
-                    .into_sliceable(),
-                );
+                self.groups = Cow::Owned({
+                    let groups = vec![[0, 1]; self.groups.len()];
+                    GroupsType::new_slice(groups, true, true).into_sliceable()
+                });
             },
         }
     }
@@ -689,7 +696,20 @@ pub trait PhysicalExpr: Send + Sync {
     }
 
     /// Take a DataFrame and evaluate the expression.
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
+    ///
+    /// Note: implementers should implement evaluate_impl instead, as this wraps
+    /// that call with an error context.
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        self.evaluate_impl(df, state).map_err(|e| {
+            if let Some(expr) = self.as_expression() {
+                e.with_expr_context(expr.to_string().into())
+            } else {
+                e
+            }
+        })
+    }
+
+    fn evaluate_impl(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
 
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, filter, shift, etc.
@@ -715,6 +735,23 @@ pub trait PhysicalExpr: Send + Sync {
     // this means filters will be incorrect and lead to invalid results down the line
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        self.evaluate_on_groups_impl(df, groups, state)
+            .map_err(|e| {
+                if let Some(expr) = self.as_expression() {
+                    e.with_expr_context(expr.to_string().into())
+                } else {
+                    e
+                }
+            })
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

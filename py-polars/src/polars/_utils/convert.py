@@ -6,7 +6,6 @@ from functools import lru_cache
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     NoReturn,
     overload,
 )
@@ -24,6 +23,7 @@ from polars._utils.constants import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from datetime import date, tzinfo
     from decimal import Decimal
 

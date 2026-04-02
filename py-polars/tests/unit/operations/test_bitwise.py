@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import sys
 import typing
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.parametrize("op", ["and_", "or_"])
@@ -82,7 +85,6 @@ def trailing_ones(v: int | None) -> int | None:
     ],
 )
 @pytest.mark.parametrize("dtype", [*INTEGER_DTYPES, pl.Boolean])
-@pytest.mark.skipif(sys.version_info < (3, 10), reason="bit_count introduced in 3.10")
 @typing.no_type_check
 def test_bit_counts(value: int, dtype: pl.DataType) -> None:
     bitsize = 8
@@ -329,9 +331,9 @@ def test_bitwise_boolean(expr: pl.Expr, result: list[bool]) -> None:
 # Although there is no way to deterministically trigger the `evict` path
 # in the code, the below test will do so with high likelihood
 # POLARS_MAX_THREADS is only honored when tested in isolation, see issue #22070
-def test_bitwise_boolean_evict_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("POLARS_MAX_THREADS", "1")
-    monkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
+def test_bitwise_boolean_evict_path(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
     n_groups = 100
     group_size_pairs = 10
     group_size = group_size_pairs * 2
@@ -362,6 +364,20 @@ def test_bitwise_boolean_evict_path(monkeypatch: pytest.MonkeyPatch) -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_bool_xor_group_by_with_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a", "a", "b", "b", "b"],
+            "v": [True, None, True, True, None],
+        }
+    )
+    assert_frame_equal(
+        df.group_by("g").agg(XOR=pl.col.v.bitwise_xor()),
+        pl.DataFrame({"g": ["a", "b"], "XOR": [True, False]}),
+        check_row_order=False,
+    )
 
 
 def test_bitwise_in_group_by() -> None:

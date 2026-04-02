@@ -69,10 +69,12 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
-        Operator::Divide => left / right,
+        Operator::RustDivide => left / right,
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left / right,
+            #[cfg(feature = "dtype-f16")]
+            Float16 => left / right,
             Duration(_) | Date | Datetime(_, _) | Float32 | Float64 => left / right,
             #[cfg(feature = "dtype-array")]
             Array(..) => left / right,
@@ -227,7 +229,7 @@ impl PhysicalExpr for BinaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // Window functions may set a global state that determine their output
         // state, so we don't let them run in parallel as they race
         // they also saturate the thread pool by themselves, so that's fine.
@@ -262,7 +264,7 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -296,8 +298,7 @@ impl PhysicalExpr for BinaryExpr {
                 AggState::NotAggregated(_) => {
                     has_not_agg = true;
                     if let Some(p) = previous {
-                        not_agg_groups_may_diverge |=
-                            !std::ptr::eq(p.groups.as_ref(), ac.groups.as_ref());
+                        not_agg_groups_may_diverge |= !p.groups.is_same(&ac.groups)
                     }
                     previous = Some(ac);
                     if ac.groups.is_overlapping() {

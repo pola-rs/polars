@@ -127,7 +127,7 @@ impl MapArray {
     impl_into_array!();
 
     pub(crate) fn try_get_field(dtype: &ArrowDataType) -> PolarsResult<&Field> {
-        if let ArrowDataType::Map(field, _) = dtype.to_logical_type() {
+        if let ArrowDataType::Map(field, _) = dtype.to_storage() {
             Ok(field.as_ref())
         } else {
             polars_bail!(ComputeError: "The dtype's logical type must be DataType::Map")

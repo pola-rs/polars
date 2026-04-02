@@ -131,3 +131,13 @@ def test_scatter_null(dtype: PolarsDataType) -> None:
     result = s.scatter(0, None)
     expected = pl.Series("a", [None, "b"], dtype=dtype)
     assert_series_equal(result, expected)
+
+
+def test_scatter_decimal_25869() -> None:
+    s = pl.Series([1, 2, 3], dtype=pl.Decimal(scale=10))
+    assert_series_equal(
+        s.scatter(0, 15), pl.Series([15, 2, 3], dtype=pl.Decimal(scale=10))
+    )
+
+    with pytest.raises(InvalidOperationError):
+        s.scatter(1, "test")

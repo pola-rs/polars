@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars import Expr
     from polars._typing import IntoExpr, IntoExprColumn
 
@@ -759,9 +761,16 @@ class ExprArrayNameSpace:
         separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
-    def explode(self) -> Expr:
+    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
         """
         Returns a column with a separate row for every array element.
+
+        Parameters
+        ----------
+        empty_as_null
+            Explode an empty array into a `null`.
+        keep_nulls
+            Explode a `null` array into a `null`.
 
         Returns
         -------
@@ -788,7 +797,9 @@ class ExprArrayNameSpace:
         │ 6   │
         └─────┘
         """
-        return wrap_expr(self._pyexpr.arr_explode())
+        return wrap_expr(
+            self._pyexpr.arr_explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
+        )
 
     def contains(self, item: IntoExpr, *, nulls_equal: bool = True) -> Expr:
         """

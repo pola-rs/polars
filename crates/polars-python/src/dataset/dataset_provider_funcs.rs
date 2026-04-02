@@ -5,7 +5,7 @@ use polars::prelude::{DslPlan, PlSmallStr, Schema, SchemaRef};
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::python_function::PythonObject;
-use pyo3::conversion::FromPyObjectBound;
+use pyo3::conversion::FromPyObject;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
@@ -69,7 +69,7 @@ pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
             }
         }
 
-        let Wrap(schema) = Wrap::<Schema>::from_py_object_bound(schema_obj.bind_borrowed(py))?;
+        let Wrap(schema) = Wrap::<Schema>::extract(schema_obj.bind_borrowed(py))?;
 
         Ok(Arc::new(schema))
     })

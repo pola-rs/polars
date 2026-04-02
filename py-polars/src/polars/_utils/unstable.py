@@ -3,18 +3,16 @@ from __future__ import annotations
 import inspect
 import os
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from polars._utils.various import issue_warning
 from polars.exceptions import UnstableWarning
 
 if TYPE_CHECKING:
-    import sys
+    from collections.abc import Callable
+    from typing import ParamSpec
 
-    if sys.version_info >= (3, 10):
-        from typing import ParamSpec
-    else:
-        from typing_extensions import ParamSpec
+    from polars._utils.various import IdentityFunction
 
     P = ParamSpec("P")
     T = TypeVar("T")
@@ -48,7 +46,7 @@ def issue_unstable_warning(message: str | None = None) -> None:
     issue_warning(message, UnstableWarning)
 
 
-def unstable() -> Callable[[Callable[P, T]], Callable[P, T]]:
+def unstable() -> IdentityFunction:
     """Decorator to mark a function as unstable."""
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:

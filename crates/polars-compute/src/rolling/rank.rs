@@ -13,7 +13,8 @@ where
     Out: NativeType,
 {
     fn new(params: &RollingFnParams) -> Self;
-    fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<Out>;
+    fn rank<'a>(&self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<Out>;
+    fn bump_rng(&mut self) {}
 }
 
 #[derive(Debug)]
@@ -23,7 +24,7 @@ impl<T: NativeType> RankPolicy<T, f64> for RankPolicyAverage {
     fn new(_params: &RollingFnParams) -> Self {
         Self
     }
-    fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<f64> {
+    fn rank<'a>(&self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<f64> {
         let rank_range = ost.rank_range(&value).ok()?;
         let rank_lo = (rank_range.start() + 1) as f64;
         let rank_hi = (rank_range.end() + 1) as f64;
@@ -38,8 +39,9 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyMin {
     fn new(_params: &RollingFnParams) -> Self {
         Self
     }
-    fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
-        Some(IdxSize::try_from(ost.rank_range(&value).ok()?.start() + 1).unwrap())
+    fn rank<'a>(&self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
+        let range = ost.rank_range(&value).ok()?;
+        Some(IdxSize::try_from(range.start() + 1).unwrap())
     }
 }
 
@@ -50,8 +52,9 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyMax {
     fn new(_params: &RollingFnParams) -> Self {
         Self
     }
-    fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
-        Some(IdxSize::try_from(*ost.rank_range(&value).ok()?.end() + 1).unwrap())
+    fn rank<'a>(&self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
+        let range = ost.rank_range(&value).ok()?;
+        Some(IdxSize::try_from(range.end() + 1).unwrap())
     }
 }
 
@@ -62,8 +65,9 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyDense {
     fn new(_params: &RollingFnParams) -> Self {
         Self
     }
-    fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
-        Some(IdxSize::try_from(ost.rank_unique(&value).ok()? + 1).unwrap())
+    fn rank<'a>(&self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
+        let rank = ost.rank_unique(&value).ok()?;
+        Some(IdxSize::try_from(rank + 1).unwrap())
     }
 }
 
@@ -83,10 +87,13 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyRandom {
         };
         Self { rng }
     }
-    fn rank<'a>(&mut self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
+    fn rank<'a>(&self, ost: &OrderStatisticTree<&'a T>, value: &'a T) -> Option<IdxSize> {
         let rank_range = ost.rank_range(&value).ok()?;
         let rank_lo = rank_range.start() + 1;
         let rank_hi = rank_range.end() + 1;
-        Some(IdxSize::try_from(self.rng.random_range(rank_lo..=rank_hi)).unwrap())
+        Some(IdxSize::try_from(self.rng.clone().random_range(rank_lo..=rank_hi)).unwrap())
+    }
+    fn bump_rng(&mut self) {
+        self.rng.random::<u32>();
     }
 }

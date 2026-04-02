@@ -66,6 +66,7 @@ pub struct TaskMetrics {
     pub total_stolen_polls: RelaxedCell<u64>,
     pub total_poll_time_ns: RelaxedCell<u64>,
     pub max_poll_time_ns: RelaxedCell<u64>,
+    pub done: RelaxedCell<bool>,
 }
 
 struct TaskMetadata {
@@ -78,6 +79,10 @@ struct TaskMetadata {
 
 impl Drop for TaskMetadata {
     fn drop(&mut self) {
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.done.store(true);
+        }
+
         if let Some(scoped) = &self.scoped {
             if let Some(completed_tasks) = scoped.completed_tasks.upgrade() {
                 completed_tasks.lock().push(scoped.task_key);

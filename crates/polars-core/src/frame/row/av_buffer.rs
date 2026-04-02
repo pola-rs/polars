@@ -1,3 +1,5 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 use std::hint::unreachable_unchecked;
 
 use arrow::bitmap::BitmapBuilder;
@@ -363,7 +365,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
     }
 
     #[inline]
-    unsafe fn add_null(&mut self) {
+    fn add_null(&mut self) {
         use AnyValueBufferTrusted::*;
         match self {
             Boolean(builder) => builder.append_null(),
@@ -394,99 +396,104 @@ impl<'a> AnyValueBufferTrusted<'a> {
         }
     }
 
+    /// # Safety
+    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type.
     #[inline]
     unsafe fn add_physical(&mut self, val: &AnyValue<'_>) {
+        // SAFETY: All unsafe blocks rely directly on the function contract.
+
         use AnyValueBufferTrusted::*;
         match self {
             Boolean(builder) => {
                 let AnyValue::Boolean(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-i8")]
             Int8(builder) => {
                 let AnyValue::Int8(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-i16")]
             Int16(builder) => {
                 let AnyValue::Int16(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Int32(builder) => {
                 let AnyValue::Int32(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Int64(builder) => {
                 let AnyValue::Int64(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-u8")]
             UInt8(builder) => {
                 let AnyValue::UInt8(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-u16")]
             UInt16(builder) => {
                 let AnyValue::UInt16(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             UInt32(builder) => {
                 let AnyValue::UInt32(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             UInt64(builder) => {
                 let AnyValue::UInt64(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Float32(builder) => {
                 let AnyValue::Float32(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Float64(builder) => {
                 let AnyValue::Float64(v) = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_value(*v)
             },
             Null(builder) => {
                 let AnyValue::Null = val else {
-                    unreachable_unchecked()
+                    unsafe { unreachable_unchecked() }
                 };
                 builder.append_null()
             },
-            _ => unreachable_unchecked(),
+            _ => unreachable!(),
         }
     }
 
-    /// Will add the [`AnyValue`] into [`Self`] and unpack as the physical type
-    /// belonging to [`Self`]. This should only be used with physical buffers
+    /// Will add the [`AnyValue`] into [`Self`] and unpack as the physical type belonging to
+    /// [`Self`]. This should only be used with physical buffers
     ///
     /// If a type is not primitive or String, the AnyValues will be converted to static
     ///
     /// # Safety
-    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is owned.
+    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is
+    /// owned.
     #[inline]
-    pub unsafe fn add_unchecked_owned_physical(&mut self, val: &AnyValue<'_>) {
+    pub unsafe fn add_unchecked_owned_physical(&mut self, val: &AnyValue<'a>) {
         use AnyValueBufferTrusted::*;
         match val {
             AnyValue::Null => self.add_null(),
@@ -494,37 +501,38 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 match self {
                     String(builder) => {
                         let AnyValue::StringOwned(v) = val else {
-                            unreachable_unchecked()
+                            // SAFETY: Function contract.
+                            unsafe { unreachable_unchecked() }
                         };
                         builder.append_value(v.as_str())
                     },
                     #[cfg(feature = "dtype-struct")]
                     Struct(outer_validity, builders) => {
                         let AnyValue::StructOwned(payload) = val else {
-                            unreachable_unchecked()
+                            // SAFETY: Function contract.
+                            unsafe { unreachable_unchecked() }
                         };
                         let avs = &*payload.0;
-                        // amortize loop counter
-                        for i in 0..avs.len() {
-                            let (builder, _) = builders.get_unchecked_mut(i);
-                            let av = avs.get_unchecked(i).clone();
-                            // lifetime is bound to 'a
-                            let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
-                            builder.add(av.clone());
+
+                        debug_assert_eq!(builders.len(), avs.len());
+                        for ((builder, _), av) in builders.iter_mut().zip(avs.iter().cloned()) {
+                            builder.add(av);
                         }
                         outer_validity.push(true);
                     },
                     All(_, vals) => vals.push(val.clone().into_static()),
-                    _ => self.add_physical(val),
+                    // SAFETY: Function contract.
+                    _ => unsafe { self.add_physical(val) },
                 }
             },
         }
     }
 
     /// # Safety
-    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is borrowed.
+    /// The caller must ensure that the [`AnyValue`] type exactly matches the `Buffer` type and is
+    /// borrowed and if `val` is a `AnyValue::Struct` that the values are internally consistent.
     #[inline]
-    pub unsafe fn add_unchecked_borrowed_physical(&mut self, val: &AnyValue<'_>) {
+    pub unsafe fn add_unchecked_borrowed_physical(&mut self, val: &AnyValue<'a>) {
         use AnyValueBufferTrusted::*;
         match val {
             AnyValue::Null => self.add_null(),
@@ -532,32 +540,32 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 match self {
                     String(builder) => {
                         let AnyValue::String(v) = val else {
-                            unreachable_unchecked()
+                            unsafe { unreachable_unchecked() }
                         };
                         builder.append_value(v)
                     },
                     #[cfg(feature = "dtype-struct")]
                     Struct(outer_validity, builders) => {
-                        let AnyValue::Struct(idx, arr, fields) = val else {
-                            unreachable_unchecked()
+                        let AnyValue::Struct(idx, arr, fields) = *val else {
+                            // SAFETY: Function contract.
+                            unsafe { unreachable_unchecked() }
                         };
                         let arrays = arr.values();
-                        // amortize loop counter
-                        for i in 0..fields.len() {
-                            unsafe {
-                                let array = arrays.get_unchecked(i);
-                                let field = fields.get_unchecked(i);
-                                let (builder, _) = builders.get_unchecked_mut(i);
-                                let av = arr_to_any_value(&**array, *idx, &field.dtype);
-                                // lifetime is bound to 'a
-                                let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
-                                builder.add(av);
-                            }
+                        debug_assert_eq!(builders.len(), arrays.len());
+                        debug_assert_eq!(fields.len(), arrays.len());
+                        for ((field, array), (builder, _)) in
+                            fields.iter().zip(arrays).zip(builders.iter_mut())
+                        {
+                            // SAFETY: The values inside `val` need to be consistent, `idx` MUST be
+                            // in-bounds for all `arr.values()` and `field.dtype` correct.
+                            let av_new = unsafe { arr_to_any_value(&**array, idx, &field.dtype) };
+                            builder.add(av_new);
                         }
                         outer_validity.push(true);
                     },
                     All(_, vals) => vals.push(val.clone().into_static()),
-                    _ => self.add_physical(val),
+                    // SAFETY: Function contract.
+                    _ => unsafe { self.add_physical(val) },
                 }
             },
         }

@@ -1,20 +1,10 @@
-use arrow::array::Array;
 use polars_compute::gather::sublist::fixed_size_list::{
     sub_fixed_size_list_get, sub_fixed_size_list_get_literal,
 };
-use polars_core::utils::align_chunks_binary;
+use polars_core::prelude::arity::{try_binary_to_series, try_unary_to_series};
 
 use super::*;
-
-fn array_get_literal(ca: &ArrayChunked, idx: i64, null_on_oob: bool) -> PolarsResult<Series> {
-    let chunks = ca
-        .downcast_iter()
-        .map(|arr| sub_fixed_size_list_get_literal(arr, idx, null_on_oob))
-        .collect::<PolarsResult<Vec<_>>>()?;
-    Series::try_from((ca.name().clone(), chunks))
-        .unwrap()
-        .cast(ca.inner_dtype())
-}
+use crate::series::convert_and_bound_idx_ca;
 
 /// Get the value by literal index in the array.
 /// So index `0` would return the first item of every sub-array
@@ -78,9 +68,11 @@ fn array_get_impl(
 ) -> PolarsResult<Series> {
     match index.len() {
         1 => {
-            let index = index.get(0);
-            if let Some(index) = index {
-                array_get_literal(ca, index, null_on_oob)
+            if let Some(index) = index.get(0) {
+                let out = try_unary_to_series(ca, |arr| {
+                    sub_fixed_size_list_get_literal(arr, index, null_on_oob)
+                })?;
+                unsafe { out.from_physical_unchecked(ca.inner_dtype()) }
             } else {
                 Ok(Series::full_null(
                     ca.name().clone(),
@@ -89,36 +81,35 @@ fn array_get_impl(
                 ))
             }
         },
+
         len if len == ca.len() => {
-            let out = binary_to_series_arr_get(ca, index, null_on_oob, |arr, idx, nob| {
-                sub_fixed_size_list_get(arr, idx, nob)
-            });
-            out?.cast(ca.inner_dtype())
+            let out = try_binary_to_series(ca, index, |arr, idx_arr| {
+                sub_fixed_size_list_get(arr, idx_arr, null_on_oob)
+            })?;
+            unsafe { out.from_physical_unchecked(ca.inner_dtype()) }
         },
+
+        _len if ca.len() == 1 => {
+            if let Some(arr) = ca.get(0) {
+                let idx = convert_and_bound_idx_ca(index, arr.len(), null_on_oob)?;
+                let s = Series::try_from((ca.name().clone(), vec![arr])).unwrap();
+                unsafe {
+                    s.take_unchecked(&idx)
+                        .from_physical_unchecked(ca.inner_dtype())
+                }
+            } else {
+                Ok(Series::full_null(
+                    ca.name().clone(),
+                    ca.len(),
+                    ca.inner_dtype(),
+                ))
+            }
+        },
+
         len => polars_bail!(
             ComputeError:
             "`arr.get` expression got an index array of length {} while the array has {} elements",
             len, ca.len()
         ),
     }
-}
-
-pub fn binary_to_series_arr_get<T, U, F>(
-    lhs: &ChunkedArray<T>,
-    rhs: &ChunkedArray<U>,
-    null_on_oob: bool,
-    mut op: F,
-) -> PolarsResult<Series>
-where
-    T: PolarsDataType,
-    U: PolarsDataType,
-    F: FnMut(&T::Array, &U::Array, bool) -> PolarsResult<Box<dyn Array>>,
-{
-    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
-    let chunks = lhs
-        .downcast_iter()
-        .zip(rhs.downcast_iter())
-        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr, null_on_oob))
-        .collect::<PolarsResult<Vec<_>>>()?;
-    Series::try_from((lhs.name().clone(), chunks))
 }

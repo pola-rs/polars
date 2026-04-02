@@ -92,6 +92,7 @@ fn into_datatype_impl(
             let dtype = arena
                 .get(e.node())
                 .to_dtype(&ToFieldContext::new(&arena, schema))?;
+            let dtype = dtype.materialize_unknown(true)?;
             polars_ensure!(!dtype.contains_unknown(),InvalidOperation:"DataType expression is not allowed to instantiate to `unknown`");
             dtype
         },

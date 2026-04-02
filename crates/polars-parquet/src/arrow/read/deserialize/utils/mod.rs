@@ -630,11 +630,14 @@ impl<D: Decoder> PageDecoder<D> {
                     &mut page_ptm,
                     dict_mask.as_ref(),
                 )? {
-                    let num_filtered_values = page_ptm.set_bits();
                     if page_ptm.set_bits() == 0 {
-                        pred_true_mask.extend_constant(page_ptm.len(), false);
+                        pred_true_mask.extend_constant(page.num_values(), false);
                         return Ok(());
                     }
+
+                    let page_ptm = page_ptm.freeze().sliced(0, page.num_values());
+                    pred_true_mask.extend_from_bitmap(&page_ptm);
+                    let num_filtered_values = page_ptm.set_bits();
 
                     // If we would need to move data, just create a new chunk.
                     if p.include_values && num_filtered_values > target.remaining_capacity() {
@@ -656,9 +659,6 @@ impl<D: Decoder> PageDecoder<D> {
                             self.decoder.apply_dictionary(&mut target, dict)?;
                         }
                     }
-
-                    let page_ptm = page_ptm.freeze();
-                    pred_true_mask.extend_from_bitmap(&page_ptm);
 
                     if p.include_values {
                         if let Some(SpecializedParquetColumnExpr::Equal(needle)) = specialized_pred
@@ -750,8 +750,10 @@ impl<D: Decoder> PageDecoder<D> {
 
             let page_num_values = page.num_values();
 
-            let state_filter;
+            let mut state_filter;
             (state_filter, filter) = Filter::opt_split_at(&filter, page_num_values);
+
+            state_filter = state_filter.or(Some(Filter::Range(0..page_num_values)));
 
             // Skip the whole page if we don't need any rows from it
             if state_filter

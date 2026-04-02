@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import enum
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
@@ -272,3 +272,18 @@ def test_lit_structs(item: Any) -> None:
 def test_numpy_lit(value: Any, expected_dtype: PolarsDataType) -> None:
     result = pl.select(pl.lit(value)).get_column("literal")
     assert result.dtype == expected_dtype
+
+
+def test_lit_object_type_25713() -> None:
+    obj = time(hour=1)
+    out = pl.select(pl.lit(obj, dtype=pl.Object))
+    expected = pl.DataFrame({"literal": [obj]}, schema={"literal": pl.Object})
+    assert out.to_dict(as_series=False) == expected.to_dict(as_series=False)
+
+
+def test_allow_dtype_expr_lit_26644() -> None:
+    result = pl.DataFrame().select(
+        pl.lit(None, pl.dtype_of(pl.lit(["abc"])).list.inner_dtype())
+    )
+    expected = pl.DataFrame({"literal": pl.Series([None], dtype=pl.String)})
+    assert_frame_equal(result, expected)

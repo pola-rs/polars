@@ -46,7 +46,6 @@ extensions = [
     "sphinx_copybutton",
     "sphinx_design",
     "sphinx_favicon",
-    "sphinx_llms_txt",
     "sphinx_reredirects",
     "sphinx_toolbox.more_autodoc.overloads",
 ]
@@ -276,11 +275,11 @@ def _minify_classpaths(s: str) -> str:
 
 
 def process_signature(  # noqa: D103
-    app: object,
-    what: object,
-    name: object,
-    obj: object,
-    opts: object,
+    app: object,  # noqa: ARG001
+    what: object,  # noqa: ARG001
+    name: object,  # noqa: ARG001
+    obj: object,  # noqa: ARG001
+    opts: object,  # noqa: ARG001
     sig: str,
     ret: str,
 ) -> tuple[str, str]:

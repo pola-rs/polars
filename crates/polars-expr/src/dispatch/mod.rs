@@ -106,6 +106,8 @@ mod cat;
 mod cum;
 #[cfg(feature = "temporal")]
 mod datetime;
+#[cfg(feature = "dtype-extension")]
+mod extension;
 mod groups_dispatch;
 mod horizontal;
 mod list;
@@ -125,7 +127,7 @@ mod shift_and_fill;
 #[cfg(feature = "strings")]
 mod strings;
 #[cfg(feature = "dtype-struct")]
-mod struct_;
+pub(crate) mod struct_;
 #[cfg(feature = "temporal")]
 mod temporal;
 #[cfg(feature = "trigonometry")]
@@ -142,6 +144,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::BinaryExpr(func) => binary::function_expr_to_udf(func),
         #[cfg(feature = "dtype-categorical")]
         F::Categorical(func) => cat::function_expr_to_udf(func),
+        #[cfg(feature = "dtype-extension")]
+        F::Extension(func) => extension::function_expr_to_udf(func),
         F::ListExpr(func) => list::function_expr_to_udf(func),
         #[cfg(feature = "strings")]
         F::StringExpr(func) => strings::function_expr_to_udf(func),
@@ -269,7 +273,6 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             map_as_slice!(misc::hist, bin_count, include_category, include_breakpoint)
         },
         F::Rechunk => map!(misc::rechunk),
-        F::Append { upcast } => map_as_slice!(misc::append, upcast),
         F::ShiftAndFill => {
             map_as_slice!(shift_and_fill::shift_and_fill)
         },
@@ -280,7 +283,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             map_as_slice!(misc::clip, has_min, has_max)
         },
         #[cfg(feature = "mode")]
-        F::Mode => map!(misc::mode),
+        F::Mode { maintain_order } => map!(misc::mode, maintain_order),
         #[cfg(feature = "moment")]
         F::Skew(bias) => map!(misc::skew, bias),
         #[cfg(feature = "moment")]
@@ -292,6 +295,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
             descending,
             nulls_last,
         } => map!(misc::arg_sort, descending, nulls_last),
+        F::MinBy => map_as_slice!(misc::min_by),
+        F::MaxBy => map_as_slice!(misc::max_by),
         F::Product => map!(misc::product),
         F::Repeat => map_as_slice!(misc::repeat),
         #[cfg(feature = "rank")]
@@ -358,12 +363,14 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "round_series")]
         F::RoundSF { digits } => map!(round::round_sig_figs, digits),
         #[cfg(feature = "round_series")]
+        F::Truncate { decimals } => map!(round::truncate, decimals),
+        #[cfg(feature = "round_series")]
         F::Floor => map!(round::floor),
         #[cfg(feature = "round_series")]
         F::Ceil => map!(round::ceil),
         #[cfg(feature = "fused")]
         F::Fused(op) => map_as_slice!(misc::fused, op),
-        F::ConcatExpr(rechunk) => map_as_slice!(misc::concat_expr, rechunk),
+        F::ConcatExpr { rechunk } => map_as_slice!(misc::concat_expr, rechunk),
         #[cfg(feature = "cov")]
         F::Correlation { method } => map_as_slice!(misc::corr, method),
         #[cfg(feature = "peaks")]
@@ -426,7 +433,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
                 },
             }
         },
-        F::SetSortedFlag(sorted) => map!(misc::set_sorted_flag, sorted),
+        F::SetSortedFlag(sortedness) => map!(misc::set_sorted_flag, sortedness),
         #[cfg(feature = "ffi_plugin")]
         F::FfiPlugin {
             flags: _,
@@ -511,7 +518,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::FillNullWithStrategy(strategy) => map!(misc::fill_null_with_strategy, strategy),
         F::GatherEvery { n, offset } => map!(misc::gather_every, n, offset),
         #[cfg(feature = "reinterpret")]
-        F::Reinterpret(signed) => map!(misc::reinterpret, signed),
+        F::Reinterpret(dtype) => map!(misc::reinterpret, &dtype),
         F::ExtendConstant => map_as_slice!(misc::extend_constant),
 
         F::RowEncode(dts, variants) => {
@@ -520,6 +527,9 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "dtype-struct")]
         F::RowDecode(fs, variants) => {
             map_as_slice!(misc::row_decode, fs.clone(), variants.clone())
+        },
+        F::DynamicPred { pred } => {
+            map_as_slice!(misc::dynamic_pred, &pred)
         },
     }
 }

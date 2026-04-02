@@ -4,7 +4,7 @@ import re
 from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
 
-_INVALID_QUERY_TYPES = {
+_INVALID_QUERY_TYPES: Final[set[str]] = {
     "ALTER",
     "ANALYZE",
     "CREATE",
@@ -199,7 +199,7 @@ class ConnectionExecutor:
         batch_size: int | None,
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
-        infer_schema_length: int | None,
+        infer_schema_length: int | None,  # noqa: ARG002
     ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
@@ -345,7 +345,7 @@ class ConnectionExecutor:
                 msg = f"column {nm!r} appears more than once in the query/result cursor"
                 raise DuplicateError(msg)
             elif desc is not None and nm not in schema_overrides:
-                dtype = dtype_from_cursor_description(self.cursor, desc)
+                dtype = dtype_from_cursor_description(desc)
                 if dtype is not None:
                     schema_overrides[nm] = dtype  # type: ignore[index]
             dupe_check.add(nm)
@@ -456,6 +456,12 @@ class ConnectionExecutor:
         """Execute a query using an async SQLAlchemy connection."""
         is_session = self._is_alchemy_session(self.cursor)
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
+
+        # check if connection is already started (eg: user awaited `engine.connect()`);
+        # if so, use it directly without entering the context manager again
+        if getattr(cursor, "sync_connection", None) is not None:
+            return await cursor.execute(query, **options)
+
         async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
                 conn = conn.session
@@ -547,7 +553,7 @@ class ConnectionExecutor:
         # note: some cursors execute in-place, some access results via a property
         result = self.cursor if (result is None or result is True) else result
         if self.driver_name == "duckdb" and self._is_alchemy_result(result):
-            result = result.cursor
+            result = result.cursor  # type: ignore[union-attr]
 
         self.result = result
         return self

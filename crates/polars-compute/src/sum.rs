@@ -1,11 +1,14 @@
 use std::ops::Add;
 #[cfg(feature = "simd")]
+use std::simd::Select;
+#[cfg(feature = "simd")]
 use std::simd::prelude::*;
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::Zero;
+use polars_utils::float16::pf16;
 
 macro_rules! wrapping_impl {
     ($trait_name:ident, $method:ident, $t:ty) => {
@@ -41,6 +44,7 @@ wrapping_impl!(WrappingAdd, wrapping_add, i64);
 wrapping_impl!(WrappingAdd, wrapping_add, isize);
 wrapping_impl!(WrappingAdd, wrapping_add, i128);
 
+wrapping_impl!(WrappingAdd, add, pf16);
 wrapping_impl!(WrappingAdd, add, f32);
 wrapping_impl!(WrappingAdd, add, f64);
 
@@ -96,7 +100,7 @@ where
             .chunks_exact(STRIPE)
             .enumerate()
             .map(|(i, a)| {
-                let m: Mask<_, STRIPE> = main_mask.get_simd(i * STRIPE);
+                let m: Mask<T::Mask, STRIPE> = main_mask.get_simd(i * STRIPE);
                 m.select(Simd::from_slice(a), zero)
             })
             .fold(zero, |a, b| {
@@ -135,6 +139,17 @@ impl WrappingSum for i128 {
 
     fn wrapping_sum_with_validity(vals: &[Self], mask: &BitMask) -> Self {
         wrapping_sum_with_mask_scalar(vals, mask)
+    }
+}
+
+#[cfg(feature = "simd")]
+impl WrappingSum for pf16 {
+    fn wrapping_sum(_vals: &[Self]) -> Self {
+        unimplemented!("should have been dispatched to other sum kernel")
+    }
+
+    fn wrapping_sum_with_validity(_vals: &[Self], _mask: &BitMask) -> Self {
+        unimplemented!("should have been dispatched to other sum kernel")
     }
 }
 

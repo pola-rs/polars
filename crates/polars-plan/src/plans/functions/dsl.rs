@@ -33,6 +33,7 @@ pub enum DslFunction {
     OpaquePython(OpaquePythonUdf),
     Explode {
         columns: Selector,
+        options: ExplodeOptions,
         allow_empty: bool,
     },
     #[cfg(feature = "pivot")]
@@ -95,15 +96,39 @@ impl DslFunction {
         let function = match self {
             #[cfg(feature = "pivot")]
             DslFunction::Unpivot { args } => {
-                let on = args.on.into_columns(input_schema, &Default::default())?;
-                let index = args.index.into_columns(input_schema, &Default::default())?;
+                let variable_name = args.variable_name.as_deref().unwrap_or("variable");
+                polars_ensure!(
+                    !input_schema.contains(variable_name),
+                    Duplicate: "duplicate column name '{variable_name}'"
+                );
 
-                let args = UnpivotArgsIR {
-                    on: on.into_iter().collect(),
-                    index: index.into_iter().collect(),
-                    variable_name: args.variable_name.clone(),
-                    value_name: args.value_name,
+                let value_name = args.value_name.as_deref().unwrap_or("value");
+                polars_ensure!(
+                    !input_schema.contains(value_name),
+                    Duplicate: "duplicate column name '{value_name}'"
+                );
+
+                let on = match args.on {
+                    None => None,
+                    Some(on) => Some(
+                        on.into_columns(input_schema, &Default::default())?
+                            .into_iter()
+                            .collect::<Vec<_>>(),
+                    ),
                 };
+
+                let index = args
+                    .index
+                    .into_columns(input_schema, &Default::default())?
+                    .into_vec();
+
+                let args = UnpivotArgsIR::new(
+                    input_schema.iter().map(|(name, _)| name.clone()).collect(),
+                    on,
+                    index,
+                    args.value_name,
+                    args.variable_name,
+                );
 
                 FunctionIR::Unpivot {
                     args: Arc::new(args),
@@ -111,10 +136,17 @@ impl DslFunction {
                 }
             },
             DslFunction::FunctionIR(func) => func,
-            DslFunction::RowIndex { name, offset } => FunctionIR::RowIndex {
-                name,
-                offset,
-                schema: Default::default(),
+            DslFunction::RowIndex { name, offset } => {
+                polars_ensure!(
+                    !input_schema.contains(&name),
+                    Duplicate: "duplicate column name {name}"
+                );
+
+                FunctionIR::RowIndex {
+                    name,
+                    offset,
+                    schema: Default::default(),
+                }
             },
             DslFunction::Unnest { columns, separator } => {
                 let columns = columns.into_columns(input_schema, &Default::default())?;

@@ -15,7 +15,6 @@ pub use hint::*;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_io::cloud::CloudOptions;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -43,8 +42,8 @@ pub enum FunctionIR {
     FastCount {
         sources: ScanSources,
         scan_type: Box<FileScanIR>,
-        cloud_options: Option<CloudOptions>,
         alias: Option<PlSmallStr>,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
 
     Unnest {
@@ -54,6 +53,7 @@ pub enum FunctionIR {
     Rechunk,
     Explode {
         columns: Arc<[PlSmallStr]>,
+        options: ExplodeOptions,
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
@@ -78,46 +78,28 @@ pub enum FunctionIR {
     Hint(HintIR),
 }
 
-impl Eq for FunctionIR {}
-
-impl PartialEq for FunctionIR {
-    fn eq(&self, other: &Self) -> bool {
-        use FunctionIR::*;
-        match (self, other) {
-            (Rechunk, Rechunk) => true,
-            (
-                FastCount {
-                    sources: srcs_l, ..
-                },
-                FastCount {
-                    sources: srcs_r, ..
-                },
-            ) => srcs_l == srcs_r,
-            (Explode { columns: l, .. }, Explode { columns: r, .. }) => l == r,
-            #[cfg(feature = "pivot")]
-            (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
-            (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
-            _ => false,
-        }
-    }
-}
-
 impl Hash for FunctionIR {
     fn hash<H: Hasher>(&self, state: &mut H) {
         std::mem::discriminant(self).hash(state);
         match self {
             #[cfg(feature = "python")]
-            FunctionIR::OpaquePython { .. } => {},
+            FunctionIR::OpaquePython(OpaquePythonUdf { function, .. }) => {
+                // Use the Python object pointer as its identity (equivalent to Python's id()).
+                // This ensures two different Python functions are never treated as identical
+                // by common subplan elimination, while the same function object used twice
+                // on the same input is correctly recognised as a common subplan.
+                let ptr_addr = function.0.as_ptr() as usize;
+                ptr_addr.hash(state);
+            },
             FunctionIR::Opaque { fmt_str, .. } => fmt_str.hash(state),
             FunctionIR::FastCount {
                 sources,
                 scan_type,
-                cloud_options,
                 alias,
+                ..
             } => {
                 sources.hash(state);
                 scan_type.hash(state);
-                cloud_options.hash(state);
                 alias.hash(state);
             },
             FunctionIR::Unnest { columns, separator } => {
@@ -125,7 +107,14 @@ impl Hash for FunctionIR {
                 separator.hash(state);
             },
             FunctionIR::Rechunk => {},
-            FunctionIR::Explode { columns, schema: _ } => columns.hash(state),
+            FunctionIR::Explode {
+                columns,
+                options,
+                schema: _,
+            } => {
+                columns.hash(state);
+                options.hash(state);
+            },
             #[cfg(feature = "pivot")]
             FunctionIR::Unpivot { args, schema: _ } => args.hash(state),
             FunctionIR::RowIndex {
@@ -218,11 +207,11 @@ impl FunctionIR {
             FastCount {
                 sources,
                 scan_type,
-                cloud_options,
                 alias,
-            } => count::count_rows(sources, scan_type, cloud_options.as_ref(), alias.clone()),
+                cloud_options,
+            } => count::count_rows(sources, scan_type, alias.clone(), cloud_options.as_ref()),
             Rechunk => {
-                df.as_single_chunk_par();
+                df.rechunk_mut_par();
                 Ok(df)
             },
             Unnest { columns, separator } => {
@@ -231,7 +220,9 @@ impl FunctionIR {
                     df.unnest(columns.iter().cloned(), separator.as_deref())
                 )
             },
-            Explode { columns, .. } => df.explode(columns.iter().cloned()),
+            Explode {
+                columns, options, ..
+            } => df.explode(columns.iter().cloned(), *options),
             #[cfg(feature = "pivot")]
             Unpivot { args, .. } => {
                 use polars_ops::unpivot::UnpivotDF;
@@ -240,18 +231,18 @@ impl FunctionIR {
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
             Hint(hint) => {
-                #[expect(irrefutable_let_patterns)]
-                if let HintIR::Sorted(s) = &hint
-                    && let Some(s) = s.first()
-                {
+                let HintIR::Sorted(s) = &hint;
+                if let Some(s) = s.first() {
                     let idx = df.try_get_column_index(&s.column)?;
-                    let col = &mut unsafe { df.get_columns_mut() }[idx];
-                    let flag = if s.descending {
-                        IsSorted::Descending
-                    } else {
-                        IsSorted::Ascending
-                    };
-                    col.set_sorted_flag(flag);
+                    let col = &mut unsafe { df.columns_mut_retain_schema() }[idx];
+                    if let Some(d) = s.descending {
+                        let flag = if d {
+                            IsSorted::Descending
+                        } else {
+                            IsSorted::Ascending
+                        };
+                        col.set_sorted_flag(flag);
+                    }
                 }
 
                 Ok(df)
@@ -324,16 +315,20 @@ impl Display for FunctionIR {
                 write!(f, "hint.{hint}")
             },
             Opaque { fmt_str, .. } => write!(f, "{fmt_str}"),
-            Unnest { columns, .. } => {
+            Unnest { columns, separator } => {
                 write!(f, "UNNEST by:")?;
                 let columns = columns.as_ref();
-                fmt_column_delimited(f, columns, "[", "]")
+                fmt_column_delimited(f, columns, "[", "]")?;
+                if let Some(separator) = separator {
+                    write!(f, ", separator: {separator}")?;
+                }
+                Ok(())
             },
             FastCount {
                 sources,
                 scan_type,
-                cloud_options: _,
                 alias,
+                ..
             } => {
                 let scan_type: &str = (&(**scan_type)).into();
                 let default_column_name = PlSmallStr::from_static(crate::constants::LEN);
@@ -345,10 +340,52 @@ impl Display for FunctionIR {
                     ScanSourcesDisplay(sources)
                 )
             },
-            v => {
-                let s: &str = v.into();
-                write!(f, "{s}")
+            RowIndex {
+                name,
+                offset,
+                schema: _,
+            } => {
+                write!(f, "ROW INDEX name: {name}")?;
+                if let Some(offset) = offset {
+                    write!(f, ", offset: {offset}")?;
+                }
+
+                Ok(())
             },
+            Explode {
+                columns,
+                options,
+                schema: _,
+            } => {
+                f.write_str("EXPLODE ")?;
+                fmt_column_delimited(f, columns, "[", "]")?;
+                if !options.empty_as_null {
+                    f.write_str(", empty_as_null: false")?;
+                }
+                if !options.keep_nulls {
+                    f.write_str(", keep_nulls: false")?;
+                }
+                Ok(())
+            },
+            #[cfg(feature = "pivot")]
+            Unpivot { args, schema: _ } => {
+                let UnpivotArgsIR {
+                    on,
+                    index,
+                    variable_name,
+                    value_name,
+                } = args.as_ref();
+
+                f.write_str("UNPIVOT on: ")?;
+                fmt_column_delimited(f, on, "[", "]")?;
+                fmt_column_delimited(f, index, "[", "]")?;
+                write!(f, ", variable_name: {variable_name}")?;
+                write!(f, ", value_name: {value_name}")?;
+                Ok(())
+            },
+            #[cfg(feature = "python")]
+            OpaquePython(_) => f.write_str(<&'static str>::from(self)),
+            Rechunk => f.write_str(<&'static str>::from(self)),
         }
     }
 }

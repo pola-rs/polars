@@ -30,7 +30,7 @@ fn compute_jaccard_similarity(sa: &Series, sb: &Series) -> PolarsResult<Series> 
 
     let ca = sa
         .into_iter()
-        .zip(sb.into_iter())
+        .zip(sb)
         .map(|(a, b)| {
             match (a, b) {
                 (Some(a), Some(b)) => {

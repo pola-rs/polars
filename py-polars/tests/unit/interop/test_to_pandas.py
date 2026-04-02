@@ -11,6 +11,8 @@ import pytest
 from hypothesis import given
 
 import polars as pl
+from polars._utils.various import parse_version
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -42,13 +44,17 @@ def test_to_pandas() -> None:
 
     pd_out = df.to_pandas()
 
+    pd_version = parse_version(pd.__version__)
+    string_dtype = (
+        pd.StringDtype(na_value=float("nan")) if pd_version >= (3,) else np.object_
+    )
     pd_out_dtypes_expected = [
         np.dtype(np.uint8),
         np.dtype(np.float64),
         np.dtype(np.float64),
         np.dtype("datetime64[ms]"),
-        np.dtype(np.object_),
-        np.dtype(np.object_),
+        string_dtype,
+        string_dtype,
         np.dtype("datetime64[us]"),
     ]
     assert pd_out_dtypes_expected == pd_out.dtypes.to_list()[:-2]
@@ -88,6 +94,10 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
     assert pd_pa_out["a"].dtype == pd.ArrowDtype(
         pa.dictionary(pa.int64(), pa.large_string())
     )
+
+    assert pl.Series(dtype=pl.Enum(["A"])).to_pandas().dtype.categories.tolist() == [  # type: ignore[union-attr]
+        "A"
+    ]
 
 
 @given(
@@ -197,3 +207,12 @@ def test_series_to_pandas_categorical_pyarrow(polars_dtype: PolarsDataType) -> N
     s = pl.Series("x", ["a", "b", "a"], dtype=polars_dtype)
     result = s.to_pandas(use_pyarrow_extension_array=True)
     assert s.to_list() == result.to_list()
+
+
+def test_filter_with_pandas_timedelta_26620() -> None:
+    actual = pl.select(x=pd.Timedelta(days=1))
+    expected = pl.DataFrame(
+        {"x": pl.Series(values=[86_400_000_000], dtype=pl.Duration("us"))}
+    )
+
+    assert_frame_equal(actual, expected)

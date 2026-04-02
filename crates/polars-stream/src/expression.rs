@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_bail};
 use polars_expr::prelude::{AggregationContext, ExecutionState, PhysicalExpr};
 
 #[derive(Clone)]
@@ -35,6 +35,29 @@ impl StreamExpr {
         }
     }
 
+    /// Broadcasts unit-length results to df height. Errors if length does not match df height otherwise.
+    pub async fn evaluate_preserve_len_broadcast(
+        &self,
+        df: &DataFrame,
+        state: &ExecutionState,
+    ) -> PolarsResult<Column> {
+        let mut c = self.evaluate(df, state).await?;
+
+        if c.len() != df.height() {
+            if c.len() != 1 {
+                polars_bail!(
+                    ShapeMismatch:
+                    "expression result length {} does not match df height {}",
+                    c.len(), df.height(),
+                )
+            }
+
+            c = c.new_from_index(0, df.height());
+        }
+
+        Ok(c)
+    }
+
     pub fn evaluate_blocking(
         &self,
         df: &DataFrame,
@@ -51,6 +74,7 @@ impl StreamExpr {
     ) -> PolarsResult<AggregationContext<'a>> {
         if self.reentrant {
             let state = state.split();
+            // @NOTE: Clones only the Arc, relatively cheap.
             let groups = <GroupPositions as Clone>::clone(groups);
             let phys_expr = self.inner.clone();
             let df = df.clone();

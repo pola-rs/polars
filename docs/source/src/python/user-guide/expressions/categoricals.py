@@ -88,11 +88,16 @@ print(bears_cat == bears_cat2)
 # --8<-- [end:stringcache-categorical-equality]
 
 # --8<-- [start:stringcache-categorical-comparison-lexical]
+import warnings
+
 with pl.StringCache():
-    bears_cat = pl.Series(
-        ["Polar", "Panda", "Brown", "Brown", "Polar"],
-        dtype=pl.Categorical(ordering="lexical"),
-    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+        bears_cat = pl.Series(
+            ["Polar", "Panda", "Brown", "Brown", "Polar"],
+            dtype=pl.Categorical(ordering="lexical"),
+        )
     bears_cat2 = pl.Series(
         ["Panda", "Brown", "Brown", "Polar", "Polar"], dtype=pl.Categorical
     )

@@ -56,7 +56,7 @@ where
     I: IntoIterator<Item = S>,
     S: Into<PlSmallStr>,
 {
-    by_name(names, true)
+    by_name(names, true, true)
 }
 
 /// Select multiple columns by dtype.
@@ -70,8 +70,22 @@ pub fn dtype_cols<DT: AsRef<[DataType]>>(dtype: DT) -> DataTypeSelector {
     DataTypeSelector::AnyOf(dtypes.into())
 }
 
-/// Select multiple columns by dtype.
-pub fn by_name<S: Into<PlSmallStr>, I: IntoIterator<Item = S>>(names: I, strict: bool) -> Selector {
+/// Select multiple columns by name.
+///
+/// When `expand_patterns` is `true`, a single wildcard `"*"` and anchored regex patterns
+/// (e.g. `"^...$"`) are expanded to their matching columns. When `false`, names are
+/// treated as literals.
+pub fn by_name<S: Into<PlSmallStr>, I: IntoIterator<Item = S>>(
+    names: I,
+    strict: bool,
+    expand_patterns: bool,
+) -> Selector {
+    if !expand_patterns {
+        let names = names.into_iter().map(Into::into).collect::<Arc<[_]>>();
+        return Selector::ByName { names, strict };
+    }
+
+    // When expand_patterns is true, handle wildcards and regex patterns
     let mut selector = None;
     let _s = &mut selector;
     let names = names

@@ -57,7 +57,7 @@ impl ComputeNode for EwmNode {
                 debug_assert_eq!(df.width(), 1);
 
                 unsafe {
-                    let c = df.get_columns_mut().get_mut(0).unwrap();
+                    let c = df.columns_mut_retain_schema().get_mut(0).unwrap();
 
                     *c = Series::from_chunks_and_dtype_unchecked(
                         c.name().clone(),

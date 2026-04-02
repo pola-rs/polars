@@ -2,8 +2,9 @@ use std::io::Read;
 #[cfg(target_os = "emscripten")]
 use std::io::{Seek, SeekFrom};
 
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
-use polars_utils::mmap::{MMapSemaphore, MemSlice};
+use polars_utils::mmap::MMapSemaphore;
 
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 
@@ -29,7 +30,7 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
         }
 
         let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
-        Ok(ReaderBytes::Owned(MemSlice::from_mmap(Arc::new(mmap))))
+        Ok(ReaderBytes::Owned(Buffer::from_owner(mmap)))
     } else {
         // we can get the bytes for free
         if reader.to_bytes().is_some() {
@@ -81,8 +82,8 @@ pub fn columns_to_projection<T: AsRef<str>>(
 #[cfg(debug_assertions)]
 fn check_offsets(dfs: &[DataFrame]) {
     dfs.windows(2).for_each(|s| {
-        let a = &s[0].get_columns()[0];
-        let b = &s[1].get_columns()[0];
+        let a = &s[0].columns()[0];
+        let b = &s[1].columns()[0];
 
         let prev = a.get(a.len() - 1).unwrap().extract::<usize>().unwrap();
         let next = b.get(0).unwrap().extract::<usize>().unwrap();
@@ -97,11 +98,11 @@ pub(crate) fn update_row_counts2(dfs: &mut [DataFrame], offset: IdxSize) {
     if !dfs.is_empty() {
         let mut previous = offset;
         for df in &mut *dfs {
-            if df.is_empty() {
+            if df.shape_has_zero() {
                 continue;
             }
             let n_read = df.height() as IdxSize;
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+            if let Some(s) = unsafe { df.columns_mut_retain_schema() }.get_mut(0) {
                 if let Ok(v) = s.get(0) {
                     if v.extract::<usize>().unwrap() != previous as usize {
                         *s = &*s + previous;
@@ -126,11 +127,11 @@ pub(crate) fn update_row_counts3(dfs: &mut [DataFrame], heights: &[IdxSize], off
         let mut previous = offset;
         for i in 0..dfs.len() {
             let df = &mut dfs[i];
-            if df.is_empty() {
+            if df.shape_has_zero() {
                 continue;
             }
 
-            if let Some(s) = unsafe { df.get_columns_mut() }.get_mut(0) {
+            if let Some(s) = unsafe { df.columns_mut_retain_schema() }.get_mut(0) {
                 if let Ok(v) = s.get(0) {
                     if v.extract::<usize>().unwrap() != previous as usize {
                         *s = &*s + previous;

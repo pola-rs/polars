@@ -17,7 +17,7 @@ fn test_lazy_agg() {
     .into_column();
     let s1 = Column::new("temp".into(), [20, 10, 7, 9, 1].as_ref());
     let s2 = Column::new("rain".into(), [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
-    let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
+    let df = DataFrame::new_infer_height(vec![s0, s1, s2]).unwrap();
 
     let lf = df
         .lazy()

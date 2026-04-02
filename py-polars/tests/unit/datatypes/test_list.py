@@ -326,6 +326,7 @@ def test_list_sum_and_dtypes() -> None:
         (pl.UInt32, pl.UInt32),
         (pl.UInt64, pl.UInt64),
         (pl.UInt128, pl.UInt128),
+        (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
     ]:
@@ -639,7 +640,7 @@ def test_list_amortized_iter_clear_settings_10126() -> None:
         pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
         .explode("a")
         .group_by("a")
-        .agg(pl.col("b").flatten())
+        .agg(pl.col("b").list.explode(keep_nulls=False, empty_as_null=False))
         .with_columns(pl.col("b").list.unique())
         .sort("a")
     )

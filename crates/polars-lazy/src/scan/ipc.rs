@@ -1,14 +1,14 @@
-use arrow::buffer::Buffer;
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::ipc::IpcScanOptions;
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 use crate::prelude::*;
 
 impl LazyFrame {
     /// Create a LazyFrame directly from a ipc scan.
     pub fn scan_ipc(
-        path: PlPath,
+        path: PlRefPath,
         options: IpcScanOptions,
         unified_scan_args: UnifiedScanArgs,
     ) -> PolarsResult<Self> {

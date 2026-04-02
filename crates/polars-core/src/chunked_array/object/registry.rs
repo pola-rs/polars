@@ -7,8 +7,8 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use arrow::array::ArrayRef;
 use arrow::array::builder::ArrayBuilder;
+use arrow::array::{Array, ArrayRef};
 use arrow::datatypes::ArrowDataType;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -22,6 +22,8 @@ pub type BuilderConstructor =
     Box<dyn Fn(PlSmallStr, usize) -> Box<dyn AnonymousObjectBuilder> + Send + Sync>;
 pub type ObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
 pub type PyObjectConverter = Arc<dyn Fn(AnyValue) -> Box<dyn Any> + Send + Sync>;
+pub type ObjectArrayGetter = Arc<dyn Fn(&dyn Array, usize) -> Option<AnyValue<'_>> + Send + Sync>;
+pub type WithGIL = Arc<dyn Fn(&mut dyn FnMut()) + Send + Sync>;
 
 pub struct ObjectRegistry {
     /// A function that creates an object builder
@@ -31,6 +33,10 @@ pub struct ObjectRegistry {
     // A function that converts AnyValue to Box<dyn Any> of the PyObject type
     pyobject_converter: Option<PyObjectConverter>,
     pub physical_dtype: ArrowDataType,
+    // A function that gets an AnyValue from a Box<dyn Array>.
+    array_getter: ObjectArrayGetter,
+    // A function which grabs the Python GIL.
+    with_gil: WithGIL,
 }
 
 impl Debug for ObjectRegistry {
@@ -122,6 +128,8 @@ pub fn register_object_builder(
     object_converter: ObjectConverter,
     pyobject_converter: PyObjectConverter,
     physical_dtype: ArrowDataType,
+    array_getter: ObjectArrayGetter,
+    with_gil: WithGIL,
 ) {
     let reg = GLOBAL_OBJECT_REGISTRY.deref();
     let mut reg = reg.write().unwrap();
@@ -131,6 +139,8 @@ pub fn register_object_builder(
         object_converter: Some(object_converter),
         pyobject_converter: Some(pyobject_converter),
         physical_dtype,
+        array_getter,
+        with_gil,
     })
 }
 
@@ -157,4 +167,24 @@ pub fn get_pyobject_converter() -> PyObjectConverter {
     let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
     let reg = reg.as_ref().unwrap();
     reg.pyobject_converter.as_ref().unwrap().clone()
+}
+
+pub fn get_object_array_getter() -> ObjectArrayGetter {
+    let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
+    reg.as_ref().unwrap().array_getter.clone()
+}
+
+/// Run the given function while holding the GIL.
+///
+/// This is sometimes used to avoid the overhead of repeatedly
+/// releasing and acquiring the GIL.
+pub fn run_with_gil<R, F: FnOnce() -> R>(f: F) -> R {
+    let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();
+    let with_gil = reg.as_ref().unwrap().with_gil.clone();
+    let r = &mut None;
+    let f = &mut Some(f);
+    (with_gil)(&mut || {
+        *r = Some((f.take().unwrap())());
+    });
+    r.take().unwrap()
 }

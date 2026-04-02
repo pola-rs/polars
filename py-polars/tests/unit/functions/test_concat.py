@@ -4,6 +4,8 @@ from typing import IO
 import pytest
 
 import polars as pl
+from polars._typing import ConcatMethod
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -26,6 +28,39 @@ def test_concat_lf_stack_overflow() -> None:
     for i in range(n):
         bar = pl.concat([bar, pl.DataFrame({"a": i}).lazy()])
     assert bar.collect().shape == (1001, 1)
+
+
+def test_concat_horizontally_strict() -> None:
+    df1 = pl.DataFrame({"c": [11], "d": [42]})  # 1 vs N (may broadcast)
+    df2 = pl.DataFrame({"c": [11, 12], "d": [42, 24]})  # 2 vs N
+    df3 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df1, df3], how="horizontal", strict=True)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df2, df3], how="horizontal", strict=True)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df1.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df2.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
+
+    out = pl.concat([df1, df3], how="horizontal", strict=False)
+    assert out.to_dict(as_series=False) == {
+        "a": [0, 1, 2],
+        "b": [1, 2, 3],
+        "c": [11, None, None],
+        "d": [42, None, None],
+    }
+
+    out = pl.concat([df2, df3], how="horizontal", strict=False)
+    assert out.to_dict(as_series=False) == {
+        "a": [0, 1, 2],
+        "b": [1, 2, 3],
+        "c": [11, 12, None],
+        "d": [42, 24, None],
+    }
 
 
 def test_concat_vertically_relaxed() -> None:
@@ -364,3 +399,76 @@ def test_concat_with_empty_dataframes() -> None:
 
     result2 = pl.concat([df_with_data, empty_df])
     assert_frame_equal(result2, df_with_data)
+
+
+def test_concat_with_empty_dataframes_strict_25725() -> None:
+    df = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    result = pl.concat([df, df.select([])], how="horizontal", strict=True)
+    expected = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    assert_frame_equal(result, expected)
+
+
+def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
+    df = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    result = pl.concat([df, df.select([])], how="horizontal", strict=False)
+    expected = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    assert_frame_equal(result, expected)
+
+    empty_df = pl.LazyFrame(schema={"c": pl.Int64})
+    result = pl.concat([empty_df, df], how="horizontal", strict=False)
+    expected = pl.LazyFrame(
+        {"c": [None, None], "a": [1, 2], "b": ["x", "y"]},
+        schema={"c": pl.Int64, "a": pl.Int64, "b": pl.String},
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "how",
+    [
+        "align",
+        "align_full",
+        "align_inner",
+        "align_left",
+        "align_right",
+    ],
+)
+@pytest.mark.parametrize(
+    "n_dfs",
+    [3, 4, 5],  # balanced tree +/- 1
+)
+def test_concat_align_associativity_26788(how: ConcatMethod, n_dfs: int) -> None:
+    # create every possible key combination over `n_dfs` dataframes
+    n_dfs = n_dfs
+    keys = [
+        [x for x in range(1 << n_dfs) if not (x >> (n_dfs - 1 - i) & 1)]
+        for i in range(n_dfs)
+    ]
+    dfs = [
+        pl.DataFrame({"k": key})
+        .with_columns((i * 100 + pl.col.k).alias(f"v_{i}"))
+        .lazy()
+        for i, key in enumerate(keys)
+    ]
+
+    chained_from_left = dfs[0]
+    for df in dfs[1:]:
+        chained_from_left = pl.concat([chained_from_left, df], how=how)
+
+    full = pl.concat(dfs, how=how)
+    assert_frame_equal(chained_from_left, full)
+
+
+def test_concat_horizontal_zero_width_height_mismatch_26876() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame(height=5),
+            pl.LazyFrame(height=3),
+        ],
+        how="horizontal",
+        strict=True,
+    )
+
+    with pytest.raises(ShapeError):
+        q.collect()

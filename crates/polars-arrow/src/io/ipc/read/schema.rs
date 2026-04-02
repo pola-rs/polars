@@ -414,7 +414,7 @@ pub(super) fn fb_to_schema(
             let metadata: Metadata = metadata
                 .into_iter()
                 .filter_map(|kv_result| {
-                    // FIXME: silently hiding errors here
+                    // TODO: silently hiding errors here
                     let kv_ref = kv_result.ok()?;
                     Some((kv_ref.key().ok()??.into(), kv_ref.value().ok()??.into()))
                 })

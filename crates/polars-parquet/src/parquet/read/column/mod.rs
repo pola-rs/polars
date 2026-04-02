@@ -1,8 +1,10 @@
+use std::io::Cursor;
 use std::vec::IntoIter;
 
+use polars_buffer::Buffer;
 use polars_utils::idx_vec::UnitVec;
 
-use super::{MemReader, PageReader, get_page_iterator};
+use super::{PageReader, get_page_iterator};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetadata, RowGroupMetadata};
 use crate::parquet::page::CompressedPage;
@@ -16,7 +18,7 @@ use crate::parquet::schema::types::ParquetType;
 /// For complex fields, it yields multiple columns.
 /// `max_page_size` is the maximum number of bytes allowed.
 pub fn get_column_iterator<'a>(
-    reader: MemReader,
+    reader: Cursor<Buffer<u8>>,
     row_group: &'a RowGroupMetadata,
     field_name: &str,
     max_page_size: usize,
@@ -50,7 +52,7 @@ pub trait MutStreamingIterator: Sized {
 /// A [`MutStreamingIterator`] that reads column chunks one by one,
 /// returning a [`PageReader`] per column.
 pub struct ColumnIterator<'a> {
-    reader: MemReader,
+    reader: Cursor<Buffer<u8>>,
     columns: UnitVec<&'a ColumnChunkMetadata>,
     max_page_size: usize,
 }
@@ -59,7 +61,7 @@ impl<'a> ColumnIterator<'a> {
     /// Returns a new [`ColumnIterator`]
     /// `max_page_size` is the maximum allowed page size
     pub fn new(
-        reader: MemReader,
+        reader: Cursor<Buffer<u8>>,
         columns: UnitVec<&'a ColumnChunkMetadata>,
         max_page_size: usize,
     ) -> Self {

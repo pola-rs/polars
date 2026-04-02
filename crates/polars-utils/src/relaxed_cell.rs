@@ -22,6 +22,11 @@ impl<T: AtomicNative> RelaxedCell<T> {
     }
 
     #[inline(always)]
+    pub fn fetch_sub(&self, value: T) -> T {
+        T::fetch_sub(&self.0, value)
+    }
+
+    #[inline(always)]
     pub fn fetch_max(&self, value: T) -> T {
         T::fetch_max(&self.0, value)
     }
@@ -29,6 +34,11 @@ impl<T: AtomicNative> RelaxedCell<T> {
     #[inline(always)]
     pub fn get_mut(&mut self) -> &mut T {
         T::get_mut(&mut self.0)
+    }
+
+    #[inline(always)]
+    pub fn swap(&self, value: T) -> T {
+        T::swap(&self.0, value)
     }
 }
 
@@ -57,8 +67,10 @@ pub trait AtomicNative: Sized + Default + fmt::Debug {
     fn load(atomic: &Self::Atomic) -> Self;
     fn store(atomic: &Self::Atomic, val: Self);
     fn fetch_add(atomic: &Self::Atomic, val: Self) -> Self;
+    fn fetch_sub(atomic: &Self::Atomic, val: Self) -> Self;
     fn fetch_max(atomic: &Self::Atomic, val: Self) -> Self;
     fn get_mut(atomic: &mut Self::Atomic) -> &mut Self;
+    fn swap(atomic: &Self::Atomic, val: Self) -> Self;
 }
 
 macro_rules! impl_relaxed_cell {
@@ -89,6 +101,11 @@ macro_rules! impl_relaxed_cell {
             }
 
             #[inline(always)]
+            fn fetch_sub(atomic: &Self::Atomic, val: Self) -> Self {
+                atomic.fetch_sub(val, Ordering::Relaxed)
+            }
+
+            #[inline(always)]
             fn fetch_max(atomic: &Self::Atomic, val: Self) -> Self {
                 atomic.fetch_max(val, Ordering::Relaxed)
             }
@@ -96,6 +113,11 @@ macro_rules! impl_relaxed_cell {
             #[inline(always)]
             fn get_mut(atomic: &mut Self::Atomic) -> &mut Self {
                 atomic.get_mut()
+            }
+
+            #[inline(always)]
+            fn swap(atomic: &Self::Atomic, val: Self) -> Self {
+                atomic.swap(val, Ordering::Relaxed)
             }
         }
     };
@@ -137,6 +159,11 @@ impl AtomicNative for bool {
     }
 
     #[inline(always)]
+    fn fetch_sub(_atomic: &Self::Atomic, _val: Self) -> Self {
+        unimplemented!()
+    }
+
+    #[inline(always)]
     fn fetch_max(atomic: &Self::Atomic, val: Self) -> Self {
         atomic.fetch_or(val, Ordering::Relaxed)
     }
@@ -144,5 +171,10 @@ impl AtomicNative for bool {
     #[inline(always)]
     fn get_mut(atomic: &mut Self::Atomic) -> &mut Self {
         atomic.get_mut()
+    }
+
+    #[inline(always)]
+    fn swap(atomic: &Self::Atomic, val: Self) -> Self {
+        atomic.swap(val, Ordering::Relaxed)
     }
 }

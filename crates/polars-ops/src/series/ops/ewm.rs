@@ -15,6 +15,20 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         }
     })?;
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            use num_traits::AsPrimitive;
+
+            let xs = s.f16().unwrap();
+            let result = kernel_ewm_mean(
+                xs,
+                options.alpha.as_(),
+                options.adjust,
+                options.min_periods,
+                options.ignore_nulls,
+            );
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+        },
         DataType::Float32 => {
             let xs = s.f32().unwrap();
             let result = kernel_ewm_mean(
@@ -45,6 +59,21 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
 pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
     check_alpha(options.alpha)?;
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            use num_traits::AsPrimitive;
+
+            let xs = s.f16().unwrap();
+            let result = kernel_ewm_std(
+                xs,
+                options.alpha.as_(),
+                options.adjust,
+                options.bias,
+                options.min_periods,
+                options.ignore_nulls,
+            );
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+        },
         DataType::Float32 => {
             let xs = s.f32().unwrap();
             let result = kernel_ewm_std(
@@ -76,6 +105,21 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
 pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
     check_alpha(options.alpha)?;
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            use num_traits::AsPrimitive;
+
+            let xs = s.f16().unwrap();
+            let result = kernel_ewm_var(
+                xs,
+                options.alpha.as_(),
+                options.adjust,
+                options.bias,
+                options.min_periods,
+                options.ignore_nulls,
+            );
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+        },
         DataType::Float32 => {
             let xs = s.f32().unwrap();
             let result = kernel_ewm_var(

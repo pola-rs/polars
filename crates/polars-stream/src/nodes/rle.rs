@@ -110,7 +110,7 @@ impl ComputeNode for RleNode {
                         )
                         .into_column(self.name.clone());
 
-                        let df = DataFrame::new(vec![column]).unwrap();
+                        let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
                         _ = send
                             .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
                             .await;
@@ -215,7 +215,12 @@ impl ComputeNode for RleNode {
                             [&lengths, &series].into_iter(),
                         )
                         .unwrap();
-                        *m.df_mut() = DataFrame::new(vec![rle_struct.into_column()]).unwrap();
+                        *m.df_mut() = unsafe {
+                            DataFrame::new_unchecked(
+                                rle_struct.len(),
+                                vec![rle_struct.into_column()],
+                            )
+                        };
 
                         if send.send(m).await.is_err() {
                             break;

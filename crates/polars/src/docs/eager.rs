@@ -94,7 +94,7 @@
 //! // from a Vec<Column>
 //! let c1 = Column::new("names".into(), &["a", "b", "c"]);
 //! let c2 = Column::new("values".into(), &[Some(1), None, Some(3)]);
-//! let df = DataFrame::new(vec![c1, c2])?;
+//! let df = DataFrame::new_infer_height(vec![c1, c2])?;
 //! # Ok(())
 //! # }
 //! ```
@@ -533,7 +533,7 @@
 //! // construct a few more Series.
 //! let s0 = Column::new("B".into(), [1, 2, 3]);
 //! let s1 = Column::new("C".into(), [1, 1, 1]);
-//! let df = DataFrame::new(vec![list, s0, s1])?;
+//! let df = DataFrame::new_infer_height(vec![list, s0, s1])?;
 //!
 //! let exploded = df.explode([PlSmallStr::from("foo")])?;
 //! // exploded:
