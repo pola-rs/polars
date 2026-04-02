@@ -36,7 +36,7 @@ use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
 pub use predicate_pushdown::{
-    DynamicPred, DynamicPredRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
+    DynamicPred, DynamicPredWeakRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
 };
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};

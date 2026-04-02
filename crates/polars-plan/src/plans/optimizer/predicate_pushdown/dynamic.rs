@@ -43,7 +43,7 @@ pub struct DynamicPred {
 
 #[derive(Clone)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
-pub struct DynamicPredRef {
+pub struct DynamicPredWeakRef {
     inner: Weak<Inner>,
 }
 
@@ -53,7 +53,7 @@ impl Debug for DynamicPred {
     }
 }
 
-impl Debug for DynamicPredRef {
+impl Debug for DynamicPredWeakRef {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(id) = self.id() {
             write!(f, "dynamic_pred: {:}", id)
@@ -69,7 +69,7 @@ impl PartialEq for DynamicPred {
     }
 }
 
-impl PartialEq for DynamicPredRef {
+impl PartialEq for DynamicPredWeakRef {
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()
     }
@@ -92,8 +92,8 @@ impl DynamicPred {
         }
     }
 
-    fn get_ref(&self) -> DynamicPredRef {
-        DynamicPredRef {
+    fn downgrade(&self) -> DynamicPredWeakRef {
+        DynamicPredWeakRef {
             inner: Arc::downgrade(&self.inner),
         }
     }
@@ -112,7 +112,8 @@ impl DynamicPred {
         self.inner.is_set.store(true, Ordering::Release);
     }
 }
-impl DynamicPredRef {
+
+impl DynamicPredWeakRef {
     pub fn id(&self) -> Option<UniqueId> {
         Some(self.inner.upgrade()?.id)
     }
@@ -140,7 +141,7 @@ impl DynamicPredRef {
 pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
     let pred = DynamicPred::new();
     let function = IRFunctionExpr::DynamicPred {
-        pred: pred.get_ref(),
+        pred: pred.downgrade(),
     };
     let options = function.function_options();
     let aexpr = AExpr::Function {

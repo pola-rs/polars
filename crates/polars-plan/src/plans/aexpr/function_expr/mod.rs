@@ -390,7 +390,7 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
     DynamicPred {
-        pred: DynamicPredRef,
+        pred: DynamicPredWeakRef,
     },
 }
 
