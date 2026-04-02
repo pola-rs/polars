@@ -102,7 +102,7 @@ requirements-all:  ## Install/refresh all Python requirements (including those n
 # variables are sticky.
 .PHONY: update-cargo-env
 update-cargo-env: .venv
-	RUSTFLAGS=$(RUSTFLAGS) CFLAGS=$(CFLAGS) $(VENV_BIN)/python tools/update-cargo-env.py
+	@RUSTFLAGS="$(RUSTFLAGS)" CFLAGS="$(CFLAGS)" $(VENV_BIN)/python tools/update-cargo-env.py
 
 .PHONY: build
 build: update-cargo-env ## Compile and install Python Polars for development
