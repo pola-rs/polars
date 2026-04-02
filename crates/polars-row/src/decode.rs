@@ -6,7 +6,7 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_dtype::categorical::CatNative;
 
-use self::encode::{fixed_size, FSL_TAG_SIZE};
+use self::encode::{FSL_TAG_SIZE, fixed_size};
 use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;

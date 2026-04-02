@@ -1091,10 +1091,8 @@ mod tests {
         let dicts_1 = vec![None];
         let dicts_2 = vec![None];
 
-        let encoded_u16 =
-            convert_columns_no_order(1, &[u16_fsl.to_boxed()], &dicts_1);
-        let encoded_u8 =
-            convert_columns_no_order(1, &[u8_fsl.to_boxed()], &dicts_2);
+        let encoded_u16 = convert_columns_no_order(1, &[u16_fsl.to_boxed()], &dicts_1);
+        let encoded_u8 = convert_columns_no_order(1, &[u8_fsl.to_boxed()], &dicts_2);
 
         // The row encodings must differ due to the dtype fingerprint tag
         assert_ne!(
