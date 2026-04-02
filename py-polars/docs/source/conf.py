@@ -76,40 +76,27 @@ overloads_location = ["bottom"]
 
 # sphinx.ext.intersphinx - link to other projects' documentation
 # https://www.sphinx-doc.org/en/master/usage/extensions/intersphinx.html
-inv = str(Path(__file__).resolve().parent.parent / "_intersphinx")
+#
+# Note: can use `make fetch-intersphinx` to pre-fetch files for faster/offline
+# builds; if cached files are not present, Sphinx fetches them at build time
+# (download failures don't block the build, but will generate warnings)
+_inv = Path(__file__).resolve().parent.parent / "_intersphinx"
+_intersphinx_targets = {
+    "deltalake": "https://delta-io.github.io/delta-rs/python/",
+    "jax": "https://jax.readthedocs.io/en/latest/",
+    "numpy": "https://numpy.org/doc/stable/",
+    "pandas": "https://pandas.pydata.org/docs/",
+    "pyarrow": "https://arrow.apache.org/docs/",
+    "python": "https://docs.python.org/3",
+    "sqlalchemy": "https://docs.sqlalchemy.org/en/stable/",
+    "torch": "https://pytorch.org/docs/stable/",
+}
 intersphinx_mapping = {
-    "deltalake": (
-        "https://delta-io.github.io/delta-rs/python/",
-        (f"{inv}/deltalake.inv", None),
-    ),
-    "jax": (
-        "https://jax.readthedocs.io/en/latest/",
-        (f"{inv}/jax.inv", None),
-    ),
-    "numpy": (
-        "https://numpy.org/doc/stable/",
-        (f"{inv}/numpy.inv", None),
-    ),
-    "pandas": (
-        "https://pandas.pydata.org/docs/",
-        (f"{inv}/pandas.inv", None),
-    ),
-    "pyarrow": (
-        "https://arrow.apache.org/docs/",
-        (f"{inv}/pyarrow.inv", None),
-    ),
-    "python": (
-        "https://docs.python.org/3",
-        (f"{inv}/python.inv", None),
-    ),
-    "sqlalchemy": (
-        "https://docs.sqlalchemy.org/en/stable/",
-        (f"{inv}/sqlalchemy.inv", None),
-    ),
-    "torch": (
-        "https://pytorch.org/docs/stable/",
-        (f"{inv}/torch.inv", None),
-    ),
+    name: (
+        url,
+        (str(_inv / f"{name}.inv"), None) if (_inv / f"{name}.inv").is_file() else None,
+    )
+    for name, url in _intersphinx_targets.items()
 }
 
 # numpydoc - parse numpy docstrings
