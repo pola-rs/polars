@@ -1366,6 +1366,9 @@ class DateTimeNameSpace:
         """
         Convert to given time zone for a Series of type Datetime.
 
+        Different from `replace_time_zone`, this will not modify
+        the underlying timestamp.
+
         Parameters
         ----------
         time_zone
@@ -1379,28 +1382,40 @@ class DateTimeNameSpace:
         Examples
         --------
         >>> from datetime import datetime
-        >>> start = datetime(2020, 3, 1)
-        >>> stop = datetime(2020, 5, 1)
-        >>> date = pl.datetime_range(
-        ...     start, stop, "1mo", time_zone="UTC", eager=True
-        ... ).alias("datetime")
-        >>> date
-        shape: (3,)
-        Series: 'datetime' [datetime[μs, UTC]]
-        [
-                2020-03-01 00:00:00 UTC
-                2020-04-01 00:00:00 UTC
-                2020-05-01 00:00:00 UTC
-        ]
-        >>> date = date.dt.convert_time_zone("Europe/London").alias("London")
-        >>> date
-        shape: (3,)
-        Series: 'London' [datetime[μs, Europe/London]]
-        [
-            2020-03-01 00:00:00 GMT
-            2020-04-01 01:00:00 BST
-            2020-05-01 01:00:00 BST
-        ]
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "utc": pl.datetime_range(
+        ...             datetime(2020, 3, 1),
+        ...             datetime(2020, 7, 1),
+        ...             "1mo",
+        ...             time_zone="UTC",
+        ...             eager=True,
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(
+        ...     [
+        ...         pl.col("utc"),
+        ...         pl.col("utc")
+        ...         .alias("convert_to_new_york")
+        ...         .dt.convert_time_zone(time_zone="America/New_York"),
+        ...         pl.col("utc")
+        ...         .dt.replace_time_zone(time_zone="America/New_York")
+        ...         .alias("replace_with_new_york"),
+        ...     ]
+        ... )
+        shape: (5, 3)
+        ┌─────────────────────────┬────────────────────────────────┬────────────────────────────────┐
+        │ utc                     ┆ convert_to_new_york            ┆ replace_with_new_york          │
+        │ ---                     ┆ ---                            ┆ ---                            │
+        │ datetime[μs, UTC]       ┆ datetime[μs, America/New_York] ┆ datetime[μs, America/New_York] │
+        ╞═════════════════════════╪════════════════════════════════╪════════════════════════════════╡
+        │ 2020-03-01 00:00:00 UTC ┆ 2020-02-29 19:00:00 EST        ┆ 2020-03-01 00:00:00 EST        │
+        │ 2020-04-01 00:00:00 UTC ┆ 2020-03-31 20:00:00 EDT        ┆ 2020-04-01 00:00:00 EDT        │
+        │ 2020-05-01 00:00:00 UTC ┆ 2020-04-30 20:00:00 EDT        ┆ 2020-05-01 00:00:00 EDT        │
+        │ 2020-06-01 00:00:00 UTC ┆ 2020-05-31 20:00:00 EDT        ┆ 2020-06-01 00:00:00 EDT        │
+        │ 2020-07-01 00:00:00 UTC ┆ 2020-06-30 20:00:00 EDT        ┆ 2020-07-01 00:00:00 EDT        │
+        └─────────────────────────┴────────────────────────────────┴────────────────────────────────┘
         """
 
     def replace_time_zone(
@@ -1438,37 +1453,38 @@ class DateTimeNameSpace:
         >>> from datetime import datetime
         >>> df = pl.DataFrame(
         ...     {
-        ...         "london_timezone": pl.datetime_range(
+        ...         "utc": pl.datetime_range(
         ...             datetime(2020, 3, 1),
         ...             datetime(2020, 7, 1),
         ...             "1mo",
         ...             time_zone="UTC",
         ...             eager=True,
         ...         )
-        ...         .alias("datetime")
-        ...         .dt.convert_time_zone(time_zone="Europe/London"),
         ...     }
         ... )
         >>> df.select(
         ...     [
-        ...         pl.col("london_timezone"),
-        ...         pl.col("london_timezone")
-        ...         .dt.replace_time_zone(time_zone="Europe/Amsterdam")
-        ...         .alias("London_to_Amsterdam"),
+        ...         pl.col("utc"),
+        ...         pl.col("utc")
+        ...         .dt.replace_time_zone(time_zone="America/New_York")
+        ...         .alias("replace_with_new_york"),
+        ...         pl.col("utc")
+        ...         .alias("convert_to_new_york")
+        ...         .dt.convert_time_zone(time_zone="America/New_York"),
         ...     ]
         ... )
-        shape: (5, 2)
-        ┌─────────────────────────────┬────────────────────────────────┐
-        │ london_timezone             ┆ London_to_Amsterdam            │
-        │ ---                         ┆ ---                            │
-        │ datetime[μs, Europe/London] ┆ datetime[μs, Europe/Amsterdam] │
-        ╞═════════════════════════════╪════════════════════════════════╡
-        │ 2020-03-01 00:00:00 GMT     ┆ 2020-03-01 00:00:00 CET        │
-        │ 2020-04-01 01:00:00 BST     ┆ 2020-04-01 01:00:00 CEST       │
-        │ 2020-05-01 01:00:00 BST     ┆ 2020-05-01 01:00:00 CEST       │
-        │ 2020-06-01 01:00:00 BST     ┆ 2020-06-01 01:00:00 CEST       │
-        │ 2020-07-01 01:00:00 BST     ┆ 2020-07-01 01:00:00 CEST       │
-        └─────────────────────────────┴────────────────────────────────┘
+        shape: (5, 3)
+        ┌─────────────────────────┬────────────────────────────────┬────────────────────────────────┐
+        │ utc                     ┆ replace_with_new_york          ┆ convert_to_new_york            │
+        │ ---                     ┆ ---                            ┆ ---                            │
+        │ datetime[μs, UTC]       ┆ datetime[μs, America/New_York] ┆ datetime[μs, America/New_York] │
+        ╞═════════════════════════╪════════════════════════════════╪════════════════════════════════╡
+        │ 2020-03-01 00:00:00 UTC ┆ 2020-03-01 00:00:00 EST        ┆ 2020-02-29 19:00:00 EST        │
+        │ 2020-04-01 00:00:00 UTC ┆ 2020-04-01 00:00:00 EDT        ┆ 2020-03-31 20:00:00 EDT        │
+        │ 2020-05-01 00:00:00 UTC ┆ 2020-05-01 00:00:00 EDT        ┆ 2020-04-30 20:00:00 EDT        │
+        │ 2020-06-01 00:00:00 UTC ┆ 2020-06-01 00:00:00 EDT        ┆ 2020-05-31 20:00:00 EDT        │
+        │ 2020-07-01 00:00:00 UTC ┆ 2020-07-01 00:00:00 EDT        ┆ 2020-06-30 20:00:00 EDT        │
+        └─────────────────────────┴────────────────────────────────┴────────────────────────────────┘
 
         You can use `ambiguous` to deal with ambiguous datetimes:
 
