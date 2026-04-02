@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 
 use polars_core::prelude::*;
 use polars_core::utils::Container;
-use polars_ops::frame::{AsOfOptions, AsofStrategy, JoinArgs, JoinType};
+use polars_ops::frame::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy, JoinArgs, JoinType};
 use polars_utils::format_pl_smallstr;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -292,15 +292,10 @@ fn need_more_right_side(
     let options = params.as_of_options();
     if left.height() == 0 {
         return Ok(false);
-    }
-    if right.height() == 0 {
+    } else if right.height() == 0 {
         return Ok(true);
     }
-    let mut left_last_group_keys = Vec::with_capacity(params.left.by.len());
-    for by in &params.left.by {
-        let col = left.column(by)?;
-        left_last_group_keys.push(unsafe { col.get_unchecked(col.len() - 1) });
-    }
+
     // If there are `by` groups, first check that the right side has reached the
     // group of the last left row before checking the key range.  Data arrives
     // sorted by (by..., on), so if the last right row's group is still less than
@@ -312,14 +307,14 @@ fn need_more_right_side(
         let right_last_group = unsafe { right.get_unchecked(right_by, right.height() - 1) };
         match PartialOrd::partial_cmp(&left_last_group, &right_last_group) {
             Some(Ordering::Less) => return Ok(false),
-            Some(Ordering::Equal) => {},
             Some(Ordering::Greater) => return Ok(true),
+            Some(Ordering::Equal) => {},
             None => unreachable!(),
         }
     }
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
-    // SAFETY: We checked earlier that the dataframe is not empty
+    // SAFETY: We checked earlier that the dataframes are not empty
     let left_last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
         (AsofStrategy::Forward, true) => {
@@ -352,13 +347,22 @@ fn prune_right_side(
     right: &mut DataFrameSearchBuffer,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    // TODO: [amber] Add the grouping logic here
-
-    let left_key = left.column(params.left.key_col())?.as_materialized_series();
-    if left.len() == 0 {
+    if left.height() == 0 || right.height() == 0 {
         return Ok(());
     }
-    // SAFETY: We just checked that left_key is not empty
+
+    for (left_by, right_by) in Iterator::zip(params.left.by.iter(), params.right.by.iter()) {
+        let left_by_col = left.column(left_by)?.as_materialized_series();
+        // SAFETY: We checked earlier that the dataframes are not empty
+        let left_first_group = unsafe { left_by_col.get_unchecked(0) };
+        let right_range_start = right
+            .binary_search(|x| *x >= left_first_group, right_by, false)
+            .saturating_sub(1);
+        right.split_at(right_range_start);
+    }
+
+    let left_key = left.column(params.left.key_col())?.as_materialized_series();
+    // SAFETY: We checked earlier that the dataframes are not empty
     let left_first_val = unsafe { left_key.get_unchecked(0) };
     let right_range_start = right
         .binary_search(|x| *x >= left_first_val, params.right.key_col(), false)
@@ -372,29 +376,47 @@ async fn compute_and_emit_task(
     mut send: PortSender,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    // TODO: [amber] Add the grouping logic here
-
     let options = params.as_of_options();
+    let any_key_is_temporary_col =
+        params.left.tmp_key_col.is_some() || params.right.tmp_key_col.is_some();
+    let coalesce = any_key_is_temporary_col || params.args.should_coalesce();
     while let Ok((left_df, right_buffer, seq, st)) = dist_recv.recv().await {
         let right_df = right_buffer.into_df();
 
         let left_key = left_df.column(params.left.key_col())?;
         let right_key = right_df.column(params.right.key_col())?;
-        let any_key_is_temporary_col =
-            params.left.tmp_key_col.is_some() || params.right.tmp_key_col.is_some();
-        let mut out = polars_ops::frame::AsofJoin::_join_asof(
-            &left_df,
-            &right_df,
-            left_key.as_materialized_series(),
-            right_key.as_materialized_series(),
-            options.strategy,
-            options.tolerance.clone().map(Scalar::into_value),
-            params.args.suffix.clone(),
-            None,
-            any_key_is_temporary_col || params.args.should_coalesce(),
-            options.allow_eq,
-            options.check_sortedness,
-        )?;
+
+        let mut out = if !params.left.by.is_empty() || !params.right.by.is_empty() {
+            AsofJoinBy::_join_asof_by(
+                &left_df,
+                &right_df,
+                left_key.as_materialized_series(),
+                right_key.as_materialized_series(),
+                params.left.by.clone(),
+                params.right.by.clone(),
+                options.strategy,
+                options.tolerance.clone().map(Scalar::into_value),
+                params.args.suffix.clone(),
+                None,
+                coalesce,
+                options.allow_eq,
+                options.check_sortedness,
+            )?
+        } else {
+            AsofJoin::_join_asof(
+                &left_df,
+                &right_df,
+                left_key.as_materialized_series(),
+                right_key.as_materialized_series(),
+                options.strategy,
+                options.tolerance.clone().map(Scalar::into_value),
+                params.args.suffix.clone(),
+                None,
+                coalesce,
+                options.allow_eq,
+                options.check_sortedness,
+            )?
+        };
 
         // Drop any temporary key columns that were added
         for tmp_key_col in [&params.left.tmp_key_col, &params.right.tmp_key_col] {
