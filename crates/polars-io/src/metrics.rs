@@ -8,6 +8,9 @@ pub const HEAD_RESPONSE_SIZE_ESTIMATE: u64 = 1;
 #[derive(Debug, Default, Clone)]
 pub struct IOMetrics {
     pub io_timer: LiveTimer,
+    /// Slot for the reader to store consumed amounts. Needed when flushing
+    /// metrics across phases.
+    pub io_timer_consumed: RelaxedCell<u64>,
     pub bytes_requested: RelaxedCell<u64>,
     pub bytes_received: RelaxedCell<u64>,
     pub bytes_sent: RelaxedCell<u64>,

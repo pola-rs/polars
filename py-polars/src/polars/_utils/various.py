@@ -680,7 +680,8 @@ def display_dot_graph(
 
     output_type = (
         "svg"
-        if _in_notebook()
+        if (output_path is not None and str(output_path).endswith(".svg"))
+        or _in_notebook()
         or _in_marimo_notebook()
         or "POLARS_DOT_SVG_VIEWER" in os.environ
         else "png"

@@ -29,10 +29,7 @@ ctx = pl.SQLContext(df_pandas=pl.from_pandas(df_pandas))
 # --8<-- [end:register_pandas]
 
 # --8<-- [start:execute]
-# For local files use scan_csv instead
-pokemon = pl.read_csv(
-    "https://gist.githubusercontent.com/ritchie46/cac6b337ea52281aa23c049250a4ff03/raw/89a957ff3919d90e6ef2d34235e6bf22304f3366/pokemon.csv"
-)
+pokemon = pl.scan_csv("docs/assets/data/pokemon.csv")
 with pl.SQLContext(register_globals=True, eager=True) as ctx:
     df_small = ctx.execute("SELECT * from pokemon LIMIT 5")
     print(df_small)

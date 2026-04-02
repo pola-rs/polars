@@ -170,7 +170,8 @@ impl ColumnStatistics {
             }};
         }
 
-        use {ArrowDataType as D, ParquetPhysicalType as PPT};
+        use ArrowDataType as D;
+        use ParquetPhysicalType as PPT;
         let (min_value, max_value) = match (self.field.dtype(), &self.physical_type) {
             (D::Null, _) => (None, None),
 
@@ -399,7 +400,8 @@ pub fn deserialize_all(
                 }};
             }
 
-            use {ArrowDataType as D, ParquetPhysicalType as PPT};
+            use ArrowDataType as D;
+            use ParquetPhysicalType as PPT;
             let (min_value, max_value) = match (field.dtype(), physical_type) {
                 (D::Null, _) => (
                     NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),

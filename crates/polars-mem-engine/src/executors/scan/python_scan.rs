@@ -108,12 +108,7 @@ impl Executor for PythonScanExec {
                     };
                     self.finish_df(py, df, state)
                 },
-                PythonScanSource::Pyarrow => {
-                    let args = (with_columns, predicate, n_rows);
-                    let df = python_scan_function.call1(args)?;
-                    self.finish_df(py, df, state)
-                },
-                PythonScanSource::IOPlugin => {
+                PythonScanSource::IOPlugin | PythonScanSource::Pyarrow => {
                     // If there are filters, take smaller chunks to ensure we can keep memory
                     // pressure low.
                     let batch_size = if self.predicate.is_some() {

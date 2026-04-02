@@ -147,7 +147,8 @@ impl AnyValue<'static> {
         numeric_to_one: bool,
         num_list_values: usize,
     ) -> AnyValue<'static> {
-        use {AnyValue as AV, DataType as DT};
+        use AnyValue as AV;
+        use DataType as DT;
         match dtype {
             DT::Boolean => AV::Boolean(false),
             DT::UInt8 => AV::UInt8(numeric_to_one.into()),

@@ -20,6 +20,7 @@ polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true, features = ["python"] }
+polars-ooc = { workspace = true }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
@@ -50,16 +51,6 @@ rayon = { workspace = true }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 uuid = { workspace = true }
-
-[target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
-mimalloc = { version = "0.1", default-features = false }
-
-# Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
-[target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten")))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"] }
-
-[target.'cfg(all(target_family = "unix", target_os = "macos"))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"] }
 
 [dependencies.polars]
 workspace = true
@@ -319,7 +310,7 @@ rtcompat = ["polars/bigidx"]
 default = [
   "full",
 ]
-default_alloc = []
+default_alloc = ["polars-ooc/default_alloc"]
 
 [lints]
 workspace = true

@@ -190,9 +190,11 @@ pub(super) fn rolling_corr_cov(
 
     let mean_x = x.rolling_mean(rolling_options.clone())?;
     let mean_y = y.rolling_mean(rolling_options.clone())?;
+
+    let ddof_value = if is_corr { 1u8 } else { cov_options.ddof };
     let ddof = Series::new(
         PlSmallStr::EMPTY,
-        &[AnyValue::from(cov_options.ddof).cast(&dtype)],
+        &[AnyValue::from(ddof_value).cast(&dtype)],
     );
 
     let numerator = ((mean_x_y - (mean_x * mean_y).unwrap()).unwrap()

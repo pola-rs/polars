@@ -309,12 +309,14 @@ fn nodes_to_exprs(nodes: &[Node], expr_arena: &Arena<AExpr>) -> Vec<Expr> {
 }
 
 pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
-    use {FunctionExpr as F, IRFunctionExpr as IF};
+    use FunctionExpr as F;
+    use IRFunctionExpr as IF;
 
     let function = match function {
         #[cfg(feature = "dtype-array")]
         IF::ArrayExpr(f) => {
-            use {ArrayFunction as A, IRArrayFunction as IA};
+            use ArrayFunction as A;
+            use IRArrayFunction as IA;
             F::ArrayExpr(match f {
                 IA::Concat => A::Concat,
                 IA::Length => A::Length,
@@ -350,7 +352,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             })
         },
         IF::BinaryExpr(f) => {
-            use {BinaryFunction as B, IRBinaryFunction as IB};
+            use BinaryFunction as B;
+            use IRBinaryFunction as IB;
             F::BinaryExpr(match f {
                 IB::Contains => B::Contains,
                 IB::StartsWith => B::StartsWith,
@@ -374,7 +377,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "dtype-categorical")]
         IF::Categorical(f) => {
-            use {CategoricalFunction as C, IRCategoricalFunction as IC};
+            use CategoricalFunction as C;
+            use IRCategoricalFunction as IC;
             F::Categorical(match f {
                 IC::GetCategories => C::GetCategories,
                 #[cfg(feature = "strings")]
@@ -391,14 +395,16 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "dtype-extension")]
         IF::Extension(f) => {
-            use {ExtensionFunction as E, IRExtensionFunction as IE};
+            use ExtensionFunction as E;
+            use IRExtensionFunction as IE;
             F::Extension(match f {
                 IE::To(dtype) => E::To(dtype.into()),
                 IE::Storage => E::Storage,
             })
         },
         IF::ListExpr(f) => {
-            use {IRListFunction as IL, ListFunction as L};
+            use IRListFunction as IL;
+            use ListFunction as L;
             F::ListExpr(match f {
                 IL::Concat => L::Concat,
                 #[cfg(feature = "is_in")]
@@ -457,7 +463,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "strings")]
         IF::StringExpr(f) => {
-            use {IRStringFunction as IB, StringFunction as B};
+            use IRStringFunction as IB;
+            use StringFunction as B;
             F::StringExpr(match f {
                 IB::Format { format, insertions } => B::Format { format, insertions },
                 #[cfg(feature = "concat_str")]
@@ -580,7 +587,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "dtype-struct")]
         IF::StructExpr(f) => {
-            use {IRStructFunction as IB, StructFunction as B};
+            use IRStructFunction as IB;
+            use StructFunction as B;
             F::StructExpr(match f {
                 IB::FieldByName(pl_small_str) => B::FieldByName(pl_small_str),
                 IB::RenameFields(pl_small_strs) => B::RenameFields(pl_small_strs),
@@ -593,7 +601,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "temporal")]
         IF::TemporalExpr(f) => {
-            use {IRTemporalFunction as IB, TemporalFunction as B};
+            use IRTemporalFunction as IB;
+            use TemporalFunction as B;
             F::TemporalExpr(match f {
                 IB::Millennium => B::Millennium,
                 IB::Century => B::Century,
@@ -667,7 +676,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "bitwise")]
         IF::Bitwise(f) => {
-            use {BitwiseFunction as B, IRBitwiseFunction as IB};
+            use BitwiseFunction as B;
+            use IRBitwiseFunction as IB;
             F::Bitwise(match f {
                 IB::CountOnes => B::CountOnes,
                 IB::CountZeros => B::CountZeros,
@@ -681,7 +691,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             })
         },
         IF::Boolean(f) => {
-            use {BooleanFunction as B, IRBooleanFunction as IB};
+            use BooleanFunction as B;
+            use IRBooleanFunction as IB;
             F::Boolean(match f {
                 IB::Any { ignore_nulls } => B::Any { ignore_nulls },
                 IB::All { ignore_nulls } => B::All { ignore_nulls },
@@ -720,7 +731,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "business")]
         IF::Business(f) => {
-            use {BusinessFunction as B, IRBusinessFunction as IB};
+            use BusinessFunction as B;
+            use IRBusinessFunction as IB;
             F::Business(match f {
                 IB::BusinessDayCount { week_mask } => B::BusinessDayCount { week_mask },
                 IB::AddBusinessDay { week_mask, roll } => B::AddBusinessDay { week_mask, roll },
@@ -742,7 +754,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         IF::NullCount => F::NullCount,
         IF::Pow(f) => {
-            use {IRPowFunction as IP, PowFunction as P};
+            use IRPowFunction as IP;
+            use PowFunction as P;
             F::Pow(match f {
                 IP::Generic => P::Generic,
                 IP::Sqrt => P::Sqrt,
@@ -759,7 +772,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::SearchSorted { side, descending } => F::SearchSorted { side, descending },
         #[cfg(feature = "range")]
         IF::Range(f) => {
-            use {IRRangeFunction as IR, RangeFunction as R};
+            use IRRangeFunction as IR;
+            use RangeFunction as R;
             F::Range(match f {
                 IR::IntRange { step, dtype } => R::IntRange {
                     step,
@@ -832,7 +846,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         },
         #[cfg(feature = "trigonometry")]
         IF::Trigonometry(f) => {
-            use {IRTrigonometricFunction as IT, TrigonometricFunction as T};
+            use IRTrigonometricFunction as IT;
+            use TrigonometricFunction as T;
             F::Trigonometry(match f {
                 IT::Cos => T::Cos,
                 IT::Cot => T::Cot,
@@ -859,7 +874,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::FillNullWithStrategy(strategy) => F::FillNullWithStrategy(strategy),
         #[cfg(feature = "rolling_window")]
         IF::RollingExpr { function, options } => {
-            use {IRRollingFunction as IR, RollingFunction as R};
+            use IRRollingFunction as IR;
+            use RollingFunction as R;
             FunctionExpr::RollingExpr {
                 function: match function {
                     IR::Min => R::Min,
@@ -892,7 +908,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             function_by,
             options,
         } => {
-            use {IRRollingFunctionBy as IR, RollingFunctionBy as R};
+            use IRRollingFunctionBy as IR;
+            use RollingFunctionBy as R;
             FunctionExpr::RollingExprBy {
                 function_by: match function_by {
                     IR::MinBy => R::MinBy,
@@ -1017,7 +1034,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::ConcatExpr { rechunk } => F::ConcatExpr(rechunk),
         #[cfg(feature = "cov")]
         IF::Correlation { method } => {
-            use {CorrelationMethod as C, IRCorrelationMethod as IC};
+            use CorrelationMethod as C;
+            use IRCorrelationMethod as IC;
             F::Correlation {
                 method: match method {
                     IC::Pearson => C::Pearson,
@@ -1064,7 +1082,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::ToPhysical => F::ToPhysical,
         #[cfg(feature = "random")]
         IF::Random { method, seed } => {
-            use {IRRandomMethod as IR, RandomMethod as R};
+            use IRRandomMethod as IR;
+            use RandomMethod as R;
             F::Random {
                 method: match method {
                     IR::Shuffle => R::Shuffle,
