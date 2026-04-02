@@ -95,7 +95,7 @@ impl NodeMetrics {
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
-    in_progress_io_metrics: SecondaryMap<GraphNodeKey, Option<Arc<IOMetrics>>>,
+    in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
@@ -138,8 +138,7 @@ impl GraphMetrics {
             }
         }
 
-        for (key, in_progress_io_metrics) in self.in_progress_io_metrics.iter_mut() {
-            let io_metrics = in_progress_io_metrics.take().unwrap();
+        for (key, io_metrics) in self.in_progress_io_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.reset_io_metrics();
             this_node_metrics.add_io(&io_metrics);
@@ -182,13 +181,18 @@ impl NodeMetricsRegistrator {
     /// phase.
     pub fn register_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
         let mut guard = self.graph_metrics.lock();
-        let metrics_option = guard
-            .in_progress_io_metrics
-            .entry(self.graph_key)
-            .unwrap()
-            .or_default();
 
-        let existing = metrics_option.replace(io_metrics);
-        assert!(existing.is_none()); // Duplicate IO metrics registration
+        use slotmap::secondary::Entry;
+
+        match guard.in_progress_io_metrics.entry(self.graph_key).unwrap() {
+            Entry::Occupied(e) => {
+                // Each node should only have 1 set of metrics, identified by the Arc address.
+                // But the registration can be called multiple times (per phase).
+                assert!(Arc::ptr_eq(&io_metrics, e.get()));
+            },
+            Entry::Vacant(e) => {
+                e.insert(io_metrics);
+            },
+        };
     }
 }
