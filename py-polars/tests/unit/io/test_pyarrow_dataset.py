@@ -519,7 +519,7 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
             n_rows=2,
             predicate="pa.compute.field('year') == 2026",
             with_columns=None,
-        ),
+        )[0].__next__(),
         pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
     )
 
@@ -529,7 +529,7 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
             n_rows=0,
             predicate="pa.compute.field('year') == 2026",
             with_columns=None,
-        ),
+        )[0].__next__(),
         pl.DataFrame(schema={"index": pl.Int64, "year": pl.Int64, "month": pl.Int64}),
     )
 

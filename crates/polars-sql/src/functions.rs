@@ -2273,8 +2273,7 @@ impl SQLFunctionVisitor<'_> {
             return Ok(expr.sort(
                 SortOptions::default()
                     .with_order_descending(desc_order)
-                    .with_nulls_last(nulls_last)
-                    .with_maintain_order(true),
+                    .with_nulls_last(nulls_last),
             ));
         }
         // Otherwise, fall back to `sort_by` (may need to handle further edge-cases later)

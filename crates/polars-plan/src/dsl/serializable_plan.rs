@@ -180,7 +180,8 @@ fn convert_dsl_plan_to_serializable_plan(
     plan: &DslPlan,
     arenas: &mut SerializeArenas,
 ) -> SerializableDslPlanNode {
-    use {DslPlan as DP, SerializableDslPlanNode as SP};
+    use DslPlan as DP;
+    use SerializableDslPlanNode as SP;
 
     match plan {
         #[cfg(feature = "python")]
@@ -425,7 +426,8 @@ fn try_convert_serializable_plan_to_dsl_plan(
     ser_dsl_plan: &SerializableDslPlan,
     arenas: &mut DeserializeArenas,
 ) -> Result<DslPlan, PolarsError> {
-    use {DslPlan as DP, SerializableDslPlanNode as SP};
+    use DslPlan as DP;
+    use SerializableDslPlanNode as SP;
 
     match node {
         #[cfg(feature = "python")]
