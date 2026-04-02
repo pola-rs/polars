@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
+use std::ops::{Range, RangeBounds};
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
+use polars_utils::range::check_range;
 
 use crate::morsel::MorselSeq;
 use crate::pipe::PortReceiver;
@@ -112,17 +114,21 @@ impl DataFrameSearchBuffer {
 
     /// Find the index of the first item in the buffer that satisfies `predicate`,
     /// assuming it is first always false and then always true.
-    pub(super) fn binary_search<P>(
+    pub(super) fn binary_search<P, R>(
         &self,
         predicate: P,
         key_col_name: &str,
+        range: R,
         binary_offset_bypass_validity: bool,
     ) -> usize
     where
         P: Fn(&AnyValue<'_>) -> bool,
+        R: RangeBounds<usize>,
     {
-        let mut lower = 0;
-        let mut upper = self.height();
+        let Range {
+            start: mut lower,
+            end: mut upper,
+        } = check_range(range, ..self.height());
         while lower < upper {
             let mid = (lower + upper) / 2;
             let mid_val = unsafe {

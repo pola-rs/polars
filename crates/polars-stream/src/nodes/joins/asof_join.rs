@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use polars_core::prelude::*;
@@ -274,11 +273,11 @@ async fn distribute_work_task(
             }
         }
 
+        prune_right_side(&left_df, right_buffer, params)?;
         distributor
             .send((left_df.clone(), right_buffer.clone(), seq, st))
             .await
             .unwrap();
-        prune_right_side(&left_df, right_buffer, params)?;
     }
 }
 
@@ -289,43 +288,47 @@ fn need_more_right_side(
     right: &DataFrameSearchBuffer,
     params: &AsOfJoinParams,
 ) -> PolarsResult<bool> {
-    let options = params.as_of_options();
     if left.height() == 0 {
         return Ok(false);
     } else if right.height() == 0 {
         return Ok(true);
     }
 
-    // If there are `by` groups, first check that the right side has reached the
-    // group of the last left row before checking the key range.  Data arrives
-    // sorted by (by..., on), so if the last right row's group is still less than
-    // the last left row's group, we must wait for more right-side data.
+    let options = params.as_of_options();
+
+    let mut start = 0;
+    let mut end = right.height();
     for (left_by, right_by) in Iterator::zip(params.left.by.iter(), params.right.by.iter()) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
         // SAFETY: We checked earlier that the dataframes are not empty
-        let left_last_group = unsafe { left_by_col.get_unchecked(left_by_col.len() - 1) };
-        let right_last_group = unsafe { right.get_unchecked(right_by, right.height() - 1) };
-        match PartialOrd::partial_cmp(&left_last_group, &right_last_group) {
-            Some(Ordering::Less) => return Ok(false),
-            Some(Ordering::Greater) => return Ok(true),
-            Some(Ordering::Equal) => {},
-            None => unreachable!(),
-        }
+        let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) };
+        start = right.binary_search(|x| x >= &left_last_group, right_by, start..end, false);
+        end = right.binary_search(|x| x > &left_last_group, right_by, start..end, false)
     }
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     // SAFETY: We checked earlier that the dataframes are not empty
     let left_last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
-        (AsofStrategy::Forward, true) => {
-            right.binary_search(|x| *x >= left_last_val, params.right.key_col(), false)
-        },
-        (AsofStrategy::Forward, false) | (AsofStrategy::Backward, true) => {
-            right.binary_search(|x| *x > left_last_val, params.right.key_col(), false)
-        },
+        (AsofStrategy::Forward, true) => right.binary_search(
+            |x| *x >= left_last_val,
+            params.right.key_col(),
+            start..end,
+            false,
+        ),
+        (AsofStrategy::Forward, false) | (AsofStrategy::Backward, true) => right.binary_search(
+            |x| *x > left_last_val,
+            params.right.key_col(),
+            start..end,
+            false,
+        ),
         (AsofStrategy::Backward, false) | (AsofStrategy::Nearest, _) => {
-            let first_greater =
-                right.binary_search(|x| *x > left_last_val, params.right.key_col(), false);
+            let first_greater = right.binary_search(
+                |x| *x > left_last_val,
+                params.right.key_col(),
+                start..end,
+                false,
+            );
             if first_greater >= right.height() {
                 return Ok(true);
             }
@@ -336,7 +339,12 @@ fn need_more_right_side(
             // SAFETY: We just checked that right_range_end is in bounds
             let fst_greater_val =
                 unsafe { right.get_unchecked(params.right.key_col(), first_greater) };
-            right.binary_search(|x| *x > fst_greater_val, params.right.key_col(), false)
+            right.binary_search(
+                |x| *x > fst_greater_val,
+                params.right.key_col(),
+                first_greater..end,
+                false,
+            )
         },
     };
     Ok(right_range_end >= right.height())
@@ -351,21 +359,26 @@ fn prune_right_side(
         return Ok(());
     }
 
+    let mut start = 0;
+    let mut end = right.height();
     for (left_by, right_by) in Iterator::zip(params.left.by.iter(), params.right.by.iter()) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
         // SAFETY: We checked earlier that the dataframes are not empty
-        let left_first_group = unsafe { left_by_col.get_unchecked(0) };
-        let right_range_start = right
-            .binary_search(|x| *x >= left_first_group, right_by, false)
-            .saturating_sub(1);
-        right.split_at(right_range_start);
+        let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) };
+        start = right.binary_search(|x| x >= &left_last_group, right_by, start..end, false);
+        end = right.binary_search(|x| x > &left_last_group, right_by, start..end, false)
     }
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     // SAFETY: We checked earlier that the dataframes are not empty
     let left_first_val = unsafe { left_key.get_unchecked(0) };
     let right_range_start = right
-        .binary_search(|x| *x >= left_first_val, params.right.key_col(), false)
+        .binary_search(
+            |x| *x >= left_first_val,
+            params.right.key_col(),
+            start..end,
+            false,
+        )
         .saturating_sub(1);
     right.split_at(right_range_start);
     Ok(())
@@ -436,6 +449,8 @@ async fn compute_and_emit_task(
             let right_on_name = format_pl_smallstr!("{}{}", params.right.on, params.args.suffix());
             out.drop_in_place(&right_on_name)?;
         }
+
+        dbg!(&out);
 
         let morsel = Morsel::new(out, seq, st);
         if send.send(morsel).await.is_err() {

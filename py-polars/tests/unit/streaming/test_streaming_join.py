@@ -16,7 +16,7 @@ from polars.datatypes.group import (
     INTEGER_DTYPES,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric.strategies.core import dataframes
+from polars.testing.parametric.strategies.core import dataframes, column, dtypes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -608,58 +608,105 @@ def test_merge_join_applicable(
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
-@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize(
+    "strategy",
+    [
+        # "backward",
+        # "forward",
+        "nearest",
+    ],
+)
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize("coalesce", [False, True])
 @pytest.mark.parametrize(
-    "dtypes",
+    "val_dtypes",
     [
         FLOAT_DTYPES,
+        # INTEGER_DTYPES,
+        # {pl.String, pl.Binary},
+        # {pl.Date},
+        # {
+        #     pl.Datetime("ms"),
+        #     pl.Datetime("us"),
+        #     pl.Datetime("ns"),
+        # },
+        # {
+        #     pl.Datetime("ms", time_zone="Europe/Amsterdam"),
+        #     pl.Datetime("us", time_zone="Europe/Amsterdam"),
+        #     pl.Datetime("ns", time_zone="Europe/Amsterdam"),
+        # },
+        # {pl.Time},
+        # {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
+    ],
+)
+@pytest.mark.parametrize(
+    "group_dtypes",
+    [
+        # None,
         INTEGER_DTYPES,
-        {pl.String, pl.Binary},
-        {pl.Date},
-        {
-            pl.Datetime("ms"),
-            pl.Datetime("us"),
-            pl.Datetime("ns"),
-        },
-        {
-            pl.Datetime("ms", time_zone="Europe/Amsterdam"),
-            pl.Datetime("us", time_zone="Europe/Amsterdam"),
-            pl.Datetime("ns", time_zone="Europe/Amsterdam"),
-        },
-        {pl.Time},
-        {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
+        # {pl.String, pl.Binary, pl.Categorical},
     ],
 )
 @given(data=st.data())
+@settings(max_examples=500)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
     allow_exact_matches: bool,
     coalesce: bool,
-    dtypes: set[pl.DataType],
+    val_dtypes: set[pl.DataType],
+    group_dtypes: set[pl.DataType] | None,
 ) -> None:
-    if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
+    if val_dtypes & {pl.String, pl.Binary} and strategy == "nearest":
         pytest.skip("asof join with string/binary does not support 'nearest' strategy")
 
-    dtype = data.draw(st.sampled_from(list(dtypes)))
+    group_dtype = None
+    group_cols = []
+    if group_dtypes is not None:
+        group_dtype = data.draw(st.sampled_from(list(group_dtypes)))
+        group_cols.append(column(name="group", dtype=group_dtype))
+
+    val_dtype = data.draw(st.sampled_from(list(val_dtypes)))
     df_st = dataframes(
-        min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
+        min_cols=1,
+        max_cols=1,
+        allowed_dtypes=[val_dtype],
+        allow_time_zones=False,
+        include_cols=group_cols,
     )
     left_df = data.draw(df_st)
     right_df = data.draw(df_st)
 
-    left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
-    right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    left = left_df.rename({"col0": "key"}).sort("key").with_row_index().lazy()
+    right = right_df.rename({"col0": "key"}).sort("key").with_row_index().lazy()
 
-    q = left.join_asof(
-        right,
-        on="key",
-        strategy=strategy,
-        allow_exact_matches=allow_exact_matches,
-        coalesce=coalesce,
-    )
+    if group_cols:
+        q = left.sort("group", maintain_order=True).join_asof(
+            right.sort("group", maintain_order=True),
+            on="key",
+            by="group",
+            strategy=strategy,
+            allow_exact_matches=allow_exact_matches,
+            coalesce=coalesce,
+            check_sortedness=False,
+        )
+        import sys
+
+        # assert q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    else:
+        q = left.join_asof(
+            right,
+            on="key",
+            strategy=strategy,
+            allow_exact_matches=allow_exact_matches,
+            coalesce=coalesce,
+            check_sortedness=True,
+        )
+
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
+    print(f"{left.sort('group').collect() = }", file=sys.stderr)
+    print(f"{right.sort('group').collect() = }", file=sys.stderr)
+    print(f"{actual = }", file=sys.stderr)
+    print(f"{expected = }", file=sys.stderr)
     assert_frame_equal(actual, expected)

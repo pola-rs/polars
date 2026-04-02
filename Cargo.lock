@@ -3026,6 +3026,7 @@ version = "0.53.0"
 dependencies = [
  "bytemuck",
  "either",
+ "polars-utils",
  "serde",
  "version_check",
 ]
