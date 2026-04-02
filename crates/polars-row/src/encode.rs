@@ -20,6 +20,21 @@ use crate::{
     ArrayRef, RowEncodingCategoricalContext, RowEncodingContext, with_match_arrow_primitive_type,
 };
 
+/// Size of the dtype fingerprint tag for FixedSizeList row encoding.
+/// This tag prevents cross-type hash collisions where different Array dtypes
+/// (e.g. Array(UInt16, 2) vs Array(UInt8, 3)) with the same total encoded byte
+/// length produce identical row encodings.
+pub(crate) const FSL_TAG_SIZE: usize = 4;
+
+/// Compute a dtype fingerprint tag for FixedSizeList.
+/// Packs width (upper 16 bits) and inner element encoded size (lower 16 bits).
+fn compute_fsl_dtype_tag(width: usize, inner_fixed_size: usize) -> [u8; FSL_TAG_SIZE] {
+    let mut tag = [0u8; FSL_TAG_SIZE];
+    tag[0..2].copy_from_slice(&(width as u16).to_le_bytes());
+    tag[2..4].copy_from_slice(&(inner_fixed_size as u16).to_le_bytes());
+    tag
+}
+
 pub fn convert_columns(
     num_rows: usize,
     columns: &[ArrayRef],
@@ -263,7 +278,7 @@ fn get_encoder(
     if let Some(size) = fixed_size(dtype, opt, dict) {
         row_widths.push_constant(size);
         let state = match dtype {
-            D::FixedSizeList(_, width) => {
+            D::FixedSizeList(f, width) => {
                 let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
                 debug_assert_eq!(array.values().len(), array.len() * width);
@@ -275,10 +290,13 @@ fn get_encoder(
                     &mut nested_row_widths,
                     masked_out_max_width,
                 );
+                let inner_fixed_size = fixed_size(f.dtype(), opt, dict).unwrap_or(0);
+                let dtype_tag = compute_fsl_dtype_tag(*width, inner_fixed_size);
                 Some(EncoderState::FixedSizeList(
                     Box::new(nested_encoder),
                     *width,
                     nested_row_widths,
+                    dtype_tag,
                 ))
             },
             D::Struct(_) => {
@@ -384,7 +402,7 @@ fn get_encoder(
     }
 
     match dtype {
-        D::FixedSizeList(_, width) => {
+        D::FixedSizeList(f, width) => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
 
             debug_assert_eq!(array.values().len(), array.len() * width);
@@ -398,7 +416,10 @@ fn get_encoder(
             );
 
             let mut fsl_row_widths = nested_row_widths.collapse_chunks(*width, array.len());
-            fsl_row_widths.push_constant(1); // validity byte
+            fsl_row_widths.push_constant(1 + FSL_TAG_SIZE); // validity byte + dtype tag
+
+            let inner_fixed_size = fixed_size(f.dtype(), opt, dict).unwrap_or(0);
+            let dtype_tag = compute_fsl_dtype_tag(*width, inner_fixed_size);
 
             row_widths.push(&fsl_row_widths);
             Encoder {
@@ -407,6 +428,7 @@ fn get_encoder(
                     Box::new(nested_encoder),
                     *width,
                     nested_row_widths,
+                    dtype_tag,
                 ))),
             }
         },
@@ -550,7 +572,7 @@ struct Encoder {
 
 enum EncoderState {
     List(Box<Encoder>, RowWidths),
-    FixedSizeList(Box<Encoder>, usize, RowWidths),
+    FixedSizeList(Box<Encoder>, usize, RowWidths, [u8; FSL_TAG_SIZE]),
     Struct(Vec<Encoder>),
 }
 
@@ -833,8 +855,19 @@ unsafe fn encode_array(
                 )
             };
         },
-        EncoderState::FixedSizeList(array, width, nested_row_widths) => {
+        EncoderState::FixedSizeList(array, width, nested_row_widths, dtype_tag) => {
             encode_validity(buffer, encoder.array.validity(), opt, offsets);
+
+            // Write dtype fingerprint tag to prevent cross-type hash collisions.
+            // Without this tag, Array(UInt16, 2) and Array(UInt8, 3) can produce
+            // identical row encodings for certain values (both encode to 7 bytes
+            // with validity and data bytes being interchangeable).
+            for offset in offsets.iter_mut() {
+                for (i, &b) in dtype_tag.iter().enumerate() {
+                    buffer[*offset + i] = MaybeUninit::new(b);
+                }
+                *offset += FSL_TAG_SIZE;
+            }
 
             if *width == 0 {
                 return;
@@ -963,7 +996,10 @@ pub fn fixed_size(
         D::Float16 => pf16::ENCODED_LEN,
         D::Float32 => f32::ENCODED_LEN,
         D::Float64 => f64::ENCODED_LEN,
-        D::FixedSizeList(f, width) => 1 + width * fixed_size(f.dtype(), opt, dict)?,
+        D::FixedSizeList(f, width) => {
+            let inner = fixed_size(f.dtype(), opt, dict)?;
+            1 + FSL_TAG_SIZE + width * inner
+        },
         D::Struct(fs) => match dict {
             None => {
                 let mut sum = 0;
@@ -1017,5 +1053,54 @@ mod tests {
             let dicts: Vec<Option<RowEncodingContext>> = (0..arrays.len()).map(|_| None).collect();
             convert_columns_no_order(arrays[0].len(), &arrays, &dicts);
         }
+    }
+
+    /// Regression test: Array(UInt16, 2) and Array(UInt8, 3) must produce
+    /// different row encodings. Before the dtype fingerprint tag fix, both
+    /// types encoded to 7 bytes and certain values produced identical byte
+    /// sequences, causing deterministic hash collisions in hash_rows/join/group_by.
+    #[test]
+    fn test_fsl_cross_type_no_collision() {
+        use arrow::array::FixedSizeListArray;
+        use arrow::datatypes::{ArrowDataType, Field};
+
+        // Array(UInt16, 2) with value [257, 256]
+        let u16_values = PrimitiveArray::from_vec(vec![257u16, 256u16]);
+        let u16_fsl = FixedSizeListArray::new(
+            ArrowDataType::FixedSizeList(
+                Box::new(Field::new("item".into(), ArrowDataType::UInt16, true)),
+                2,
+            ),
+            1,
+            u16_values.to_boxed(),
+            None,
+        );
+
+        // Array(UInt8, 3) with value [1, 1, 0]
+        let u8_values = PrimitiveArray::from_vec(vec![1u8, 1u8, 0u8]);
+        let u8_fsl = FixedSizeListArray::new(
+            ArrowDataType::FixedSizeList(
+                Box::new(Field::new("item".into(), ArrowDataType::UInt8, true)),
+                3,
+            ),
+            1,
+            u8_values.to_boxed(),
+            None,
+        );
+
+        let dicts_1 = vec![None];
+        let dicts_2 = vec![None];
+
+        let encoded_u16 =
+            convert_columns_no_order(1, &[u16_fsl.to_boxed()], &dicts_1);
+        let encoded_u8 =
+            convert_columns_no_order(1, &[u8_fsl.to_boxed()], &dicts_2);
+
+        // The row encodings must differ due to the dtype fingerprint tag
+        assert_ne!(
+            encoded_u16.get(0),
+            encoded_u8.get(0),
+            "Array(UInt16, 2)[257, 256] and Array(UInt8, 3)[1, 1, 0] must produce different row encodings"
+        );
     }
 }

@@ -6,7 +6,7 @@ use arrow::types::NativeType;
 use polars_buffer::Buffer;
 use polars_dtype::categorical::CatNative;
 
-use self::encode::fixed_size;
+use self::encode::{fixed_size, FSL_TAG_SIZE};
 use self::row::{RowEncodingCategoricalContext, RowEncodingOptions};
 use self::variable::utf8::decode_str;
 use super::*;
@@ -118,8 +118,8 @@ fn dtype_and_data_to_encoded_item_len(
 
         D::FixedSizeBinary(_) => todo!(),
         D::FixedSizeList(fsl_field, width) => {
-            let mut data = &data[1..];
-            let mut item_len = 1; // validity byte
+            let mut data = &data[1 + FSL_TAG_SIZE..]; // skip validity byte + dtype tag
+            let mut item_len = 1 + FSL_TAG_SIZE; // validity byte + dtype tag
 
             for _ in 0..*width {
                 let len = dtype_and_data_to_encoded_item_len(
@@ -275,6 +275,11 @@ unsafe fn decode(
         },
         D::FixedSizeList(fsl_field, width) => {
             let validity = decode_validity(rows, opt);
+
+            // Skip dtype fingerprint tag
+            for row in rows.iter_mut() {
+                *row = &row[FSL_TAG_SIZE..];
+            }
 
             // @TODO: we could consider making this into a scratchpad
             let mut nested_rows = Vec::new();
