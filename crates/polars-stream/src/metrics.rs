@@ -141,7 +141,7 @@ impl GraphMetrics {
         for (key, io_metrics) in self.in_progress_io_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.reset_io_metrics();
-            this_node_metrics.add_io(&io_metrics);
+            this_node_metrics.add_io(io_metrics);
         }
 
         for (key, in_progress_pipe_metrics) in self.in_progress_pipe_metrics.iter_mut() {
