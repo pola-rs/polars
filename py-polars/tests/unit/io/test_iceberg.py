@@ -66,9 +66,8 @@ from polars.io.iceberg._dataset import (
 )
 from polars.io.iceberg._sink import IcebergSinkState, PlIcebergPathProviderConfig
 from polars.io.iceberg._utils import (
-    _convert_predicate,
+    _build_iceberg_expr,
     _normalize_windows_iceberg_file_uri,
-    _to_ast,
     try_convert_pyarrow_predicate,
 )
 from polars.testing import assert_frame_equal
@@ -85,6 +84,7 @@ if TYPE_CHECKING:
     GreaterThanOrEqual = Any
     In = Any
     IsNull = Any
+    IsNotNull = Any
     LessThan = Any
     LessThanOrEqual = Any
     Not = Any
@@ -96,11 +96,10 @@ else:
         EqualTo,
         GreaterThan,
         GreaterThanOrEqual,
-        In,
+        IsNotNull,
         IsNull,
         LessThan,
         LessThanOrEqual,
-        Not,
         Or,
         Reference,
     )
@@ -262,65 +261,50 @@ class TestIcebergExpressions:
     """Test coverage for `iceberg` expressions comprehension."""
 
     def test_is_null_expression(self) -> None:
-        expr = _to_ast("(pa.compute.field('id')).is_null()")
-        assert _convert_predicate(expr) == IsNull("id")
+        assert _build_iceberg_expr(["is_null", ["field", "id"]]) == IsNull("id")
 
     def test_is_not_null_expression(self) -> None:
-        expr = _to_ast("~(pa.compute.field('id')).is_null()")
-        assert _convert_predicate(expr) == Not(IsNull("id"))
-
-    def test_isin_expression(self) -> None:
-        expr = _to_ast("(pa.compute.field('id')).isin([1,2,3])")
-        assert _convert_predicate(expr) == In(
-            "id", {literal(1), literal(2), literal(3)}
-        )
+        assert _build_iceberg_expr(["is_not_null", ["field", "id"]]) == IsNotNull("id")
 
     def test_parse_combined_expression(self) -> None:
-        expr = _to_ast(
-            "(((pa.compute.field('str') == '2') & (pa.compute.field('id') > 10)) | (pa.compute.field('id')).isin([1,2,3]))"
-        )
-        assert _convert_predicate(expr) == Or(
+        node = [
+            "binop", "or",
+            ["binop", "and",
+                ["binop", "eq", ["field", "str"], ["lit_str", "2"]],
+                ["binop", "gt", ["field", "id"], ["lit_i64", 10]],
+            ],
+            ["binop", "eq", ["field", "id"], ["lit_i64", 1]],
+        ]
+        assert _build_iceberg_expr(node) == Or(
             left=And(
                 left=EqualTo(term=Reference(name="str"), literal=literal("2")),
                 right=GreaterThan(term="id", literal=literal(10)),
             ),
-            right=In("id", {literal(1), literal(2), literal(3)}),
+            right=EqualTo("id", 1),
         )
 
     def test_parse_gt(self) -> None:
-        expr = _to_ast("(pa.compute.field('ts') > '2023-08-08')")
-        assert _convert_predicate(expr) == GreaterThan("ts", "2023-08-08")
+        assert _build_iceberg_expr(["binop", "gt", ["field", "ts"], ["lit_str", "2023-08-08"]]) == GreaterThan("ts", "2023-08-08")
 
     def test_parse_gteq(self) -> None:
-        expr = _to_ast("(pa.compute.field('ts') >= '2023-08-08')")
-        assert _convert_predicate(expr) == GreaterThanOrEqual("ts", "2023-08-08")
+        assert _build_iceberg_expr(["binop", "gte", ["field", "ts"], ["lit_str", "2023-08-08"]]) == GreaterThanOrEqual("ts", "2023-08-08")
 
     def test_parse_eq(self) -> None:
-        expr = _to_ast("(pa.compute.field('ts') == '2023-08-08')")
-        assert _convert_predicate(expr) == EqualTo("ts", "2023-08-08")
+        assert _build_iceberg_expr(["binop", "eq", ["field", "ts"], ["lit_str", "2023-08-08"]]) == EqualTo("ts", "2023-08-08")
 
     def test_parse_lt(self) -> None:
-        expr = _to_ast("(pa.compute.field('ts') < '2023-08-08')")
-        assert _convert_predicate(expr) == LessThan("ts", "2023-08-08")
+        assert _build_iceberg_expr(["binop", "lt", ["field", "ts"], ["lit_str", "2023-08-08"]]) == LessThan("ts", "2023-08-08")
 
     def test_parse_lteq(self) -> None:
-        expr = _to_ast("(pa.compute.field('ts') <= '2023-08-08')")
-        assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
+        assert _build_iceberg_expr(["binop", "lte", ["field", "ts"], ["lit_str", "2023-08-08"]]) == LessThanOrEqual("ts", "2023-08-08")
 
     def test_compare_boolean(self) -> None:
-        expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(True))")
-        assert _convert_predicate(expr) == EqualTo("ts", True)
-
-        expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(False))")
-        assert _convert_predicate(expr) == EqualTo("ts", False)
+        assert _build_iceberg_expr(["binop", "eq", ["field", "ts"], ["lit_bool", True]]) == EqualTo("ts", True)
+        assert _build_iceberg_expr(["binop", "eq", ["field", "ts"], ["lit_bool", False]]) == EqualTo("ts", False)
 
     def test_bare_boolean_field(self) -> None:
-        expr = try_convert_pyarrow_predicate("pa.compute.field('is_active')")
+        expr = try_convert_pyarrow_predicate('["field","is_active"]')
         assert expr == EqualTo("is_active", True)
-
-    def test_bare_boolean_field_negated(self) -> None:
-        expr = try_convert_pyarrow_predicate("~pa.compute.field('is_active')")
-        assert expr == Not(EqualTo("is_active", True))
 
 
 @dataclass(kw_only=True)
@@ -2666,7 +2650,8 @@ def test_scan_iceberg_partial_and_pushdown(
 
     # Verify: partial predicate was pushed
     assert "pyarrow_predicate = " in capture
-    assert "pa.compute.field('a') > 1" in capture
+    assert '"binop"' in capture
+    assert '"gt"' in capture
     # Verify: correctness
     assert len(result) == 2
     assert result["a"].to_list() == [2, 3]
