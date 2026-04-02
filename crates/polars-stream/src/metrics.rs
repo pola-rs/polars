@@ -49,20 +49,17 @@ impl NodeMetrics {
     }
 
     fn add_io(&mut self, io_metrics: &IOMetrics) {
-        // We consume the IOMetrics counters as they get re-used across phases.
-        let io_total_active_ns = io_metrics.io_timer.total_time_live_ns();
+        self.io_total_active_ns += io_metrics.io_timer.total_time_live_ns();
+        self.io_total_bytes_requested += io_metrics.bytes_requested.load();
+        self.io_total_bytes_received += io_metrics.bytes_received.load();
+        self.io_total_bytes_sent += io_metrics.bytes_sent.load();
+    }
 
-        let io_total_active_ns_prev_call =
-            io_metrics.io_timer_consumed.fetch_max(io_total_active_ns);
-
-        let io_total_active_ns_delta = io_total_active_ns - io_total_active_ns_prev_call;
-        self.io_total_active_ns += io_total_active_ns_delta;
-
-        // Load-swap received before requested to ensure received<=requested.
-        self.io_total_bytes_received += io_metrics.bytes_received.swap(0);
-        self.io_total_bytes_requested += io_metrics.bytes_requested.swap(0);
-
-        self.io_total_bytes_sent += io_metrics.bytes_sent.swap(0);
+    fn reset_io_metrics(&mut self) {
+        self.io_total_active_ns = 0;
+        self.io_total_bytes_requested = 0;
+        self.io_total_bytes_received = 0;
+        self.io_total_bytes_sent = 0;
     }
 
     fn start_state_update(&mut self) {
@@ -144,6 +141,7 @@ impl GraphMetrics {
         for (key, in_progress_io_metrics) in self.in_progress_io_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
             this_node_metrics.num_running_tasks = 0;
+            this_node_metrics.reset_io_metrics();
             for io_metrics in in_progress_io_metrics.drain(..) {
                 this_node_metrics.add_io(&io_metrics);
             }
