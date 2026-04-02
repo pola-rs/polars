@@ -1,3 +1,5 @@
+use std::borrow::BorrowMut;
+
 use slotmap::SlotMap;
 
 use crate::plans::ir_traversal::ir_graph::{IRNodeEdgeKeys, unpack_edges_mut};
@@ -52,8 +54,10 @@ where
     pub edges_map: &'a mut SlotMap<EdgeKey, Edge>,
 }
 
-impl<'provider, EdgeKey: slotmap::Key, Edge> EdgesProvider<Edge>
+impl<'provider, EdgeKey: slotmap::Key, Edge, EdgeAsMut> EdgesProvider<EdgeAsMut>
     for IRTraversalGraphEdgeProvider<'provider, EdgeKey, Edge>
+where
+    Edge: AsMut<EdgeAsMut>,
 {
     fn unpack_edges_mut<
         'a,
@@ -63,32 +67,39 @@ impl<'provider, EdgeKey: slotmap::Key, Edge> EdgesProvider<Edge>
         const TOTAL_EDGES: usize,
     >(
         &'a mut self,
-    ) -> Option<([&'a mut Edge; NUM_INPUTS], [&'a mut Edge; NUM_OUTPUTS])>
+    ) -> Option<(
+        [&'a mut EdgeAsMut; NUM_INPUTS],
+        [&'a mut EdgeAsMut; NUM_OUTPUTS],
+    )>
     where
         Edge: 'a,
     {
-        unpack_edges_mut::<EdgeKey, Edge, NUM_INPUTS, NUM_OUTPUTS, TOTAL_EDGES>(
+        let (in_, out) = unpack_edges_mut::<EdgeKey, Edge, NUM_INPUTS, NUM_OUTPUTS, TOTAL_EDGES>(
             self.ir_node_edge_keys,
             self.edges_map,
-        )
+        )?;
+
+        Some((in_.map(AsMut::as_mut), out.map(AsMut::as_mut)))
     }
 
-    fn get_in_edge_mut<'a>(&'a mut self, idx: usize) -> &'a mut Edge
+    fn get_in_edge_mut<'a>(&'a mut self, idx: usize) -> &'a mut EdgeAsMut
     where
-        Edge: 'a,
+        EdgeAsMut: 'a,
     {
         self.edges_map
             .get_mut(self.ir_node_edge_keys.in_edges[idx])
             .unwrap()
+            .as_mut()
     }
 
-    fn get_out_edge_mut<'a>(&'a mut self, idx: usize) -> &'a mut Edge
+    fn get_out_edge_mut<'a>(&'a mut self, idx: usize) -> &'a mut EdgeAsMut
     where
-        Edge: 'a,
+        EdgeAsMut: 'a,
     {
         self.edges_map
             .get_mut(self.ir_node_edge_keys.out_edges[idx])
             .unwrap()
+            .as_mut()
     }
 
     fn num_in_edges(&self) -> usize {

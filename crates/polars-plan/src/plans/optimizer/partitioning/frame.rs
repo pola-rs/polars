@@ -6,7 +6,8 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::plans::Sorted;
 
-static EMPTY: LazyLock<PlIndexMap<PlSmallStr, Sorted>> = LazyLock::new(Default::default);
+static EMPTY_MAP: LazyLock<PlIndexMap<PlSmallStr, Sorted>> = LazyLock::new(Default::default);
+static EMPTY: LazyLock<FramePartitioning> = LazyLock::new(FramePartitioning::new);
 
 #[derive(Debug, Default, Clone)]
 pub struct FramePartitioning {
@@ -14,6 +15,14 @@ pub struct FramePartitioning {
 }
 
 impl FramePartitioning {
+    pub const fn new() -> Self {
+        Self { keys: None }
+    }
+
+    pub fn empty_static() -> &'static FramePartitioning {
+        &*EMPTY
+    }
+
     pub fn is_empty(&self) -> bool {
         self.keys.as_ref().is_none_or(|x| x.is_empty())
     }
@@ -37,7 +46,7 @@ impl Deref for FramePartitioning {
     type Target = PlIndexMap<PlSmallStr, Sorted>;
 
     fn deref(&self) -> &Self::Target {
-        self.keys.as_deref().unwrap_or(&*EMPTY)
+        self.keys.as_deref().unwrap_or(&*EMPTY_MAP)
     }
 }
 

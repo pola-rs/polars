@@ -54,7 +54,9 @@ impl IRPlanSorted {
     }
 
     pub fn get(&self, node_key: &IRNodeKey) -> &FramePartitioning {
-        self.0.get(node_key).unwrap()
+        self.0
+            .get(node_key)
+            .unwrap_or(FramePartitioning::empty_static())
     }
 
     pub fn is_expr_sorted(

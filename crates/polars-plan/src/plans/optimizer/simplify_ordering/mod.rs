@@ -3,7 +3,7 @@ pub mod expr;
 use std::sync::Arc;
 
 use polars_core::frame::UniqueKeepStrategy;
-use polars_core::prelude::PlHashMap;
+use polars_core::prelude::{PlHashMap, ScratchMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use slotmap::{SlotMap, new_key_type};
@@ -12,25 +12,93 @@ use crate::dsl::{SinkTypeIR, UnionOptions};
 use crate::plans::ir_traversal::edge_provider::{EdgesProvider, IRTraversalGraphEdgeProvider};
 use crate::plans::ir_traversal::ir_graph::{IRNodeEdgeKeys, build_ir_traversal_graph};
 use crate::plans::ir_traversal::ir_node_key::IRNodeKey;
+use crate::plans::optimizer::sortedness::pullup_sorted_single;
+use crate::plans::partitioning::frame::FramePartitioning;
 use crate::plans::simplify_ordering::expr::{ExprOrderSimplifier, ObservableOrders};
-use crate::plans::{IRAggExpr, is_scalar_ae};
+use crate::plans::{IRAggExpr, Sorted, is_scalar_ae};
 use crate::prelude::{AExpr, IR};
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub enum Edge {
-    #[default]
-    Ordered,
-    Unordered,
+    Ordered(FramePartitioning),
+    Unordered(FramePartitioning),
+}
+
+impl Default for Edge {
+    fn default() -> Self {
+        Self::Ordered(FramePartitioning::new())
+    }
+}
+
+impl AsMut<Edge> for Edge {
+    fn as_mut(&mut self) -> &mut Edge {
+        self
+    }
+}
+
+impl AsMut<FramePartitioning> for Edge {
+    fn as_mut(&mut self) -> &mut FramePartitioning {
+        match self {
+            Self::Ordered(v) => v,
+            Self::Unordered(v) => v,
+        }
+    }
 }
 
 impl Edge {
     pub fn is_unordered(&self) -> bool {
-        matches!(self, Self::Unordered)
+        matches!(self, Self::Unordered(_))
+    }
+
+    pub fn partitioning(&self) -> &FramePartitioning {
+        match self {
+            Self::Ordered(v) => v,
+            Self::Unordered(v) => v,
+        }
+    }
+
+    fn set_unordered(&mut self) {
+        match self {
+            Self::Ordered(p) => {
+                *self = Self::Unordered(std::mem::take(p));
+                self.unordered_partitioning_correction();
+            },
+            Self::Unordered(_) => {},
+        }
+    }
+
+    fn unordered_partitioning_correction(&mut self) {
+        if !self.is_unordered() {
+            return;
+        }
+
+        let partitioning: &mut FramePartitioning = self.as_mut();
+
+        for i in 0..partitioning.len() {
+            if !matches!(
+                partitioning.get_index(i).unwrap().1,
+                Sorted {
+                    column: _,
+                    descending: None,
+                    nulls_last: None,
+                }
+            ) {
+                let sorted = partitioning.make_mut().get_index_mut(i).unwrap().1;
+                sorted.descending = None;
+                sorted.nulls_last = None;
+            }
+        }
     }
 }
 
 new_key_type! {
     pub struct EdgeKey;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VisitState {
+    Pre,
+    Post,
 }
 
 pub fn simplify_and_fetch_orderings(
@@ -64,11 +132,14 @@ pub fn simplify_and_fetch_orderings(
                     .unwrap(),
                 edges_map: &mut edges_map,
             },
+            VisitState::Pre,
         ) {
             deleted_idxs.push(i);
             unlink_node(node, ir_arena, &mut ir_node_to_edge_keys_map);
         }
     }
+
+    let mut column_names_scratch = ScratchMap::default();
 
     for (i, node) in ir_nodes_stack.drain(..).enumerate().rev() {
         if deleted_idxs.last() == Some(&i) {
@@ -85,9 +156,29 @@ pub fn simplify_and_fetch_orderings(
                     .unwrap(),
                 edges_map: &mut edges_map,
             },
+            VisitState::Post,
         ) {
             unlink_node(node, ir_arena, &mut ir_node_to_edge_keys_map);
         }
+
+        let mut edge_provider = IRTraversalGraphEdgeProvider {
+            ir_node_edge_keys: ir_node_to_edge_keys_map
+                .get(&IRNodeKey::new(node, ir_arena))
+                .unwrap(),
+            edges_map: &mut edges_map,
+        };
+
+        pullup_sorted_single(
+            node,
+            ir_arena,
+            simplifier.expr_arena,
+            &mut edge_provider,
+            &mut column_names_scratch,
+        );
+
+        edge_provider
+            .map_out_edges_mut(|e: &mut Edge| e.unordered_partitioning_correction())
+            .for_each(|_| ());
     }
 
     cache_updater.update_cache_nodes(ir_arena);
@@ -107,7 +198,8 @@ impl SimplifyIRNodeOrder<'_> {
         &mut self,
         current_ir_node: Node,
         ir_arena: &mut Arena<IR>,
-        mut edges_provider: IRTraversalGraphEdgeProvider<'_, EdgeKey, Edge>,
+        mut edges_provider: impl EdgesProvider<Edge>,
+        visit_state: VisitState,
     ) -> bool {
         use ObservableOrders as O;
 
@@ -154,14 +246,14 @@ impl SimplifyIRNodeOrder<'_> {
                     || eos.internally_observed_orders().contains(O::COLUMN);
 
                 if !input_order_observe {
-                    *in_edge = Edge::Unordered;
+                    in_edge.set_unordered();
                 }
 
                 if !exprs_observable_orders.contains(O::INDEPENDENT)
                     && (in_edge.is_unordered()
                         || !(is_hstack || exprs_observable_orders.contains(O::COLUMN)))
                 {
-                    *out_edge = Edge::Unordered;
+                    out_edge.set_unordered();
                 }
             },
 
@@ -174,6 +266,7 @@ impl SimplifyIRNodeOrder<'_> {
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
                 if out_edge.is_unordered() && slice.is_none() {
+                    debug_assert_eq!(visit_state, VisitState::Pre);
                     *in_edge = out_edge.clone();
                     return true;
                 }
@@ -191,7 +284,7 @@ impl SimplifyIRNodeOrder<'_> {
                         || eos.internally_observed_orders().contains(O::COLUMN)
                         || key_exprs_observable_orders.contains(O::INDEPENDENT))
                 {
-                    *in_edge = Edge::Unordered;
+                    in_edge.set_unordered();
                     sort_options.maintain_order = false;
                 }
             },
@@ -210,11 +303,11 @@ impl SimplifyIRNodeOrder<'_> {
                     && !(eos.internally_observed_orders().contains(O::COLUMN)
                         || predicate_observable_orders.contains(O::INDEPENDENT))
                 {
-                    *in_edge = Edge::Unordered;
+                    in_edge.set_unordered();
                 }
 
                 if in_edge.is_unordered() {
-                    *out_edge = Edge::Unordered;
+                    out_edge.set_unordered();
                 }
             },
 
@@ -262,14 +355,14 @@ impl SimplifyIRNodeOrder<'_> {
                         && keys_observable.contains(O::COLUMN)
                         && !out_edge.is_unordered()))
                 {
-                    *in_edge = Edge::Unordered;
+                    in_edge.set_unordered();
                 }
 
                 if out_edge.is_unordered()
                     || !*maintain_order
                     || (in_edge.is_unordered() && !keys_observable.contains(O::INDEPENDENT))
                 {
-                    *out_edge = Edge::Unordered;
+                    out_edge.set_unordered();
                     *maintain_order = false;
                 }
             },
@@ -281,7 +374,7 @@ impl SimplifyIRNodeOrder<'_> {
 
                 if !options.maintain_order || out_edge.is_unordered() {
                     options.maintain_order = false;
-                    *out_edge = Edge::Unordered;
+                    out_edge.set_unordered();
                 }
 
                 if in_edge.is_unordered()
@@ -298,7 +391,7 @@ impl SimplifyIRNodeOrder<'_> {
                         K::Any | K::None => {},
                     };
 
-                    *in_edge = Edge::Unordered;
+                    in_edge.set_unordered();
                 }
             },
 
@@ -333,9 +426,9 @@ impl SimplifyIRNodeOrder<'_> {
                     if in_edge_lhs.is_unordered()
                         || (out_edge.is_unordered() && in_edge_rhs.is_unordered())
                     {
-                        *in_edge_lhs = Edge::Unordered;
-                        *in_edge_rhs = Edge::Unordered;
-                        *out_edge = Edge::Unordered;
+                        in_edge_lhs.set_unordered();
+                        in_edge_rhs.set_unordered();
+                        out_edge.set_unordered();
                     }
 
                     return false;
@@ -344,14 +437,14 @@ impl SimplifyIRNodeOrder<'_> {
                 use polars_ops::prelude::MaintainOrderJoin as JO;
 
                 if out_edge.is_unordered() || options.args.maintain_order == JO::None {
-                    *out_edge = Edge::Unordered;
-                    *in_edge_lhs = Edge::Unordered;
-                    *in_edge_rhs = Edge::Unordered;
+                    out_edge.set_unordered();
+                    in_edge_lhs.set_unordered();
+                    in_edge_rhs.set_unordered();
                     Arc::make_mut(options).args.maintain_order = JO::None;
                 }
 
                 if in_edge_lhs.is_unordered() || options.args.maintain_order == JO::Right {
-                    *in_edge_lhs = Edge::Unordered;
+                    in_edge_lhs.set_unordered();
 
                     match options.args.maintain_order {
                         JO::Left => Arc::make_mut(options).args.maintain_order = JO::None,
@@ -370,7 +463,7 @@ impl SimplifyIRNodeOrder<'_> {
                         _ => false,
                     }
                 {
-                    *in_edge_rhs = Edge::Unordered;
+                    in_edge_rhs.set_unordered();
 
                     match options.args.maintain_order {
                         JO::Right => Arc::make_mut(options).args.maintain_order = JO::None,
@@ -389,10 +482,10 @@ impl SimplifyIRNodeOrder<'_> {
 
                 if !options.maintain_order || out_edge.is_unordered() {
                     options.maintain_order = false;
-                    *out_edge = Edge::Unordered;
+                    out_edge.set_unordered();
 
                     edges_provider
-                        .map_in_edges_mut(|e| *e = Edge::Unordered)
+                        .map_in_edges_mut(|e| e.set_unordered())
                         .for_each(|_| ());
                 }
 
@@ -411,9 +504,9 @@ impl SimplifyIRNodeOrder<'_> {
                 if out_edge.is_unordered()
                     || (in_edge_lhs.is_unordered() && in_edge_rhs.is_unordered())
                 {
-                    *out_edge = Edge::Unordered;
-                    *in_edge_lhs = Edge::Unordered;
-                    *in_edge_rhs = Edge::Unordered;
+                    out_edge.set_unordered();
+                    in_edge_lhs.set_unordered();
+                    in_edge_rhs.set_unordered();
 
                     let input_left = *input_left;
                     let input_right = *input_right;
@@ -437,13 +530,13 @@ impl SimplifyIRNodeOrder<'_> {
                 if !function.observes_input_order()
                     && (!function.has_equal_order() || out_edge.is_unordered())
                 {
-                    *in_edge = Edge::Unordered;
+                    in_edge.set_unordered();
                 }
 
                 if !function.is_order_producing(!in_edge.is_unordered())
                     && (in_edge.is_unordered() || !function.has_equal_order())
                 {
-                    *out_edge = Edge::Unordered;
+                    out_edge.set_unordered();
                 }
             },
 
@@ -453,7 +546,7 @@ impl SimplifyIRNodeOrder<'_> {
                     .all(|x| x)
                 {
                     edges_provider
-                        .map_out_edges_mut(|e| *e = Edge::Unordered)
+                        .map_out_edges_mut(|e| e.set_unordered())
                         .for_each(|_| ())
                 }
             },
@@ -462,8 +555,8 @@ impl SimplifyIRNodeOrder<'_> {
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
                 if in_edge.is_unordered() || out_edge.is_unordered() {
-                    *in_edge = Edge::Unordered;
-                    *out_edge = Edge::Unordered;
+                    in_edge.set_unordered();
+                    out_edge.set_unordered();
                 }
             },
 
@@ -472,14 +565,14 @@ impl SimplifyIRNodeOrder<'_> {
 
                 if edges_provider.get_in_edge_mut(0).is_unordered() {
                     edges_provider
-                        .map_out_edges_mut(|e| *e = Edge::Unordered)
+                        .map_out_edges_mut(|e| e.set_unordered())
                         .for_each(|_| ())
                 } else if edges_provider
                     .map_out_edges_mut(|e| e.is_unordered())
                     .all(|x| x)
                 {
                     edges_provider
-                        .map_in_edges_mut(|e| *e = Edge::Unordered)
+                        .map_in_edges_mut(|e| e.set_unordered())
                         .for_each(|_| ())
                 }
             },
@@ -499,8 +592,10 @@ impl SimplifyIRNodeOrder<'_> {
                     assert!(!eos.internally_observed_orders().contains(O::COLUMN));
                 }
 
+                dbg!((&in_edge, visit_state));
+
                 if !payload.maintain_order() || in_edge.is_unordered() {
-                    *in_edge = Edge::Unordered;
+                    in_edge.set_unordered();
                     payload.set_maintain_order(false);
                 }
             },
