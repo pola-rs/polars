@@ -112,36 +112,23 @@ def dict_to_pydf(
         if count_numpy >= 3:
             # yes, multi-threading was easier in python here; we cannot have multiple
             # threads running python and release the gil in pyo3 (it will deadlock).
+            from concurrent.futures import ThreadPoolExecutor
 
-            # (note: 'dummy' is threaded)
-            # We catch FileNotFoundError: see 16675
-            try:
-                import multiprocessing.dummy
-
-                pool_size = thread_pool_size()
-                with multiprocessing.dummy.Pool(pool_size) as pool:
-                    data = dict(
-                        zip(
-                            column_names,
-                            pool.map(
-                                lambda t: (
-                                    pl.Series(t[0], t[1], nan_to_null=nan_to_null)
-                                    if isinstance(t[1], np.ndarray)
-                                    else t[1]
-                                ),
-                                list(data.items()),
+            pool_size = thread_pool_size()
+            with ThreadPoolExecutor(max_workers=pool_size) as pool:
+                data = dict(
+                    zip(
+                        column_names,
+                        pool.map(
+                            lambda t: (
+                                pl.Series(t[0], t[1], nan_to_null=nan_to_null)
+                                if isinstance(t[1], np.ndarray)
+                                else t[1]
                             ),
-                            strict=True,
-                        )
+                            list(data.items()),
+                        ),
+                        strict=True,
                     )
-            except FileNotFoundError:
-                return dict_to_pydf(
-                    data=data,
-                    schema=schema,
-                    schema_overrides=schema_overrides,
-                    strict=strict,
-                    nan_to_null=nan_to_null,
-                    allow_multithreaded=False,
                 )
 
     if not data and schema_overrides:
