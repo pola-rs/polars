@@ -8507,6 +8507,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "PRICE2": ["xp2", "yp2", "zp2"],
         ...     }
         ... )
+        >>>
         >>> lf.collect()
         shape: (3, 5)
         ┌─────────┬───────────┬───────────┬────────┬────────┐
@@ -8524,8 +8525,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         pl.struct(QTY="QUANTITY1", PRICE="PRICE1").alias("PQ1"),
         ...         pl.struct(QTY="QUANTITY2", PRICE="PRICE2").alias("PQ2"),
         ...     )
-        ...     .unpivot(cs.numeric(), index="PRODUCT")
+        ...     .unpivot(on=["PQ1", "PQ2"], index="PRODUCT")
         ...     .unnest("value")
+        ...     .with_columns(pl.col("variable").str.replace("PQ", ""))
         ...     .collect()
         ... )
         shape: (6, 4)
@@ -8534,12 +8536,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ ---     ┆ ---      ┆ --- ┆ ---   │
         │ str     ┆ str      ┆ str ┆ str   │
         ╞═════════╪══════════╪═════╪═══════╡
-        │ x       ┆ PQ1      ┆ xq1 ┆ xp1   │
-        │ y       ┆ PQ1      ┆ yq1 ┆ yp1   │
-        │ z       ┆ PQ1      ┆ zq1 ┆ zp1   │
-        │ x       ┆ PQ2      ┆ xq2 ┆ xp2   │
-        │ y       ┆ PQ2      ┆ yq2 ┆ yp2   │
-        │ z       ┆ PQ2      ┆ zq2 ┆ zp2   │
+        │ x       ┆ 1        ┆ xq1 ┆ xp1   │
+        │ y       ┆ 1        ┆ yq1 ┆ yp1   │
+        │ z       ┆ 1        ┆ zq1 ┆ zp1   │
+        │ x       ┆ 2        ┆ xq2 ┆ xp2   │
+        │ y       ┆ 2        ┆ yq2 ┆ yp2   │
+        │ z       ┆ 2        ┆ zq2 ┆ zp2   │
         └─────────┴──────────┴─────┴───────┘
 
         """
