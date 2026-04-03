@@ -77,7 +77,9 @@ def test_cut_null_values() -> None:
 
     result = s.cut([1.5, 5.0], labels=["a", "b", "c"])
 
-    expected = pl.Series(["a", None, "a", "b", None, "c", "b"], dtype=pl.Enum(["a", "b", "c"]))
+    expected = pl.Series(
+        ["a", None, "a", "b", None, "c", "b"], dtype=pl.Enum(["a", "b", "c"])
+    )
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
@@ -88,10 +90,17 @@ def test_cut_bin_name_in_agg_context() -> None:
         qcut_uniform=pl.col("a").qcut(1, include_breaks=True).over(1),
     )
     cut_schema = pl.Struct(
-        {"breakpoint": pl.Float64, "category": pl.Enum(["(-inf, 1]", "(1, 2]", "(2, inf]"])}
+        {
+            "breakpoint": pl.Float64,
+            "category": pl.Enum(["(-inf, 1]", "(1, 2]", "(2, inf]"]),
+        }
     )
     qcut_schema = pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical()})
-    assert df.schema == {"cut": cut_schema, "qcut": qcut_schema, "qcut_uniform": qcut_schema}
+    assert df.schema == {
+        "cut": cut_schema,
+        "qcut": qcut_schema,
+        "qcut_uniform": qcut_schema,
+    }
 
 
 @pytest.mark.parametrize(
