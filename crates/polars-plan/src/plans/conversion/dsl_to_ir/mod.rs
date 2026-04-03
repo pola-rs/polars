@@ -284,19 +284,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         expanded.push_str("\t...\n")
                     }
 
-                    if cfg!(feature = "python") {
-                        polars_bail!(
-                            ComputeError:
-                            "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                                This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
-                        )
-                    } else {
-                        polars_bail!(
-                            ComputeError:
-                            "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                                This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
-                        )
-                    };
+                    polars_bail!(
+                        ComputeError:
+                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
+                    )
                 },
             };
             let predicate_ae = to_expr_ir(
@@ -610,15 +602,48 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             ctxt.conversion_optimizer
                 .fill_scratch(&aggs, ctxt.expr_arena);
 
-            let lp = IR::GroupBy {
-                input,
-                keys,
-                aggs,
-                schema,
-                apply,
-                maintain_order,
-                options,
+            // Should not be constructable from Python API, as it has mutually exclusive
+            // `group_by().agg()` or `group_by().map_groups()`.
+            let has_aggs = !aggs.is_empty();
+            debug_assert!(!(apply.is_some() && has_aggs));
+            debug_assert!(
+                aggs.iter()
+                    .all(|eir| is_scalar_ae(eir.node(), ctxt.expr_arena))
+            );
+
+            // Rewrite empty group_by() -> select(aggs).
+            let lp = if !(options.is_dynamic() || options.is_rolling())
+                && keys
+                    .iter()
+                    .all(|eir| is_scalar_ae(eir.node(), ctxt.expr_arena))
+            {
+                polars_ensure!(
+                    apply.is_none(),
+                    ComputeError:
+                    "not implemented: map_groups with empty key exprs"
+                );
+
+                let mut exprs = keys;
+                exprs.extend(aggs);
+
+                IR::Select {
+                    input,
+                    expr: exprs,
+                    schema,
+                    options: ProjectionOptions::default(),
+                }
+            } else {
+                IR::GroupBy {
+                    input,
+                    keys,
+                    aggs,
+                    schema,
+                    apply,
+                    maintain_order,
+                    options,
+                }
             };
+
             return run_conversion(lp, ctxt, "group_by")
                 .map_err(|e| e.context(failed_here!(group_by)));
         },
@@ -985,7 +1010,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
-                .group_by(keys, aggs, None, maintain_order, Default::default())
+                .group_by(keys, aggs, None, maintain_order, Default::default())?
                 .build()
         },
         DslPlan::Distinct { input, options } => {
@@ -1606,7 +1631,7 @@ fn resolve_group_by(
 
     // Add aggregation column(s)
     let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
-    let aggs = to_expr_irs(
+    let mut aggs = to_expr_irs(
         aggs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
@@ -1624,10 +1649,13 @@ fn resolve_group_by(
         }
     }
 
-    // Coerce aggregation column(s) into List unless not needed (auto-implode)
-    debug_assert!(aggs_schema.len() == aggs.len());
-    for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(&aggs) {
+    assert!(aggs_schema.len() == aggs.len());
+    for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(aggs.iter_mut()) {
         if !expr.is_scalar(expr_arena) {
+            expr.set_node(expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                input: expr.node(),
+                maintain_order: true,
+            })));
             *dtype = dtype.clone().implode();
         }
     }

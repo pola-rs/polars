@@ -47,7 +47,7 @@ pub struct Literal {
     dtype: Py<PyAny>,
 }
 
-#[pyclass(name = "Operator", eq, frozen)]
+#[pyclass(name = "Operator", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyOperator {
     Eq,
@@ -128,7 +128,7 @@ impl<'py> IntoPyObject<'py> for Wrap<InequalityOperator> {
     }
 }
 
-#[pyclass(name = "StringFunction", eq, frozen)]
+#[pyclass(name = "StringFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStringFunction {
     ConcatHorizontal,
@@ -185,7 +185,7 @@ impl PyStringFunction {
     }
 }
 
-#[pyclass(name = "BooleanFunction", eq, frozen)]
+#[pyclass(name = "BooleanFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyBooleanFunction {
     Any,
@@ -215,7 +215,7 @@ impl PyBooleanFunction {
     }
 }
 
-#[pyclass(name = "TemporalFunction", eq, frozen)]
+#[pyclass(name = "TemporalFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyTemporalFunction {
     Millennium,
@@ -272,7 +272,7 @@ impl PyTemporalFunction {
     }
 }
 
-#[pyclass(name = "StructFunction", eq, frozen)]
+#[pyclass(name = "StructFunction", eq, frozen, skip_from_py_object)]
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyStructFunction {
     FieldByName,
@@ -1254,7 +1254,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                 },
                 IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
-                IRFunctionExpr::Append { upcast } => ("append", upcast).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
                 IRFunctionExpr::DropNans => ("drop_nans",).into_py_any(py),
@@ -1350,7 +1349,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
                 IRFunctionExpr::Ceil => ("ceil",).into_py_any(py),
                 IRFunctionExpr::Fused(_) => return Err(PyNotImplementedError::new_err("fused")),
-                IRFunctionExpr::ConcatExpr(_) => {
+                IRFunctionExpr::ConcatExpr { .. } => {
                     return Err(PyNotImplementedError::new_err("concat expr"));
                 },
                 IRFunctionExpr::Correlation { .. } => {

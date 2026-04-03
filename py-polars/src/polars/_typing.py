@@ -114,9 +114,10 @@ ColumnMapping: TypeAlias = tuple[
 DefaultFieldValues: TypeAlias = tuple[
     Literal["iceberg"], dict[int, Union["Series", str]]
 ]
-DeletionFiles: TypeAlias = tuple[
-    Literal["iceberg-position-delete"], dict[int, list[str]]
-]
+DeletionFiles: TypeAlias = (
+    tuple[Literal["iceberg-position-delete"], dict[int, list[str]]]
+    | tuple[Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame"]]
+)
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
@@ -215,7 +216,9 @@ ExplainFormat: TypeAlias = Literal["plain", "tree"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = Union[
-    Mapping[str, Union[Sequence[object], Mapping[str, Sequence[object]], "Series"]],
+    Mapping[
+        str, Union[Sequence[object], Mapping[str, Sequence[object]], "Series", None]
+    ],
     Sequence[Any],
     "np.ndarray[Any, Any]",
     "pa.Table",
@@ -223,6 +226,7 @@ FrameInitTypes: TypeAlias = Union[
     "ArrowArrayExportable",
     "ArrowStreamExportable",
     "torch.Tensor",
+    "DataFrame",
 ]
 
 # Excel IO

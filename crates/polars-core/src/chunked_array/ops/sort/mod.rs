@@ -751,13 +751,19 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             }
         }
 
-        Self::from_chunk_iter(
+        let mut ca = Self::from_chunk_iter(
             self.name().clone(),
             Some(BooleanArray::from_data_default(
                 bitmap.freeze(),
                 validity.map(|v| v.freeze()),
             )),
-        )
+        );
+        ca.set_sorted_flag(if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        });
+        ca
     }
 
     fn sort(&self, descending: bool) -> BooleanChunked {

@@ -427,3 +427,23 @@ def test_is_sorted_struct() -> None:
     s = s.sort(descending=True)
     assert s.flags["SORTED_DESC"]
     assert not s.flags["SORTED_ASC"]
+
+
+def test_is_sorted_boolean_27034() -> None:
+    s = pl.Series("a", [False, True]).sort()
+    assert s.flags["SORTED_ASC"]
+    assert not s.flags["SORTED_DESC"]
+
+    s = pl.Series("a", [False, True]).sort(descending=True)
+    assert s.flags["SORTED_DESC"]
+    assert not s.flags["SORTED_ASC"]
+
+
+def test_is_sorted_time() -> None:
+    s = pl.Series("a", [0, 1]).sort().cast(pl.Time)
+    assert s.flags["SORTED_ASC"]
+    assert not s.flags["SORTED_DESC"]
+
+    s = pl.Series("a", [1, 1]).sort(descending=True).cast(pl.Time)
+    assert s.flags["SORTED_DESC"]
+    assert not s.flags["SORTED_ASC"]

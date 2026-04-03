@@ -127,13 +127,6 @@ impl IRFunctionExpr {
                 }
             },
             Rechunk => mapper.with_same_dtype(),
-            Append { upcast } => {
-                if *upcast {
-                    mapper.map_to_supertype()
-                } else {
-                    mapper.with_same_dtype()
-                }
-            },
             ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
@@ -291,7 +284,7 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
-            ConcatExpr(_) => mapper.map_to_supertype(),
+            ConcatExpr { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "cov")]
             Correlation { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "peaks")]

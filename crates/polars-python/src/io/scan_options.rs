@@ -109,6 +109,8 @@ impl PyScanOptions<'_> {
             try_parse_dates: try_parse_hive_dates,
         };
 
+        let deletion_files = DeletionFilesList::filter_empty(deletion_files.map(|x| x.0));
+
         let unified_scan_args = UnifiedScanArgs {
             // Schema is currently still stored inside the options per scan type, but we do eventually
             // want to put it here instead.
@@ -131,7 +133,7 @@ impl PyScanOptions<'_> {
             missing_columns_policy: missing_columns.0,
             extra_columns_policy: extra_columns.0,
             include_file_paths: include_file_paths.map(|x| x.0),
-            deletion_files: DeletionFilesList::filter_empty(deletion_files.map(|x| x.0)),
+            deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
             row_count,
         };

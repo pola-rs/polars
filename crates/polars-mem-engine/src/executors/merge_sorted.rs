@@ -1,4 +1,5 @@
 use polars_ops::prelude::*;
+use recursive::recursive;
 
 use super::*;
 
@@ -9,6 +10,7 @@ pub(crate) struct MergeSorted {
 }
 
 impl Executor for MergeSorted {
+    #[recursive]
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
         #[cfg(debug_assertions)]

@@ -171,7 +171,9 @@ impl<'a> TreeFmtNode<'a> {
     }
 
     fn node_data(&self) -> TreeFmtNodeData<'_> {
-        use {TreeFmtNodeContent as C, TreeFmtNodeData as ND, with_header as wh};
+        use TreeFmtNodeContent as C;
+        use TreeFmtNodeData as ND;
+        use with_header as wh;
 
         let lp = &self.lp;
         let h = &self.h;

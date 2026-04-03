@@ -9,7 +9,6 @@ use polars_core::utils::{_split_offsets, NoNull};
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
-use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use super::*;
@@ -253,7 +252,18 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Count { include_nulls } => {
-                    if include_nulls || ac.get_values().null_count() == 0 {
+                    let values_have_no_nulls = match ac.agg_state() {
+                        AggState::AggregatedList(s) => {
+                            let list = s.list()?;
+                            list.null_count() == 0
+                                && list
+                                    .downcast_iter()
+                                    .all(|arr| arr.values().null_count() == 0)
+                        },
+                        _ => ac.get_values().null_count() == 0,
+                    };
+
+                    if include_nulls || values_have_no_nulls {
                         // a few fast paths that prevent materializing new groups
                         match ac.update_groups {
                             UpdateGroups::WithSeriesLen => {
@@ -579,8 +589,16 @@ impl PhysicalExpr for AggQuantileExpr {
         let keep_name = ac.get_values().name().clone();
 
         let quantile_column = self.quantile.evaluate(df, state)?;
-        polars_ensure!(quantile_column.len() <= 1, ComputeError:
-            "polars only supports computing a single quantile in a groupby aggregation context"
+        polars_ensure!(
+            quantile_column.len() <= 1,
+            ComputeError:
+                "polars only supports computing a single quantile in a groupby aggregation context"
+        );
+        polars_ensure!(
+            quantile_column.dtype().is_numeric(),
+            SchemaMismatch:
+                "expected expression of dtype 'numeric' for quantile, got '{}'",
+            quantile_column.dtype()
         );
         let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
 
@@ -712,21 +730,23 @@ impl PhysicalExpr for AggMinMaxByExpr {
             unsafe { by_col.agg_arg_min(&by_groups) }
         };
         let idxs_in_groups: &IdxCa = idxs_in_groups.as_materialized_series().as_ref().as_ref();
-        let flat_gather_idxs = match input_groups.as_ref().as_ref() {
+        let gather_idxs: IdxCa = match input_groups.as_ref().as_ref() {
             GroupsType::Idx(g) => idxs_in_groups
-                .into_no_null_iter()
+                .iter()
                 .enumerate()
-                .map(|(group_idx, idx_in_group)| g.all()[group_idx][idx_in_group as usize])
-                .collect_vec(),
+                .map(|(group_idx, idx_in_group)| {
+                    idx_in_group.map(|i| g.all()[group_idx][i as usize])
+                })
+                .collect(),
             GroupsType::Slice { groups, .. } => idxs_in_groups
-                .into_no_null_iter()
+                .iter()
                 .enumerate()
-                .map(|(group_idx, idx_in_group)| groups[group_idx][0] + idx_in_group)
-                .collect_vec(),
+                .map(|(group_idx, idx_in_group)| idx_in_group.map(|i| groups[group_idx][0] + i))
+                .collect(),
         };
 
-        // SAFETY: All indices are within input_col's groups.
-        let gathered = unsafe { input_col.take_slice_unchecked(&flat_gather_idxs) };
+        // SAFETY: All non-null indices are within input_col's groups.
+        let gathered = unsafe { input_col.take_unchecked(&gather_idxs) };
         let agg_state = AggregatedScalar(gathered.with_name(keep_name));
         Ok(AggregationContext::from_agg_state(
             agg_state,

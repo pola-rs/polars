@@ -726,3 +726,9 @@ def test_pivot_on_columns_str_25862() -> None:
     )
     with pytest.raises(TypeError, match="on_columns"):
         result = df.pivot("data", index="index", values="value", on_columns="bar")
+
+
+def test_pivot_unsupported_agg_raises_25860() -> None:
+    df = pl.DataFrame({"index": [0, 0], "data": ["foo", "bar"]})
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="sum"):
+        df.pivot("index", index="index", aggregate_function=pl.element().sum())

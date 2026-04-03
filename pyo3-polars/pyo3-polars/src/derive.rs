@@ -58,7 +58,7 @@ fn start_up_init() {
 /// FFI function, so unsafe
 pub unsafe extern "C" fn _polars_plugin_get_version() -> u32 {
     if !INIT.swap(true, Ordering::Relaxed) {
-        // Plugin version is is always called at least once.
+        // Plugin version is always called at least once.
         start_up_init();
     }
     let (major, minor) = polars_ffi::get_version();

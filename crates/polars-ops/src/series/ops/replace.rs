@@ -211,6 +211,7 @@ fn replace_by_single(
     }
     new.zip_with(&mask, default)
 }
+
 /// Fast path for replacing by a single value in strict mode
 fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
     let mask = get_replacement_mask(s, old)?;
@@ -224,6 +225,7 @@ fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsRes
     }
     Ok(out)
 }
+
 /// Get a boolean mask of which values in the original Series will be replaced.
 ///
 /// Null values are propagated to the mask.
@@ -231,6 +233,8 @@ fn get_replacement_mask(s: &Series, old: &Series) -> PolarsResult<BooleanChunked
     if old.null_count() == old.len() {
         // Fast path for when users are using `replace(None, ...)` instead of `fill_null`.
         Ok(s.is_null())
+    } else if old.len() == 1 {
+        Ok(s.equal(old)?)
     } else {
         let old = old.implode()?;
         is_in(s, &old.into_series(), false)

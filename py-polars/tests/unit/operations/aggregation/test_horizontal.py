@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, PolarsError
+from polars.exceptions import ComputeError, InvalidOperationError, PolarsError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -284,6 +284,14 @@ def test_str_sum_horizontal() -> None:
     assert_series_equal(out["A"], pl.Series("A", ["af", "bg", "h", "c", ""]))
 
 
+def test_str_primitive_sum_horizontal() -> None:
+    result = (
+        pl.LazyFrame({"a": ["A"]}).select(pl.sum_horizontal("a", pl.lit(1))).collect()
+    )
+    expected = pl.DataFrame({"a": ["A1"]})
+    assert_frame_equal(result, expected)
+
+
 def test_sum_null_dtype() -> None:
     df = pl.DataFrame(
         {
@@ -438,6 +446,89 @@ def test_mean_horizontal() -> None:
 
     expected = pl.LazyFrame({"mean": [2.0, 3.0, 6.0]}, schema={"mean": pl.Float64})
     assert_frame_equal(result, expected)
+
+
+def test_horizontal_untyped_literal_cast_regression_26723() -> None:
+    df = pl.DataFrame({"a": [1, 2], "b": [1, 2]}, schema={"a": pl.Int8, "b": pl.Int16})
+
+    expected_no_cast = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 2],
+            "sum_a": [1, 2],
+            "max_a": [1, 2],
+            "min_a": [0, 0],
+            "sum_b": [1, 2],
+        },
+        schema={
+            "a": pl.Int8,
+            "b": pl.Int16,
+            "sum_a": pl.Int8,
+            "max_a": pl.Int8,
+            "min_a": pl.Int8,
+            "sum_b": pl.Int16,
+        },
+    )
+
+    expected_cast = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [1, 2],
+            "sum_a": [1, 2],
+            "max_a": [1, 2],
+            "min_a": [0, 0],
+            "sum_b": [1, 2],
+        },
+        schema={
+            "a": pl.Int8,
+            "b": pl.Int16,
+            "sum_a": pl.Int8,
+            "max_a": pl.Int8,
+            "min_a": pl.Int8,
+            "sum_b": pl.Int8,
+        },
+    )
+
+    out_no_cast = df.with_columns(
+        sum_a=pl.sum_horizontal("a", 0),
+        max_a=pl.max_horizontal("a", 0),
+        min_a=pl.min_horizontal("a", 0),
+        sum_b=pl.sum_horizontal("b", 0),
+    )
+    assert_frame_equal(out_no_cast, expected_no_cast)
+
+    out_lf_no_cast = (
+        df.lazy()
+        .with_columns(
+            sum_a=pl.sum_horizontal("a", 0),
+            max_a=pl.max_horizontal("a", 0),
+            min_a=pl.min_horizontal("a", 0),
+            sum_b=pl.sum_horizontal("b", 0),
+        )
+        .collect()
+    )
+    assert_frame_equal(out_lf_no_cast, expected_no_cast)
+
+    out_expr_cast = df.with_columns(
+        sum_a=pl.sum_horizontal("a", 0).cast(pl.Int8),
+        max_a=pl.max_horizontal("a", 0).cast(pl.Int8),
+        min_a=pl.min_horizontal("a", 0).cast(pl.Int8),
+        sum_b=pl.sum_horizontal("b", 0).cast(pl.Int8),
+    )
+    assert_frame_equal(out_expr_cast, expected_cast)
+
+    out_lf_cast = (
+        df.lazy()
+        .with_columns(
+            sum_a=pl.sum_horizontal("a", 0),
+            max_a=pl.max_horizontal("a", 0),
+            min_a=pl.min_horizontal("a", 0),
+            sum_b=pl.sum_horizontal("b", 0),
+        )
+        .cast({"sum_a": pl.Int8, "max_a": pl.Int8, "min_a": pl.Int8, "sum_b": pl.Int8})
+        .collect()
+    )
+    assert_frame_equal(out_lf_cast, expected_cast)
 
 
 def test_mean_horizontal_bool() -> None:
@@ -664,7 +755,7 @@ def test_raise_invalid_types_21835() -> None:
     df = pl.DataFrame({"x": [1, 2], "y": ["three", "four"]})
 
     with pytest.raises(
-        ComputeError,
-        match=r"cannot compare string with numeric type \(i64\)",
+        InvalidOperationError,
+        match=r"got invalid or ambiguous dtypes: '\[i64, str\]' in expression 'min_horizontal'",
     ):
         df.select(pl.min_horizontal("x", "y"))

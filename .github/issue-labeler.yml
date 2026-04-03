@@ -47,7 +47,7 @@ A-panic:
 A-plugin:
   - '/plugin/i'
 A-sql:
-  - '/\bsql\b|sqlcontext/i'
+  - '/\bsql\b|sql_expr|sqlcontext/i'
 A-selectors:
   - '/selector/i'
 A-streaming:

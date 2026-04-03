@@ -75,14 +75,11 @@ where
             // we are in bounds
             unsafe { agg_window.update(start, end) };
             match agg_window.get_agg(idx) {
-                Some(val) => {
-                    if agg_window.is_valid(min_periods) {
-                        val
-                    } else {
-                        // SAFETY: we are in bounds
-                        unsafe { validity.set_unchecked(idx, false) };
-                        Out::default()
-                    }
+                Some(val) if agg_window.is_valid(min_periods) => val,
+                Some(_) => {
+                    // SAFETY: we are in bounds
+                    unsafe { validity.set_unchecked(idx, false) };
+                    Out::default()
                 },
                 None => {
                     // SAFETY: we are in bounds

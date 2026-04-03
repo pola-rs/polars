@@ -58,6 +58,13 @@ def test_is_business_day(
     )["date"]
     expected = pl.Series("date", expected_values)
     assert_series_equal(result, expected)
+    result = df.select(
+        pl.col("date").dt.is_business_day(
+            holidays=pl.Series(holidays, dtype=pl.Date), week_mask=week_mask
+        )
+    )["date"]
+    expected = pl.Series("date", expected_values)
+    assert_series_equal(result, expected)
     # Holidays are in Series of List of Date, of length 1:
     result = df.select(
         pl.col("date").dt.is_business_day(

@@ -9,7 +9,7 @@ from datetime import time
 from glob import glob
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, NoReturn, overload
+from typing import IO, TYPE_CHECKING, Any, NoReturn, cast, overload
 
 import polars._reexport as pl
 from polars import from_arrow
@@ -1075,7 +1075,7 @@ def _read_spreadsheet_calamine(
 
     if fastexcel_version < (0, 11, 2):
         ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
-        df = ws.to_polars()
+        df: pl.DataFrame = ws.to_polars()
     else:
         if table_name:
             if col_names := read_options.get("use_columns"):
@@ -1092,10 +1092,10 @@ def _read_spreadsheet_calamine(
         elif _PYARROW_AVAILABLE:
             # eager loading is faster / more memory-efficient, but requires pyarrow
             ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)
-            df = from_arrow(ws_arrow)
+            df = cast("pl.DataFrame", from_arrow(ws_arrow))
         else:
             ws_arrow = parser.load_sheet(sheet_name, **read_options)
-            df = from_arrow(ws_arrow)
+            df = cast("pl.DataFrame", from_arrow(ws_arrow))
 
         if read_options.get("header_row", False) is None and not read_options.get(
             "column_names"

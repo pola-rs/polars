@@ -12,12 +12,12 @@ import polars_cloud as pc
 
 # Connect to your Polars on-premises cluster
 ctx = pc.ClusterContext(compute_address="your-cluster-compute-address", insecure=True)
-query = (
+result = (
     pl.LazyFrame()
     .with_columns(a=pl.arange(0, 100000000).sum())
     .remote(ctx)
     .distributed()
     .execute()
 )
-print(query.await_result())
+print(result)
 ```

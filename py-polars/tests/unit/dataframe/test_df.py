@@ -3354,3 +3354,28 @@ def test_sort_errors_with_object_dtype_24677() -> None:
         match=r"column '.*' has a dtype of '.*', which does not support sorting",
     ):
         df.sort("a")
+
+
+def test_sample_respects_global_seed_26973() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5, 6, 7, 8]})
+
+    pl.set_random_seed(0)
+    result1 = df.sample(1)
+    pl.set_random_seed(0)
+    result2 = df.sample(1)
+
+    assert_frame_equal(result1, result2)
+
+
+def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [3, 4]],
+            "b": [[5, 6], [7, 8]],
+            "c": ["foo", "bar"],
+            "d": [["baz"], ["qux"]],
+        }
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.transpose()

@@ -91,7 +91,7 @@ requirements:  ## Install/refresh Python project requirements
 	   -r py-polars/requirements-lint.txt \
 	   -r py-polars/docs/requirements-docs.txt \
 	   -r docs/source/requirements.txt \
-	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core \
+	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode "pyiceberg>=0.7.1" pyiceberg-core!=0.9.0 \
 	&& $(VENV_BIN)/uv pip install --no-deps -e py-polars \
 	&& $(VENV_BIN)/uv pip uninstall polars-runtime-compat polars-runtime-64  ## Uninstall runtimes which might take precedence over polars-runtime-32
 

@@ -370,6 +370,17 @@ fn try_lower_elementwise_scalar_agg_expr(
             ..
         } => Some(replace_agg_uniq!(expr)),
 
+        #[cfg(feature = "cov")]
+        AExpr::Function {
+            function:
+                IRFunctionExpr::Correlation {
+                    method:
+                        polars_plan::plans::IRCorrelationMethod::Pearson
+                        | polars_plan::plans::IRCorrelationMethod::Covariance(_),
+                },
+            ..
+        } => Some(replace_agg_uniq!(expr)),
+
         AExpr::AnonymousAgg { .. } => Some(replace_agg_uniq!(expr)),
 
         node @ AExpr::Function { input, options, .. }
@@ -485,7 +496,7 @@ fn try_lower_agg_input_expr(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<Option<(PhysStream, Node, /* all_keys_included */ bool)>> {
     if is_elementwise_rec_cached(expr, expr_arena, expr_cache) {
         return Ok(Some((input_stream, expr, true)));
@@ -597,7 +608,7 @@ fn try_build_streaming_group_by(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<Option<PhysStream>> {
     if apply.is_some() {
         return Ok(None); // TODO
@@ -867,7 +878,7 @@ pub fn try_build_sorted_group_by(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<Option<PhysStream>> {
     let input_schema = phys_sm[input.node].output_schema.as_ref();
@@ -1046,7 +1057,7 @@ pub fn build_group_by_stream(
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<PhysStream> {
     #[cfg(feature = "dynamic_group_by")]

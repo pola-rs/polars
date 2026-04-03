@@ -97,7 +97,7 @@ impl FileFetcher for CloudFileFetcher {
             pl_async::get_runtime().block_in_place_on(self.object_store.head(&self.cloud_path))?;
 
         Ok(RemoteMetadata {
-            size: metadata.size as u64,
+            size: metadata.size,
             version: metadata
                 .e_tag
                 .map(|x| FileVersion::ETag(blake3::hash(x.as_bytes()).to_hex()[..32].to_string()))

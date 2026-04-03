@@ -826,10 +826,10 @@ def test_is_selector() -> None:
 
     schema = {"x": pl.Int64, "y": pl.Float64}
     with pytest.raises(TypeError):
-        expand_selector(schema, 999)
+        expand_selector(schema, 999)  # type: ignore[arg-type]
 
     with pytest.raises(TypeError):
-        expand_selector(schema, "colname")
+        expand_selector(schema, "colname")  # type: ignore[arg-type]
 
 
 def test_selector_or() -> None:

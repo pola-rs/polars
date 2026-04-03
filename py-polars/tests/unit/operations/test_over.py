@@ -181,3 +181,19 @@ def test_nulls_last_over_24989() -> None:
     )
 
     assert_frame_equal(out, expected)
+
+
+def test_over_duplicate_partition_by_26921() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.DuplicateError):
+        df.with_columns(pl.len().over("x", "x"))
+
+
+def test_count_over_aggregated_list_respects_inner_nulls_27031() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, None]})
+
+    result = df.with_columns(
+        pl.col("x").cum_sum().count().over("g").alias("x_count"),
+    )
+
+    assert result.get_column("x_count").to_list() == [2, 2, 2]

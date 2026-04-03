@@ -42,7 +42,14 @@ target/
 *.tbl
 
 # Project
-/docs/assets/data/
+/docs/assets/data/*
+!/docs/assets/data/alltypes_plain.parquet
+!/docs/assets/data/apple_stock.csv
+!/docs/assets/data/iris.csv
+!/docs/assets/data/monopoly_props_groups.csv
+!/docs/assets/data/monopoly_props_prices.csv
+!/docs/assets/data/pokemon.csv
+!/docs/assets/data/reddit.csv
 /docs/assets/people.md
 
 # User specific source setups

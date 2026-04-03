@@ -25,7 +25,7 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
-use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
+use super::{BufferedStream, LOPSIDED_SAMPLE_FACTOR};
 use crate::async_executor;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
@@ -48,6 +48,7 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     random_state: PlRandomState,
+    sample_limit: usize,
 }
 
 impl EquiJoinParams {
@@ -84,8 +85,7 @@ fn compute_payload_selector(
 
     this.iter_names()
         .map(|c| {
-            #[expect(clippy::never_loop)]
-            loop {
+            'create_and_return_selector: {
                 let selector = if args.how == JoinType::Right {
                     if is_left {
                         if should_coalesce && this_key_schema.contains(c) {
@@ -94,10 +94,12 @@ fn compute_payload_selector(
                         } else {
                             Some(c.clone())
                         }
-                    } else if !other.contains(c) || (should_coalesce && other_key_schema.contains(c)) {
+                    } else if !other.contains(c)
+                        || (should_coalesce && other_key_schema.contains(c))
+                    {
                         Some(c.clone())
                     } else {
-                        break;
+                        break 'create_and_return_selector;
                     }
                 } else if should_coalesce && this_key_schema.contains(c) {
                     if is_left {
@@ -114,7 +116,7 @@ fn compute_payload_selector(
                 } else if !other.contains(c) || is_left {
                     Some(c.clone())
                 } else {
-                    break;
+                    break 'create_and_return_selector;
                 };
 
                 return Ok(selector);
@@ -122,10 +124,14 @@ fn compute_payload_selector(
 
             let suffixed = format_pl_smallstr!("{}{}", c, args.suffix());
             if other.contains(&suffixed) {
-                polars_bail!(Duplicate: "column with name '{suffixed}' already exists\n\n\
-                You may want to try:\n\
-                - renaming the column prior to joining\n\
-                - using the `suffix` parameter to specify a suffix different to the default one ('_right')")
+                polars_bail!(
+                    Duplicate:
+                    "column with name '{suffixed}' already exists\n\n\
+                    You may want to try:\n\
+                    - renaming the column prior to joining\n\
+                    - using the `suffix` parameter to specify \
+                    a suffix different to the default one ('_right')"
+                )
             }
 
             Ok(Some(suffixed))
@@ -207,7 +213,7 @@ fn estimate_cardinality(
     params: &EquiJoinParams,
     state: &ExecutionState,
 ) -> PolarsResult<f64> {
-    let sample_limit = *JOIN_SAMPLE_LIMIT;
+    let sample_limit = params.sample_limit;
     if morsels.is_empty() || sample_limit == 0 {
         return Ok(0.0);
     }
@@ -250,6 +256,16 @@ fn estimate_cardinality(
     })
 }
 
+fn estimate_size_per_row(morsels: &[Morsel]) -> f64 {
+    let mut total_size = 0;
+    let mut total_height = 0;
+    for m in morsels {
+        total_size += m.df().estimated_size();
+        total_height += m.df().height();
+    }
+    total_size as f64 / total_height as f64
+}
+
 #[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
@@ -265,10 +281,11 @@ impl SampleState {
         len: &mut usize,
         this_final_len: Arc<RelaxedCell<usize>>,
         other_final_len: Arc<RelaxedCell<usize>>,
+        join_sample_limit: usize,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
-            if *len >= *JOIN_SAMPLE_LIMIT
+            if *len >= join_sample_limit
                 || *len
                     >= other_final_len
                         .load()
@@ -290,8 +307,8 @@ impl SampleState {
         params: &mut EquiJoinParams,
         state: &StreamingExecutionState,
     ) -> PolarsResult<Option<BuildState>> {
-        let left_saturated = self.left_len >= *JOIN_SAMPLE_LIMIT;
-        let right_saturated = self.right_len >= *JOIN_SAMPLE_LIMIT;
+        let left_saturated = self.left_len >= params.sample_limit;
+        let right_saturated = self.right_len >= params.sample_limit;
         let left_done = recv[0] == PortState::Done || left_saturated;
         let right_done = recv[1] == PortState::Done || right_saturated;
         #[expect(clippy::nonminimal_bool)]
@@ -346,9 +363,11 @@ impl SampleState {
                     Some(JoinBuildSide::PreferRight) => false,
                     Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight) => unreachable!(),
                     None => {
-                        // Estimate cardinality and choose smaller.
+                        // Estimate cardinality and choose smaller, minimizing expected memory usage.
                         let (lc, rc) = estimate_cardinalities()?;
-                        lc < rc
+                        let ls = estimate_size_per_row(&self.left);
+                        let rs = estimate_size_per_row(&self.right);
+                        lc * ls < rc * rs
                     },
                 }
             },
@@ -1190,12 +1209,16 @@ impl EquiJoinNode {
         args: JoinArgs,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
+        let sample_limit: usize = polars_config::config()
+            .join_sample_limit()
+            .try_into()
+            .unwrap();
         let left_is_build = match args.maintain_order {
             MaintainOrderJoin::None => match args.build_side {
                 Some(JoinBuildSide::ForceLeft) => Some(true),
                 Some(JoinBuildSide::ForceRight) => Some(false),
                 Some(JoinBuildSide::PreferLeft) | Some(JoinBuildSide::PreferRight) | None => {
-                    if *JOIN_SAMPLE_LIMIT == 0 {
+                    if sample_limit == 0 {
                         Some(args.build_side != Some(JoinBuildSide::PreferRight))
                     } else {
                         None
@@ -1268,6 +1291,7 @@ impl EquiJoinNode {
                 right_payload_schema,
                 args,
                 random_state: PlRandomState::default(),
+                sample_limit,
             },
             table: new_idx_table(unique_key_schema),
         })
@@ -1358,14 +1382,14 @@ impl ComputeNode for EquiJoinNode {
             EquiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
                 if recv[0] != PortState::Done {
-                    recv[0] = if sample_state.left_len < *JOIN_SAMPLE_LIMIT {
+                    recv[0] = if sample_state.left_len < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
                     };
                 }
                 if recv[1] != PortState::Done {
-                    recv[1] = if sample_state.right_len < *JOIN_SAMPLE_LIMIT {
+                    recv[1] = if sample_state.right_len < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1464,6 +1488,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.left_len,
                             left_final_len.clone(),
                             right_final_len.clone(),
+                            self.params.sample_limit,
                         ),
                     ));
                 }
@@ -1476,6 +1501,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.right_len,
                             right_final_len,
                             left_final_len,
+                            self.params.sample_limit,
                         ),
                     ));
                 }

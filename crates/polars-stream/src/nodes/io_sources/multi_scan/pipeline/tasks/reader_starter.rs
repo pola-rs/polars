@@ -8,7 +8,7 @@ use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
 use polars_core::schema::iceberg::IcebergSchema;
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_mem_engine::scan_predicate::skip_files_mask::SkipFilesMask;
 use polars_plan::dsl::{MissingColumnsPolicy, ScanSource};
 use polars_utils::IdxSize;
@@ -207,6 +207,17 @@ impl ReaderStarter {
                 debug_assert!(extra_ops.has_row_index_or_slice())
             }
 
+            if cfg!(debug_assertions)
+                && let Some(n_rows_in_file) = n_rows_in_file
+                && let Some(mask_len) = external_filter_mask.as_ref().map(|fm| fm.len())
+            {
+                // @NOTE: the deletion files / vectors may be truncated
+                polars_ensure!(mask_len <= n_rows_in_file.num_physical_rows(),
+                    ComputeError: "deletion row count: {}, exceeds number of physical rows: {}",
+                    mask_len, n_rows_in_file.num_physical_rows()
+                )
+            }
+
             // `fast_n_rows_in_file()` or negative slice, we know the exact row count here already.
             // After this point, if n_rows_in_file is `Some`, it should contain the exact physical
             // and deleted row counts.
@@ -353,20 +364,19 @@ impl ReaderStarter {
             if let Some(current_row_position) = current_row_position.as_mut() {
                 let mut row_position_this_file = RowCounter::default();
 
-                #[expect(clippy::never_loop)]
-                loop {
+                'set_row_position_this_file: {
                     if let Some(v) = n_rows_in_file {
                         row_position_this_file = v;
-                        break;
+                        break 'set_row_position_this_file;
                     };
 
                     // Note, can be None on the last scan source.
                     let Some(rx) = row_position_on_end_rx else {
-                        break;
+                        break 'set_row_position_this_file;
                     };
 
                     let Ok(num_physical_rows) = rx.recv().await else {
-                        break;
+                        break 'set_row_position_this_file;
                     };
 
                     let num_deleted_rows = external_filter_mask.map_or(0, |external_filter_mask| {
@@ -376,7 +386,6 @@ impl ReaderStarter {
                     });
 
                     row_position_this_file = RowCounter::new(num_physical_rows, num_deleted_rows);
-                    break;
                 }
 
                 *current_row_position = current_row_position.add(row_position_this_file);

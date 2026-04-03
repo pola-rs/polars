@@ -19,10 +19,11 @@ pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
 #[cfg(feature = "python")]
 pub use expand_datasets::ExpandedPythonScan;
+mod collapse_sort;
 mod predicate_pushdown;
 mod projection_pushdown;
-pub mod set_order;
 mod simplify_expr;
+pub mod simplify_ordering;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod sortedness;
@@ -38,7 +39,9 @@ pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, Triv
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
-pub use sortedness::{AExprSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted};
+pub use sortedness::{
+    AExprSorted, IRPlanSorted, IRSorted, are_keys_sorted_any, expr_is_sorted, is_sorted,
+};
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
@@ -227,6 +230,10 @@ pub fn optimize(
         )));
     }
 
+    if opt_flags.contains(OptFlags::SORT_COLLAPSE) {
+        rules.push(Box::new(collapse_sort::CollapseSort {}));
+    }
+
     if !opt_flags.eager() {
         rules.push(Box::new(DelayRechunk::new()));
     }
@@ -257,8 +264,9 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
-        let mut optimizer =
-            CommonSubExprOptimizer::new(opt_flags.contains(OptFlags::NEW_STREAMING));
+        let mut optimizer = CommonSubExprOptimizer::new(
+            opt_flags.contains(OptFlags::NEW_STREAMING) | opt_flags.contains(OptFlags::GPU),
+        );
         let ir_node = IRNode::new_mutate(root);
 
         root = try_with_ir_arena(ir_arena, expr_arena, |arena| {
@@ -268,36 +276,29 @@ pub fn optimize(
     }
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {
-        let members = get_or_init_members!();
-        if members.has_group_by
-            | members.has_sort
-            | members.has_distinct
-            | members.has_joins_or_unions
-        {
-            match ir_arena.get(root) {
-                IR::SinkMultiple { inputs } => {
-                    let mut roots = inputs.clone();
-                    for root in &mut roots {
-                        if !matches!(ir_arena.get(*root), IR::Sink { .. }) {
-                            *root = ir_arena.add(IR::Sink {
-                                input: *root,
-                                payload: SinkTypeIR::Memory,
-                            });
-                        }
-                    }
-                    set_order::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
-                },
-                ir => {
-                    let mut tmp_top = root;
-                    if !matches!(ir, IR::Sink { .. }) {
-                        tmp_top = ir_arena.add(IR::Sink {
-                            input: root,
+        match ir_arena.get(root) {
+            IR::SinkMultiple { inputs } => {
+                let mut roots = inputs.clone();
+                for root in &mut roots {
+                    if !matches!(ir_arena.get(*root), IR::Sink { .. }) {
+                        *root = ir_arena.add(IR::Sink {
+                            input: *root,
                             payload: SinkTypeIR::Memory,
                         });
                     }
-                    _ = set_order::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena)
-                },
-            }
+                }
+                simplify_ordering::simplify_and_fetch_orderings(&roots, ir_arena, expr_arena);
+            },
+            ir => {
+                let mut tmp_top = root;
+                if !matches!(ir, IR::Sink { .. }) {
+                    tmp_top = ir_arena.add(IR::Sink {
+                        input: root,
+                        payload: SinkTypeIR::Memory,
+                    });
+                }
+                simplify_ordering::simplify_and_fetch_orderings(&[tmp_top], ir_arena, expr_arena);
+            },
         }
     }
 

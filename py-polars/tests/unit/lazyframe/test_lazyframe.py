@@ -27,7 +27,11 @@ if TYPE_CHECKING:
 
     from _pytest.capture import CaptureFixture
 
-    from polars._typing import MapElementsStrategy, PolarsDataType
+    from polars._typing import (
+        EpochTimeUnit,
+        MapElementsStrategy,
+        PolarsDataType,
+    )
     from tests.conftest import PlMonkeyPatch
 
 
@@ -1344,6 +1348,67 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
     ts_col = pl.col("timestamp_s")
     with pytest.raises(ValueError):
         _ = ldf.select(pl.from_epoch(ts_col, time_unit="s2"))  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize(
+    ("input_dtype", "epoch_value", "time_unit", "expected_datetime"),
+    [
+        # 32-bit types with large positive values (original overflow case)
+        (pl.Int32, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt32, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        # larger integer types
+        (pl.Int64, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt64, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.Int128, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt128, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        # small unsigned types
+        (pl.UInt8, 100, "s", datetime(1970, 1, 1, 0, 1, 40)),
+        (pl.UInt16, 32_000, "s", datetime(1970, 1, 1, 8, 53, 20)),
+        # small signed types (positive values)
+        (pl.Int8, 100, "s", datetime(1970, 1, 1, 0, 1, 40)),
+        (pl.Int16, 32_000, "ms", datetime(1970, 1, 1, 0, 0, 32)),
+        # signed types with negative values (pre-epoch)
+        (pl.Int8, -100, "s", datetime(1969, 12, 31, 23, 58, 20)),
+        (pl.Int16, -32_000, "s", datetime(1969, 12, 31, 15, 6, 40)),
+        (pl.Int32, -1_721_068_200, "s", datetime(1915, 6, 19, 5, 30)),
+        (pl.Int64, -1_721_068_200, "s", datetime(1915, 6, 19, 5, 30)),
+        # milliseconds (with subsecond component)
+        (pl.Int64, 1_721_068_200_456, "ms", datetime(2024, 7, 15, 18, 30, 0, 456000)),
+        (pl.Int32, 2_000_456, "ms", datetime(1970, 1, 1, 0, 33, 20, 456000)),
+        (pl.Int64, -1_721_068_200_456, "ms", datetime(1915, 6, 19, 5, 29, 59, 544000)),
+        # nanoseconds (with subsecond component)
+        (
+            pl.UInt128,
+            1_721_068_200_456_789_000,
+            "ns",
+            datetime(2024, 7, 15, 18, 30, 0, 456789),
+        ),
+        (
+            pl.UInt128,
+            2_721_068_200_999_999_000,
+            "ns",
+            datetime(2056, 3, 23, 20, 16, 40, 999999),
+        ),
+        (
+            pl.Int128,
+            -1_721_068_200_456_789_000,
+            "ns",
+            datetime(1915, 6, 19, 5, 29, 59, 543211),
+        ),
+    ],
+)
+def test_from_epoch_27107(
+    input_dtype: PolarsDataType,
+    epoch_value: int,
+    time_unit: EpochTimeUnit,
+    expected_datetime: datetime,
+) -> None:
+    ldf = pl.LazyFrame({"ts": [epoch_value]}, schema={"ts": input_dtype})
+    res = ldf.select(pl.from_epoch("ts", time_unit=time_unit))
+
+    dtype = pl.Datetime(time_unit if time_unit == "ns" else "us")
+    expected = pl.LazyFrame({"ts": [expected_datetime]}, schema={"ts": dtype})
+    assert_frame_equal(res, expected)
 
 
 def test_from_epoch_str() -> None:

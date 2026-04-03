@@ -1,13 +1,16 @@
 use std::sync::Arc;
 
-use polars_error::PolarsResult;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
 use polars_io::pl_async;
 use polars_io::utils::file::Writeable;
 use polars_plan::dsl::file_provider::{FileProviderReturn, FileProviderType};
+use polars_plan::dsl::sink::SinkedPathInfo;
 use polars_plan::prelude::file_provider::FileProviderArgs;
 use polars_utils::pl_path::PlRefPath;
+
+use crate::nodes::io_sinks::components::sinked_path_info_list::SinkedPathInfoList;
 
 pub struct FileProvider {
     pub base_path: PlRefPath,
@@ -16,29 +19,56 @@ pub struct FileProvider {
     pub upload_chunk_size: usize,
     pub upload_max_concurrency: usize,
     pub io_metrics: Option<Arc<IOMetrics>>,
+    pub sinked_path_info_list: Option<SinkedPathInfoList>,
 }
 
 impl FileProvider {
     pub async fn open_file(&self, args: FileProviderArgs) -> PolarsResult<Writeable> {
-        let provided_path: String = match &self.provider_type {
-            FileProviderType::Hive(p) => p.get_path(args)?,
-            FileProviderType::Iceberg(p) => p.get_path(args)?,
-            FileProviderType::Function(f) => {
-                let f = f.clone();
+        let provided_path: String = 'provided_path: {
+            let provided_writeable = match &self.provider_type {
+                FileProviderType::Hive(p) => break 'provided_path p.get_path(args)?,
+                FileProviderType::Iceberg(p) => break 'provided_path p.get_path(args)?,
+                FileProviderType::Function(f) => {
+                    let f = f.clone();
 
-                let out = pl_async::get_runtime()
-                    .spawn_blocking(move || f.get_path_or_file(args))
-                    .await
-                    .unwrap()?;
+                    let out = pl_async::get_runtime()
+                        .spawn_blocking(move || f.get_path_or_file(args))
+                        .await
+                        .unwrap()?;
 
-                match out {
-                    FileProviderReturn::Path(p) => p,
-                    FileProviderReturn::Writeable(v) => return Ok(v),
-                }
-            },
+                    match out {
+                        FileProviderReturn::Path(p) => break 'provided_path p,
+                        FileProviderReturn::Writeable(v) => v,
+                    }
+                },
+            };
+
+            if let Some(v) = &self.sinked_path_info_list {
+                return Err(v.non_path_error());
+            }
+
+            return Ok(provided_writeable);
         };
 
         let path = self.base_path.join(&provided_path);
+
+        polars_ensure!(
+            path.as_str().starts_with(self.base_path.as_str()),
+            ComputeError:
+            "provided path '{provided_path}' is absolute but does not start with base path '{}'",
+            self.base_path,
+        );
+
+        let has_parent_dir_component = provided_path
+            .as_bytes()
+            .split(|c| *c == b'/' || *c == b'\\')
+            .any(|bytes| bytes == b"..");
+
+        polars_ensure!(
+            !has_parent_dir_component,
+            ComputeError:
+            "provided path '{provided_path}' contained parent dir component '..'"
+        );
 
         if !path.has_scheme()
             && let Some(path) = path.parent()
@@ -49,6 +79,12 @@ impl FileProvider {
                 .recursive(true)
                 .create(path)
                 .await;
+        }
+
+        if let Some(v) = &self.sinked_path_info_list {
+            v.path_info_list
+                .lock()
+                .push(SinkedPathInfo { path: path.clone() });
         }
 
         Writeable::try_new(

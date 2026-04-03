@@ -68,6 +68,16 @@ def test_group_by() -> None:
     assert result.columns == ["b", "a"]
 
 
+def test_group_by_count_respects_inner_nulls_in_aggregated_list_27031() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, None]})
+
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("x").cum_sum().count().alias("x_count")
+    )
+
+    assert result.rows() == [(1, 2)]
+
+
 @pytest.mark.parametrize(
     ("input", "expected", "input_dtype", "output_dtype"),
     [
@@ -2401,7 +2411,7 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
             True,
         ),
         (
-            lambda e: e.fill_null(strategy="forward").over([e, e]),
+            lambda e: e.fill_null(strategy="forward").over([e]),
             True,
             False,
             True,
@@ -2973,3 +2983,37 @@ def test_group_by_agg_get_oob_error_26747() -> None:
 
     with pytest.raises(ComputeError, match="get index is out of bounds"):
         df.group_by("x").agg(y=pl.col.x.get(100))
+
+
+def test_group_by_arg_max_boolean_26978() -> None:
+    # https://github.com/pola-rs/polars/issues/26978
+    df = pl.DataFrame(
+        {
+            "group": ["A"] * 5,
+            "val": [False, False, True, True, True],
+        }
+    )
+
+    result = df.group_by("group").agg(pl.col("val").arg_max())
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"group": ["A"], "val": pl.Series([2], dtype=pl.get_index_type())}
+        ),
+    )
+
+    result = df.with_columns(pl.row_index().max_by("val").over("group"))
+    # max_by doesn't guarantee which tied row is returned, so extract the
+    # actual value and verify it is one of the valid True-indices (2, 3, 4).
+    idx_val = result["index"][0]
+    assert idx_val in {2, 3, 4}
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "group": ["A", "A", "A", "A", "A"],
+                "val": [False, False, True, True, True],
+                "index": pl.Series([idx_val] * 5, dtype=pl.get_index_type()),
+            }
+        ),
+    )

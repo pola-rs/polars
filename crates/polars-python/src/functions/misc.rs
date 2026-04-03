@@ -1,5 +1,6 @@
 use polars_plan::prelude::*;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 
 use crate::PyExpr;
 use crate::conversion::Wrap;
@@ -68,4 +69,9 @@ pub fn __register_startup_deps() {
     unsafe {
         crate::on_startup::register_startup_deps(true)
     }
+}
+
+#[pyfunction]
+pub fn gen_uuid_v7(py: Python) -> Py<PyBytes> {
+    PyBytes::new(py, uuid::Uuid::now_v7().as_bytes()).unbind()
 }

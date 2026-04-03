@@ -96,6 +96,7 @@ def test_count() -> None:
           COUNT(b) AS count_b,
           COUNT(c) AS count_c,
           COUNT(*) AS count_star,
+          COUNT(1) AS count_one,
           COUNT(NULL) AS count_null,
           -- count distinct
           COUNT(DISTINCT a) AS count_unique_a,
@@ -110,6 +111,7 @@ def test_count() -> None:
         "count_b": [5],
         "count_c": [3],
         "count_star": [5],
+        "count_one": [5],
         "count_null": [0],
         "count_unique_a": [5],
         "count_unique_b": [3],
@@ -123,6 +125,8 @@ def test_count() -> None:
         SELECT
           COUNT(x) AS count_x,
           COUNT(*) AS count_star,
+          COUNT(1) AS count_one,
+          COUNT('hello') AS count_hello,
           COUNT(DISTINCT x) AS count_unique_x
         FROM self
         """
@@ -130,6 +134,8 @@ def test_count() -> None:
     assert res.to_dict(as_series=False) == {
         "count_x": [0],
         "count_star": [3],
+        "count_one": [3],
+        "count_hello": [3],
         "count_unique_x": [0],
     }
 
@@ -574,6 +580,10 @@ def test_select_explode_height_filter_order_by() -> None:
         ),
         (
             """SELECT a, COUNT() OVER (PARTITION BY a) AS b FROM self""",
+            [3, 3, 3, 1, 3, 3, 3],
+        ),
+        (
+            """SELECT a, COUNT(1) OVER (PARTITION BY a) AS b FROM self""",
             [3, 3, 3, 1, 3, 3, 3],
         ),
         (

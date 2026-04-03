@@ -9,6 +9,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt, get_bit_unchecked};
 use super::{IntoIter, MutableBitmap, chunk_iter_to_vec, num_intersections_with};
 use crate::array::Splitable;
+use crate::bitmap::BitmapBuilder;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{
     FastU32BitmapIter, FastU56BitmapIter, FastU64BitmapIter, TrueIdxIter,
@@ -633,6 +634,26 @@ impl FromTrustedLenIterator<bool> for Bitmap {
 }
 
 impl Bitmap {
+    /// Returns a bitmap from an iterator, returning None if all elements were true.
+    pub fn opt_from_iter<I: Iterator<Item = bool>>(mut iterator: I) -> Option<Self> {
+        let mut num_true = 0;
+        loop {
+            match iterator.next() {
+                Some(true) => num_true += 1,
+                Some(false) => break,
+                None => return None, // All true.
+            }
+        }
+
+        let mut bm = BitmapBuilder::with_capacity(num_true + 1 + iterator.size_hint().0);
+        bm.extend_constant(num_true, true);
+        bm.push(false);
+        for x in iterator {
+            bm.push(x);
+        }
+        bm.into_opt_validity()
+    }
+
     /// Creates a new [`Bitmap`] from an iterator of booleans.
     ///
     /// # Safety

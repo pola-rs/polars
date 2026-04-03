@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
+use polars_io::metrics::IOMetrics;
 use polars_io::pl_async::get_runtime;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
 use polars_plan::dsl::PredicateFileSkip;
@@ -34,6 +35,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 pub fn initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     execution_state: StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> InitializedPipelineState {
     assert!(config.num_pipelines() > 0);
 
@@ -61,8 +63,13 @@ pub fn initialize_multi_scan_pipeline(
 
     let task_handle =
         AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-            finish_initialize_multi_scan_pipeline(config, bridge_recv_port_tx, execution_state)
-                .await?;
+            finish_initialize_multi_scan_pipeline(
+                config,
+                bridge_recv_port_tx,
+                execution_state,
+                io_metrics,
+            )
+            .await?;
             bridge_handle.await;
             Ok(())
         }));
@@ -78,6 +85,7 @@ async fn finish_initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
     execution_state: StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<()> {
     let verbose = config.verbose;
 
@@ -106,16 +114,20 @@ async fn finish_initialize_multi_scan_pipeline(
         eprintln!(
             "[MultiScanTaskInit]: \
             predicate: {:?}, \
+            deletion_files: {:?}, \
             skip files mask: {:?}, \
             predicate to reader: {:?}",
             config.predicate.is_some().then_some("<predicate>"),
+            config
+                .deletion_files
+                .is_some()
+                .then_some("<deletion_files>"),
             skip_files_mask.is_some().then_some("<skip_files>"),
             predicate.is_some().then_some("<predicate>"),
         )
     }
 
-    #[expect(clippy::never_loop)]
-    loop {
+    'early_return: {
         if skip_files_mask
             .as_ref()
             .is_some_and(|x| x.num_skipped_files() == x.len())
@@ -132,7 +144,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 eprintln!("[MultiScanTaskInit]: early return (pre_slice.len == 0)")
             }
         } else {
-            break;
+            break 'early_return;
         }
 
         return Ok(());
@@ -194,7 +206,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     .spawn(is_compressed_source(
                         config.sources.get(0).unwrap().into_owned()?,
                         config.cloud_options.clone(),
-                        config.io_metrics(),
+                        io_metrics.clone(),
                     ))
                     .await
                     .unwrap()? =>
@@ -218,7 +230,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 }
             }
 
-            resolve_to_positive_slice(&config, &execution_state).await?
+            resolve_to_positive_slice(&config, &execution_state, io_metrics.clone()).await?
         },
     };
 
@@ -304,6 +316,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 .min(skip_files_mask.len() - skip_files_mask.trailing_skipped_files());
         }
 
+        // Note, range does not alter the indexes (`scan_source_idx`) of `scan_sources`.
         let range = range.filter(move |scan_source_idx| {
             let can_skip = !has_row_index_or_slice
                 && skip_files_mask
@@ -316,11 +329,16 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
         let file_reader_builder = config.file_reader_builder.clone();
-        let deletion_files_provider = DeletionFilesProvider::new(
+
+        // Note: The list of sources is fixed, so indexing via `scan_source_idx` is sound.
+        // The list of sources is captured so that in the case of Delta deletion vector,
+        // the first callback has everything needed to request all deletion vectors.
+        let deletion_files_provider = DeletionFilesProvider::try_new(
             config.deletion_files.clone(),
+            config.sources.clone(),
             &execution_state,
-            config.io_metrics(),
-        );
+            io_metrics,
+        )?;
 
         futures::stream::iter(range)
             .map(move |scan_source_idx| {

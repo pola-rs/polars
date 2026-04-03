@@ -321,8 +321,8 @@ def test_non_found_correct_type() -> None:
 
 def test_error_on_multiple_values() -> None:
     with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="needle of `index_of` can only contain",
+        pl.exceptions.ShapeError,
+        match="non-scalar value passed to",
     ):
         pl.Series("a", [1, 2, 3]).index_of(pl.Series([2, 3]))
 

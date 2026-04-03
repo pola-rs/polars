@@ -33,14 +33,21 @@ pub(super) fn process_functions(
             process_unpivot(proj_pd, args, input, ctx, lp_arena, expr_arena)
         },
         Hint(hint) => {
-            let hint = hint.project(&ctx.projected_names);
-            proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
-            Ok(match hint {
-                None => lp_arena.get(input).clone(),
-                Some(hint) => IRBuilder::new(input, expr_arena, lp_arena)
+            if ctx.has_pushed_down() {
+                let hint = hint.project(&ctx.projected_names);
+                proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
+                Ok(match hint {
+                    None => lp_arena.get(input).clone(),
+                    Some(hint) => IRBuilder::new(input, expr_arena, lp_arena)
+                        .hint(hint)
+                        .build(),
+                })
+            } else {
+                proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
+                Ok(IRBuilder::new(input, expr_arena, lp_arena)
                     .hint(hint)
-                    .build(),
-            })
+                    .build())
+            }
         },
         _ => {
             if function.allow_projection_pd() && ctx.has_pushed_down() {
