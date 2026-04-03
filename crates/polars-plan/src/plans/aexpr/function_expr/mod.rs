@@ -1180,7 +1180,11 @@ impl IRFunctionExpr {
             #[cfg(feature = "peaks")]
             F::PeakMin | F::PeakMax => FunctionOptions::length_preserving(),
             #[cfg(feature = "cutqcut")]
-            F::Cut { .. } | F::QCut { .. } => FunctionOptions::length_preserving()
+            F::Cut { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
+            },
+            #[cfg(feature = "cutqcut")]
+            F::QCut { .. } => FunctionOptions::length_preserving()
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "rle")]
             F::RLE => FunctionOptions::groupwise(),
