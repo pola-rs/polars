@@ -3,6 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
+use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
@@ -415,6 +416,41 @@ fn try_lower_elementwise_scalar_agg_expr(
                 _ => unreachable!(),
             }
             Some(expr_arena.add(new_node))
+        },
+
+        #[cfg(feature = "log")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Entropy { base, normalize },
+            ..
+        } => {
+            // x.entropy() ->
+            //   normalize=false: -sum(x * log(x, base))
+            //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
+            //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+            let (base, normalize) = (*base, *normalize);
+            let x = AExprBuilder::new_from_node(inner_exprs[0].node());
+            let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
+            let log_x = AExprBuilder::function(
+                vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                IRFunctionExpr::Log,
+                expr_arena,
+            );
+            let x_log_x = x.multiply(log_x, expr_arena);
+            let mut entropy = x_log_x.sum(expr_arena).negate(expr_arena);
+            if normalize {
+                // sum(x) is deduplicated by CSE
+                let sum_x = x.sum(expr_arena);
+                let log_sum_x = AExprBuilder::function(
+                    vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                    IRFunctionExpr::Log,
+                    expr_arena,
+                );
+                entropy = log_sum_x.plus(entropy.true_divide(sum_x, expr_arena), expr_arena)
+            }
+            let lowered = entropy.node();
+            expr_merger.add_expr(lowered, expr_arena);
+            lower_rec!(lowered)
         },
 
         AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,

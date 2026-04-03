@@ -2196,6 +2196,80 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(trans_stream);
                 transformed_exprs.push(trans_expr);
             },
+            #[cfg(feature = "log")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Entropy { base, normalize },
+                ..
+            } => {
+                // x.entropy() ->
+                //   normalize=false: -sum(x * log(x, base))
+                //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
+                //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                let inner = inner_exprs[0].node();
+                let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let x = AExprBuilder::new_from_node(trans_inner[0]);
+                let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
+                let log_x = AExprBuilder::function(
+                    vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                    IRFunctionExpr::Log,
+                    ctx.expr_arena,
+                );
+                let x_log_x = x.multiply(log_x, ctx.expr_arena);
+                let sum_x_log_x = x_log_x.sum(ctx.expr_arena);
+
+                if !normalize {
+                    let entropy = sum_x_log_x.negate(ctx.expr_arena);
+                    let (trans_stream, trans_expr) =
+                        lower_exprs_with_ctx(trans_input, &[entropy.node()], ctx)?;
+                    input_streams.insert(trans_stream);
+                    transformed_exprs.push(trans_expr[0]);
+                } else {
+                    // Compute sum(x) and sum(x*log(x, base)) in a single Reduce node,
+                    // then combine elementwise.
+                    let sum_x_name = unique_column_name();
+                    let sum_x_log_x_name = unique_column_name();
+                    let sum_x_expr = ExprIR::new(
+                        x.sum(ctx.expr_arena).node(),
+                        OutputName::Alias(sum_x_name.clone()),
+                    );
+                    let sum_x_log_x_expr = ExprIR::new(
+                        sum_x_log_x.node(),
+                        OutputName::Alias(sum_x_log_x_name.clone()),
+                    );
+                    let output_schema = schema_for_select(
+                        trans_input,
+                        &[sum_x_expr.clone(), sum_x_log_x_expr.clone()],
+                        ctx,
+                    )?;
+                    let reduce_key = ctx.phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::Reduce {
+                            input: trans_input,
+                            exprs: vec![sum_x_expr, sum_x_log_x_expr],
+                        },
+                    ));
+                    let reduce_stream = PhysStream::first(reduce_key);
+
+                    let sum_x = AExprBuilder::col(sum_x_name, ctx.expr_arena);
+                    let sum_x_log_x = AExprBuilder::col(sum_x_log_x_name, ctx.expr_arena);
+                    let log_sum_x = AExprBuilder::function(
+                        vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                        IRFunctionExpr::Log,
+                        ctx.expr_arena,
+                    );
+                    // log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                    let result = log_sum_x
+                        .minus(
+                            sum_x_log_x.true_divide(sum_x, ctx.expr_arena),
+                            ctx.expr_arena,
+                        )
+                        .node();
+
+                    input_streams.insert(reduce_stream);
+                    transformed_exprs.push(result);
+                }
+            },
 
             // Length-based expressions.
             AExpr::Len => {
