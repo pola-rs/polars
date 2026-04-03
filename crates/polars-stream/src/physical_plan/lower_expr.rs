@@ -2119,6 +2119,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(trans_expr);
             },
 
+            #[cfg(feature = "moment")]
             AExpr::Function {
                 function: IRFunctionExpr::Skew(_) | IRFunctionExpr::Kurtosis(_, _),
                 ..
