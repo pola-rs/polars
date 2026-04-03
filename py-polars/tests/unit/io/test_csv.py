@@ -3143,3 +3143,28 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
 def test_read_batch_csv_deprecations_26479(foods_file_path: Path) -> None:
     with pytest.warns(DeprecationWarning, match=r"`read_csv_batched` is deprecated"):
         pl.read_csv_batched(foods_file_path)
+
+
+@pytest.mark.parametrize(
+    ("ext", "reader"),
+    [
+        (".parquet", "read_parquet"),
+        (".parq", "read_parquet"),
+        (".ipc", "read_ipc"),
+        (".arrow", "read_ipc"),
+        (".feather", "read_ipc"),
+        (".avro", "read_avro"),
+        (".ndjson", "read_ndjson"),
+        (".jsonl", "read_ndjson"),
+        (".json", "read_json"),
+        (".xlsx", "read_excel"),
+        (".xls", "read_excel"),
+        (".ods", "read_ods"),
+    ],
+)
+@pytest.mark.write_disk
+def test_read_csv_wrong_file_extension(tmp_path: Path, ext: str, reader: str) -> None:
+    path = tmp_path / f"data{ext}"
+    path.write_bytes(b"not a csv")
+    with pytest.raises(ValueError, match=rf"pl\.{reader}\(\)"):
+        pl.read_csv(path)
