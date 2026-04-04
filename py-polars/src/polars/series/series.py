@@ -1514,7 +1514,7 @@ class Series:
 
             - ``int``: a single row index.
             - ``Series`` (Boolean): a boolean mask.
-            - ``Series`` (UInt32/UInt64): an index array.
+            - ``Series`` (Integer): an index array.
             - ``ndarray``: a NumPy boolean mask or integer index array.
             - ``list`` / ``tuple``: an index sequence (cast to UInt32).
         value
