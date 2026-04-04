@@ -10,7 +10,7 @@ pub fn replace_datetime(
     year: &Int32Chunked,
     month: &Int8Chunked,
     day: &Int8Chunked,
-    hour: &Int8Chunked,
+    hour: &Int64Chunked,
     minute: &Int8Chunked,
     second: &Int8Chunked,
     nanosecond: &Int32Chunked,
@@ -88,7 +88,7 @@ pub fn replace_datetime(
     };
     let hour = if hour.len() == 1 {
         if let Some(value) = hour.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
+            &Int64Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.hour()
         }

@@ -19,7 +19,7 @@ impl AsSeries for Series {
 pub trait TemporalMethods: AsSeries {
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> PolarsResult<Int8Chunked> {
+    fn hour(&self) -> PolarsResult<Int64Chunked> {
         let s = self.as_series();
         match s.dtype() {
             #[cfg(feature = "dtype-datetime")]

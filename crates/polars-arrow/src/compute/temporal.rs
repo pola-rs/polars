@@ -138,11 +138,11 @@ macro_rules! time_like {
     };
 }
 
-/// Extracts the hours of a temporal array as [`PrimitiveArray<i8>`].
+/// Extracts the hours of a temporal array as [`PrimitiveArray<i64>`].
 /// Value ranges from 0 to 23.
 /// Use [`can_hour`] to check if this operation is supported for the target [`ArrowDataType`].
-pub fn hour(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
-    time_like!(hour, array, ArrowDataType::Int8)
+pub fn hour(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    time_like!(hour, array, ArrowDataType::Int64)
 }
 
 /// Extracts the minutes of a temporal array as [`PrimitiveArray<i8>`].

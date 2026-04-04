@@ -5,7 +5,7 @@ use super::*;
 pub trait TimeMethods {
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> Int8Chunked;
+    fn hour(&self) -> Int64Chunked;
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
@@ -26,8 +26,9 @@ pub trait TimeMethods {
 impl TimeMethods for TimeChunked {
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> Int8Chunked {
-        self.physical().apply_kernel_cast::<Int8Type>(&time_to_hour)
+    fn hour(&self) -> Int64Chunked {
+        self.physical()
+            .apply_kernel_cast::<Int64Type>(&time_to_hour)
     }
 
     /// Extract minute from underlying NaiveDateTime representation.

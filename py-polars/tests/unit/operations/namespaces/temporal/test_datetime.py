@@ -77,7 +77,7 @@ def test_dt_extract_datetime_component(
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
-        ("hour", pl.Series(values=[0, 3], dtype=pl.Int8)),
+        ("hour", pl.Series(values=[0, 3], dtype=pl.Int64)),
         ("minute", pl.Series(values=[0, 20], dtype=pl.Int8)),
         ("second", pl.Series(values=[0, 10], dtype=pl.Int8)),
         ("millisecond", pl.Series(values=[0, 987], dtype=pl.Int32)),

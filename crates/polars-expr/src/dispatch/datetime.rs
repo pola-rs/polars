@@ -442,11 +442,11 @@ pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
 
     match time_series.dtype() {
         DataType::Datetime(_, _) => {
-            let s_hour = &s[4].strict_cast(&DataType::Int8)?;
+            let s_hour = &s[4].strict_cast(&DataType::Int64)?;
             let s_minute = &s[5].strict_cast(&DataType::Int8)?;
             let s_second = &s[6].strict_cast(&DataType::Int8)?;
             let s_microsecond = &s[7].strict_cast(&DataType::Int32)?;
-            let hour = s_hour.i8()?;
+            let hour = s_hour.i64()?;
             let minute = s_minute.i8()?;
             let second = s_second.i8()?;
             let nanosecond = &(s_microsecond.i32()? * 1_000);

@@ -86,7 +86,7 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
         (["isodow"], pl.Int8, [7, 3, 7]),
         (["dow"], pl.Int8, [0, 3, 0]),
         (["day", "days", "d"], pl.Int8, [7, 30, 1]),
-        (["hour", "hours", "h"], pl.Int8, [1, 10, 23]),
+        (["hour", "hours", "h"], pl.Int64, [1, 10, 23]),
         (["minute", "min", "mins", "m"], pl.Int8, [2, 30, 59]),
         (["second", "seconds", "secs", "sec"], pl.Int8, [3, 45, 59]),
         (

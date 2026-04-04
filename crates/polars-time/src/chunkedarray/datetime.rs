@@ -141,7 +141,7 @@ pub trait DatetimeMethods: AsDatetime {
 
     /// Extract hour from underlying NaiveDateTime representation.
     /// Returns the hour number from 0 to 23.
-    fn hour(&self) -> Int8Chunked {
+    fn hour(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::hour)
     }
 
@@ -214,7 +214,7 @@ pub trait DatetimeMethods: AsDatetime {
         year: &Int32Chunked,
         month: &Int8Chunked,
         day: &Int8Chunked,
-        hour: &Int8Chunked,
+        hour: &Int64Chunked,
         minute: &Int8Chunked,
         second: &Int8Chunked,
         nanosecond: &Int32Chunked,

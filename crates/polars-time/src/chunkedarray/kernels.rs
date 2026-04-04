@@ -164,8 +164,8 @@ to_temporal_unit!(
     hour,
     time64ns_to_time_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(

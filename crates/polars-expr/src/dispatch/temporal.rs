@@ -156,11 +156,11 @@ pub(super) fn datetime(
     }
     let day = day.i8()?;
 
-    let mut hour = hour.cast(&DataType::Int8)?;
+    let mut hour = hour.cast(&DataType::Int64)?;
     if hour.len() < max_len {
         hour = hour.new_from_index(0, max_len);
     }
-    let hour = hour.i8()?;
+    let hour = hour.i64()?;
 
     let mut minute = minute.cast(&DataType::Int8)?;
     if minute.len() < max_len {
