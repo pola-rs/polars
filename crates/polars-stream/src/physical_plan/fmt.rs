@@ -453,6 +453,10 @@ fn visualize_plan_rec(
             },
             &[*input][..],
         ),
+        #[cfg(feature = "interpolate")]
+        PhysNodeKind::Interpolate { input, method } => {
+            (format!("interpolate\\nmethod: {method:?}"), &[*input][..])
+        },
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::SortedUnique { input, keys } => {

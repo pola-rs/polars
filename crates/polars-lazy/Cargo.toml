@@ -249,7 +249,7 @@ range = [
 ]
 mode = ["polars-expr/mode", "polars-stream?/mode"]
 cum_agg = ["polars-expr/cum_agg", "polars-stream?/cum_agg"]
-interpolate = ["polars-expr/interpolate"]
+interpolate = ["polars-expr/interpolate", "polars-stream?/interpolate"]
 interpolate_by = ["polars-expr/interpolate_by"]
 rolling_window = [
   "polars-expr/rolling_window",
