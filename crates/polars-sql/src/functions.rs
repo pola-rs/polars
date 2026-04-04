@@ -2,8 +2,8 @@ use std::ops::{Add, Sub};
 
 use polars_core::chunked_array::ops::{FillNullStrategy, SortMultipleOptions, SortOptions};
 use polars_core::prelude::{
-    DataType, ExplodeOptions, PolarsResult, QuantileMethod, Schema, TimeUnit, polars_bail,
-    polars_err,
+    polars_bail, polars_err, DataType, ExplodeOptions, PolarsResult, QuantileMethod, Schema,
+    TimeUnit,
 };
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "rank")]
@@ -14,7 +14,7 @@ use polars_plan::dsl::functions::{
     as_struct, coalesce, col, cols, concat_str, element, int_range, len, lit, max_horizontal,
     min_horizontal, when,
 };
-use polars_plan::plans::{DynLiteralValue, LiteralValue, typed_lit};
+use polars_plan::plans::{typed_lit, DynLiteralValue, LiteralValue};
 use polars_plan::prelude::StrptimeOptions;
 use polars_utils::pl_str::PlSmallStr;
 use sqlparser::ast::helpers::attached_token::AttachedToken;
@@ -26,8 +26,8 @@ use sqlparser::ast::{
 };
 use sqlparser::tokenizer::Span;
 
-use crate::SQLContext;
 use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
+use crate::SQLContext;
 
 pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
@@ -1079,8 +1079,8 @@ impl PolarsSQLFunctions {
 
 impl SQLFunctionVisitor<'_> {
     pub(crate) fn visit_function(&mut self) -> PolarsResult<Expr> {
-        use PolarsSQLFunctions::*;
         use polars_lazy::prelude::Literal;
+        use PolarsSQLFunctions::*;
 
         let function_name = PolarsSQLFunctions::try_from_sql(self.func, self.ctx)?;
         let function = self.func;
@@ -2025,10 +2025,7 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
         match args.as_slice() {
-            [
-                FunctionArgExpr::Expr(sql_expr1),
-                FunctionArgExpr::Expr(sql_expr2),
-            ] => {
+            [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2)] => {
                 let expr1 = parse_sql_expr(sql_expr1, self.ctx, self.active_schema)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 f(expr1, expr2)
@@ -2063,11 +2060,8 @@ impl SQLFunctionVisitor<'_> {
     ) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
         match args.as_slice() {
-            [
-                FunctionArgExpr::Expr(sql_expr1),
-                FunctionArgExpr::Expr(sql_expr2),
-                FunctionArgExpr::Expr(sql_expr3),
-            ] => {
+            [FunctionArgExpr::Expr(sql_expr1), FunctionArgExpr::Expr(sql_expr2), FunctionArgExpr::Expr(sql_expr3)] =>
+            {
                 let expr1 = parse_sql_expr(sql_expr1, self.ctx, self.active_schema)?;
                 let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
                 let expr3 = Arg::from_sql_expr(sql_expr3, self.ctx)?;

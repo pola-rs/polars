@@ -550,7 +550,8 @@ fn test_take_in_groups() -> PolarsResult<()> {
         .sort(["fruits"], Default::default())
         .select([col("B")
             .get(lit(0u32), false)
-            .over([col("fruits")]).unwrap()
+            .over([col("fruits")])
+            .unwrap()
             .alias("taken")])
         .collect()?;
 
