@@ -184,7 +184,11 @@ impl ComputeNode for InterpolateNode {
                 let wait_group = WaitGroup::default();
                 while let Ok((seq, pending_nulls, last_non_null, mut column)) = recv.recv().await {
                     // Add back in the last non-null value and the pending nulls.
-                    if pending_nulls > 0 {
+                    //
+                    // If we have only seen nulls until now, last_non_null=Null and its just an
+                    // extra null at the start.
+                    let has_prepended = pending_nulls > 0 || !last_non_null.is_null();
+                    if has_prepended {
                         let mut c = Column::new_scalar(
                             column.name().clone(),
                             Scalar::new(input_dtype.clone(), last_non_null),
@@ -209,7 +213,7 @@ impl ComputeNode for InterpolateNode {
                     // If there were pending nulls, we know that the previous morsel already
                     // emitted our first value. We are only using it to enable interpolation here.
                     // Slice it off and don't double emit it.
-                    if pending_nulls > 0 {
+                    if has_prepended {
                         column = column.slice(1, usize::MAX);
                     }
 
