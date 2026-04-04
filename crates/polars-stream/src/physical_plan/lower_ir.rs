@@ -463,25 +463,53 @@ pub fn lower_ir(
             };
 
             let mut stream = phys_input;
+
+            // If we need to maintain order augment with row index. This is
+            // not yet necessary for the non-limiting case as that one
+            // dispatches to in-memory.
+            if sort_options.maintain_order && limit < u64::MAX {
+                let row_idx_name = unique_column_name();
+                stream = build_row_idx_stream(stream, row_idx_name.clone(), None, phys_sm);
+
+                // Add row index to sort columns.
+                let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
+                by_column.push(ExprIR::new(
+                    row_idx_node,
+                    OutputName::ColumnLhs(row_idx_name),
+                ));
+                sort_options.descending.push(false);
+                sort_options.nulls_last.push(true);
+
+                // No longer needed for the actual sort itself, handled by row index.
+                sort_options.maintain_order = false;
+            }
+
+            let mut output_exprs: Vec<_> = output_schema
+                .iter_names()
+                .map(|name| {
+                    let node = expr_arena.add(AExpr::Column(name.clone()));
+                    ExprIR::new(node, OutputName::ColumnLhs(name.clone()))
+                })
+                .collect();
+            let trans_by_column = if by_column
+                .iter()
+                .any(|e| !matches!(expr_arena.get(e.node()), AExpr::Column(_)))
+            {
+                let mut exprs = Vec::new();
+                exprs.extend(output_exprs.iter().cloned());
+                exprs.extend(by_column.iter().enumerate().map(|(i, expr)| {
+                    expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i))
+                }));
+                let trans_exprs;
+                (stream, trans_exprs) =
+                    lower_exprs(stream, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+                output_exprs = trans_exprs[..output_exprs.len()].to_vec();
+                trans_exprs[output_exprs.len()..].to_vec()
+            } else {
+                by_column.clone()
+            };
+
             if limit < u64::MAX {
-                // If we need to maintain order augment with row index.
-                if sort_options.maintain_order {
-                    let row_idx_name = unique_column_name();
-                    stream = build_row_idx_stream(stream, row_idx_name.clone(), None, phys_sm);
-
-                    // Add row index to sort columns.
-                    let row_idx_node = expr_arena.add(AExpr::Column(row_idx_name.clone()));
-                    by_column.push(ExprIR::new(
-                        row_idx_node,
-                        OutputName::ColumnLhs(row_idx_name),
-                    ));
-                    sort_options.descending.push(false);
-                    sort_options.nulls_last.push(true);
-
-                    // No longer needed for the actual sort itself, handled by row index.
-                    sort_options.maintain_order = false;
-                }
-
                 let k_node =
                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::from(limit))));
                 let k_selector = ExprIR::from_node(k_node, expr_arena);
@@ -493,22 +521,12 @@ pub fn lower_ir(
                     },
                 ));
 
-                let mut trans_by_column;
-                (stream, trans_by_column) =
-                    lower_exprs(stream, &by_column, expr_arena, phys_sm, expr_cache, ctx)?;
-
-                trans_by_column = trans_by_column
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, expr)| expr.with_alias(format_pl_smallstr!("__POLARS_KEYCOL_{}", i)))
-                    .collect_vec();
-
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
                     output_schema: phys_sm[stream.node].output_schema.clone(),
                     kind: PhysNodeKind::TopK {
                         input: stream,
                         k: PhysStream::first(k_node),
-                        by_column: trans_by_column,
+                        by_column: trans_by_column.clone(),
                         reverse: sort_options.descending.iter().map(|x| !x).collect(),
                         nulls_last: sort_options.nulls_last.clone(),
                         dyn_pred: slice.as_ref().and_then(|t| t.2.clone()),
@@ -520,21 +538,15 @@ pub fn lower_ir(
                 output_schema: phys_sm[stream.node].output_schema.clone(),
                 kind: PhysNodeKind::Sort {
                     input: stream,
-                    by_column,
+                    by_column: trans_by_column,
                     slice: slice.as_ref().map(|t| (t.0, t.1)),
                     sort_options,
                 },
             }));
 
             // Remove any temporary columns we may have added.
-            let exprs: Vec<_> = output_schema
-                .iter_names()
-                .map(|name| {
-                    let node = expr_arena.add(AExpr::Column(name.clone()));
-                    ExprIR::new(node, OutputName::ColumnLhs(name.clone()))
-                })
-                .collect();
-            stream = build_select_stream(stream, &exprs, expr_arena, phys_sm, expr_cache, ctx)?;
+            stream =
+                build_select_stream(stream, &output_exprs, expr_arena, phys_sm, expr_cache, ctx)?;
 
             return Ok(stream);
         },

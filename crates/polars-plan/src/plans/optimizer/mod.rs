@@ -264,8 +264,9 @@ pub fn optimize(
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
-        let mut optimizer =
-            CommonSubExprOptimizer::new(opt_flags.contains(OptFlags::NEW_STREAMING));
+        let mut optimizer = CommonSubExprOptimizer::new(
+            opt_flags.contains(OptFlags::NEW_STREAMING) | opt_flags.contains(OptFlags::GPU),
+        );
         let ir_node = IRNode::new_mutate(root);
 
         root = try_with_ir_arena(ir_arena, expr_arena, |arena| {

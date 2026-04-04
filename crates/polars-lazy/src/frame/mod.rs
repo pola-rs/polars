@@ -197,6 +197,11 @@ impl LazyFrame {
         self
     }
 
+    pub fn with_gpu(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::GPU, toggle);
+        self
+    }
+
     /// Try to estimate the number of rows so that joins can determine which side to keep in memory.
     pub fn with_row_estimate(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::ROW_ESTIMATE, toggle);
@@ -635,9 +640,12 @@ impl LazyFrame {
                 }
             })
         }
-
-        if let Engine::Streaming = engine {
-            feature_gated!("new_streaming", self = self.with_new_streaming(true))
+        match engine {
+            Engine::Streaming => {
+                feature_gated!("new_streaming", self = self.with_new_streaming(true))
+            },
+            Engine::Gpu => self = self.with_gpu(true),
+            _ => (),
         }
 
         let mut ir_plan = self.to_alp_optimized()?;
