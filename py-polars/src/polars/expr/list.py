@@ -107,7 +107,7 @@ class ExprListNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return self.agg(pl.element().any(ignore_nulls=ignore_nulls))
+        return self.agg(F.element().any(ignore_nulls=ignore_nulls))
 
     def len(self) -> Expr:
         """
