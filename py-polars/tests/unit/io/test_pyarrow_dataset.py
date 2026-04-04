@@ -197,6 +197,75 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
     assert_frame_equal(result, expected)
 
 
+def test_pyarrow_dataset_is_in_predicate_pushdown(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"id": [1, 2, 3, 4, 5], "val": [10, 20, 30, 40, 50]})
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+
+    pred = pl.col("id").is_in([1, 3])
+    expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "is_in" in capture
+    assert_frame_equal(result, expected)
+
+    # Test with range input
+    pred = pl.col("id").is_in(range(1, 4))
+    expected = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
+    result = pl.scan_pyarrow_dataset(dset).filter(pred).collect()
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.write_disk
+def test_pyarrow_dataset_is_in_with_types(df: pl.DataFrame, tmp_path: Path) -> None:
+    file_path = tmp_path / "small.ipc"
+    df.write_ipc(file_path, compat_level=pl.CompatLevel.oldest())
+
+    # pushdown is_in with integers
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("int").is_in([1, 3, 20])).select(
+            "bools", "floats", "date"
+        ),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+
+    # pushdown is_in with large list (should still work, just not pushed down)
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("int").is_in(list(range(120)))).select(
+            "bools", "floats", "date"
+        ),
+        n_expected=3,
+    )
+
+    # pushdown is_in with empty list
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("cat").is_in([])).select("bools", "floats", "date"),
+        n_expected=0,
+    )
+
+    # combined predicate with is_in
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("bools") & pl.col("int").is_in([1, 2])).select(
+            "bools", "floats"
+        ),
+        n_expected=1,
+        check_predicate_pushdown=True,
+    )
+
+
 def test_pyarrow_dataset_comm_subplan_elim(tmp_path: Path) -> None:
     df0 = pl.DataFrame({"a": [1, 2, 3]})
 

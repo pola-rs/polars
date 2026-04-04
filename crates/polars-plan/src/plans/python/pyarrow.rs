@@ -14,6 +14,7 @@ const TAG_LIT_BOOL: &str = "lit_bool";
 const TAG_LIT_I64: &str = "lit_i64";
 const TAG_LIT_F64: &str = "lit_f64";
 const TAG_LIT_NULL: &str = "lit_null";
+const TAG_IS_IN: &str = "is_in";
 
 const OP_EQ: &str = "eq";
 const OP_NEQ: &str = "neq";
@@ -152,6 +153,41 @@ fn predicate_to_pa_json(
                     write!(out, "[\"{TAG_IS_NOT_NULL}\",").unwrap();
                     predicate_to_pa_json(input_node, expr_arena, out)?;
                     out.push(']');
+                    Some(())
+                },
+                #[cfg(feature = "is_in")]
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) => {
+                    let rhs_node = input.get(1)?.node();
+
+                    // The RHS of is_in is a literal list/series. We need to
+                    // extract individual elements and serialize them.
+                    let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
+                        return None;
+                    };
+
+                    let av = lv.to_any_value()?;
+                    let s = match av {
+                        AnyValue::List(s) => s,
+                        _ => return None,
+                    };
+
+                    // Don't push down very large lists
+                    if s.len() > 100 {
+                        return None;
+                    }
+
+                    let dtype = s.dtype().clone();
+
+                    write!(out, "[\"{TAG_IS_IN}\",").unwrap();
+                    predicate_to_pa_json(input_node, expr_arena, out)?;
+                    out.push_str(",[");
+                    for (i, val) in s.iter().enumerate() {
+                        if i > 0 {
+                            out.push(',');
+                        }
+                        anyvalue_to_json(val, &dtype, out)?;
+                    }
+                    out.push_str("]]");
                     Some(())
                 },
                 _ => None,

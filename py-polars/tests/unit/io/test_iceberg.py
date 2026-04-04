@@ -96,6 +96,7 @@ else:
         EqualTo,
         GreaterThan,
         GreaterThanOrEqual,
+        In,
         IsNull,
         LessThan,
         LessThanOrEqual,
@@ -318,6 +319,24 @@ class TestIcebergExpressions:
         assert _build_iceberg_expr(
             ["binop", "eq", ["field", "ts"], ["lit_bool", False]]
         ) == EqualTo("ts", False)
+
+    def test_isin_expression(self) -> None:
+        node = [
+            "is_in",
+            ["field", "id"],
+            [["lit_i64", 1], ["lit_i64", 2], ["lit_i64", 3]],
+        ]
+        assert _build_iceberg_expr(node) == In(
+            "id", {literal(1), literal(2), literal(3)}
+        )
+
+    def test_isin_expression_strings(self) -> None:
+        node = [
+            "is_in",
+            ["field", "name"],
+            [["lit_str", "a"], ["lit_str", "b"]],
+        ]
+        assert _build_iceberg_expr(node) == In("name", {literal("a"), literal("b")})
 
     def test_bare_boolean_field(self) -> None:
         expr = try_convert_pyarrow_predicate('["field","is_active"]')

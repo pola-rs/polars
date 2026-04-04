@@ -49,6 +49,11 @@ def _build_pyarrow_expr(node: list[Any]) -> Any:
         return pa.compute.scalar(node[1])
     if tag == "lit_null":
         return pa.compute.scalar(None)
+    if tag == "is_in":
+        field_expr = _build_pyarrow_expr(node[1])
+        values = [_build_pyarrow_expr(v) for v in node[2]]
+        value_set = pa.array([v.as_py() for v in values])
+        return pa.compute.is_in(field_expr, value_set=value_set)
 
     msg = f"unknown predicate node tag: {tag!r}"
     raise ValueError(msg)

@@ -119,7 +119,11 @@ def _build_iceberg_expr(node: list[Any]) -> Any:
     if tag == "is_null":
         return pyiceberg.expressions.IsNull(node[1][1])  # type: ignore[misc]
     if tag == "is_not_null":
-        return pyiceberg.expressions.IsNotNull(node[1][1])  # type: ignore[misc, attr-defined]
+        return pyiceberg.expressions.NotNull(node[1][1])  # type: ignore[misc, attr-defined]
+    if tag == "is_in":
+        field_name: str = node[1][1]
+        values = tuple(_build_iceberg_expr(v) for v in node[2])
+        return pyiceberg.expressions.In(field_name, values)  # type: ignore[misc, call-arg, arg-type]
     if tag in ("lit_str", "lit_bool", "lit_i64", "lit_f64"):
         return node[1]
     if tag == "lit_null":
