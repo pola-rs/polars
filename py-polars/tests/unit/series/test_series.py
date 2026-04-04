@@ -2475,3 +2475,10 @@ def test_setitem_negative_index_27110() -> None:
     idx = pl.Series([-1])
     s[idx] = 99
     assert s.to_list() == [1, 2, 99]
+
+
+def test_setitem_invalid_series_dtype_27110() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    idx = pl.Series([0.0, 2.0])
+    with pytest.raises(TypeError, match="cannot use Series of dtype"):
+        s[idx] = 99

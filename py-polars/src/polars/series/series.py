@@ -1565,6 +1565,9 @@ class Series:
                 self._s = self.set(key, value)._s
             elif key.dtype.is_integer():
                 self._s = self.scatter(key, value)._s
+            else:
+                msg = f"cannot use Series of dtype {key.dtype!r} for indexing; expected boolean or integer dtype"
+                raise TypeError(msg)
 
         # TODO: implement for these types without casting to series
         elif _check_for_numpy(key) and isinstance(key, np.ndarray):
