@@ -184,7 +184,7 @@ def test_interpolate_overflow_27184() -> None:
 @pytest.mark.parametrize("method", ["linear", "nearest"])
 def test_streaming_interpolate_vs_in_memory(
     df: pl.DataFrame,
-    method: str,
+    method: InterpolationMethod,
 ) -> None:
     lf = df.lazy().select(pl.col("a").interpolate(method=method))
 
@@ -219,7 +219,7 @@ def test_streaming_interpolate_vs_in_memory(
 @pytest.mark.parametrize("method", ["linear", "nearest"])
 def test_streaming_interpolate_dtypes(
     data: pl.Series,
-    method: str,
+    method: InterpolationMethod,
 ) -> None:
     lf = data.to_frame().lazy().select(pl.col("a").interpolate(method=method))
 
