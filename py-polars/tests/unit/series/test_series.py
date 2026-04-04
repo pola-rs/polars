@@ -2463,7 +2463,7 @@ def test_multiply_int_series_by_timedelta_26205() -> None:
 @pytest.mark.parametrize(
     "dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16]
 )
-def test_setitem_integer_dtypes_27110(dtype: pl.PolarsDataType) -> None:
+def test_setitem_integer_dtypes_27110(dtype: pl.DataType) -> None:
     s = pl.Series("a", [1, 2, 3])
     idx = pl.Series([0, 2], dtype=dtype)
     s[idx] = 99
