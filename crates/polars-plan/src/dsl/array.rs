@@ -78,20 +78,6 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::ToList))
     }
 
-    #[cfg(feature = "array_any_all")]
-    /// Evaluate whether all boolean values are true for every subarray.
-    pub fn all(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::All))
-    }
-
-    #[cfg(feature = "array_any_all")]
-    /// Evaluate whether any boolean value is true for every subarray
-    pub fn any(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Any))
-    }
-
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Sort(options)))
