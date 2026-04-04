@@ -1563,9 +1563,7 @@ class Series:
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
-            elif key.dtype == UInt64:
-                self._s = self.scatter(key.cast(UInt32), value)._s
-            elif key.dtype == UInt32:
+            elif key.dtype.is_integer():
                 self._s = self.scatter(key, value)._s
 
         # TODO: implement for these types without casting to series
