@@ -106,8 +106,7 @@ impl ComputeNode for InterpolateNode {
         let source_token = SourceToken::new();
 
         let Some(recv) = recv else {
-            // Input exhausted. Flush pending trailing nulls as actual nulls — no right endpoint
-            // exists, so they remain null per `interpolate` semantics.
+            // Input exhausted. Flush pending trailing nulls as actual nulls.
             debug_assert!(*pending_nulls > 0);
 
             let pending = *pending_nulls;
@@ -200,7 +199,7 @@ impl ComputeNode for InterpolateNode {
                         column = c;
                     }
 
-                    // Interpolate if neccesary.
+                    // Interpolate if necessary.
                     column = if column.has_nulls() {
                         interpolate(column.as_materialized_series(), method).into_column()
                     } else {
