@@ -635,6 +635,13 @@ impl EvalVariant {
             (Self::List | Self::ListAgg, DataType::List(inner)) => Ok(inner.as_ref()),
             #[cfg(feature = "dtype-array")]
             (Self::Array { .. } | Self::ArrayAgg, DataType::Array(inner, _)) => Ok(inner.as_ref()),
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg { .. }, dtype) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "expected Array datatype for array operation, got: {dtype:?}"
+                );
+            },
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -671,6 +678,13 @@ impl EvalVariant {
                 } else {
                     Ok(DataType::List(Box::new(output_element_dtype)))
                 }
+            },
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg, dtype) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "expected Array datatype for array operation, got: {dtype:?}"
+                );
             },
             (Self::Cumulative { min_samples: _ }, _) => Ok(output_element_dtype),
             _ => polars_bail!(op = self.to_name(), dtype),
