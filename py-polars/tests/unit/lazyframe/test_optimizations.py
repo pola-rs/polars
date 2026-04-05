@@ -628,3 +628,16 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
         q.collect(),
         pl.DataFrame({"x": [4, 5]}),
     )
+
+
+def test_drop_nulls_first_last_optimization_25478() -> None:
+    lf = pl.LazyFrame({"a": [None, 1, None, 3, None]})
+    lf = lf.select(a=pl.col.a.drop_nulls().first(), b=pl.col.a.drop_nulls().last())
+
+    explain = lf.explain(engine="streaming")
+    assert "first(" not in explain
+    assert "first_non_null(" in explain
+    assert "last(" not in explain
+    assert "last_non_null(" in explain
+
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1], "b": [3]}))

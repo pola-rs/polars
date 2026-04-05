@@ -1514,7 +1514,7 @@ class Series:
 
             - ``int``: a single row index.
             - ``Series`` (Boolean): a boolean mask.
-            - ``Series`` (UInt32/UInt64): an index array.
+            - ``Series`` (Integer): an index array.
             - ``ndarray``: a NumPy boolean mask or integer index array.
             - ``list`` / ``tuple``: an index sequence (cast to UInt32).
         value
@@ -1563,10 +1563,11 @@ class Series:
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
-            elif key.dtype == UInt64:
-                self._s = self.scatter(key.cast(UInt32), value)._s
-            elif key.dtype == UInt32:
+            elif key.dtype.is_integer():
                 self._s = self.scatter(key, value)._s
+            else:
+                msg = f"cannot use Series of dtype {key.dtype!r} for indexing; expected boolean or integer dtype"
+                raise TypeError(msg)
 
         # TODO: implement for these types without casting to series
         elif _check_for_numpy(key) and isinstance(key, np.ndarray):

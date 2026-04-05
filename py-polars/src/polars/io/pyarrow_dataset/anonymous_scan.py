@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-import polars._reexport as pl
+import polars as pl
 from polars._dependencies import pyarrow as pa
 
 if TYPE_CHECKING:
@@ -132,14 +132,32 @@ def _scan_pyarrow_dataset_impl(
         common_params["batch_size"] = batch_size
 
     def frames() -> Iterator[DataFrame]:
-        yield pl.DataFrame(
-            (
-                ds.head(n_rows, **common_params).filter(filter_post_slice_)
-                if filter_post_slice_ is not None
-                else ds.head(n_rows, **common_params)
-            )
-            if n_rows is not None
-            else ds.to_table(**common_params)
-        )
+        if n_rows == 0:
+            yield pl.DataFrame(ds.head(n_rows, **common_params))
+            return
+
+        remaining = n_rows  # None = unlimited
+
+        for batch in ds.to_batches(**common_params):
+            if batch.num_rows == 0:
+                continue
+
+            # 1. Slice to row limit first (zero-copy)
+            if remaining is not None:
+                if remaining <= 0:
+                    break
+                if batch.num_rows > remaining:
+                    batch = batch.slice(0, remaining)
+                remaining -= batch.num_rows
+
+            # TODO: Let the engine take care of post-slice
+            # 2. Filter after slice
+            if filter_post_slice_ is not None:
+                batch = pa.Table.from_batches([batch]).filter(filter_post_slice_)
+                for fb in batch.to_batches():
+                    if fb.num_rows > 0:
+                        yield pl.from_arrow(fb)  # type: ignore[misc]
+            else:
+                yield pl.from_arrow(batch)  # type: ignore[misc]
 
     return frames(), False
