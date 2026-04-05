@@ -231,6 +231,7 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
     q = pl.scan_pyarrow_dataset(dset).filter(
         (pl.col("a") > 1) & (pl.col("a") * pl.col("b") > 25)
     )
+    print(q.explain())
 
     capfd.readouterr()
     result = q.collect()
@@ -513,6 +514,14 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
 
     import polars.io.pyarrow_dataset.anonymous_scan
 
+    # Test post-filter in engine: this tests the correct result.
+    # Head is applied in scan_pyarrow, filter is applied in engine.
+    assert_frame_equal(
+        pl.scan_pyarrow_dataset(dataset).head(2).filter(pl.col.year == 2026).collect(),
+        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+    )
+
+    # Test post-filter in engine: this tests that the filter is not applied pyarrow.
     assert_frame_equal(
         polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
             dataset,
@@ -520,9 +529,10 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
             predicate="pa.compute.field('year') == 2026",
             with_columns=None,
         )[0].__next__(),
-        pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
+        pl.DataFrame({"index": [0, 1], "year": [2025, 2026], "month": [0, 0]}),
     )
 
+    # No head: Filter is applied in _scan_pyarrow
     assert_frame_equal(
         polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
             dataset,
@@ -533,6 +543,7 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
         pl.DataFrame(schema={"index": pl.Int64, "year": pl.Int64, "month": pl.Int64}),
     )
 
+    # Head is applied in _scan_pyarrow
     assert_frame_equal(
         pl.concat(
             polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
