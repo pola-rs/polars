@@ -90,8 +90,7 @@ def _scan_pyarrow_dataset_impl(
     -------
     tuple[Iterator[DataFrame], bool]
     A generator over the DataFrames and a boolean indicating if the
-    predicates could be parsed.
-    This boolean is always `True` as we know that we can parse pyarrow predicates
+    predicates is applied.
     """
     # If this is None, the engine will post-apply a predicate if there is one.
     # If the dataset cannot do it at the source, we want that to happen in the engine
