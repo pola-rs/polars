@@ -85,10 +85,6 @@ pub(crate) fn is_fake_elementwise_function(expr: &AExpr) -> bool {
                 F::Boolean(IRBooleanFunction::IsIn { .. }) => true,
                 #[cfg(feature = "replace")]
                 F::Replace | F::ReplaceStrict { .. } => true,
-                // `str.replace` can take a single value (e.g. from `first()`) with columns.
-                // If treated as elementwise, that value would get repeated in streaming, which is wrong.
-                #[cfg(feature = "strings")]
-                F::StringExpr(IRStringFunction::Replace { .. }) => true,
                 _ => false,
             }
         },
