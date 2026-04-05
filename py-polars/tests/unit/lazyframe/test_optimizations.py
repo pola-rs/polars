@@ -641,3 +641,11 @@ def test_drop_nulls_first_last_optimization_25478() -> None:
     assert "last_non_null(" in explain
 
     assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1], "b": [3]}))
+
+
+def test_fast_count_predicate_27168() -> None:
+    csv = b"""a,b
+true,1
+false,2
+"""
+    assert pl.scan_csv(csv).filter(pl.col.a).select(pl.len()).collect().item() == 1
