@@ -264,7 +264,7 @@ def test_dataframe_row_orient_bare_decimal_float() -> None:
     )
     assert result["asset"].to_list() == ["USD"]
     assert result["amount"].dtype.is_decimal()
-    assert result["amount"].to_python() == [PyDecimal("1000.0")]
+    assert result["amount"].to_list() == [PyDecimal("1000.0")]
 
 
 def test_dataframe_row_orient_bare_decimal_integer() -> None:
@@ -274,7 +274,7 @@ def test_dataframe_row_orient_bare_decimal_integer() -> None:
         orient="row",
     )
     assert result["amount"].dtype == pl.Decimal(scale=0)
-    assert result["amount"].to_python() == [PyDecimal("500")]
+    assert result["amount"].to_list() == [PyDecimal("500")]
 
 
 def test_dataframe_row_orient_bare_decimal_with_nulls() -> None:
@@ -295,7 +295,7 @@ def test_dataframe_row_orient_explicit_decimal_scale_unaffected() -> None:
         orient="row",
     )
     assert result["amount"].dtype == pl.Decimal(scale=2)
-    assert result["amount"].to_python() == [PyDecimal("10.50")]
+    assert result["amount"].to_list() == [PyDecimal("10.50")]
 
 
 def test_dataframe_row_and_col_orient_bare_decimal_consistent() -> None:
@@ -311,4 +311,4 @@ def test_dataframe_row_and_col_orient_bare_decimal_consistent() -> None:
     )
     assert row_df["amount"].dtype.is_decimal()
     assert col_df["amount"].dtype.is_decimal()
-    assert row_df["amount"].to_python() == col_df["amount"].to_python()
+    assert row_df["amount"].to_list() == col_df["amount"].to_list()

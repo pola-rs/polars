@@ -576,7 +576,7 @@ def _sequence_of_sequence_to_pydf(
         for col, tp in local_schema_override.items():
             if tp in (Categorical, Enum):
                 local_schema_override[col] = String
-            elif tp == Decimal:
+            elif tp is Decimal:
                 # Bare Decimal (no precision/scale) cannot be serialized into the
                 # Rust schema dict. Replace with Unknown so from_rows infers the
                 # native type; we rebuild these columns afterwards using pl.Series
@@ -608,8 +608,16 @@ def _sequence_of_sequence_to_pydf(
         if bare_decimal_cols:
             for col, col_idx in bare_decimal_cols:
                 col_values = [row[col_idx] for row in data]
+                # Infer the concrete Decimal(precision, scale) from non-null values
+                # so that null-containing columns are handled correctly.
+                non_null = [v for v in col_values if v is not None]
+                decimal_dtype = (
+                    pl.Series("_", non_null, dtype=Decimal).dtype
+                    if non_null
+                    else Decimal(scale=0)
+                )
                 pyseries = pl.Series(
-                    col, col_values, dtype=Decimal, strict=strict, nan_to_null=nan_to_null
+                    col, col_values, dtype=decimal_dtype, strict=strict, nan_to_null=nan_to_null
                 )._s
                 pydf.replace_column(col_idx, pyseries)
             if schema_overrides:
