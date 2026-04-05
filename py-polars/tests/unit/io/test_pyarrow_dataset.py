@@ -231,7 +231,6 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
     q = pl.scan_pyarrow_dataset(dset).filter(
         (pl.col("a") > 1) & (pl.col("a") * pl.col("b") > 25)
     )
-    print(q.explain())
 
     capfd.readouterr()
     result = q.collect()
