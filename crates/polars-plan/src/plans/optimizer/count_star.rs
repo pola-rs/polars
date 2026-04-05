@@ -153,6 +153,7 @@ fn visit_logical_plan_for_scan_paths(
             scan_type,
             sources,
             unified_scan_args,
+            predicate,
             ..
         } => {
             // New-streaming is generally on par for all except CSV (see https://github.com/pola-rs/polars/pull/22363).
@@ -160,7 +161,7 @@ fn visit_logical_plan_for_scan_paths(
 
             let use_fast_file_count = match scan_type.as_ref() {
                 #[cfg(feature = "csv")]
-                FileScanIR::Csv { .. } => true,
+                FileScanIR::Csv { .. } => predicate.is_none(),
                 _ => false,
             };
 
