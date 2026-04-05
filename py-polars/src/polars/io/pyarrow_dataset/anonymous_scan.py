@@ -91,9 +91,7 @@ def _scan_pyarrow_dataset_impl(
     tuple[Iterator[DataFrame], bool]
     A generator over the DataFrames and a boolean indicating if the
     predicates could be parsed.
-    This boolean is always `False` as there might be some predicates
-    that could not be converted
-    to pyarrow and need to be applied as post-predicate.
+    This boolean is always `True` as we know that we can parse pyarrow predicates
     """
     filter_ = None
     filter_post_slice_ = None
@@ -160,4 +158,5 @@ def _scan_pyarrow_dataset_impl(
             else:
                 yield pl.from_arrow(batch)  # type: ignore[misc]
 
-    return frames(), False
+    applies_predicate_in_this_function = filter_ is not None
+    return frames(), applies_predicate_in_this_function
