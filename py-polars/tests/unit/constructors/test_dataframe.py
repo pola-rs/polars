@@ -312,3 +312,15 @@ def test_dataframe_row_and_col_orient_bare_decimal_consistent() -> None:
     assert row_df["amount"].dtype.is_decimal()
     assert col_df["amount"].dtype.is_decimal()
     assert row_df["amount"].to_list() == col_df["amount"].to_list()
+
+
+def test_dataframe_row_orient_bare_decimal_only_column() -> None:
+    # schema_overrides is empty after bare Decimal cols are removed — exercises
+    # the `if schema_overrides` False branch in _sequence_of_sequence_to_pydf.
+    result = pl.DataFrame(
+        [(1000.0,)],
+        schema={"amount": pl.Decimal},
+        orient="row",
+    )
+    assert result["amount"].dtype.is_decimal()
+    assert result["amount"].to_list() == [PyDecimal("1000.0")]
