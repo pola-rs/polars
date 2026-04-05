@@ -617,15 +617,20 @@ def _sequence_of_sequence_to_pydf(
                     else Decimal(scale=0)
                 )
                 pyseries = pl.Series(
-                    col, col_values, dtype=decimal_dtype, strict=strict, nan_to_null=nan_to_null
+                    col,
+                    col_values,
+                    dtype=decimal_dtype,
+                    strict=strict,
+                    nan_to_null=nan_to_null,
                 )._s
                 pydf.replace_column(col_idx, pyseries)
             if schema_overrides:
                 bare_decimal_names = {col for col, _ in bare_decimal_cols}
-                schema_overrides = (
-                    {k: v for k, v in schema_overrides.items() if k not in bare_decimal_names}
-                    or None
-                )
+                schema_overrides = {
+                    k: v
+                    for k, v in schema_overrides.items()
+                    if k not in bare_decimal_names
+                } or None
 
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
