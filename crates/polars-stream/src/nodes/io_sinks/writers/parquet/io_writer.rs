@@ -111,6 +111,7 @@ fn build_file_stats(
     }
     let column_stats = (0..num_columns)
         .map(|col_idx| build_column_stats(&file_metadata, &leaf_fields[col_idx], col_idx))
+        .filter_map(|r| r.transpose())
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let stats = SinkedFileStats {
@@ -128,9 +129,18 @@ fn build_column_stats(
     file_metadata: &FileMetadata,
     field: &Field,
     col_idx: usize,
-) -> PolarsResult<SinkedParquetColumnStats> {
-    // Get basic information
-    let column = &file_metadata.schema().columns()[col_idx];
+) -> PolarsResult<Option<SinkedParquetColumnStats>> {
+    // Get field_id from the Arrow field's metadata (set via the arrow_schema parameter).
+    // Columns without a field_id are excluded from the output.
+    let field_id = match field
+        .metadata
+        .as_deref()
+        .and_then(|m| m.get("PARQUET:field_id"))
+        .and_then(|v| v.parse::<i32>().ok())
+    {
+        Some(id) => id,
+        None => return Ok(None),
+    };
     let compressed_size_bytes: i64 = file_metadata
         .row_groups
         .iter()
@@ -171,13 +181,13 @@ fn build_column_stats(
 
     // Build result
     let stats = SinkedParquetColumnStats {
-        name: column.path_in_schema.clone(),
+        field_id,
         compressed_size_bytes: compressed_size_bytes as u64,
         null_count,
         min_value,
         max_value,
     };
-    Ok(stats)
+    Ok(Some(stats))
 }
 
 /// Collect leaf-level arrow fields in DFS order, matching the parquet leaf column layout.

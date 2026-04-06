@@ -504,7 +504,7 @@ pub struct SinkedParquetMetadata {
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct SinkedParquetColumnStats {
-    pub name: Vec<PlSmallStr>,
+    pub field_id: i32,
     pub compressed_size_bytes: u64,
     pub null_count: Option<IdxSize>,
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -517,7 +517,7 @@ pub struct SinkedParquetColumnStats {
 
 impl Hash for SinkedParquetColumnStats {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
+        self.field_id.hash(state);
         self.compressed_size_bytes.hash(state);
         self.null_count.hash(state);
         self.min_value.hash(state);
@@ -554,10 +554,7 @@ impl SinkedFilesCallback {
 
                             for col in &parquet_metadata.columns {
                                 let col_kwargs = PyDict::new(py);
-                                col_kwargs.set_item(
-                                    intern!(py, "name"),
-                                    col.name.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                                )?;
+                                col_kwargs.set_item(intern!(py, "field_id"), col.field_id)?;
                                 col_kwargs.set_item(
                                     intern!(py, "compressed_size_bytes"),
                                     col.compressed_size_bytes,

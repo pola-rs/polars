@@ -9,6 +9,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
@@ -452,10 +453,29 @@ def test_sinked_files_callback_single(tmp_path: Path) -> None:
     assert info.parquet is not None
     assert info.num_rows == lf.collect().height
     assert 0 < info.parquet.footer_size_bytes < info.file_size_bytes
+    assert len(info.parquet.column_stats) == 0
+
+
+@pytest.mark.write_disk
+def test_sinked_files_callback_single_with_field_ids(tmp_path: Path) -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+    arrow_schema = pa.schema(
+        [pa.field("a", pa.int64()).with_metadata({"PARQUET:field_id": "1"})]
+    )
+
+    lst: list[SinkedFilesCallbackArgs] = []
+    lf.sink_parquet(
+        tmp_path / "a.parquet",
+        sinked_files_callback=lst.append,
+        arrow_schema=arrow_schema,
+    )
+
+    info = lst[0].files[0]
+    assert info.parquet is not None
     assert len(info.parquet.column_stats) == 1
 
     col_stats = info.parquet.column_stats[0]
-    assert col_stats.name == ["a"]
+    assert col_stats.field_id == 1
     assert col_stats.compressed_size_bytes > 0
     assert col_stats.null_count == 0
     assert col_stats.min_value == 0
@@ -574,12 +594,17 @@ def test_sinked_files_callback_stats_aggregation(
     expected_max: Any,
 ) -> None:
     lf = pl.LazyFrame({"a": values}, schema={"a": dtype})
+    pa_dtype = lf.collect().to_arrow().schema.field("a").type
+    arrow_schema = pa.schema(
+        [pa.field("a", pa_dtype).with_metadata({"PARQUET:field_id": "1"})]
+    )
 
     lst: list[SinkedFilesCallbackArgs] = []
     lf.sink_parquet(
         tmp_path / "a.parquet",
         sinked_files_callback=lst.append,
         row_group_size=2,
+        arrow_schema=arrow_schema,
     )
 
     assert len(lst[0].files) == 1
@@ -591,7 +616,9 @@ def test_sinked_files_callback_stats_aggregation(
 
     info = lst[0].files[0]
     assert info.parquet is not None
+    assert len(info.parquet.column_stats) == 1
     col_a = info.parquet.column_stats[0]
+    assert col_a.field_id == 1
     assert col_a.min_value == expected_min
     assert col_a.max_value == expected_max
 
@@ -606,24 +633,52 @@ def test_sinked_files_callback_stats_nested(tmp_path: Path) -> None:
         }
     )
 
+    FIELD_ID = "PARQUET:field_id"
+    arrow_schema = pa.schema(
+        [
+            pa.field(
+                "s",
+                pa.struct(
+                    [
+                        pa.field("x", pa.int64()).with_metadata({FIELD_ID: "2"}),
+                        pa.field(
+                            "y",
+                            pa.large_list(
+                                pa.field("element", pa.int64()).with_metadata(
+                                    {FIELD_ID: "4"}
+                                )
+                            ),
+                        ).with_metadata({FIELD_ID: "3"}),
+                    ]
+                ),
+            ).with_metadata({FIELD_ID: "1"}),
+            pa.field("i", pa.int64()).with_metadata({FIELD_ID: "5"}),
+            pa.field(
+                "l",
+                pa.large_list(
+                    pa.field("element", pa.int64()).with_metadata({FIELD_ID: "7"})
+                ),
+            ).with_metadata({FIELD_ID: "6"}),
+        ]
+    )
+
     lst: list[SinkedFilesCallbackArgs] = []
-    lf.sink_parquet(tmp_path / "a.parquet", sinked_files_callback=lst.append)
+    lf.sink_parquet(
+        tmp_path / "a.parquet",
+        sinked_files_callback=lst.append,
+        arrow_schema=arrow_schema,
+    )
 
     assert len(lst[0].files) == 1
     info = lst[0].files[0]
     assert info.parquet is not None
     columns = info.parquet.column_stats
-    assert {tuple(col.name) for col in columns} == {
-        ("s", "x"),
-        ("s", "y", "list", "element"),
-        ("i",),
-        ("l", "list", "element"),
-    }
+    assert {col.field_id for col in columns} == {2, 4, 5, 7}
 
-    stats_s_x = next(c for c in columns if c.name == ["s", "x"])
-    stats_s_y = next(c for c in columns if c.name == ["s", "y", "list", "element"])
-    stats_i = next(c for c in columns if c.name == ["i"])
-    stats_l = next(c for c in columns if c.name == ["l", "list", "element"])
+    stats_s_x = next(c for c in columns if c.field_id == 2)
+    stats_s_y = next(c for c in columns if c.field_id == 4)
+    stats_i = next(c for c in columns if c.field_id == 5)
+    stats_l = next(c for c in columns if c.field_id == 7)
 
     assert (stats_s_x.min_value, stats_s_x.max_value) == (1, 4)
     assert (stats_s_y.min_value, stats_s_y.max_value) == (2, 6)

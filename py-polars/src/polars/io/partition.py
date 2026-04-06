@@ -209,7 +209,7 @@ class ParquetFileMetadata:
     footer_size_bytes
         Parquet footer size in bytes.
     column_stats
-        Per-column statistics.
+        Per-column statistics. A column is only included if it has a field ID.
     """
 
     footer_size_bytes: int
@@ -227,8 +227,8 @@ class ParquetColumnStats:
 
     Attributes
     ----------
-    name
-        The name of the column, represented as list to reference nested columns.
+    field_id
+        The field ID of the column.
     compressed_size_bytes
         Total compressed size of this column across all row groups.
     null_count
@@ -241,7 +241,7 @@ class ParquetColumnStats:
         The type depends on the column's type.
     """
 
-    name: list[str]
+    field_id: int
     compressed_size_bytes: int
     null_count: int | None
     min_value: Any | None
