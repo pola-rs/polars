@@ -109,7 +109,7 @@ pub fn aexpr_projection_height(
             if *returns_scalar {
                 H::Scalar
             } else {
-                H::Unknown
+                input_heights[1]
             }
         },
 
