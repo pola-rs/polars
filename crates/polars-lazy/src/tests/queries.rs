@@ -488,10 +488,11 @@ fn test_lazy_query_10() {
         .select(&[(col("x") - col("y")).alias("z")])
         .collect()
         .unwrap();
-    assert!(out
-        .column("z")
-        .unwrap()
-        .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap()));
+    assert!(
+        out.column("z")
+            .unwrap()
+            .equals(&z.cast(&DataType::Duration(TimeUnit::Milliseconds)).unwrap())
+    );
 }
 
 #[test]
@@ -616,13 +617,14 @@ fn test_lazy_wildcard() {
 #[test]
 fn test_lazy_reverse() {
     let df = load_df();
-    assert!(df
-        .clone()
-        .lazy()
-        .reverse()
-        .collect()
-        .unwrap()
-        .equals_missing(&df.reverse()))
+    assert!(
+        df.clone()
+            .lazy()
+            .reverse()
+            .collect()
+            .unwrap()
+            .equals_missing(&df.reverse())
+    )
 }
 
 #[test]
@@ -2008,7 +2010,7 @@ fn test_over_with_options_empty_join() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "serde")]
 fn test_named_udfs() -> PolarsResult<()> {
-    use polars_plan::dsl::named_serde::{set_named_serde_registry, ExprRegistry};
+    use polars_plan::dsl::named_serde::{ExprRegistry, set_named_serde_registry};
 
     let lf = DataFrame::new_infer_height(vec![Column::new("a".into(), vec![1, 2, 3, 4])])?.lazy();
 
