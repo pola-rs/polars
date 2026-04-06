@@ -1,7 +1,7 @@
 use polars_utils::arena::{Arena, Node};
 
 use crate::dsl::WindowMapping;
-use crate::plans::AExpr;
+use crate::plans::{AExpr, aexpr_postvisit_traversal};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ExprProjectionHeight {
@@ -42,49 +42,31 @@ impl ExprProjectionHeight {
 #[recursive::recursive]
 pub fn aexpr_projection_height_rec(
     ae_node: Node,
-    expr_arena: &Arena<AExpr>,
+    mut expr_arena: &Arena<AExpr>,
     stack: &mut Vec<Node>,
     inputs_stack: &mut Vec<ExprProjectionHeight>,
 ) -> ExprProjectionHeight {
-    let ae = expr_arena.get(ae_node);
-
-    let base_stack_len = stack.len();
-    let base_inputs_stack_len = inputs_stack.len();
-    ae.inputs(stack);
-    let num_inputs = stack.len() - base_stack_len;
-
-    for i in base_stack_len..stack.len() {
-        let h = aexpr_projection_height_rec(stack[i], expr_arena, stack, inputs_stack);
-        inputs_stack.push(h);
-    }
-
-    assert_eq!(stack.len(), base_stack_len + num_inputs);
-    stack.truncate(base_stack_len);
-
-    assert_eq!(inputs_stack.len(), base_inputs_stack_len + num_inputs);
-    let mut h = ExprProjectionHeight::Unknown;
-    aexpr_projection_height(
-        expr_arena.get(ae_node),
-        &inputs_stack[base_inputs_stack_len..],
-        &mut h,
-    );
-    inputs_stack.truncate(base_inputs_stack_len);
-
-    h
+    aexpr_postvisit_traversal(
+        ae_node,
+        &mut expr_arena,
+        stack,
+        inputs_stack,
+        &mut |ae_node, input_heights, expr_arena| {
+            aexpr_projection_height(expr_arena.get(ae_node), input_heights)
+        },
+    )
 }
 
 pub fn aexpr_projection_height(
     aexpr: &AExpr,
     input_heights: &[ExprProjectionHeight],
-    output_height: &mut ExprProjectionHeight,
-) {
+) -> ExprProjectionHeight {
     use AExpr::*;
     use ExprProjectionHeight as H;
 
-    *output_height = match aexpr {
+    match aexpr {
         Column(_) => H::Column,
 
-        // FIXME
         // Not technically correct but we rely on this to determine if an eval expr
         // is length-preserving (which looks for "column-length").
         Element => H::Column,
@@ -150,5 +132,5 @@ pub fn aexpr_projection_height(
                 H::Column
             }
         },
-    };
+    }
 }

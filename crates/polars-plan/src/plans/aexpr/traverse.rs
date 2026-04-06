@@ -600,3 +600,42 @@ impl NodeInputs {
         }
     }
 }
+
+#[recursive::recursive]
+pub fn aexpr_postvisit_traversal<F, State, ArenaT>(
+    ae_node: Node,
+    expr_arena: &mut ArenaT,
+    stack: &mut Vec<Node>,
+    inputs_stack: &mut Vec<State>,
+    visit: &mut F,
+) -> State
+where
+    F: FnMut(Node, &mut [State], &mut ArenaT) -> State,
+    State: Default,
+    ArenaT: AsRef<Arena<AExpr>>,
+{
+    let ae = expr_arena.as_ref().get(ae_node);
+
+    let base_stack_len = stack.len();
+    let base_inputs_stack_len = inputs_stack.len();
+    ae.inputs(stack);
+    let num_inputs = stack.len() - base_stack_len;
+
+    for i in base_stack_len..stack.len() {
+        let h = aexpr_postvisit_traversal(stack[i], expr_arena, stack, inputs_stack, visit);
+        inputs_stack.push(h);
+    }
+
+    assert_eq!(stack.len(), base_stack_len + num_inputs);
+    stack.truncate(base_stack_len);
+
+    assert_eq!(inputs_stack.len(), base_inputs_stack_len + num_inputs);
+    let state = visit(
+        ae_node,
+        &mut inputs_stack[base_inputs_stack_len..],
+        expr_arena,
+    );
+    inputs_stack.truncate(base_inputs_stack_len);
+
+    state
+}
