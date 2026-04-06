@@ -508,9 +508,7 @@ def test_sinked_files_callback_partition_values(tmp_path: Path) -> None:
     )
     assert len(lst[0].files) == 2
     assert all(s.partition_keys.shape == (1, 1) for s in lst[0].files)
-    partition_values = {
-        f.partition_keys["b"].item(): f for f in lst[0].files
-    }
+    partition_values = {f.partition_keys["b"].item(): f for f in lst[0].files}
     assert set(partition_values.keys()) == {"x", "y"}
     assert partition_values["x"].num_rows == 2
     assert partition_values["y"].num_rows == 1
