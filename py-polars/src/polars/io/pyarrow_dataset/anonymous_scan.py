@@ -90,13 +90,12 @@ def _scan_pyarrow_dataset_impl(
     -------
     tuple[Iterator[DataFrame], bool]
     A generator over the DataFrames and a boolean indicating if the
-    predicates could be parsed.
-    This boolean is always `False` as there might be some predicates
-    that could not be converted
-    to pyarrow and need to be applied as post-predicate.
+    predicates is applied.
     """
+    # If this is None, the engine will post-apply a predicate if there is one.
+    # If the dataset cannot do it at the source, we want that to happen in the engine
+    # so that we have better parallelism
     filter_ = None
-    filter_post_slice_ = None
 
     if allow_pyarrow_filter and predicate is not None:
         from polars._utils.convert import (
@@ -123,8 +122,6 @@ def _scan_pyarrow_dataset_impl(
 
         if n_rows is None:
             filter_ = v
-        else:
-            filter_post_slice_ = v
 
     common_params: dict[str, Any] = {"columns": with_columns, "filter": filter_}
     batch_size = user_batch_size if user_batch_size is not None else batch_size
@@ -150,14 +147,7 @@ def _scan_pyarrow_dataset_impl(
                     batch = batch.slice(0, remaining)
                 remaining -= batch.num_rows
 
-            # TODO: Let the engine take care of post-slice
-            # 2. Filter after slice
-            if filter_post_slice_ is not None:
-                batch = pa.Table.from_batches([batch]).filter(filter_post_slice_)
-                for fb in batch.to_batches():
-                    if fb.num_rows > 0:
-                        yield pl.from_arrow(fb)  # type: ignore[misc]
-            else:
-                yield pl.from_arrow(batch)  # type: ignore[misc]
+            yield pl.from_arrow(batch)  # type: ignore[misc]
 
-    return frames(), False
+    applies_predicate_in_this_function = filter_ is not None
+    return frames(), applies_predicate_in_this_function
