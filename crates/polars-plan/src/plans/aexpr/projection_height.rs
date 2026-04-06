@@ -67,8 +67,8 @@ pub fn aexpr_projection_height(
     match aexpr {
         Column(_) => H::Column,
 
-        // Not technically correct but we rely on this to determine if an eval expr
-        // is length-preserving (which looks for "column-length").
+        // TODO: Not technically correct but we currently rely on this to determine if an eval expr
+        // is length-preserving (it looks for "column-length").
         Element => H::Column,
         #[cfg(feature = "dtype-struct")]
         StructField(_) => H::Unknown,
