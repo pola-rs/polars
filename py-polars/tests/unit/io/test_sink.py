@@ -450,6 +450,7 @@ def test_sinked_files_callback_single(tmp_path: Path) -> None:
     assert len(lst[0].files) == 1
 
     info = lst[0].files[0]
+    assert info.partition_keys.shape == (0, 0)
     assert info.parquet is not None
     assert info.num_rows == lf.collect().height
     assert 0 < info.parquet.footer_size_bytes < info.file_size_bytes
@@ -493,6 +494,26 @@ def test_sinked_files_callback_multiple(tmp_path: Path) -> None:
     )
     assert len(lst[0].files) == 5
     assert all(s.num_rows == 1 for s in lst[0].files)
+    assert all(s.partition_keys.shape == (1, 0) for s in lst[0].files)
+
+
+@pytest.mark.write_disk
+def test_sinked_files_callback_partition_values(tmp_path: Path) -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2], "b": ["x", "y", "x"]})
+
+    lst: list[SinkedFilesCallbackArgs] = []
+    lf.sink_parquet(
+        pl.PartitionBy(tmp_path, key="b"),
+        sinked_files_callback=lst.append,
+    )
+    assert len(lst[0].files) == 2
+    assert all(s.partition_keys.shape == (1, 1) for s in lst[0].files)
+    partition_values = {
+        f.partition_keys["b"].item(): f for f in lst[0].files
+    }
+    assert set(partition_values.keys()) == {"x", "y"}
+    assert partition_values["x"].num_rows == 2
+    assert partition_values["y"].num_rows == 1
 
 
 @pytest.mark.write_disk

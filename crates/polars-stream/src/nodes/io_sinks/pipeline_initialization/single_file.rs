@@ -155,6 +155,7 @@ pub fn start_single_file_sink_pipeline(
                     .lock()
                     .push(SinkedFileInfo {
                         path: sinked_path.unwrap(),
+                        partition_keys: Arc::new(DataFrame::empty()),
                         stats,
                     });
 

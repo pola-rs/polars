@@ -181,6 +181,8 @@ class SinkedFileInfo:
     ----------
     path
         File path.
+    partition_keys
+        Partition key for this file as a single-row DataFrame.
     num_rows
         Total number of rows in the file.
     file_size_bytes
@@ -190,6 +192,7 @@ class SinkedFileInfo:
     """
 
     path: str
+    partition_keys: DataFrame
     num_rows: int
     file_size_bytes: int
     parquet: ParquetFileMetadata | None = None

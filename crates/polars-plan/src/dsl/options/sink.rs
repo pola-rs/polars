@@ -477,10 +477,20 @@ pub struct SinkedFilesCallbackArgs {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, Hash, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SinkedFileInfo {
     pub path: PlRefPath,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
+    pub partition_keys: Arc<DataFrame>,
     pub stats: Option<SinkedFileStats>,
+}
+
+impl Hash for SinkedFileInfo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
+        self.stats.hash(state);
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -502,7 +512,7 @@ pub struct SinkedParquetMetadata {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Hash, PartialEq)]
 pub struct SinkedParquetColumnStats {
     pub field_id: i32,
     pub compressed_size_bytes: u64,
@@ -513,16 +523,6 @@ pub struct SinkedParquetColumnStats {
     #[cfg_attr(feature = "serde", serde(skip))]
     #[cfg_attr(feature = "dsl-schema", schemars(skip))]
     pub max_value: Option<AnyValue<'static>>,
-}
-
-impl Hash for SinkedParquetColumnStats {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.field_id.hash(state);
-        self.compressed_size_bytes.hash(state);
-        self.null_count.hash(state);
-        self.min_value.hash(state);
-        self.max_value.hash(state);
-    }
 }
 
 impl SinkedFilesCallback {
@@ -541,7 +541,12 @@ impl SinkedFilesCallback {
 
                 let py_files = PyList::empty(py);
 
-                for SinkedFileInfo { path, stats } in file_info_list {
+                for SinkedFileInfo {
+                    path,
+                    partition_keys,
+                    stats,
+                } in file_info_list
+                {
                     use pyo3::types::PyListMethods;
 
                     let (num_rows, file_size_bytes, py_parquet_metadata) = if let Some(stats) =
@@ -602,8 +607,14 @@ impl SinkedFilesCallback {
                         (0u64, 0u64, None)
                     };
 
+                    let py_partition_keys = convert_registry
+                        .to_py
+                        .df_to_wrapped_pydf(partition_keys.as_ref())
+                        .map_err(polars_core::error::PolarsError::from)?;
+
                     let file_kwargs = PyDict::new(py);
                     file_kwargs.set_item(intern!(py, "path"), path.as_str())?;
+                    file_kwargs.set_item(intern!(py, "partition_keys"), py_partition_keys)?;
                     file_kwargs.set_item(intern!(py, "num_rows"), num_rows)?;
                     file_kwargs.set_item(intern!(py, "file_size_bytes"), file_size_bytes)?;
                     file_kwargs.set_item(intern!(py, "parquet"), py_parquet_metadata)?;
