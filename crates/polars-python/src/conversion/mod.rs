@@ -16,12 +16,11 @@ use polars::frame::PivotColumnNaming;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::prelude::ColumnMapping;
-use polars::prelude::FileStatistics;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
+use polars::prelude::{ColumnMapping, FileStatistics};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
