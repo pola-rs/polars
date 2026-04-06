@@ -2,6 +2,7 @@ use std::hash::Hash;
 use std::sync::Mutex;
 
 use deletion::DeletionFilesList;
+use polars_core::prelude::PlIndexMap;
 use polars_core::schema::iceberg::IcebergSchemaRef;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_io::cloud::CloudOptions;
@@ -303,6 +304,37 @@ impl std::ops::Deref for TableStatistics {
     }
 }
 
+/// Per-file size hints for Parquet scans, mapping file_index to
+/// (file_size_bytes, thrift_metadata_bytes).
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct FileStatistics(pub Arc<PlIndexMap<usize, (usize, usize)>>);
+
+impl FileStatistics {
+    /// Converts `Some(v)` to `None` if `v` is empty.
+    pub fn filter_empty(this: Option<Self>) -> Option<Self> {
+        match this {
+            Some(fs) => (!fs.0.is_empty()).then_some(fs),
+            None => None,
+        }
+    }
+}
+
+impl PartialEq for FileStatistics {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for FileStatistics {}
+
+impl Hash for FileStatistics {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_usize(Arc::as_ptr(&self.0) as *const () as usize);
+    }
+}
+
 /// Scan arguments shared across different scan types.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -335,6 +367,7 @@ pub struct UnifiedScanArgs {
 
     pub deletion_files: Option<DeletionFilesList>,
     pub table_statistics: Option<TableStatistics>,
+    pub file_statistics: Option<FileStatistics>,
     /// Stores (physical, deleted) row counts of the table if known upfront (e.g. for Iceberg).
     /// This allows for row-count queries to succeed without scanning all files.
     ///
@@ -380,6 +413,7 @@ impl Default for UnifiedScanArgs {
             include_file_paths: None,
             deletion_files: None,
             table_statistics: None,
+            file_statistics: None,
             row_count: None,
         }
     }

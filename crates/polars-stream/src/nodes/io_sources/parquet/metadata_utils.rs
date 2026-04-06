@@ -4,8 +4,12 @@ use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 
 /// Read the metadata bytes of a parquet file, does not decode the bytes. If during metadata fetch
 /// the bytes of the entire file are loaded, it is returned in the second return value.
+///
+/// If `file_size_hint` as (file_size, thrift_metadata_size) is provided, it is used to prevent
+/// IO roundtrips.
 pub async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
+    file_size_hint: Option<(usize, usize)>,
     verbose: bool,
 ) -> PolarsResult<(Buffer<u8>, Option<Buffer<u8>>)> {
     use polars_parquet::parquet::PARQUET_MAGIC;
@@ -13,7 +17,11 @@ pub async fn read_parquet_metadata_bytes(
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 
-    let file_size = byte_source.get_size().await?;
+    let file_size = if let Some((file_size, _)) = file_size_hint {
+        file_size
+    } else {
+        byte_source.get_size().await?
+    };
 
     if file_size < FOOTER_HEADER_SIZE {
         return Err(ParquetError::OutOfSpec(format!(
@@ -22,7 +30,9 @@ pub async fn read_parquet_metadata_bytes(
         .into());
     }
 
-    let estimated_metadata_size = if let DynByteSource::Buffer(_) = byte_source {
+    let estimated_metadata_size = if let Some((_, thrift_metadata_size)) = file_size_hint {
+        (thrift_metadata_size + FOOTER_HEADER_SIZE).min(file_size)
+    } else if let DynByteSource::Buffer(_) = byte_source {
         // Mmapped or in-memory, reads are free.
         file_size
     } else {

@@ -14,7 +14,8 @@ use polars_plan::dsl::default_values::{
 };
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    FileScanIR, Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
+    FileScanIR, FileStatistics, Operator, PredicateFileSkip, ScanSources, TableStatistics,
+    UnifiedScanArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
@@ -477,6 +478,7 @@ where
         include_file_paths: _,
         deletion_files,
         table_statistics,
+        file_statistics,
         row_count,
     } = unified_scan_args.as_mut()
     else {
@@ -562,6 +564,21 @@ where
         TableStatistics(Arc::new(unsafe {
             x.0.take_slice_unchecked(&selected_path_indices_idxsize)
         }))
+    });
+
+    *file_statistics = file_statistics.take().and_then(|fs| {
+        let mut out = None;
+
+        for (out_idx, source_idx) in selected_path_indices.clone().enumerate() {
+            if let Some(v) = fs.0.get(&source_idx) {
+                out.get_or_insert_with(|| {
+                    PlIndexMap::with_capacity(selected_path_indices.size_hint().0 - out_idx)
+                })
+                .insert(out_idx, *v);
+            }
+        }
+
+        out.map(|x| FileStatistics(Arc::new(x)))
     });
 
     let original_sources_len = sources.len();

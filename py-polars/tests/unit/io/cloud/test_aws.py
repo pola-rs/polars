@@ -111,3 +111,52 @@ def test_read_parquet_metadata(s3: str) -> None:
         "s3://bucket/foods1.parquet", storage_options={"endpoint_url": s3}
     )
     assert "ARROW:schema" in metadata
+
+
+def test_scan_parquet_file_statistics(
+    s3: str,
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    storage_options = {"endpoint_url": s3}
+    client = boto3.client("s3", region_name="us-east-1", endpoint_url=s3)
+
+    # Use 1000 columns to create large-enough metadata to run into re-fetches
+    df = pl.DataFrame({f"a{i}": ["a", "b", "c"] for i in range(1000)})
+    for i in range(2):
+        local_path = tmp_path / f"test_{i}.parquet"
+        df.write_parquet(local_path)
+        client.upload_file(str(local_path), Bucket="bucket", Key=f"test_{i}.parquet")
+
+    # Read footer size from the local copy
+    local_path = tmp_path / "test_1.parquet"
+    file_size = local_path.stat().st_size
+    with local_path.open("rb") as f:
+        f.seek(-8, 2)
+        thrift_metadata_size = int.from_bytes(f.read(4), "little")
+
+    expected = pl.concat([df, df])
+
+    # Without file_statistics, an extra fetch is needed for the second file
+    capfd.readouterr()
+    result = pl.scan_parquet(
+        "s3://bucket/test_*.parquet",
+        storage_options=storage_options,
+    ).collect()
+    assert_frame_equal(result, expected)
+    stderr = capfd.readouterr().err
+    assert "bytes need to be fetched" in stderr
+
+    # With the correct footer size hint for file index 1, no extra fetch
+    capfd.readouterr()
+    result = pl.scan_parquet(
+        "s3://bucket/test_*.parquet",
+        storage_options=storage_options,
+        _file_statistics={1: (file_size, thrift_metadata_size)},
+    ).collect()
+    assert_frame_equal(result, expected)
+    stderr = capfd.readouterr().err
+    assert "bytes need to be fetched" not in stderr
+    assert "Fetched all bytes for metadata on first try" in stderr

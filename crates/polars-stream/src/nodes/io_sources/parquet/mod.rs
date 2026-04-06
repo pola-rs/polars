@@ -50,6 +50,8 @@ pub struct ParquetFileReader {
     io_metrics: OptIOMetrics,
     verbose: bool,
 
+    /// Pre-known (file_size_bytes, thrift_metadata_bytes) hint
+    file_size_hint: Option<(usize, usize)>,
     /// Set during initialize()
     init_data: Option<InitializedState>,
 }
@@ -108,10 +110,16 @@ impl FileReader for ParquetFileReader {
         } else {
             let (metadata_bytes, opt_full_bytes) = {
                 let byte_source = byte_source.clone();
+                let file_size_hint = self.file_size_hint;
 
                 pl_async::get_runtime()
                     .spawn(async move {
-                        metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
+                        metadata_utils::read_parquet_metadata_bytes(
+                            &byte_source,
+                            file_size_hint,
+                            verbose,
+                        )
+                        .await
                     })
                     .await
                     .unwrap()?
