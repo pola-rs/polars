@@ -43,6 +43,7 @@ version_check = { workspace = true }
 catalog = ["polars-io/catalog"]
 nightly = ["polars-core/nightly", "polars-expr/nightly"]
 new_streaming = ["polars-stream"]
+bundled_alloc = ["polars-stream?/bundled_alloc"]
 parquet = [
   "polars-io/parquet",
   "polars-plan/parquet",

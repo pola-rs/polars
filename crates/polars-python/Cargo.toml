@@ -297,6 +297,7 @@ full = [
   "ffi_plugin",
   "polars_cloud_client",
   "new_streaming",
+  "bundled_alloc",
 ]
 
 rt32 = []
@@ -310,6 +311,7 @@ rtcompat = ["polars/bigidx"]
 default = [
   "full",
 ]
+bundled_alloc = ["polars-ooc/bundled_alloc"]
 default_alloc = ["polars-ooc/default_alloc"]
 
 [lints]
