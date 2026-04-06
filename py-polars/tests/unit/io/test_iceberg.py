@@ -342,6 +342,10 @@ class TestIcebergExpressions:
         expr = try_convert_pyarrow_predicate('["field","is_active"]')
         assert expr == EqualTo("is_active", True)
 
+    def test_bare_boolean_field_negated(self) -> None:
+        expr = try_convert_pyarrow_predicate('["not",["field","is_active"]]')
+        assert expr == Not(EqualTo("is_active", True))
+
 
 @dataclass(kw_only=True)
 class _TableDataAllTypes:

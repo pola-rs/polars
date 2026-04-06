@@ -99,6 +99,17 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
         check_predicate_pushdown=True,
     )
 
+    for closed, n_expected in zip(
+        ["both", "left", "right", "none"], [3, 2, 2, 1], strict=True
+    ):
+        helper_dataset_test(
+            file_path,
+            lambda lf, closed=closed: lf.filter(  # type: ignore[misc]
+                pl.col("int").is_between(1, 3, closed=closed)
+            ).select("bools", "floats", "date"),
+            n_expected=n_expected,
+            check_predicate_pushdown=True,
+        )
     # this predicate is not supported by pyarrow
     # check if we still do it on our side
     helper_dataset_test(
@@ -133,6 +144,49 @@ def test_pyarrow_dataset_source(df: pl.DataFrame, tmp_path: Path) -> None:
         ),
         n_expected=3,
         check_predicate_pushdown=True,
+    )
+    # pushdown is_in
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("int").is_in([1, 3, 20])).select(
+            "bools", "floats", "date"
+        ),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(
+            pl.col("date").is_in([date(1973, 8, 17), date(1973, 5, 19)])
+        ).select("bools", "floats", "date"),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(
+            pl.col("datetime").is_in(
+                [
+                    datetime(1970, 1, 1, 0, 0, 12, 341234),
+                    datetime(1970, 1, 1, 0, 0, 13, 241324),
+                ]
+            )
+        ).select("bools", "floats", "date"),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("int").is_in(list(range(120)))).select(
+            "bools", "floats", "date"
+        ),
+        n_expected=3,
+        check_predicate_pushdown=True,
+    )
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("cat").is_in([])).select("bools", "floats", "date"),
+        n_expected=0,
     )
     helper_dataset_test(
         file_path,
@@ -222,6 +276,64 @@ def test_pyarrow_dataset_is_in_predicate_pushdown(
     expected = pl.DataFrame({"id": [1, 2, 3], "val": [10, 20, 30]})
     result = pl.scan_pyarrow_dataset(dset).filter(pred).collect()
     assert_frame_equal(result, expected)
+
+
+def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "1")
+
+    df = pl.DataFrame({"id": [1, 2, 3, 4, None], "val": [10, 20, 30, 40, 50]})
+    dset = ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+
+    pred = pl.col("id").is_in([1, None, 3])
+    expected = pl.DataFrame({"id": [1, 3], "val": [10, 30]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "is_in" in capture
+    assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in([1, None, 3], nulls_equal=True)
+    expected = pl.DataFrame({"id": [1, 3, None], "val": [10, 30, 50]})
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert "is_in" in capture
+    assert_frame_equal(result, expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in(pl.lit(None, dtype=pl.List(pl.Int64)))
+    expected = df.clear()
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(df.filter(pred), expected)
+
+    pred = pl.col("id").is_in(pl.Series([None], dtype=pl.List(pl.Int64)))
+    expected = df.clear()
+    q = pl.scan_pyarrow_dataset(dset).filter(pred)
+
+    capfd.readouterr()
+    result = q.collect()
+    capture = capfd.readouterr().err
+
+    plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
+
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(df.filter(pred), expected)
 
 
 @pytest.mark.write_disk
