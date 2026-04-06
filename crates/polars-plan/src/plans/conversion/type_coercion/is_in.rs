@@ -147,46 +147,34 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
             return Ok(None);
         },
 
-        // don't attempt to cast between obviously mismatched types, but
-        // allow integer/float comparison (will use their supertypes).
         (a, b) => {
-            if (a.is_primitive_numeric() && b.is_primitive_numeric()) || (a == &DataType::Null) {
-                if a != b {
-                    // @TAG: 2.0
-                    // @HACK: `is_in` does supertype casting between primitive numerics, which
-                    // honestly makes very little sense. To stay backwards compatible we keep this,
-                    // but please in 2.0 remove this. FirstArgLossless might be a good alternative,
-                    // as used by index_of(), or build on index_of().
-                    //
-                    // Try lossless supertype first to avoid precision loss (e.g.,
-                    // UInt64 + Int64 would otherwise become Float64), then fall back
-                    // to the existing supertype behavior.
-                    let super_type = polars_core::utils::get_numeric_upcast_supertype_lossless(
-                        &type_left,
-                        type_other_inner,
-                    )
-                    .map_or_else(
-                        || polars_core::utils::try_get_supertype(&type_left, type_other_inner),
-                        Ok,
-                    )?;
+            // Only do lossless coercion for primitive numerics; keep existing Null
+            // behavior by resolving its supertype against the inner right dtype.
+            let super_type = if a.is_primitive_numeric() && b.is_primitive_numeric() {
+                polars_core::utils::get_numeric_upcast_supertype_lossless(
+                    &type_left,
+                    type_other_inner,
+                )
+                .ok_or_else(
+                    || polars_err!(InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data",&type_left, &type_other)
+                )?
+            } else if a == &DataType::Null {
+                polars_core::utils::try_get_supertype(&type_left, type_other_inner)?
+            } else {
+                polars_bail!(
+                InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data", &type_other, &type_left
+                                    )
+            };
+            let other_type = match &type_other {
+                DataType::List(_) => DataType::List(Box::new(super_type.clone())),
+                #[cfg(feature = "dtype-array")]
+                DataType::Array(_, width) => DataType::Array(Box::new(super_type.clone()), *width),
+                _ => unreachable!(),
+            };
 
-                    let other_type = match &type_other {
-                        DataType::List(_) => DataType::List(Box::new(super_type.clone())),
-                        #[cfg(feature = "dtype-array")]
-                        DataType::Array(_, width) => {
-                            DataType::Array(Box::new(super_type.clone()), *width)
-                        },
-                        _ => unreachable!(),
-                    };
-
-                    return Ok(Some(IsInTypeCoercionResult::SuperType(
-                        super_type, other_type,
-                    )));
-                }
-
-                return Ok(None);
-            }
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {:?} values in {:?} data", &type_other, &type_left)
+            return Ok(Some(IsInTypeCoercionResult::SuperType(
+                super_type, other_type,
+            )));
         },
     };
     Ok(Some(casted_expr))
