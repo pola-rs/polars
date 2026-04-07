@@ -89,8 +89,9 @@ operations = ["polars-python/operations"]
 io = ["polars-python/io"]
 
 optimizations = ["polars-python/optimizations"]
+fast_alloc = ["polars-python/fast_alloc"]
 
-full = [
+full_functionality = [
   "ffi_plugin",
   "csv",
   "polars_cloud_client",
@@ -101,11 +102,15 @@ full = [
   "parquet",
   "ipc",
   "catalog",
-  "polars-python/full",
+  "polars-python/full_functionality",
   "performant",
 ]
 
-default_alloc = ["polars-python/default_alloc"]
+full = [
+  "full_functionality",
+  "fast_alloc",
+]
+
 default = ["full", "nightly"]
 
 [lints]
