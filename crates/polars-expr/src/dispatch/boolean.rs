@@ -1,5 +1,4 @@
 use std::ops::{BitAnd, BitOr};
-use std::ptr::null;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
@@ -227,9 +226,8 @@ fn is_sorted(
 
             return Ok(Column::new(s.name().clone(), [result]));
         },
-        _ => unimplemented!()
+        _ => unimplemented!(),
     }
-
 }
 
 fn not(s: &Column) -> PolarsResult<Column> {

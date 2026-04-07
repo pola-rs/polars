@@ -24,7 +24,11 @@ pub struct IsSortedNode {
 }
 
 impl IsSortedNode {
-    pub fn new(descending: Option<bool>, nulls_last: Option<bool>, output_name: PlSmallStr) -> Self {
+    pub fn new(
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+        output_name: PlSmallStr,
+    ) -> Self {
         Self {
             state: IsSortedState::Sink {
                 is_sorted: true,
