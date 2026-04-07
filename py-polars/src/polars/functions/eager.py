@@ -611,6 +611,10 @@ def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
     are sorted in ascending order by that key otherwise
     the output will not make sense.
 
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
     Parameters
     ----------
     items
