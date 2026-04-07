@@ -4,6 +4,10 @@ use std::fmt::Write;
 use crate::IdxSize;
 
 pub mod enumerate_idx;
+pub mod zip_eq;
+
+pub use enumerate_idx::EnumerateIdx;
+pub use zip_eq::{ZipEq, zip_eq};
 
 /// Utility extension trait of iterator methods.
 pub trait Itertools: Iterator {
@@ -33,18 +37,18 @@ pub trait Itertools: Iterator {
         self.collect()
     }
 
-    fn enumerate_idx(self) -> enumerate_idx::EnumerateIdx<Self, IdxSize>
+    fn enumerate_idx(self) -> EnumerateIdx<Self, IdxSize>
     where
         Self: Sized,
     {
-        enumerate_idx::EnumerateIdx::new(self)
+        EnumerateIdx::new(self)
     }
 
-    fn enumerate_u32(self) -> enumerate_idx::EnumerateIdx<Self, u32>
+    fn enumerate_u32(self) -> EnumerateIdx<Self, u32>
     where
         Self: Sized,
     {
-        enumerate_idx::EnumerateIdx::new(self)
+        EnumerateIdx::new(self)
     }
 
     fn all_equal(mut self) -> bool
@@ -121,6 +125,15 @@ pub trait Itertools: Iterator {
                 result
             },
         }
+    }
+
+    /// Zips two iterators but **panics** if they are not of the same length.
+    fn zip_eq<I, J>(self, other: I) -> ZipEq<Self, I::IntoIter>
+    where
+        Self: Sized,
+        I: IntoIterator,
+    {
+        zip_eq(self, other)
     }
 }
 

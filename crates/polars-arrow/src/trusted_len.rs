@@ -30,13 +30,15 @@ where
 }
 
 unsafe impl<I> TrustedLen for std::iter::Enumerate<I> where I: TrustedLen {}
-
-unsafe impl<A, B> TrustedLen for std::iter::Zip<A, B>
+unsafe impl<I, T> TrustedLen for polars_utils::itertools::EnumerateIdx<I, T>
 where
-    A: TrustedLen,
-    B: TrustedLen,
+    I: TrustedLen,
+    polars_utils::itertools::EnumerateIdx<I, T>: Iterator,
 {
 }
+
+unsafe impl<A: TrustedLen, B: TrustedLen> TrustedLen for std::iter::Zip<A, B> {}
+unsafe impl<A: TrustedLen, B: TrustedLen> TrustedLen for polars_utils::itertools::ZipEq<A, B> {}
 
 unsafe impl<T> TrustedLen for std::slice::ChunksExact<'_, T> {}
 
