@@ -1,6 +1,6 @@
-mod global_alloc;
 mod cleaner;
 pub(crate) mod df_store;
+mod global_alloc;
 mod memory_manager;
 mod spiller;
 mod token;

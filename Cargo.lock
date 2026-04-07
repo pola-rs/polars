@@ -3331,10 +3331,12 @@ version = "0.53.0"
 dependencies = [
  "boxcar",
  "libc",
+ "mimalloc",
  "polars-config",
  "polars-core",
  "polars-io",
  "polars-utils",
+ "tikv-jemallocator",
  "tokio",
 ]
 

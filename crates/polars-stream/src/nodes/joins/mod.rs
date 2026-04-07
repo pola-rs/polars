@@ -1,4 +1,4 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 
 use crossbeam_queue::ArrayQueue;
 use polars_core::POOL;
