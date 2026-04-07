@@ -1066,10 +1066,7 @@ def test_over_descending_list_27076() -> None:
 
     # List with single element broadcasts to all order_by columns
     result = df.with_columns(
-        pl.col("x")
-        .shift(1)
-        .over("g", order_by=["t"], descending=[True])
-        .alias("lag")
+        pl.col("x").shift(1).over("g", order_by=["t"], descending=[True]).alias("lag")
     )
     assert result["lag"].to_list() == [None, 30, 10, None, 60, 40]
 
@@ -1084,10 +1081,7 @@ def test_over_descending_list_27076() -> None:
 
     # nulls_last as list
     result = df.with_columns(
-        pl.col("x")
-        .shift(1)
-        .over("g", order_by="t", nulls_last=[True])
-        .alias("lag")
+        pl.col("x").shift(1).over("g", order_by="t", nulls_last=[True]).alias("lag")
     )
     assert result["lag"].to_list() == [None, 20, 30, None, 40, 50]
 
