@@ -37,11 +37,10 @@ impl IR {
         let mut inputs_mut = self.inputs_mut();
         let mut new_inputs = inputs.into_iter();
 
-        for (input, new_input) in inputs_mut.by_ref().zip(new_inputs.by_ref()) {
-            *input = new_input;
+        while let Some(input) = inputs_mut.next() {
+            *input = new_inputs.next().expect("not enough inputs");
         }
 
-        assert!(inputs_mut.next().is_none(), "not enough inputs");
         assert!(new_inputs.next().is_none(), "too many inputs");
 
         drop(inputs_mut);
