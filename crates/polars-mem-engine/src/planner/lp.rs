@@ -198,43 +198,49 @@ pub fn python_scan_predicate(
             use polars_core::config::verbose_print_sensitive;
             use polars_plan::plans::MintermIter;
 
-            // Split into AND-minterms and convert each independently.
-            let mut residual_predicate_nodes: Vec<Node> = vec![];
-            let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
-                .filter_map(|node| {
-                    let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
-                        node,
-                        expr_arena,
-                        Default::default(),
-                    );
-                    if result.is_none() {
-                        residual_predicate_nodes.push(node);
-                    }
-                    result
-                })
-                .collect();
-
-            let predicate_pa = match parts.len() {
-                0 => None,
-                1 => Some(parts.into_iter().next().unwrap()),
-                _ => Some(format!("({})", parts.join(" & "))),
-            };
-
-            let residual_predicate_expr_ir = if let Some(eval_str) = predicate_pa {
-                options.predicate = PythonPredicate::PyArrow(eval_str);
-
-                residual_predicate_nodes
-                    .into_iter()
-                    .fold(None, |acc, node| {
-                        Some(acc.map_or(node, |acc_node| {
-                            expr_arena.add(AExpr::BinaryExpr {
-                                left: acc_node,
-                                op: Operator::And,
-                                right: node,
-                            })
-                        }))
+            // If there is a `head`, that comes before the filter and we post-apply
+            // the predicate in the engine. No need to transpile to `pyarrow.predicate`
+            let residual_predicate_expr_ir = if options.n_rows.is_none() {
+                // Split into AND-minterms and convert each independently.
+                let mut residual_predicate_nodes: Vec<Node> = vec![];
+                let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
+                    .filter_map(|node| {
+                        let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                            node,
+                            expr_arena,
+                            Default::default(),
+                        );
+                        if result.is_none() {
+                            residual_predicate_nodes.push(node);
+                        }
+                        result
                     })
-                    .map(|node| ExprIR::from_node(node, expr_arena))
+                    .collect();
+
+                let predicate_pa = match parts.len() {
+                    0 => None,
+                    1 => Some(parts.into_iter().next().unwrap()),
+                    _ => Some(format!("({})", parts.join(" & "))),
+                };
+
+                if let Some(eval_str) = predicate_pa {
+                    options.predicate = PythonPredicate::PyArrow(eval_str);
+
+                    residual_predicate_nodes
+                        .into_iter()
+                        .fold(None, |acc, node| {
+                            Some(acc.map_or(node, |acc_node| {
+                                expr_arena.add(AExpr::BinaryExpr {
+                                    left: acc_node,
+                                    op: Operator::And,
+                                    right: node,
+                                })
+                            }))
+                        })
+                        .map(|node| ExprIR::from_node(node, expr_arena))
+                } else {
+                    Some(e.clone())
+                }
             } else {
                 Some(e.clone())
             };

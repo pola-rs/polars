@@ -440,6 +440,30 @@ impl OptimizationRule for SimplifyExprRule {
                     _ => None,
                 }
             },
+            // drop_nulls().first() -> first(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::First(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::FirstNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
+            // drop_nulls().last()  -> last(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::Last(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::LastNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {
