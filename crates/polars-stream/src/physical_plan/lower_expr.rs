@@ -1458,6 +1458,7 @@ fn lower_exprs_with_ctx(
                     input,
                     descending,
                     nulls_last,
+                    output_name: value_key.clone(),
                 };
 
                 let output_schema = Schema::from_iter([(value_key.clone(), DataType::Boolean)]);

@@ -11,7 +11,6 @@ enum IsSortedState {
     Sink {
         is_sorted: bool,
         last_value: Option<AnyValue<'static>>,
-        output_name: Option<PlSmallStr>,
     },
     Source(Option<DataFrame>),
     Done,
@@ -21,18 +20,19 @@ pub struct IsSortedNode {
     state: IsSortedState,
     descending: Option<bool>,
     nulls_last: Option<bool>,
+    output_name: PlSmallStr,
 }
 
 impl IsSortedNode {
-    pub fn new(descending: Option<bool>, nulls_last: Option<bool>) -> Self {
+    pub fn new(descending: Option<bool>, nulls_last: Option<bool>, output_name: PlSmallStr) -> Self {
         Self {
             state: IsSortedState::Sink {
                 is_sorted: true,
                 last_value: None,
-                output_name: None,
             },
             descending,
             nulls_last,
+            output_name,
         }
     }
 
@@ -40,7 +40,6 @@ impl IsSortedNode {
     fn spawn_sink<'env, 's>(
         is_sorted: &'env mut bool,
         last_value: &'env mut Option<AnyValue<'static>>,
-        output_name: &'env mut Option<PlSmallStr>,
         descending: Option<bool>,
         nulls_last: Option<bool>,
         scope: &'s TaskScope<'s, 'env>,
@@ -52,20 +51,15 @@ impl IsSortedNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = recv.recv().await {
                 if !*is_sorted {
-                    continue;
+                    return Ok(());
                 }
 
-                let (df, _seq, _in_source_token, in_wait_token) = morsel.into_inner();
-                drop(in_wait_token);
+                let df = morsel.into_df();
                 if df.height() == 0 {
                     continue;
                 }
                 assert_eq!(df.width(), 1);
                 let column = &df[0];
-
-                if output_name.is_none() {
-                    *output_name = Some(column.name().clone());
-                }
 
                 let series = column.as_materialized_series();
 
@@ -160,13 +154,13 @@ impl ComputeNode for IsSortedNode {
             _ if send[0] == PortState::Done => {
                 self.state = IsSortedState::Done;
             },
-            IsSortedState::Sink {
-                is_sorted,
-                output_name,
-                ..
-            } if matches!(recv[0], PortState::Done) => {
-                let name = output_name.clone().unwrap_or("is_sorted".into());
-                let column = Column::new(name, &[*is_sorted]);
+            IsSortedState::Sink { is_sorted, .. } if !*is_sorted => {
+                let column = Column::new(self.output_name.clone(), &[false]);
+                let out = unsafe { DataFrame::new_unchecked(1, vec![column]) };
+                self.state = IsSortedState::Source(Some(out));
+            },
+            IsSortedState::Sink { is_sorted, .. } if matches!(recv[0], PortState::Done) => {
+                let column = Column::new(self.output_name.clone(), &[*is_sorted]);
                 let out = unsafe { DataFrame::new_unchecked(1, vec![column]) };
                 self.state = IsSortedState::Source(Some(out));
             },
@@ -208,14 +202,12 @@ impl ComputeNode for IsSortedNode {
             IsSortedState::Sink {
                 is_sorted,
                 last_value,
-                output_name,
             } => {
                 assert!(send_ports[0].is_none());
                 let recv = recv_ports[0].take().unwrap();
                 Self::spawn_sink(
                     is_sorted,
                     last_value,
-                    output_name,
                     self.descending,
                     self.nulls_last,
                     scope,

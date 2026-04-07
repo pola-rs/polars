@@ -771,10 +771,11 @@ fn to_graph_rec<'a>(
             input,
             descending,
             nulls_last,
+            output_name,
         } => {
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
-                nodes::is_sorted::IsSortedNode::new(*descending, *nulls_last),
+                nodes::is_sorted::IsSortedNode::new(*descending, *nulls_last, output_name.clone()),
                 [(input_key, input.port)],
             )
         },
