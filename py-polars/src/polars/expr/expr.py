@@ -4467,13 +4467,13 @@ class Expr:
             Set the intervals to be left-closed instead of right-closed.
         include_breaks
             Include a column with the right endpoint of the bin each observation falls
-            in. This will change the data type of the output from a
-            :class:`Categorical` to a :class:`Struct`.
+            in. This will change the data type of the output from an
+            :class:`Enum` to a :class:`Struct`.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Categorical` if `include_breaks` is set to
+            Expression of data type :class:`Enum` if `include_breaks` is set to
             `False` (default), otherwise an expression of data type :class:`Struct`.
 
         See Also
@@ -4489,17 +4489,17 @@ class Expr:
         ...     pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut")
         ... )
         shape: (5, 2)
-        ┌─────┬─────┐
-        │ foo ┆ cut │
-        │ --- ┆ --- │
-        │ i64 ┆ cat │
-        ╞═════╪═════╡
-        │ -2  ┆ a   │
-        │ -1  ┆ a   │
-        │ 0   ┆ b   │
-        │ 1   ┆ b   │
-        │ 2   ┆ c   │
-        └─────┴─────┘
+        ┌─────┬──────┐
+        │ foo ┆ cut  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ -2  ┆ a    │
+        │ -1  ┆ a    │
+        │ 0   ┆ b    │
+        │ 1   ┆ b    │
+        │ 2   ┆ c    │
+        └─────┴──────┘
 
         Add both the category and the breakpoint.
 
@@ -4510,7 +4510,7 @@ class Expr:
         ┌─────┬────────────┬────────────┐
         │ foo ┆ breakpoint ┆ category   │
         │ --- ┆ ---        ┆ ---        │
-        │ i64 ┆ f64        ┆ cat        │
+        │ i64 ┆ f64        ┆ enum       │
         ╞═════╪════════════╪════════════╡
         │ -2  ┆ -1.0       ┆ (-inf, -1] │
         │ -1  ┆ -1.0       ┆ (-inf, -1] │

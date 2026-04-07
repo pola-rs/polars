@@ -21,6 +21,7 @@ pub fn join<T: PartialOrd + Copy + Debug>(
     let first_right = right[0];
     let mut left_idx = left.partition_point(|v| v < &first_right) as IdxSize;
 
+    #[allow(clippy::explicit_counter_loop)]
     for &val_l in &left[left_idx as usize..] {
         while let Some(&val_r) = right.get(right_idx as usize) {
             // matching join key
@@ -38,15 +39,13 @@ pub fn join<T: PartialOrd + Copy + Debug>(
                             right_idx = current_idx;
                             break;
                         },
-                        Some(&val_r) => {
-                            if val_l == val_r {
-                                out_lhs.push(left_idx + left_offset);
-                                out_rhs.push(right_idx);
-                            } else {
-                                // reset right index because the next lhs value can be the same
-                                right_idx = current_idx;
-                                break;
-                            }
+                        Some(&val_r) if val_l == val_r => {
+                            out_lhs.push(left_idx + left_offset);
+                            out_rhs.push(right_idx);
+                        },
+                        Some(_) => {
+                            right_idx = current_idx;
+                            break;
                         },
                     }
                 }

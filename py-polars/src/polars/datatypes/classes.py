@@ -111,6 +111,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_extension(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def from_python(cls, py_type: PythonDataType) -> PolarsDataType:  # noqa: D102
         ...
 
@@ -231,6 +235,11 @@ class DataType(metaclass=DataTypeClass):
     def is_nested(cls) -> bool:
         """Check whether the data type is a nested type."""
         return issubclass(cls, NestedType)
+
+    @classmethod
+    def is_extension(cls) -> bool:
+        """Check whether the data type is an extension type."""
+        return issubclass(cls, BaseExtension)
 
     @classmethod
     def from_python(cls, py_type: PythonDataType) -> PolarsDataType:

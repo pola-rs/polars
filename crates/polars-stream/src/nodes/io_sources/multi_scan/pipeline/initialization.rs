@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
 use polars_error::PolarsResult;
+use polars_io::metrics::IOMetrics;
 use polars_io::pl_async::get_runtime;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
 use polars_plan::dsl::PredicateFileSkip;
@@ -34,6 +35,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 pub fn initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     execution_state: StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> InitializedPipelineState {
     assert!(config.num_pipelines() > 0);
 
@@ -61,8 +63,13 @@ pub fn initialize_multi_scan_pipeline(
 
     let task_handle =
         AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
-            finish_initialize_multi_scan_pipeline(config, bridge_recv_port_tx, execution_state)
-                .await?;
+            finish_initialize_multi_scan_pipeline(
+                config,
+                bridge_recv_port_tx,
+                execution_state,
+                io_metrics,
+            )
+            .await?;
             bridge_handle.await;
             Ok(())
         }));
@@ -78,6 +85,7 @@ async fn finish_initialize_multi_scan_pipeline(
     config: Arc<MultiScanConfig>,
     bridge_recv_port_tx: connector::Sender<BridgeRecvPort>,
     execution_state: StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<()> {
     let verbose = config.verbose;
 
@@ -198,7 +206,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     .spawn(is_compressed_source(
                         config.sources.get(0).unwrap().into_owned()?,
                         config.cloud_options.clone(),
-                        config.io_metrics(),
+                        io_metrics.clone(),
                     ))
                     .await
                     .unwrap()? =>
@@ -222,7 +230,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 }
             }
 
-            resolve_to_positive_slice(&config, &execution_state).await?
+            resolve_to_positive_slice(&config, &execution_state, io_metrics.clone()).await?
         },
     };
 
@@ -329,7 +337,7 @@ async fn finish_initialize_multi_scan_pipeline(
             config.deletion_files.clone(),
             config.sources.clone(),
             &execution_state,
-            config.io_metrics(),
+            io_metrics,
         )?;
 
         futures::stream::iter(range)

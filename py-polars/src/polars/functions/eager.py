@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, get_args
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import ConcatMethod
+from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.various import ordered_unique, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
@@ -17,7 +18,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import FrameType, JoinStrategy, PolarsType
@@ -218,7 +219,7 @@ def concat(
 
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
-            lf = _balanced_reduce(join_frames, join_fn)
+            lf = reduce_balanced(join_fn, join_frames)
         else:
             # not associative => linear chain, recursion depth is O(n)
             lf = reduce(join_fn, join_frames)
@@ -509,7 +510,7 @@ def union(
 
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
-            lf = _balanced_reduce(join_frames, join_fn)
+            lf = reduce_balanced(join_fn, join_frames)
         else:
             # not associative => linear chain, recursion depth is O(n)
             lf = reduce(join_fn, join_frames)
@@ -817,18 +818,3 @@ def align_frames(
         aligned_frames.append(f)
 
     return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]
-
-
-def _balanced_reduce(
-    frames: list[LazyFrame], join_fn: Callable[[LazyFrame, LazyFrame], LazyFrame]
-) -> LazyFrame:
-    """Reduce a list of frames into a single frame using a balanced binary tree."""
-    while len(frames) > 1:
-        next_level = []
-        for i in range(0, len(frames), 2):
-            if i + 1 < len(frames):
-                next_level.append(join_fn(frames[i], frames[i + 1]))
-            else:
-                next_level.append(frames[i])
-        frames = next_level
-    return frames[0]

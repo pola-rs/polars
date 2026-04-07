@@ -44,13 +44,16 @@ const IMPORT_INTERVAL_AS_STRUCT: &str = "POLARS_IMPORT_INTERVAL_AS_STRUCT";
 const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
 
 const OOC_DRIFT_THRESHOLD: &str = "POLARS_OOC_DRIFT_THRESHOLD";
-const DEFAULT_OOC_DRIFT_THRESHOLD: u64 = 64 * 1024 * 1024;
+const DEFAULT_OOC_DRIFT_THRESHOLD: u64 = 4 * 1024 * 1024;
 
 const OOC_SPILL_POLICY: &str = "POLARS_OOC_SPILL_POLICY";
 const DEFAULT_OOC_SPILL_POLICY: SpillPolicy = SpillPolicy::NoSpill;
 
 const OOC_SPILL_FORMAT: &str = "POLARS_OOC_SPILL_FORMAT";
 const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
+
+const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
+const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
@@ -90,6 +93,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_DRIFT_THRESHOLD,
     OOC_SPILL_POLICY,
     OOC_SPILL_FORMAT,
+    JOIN_SAMPLE_LIMIT,
 ];
 
 pub struct Config {
@@ -105,9 +109,9 @@ pub struct Config {
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
     import_interval_as_struct: AtomicBool,
-    ooc_drift_threshold: AtomicU64,
     ooc_spill_policy: AtomicU8,
     ooc_spill_format: AtomicU8,
+    join_sample_limit: AtomicU64,
 }
 
 impl Config {
@@ -127,9 +131,9 @@ impl Config {
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
-            ooc_drift_threshold: AtomicU64::new(DEFAULT_OOC_DRIFT_THRESHOLD),
             ooc_spill_policy: AtomicU8::new(DEFAULT_OOC_SPILL_POLICY as u8),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
+            join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
         };
         cfg.reload_env_vars();
         cfg
@@ -202,7 +206,7 @@ impl Config {
                     .unwrap_or(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
                 Ordering::Relaxed,
             ),
-            OOC_DRIFT_THRESHOLD => self.ooc_drift_threshold.store(
+            OOC_DRIFT_THRESHOLD => OOC_DRIFT_THRESHOLD_ATOMIC.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_DRIFT_THRESHOLD),
                 Ordering::Relaxed,
@@ -215,6 +219,11 @@ impl Config {
             OOC_SPILL_FORMAT => self.ooc_spill_format.store(
                 val.and_then(|x| parse::parse_spill_format(var, x))
                     .unwrap_or(DEFAULT_OOC_SPILL_FORMAT) as u8,
+                Ordering::Relaxed,
+            ),
+            JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
                 Ordering::Relaxed,
             ),
 
@@ -270,7 +279,7 @@ impl Config {
     }
 
     pub fn ooc_drift_threshold(&self) -> u64 {
-        self.ooc_drift_threshold.load(Ordering::Relaxed)
+        get_ooc_drift_threshold()
     }
 
     pub fn ooc_spill_policy(&self) -> SpillPolicy {
@@ -280,9 +289,22 @@ impl Config {
     pub fn ooc_spill_format(&self) -> SpillFormat {
         SpillFormat::from_discriminant(self.ooc_spill_format.load(Ordering::Relaxed))
     }
+
+    pub fn join_sample_limit(&self) -> u64 {
+        self.join_sample_limit.load(Ordering::Relaxed)
+    }
 }
 
 pub fn config() -> &'static Config {
     static CONFIG: LazyLock<Config> = LazyLock::new(Config::new);
     &CONFIG
+}
+
+// Has to be a standalone because LazyLock may not be called from allocator.
+// Plus, it's faster this way.
+static OOC_DRIFT_THRESHOLD_ATOMIC: AtomicU64 = AtomicU64::new(DEFAULT_OOC_DRIFT_THRESHOLD);
+
+#[inline(always)]
+pub fn get_ooc_drift_threshold() -> u64 {
+    OOC_DRIFT_THRESHOLD_ATOMIC.load(Ordering::Relaxed)
 }
