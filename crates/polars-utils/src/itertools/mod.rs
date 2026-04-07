@@ -128,7 +128,7 @@ pub trait Itertools: Iterator {
     }
 
     /// Zips two iterators but **panics** if they are not of the same length.
-    fn zip_eq<I, J>(self, other: I) -> ZipEq<Self, I::IntoIter>
+    fn zip_eq<I>(self, other: I) -> ZipEq<Self, I::IntoIter>
     where
         Self: Sized,
         I: IntoIterator,
