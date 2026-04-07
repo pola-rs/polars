@@ -285,9 +285,10 @@ jobs:
 
       - name: Set up Python (RISCV64 Linux)
         if: matrix.os == 'ubuntu-24.04-riscv'
-        uses: actions/setup-python@v6
+        uses: riseproject-dev/setup-python@8b57351c0f828145e2ac14bd328c731503361b7a
         with:
           python-version: ${{ env.PYTHON_VERSION_LINUX_RISCV64 }}
+          mirror: https://raw.githubusercontent.com/riseproject-dev/python-versions/main
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
