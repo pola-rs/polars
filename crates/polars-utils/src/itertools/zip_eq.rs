@@ -2,8 +2,6 @@ use std::cmp;
 
 /// An iterator which iterates two other iterators simultaneously
 /// and panic if they have different lengths.
-///
-/// See [`.zip_eq()`](crate::Itertools::zip_eq) for more information.
 #[derive(Clone, Debug)]
 #[must_use = "iterator adaptors are lazy and do nothing unless consumed"]
 pub struct ZipEq<I, J> {
