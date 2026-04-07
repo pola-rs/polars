@@ -81,12 +81,13 @@ impl DataFrameSearchBuffer {
         top
     }
 
-    pub(super) fn slice(mut self, offset: usize, len: usize) -> Self {
-        self.skip_rows += offset;
-        self.total_rows -= offset;
-        self.total_rows = usize::min(self.total_rows, len);
-        self.frozen = true;
-        self
+    pub(super) fn slice(&self, offset: usize, len: usize) -> Self {
+        let mut clone = self.clone();
+        clone.skip_rows += offset;
+        clone.total_rows -= offset;
+        clone.total_rows = usize::min(self.total_rows, len);
+        clone.frozen = true;
+        clone
     }
 
     pub(super) fn into_df(self) -> DataFrame {
