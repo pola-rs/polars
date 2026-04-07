@@ -1052,23 +1052,22 @@ def test_shape_mismatch_group_by_unique_slice() -> None:
 def test_over_descending_list_27076() -> None:
     df = pl.DataFrame(
         {
-            "g": [1, 1, 1, 2, 2, 2],
-            "t": [3, 1, 2, 2, 3, 1],
-            "x": [10, 20, 30, 40, 50, 60],
+            "g": [1, 1, 1, 1, 2, 2, 2, 2],
+            "t": [1, 2, 3, 4, 4, 1, 2, 3],
+            "x": [10, 20, 30, 40, 10, 20, 30, 40],
         }
     )
 
-    # Single bool (existing behavior, should still work)
-    result = df.with_columns(
+    # Reference: single bool (existing behavior)
+    expected = df.with_columns(
         pl.col("x").shift(1).over("g", order_by="t", descending=True).alias("lag")
-    )
-    assert result["lag"].to_list() == [None, 30, 10, None, 60, 40]
+    )["lag"].to_list()
 
-    # List with single element broadcasts to all order_by columns
+    # List with single element should produce identical results
     result = df.with_columns(
         pl.col("x").shift(1).over("g", order_by=["t"], descending=[True]).alias("lag")
     )
-    assert result["lag"].to_list() == [None, 30, 10, None, 60, 40]
+    assert result["lag"].to_list() == expected
 
     # List matching multiple order_by columns (uniform values)
     result = df.with_columns(
@@ -1077,13 +1076,16 @@ def test_over_descending_list_27076() -> None:
         .over("g", order_by=["t", "x"], descending=[True, True])
         .alias("lag")
     )
-    assert result["lag"].to_list() == [None, 30, 10, None, 60, 40]
+    assert result["lag"].to_list() == expected
 
-    # nulls_last as list
+    # nulls_last as list should match single-bool nulls_last
+    expected_nl = df.with_columns(
+        pl.col("x").shift(1).over("g", order_by="t", nulls_last=True).alias("lag")
+    )["lag"].to_list()
     result = df.with_columns(
         pl.col("x").shift(1).over("g", order_by="t", nulls_last=[True]).alias("lag")
     )
-    assert result["lag"].to_list() == [None, 20, 30, None, 40, 50]
+    assert result["lag"].to_list() == expected_nl
 
 
 def test_over_descending_list_mixed_raises_27076() -> None:
