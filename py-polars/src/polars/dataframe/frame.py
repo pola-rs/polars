@@ -1026,6 +1026,9 @@ class DataFrame:
 
         return arr
 
+    @deprecated(
+        "Support for the dataframe interchange protocol is deprecated since version 1.40.0"
+    )
     def __dataframe__(
         self,
         nan_as_null: bool = False,  # noqa: FBT001
@@ -1033,6 +1036,9 @@ class DataFrame:
     ) -> PolarsDataFrame:
         """
         Convert to a dataframe object implementing the dataframe interchange protocol.
+
+        .. deprecated:: 1.40.0
+            Support for the Dataframe Interchange Protocol is deprecated.
 
         Parameters
         ----------
