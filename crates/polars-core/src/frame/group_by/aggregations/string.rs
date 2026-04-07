@@ -167,7 +167,7 @@ impl BinaryChunked {
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
-                    arr.get(first as usize).map(|_| 0)
+                    arr.is_valid(first as usize).then_some(0)
                 } else if no_nulls {
                     take_agg_bin_iter_unchecked_no_null_arg(
                         arr,
@@ -188,7 +188,7 @@ impl BinaryChunked {
                 debug_assert!(len <= self.len() as IdxSize);
                 match len {
                     0 => None,
-                    1 => arr.get(first as usize).map(|_| 0),
+                    1 => arr.is_valid(first as usize).then_some(0),
                     _ => {
                         let arr_group = _slice_from_offsets(&ca_self, first, len);
                         arr_group.arg_min_binary().map(|i| i as IdxSize)
@@ -223,7 +223,7 @@ impl BinaryChunked {
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
-                    arr.get(first as usize).map(|_| 0)
+                    arr.is_valid(first as usize).then_some(0)
                 } else if no_nulls {
                     take_agg_bin_iter_unchecked_no_null_arg(
                         arr,
@@ -244,7 +244,7 @@ impl BinaryChunked {
                 debug_assert!(len <= self.len() as IdxSize);
                 match len {
                     0 => None,
-                    1 => arr.get(first as usize).map(|_| 0),
+                    1 => arr.is_valid(first as usize).then_some(0),
                     _ => {
                         let arr_group = _slice_from_offsets(&ca_self, first, len);
                         arr_group.arg_max_binary().map(|i| i as IdxSize)
