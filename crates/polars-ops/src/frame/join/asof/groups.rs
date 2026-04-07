@@ -48,8 +48,6 @@ where
     A: AsofJoinState<T::Physical<'a>>,
     F: Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    debug_assert!(group_states.is_empty());
-
     // We use the index of the first element in a group as an identifier to
     // associate with the group state.
     let id = right_grp_idxs.first()?;
