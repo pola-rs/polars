@@ -284,11 +284,11 @@ async fn distribute_work_task(
             }
         }
 
-        prune_right_side(&left_df, right_buffer, params)?;
         distributor
             .send((left_df.clone(), right_buffer.clone(), seq, st))
             .await
             .unwrap();
+        prune_right_side(&left_df, right_buffer, params)?;
     }
 }
 
@@ -542,9 +542,10 @@ fn compute_asof_join(
     });
 
     let mut acc = DataFrame::empty_with_arc_schema(params.output_schema.clone());
-    let Some((mut right_start, mut right_len)) = right_group_idxs.next() else {
-        return Ok(acc);
-    };
+    // When right is empty there are no groups to pull from, but we still need to
+    // emit all left rows with null right columns.  Use sentinel values; the while
+    // loop below is guarded against accessing an empty right_df.
+    let (mut right_start, mut right_len) = right_group_idxs.next().unwrap_or((0, 0));
 
     let left_group_is_none =
         |idx, row_encoded: Option<&ChunkedArray<BinaryOffsetType>>| match params.left.by.len() {
@@ -584,7 +585,9 @@ fn compute_asof_join(
         if left_group_is_none(left_start, row_encoded_left.as_ref()) {
             // None group can never match on the right side
             right_len = 0;
-        } else {
+        } else if right_df.height() > 0 {
+            // Only advance the right-group cursor when right is non-empty;
+            // accessing right_df when empty would be out of bounds.
             while right_group_is_none(right_start, row_encoded_right.as_ref())
                 || right_is_lt_left(
                     left_start,
