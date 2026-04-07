@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, get_args
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import ConcatMethod
+from polars._utils import unstable
 from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.various import ordered_unique, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
@@ -602,6 +603,7 @@ def union(
     return out
 
 
+@unstable()
 def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
     """
     Merge multiple sorted DataFrames or LazyFrames by the sorted key.
