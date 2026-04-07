@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, get_args
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import ConcatMethod
-from polars._utils import unstable
 from polars._utils.reduce_balanced import reduce_balanced
+from polars._utils.unstable import unstable
 from polars._utils.various import ordered_unique, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
@@ -676,7 +676,7 @@ def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
     def reduce_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
         return x.merge_sorted(y, key=key)
 
-    lf = _balanced_reduce(frames, reduce_fn)
+    lf = reduce_balanced(reduce_fn, frames)
     eager = isinstance(elems[0], pl.DataFrame)
     return lf.collect() if eager else lf  # type: ignore[return-value]
 
