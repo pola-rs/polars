@@ -34,16 +34,13 @@ impl IR {
     where
         I: IntoIterator<Item = Node>,
     {
-        let mut inputs_mut = self.inputs_mut();
         let mut new_inputs = inputs.into_iter();
 
-        while let Some(input) = inputs_mut.next() {
+        for input in self.inputs_mut() {
             *input = new_inputs.next().expect("not enough inputs");
         }
 
         assert!(new_inputs.next().is_none(), "too many inputs");
-
-        drop(inputs_mut);
 
         self
     }
