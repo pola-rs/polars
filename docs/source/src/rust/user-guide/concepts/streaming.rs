@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_columns(vec![
             col("sepal_length")
                 .mean()
-                .over(vec![col("species")])
+                .over(vec![col("species")])?
                 .alias("sepal_length_mean"),
         ]);
 
