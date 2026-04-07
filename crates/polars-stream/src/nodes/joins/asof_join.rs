@@ -19,6 +19,9 @@ use crate::nodes::ComputeNode;
 use crate::nodes::joins::utils::{DataFrameSearchBuffer, stop_and_buffer_pipe_contents};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
+// TODO: [amber] Finalize after accumulating instead of doing it for each group.
+// TODO: [amber] Add support for descending and nulls_last.
+
 #[derive(Debug)]
 pub struct AsOfJoinSideParams {
     pub on: PlSmallStr,
@@ -343,7 +346,7 @@ fn need_more_right_side(
             if first_greater >= right.height() {
                 return Ok(true);
             }
-            // In the Backward/Nearest cases, there may be a chunk of consecutive equal
+            // In the backward/nearest cases, there may be a chunk of consecutive equal
             // values following the match value on the left side.  In this case, the AsOf
             // join is greedy and should until the *end* of that chunk.
 
@@ -400,16 +403,10 @@ async fn compute_and_emit_task(
     mut send: PortSender,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    let mut left_lengths_scratch = ScratchVec::default();
-    let mut right_lengths_scratch = ScratchVec::default();
+    let mut scratch1 = ScratchVec::default();
+    let mut scratch2 = ScratchVec::default();
     while let Ok((left_df, right_dfsb, seq, st)) = dist_recv.recv().await {
-        let out = compute_asof_join(
-            left_df,
-            right_dfsb,
-            &mut left_lengths_scratch,
-            &mut right_lengths_scratch,
-            params,
-        )?;
+        let out = compute_asof_join(left_df, right_dfsb, params, &mut scratch1, &mut scratch2)?;
         let morsel = Morsel::new(out, seq, st);
         if send.send(morsel).await.is_err() {
             return Ok(());
@@ -418,245 +415,241 @@ async fn compute_and_emit_task(
     Ok(())
 }
 
+/// Encodes the "by" group columns of a DataFrame for sorted group traversal.
+///
+/// Provides run-length group boundaries and value comparison, abstracting over
+/// the single-column and multi-column cases.
+struct GroupEncoding<'a> {
+    kind: GroupEncodingKind,
+    /// Run-lengths of consecutive equal group values (in sorted order).
+    run_lengths: &'a mut Vec<IdxSize>,
+}
+
+enum GroupEncodingKind {
+    /// Single by-column stored directly.
+    Single(Column),
+    /// Multiple by-columns merged into a row-encoded binary column for comparison.
+    Multi(ChunkedArray<BinaryOffsetType>),
+}
+
+impl<'a> GroupEncoding<'a> {
+    fn build(
+        df: &DataFrame,
+        by: &[PlSmallStr],
+        mut run_lengths: &'a mut Vec<IdxSize>,
+    ) -> PolarsResult<Self> {
+        const ROW_ENCODED_COL_NAME: PlSmallStr = PlSmallStr::from_static("__PL_ASOF_JOIN_BY");
+        let kind = match by {
+            [col_name] => {
+                let col = df.column(col_name)?;
+                rle_lengths(col, &mut run_lengths)?;
+                GroupEncodingKind::Single(col.clone())
+            },
+            _ => {
+                let cols = by
+                    .iter()
+                    .map(|n| df.column(n).unwrap().clone())
+                    .collect_vec();
+                let descending = vec![false; by.len()];
+                let nulls_last = vec![false; by.len()];
+                let encoded = _get_rows_encoded_ca(
+                    ROW_ENCODED_COL_NAME,
+                    &cols,
+                    &descending,
+                    &nulls_last,
+                    true,
+                )?;
+                rle_lengths_helper_ca(&encoded, &mut run_lengths);
+                GroupEncodingKind::Multi(encoded)
+            },
+        };
+        Ok(Self { kind, run_lengths })
+    }
+
+    /// Returns true if the group value at `idx` is null.
+    ///
+    /// # Safety
+    /// `idx` must be a valid row index.
+    unsafe fn is_null_at(&self, idx: usize) -> bool {
+        match &self.kind {
+            GroupEncodingKind::Single(col) => unsafe { col.get_unchecked(idx) }.is_null(),
+            GroupEncodingKind::Multi(enc) => unsafe { enc.get_unchecked(idx) }.is_none(),
+        }
+    }
+
+    /// Returns true if the group value at `self_idx` is strictly less than
+    /// the group value at `other_idx` in `other`.
+    ///
+    /// # Safety
+    /// Both indices must be valid row indices within their respective encodings.
+    unsafe fn is_lt_at(&self, self_idx: usize, other: &Self, other_idx: usize) -> bool {
+        match (&self.kind, &other.kind) {
+            (GroupEncodingKind::Single(s), GroupEncodingKind::Single(o)) => unsafe {
+                s.get_unchecked(self_idx) < o.get_unchecked(other_idx)
+            },
+            (GroupEncodingKind::Multi(s), GroupEncodingKind::Multi(o)) => unsafe {
+                s.get_unchecked(self_idx) < o.get_unchecked(other_idx)
+            },
+            _ => unreachable!("mismatched GroupEncoding kinds"),
+        }
+    }
+
+    /// Iterates over groups as `(start_row, row_count)` pairs.
+    fn iter_groups(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.run_lengths.iter().scan(0usize, |offset, &len| {
+            let start = *offset;
+            *offset += len as usize;
+            Some((start, len as usize))
+        })
+    }
+}
+
+/// Removes temporary key columns, coalesces the real `on` columns, and drops the
+/// duplicated right `by` columns from a freshly joined output chunk.
+fn finalize_output(
+    mut out: DataFrame,
+    params: &AsOfJoinParams,
+    any_key_is_temporary_col: bool,
+) -> PolarsResult<DataFrame> {
+    // Drop any temporary join-key columns that were added before calling _join_asof.
+    for tmp_col in [&params.left.tmp_key_col, &params.right.tmp_key_col] {
+        if let Some(col) = tmp_col
+            && out.schema().contains(col)
+        {
+            out.drop_in_place(col)?;
+        }
+    }
+
+    // When a temporary key column was used, the real `on` column from the right
+    // side is still present and needs to be coalesced away manually.
+    if any_key_is_temporary_col
+        && params.args.should_coalesce()
+        && params.left.on == params.right.on
+    {
+        let right_on = format_pl_smallstr!("{}{}", params.right.on, params.args.suffix());
+        out.drop_in_place(&right_on)?;
+    }
+
+    // Drop the right `by` columns (they appear either under their suffixed name
+    // when they collide with a left column, or under the original name).
+    for col in &params.right.by {
+        let suffixed = format_pl_smallstr!("{}{}", col, params.args.suffix());
+        if out.get_column_index(&suffixed).is_some() {
+            out.drop_in_place(&suffixed)?;
+        } else {
+            out.drop_in_place(col)?;
+        }
+    }
+
+    Ok(out)
+}
+
+/// Calls `_join_asof` on a left/right pair and cleans up the output via
+/// [`finalize_output`].
+fn join_asof_ungrouped(
+    left_df: &DataFrame,
+    right_df: &DataFrame,
+    left_key: &Series,
+    right_key: &Series,
+    options: &AsOfOptions,
+    params: &AsOfJoinParams,
+    coalesce: bool,
+    any_key_is_temporary_col: bool,
+) -> PolarsResult<DataFrame> {
+    let out = AsofJoin::_join_asof(
+        left_df,
+        right_df,
+        left_key,
+        right_key,
+        options.strategy,
+        options.tolerance.clone().map(Scalar::into_value),
+        params.args.suffix.clone(),
+        None,
+        coalesce,
+        options.allow_eq,
+        options.check_sortedness,
+    )?;
+    finalize_output(out, params, any_key_is_temporary_col)
+}
+
 fn compute_asof_join(
     left_df: DataFrame,
     right_dfsb: DataFrameSearchBuffer,
+    params: &AsOfJoinParams,
     left_lengths_scratch: &mut ScratchVec<IdxSize>,
     right_lengths_scratch: &mut ScratchVec<IdxSize>,
-    params: &AsOfJoinParams,
 ) -> PolarsResult<DataFrame> {
-    const ROW_ENCODED_COL_NAME: PlSmallStr = PlSmallStr::from_static("__PL_ASOF_JOIN_BY");
+    let left_lengths = left_lengths_scratch.get();
+    let right_lengths = right_lengths_scratch.get();
 
-    let options = params.as_of_options();
     let right_df = right_dfsb.into_df();
+    let options = params.as_of_options();
     let any_key_is_temporary_col =
         params.left.tmp_key_col.is_some() || params.right.tmp_key_col.is_some();
     let coalesce = any_key_is_temporary_col || params.args.should_coalesce();
 
-    let left_group = if params.left.by.len() == 1 {
-        Some(left_df.column(&params.left.by[0])?)
-    } else {
-        None
-    };
-    let right_group = if params.right.by.len() == 1 {
-        Some(right_df.column(&params.right.by[0])?)
-    } else {
-        None
-    };
-
     let left_key = left_df.column(params.left.key_col())?;
     let right_key = right_df.column(params.right.key_col())?;
 
-    if params.left.by.is_empty() || params.right.by.is_empty() {
-        let mut out = AsofJoin::_join_asof(
+    if params.left.by.is_empty() {
+        return join_asof_ungrouped(
             &left_df,
             &right_df,
             left_key.as_materialized_series(),
             right_key.as_materialized_series(),
-            options.strategy,
-            options.tolerance.clone().map(Scalar::into_value),
-            params.args.suffix.clone(),
-            None,
+            options,
+            params,
             coalesce,
-            options.allow_eq,
-            options.check_sortedness,
-        )?;
-
-        // Drop any temporary key columns that were added
-        for tmp_key_col in [&params.left.tmp_key_col, &params.right.tmp_key_col] {
-            if let Some(tmp_col) = tmp_key_col
-                && out.schema().contains(tmp_col)
-            {
-                out.drop_in_place(tmp_col)?;
-            }
-        }
-
-        // If the join key passed to _join_asof() was a temporary key column,
-        // we still need to coalesce the real 'on' columns ourselves.
-        if any_key_is_temporary_col
-            && params.args.should_coalesce()
-            && params.left.on == params.right.on
-        {
-            let right_on_name = format_pl_smallstr!("{}{}", params.right.on, params.args.suffix());
-            out.drop_in_place(&right_on_name)?;
-        }
-
-        return Ok(out);
+            any_key_is_temporary_col,
+        );
     }
 
-    let mut left_lengths = left_lengths_scratch.get();
-    let mut right_lengths = right_lengths_scratch.get();
+    let left_enc = GroupEncoding::build(&left_df, &params.left.by, left_lengths)?;
+    let right_enc = GroupEncoding::build(&right_df, &params.right.by, right_lengths)?;
 
-    // Computing of left lengths
-    let mut row_encoded_left = None;
-    if params.left.by.len() > 1 {
-        let by = params
-            .left
-            .by
-            .iter()
-            .map(|name| left_df.column(name).unwrap().clone())
-            .collect_vec();
-        let descending = vec![false; params.left.by.len()];
-        let nulls_last = vec![false; params.left.by.len()];
-        let row_encoded =
-            _get_rows_encoded_ca(ROW_ENCODED_COL_NAME, &by, &descending, &nulls_last, true)?;
-        rle_lengths_helper_ca(&row_encoded, &mut left_lengths);
-        row_encoded_left = Some(row_encoded);
-    } else if params.left.by.len() == 1 {
-        rle_lengths(left_df.column(&params.left.by[0])?, &mut left_lengths)?;
-    }
-
-    // Computing of right lengths
-    let mut row_encoded_right = None;
-    if params.right.by.len() > 1 {
-        let by = params
-            .right
-            .by
-            .iter()
-            .map(|name| right_df.column(name).unwrap().clone())
-            .collect_vec();
-        let descending = vec![false; params.right.by.len()];
-        let nulls_last = vec![false; params.right.by.len()];
-        let row_encoded = _get_rows_encoded_ca(
-            "__PL_ASOF_JOIN_BY".into(),
-            &by,
-            &descending,
-            &nulls_last,
-            true,
-        )?;
-        rle_lengths_helper_ca(&row_encoded, &mut right_lengths);
-        row_encoded_right = Some(row_encoded);
-    } else if params.right.by.len() == 1 {
-        rle_lengths(right_df.column(&params.right.by[0])?, &mut right_lengths)?;
-    }
-
-    let left_group_idxs = left_lengths.iter().scan(0, |state, len| {
-        let start = *state;
-        *state += *len as usize;
-        Some((start, *len as usize))
-    });
-    let mut right_group_idxs = right_lengths.iter().scan(0, |state, len| {
-        let start = *state;
-        *state += *len as usize;
-        Some((start, *len as usize))
-    });
+    let mut right_groups = right_enc.iter_groups();
+    let (mut right_start, mut right_len) = right_groups.next().unwrap_or((0, 0));
 
     let mut acc = DataFrame::empty_with_arc_schema(params.output_schema.clone());
-    // When right is empty there are no groups to pull from, but we still need to
-    // emit all left rows with null right columns.  Use sentinel values; the while
-    // loop below is guarded against accessing an empty right_df.
-    let (mut right_start, mut right_len) = right_group_idxs.next().unwrap_or((0, 0));
 
-    let left_group_is_none =
-        |idx, row_encoded: Option<&ChunkedArray<BinaryOffsetType>>| match params.left.by.len() {
-            0 => false,
-            1 => unsafe { left_group.unwrap_unchecked().get_unchecked(idx) }.is_null(),
-            _ => unsafe { row_encoded.unwrap_unchecked().get_unchecked(idx).is_none() },
-        };
-    let right_group_is_none =
-        |idx, row_encoded: Option<&ChunkedArray<BinaryOffsetType>>| match params.right.by.len() {
-            0 => false,
-            1 => unsafe { right_group.unwrap_unchecked().get_unchecked(idx) }.is_null(),
-            _ => unsafe { row_encoded.unwrap_unchecked().get_unchecked(idx).is_none() },
-        };
-    let right_is_lt_left =
-        |left_idx,
-         right_idx,
-         row_encoded_left: Option<&ChunkedArray<BinaryOffsetType>>,
-         row_encoded_right: Option<&ChunkedArray<BinaryOffsetType>>| match params
-            .right
-            .by
-            .len()
-        {
-            0 => false,
-            1 => unsafe {
-                right_group.unwrap_unchecked().get_unchecked(right_idx)
-                    < left_group.unwrap_unchecked().get_unchecked(left_idx)
-            },
-            _ => unsafe {
-                row_encoded_right
-                    .unwrap_unchecked()
-                    .get_unchecked(right_idx)
-                    < row_encoded_left.unwrap_unchecked().get_unchecked(left_idx)
-            },
-        };
-
-    for (left_start, left_len) in left_group_idxs {
-        if left_group_is_none(left_start, row_encoded_left.as_ref()) {
-            // None group can never match on the right side
+    for (left_start, left_len) in left_enc.iter_groups() {
+        // SAFETY: left_start and right_start are valid row indices from iter_groups.
+        if unsafe { left_enc.is_null_at(left_start) } {
+            // If the left group is null, then it will have no matches on the right side.
             right_len = 0;
         } else if right_df.height() > 0 {
-            // Only advance the right-group cursor when right is non-empty;
-            // accessing right_df when empty would be out of bounds.
-            while right_group_is_none(right_start, row_encoded_right.as_ref())
-                || right_is_lt_left(
-                    left_start,
-                    right_start,
-                    row_encoded_left.as_ref(),
-                    row_encoded_right.as_ref(),
-                )
-            {
-                if let Some((rs, rl)) = right_group_idxs.next() {
-                    right_start = rs;
-                    right_len = rl;
-                } else {
-                    // Right group does not exist. We still want to emit nulls, so
-                    // we just use an empty dataframe as the right side.
+            // Advance the right cursor past null groups and groups that sort
+            // before the current left group.
+            while unsafe {
+                right_enc.is_null_at(right_start)
+                    || GroupEncoding::is_lt_at(&right_enc, right_start, &left_enc, left_start)
+            } {
+                let Some((rs, rl)) = right_groups.next() else {
                     right_len = 0;
                     break;
                 };
+                right_start = rs;
+                right_len = rl;
             }
         }
-        let left_chunk = left_df.slice(left_start as i64, left_len);
-        let right_chunk = right_df.slice(right_start as i64, right_len);
-        let left_chunk_key = left_key.slice(left_start as i64, left_len);
-        let right_chunk_key = right_key.slice(right_start as i64, right_len);
 
-        let mut out = AsofJoin::_join_asof(
-            &left_chunk,
-            &right_chunk,
-            left_chunk_key.as_materialized_series(),
-            right_chunk_key.as_materialized_series(),
-            options.strategy,
-            options.tolerance.clone().map(Scalar::into_value),
-            params.args.suffix.clone(),
-            None,
+        let group_left = left_df.slice(left_start as i64, left_len);
+        let group_right = right_df.slice(right_start as i64, right_len);
+        let group_left_key = left_key.slice(left_start as i64, left_len);
+        let group_right_key = right_key.slice(right_start as i64, right_len);
+
+        let chunk = join_asof_ungrouped(
+            &group_left,
+            &group_right,
+            group_left_key.as_materialized_series(),
+            group_right_key.as_materialized_series(),
+            options,
+            params,
             coalesce,
-            options.allow_eq,
-            options.check_sortedness,
+            any_key_is_temporary_col,
         )?;
-
-        // Drop any temporary key columns that were added
-        for tmp_key_col in [&params.left.tmp_key_col, &params.right.tmp_key_col] {
-            if let Some(tmp_col) = tmp_key_col
-                && out.schema().contains(tmp_col)
-            {
-                out.drop_in_place(tmp_col)?;
-            }
-        }
-
-        // If the join key passed to _join_asof() was a temporary key column,
-        // we still need to coalesce the real 'on' columns ourselves.
-        if any_key_is_temporary_col
-            && params.args.should_coalesce()
-            && params.left.on == params.right.on
-        {
-            let right_on_name = format_pl_smallstr!("{}{}", params.right.on, params.args.suffix());
-            out.drop_in_place(&right_on_name)?;
-        }
-
-        // When we have joined on groups, we still need to remove the group columns
-        // from the right input dataframe.
-        for col in &params.right.by {
-            let with_suffix = format_pl_smallstr!("{}{}", col, params.args.suffix());
-            if out.get_column_index(&with_suffix).is_some() {
-                out.drop_in_place(&with_suffix)?;
-            } else {
-                out.drop_in_place(&col)?;
-            }
-        }
-
-        acc.vstack_mut_owned_unchecked(out);
+        acc.vstack_mut_owned_unchecked(chunk);
     }
+
     Ok(acc)
 }
