@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
@@ -164,3 +164,13 @@ def test_interpolate_decimal_22475(
 
     q = df_decimal.lazy().with_columns(pl.col("data").interpolate(method=method))
     assert q.collect_schema() == q.collect().schema
+
+
+def test_interpolate_overflow_27184() -> None:
+    out = pl.Series(
+        "a", [-2147483410, None, 229279268, -2147453395], pl.Int32
+    ).interpolate("nearest")
+    expected = pl.Series(
+        "a", [-2147483410, 229279268, 229279268, -2147453395], pl.Int32
+    ).interpolate("nearest")
+    assert_series_equal(out, expected)
