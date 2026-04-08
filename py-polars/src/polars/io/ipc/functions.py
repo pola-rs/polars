@@ -380,7 +380,7 @@ def scan_ipc(
     ),
     *,
     n_rows: int | None = None,
-    cache: bool = True,
+    cache: bool | None = None,
     rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
