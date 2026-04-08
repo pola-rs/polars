@@ -1,38 +1,61 @@
+use polars_core::error::PolarsResult;
+use polars_core::prelude::PlHashSet;
+use polars_utils::aliases::InitHashMaps;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::prelude::IR;
+use super::OptimizationRule;
+use crate::prelude::{AExpr, IR};
 
-pub(super) fn optimize(root: Node, lp_arena: &mut Arena<IR>) {
-    let mut pending = vec![root];
-    let mut collected_inputs = Vec::new();
-    let mut traversal_stack = Vec::new();
+pub struct FlattenMergeSortedRule {
+    collected_inputs: Vec<Node>,
+    optimized_nodes: PlHashSet<Node>,
+    traversal_stack: Vec<Node>,
+}
 
-    while let Some(node) = pending.pop() {
-        let rebuild_key = match lp_arena.get(node) {
-            IR::MergeSorted { key, .. } => {
-                collected_inputs.clear();
-                collect_merge_sorted_inputs(
-                    node,
-                    key,
-                    lp_arena,
-                    &mut collected_inputs,
-                    &mut traversal_stack,
-                );
-                pending.extend_from_slice(&collected_inputs);
-
-                (collected_inputs.len() > 2).then(|| key.clone())
-            },
-            ir => {
-                ir.copy_inputs(&mut pending);
-                None
-            },
-        };
-
-        if let Some(key) = rebuild_key {
-            let rebuilt_ir = rebuild_merge_sorted_tree(&mut collected_inputs, key, lp_arena);
-            lp_arena.replace(node, rebuilt_ir);
+impl FlattenMergeSortedRule {
+    pub fn new() -> Self {
+        Self {
+            collected_inputs: Vec::new(),
+            optimized_nodes: PlHashSet::new(),
+            traversal_stack: Vec::new(),
         }
+    }
+}
+
+impl OptimizationRule for FlattenMergeSortedRule {
+    fn optimize_plan(
+        &mut self,
+        lp_arena: &mut Arena<IR>,
+        _expr_arena: &mut Arena<AExpr>,
+        node: Node,
+    ) -> PolarsResult<Option<IR>> {
+        let key = match lp_arena.get(node) {
+            IR::MergeSorted { key, .. } => key.clone(),
+            _ => return Ok(None),
+        };
+        if !self.optimized_nodes.insert(node) {
+            return Ok(None);
+        }
+
+        self.collected_inputs.clear();
+        collect_merge_sorted_inputs(
+            node,
+            &key,
+            lp_arena,
+            &mut self.collected_inputs,
+            &mut self.traversal_stack,
+        );
+
+        if self.collected_inputs.len() <= 2 {
+            return Ok(None);
+        }
+
+        Ok(Some(rebuild_merge_sorted_tree(
+            &mut self.collected_inputs,
+            key,
+            lp_arena,
+        )))
     }
 }
 

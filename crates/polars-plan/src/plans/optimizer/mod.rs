@@ -48,6 +48,8 @@ pub use sortedness::{
 };
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
+#[cfg(feature = "merge_sorted")]
+use self::flatten_merge_sorted::FlattenMergeSortedRule;
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
@@ -246,6 +248,8 @@ pub fn optimize(
     }
 
     if !opt_flags.eager() {
+        #[cfg(feature = "merge_sorted")]
+        rules.push(Box::new(FlattenMergeSortedRule::new()));
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
@@ -274,13 +278,6 @@ pub fn optimize(
             let rewritten = ir_node.rewrite(&mut optimizer, arena)?;
             Ok(rewritten.node())
         })?;
-    }
-
-    // Deep MergeSorted chains cause stack overflows and poor parallelism.
-    // Must run before CHECK_ORDER_OBSERVE, which may convert MergeSorted to Union.
-    #[cfg(feature = "merge_sorted")]
-    if get_or_init_members!().has_merge_sorted {
-        flatten_merge_sorted::optimize(root, ir_arena);
     }
 
     if opt_flags.contains(OptFlags::CHECK_ORDER_OBSERVE) {

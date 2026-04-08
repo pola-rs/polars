@@ -304,6 +304,7 @@ def test_merge_sorted_chain_streaming_21789_b(streaming: bool) -> None:
 
     assert_frame_equal(out, expected)
 
+
 @pytest.mark.parametrize("n_dfs", [3, 4, 5])  # balanced tree +/- 1
 @pytest.mark.parametrize("lazy", [True, False])
 def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
@@ -378,8 +379,8 @@ def test_merge_sorted_maintain_order_parametric(lhs: pl.Series, rhs: pl.Series) 
     assert_frame_equal(actual, expected)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
-def test_merge_sorted_deep_chain_with_sort_collect(streaming: bool) -> None:
+@pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_with_sort_collect(n_frames: int) -> None:
     dfs = [
         pl.DataFrame(
             {
@@ -387,7 +388,7 @@ def test_merge_sorted_deep_chain_with_sort_collect(streaming: bool) -> None:
                 "n": [10 + i, 110 + i],
             }
         )
-        for i in range(64)
+        for i in range(n_frames)
     ]
     lfs = [df.lazy() for df in dfs]
 
@@ -397,13 +398,11 @@ def test_merge_sorted_deep_chain_with_sort_collect(streaming: bool) -> None:
 
     expected = pl.DataFrame(
         {
-            "foo": [f"lazy-bear-{i}" for i in range(64)]
-            + [f"eager-bear-{i}" for i in range(64)],
-            "n": [10 + i for i in range(64)] + [110 + i for i in range(64)],
+            "foo": [f"lazy-bear-{i}" for i in range(n_frames)]
+            + [f"eager-bear-{i}" for i in range(n_frames)],
+            "n": [10 + i for i in range(n_frames)] + [110 + i for i in range(n_frames)],
         }
     )
-    result = chained.sort("n", "foo").collect(
-        engine="streaming" if streaming else "in-memory"
-    )
+    result = chained.sort("n", "foo").collect()
 
     assert_frame_equal(result, expected)

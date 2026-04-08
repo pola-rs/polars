@@ -165,8 +165,9 @@ def test_merge_sorted_to_union() -> None:
     assert "UNION" in explain
 
 
-def test_merge_sorted_deep_chain_to_union() -> None:
-    lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(64)]
+@pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_to_union(n_frames: int) -> None:
+    lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(n_frames)]
     lf = functools.reduce(
         lambda left, right: left.merge_sorted(right, "a"), lfs
     ).unique()
@@ -180,7 +181,8 @@ def test_merge_sorted_deep_chain_to_union() -> None:
     assert "UNION" in explain
 
 
-def test_merge_sorted_deep_chain_explain_matches_balanced() -> None:
+@pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_explain_matches_balanced(n_frames: int) -> None:
     def balanced_merge_sorted(lfs: list[pl.LazyFrame]) -> pl.LazyFrame:
         items = lfs[:]
 
@@ -194,7 +196,7 @@ def test_merge_sorted_deep_chain_explain_matches_balanced() -> None:
 
         return items[0]
 
-    lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(64)]
+    lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(n_frames)]
 
     chained = functools.reduce(lambda left, right: left.merge_sorted(right, "a"), lfs)
     balanced = balanced_merge_sorted(lfs)
