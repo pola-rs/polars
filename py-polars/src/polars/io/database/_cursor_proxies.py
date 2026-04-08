@@ -40,7 +40,7 @@ class ODBCCursorProxy:
         *,
         fetch_all: bool = False,  # noqa: ARG002
     ) -> pa.Table:
-        """Fetch all results as a pyarrow Table."""
+        """Fetch all results as a PyArrow Table."""
         from pyarrow import Table
 
         return Table.from_batches(

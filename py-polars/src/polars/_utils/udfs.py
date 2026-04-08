@@ -439,7 +439,7 @@ class BytecodeParser:
 
     def can_attempt_rewrite(self) -> bool:
         """
-        Determine if we may be able to offer a native polars expression instead.
+        Determine if we may be able to offer a native Polars expression instead.
 
         Note that `lambda x: x` is inefficient, but we ignore it because it is not
         guaranteed that using the equivalent bare constant value will return the
@@ -489,7 +489,7 @@ class BytecodeParser:
         return list(self._rewritten_instructions)
 
     def to_expression(self, col: str) -> str | None:
-        """Translate postfix bytecode instructions to polars expression/string."""
+        """Translate postfix bytecode instructions to Polars expression/string."""
         if self._col_expression is not no_default and self._col_expression is not None:
             col_name, expr = self._col_expression
             if col != col_name:
@@ -563,7 +563,7 @@ class BytecodeParser:
         suggestion_override: str | None = None,
         udf_override: str | None = None,
     ) -> None:
-        """Generate warning that suggests an equivalent native polars expression."""
+        """Generate warning that suggests an equivalent native Polars expression."""
         # Import these here so that udfs can be imported without polars installed.
 
         from polars._utils.various import (
@@ -617,7 +617,7 @@ class BytecodeParser:
 
 
 class InstructionTranslator:
-    """Translates Instruction bytecode to a polars expression string."""
+    """Translates Instruction bytecode to a Polars expression string."""
 
     def __init__(
         self,
@@ -631,7 +631,7 @@ class InstructionTranslator:
         self._function = function
 
     def to_expression(self, col: str, param_name: str, depth: int) -> str:
-        """Convert intermediate stack to polars expression string."""
+        """Convert intermediate stack to Polars expression string."""
         return self._expr(self._stack, col, param_name, depth)
 
     @staticmethod
@@ -659,7 +659,7 @@ class InstructionTranslator:
             raise AssertionError(msg)
 
     def _expr(self, value: StackEntry, col: str, param_name: str, depth: int) -> str:
-        """Take stack entry value and convert to polars expression string."""
+        """Take stack entry value and convert to Polars expression string."""
         if isinstance(value, StackValue):
             op = _RE_STRIP_BOOL.sub(r"\1", value.operator)
             e1 = self._expr(value.left_operand, col, param_name, depth + 1)

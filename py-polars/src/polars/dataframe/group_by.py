@@ -858,7 +858,7 @@ class RollingGroupBy:
     """
     A rolling grouper.
 
-    This has an `.agg` method which will allow you to run all polars expressions in a
+    This has an `.agg` method which will allow you to run all Polars expressions in a
     group by context.
     """
 
@@ -1005,7 +1005,7 @@ class RollingGroupBy:
         schema
             Schema of the output function. This has to be known statically. If the
             given schema is incorrect, this is a bug in the caller's query and may
-            lead to errors. If set to None, polars assumes the schema is unchanged.
+            lead to errors. If set to None, Polars assumes the schema is unchanged.
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 

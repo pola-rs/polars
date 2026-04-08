@@ -34,7 +34,7 @@ __all__ = ["PolarsDataset"]
 
 class PolarsDataset(TensorDataset):  # type: ignore[misc]
     """
-    TensorDataset class specialized for use with Polars DataFrames.
+    Specialized :class:`~torch.utils.data.TensorDataset` class for use with Polars DataFrames.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed
@@ -87,7 +87,8 @@ class PolarsDataset(TensorDataset):  # type: ignore[misc]
     >>> ds[0]
     (tensor([1.0000, 1.5000]), tensor(0.))
 
-    The Dataset can be used standalone, or in conjunction with a DataLoader.
+    The Dataset can be used standalone, or in conjunction with a
+    :class:`~torch.utils.data.DataLoader`.
 
     >>> dl = DataLoader(ds, batch_size=2)
     >>> list(dl)
@@ -110,7 +111,7 @@ class PolarsDataset(TensorDataset):  # type: ignore[misc]
     >>> ds[:2]
     (tensor([[ 1.0000,  1.5000],
     [ 0.0000, -0.5000]]), tensor([0, 8], dtype=torch.int16))
-    """
+    """  # noqa: W505
 
     tensors: tuple[Tensor, ...]
     labels: Tensor | None

@@ -92,7 +92,7 @@ class Schema(BaseSchema):
     >>> schema.len()
     3
 
-    Import a pyarrow schema.
+    Import a PyArrow schema.
 
     >>> import pyarrow as pa
     >>> pl.Schema(pa.schema([pa.field("x", pa.int32())]))
@@ -193,7 +193,7 @@ class Schema(BaseSchema):
     @unstable()
     def to_arrow(self, *, compat_level: CompatLevel | None = None) -> pa.Schema:
         """
-        Convert the schema to a pyarrow schema.
+        Convert the schema to a PyArrow schema.
 
         Parameters
         ----------

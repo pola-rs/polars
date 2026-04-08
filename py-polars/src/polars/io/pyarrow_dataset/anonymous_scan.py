@@ -27,13 +27,13 @@ def _scan_pyarrow_dataset(
     Parameters
     ----------
     ds
-        pyarrow dataset
+        PyArrow dataset
     allow_pyarrow_filter
-        Allow predicates to be pushed down to pyarrow. This can lead to different
-        results if comparisons are done with null values as pyarrow handles this
+        Allow predicates to be pushed down to PyArrow. This can lead to different
+        results if comparisons are done with null values as PyArrow handles this
         different than polars does.
     batch_size
-        The maximum row count for scanned pyarrow record batches.
+        The maximum row count for scanned PyArrow record batches.
     """
     # when `allow_pyarrow_filter=False`, the Rust side passes `batch_size`
     # positionally, so we set as `user_batch_size` to avoid collision
@@ -64,16 +64,16 @@ def _scan_pyarrow_dataset_impl(
     Parameters
     ----------
     ds
-        pyarrow dataset.
+        PyArrow dataset.
     with_columns
         Columns that are projected.
     predicate
-        pyarrow expression string (when `allow_pyarrow_filter=True`) or
+        PyArrow expression string (when `allow_pyarrow_filter=True`) or
         serialized Polars predicate bytes (when `allow_pyarrow_filter=False`).
     n_rows:
         Materialize only `n` rows from the arrow dataset.
     batch_size
-        The maximum row count for scanned pyarrow record batches.
+        The maximum row count for scanned PyArrow record batches.
     allow_pyarrow_filter
         If True, evaluate predicate and return DataFrame directly.
         If False, return `(generator, False)` tuple for IOPlugin path.

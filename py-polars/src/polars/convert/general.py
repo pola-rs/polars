@@ -317,7 +317,7 @@ def from_numpy(
     orient: Orientation | None = None,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a NumPy ndarray. This operation clones data.
+    Construct a DataFrame from a :class:`numpy.ndarray`. This operation clones data.
 
     Note that this is slower than creating from columnar memory.
 
@@ -383,7 +383,7 @@ def from_torch(
     force: bool = False,
 ) -> DataFrame:
     """
-    Construct a DataFrame from a PyTorch Tensor.
+    Construct a DataFrame from a :class:`torch.Tensor`.
 
     Parameters
     ----------
@@ -483,9 +483,10 @@ def from_arrow(
 
     Parameters
     ----------
-    data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
-        Data representing an Arrow Table, Array, sequence of RecordBatches or Tables, or other
-        object that supports the Arrow PyCapsule interface.
+    data : pyarrow Table, Array, one or more RecordBatches or Tables, PyCapsule object
+        Data representing a :class:`pyarrow.Table`, :class:`pyarrow.Array`, sequence of
+        :class:`pyarrow.RecordBatch` or :class:`pyarrow.Table`, or another object that
+        supports the Arrow PyCapsule interface.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -536,7 +537,7 @@ def from_arrow(
         2
         3
     ]
-    """  # noqa: W505
+    """
     if is_pycapsule(data) and not _check_for_pyarrow(data):
         return pycapsule_to_frame(
             data,
@@ -631,21 +632,21 @@ def from_pandas(
     include_index: bool = False,
 ) -> DataFrame | Series:
     """
-    Construct a Polars DataFrame or Series from a pandas DataFrame, Series, or Index.
+    Construct a Polars DataFrame or Series from a :class:`pandas.DataFrame`, :class:`pandas.Series`, or :class:`pandas.Index`.
 
     This operation may clone data. If you want to ensure that in-place modifications
     of the output don't affect the input, you may want to consider one of the following:
 
     - Enable `Copy-On-Write <https://pandas.pydata.org/docs/dev/user_guide/copy_on_write.html>`_
-      in pandas.
+      in Pandas.
     - Call :meth:`DataFrame.clone` on the output of `from_pandas`.
 
     This requires that :mod:`pandas` and :mod:`pyarrow` are installed.
 
     Parameters
     ----------
-    data : :class:`pandas.DataFrame` or :class:`pandas.Series` or :class:`pandas.Index`
-        Data represented as a pandas DataFrame, Series, or Index.
+    data : pandas.DataFrame, pandas.Series, or pandas.Index
+        Data represented as a :class:`pandas.DataFrame`, :class:`pandas.Series`, or :class:`pandas.Index`.
     schema_overrides : dict, default None
         Support override of inferred types for one or more columns.
     rechunk : bool, default True
@@ -696,7 +697,7 @@ def from_pandas(
         2
         3
     ]
-    """
+    """  # noqa: W505
     if include_index and isinstance(data, pd.Series):
         data = data.reset_index()
 

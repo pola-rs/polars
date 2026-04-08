@@ -204,11 +204,11 @@ def read_csv(
         Make sure that all columns are contiguous in memory by
         aggregating the chunks into a single array.
     use_pyarrow
-        Try to use pyarrow's native CSV parser. This will always
+        Try to use PyArrow's native CSV parser. This will always
         parse dates, even if `try_parse_dates=False`.
         This is not always possible. The set of arguments given to
-        this function determines if it is possible to use pyarrow's
-        native parser. Note that pyarrow and polars may have a
+        this function determines if it is possible to use PyArrow's
+        native parser. Note that PyArrow and Polars may have a
         different strategy regarding type inference.
     storage_options
         Extra options that make sense for `fsspec.open()` or a

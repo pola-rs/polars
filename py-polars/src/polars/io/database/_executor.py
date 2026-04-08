@@ -354,7 +354,7 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_async(conn: Any) -> bool:
-        """Check if the given connection is SQLALchemy async."""
+        """Check if the given connection is SQLAlchemy async."""
         try:
             from sqlalchemy.ext.asyncio import (
                 AsyncConnection,

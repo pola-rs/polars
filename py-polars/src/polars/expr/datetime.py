@@ -508,7 +508,8 @@ class ExprDateTimeNameSpace:
         Parameters
         ----------
         time
-            A python time literal or polars expression/column that resolves to a time.
+            A Python :class:`~datetime.time` literal or Polars expression/column that
+            resolves to a time.
         time_unit : {'ns', 'us', 'ms'}
             Unit of time.
 
@@ -2501,7 +2502,7 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        If you're coming from pandas, you can think of this as a vectorised version
+        If you're coming from Pandas, you can think of this as a vectorised version
         of `pandas.tseries.offsets.MonthBegin().rollback(datetime)`.
 
         Examples
@@ -2552,7 +2553,7 @@ class ExprDateTimeNameSpace:
 
         Notes
         -----
-        If you're coming from pandas, you can think of this as a vectorised version
+        If you're coming from Pandas, you can think of this as a vectorised version
         of `pandas.tseries.offsets.MonthEnd().rollforward(datetime)`.
 
         Examples

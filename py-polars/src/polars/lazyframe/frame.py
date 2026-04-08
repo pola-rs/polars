@@ -258,7 +258,7 @@ class LazyFrame:
 
     Parameters
     ----------
-    data : dict, Sequence, ndarray, Series, or pandas.DataFrame
+    data : dict, Sequence, :class:`numpy.ndarray`, Series, or :class:`pandas.DataFrame`
         Two-dimensional data in various forms; dict input must contain Sequences,
         Generators, or a `range`. Sequence may contain Series or other Sequences.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
@@ -1361,7 +1361,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
+            is run using the Polars in-memory engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars in-memory
@@ -1525,7 +1525,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
+            is run using the Polars in-memory engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars in-memory
@@ -2072,7 +2072,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
+            is run using the Polars in-memory engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars in-memory
@@ -2315,7 +2315,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
+            is run using the Polars in-memory engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars in-memory
@@ -2514,7 +2514,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query
-            is run using the polars in-memory engine. Polars will also
+            is run using the Polars in-memory engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars in-memory
@@ -2819,7 +2819,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
+            using the Polars streaming engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
@@ -2972,9 +2972,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         storage_options: StorageOptionsDict | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
@@ -2989,7 +2989,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         target
-            URI of a table or a DeltaTable object.
+            URI of a table or a :class:`~deltalake.table.DeltaTable` object.
         mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
             How to handle existing data.
 
@@ -2997,8 +2997,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
             - If 'ignore', will not write anything if table already exists.
-            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
-              with the existing data.
+            - If 'merge', return a :class:`~deltalake.table.TableMerger` object to merge
+              data from the DataFrame with the existing data.
         storage_options
             Extra options for the storage backends supported by `deltalake`.
             For cloud storages, this may include configurations for authentication etc.
@@ -3015,15 +3015,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
         delta_write_options
-            Additional keyword arguments while writing a Delta lake Table.
-            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+            Additional keyword arguments while writing a Delta Lake Table.
+            See a list of supported write options in :func:`~deltalake.write_deltalake`.
         delta_merge_options
-            Keyword arguments which are required to `MERGE` a Delta lake Table.
-            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
+            Keyword arguments which are required to `MERGE` a Delta Lake
+            Table. See a list of supported merge options in
+            :meth:`~deltalake.table.DeltaTable.merge`.
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
+            using the Polars streaming engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
@@ -3053,7 +3054,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         normal (non-categorical) strings when written.
 
         Polars columns are always nullable. To write data to a delta table with
-        non-nullable columns, a custom pyarrow schema has to be passed to the
+        non-nullable columns, a custom PyArrow schema has to be passed to the
         `delta_write_options`. See the last example below.
 
         Examples
@@ -3120,11 +3121,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )  # doctest: +SKIP
 
         Sink DataFrame as a Delta Lake table with zstd compression.
-        For all `delta_write_options` keyword arguments, check the deltalake docs
-        `here
-        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
-        and for Writer Properties in particular `here
-        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
+        For all `delta_write_options` keyword arguments, see
+        :func:`~deltalake.write_deltalake`.
 
         >>> import deltalake
         >>> df.lazy().sink_delta(
@@ -3135,8 +3133,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )  # doctest: +SKIP
 
         Merge the DataFrame with an existing Delta Lake table.
-        For all `TableMerger` methods, check the deltalake docs
-        `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
+        For all :class:`~deltalake.table.TableMerger` methods, see the
+        `deltalake docs <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -3442,7 +3440,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
+            using the Polars streaming engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
@@ -3790,7 +3788,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
+            using the Polars streaming engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
@@ -4046,7 +4044,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
+            using the Polars streaming engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
@@ -4194,7 +4192,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
+            using the Polars streaming engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
@@ -4265,7 +4263,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run
-            using the polars streaming engine. Polars will also
+            using the Polars streaming engine. Polars will also
             attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
             environment variable. If it cannot run the query using the
             selected engine, the query is run using the polars streaming
@@ -5431,7 +5429,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        1) If you're coming from pandas, then
+        1) If you're coming from Pandas, then
 
            .. code-block:: python
 
@@ -5735,8 +5733,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tolerance
             Numeric tolerance. By setting this the join will only be done if the near
             keys are within this distance. If an asof join is done on columns of dtype
-            "Date", "Datetime", "Duration" or "Time", use either a datetime.timedelta
-            object or the following string language:
+            "Date", "Datetime", "Duration" or "Time", use either a
+            :class:`~datetime.timedelta` object or the following string language:
 
                 - 1ns   (1 nanosecond)
                 - 1us   (1 microsecond)
@@ -7863,7 +7861,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Notes
         -----
         If you're coming from Pandas, this is similar to
-        `pandas.DataFrame.drop_duplicates`.
+        :meth:`pandas.DataFrame.drop_duplicates`.
 
         Examples
         --------
@@ -8433,8 +8431,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
-        but with `index` replacing `id_vars` and `on` replacing `value_vars`.
+        If you're coming from Pandas, this is similar to
+        :meth:`pandas.DataFrame.melt`, but with `index` replacing `id_vars` and `on`
+        replacing `value_vars`.
         In other frameworks, you might know this operation as `pivot_longer`.
 
         The resulting row order is unspecified.

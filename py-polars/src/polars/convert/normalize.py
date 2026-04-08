@@ -75,7 +75,7 @@ def _normalize_json(
     max_level
         recursion depth
     encoder
-        Custom JSON encoder; if not given, `json.dumps` is used.
+        Custom JSON encoder; if not given, :func:`json.dumps` is used.
     """
     if isinstance(data, dict):
         if max_level > 0:
@@ -119,7 +119,7 @@ def _normalize_json_ordered(
     max_level
         Max number of levels(depth of dict) to normalize.
     encoder
-        Custom JSON encoder; if not given, `json.dumps` is used.
+        Custom JSON encoder; if not given, :func:`json.dumps` is used.
 
     Returns
     -------
@@ -183,7 +183,7 @@ def json_normalize(
     infer_schema_length
         Number of rows to take into consideration to determine the schema.
     encoder
-        Custom JSON encoder function; if not given, `json.dumps` is used.
+        Custom JSON encoder function; if not given, :func:`json.dumps` is used.
 
     Examples
     --------

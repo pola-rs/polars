@@ -215,7 +215,7 @@ class DeltaDataset:
         return self.table_uri_
 
     def table(self) -> DeltaTable:
-        """Fetch the DeltaTable object."""
+        """Fetch the :class:`~deltalake.table.DeltaTable` object."""
         if self.table_.get() is None:
             from deltalake.exceptions import DeltaProtocolError
             from deltalake.table import (

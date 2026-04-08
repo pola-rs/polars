@@ -996,13 +996,15 @@ class DataFrame:
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
-        Return a NumPy ndarray with the given data type.
+        Return a :class:`numpy.ndarray` with the given data type.
 
-        This method ensures a Polars DataFrame can be treated as a NumPy ndarray.
-        It enables `np.asarray` and NumPy universal functions.
+        This method ensures a Polars DataFrame can be treated as a
+        :class:`numpy.ndarray`. It enables :func:`numpy.asarray` and
+        NumPy universal functions.
 
-        See the NumPy documentation for more information:
-        https://numpy.org/doc/stable/user/basics.interoperability.html#the-array-method
+        See the `NumPy interoperability documentation
+        <https://numpy.org/doc/stable/user/basics.interoperability.html#the-array-method>`_
+        for more information.
         """
         if copy is None:
             writable, allow_copy = False, True
@@ -1930,7 +1932,7 @@ class DataFrame:
         use_pyarrow: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert this DataFrame to a NumPy ndarray.
+        Convert this DataFrame to a :class:`numpy.ndarray`.
 
         This operation copies data only when necessary. The conversion is zero copy when
         all of the following hold:
@@ -1945,7 +1947,7 @@ class DataFrame:
         Parameters
         ----------
         order
-            The index order of the returned NumPy array, either C-like or
+            The index order of the returned :class:`numpy.ndarray`, either C-like or
             Fortran-like. In general, using the Fortran-like index order is faster.
             However, the C-like order might be more appropriate to use for downstream
             applications to prevent cloning data, e.g. when reshaping into a
@@ -1965,10 +1967,8 @@ class DataFrame:
             .. _structured array: https://numpy.org/doc/stable/user/basics.rec.html
 
         use_pyarrow
-            Use `pyarrow.Array.to_numpy
-            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-
-            function for the conversion to NumPy if necessary.
+            Use :meth:`pyarrow.Array.to_numpy` for the conversion to NumPy if
+            necessary.
 
             .. deprecated:: 0.20.28
                 Polars now uses its native engine by default for conversion to NumPy.
@@ -2109,7 +2109,7 @@ class DataFrame:
         order: IndexOrder = "fortran",
     ) -> jax.Array | dict[str, jax.Array]:
         """
-        Convert DataFrame to a Jax Array, or dict of Jax Arrays.
+        Convert DataFrame to a :class:`jax.Array`, or dict of :class:`jax.Array`.
 
         .. versionadded:: 0.20.27
 
@@ -2120,13 +2120,13 @@ class DataFrame:
         Parameters
         ----------
         return_type : {"array", "dict"}
-            Set return type; a Jax Array, or dict of Jax Arrays.
+            Set return type; a :class:`jax.Array`, or dict of :class:`jax.Array`.
         device
-            Specify the jax `Device` on which the array will be created; can provide
-            a string (such as "cpu", "gpu", or "tpu") in which case the device is
-            retrieved as `jax.devices(string)[0]`. For more specific control you
-            can supply the instantiated `Device` directly. If None, arrays are
-            created on the default device.
+            Specify the :class:`jax.Device` on which the array will be created; can
+            provide a string (such as "cpu", "gpu", or "tpu") in which case the device
+            is retrieved as `jax.devices(string)[0]`. For more specific control you
+            can supply the instantiated :class:`jax.Device` directly. If None, arrays
+            are created on the default device.
         label
             One or more column names, expressions, or selectors that label the feature
             data; results in a `{"label": ..., "features": ...}` dict being returned
@@ -2136,14 +2136,15 @@ class DataFrame:
             data; if omitted, all columns that are not designated as part of the label
             are used. Only applies when `return_type` is "dict".
         dtype
-            Unify the dtype of all returned arrays; this casts any column that is
-            not already of the required dtype before converting to Array. Note that
-            export will be single-precision (32bit) unless the Jax config/environment
-            directs otherwise (eg: "jax_enable_x64" was set True in the config object
-            at startup, or "JAX_ENABLE_X64" is set to "1" in the environment).
+            Unify the dtype of all returned arrays; this casts any column that is not
+            already of the required dtype before converting to :class:`jax.Array`.
+            Note that export will be single-precision (32bit) unless the Jax
+            config/environment directs otherwise (eg: "jax_enable_x64" was set True
+            in the config object at startup, or "JAX_ENABLE_X64" is set to "1" in
+            the environment).
         order : {"c", "fortran"}
-            The index order of the returned Jax array, either C-like (row-major) or
-            Fortran-like (column-major).
+            The index order of the returned :class:`jax.Array`, either C-like
+            (row-major) or Fortran-like (column-major).
 
         See Also
         --------
@@ -2321,7 +2322,7 @@ class DataFrame:
         dtype: PolarsDataType | None = None,
     ) -> torch.Tensor | dict[str, torch.Tensor] | PolarsDataset:
         """
-        Convert DataFrame to a PyTorch Tensor, Dataset, or dict of Tensors.
+        Convert DataFrame to a :class:`~torch.Tensor`, `:class:`~torch.utils.data.Dataset`, or dict of :class:`~torch.Tensor`.
 
         .. versionadded:: 0.20.23
 
@@ -2332,8 +2333,9 @@ class DataFrame:
         Parameters
         ----------
         return_type : {"tensor", "dataset", "dict"}
-            Set return type; a PyTorch Tensor, PolarsDataset (a frame-specialized
-            TensorDataset), or dict of Tensors.
+            Set return type; a :class:`~torch.Tensor`, PolarsDataset (a
+            frame-specialized :class:`~torch.utils.data.TensorDataset`),
+            or dict of :class:`~torch.Tensor`.
         label
             One or more column names, expressions, or selectors that label the feature
             data; when `return_type` is "dataset", the PolarsDataset will return
@@ -2345,9 +2347,9 @@ class DataFrame:
             are used.
         dtype
             Unify the dtype of all returned tensors; this casts any column that is
-            not of the required dtype before converting to Tensor. This includes
-            the label column *unless* the label is an expression (such as
-            `pl.col("label_column").cast(pl.Int16)`).
+            not of the required dtype before converting to :class:`~torch.Tensor`.
+            This includes the label column *unless* the label is an expression
+            (such as `pl.col("label_column").cast(pl.Int16)`).
 
         See Also
         --------
@@ -2365,7 +2367,7 @@ class DataFrame:
         ...     }
         ... )
 
-        Standard return type (Tensor), with f32 supertype:
+        Standard return type (:class:`~torch.Tensor`), with f32 supertype:
 
         >>> df.to_torch(dtype=pl.Float32)
         tensor([[ 0.0000,  1.0000,  1.5000],
@@ -2414,7 +2416,8 @@ class DataFrame:
          (tensor([2., 0., 0.], dtype=torch.float16),),
          (tensor([ 3.0000,  1.0000, -2.2500], dtype=torch.float16),)]
 
-        Pass PolarsDataset to a DataLoader, designating the label:
+        Pass PolarsDataset to a :class:`~torch.utils.data.DataLoader`,
+        designating the label:
 
         >>> from torch.utils.data import DataLoader
         >>> ds = df.to_torch("dataset", label="lbl")
@@ -2453,7 +2456,7 @@ class DataFrame:
         ...     shuffle=True,
         ...     batch_size=64,
         ... )  # doctest: +SKIP
-        """
+        """  # noqa: W505
         if return_type not in ("dataset", "dict") and (
             label is not None or features is not None
         ):
@@ -3436,7 +3439,7 @@ class DataFrame:
             * If passing a list of colnames (used as the source of the sparkline data)
               the default sparkline settings are used (eg: line chart with no markers).
             * For more control an `xlsxwriter`-compliant options dict can be supplied,
-              in which case three additional polars-specific keys are available:
+              in which case three additional Polars-specific keys are available:
               "columns", "insert_before", and "insert_after". These allow you to define
               the source columns and position the sparkline(s) with respect to other
               table columns. If no position directive is given, sparklines are added to
@@ -3495,14 +3498,14 @@ class DataFrame:
           https://xlsxwriter.readthedocs.io/format.html#format-methods-and-format-properties
 
         * Conditional formatting dictionaries should provide xlsxwriter-compatible
-          definitions; polars will take care of how they are applied on the worksheet
+          definitions; Polars will take care of how they are applied on the worksheet
           with respect to the relative sheet/column position. For supported options,
           see: https://xlsxwriter.readthedocs.io/working_with_conditional_formats.html
 
         * Similarly, sparkline option dictionaries should contain xlsxwriter-compatible
-          key/values, as well as a mandatory polars "columns" key that defines the
+          key/values, as well as a mandatory Polars "columns" key that defines the
           sparkline source data; these source columns should all be adjacent. Two other
-          polars-specific keys are available to help define where the sparkline appears
+          Polars-specific keys are available to help define where the sparkline appears
           in the table: "insert_after", and "insert_before". The value associated with
           these keys should be the name of a column in the exported table.
           https://xlsxwriter.readthedocs.io/working_with_sparklines.html
@@ -4180,10 +4183,10 @@ class DataFrame:
             are needed via ``pyarrow_options``. Some options are not supported when
             enabled (e.g. ``statistics="full"``, ``metadata``, ``mkdir``).
         pyarrow_options
-            Arguments passed to `pyarrow.parquet.write_table`.
+            Arguments passed to :func:`pyarrow.parquet.write_table`.
 
             If you pass `partition_cols` here, the dataset will be written
-            using `pyarrow.parquet.write_to_dataset`.
+            using :func:`pyarrow.parquet.write_to_dataset`.
             The `partition_cols` parameter leads to write the dataset to a directory.
             Similar to Spark's partitioned datasets. For native partitioned
             writes, consider using ``partition_by`` instead.
@@ -4388,8 +4391,9 @@ class DataFrame:
             SQL database. If your table name contains special characters, it should
             be quoted.
         connection
-            An existing SQLAlchemy or ADBC connection against the target database, or
-            a URI string that will be used to instantiate such a connection, such as:
+            An existing :class:`SQLAlchemy <sqlalchemy.engine.Engine>` or ADBC
+            connection against the target database, or a URI string that will
+            be used to instantiate such a connection, such as:
 
             * "postgresql://user:pass@server:port/database"
             * "sqlite:////path/to/database.db"
@@ -4774,7 +4778,7 @@ class DataFrame:
         Parameters
         ----------
         target
-            URI of a table or a DeltaTable object.
+            URI of a table or a :class:`~deltalake.table.DeltaTable` object.
         mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
             How to handle existing data.
 
@@ -4782,8 +4786,8 @@ class DataFrame:
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
             - If 'ignore', will not write anything if table already exists.
-            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
-              with the existing data.
+            - If 'merge', return a :class:`~deltalake.table.TableMerger` object to merge
+              data from the DataFrame with the existing data.
         overwrite_schema
             If True, allows updating the schema of the table.
 
@@ -4806,11 +4810,12 @@ class DataFrame:
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
         delta_write_options
-            Additional keyword arguments while writing a Delta lake Table.
-            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+            Additional keyword arguments while writing a Delta Lake Table.
+            See a list of supported write options in :func:`~deltalake.write_deltalake`.
         delta_merge_options
-            Keyword arguments which are required to `MERGE` a Delta lake Table.
-            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
+            Keyword arguments which are required to `MERGE` a Delta Lake
+            Table. See a list of supported merge options in
+            :meth:`~deltalake.table.DeltaTable.merge`.
 
         Raises
         ------
@@ -4830,7 +4835,7 @@ class DataFrame:
         normal (non-categorical) strings when written.
 
         Polars columns are always nullable. To write data to a delta table with
-        non-nullable columns, a custom pyarrow schema has to be passed to the
+        non-nullable columns, a custom PyArrow schema has to be passed to the
         `delta_write_options`. See the last example below.
 
         Examples
@@ -4888,11 +4893,8 @@ class DataFrame:
         ... )  # doctest: +SKIP
 
         Write DataFrame as a Delta Lake table with zstd compression.
-        For all `delta_write_options` keyword arguments, check the deltalake docs
-        `here
-        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
-        and for Writer Properties in particular `here
-        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
+        For all `delta_write_options` keyword arguments, see
+        :func:`~deltalake.write_deltalake`.
 
         >>> import deltalake
         >>> df.write_delta(
@@ -4903,8 +4905,8 @@ class DataFrame:
         ... )  # doctest: +SKIP
 
         Merge the DataFrame with an existing Delta Lake table.
-        For all `TableMerger` methods, check the deltalake docs
-        `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
+        For all :class:`~deltalake.table.TableMerger` methods, see the
+        `deltalake docs <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
 
         >>> df = pl.DataFrame(
         ...     {
@@ -7512,7 +7514,7 @@ class DataFrame:
 
         Notes
         -----
-        1) If you're coming from pandas, then
+        1) If you're coming from Pandas, then
 
            .. code-block:: python
 
@@ -7901,8 +7903,8 @@ class DataFrame:
         tolerance
             Numeric tolerance. By setting this the join will only be done if the near
             keys are within this distance. If an asof join is done on columns of dtype
-            "Date", "Datetime", "Duration" or "Time", use either a datetime.timedelta
-            object or the following string language:
+            "Date", "Datetime", "Duration" or "Time", use either a
+            :class:`~datetime.timedelta` object or the following string language:
 
                 - 1ns   (1 nanosecond)
                 - 1us   (1 microsecond)
@@ -8415,7 +8417,7 @@ class DataFrame:
 
         Notes
         -----
-        For joining on columns with categorical data, see :class:`polars.StringCache`.
+        For joining on columns with categorical data, see :class:`~polars.StringCache`.
         """
         require_same_type(self, other)
 
@@ -9713,9 +9715,9 @@ class DataFrame:
 
         Notes
         -----
-        If you're coming from pandas, this is similar to `pandas.DataFrame.melt`,
-        but with `index` replacing `id_vars` and `on` replacing `value_vars`.
-        In other frameworks, you might know this operation as `pivot_longer`.
+        If you're coming from Pandas, this is similar to :meth:`pandas.DataFrame.melt`,
+        but with `index` replacing `id_vars` and `on` replacing `value_vars`. In other
+        frameworks, you might know this operation as `pivot_longer`.
 
         The resulting row order is unspecified.
 
@@ -11137,7 +11139,7 @@ class DataFrame:
         Notes
         -----
         If you're coming from Pandas, this is similar to
-        `pandas.DataFrame.drop_duplicates`.
+        :meth:`pandas.DataFrame.drop_duplicates`.
 
         Examples
         --------
@@ -12402,8 +12404,7 @@ class DataFrame:
         """
         Return pairwise Pearson product-moment correlation coefficients between columns.
 
-        See numpy `corrcoef` for more information:
-        https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
+        See :func:`numpy.corrcoef` for more information.
 
         Parameters
         ----------
@@ -12411,7 +12412,7 @@ class DataFrame:
             If given, a new column that contains the labels (column names)
             associated with each row is added, with this name.
         **kwargs
-            Keyword arguments that are passed to `numpy.corrcoef`.
+            Keyword arguments that are passed to :func:`numpy.corrcoef`.
 
         Notes
         -----

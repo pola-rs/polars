@@ -1,7 +1,7 @@
 """
 Minimal testing script of the BytecodeParser class.
 
-This can be run without polars installed, and so can be easily run in CI
+This can be run without Polars installed, and so can be easily run in CI
 over all supported Python versions.
 
 All that needs to be installed is pytest, numpy, and ipython.

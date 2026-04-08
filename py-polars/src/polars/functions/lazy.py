@@ -2143,7 +2143,7 @@ def collect_all(
     engine
         Select the engine used to process the query, optional.
         At the moment, if set to `"auto"` (default), the query
-        is run using the polars in-memory engine. Polars will also
+        is run using the Polars in-memory engine. Polars will also
         attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
         environment variable. If it cannot run the query using the
         selected engine, the query is run using the polars in-memory
@@ -2246,7 +2246,7 @@ def collect_all_async(
     engine
         Select the engine used to process the query, optional.
         At the moment, if set to `"auto"` (default), the query
-        is run using the polars in-memory engine. Polars will also
+        is run using the Polars in-memory engine. Polars will also
         attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
         environment variable. If it cannot run the query using the
         selected engine, the query is run using the polars in-memory

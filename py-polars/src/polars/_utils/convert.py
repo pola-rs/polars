@@ -46,7 +46,7 @@ def parse_as_duration_string(td: timedelta | str | None) -> str | None:
 
 
 def _timedelta_to_duration_string(td: timedelta) -> str:
-    """Convert a Python timedelta object to a Polars duration string."""
+    """Convert a :class:`~datetime.timedelta` object to a Polars duration string."""
     # Positive duration
     if td.days >= 0:
         d = f"{td.days}d" if td.days != 0 else ""
@@ -75,12 +75,12 @@ def negate_duration_string(duration: str) -> str:
 
 
 def date_to_int(d: date) -> int:
-    """Convert a Python time object to an integer."""
+    """Convert a :class:`~datetime.date` object to an integer."""
     return (d - EPOCH_DATE).days
 
 
 def time_to_int(t: time) -> int:
-    """Convert a Python time object to an integer."""
+    """Convert a :class:`~datetime.time` object to an integer."""
     t = t.replace(tzinfo=timezone.utc)
     seconds = t.hour * SECONDS_PER_HOUR + t.minute * 60 + t.second
     microseconds = t.microsecond
@@ -88,7 +88,7 @@ def time_to_int(t: time) -> int:
 
 
 def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
-    """Convert a Python datetime object to an integer."""
+    """Convert a :class:`~datetime.datetime` object to an integer."""
     # Make sure to use UTC rather than system time zone
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -108,7 +108,7 @@ def datetime_to_int(dt: datetime, time_unit: TimeUnit) -> int:
 
 
 def timedelta_to_int(td: timedelta, time_unit: TimeUnit) -> int:
-    """Convert a Python timedelta object to an integer."""
+    """Convert a :class:`~datetime.timedelta` object to an integer."""
     seconds = td.days * SECONDS_PER_DAY + td.seconds
     microseconds = td.microseconds
 
@@ -124,12 +124,12 @@ def timedelta_to_int(td: timedelta, time_unit: TimeUnit) -> int:
 
 @lru_cache(256)
 def to_py_date(value: int | float) -> date:
-    """Convert an integer or float to a Python date object."""
+    """Convert an integer or float to a :class:`~datetime.date` object."""
     return EPOCH_DATE + timedelta(days=value)
 
 
 def to_py_time(value: int) -> time:
-    """Convert an integer to a Python time object."""
+    """Convert an integer to a :class:`~datetime.time` object."""
     # Fast path for 00:00
     if value == 0:
         return time()
@@ -147,7 +147,7 @@ def to_py_datetime(
     time_unit: TimeUnit,
     time_zone: str | None = None,
 ) -> datetime:
-    """Convert an integer or float to a Python datetime object."""
+    """Convert an integer or float to a :class:`~datetime.datetime` object."""
     if time_unit == "us":
         td = timedelta(microseconds=value)
     elif time_unit == "ns":
@@ -195,7 +195,7 @@ def _parse_fixed_tz_offset(offset: str) -> tzinfo:
 
 
 def to_py_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
-    """Convert an integer or float to a Python timedelta object."""
+    """Convert an integer or float to a :class:`~datetime.timedelta` object."""
     if time_unit == "us":
         return timedelta(microseconds=value)
     elif time_unit == "ns":
@@ -207,7 +207,7 @@ def to_py_timedelta(value: int | float, time_unit: TimeUnit) -> timedelta:
 
 
 def to_py_decimal(prec: int, value: str) -> Decimal:
-    """Convert decimal components to a Python Decimal object."""
+    """Convert decimal components to a :class:`decimal.Decimal` object."""
     return _create_decimal_with_prec(prec)(value)
 
 

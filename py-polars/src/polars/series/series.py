@@ -197,7 +197,7 @@ class Series:
         When not specified, name is set to an empty string.
     values : ArrayLike, default None
         One-dimensional data in various forms. Supported are: Sequence, Series,
-        pyarrow Array, and numpy ndarray.
+        :class:`pyarrow.Array`, and :class:`numpy.ndarray`.
     dtype : DataType, default None
         Data type of the resulting Series. If set to `None` (default), the data type is
         inferred from the `values` input. The strategy for data type inference depends
@@ -1592,13 +1592,15 @@ class Series:
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
-        Return a NumPy ndarray with the given data type.
+        Return a :class:`numpy.ndarray` with the given data type.
 
-        This method ensures a Polars Series can be treated as a NumPy ndarray.
-        It enables `np.asarray` and NumPy universal functions.
+        This method ensures a Polars Series can be treated as a
+        :class:`numpy.ndarray`. It enables :func:`numpy.asarray` and NumPy universal
+        functions.
 
-        See the NumPy documentation for more information:
-        https://numpy.org/doc/stable/user/basics.interoperability.html#the-array-method
+        See the `NumPy interoperability documentation
+        <https://numpy.org/doc/stable/user/basics.interoperability.html#the-array-method>`_
+        for more information.
 
         See Also
         --------
@@ -4667,10 +4669,7 @@ class Series:
 
         Examples
         --------
-        Replicating the pandas
-        `pd.Series.factorize
-        <https://pandas.pydata.org/docs/reference/api/pandas.Series.factorize.html>`_
-        method.
+        Replicating the :meth:`pandas.Series.factorize` method.
 
         >>> s = pl.Series("values", ["a", None, "x", "a"])
         >>> s.cast(pl.Categorical).to_physical()
@@ -4905,7 +4904,7 @@ class Series:
         zero_copy_only: bool | None = None,
     ) -> np.ndarray[Any, Any]:
         """
-        Convert this Series to a NumPy ndarray.
+        Convert this Series to a :class:`numpy.ndarray`.
 
         This operation copies data only when necessary. The conversion is zero copy when
         all of the following hold:
@@ -4926,10 +4925,8 @@ class Series:
             causes conversions that are not zero-copy to fail.
 
         use_pyarrow
-            First convert to PyArrow, then call `pyarrow.Array.to_numpy
-            <https://arrow.apache.org/docs/python/generated/pyarrow.Array.html#pyarrow.Array.to_numpy>`_
-            to convert to NumPy. If set to `False`, Polars' own conversion logic is
-            used.
+            First convert to PyArrow, then call :meth:`pyarrow.Array.to_numpy` to
+            convert to NumPy. If set to `False`, Polars' own conversion logic is used.
 
             .. deprecated:: 0.20.28
                 Polars now uses its native engine by default for conversion to NumPy.
@@ -5019,7 +5016,7 @@ class Series:
     @unstable()
     def to_jax(self, device: jax.Device | str_ | None = None) -> jax.Array:
         """
-        Convert this Series to a Jax Array.
+        Convert this Series to a :class:`jax.Array`.
 
         .. versionadded:: 0.20.27
 
@@ -5030,11 +5027,11 @@ class Series:
         Parameters
         ----------
         device
-            Specify the jax `Device` on which the array will be created; can provide
-            a string (such as "cpu", "gpu", or "tpu") in which case the device is
-            retrieved as `jax.devices(string)[0]`. For more specific control you
-            can supply the instantiated `Device` directly. If None, arrays are
-            created on the default device.
+            Specify the :class:`jax.Device` on which the array will be created; can
+            provide a string (such as "cpu", "gpu", or "tpu") in which case the device
+            is retrieved as `jax.devices(string)[0]`. For more specific control you
+            can supply the instantiated :class:`jax.Device` directly. If None, arrays
+            are created on the default device.
 
         Examples
         --------
@@ -5069,7 +5066,7 @@ class Series:
     @unstable()
     def to_torch(self) -> torch.Tensor:
         """
-        Convert this Series to a PyTorch Tensor.
+        Convert this Series to a :class:`torch.Tensor`.
 
         .. versionadded:: 0.20.23
 
@@ -8537,7 +8534,7 @@ class Series:
 
         Notes
         -----
-        Null values are preserved. If you're coming from pandas, this matches
+        Null values are preserved. If you're coming from Pandas, this matches
         their ``fill_method=None`` behaviour.
 
         Examples

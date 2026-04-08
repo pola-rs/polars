@@ -580,7 +580,7 @@ class ListNameSpace:
 
         See Also
         --------
-        :meth:`Series.list.get` : Get the value by index in the sublists.
+        :meth:`~Series.list.get` : Get the value by index in the sublists.
 
         Examples
         --------

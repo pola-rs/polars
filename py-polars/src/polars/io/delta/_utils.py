@@ -35,7 +35,7 @@ def _get_delta_lake_table(
     delta_table_options: dict[str, Any] | None = None,
 ) -> deltalake.DeltaTable:
     """
-    Initialize a Delta lake table for use in read and scan operations.
+    Initialize a Delta Lake table for use in read and scan operations.
 
     Notes
     -----

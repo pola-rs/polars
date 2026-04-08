@@ -81,7 +81,7 @@ def read_ipc(
         Stop reading from IPC file after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
     use_pyarrow
-        Use pyarrow or the native Rust reader.
+        Use PyArrow or the native Rust reader.
     memory_map
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
@@ -271,7 +271,7 @@ def read_ipc_stream(
         Stop reading from IPC stream after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
     use_pyarrow
-        Use pyarrow or the native Rust reader.
+        Use PyArrow or the native Rust reader.
     storage_options
         Extra options that make sense for `fsspec.open()` or a particular storage
         connection, e.g. host, port, username, password, etc.

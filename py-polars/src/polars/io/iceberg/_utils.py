@@ -73,7 +73,7 @@ def _scan_pyarrow_dataset_impl(
     Parameters
     ----------
     tbl
-        pyarrow dataset
+        PyArrow dataset
     with_columns
         Columns that are projected
     iceberg_table_filter
@@ -83,7 +83,7 @@ def _scan_pyarrow_dataset_impl(
     snapshot_id:
         The snapshot ID to scan from.
     batch_size
-        The maximum row count for scanned pyarrow record batches.
+        The maximum row count for scanned PyArrow record batches.
     kwargs:
         For backward compatibility
 

@@ -146,7 +146,7 @@ class DateTimeNameSpace:
 
     def min(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
-        Return minimum as Python datetime.
+        Return minimum as Python :class:`~datetime.datetime`.
 
         Examples
         --------
@@ -159,7 +159,7 @@ class DateTimeNameSpace:
 
     def max(self) -> dt.date | dt.datetime | dt.timedelta | None:
         """
-        Return maximum as Python datetime.
+        Return maximum as Python :class:`~datetime.datetime`.
 
         Examples
         --------
@@ -2098,7 +2098,8 @@ class DateTimeNameSpace:
         Parameters
         ----------
         time
-            A python time literal or Series of the same length as this Series.
+            A Python :class:`~datetime.time` literal or Series of the same length
+            as this Series.
         time_unit : {'ns', 'us', 'ms'}
             Unit of time.
 
@@ -2129,7 +2130,7 @@ class DateTimeNameSpace:
 
         Notes
         -----
-        If you're coming from pandas, you can think of this as a vectorised version
+        If you're coming from Pandas, you can think of this as a vectorised version
         of `pandas.tseries.offsets.MonthBegin().rollback(datetime)`.
 
         Examples
@@ -2160,7 +2161,7 @@ class DateTimeNameSpace:
 
         Notes
         -----
-        If you're coming from pandas, you can think of this as a vectorised version
+        If you're coming from Pandas, you can think of this as a vectorised version
         of `pandas.tseries.offsets.MonthEnd().rollforward(datetime)`.
 
         Examples

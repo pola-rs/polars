@@ -9583,7 +9583,7 @@ Consider using {self}.implode() instead"""
 
         Notes
         -----
-        Null values are preserved. If you're coming from pandas, this matches
+        Null values are preserved. If you're coming from Pandas, this matches
         their ``fill_method=None`` behaviour.
 
         Examples
@@ -11922,7 +11922,7 @@ Consider using {self}.implode() instead"""
         .. deprecated:: 0.20.11
             This method has been renamed to :meth:`deserialize`.
             Note that the new method operates on file-like inputs rather than strings.
-            Enclose your input in `io.StringIO` to keep the same behavior.
+            Enclose your input in :class:`~io.StringIO` to keep the same behavior.
 
         Parameters
         ----------
