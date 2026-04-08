@@ -448,6 +448,8 @@ pub enum PhysNodeKind {
         tmp_right_key_col: Option<PlSmallStr>,
         left_by: Option<Vec<PlSmallStr>>,
         right_by: Option<Vec<PlSmallStr>>,
+        by_descending: Option<Vec<bool>>,
+        by_nulls_last: Option<Vec<bool>>,
         args: JoinArgs,
     },
 

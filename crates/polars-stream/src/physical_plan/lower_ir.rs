@@ -1096,6 +1096,11 @@ pub fn lower_ir(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let options = options.options.clone();
+            #[cfg(feature = "asof_join")]
+            let asof_options = || match args.how {
+                JoinType::AsOf(ref asof_options) => asof_options,
+                _ => unreachable!(),
+            };
 
             #[cfg(feature = "iejoin")]
             if args.how.is_range() {
@@ -1193,43 +1198,41 @@ pub fn lower_ir(
                 && key_nulls_last.is_some();
 
             #[cfg(feature = "asof_join")]
-            let (use_streaming_asof_join, asof_by) = 'use_asof_join: {
-                let JoinType::AsOf(ref asof_options) = args.how else {
-                    break 'use_asof_join (false, None);
-                };
+            let (mut by_descending, mut by_nulls_last) = (Default::default(), Default::default());
+            #[cfg(feature = "asof_join")]
+            let use_streaming_asof_join = 'use_asof_join: {
+                if !args.how.is_asof() {
+                    break 'use_asof_join false;
+                }
                 let (Some(left_by), Some(right_by)) =
-                    (&asof_options.left_by, &asof_options.right_by)
+                    (&asof_options().left_by, &asof_options().right_by)
                 else {
-                    break 'use_asof_join (true, None);
+                    break 'use_asof_join true;
                 };
                 let col = |by: &PlSmallStr, ea: &mut Arena<AExpr>| {
                     AExprBuilder::col(by.clone(), ea).expr_ir_retain_name(ea)
                 };
-                let left_by_expr = left_by.iter().map(|s| col(s, expr_arena)).collect_vec();
-                let right_by_expr = right_by.iter().map(|s| col(s, expr_arena)).collect_vec();
-                let Some(left_by_sorted) = ctx.sortedness.are_keys_sorted_any(
-                    input_left,
-                    &left_by_expr,
-                    expr_arena,
-                    &input_left_schema,
-                ) else {
-                    break 'use_asof_join (false, None);
+                let mut by_sorted = |by: &Vec<_>, input, input_schema| {
+                    let by_expr = by.iter().map(|s| col(s, expr_arena)).collect_vec();
+                    ctx.sortedness
+                        .are_keys_sorted_any(input, &by_expr, expr_arena, input_schema)
                 };
-                let Some(right_by_sorted) = ctx.sortedness.are_keys_sorted_any(
-                    input_right,
-                    &right_by_expr,
-                    expr_arena,
-                    &input_right_schema,
-                ) else {
-                    break 'use_asof_join (false, None);
+                let left_by_sorted = by_sorted(left_by, input_left, &input_left_schema);
+                let right_by_sorted = by_sorted(right_by, input_right, &input_right_schema);
+                let use_streaming_asof_join = match (&left_by_sorted, &right_by_sorted) {
+                    (Some(lbs), Some(rbs)) => lbs == rbs,
+                    _ => break 'use_asof_join false,
                 };
-                (
-                    left_by_sorted == right_by_sorted,
-                    Some((left_by.clone(), right_by.clone())),
-                )
+                by_descending = left_by_sorted
+                    .as_ref()
+                    .map(|v| v.iter().map(|s| s.descending.unwrap()).collect_vec());
+                by_nulls_last = left_by_sorted
+                    .as_ref()
+                    .map(|v| v.iter().map(|s| s.nulls_last.unwrap()).collect_vec());
+                use_streaming_asof_join
             };
             #[cfg(not(feature = "asof_join"))]
-            let use_streaming_asof_join = (false, None);
+            let use_streaming_asof_join = false;
 
             if (args.how.is_equi()
                 || args.how.is_semi_anti()
@@ -1366,10 +1369,6 @@ pub fn lower_ir(
                     #[cfg(feature = "asof_join")]
                     _ if use_streaming_asof_join => {
                         assert!(left_on_names.len() == 1 && right_on_names.len() == 1);
-                        let (left_by, right_by) = match asof_by {
-                            Some((left_by, right_by)) => (Some(left_by), Some(right_by)),
-                            None => (None, None),
-                        };
                         phys_sm.insert(PhysNode::new(
                             output_schema,
                             PhysNodeKind::AsOfJoin {
@@ -1379,8 +1378,10 @@ pub fn lower_ir(
                                 right_on: right_on_names[0].clone(),
                                 tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
                                 tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
-                                left_by,
-                                right_by,
+                                left_by: asof_options().left_by.clone(),
+                                right_by: asof_options().right_by.clone(),
+                                by_descending,
+                                by_nulls_last,
                                 args: args.clone(),
                             },
                         ))
