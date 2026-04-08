@@ -2623,13 +2623,23 @@ impl DataFrame {
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be
     /// inserted as columns.
+    ///
+    /// # Arguments
+    /// * `cols` - The struct columns to unnest
+    /// * `separator` - Optional separator for nested field names
+    /// * `max_depth` - Maximum depth to unnest. `None` means unlimited, `Some(1)` unnests one level.
     #[cfg(feature = "dtype-struct")]
     pub fn unnest(
         &self,
         cols: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         separator: Option<&str>,
+        max_depth: Option<usize>,
     ) -> PolarsResult<DataFrame> {
-        self.unnest_impl(cols.into_iter().map(Into::into).collect(), separator)
+        self.unnest_impl(
+            cols.into_iter().map(Into::into).collect(),
+            separator,
+            max_depth,
+        )
     }
 
     #[cfg(feature = "dtype-struct")]
@@ -2637,23 +2647,60 @@ impl DataFrame {
         &self,
         cols: PlHashSet<PlSmallStr>,
         separator: Option<&str>,
+        max_depth: Option<usize>,
     ) -> PolarsResult<DataFrame> {
+        fn unnest_series(
+            s: &Series,
+            prefix: &str,
+            separator: Option<&str>,
+            remaining_depth: Option<usize>,
+            out: &mut Vec<Column>,
+        ) {
+            if let Ok(ca) = s.struct_() {
+                for f in ca.fields_as_series() {
+                    let fld_name = match separator {
+                        Some(sep) => {
+                            polars_utils::format_pl_smallstr!("{}{}{}", prefix, sep, f.name())
+                        },
+                        None => f.name().clone(),
+                    };
+
+                    // Check if we should recurse: remaining_depth is None (unlimited) or > 1
+                    let should_recurse = match remaining_depth {
+                        None => true,
+                        Some(d) => d > 1,
+                    };
+
+                    if should_recurse && f.dtype().is_struct() {
+                        let next_depth = remaining_depth.map(|d| d - 1);
+                        unnest_series(&f, &fld_name, separator, next_depth, out);
+                    } else {
+                        let mut f = f;
+                        f.rename(fld_name);
+                        out.push(Column::from(f));
+                    }
+                }
+            }
+        }
+
         let mut new_cols = Vec::with_capacity(std::cmp::min(self.width() * 2, self.width() + 128));
         let mut count = 0;
         for s in self.columns() {
             if cols.contains(s.name()) {
+                // max_depth=Some(0) means no-op, keep the column as-is
+                if max_depth == Some(0) {
+                    new_cols.push(s.clone());
+                    count += 1;
+                    continue;
+                }
                 let ca = s.struct_()?.clone();
-                new_cols.extend(ca.fields_as_series().into_iter().map(|mut f| {
-                    if let Some(separator) = &separator {
-                        f.rename(polars_utils::format_pl_smallstr!(
-                            "{}{}{}",
-                            s.name(),
-                            separator,
-                            f.name()
-                        ));
-                    }
-                    Column::from(f)
-                }));
+                unnest_series(
+                    &ca.into_series(),
+                    s.name(),
+                    separator,
+                    max_depth,
+                    &mut new_cols,
+                );
                 count += 1;
             } else {
                 new_cols.push(s.clone())

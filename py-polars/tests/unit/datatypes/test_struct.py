@@ -1897,3 +1897,64 @@ def test_join_struct_error_lazy_26276() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
         lhs.join(rhs, on="x").collect()
+
+
+def test_unnest_max_depth_12353() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [{"foo": {"a": 1, "b": 2}}, {"foo": {"a": 3, "b": 4}}],
+            "y": [{"bar": {"a": 5, "b": 6}}, {"bar": {"a": 7, "b": 8}}],
+        }
+    )
+
+    # Test unlimited depth unnest on single column
+    result = df.unnest("x", separator=".", max_depth=None)
+    assert result.columns == ["x.foo.a", "x.foo.b", "y"]
+    assert result["x.foo.a"].to_list() == [1, 3]
+    assert result["x.foo.b"].to_list() == [2, 4]
+
+    # Test unlimited depth unnest on all columns
+    result = df.unnest("x", "y", separator=".", max_depth=None)
+    assert result.columns == ["x.foo.a", "x.foo.b", "y.bar.a", "y.bar.b"]
+    assert result["x.foo.a"].to_list() == [1, 3]
+    assert result["y.bar.a"].to_list() == [5, 7]
+
+
+def test_unnest_max_depth_deeply_nested() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [{"a": {"b": {"c": 1}}}],
+        }
+    )
+    # Unlimited depth
+    result = df.unnest("x", max_depth=None)
+    assert result.columns == ["c"]
+    assert result["c"].to_list() == [1]
+
+    # max_depth=0 - no-op, column unchanged
+    result = df.unnest("x", max_depth=0)
+    assert result.columns == ["x"]
+    assert result["x"].dtype == pl.Struct(
+        {"a": pl.Struct({"b": pl.Struct({"c": pl.Int64})})}
+    )
+
+    # max_depth=-1 raises ValueError
+    with pytest.raises(
+        ValueError, match="`max_depth` must be a positive integer or None"
+    ):
+        df.unnest("x", max_depth=-1)
+
+    # max_depth=1 (default) - only unnest one level
+    result = df.unnest("x", max_depth=1)
+    assert result.columns == ["a"]
+    assert result["a"].dtype == pl.Struct({"b": pl.Struct({"c": pl.Int64})})
+
+    # max_depth=2 - unnest two levels
+    result = df.unnest("x", max_depth=2)
+    assert result.columns == ["b"]
+    assert result["b"].dtype == pl.Struct({"c": pl.Int64})
+
+    # max_depth=3 - unnest three levels (all)
+    result = df.unnest("x", max_depth=3)
+    assert result.columns == ["c"]
+    assert result["c"].to_list() == [1]
