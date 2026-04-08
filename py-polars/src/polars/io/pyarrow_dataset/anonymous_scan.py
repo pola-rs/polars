@@ -42,17 +42,25 @@ def _build_pyarrow_expr(node: list[Any]) -> Any:
     if tag == "is_not_null":
         return _build_pyarrow_expr(node[1]).is_valid()
     if tag == "lit_str":
-        return pa.compute.scalar(node[1])
+        return pa.scalar(node[1])
     if tag == "lit_bool":
-        return pa.compute.scalar(node[1])
+        return pa.scalar(node[1])
     if tag == "lit_i64" or tag == "lit_f64":
-        return pa.compute.scalar(node[1])
+        return pa.scalar(node[1])
     if tag == "lit_null":
-        return pa.compute.scalar(None)
+        return pa.scalar(None)
     if tag == "is_in":
         field_expr = _build_pyarrow_expr(node[1])
         values = [_build_pyarrow_expr(v) for v in node[2]]
-        value_set = pa.array([v.as_py() for v in values])
+        nulls_equal = node[3] if len(node) > 3 else False
+
+        # Filter out None values from value_set when nulls_equal is False
+        # to match Polars semantics
+        py_values = [v.as_py() for v in values]
+        if not nulls_equal:
+            py_values = [v for v in py_values if v is not None]
+
+        value_set = pa.array(py_values)
         return pa.compute.is_in(field_expr, value_set=value_set)
 
     msg = f"unknown predicate node tag: {tag!r}"
