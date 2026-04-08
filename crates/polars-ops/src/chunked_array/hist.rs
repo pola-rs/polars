@@ -248,7 +248,7 @@ pub fn hist_series(
         let bins_s = bins.rechunk();
         owned_bins = bins_s;
         let bins = owned_bins.f64().unwrap();
-        let bins = bins.cont_slice().unwrap();
+        let bins = bins.cont_slice()?;
         bins_arg = Some(bins);
     };
     polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
