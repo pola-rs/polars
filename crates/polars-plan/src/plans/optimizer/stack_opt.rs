@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars_core::prelude::PolarsResult;
 use polars_core::schema::Schema;
 
@@ -24,17 +26,15 @@ impl StackOptimizer {
         let mut plans = vec![];
         let mut exprs = vec![];
         let mut scratch = vec![];
-
-        // Only used when we stack schema's, e.g. for StructEval (struct.with_fields)
         let mut children = vec![];
-        let mut schema_stack: Vec<Schema> = vec![];
-        let mut eval_stack: Vec<(Node, usize)> = vec![];
+        let mut schema_stack: Vec<Arc<Schema>> = vec![];
 
         // Run loop until reaching fixed point.
         #[allow(clippy::field_reassign_with_default)]
         while changed {
             // Recurse into sub plans and expressions and apply rules.
             changed = false;
+
             plans.push(lp_top);
             while let Some(current_node) = plans.pop() {
                 // Apply rules
@@ -56,11 +56,15 @@ impl StackOptimizer {
                     continue;
                 }
 
-                while let Some(expr_ir) = scratch.pop() {
-                    exprs.push(expr_ir.node());
-                }
-
                 let input_schema = get_input_schema(lp_arena, current_node);
+
+                schema_stack.clear();
+                let schema_idx = schema_stack.len();
+                schema_stack.push(input_schema.into_owned());
+
+                while let Some(expr_ir) = scratch.pop() {
+                    exprs.push((expr_ir.node(), schema_idx));
+                }
 
                 let mut ctx = OptimizeExprContext::default();
                 #[cfg(feature = "python")]
@@ -73,51 +77,7 @@ impl StackOptimizer {
                 ctx.has_inputs = !get_input(lp_arena, current_node).is_empty();
 
                 // process the expressions on the stack and apply optimizations.
-
-                // Fast path: no schema stacking needed.
-                while let Some(current_expr_node) = exprs.pop() {
-                    {
-                        let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-                        if expr.is_leaf() {
-                            continue;
-                        }
-                    }
-                    for rule in rules.iter_mut() {
-                        while let Some(x) =
-                            rule.optimize_expr(expr_arena, current_expr_node, &input_schema, ctx)?
-                        {
-                            expr_arena.replace(current_expr_node, x);
-                            changed = true;
-                        }
-                    }
-                    let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
-
-                    // traverse subexpressions and add to the stack
-                    match expr {
-                        #[cfg(feature = "dtype-struct")]
-                        AExpr::StructEval { expr, evaluation } => {
-                            let struct_field = expr_arena
-                                .get(current_expr_node)
-                                .to_field_impl(&ToFieldContext::new(expr_arena, &input_schema))?;
-
-                            let mut eval_schema = (**input_schema).clone();
-                            eval_schema
-                                .insert(get_pl_structfields_name(), struct_field.dtype().clone());
-
-                            let schema_idx = schema_stack.len();
-                            schema_stack.push(eval_schema);
-
-                            exprs.push(*expr);
-                            for node in evaluation.iter().map(ExprIR::node).rev() {
-                                eval_stack.push((node, schema_idx));
-                            }
-                        },
-                        expr => expr.inputs_rev(&mut exprs),
-                    }
-                }
-
-                // Slow path: process evaluation subtrees with extended schemas.
-                while let Some((current_expr_node, schema_idx)) = eval_stack.pop() {
+                while let Some((current_expr_node, schema_idx)) = exprs.pop() {
                     {
                         let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                         if expr.is_leaf() {
@@ -135,6 +95,7 @@ impl StackOptimizer {
                     }
                     let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
 
+                    // traverse subexpressions and add to the stack
                     match expr {
                         #[cfg(feature = "dtype-struct")]
                         AExpr::StructEval { expr, evaluation } => {
@@ -142,23 +103,22 @@ impl StackOptimizer {
                                 .get(current_expr_node)
                                 .to_field_impl(&ToFieldContext::new(expr_arena, schema))?;
 
-                            let mut eval_schema = schema.clone();
+                            let mut eval_schema = (**schema).clone();
                             eval_schema
                                 .insert(get_pl_structfields_name(), struct_field.dtype().clone());
+                            let eval_schema_idx = schema_stack.len();
+                            schema_stack.push(Arc::new(eval_schema));
 
-                            let new_schema_idx = schema_stack.len();
-                            schema_stack.push(eval_schema);
-
-                            eval_stack.push((*expr, schema_idx));
+                            exprs.push((*expr, schema_idx));
                             for node in evaluation.iter().map(ExprIR::node).rev() {
-                                eval_stack.push((node, new_schema_idx));
+                                exprs.push((node, eval_schema_idx));
                             }
                         },
                         expr => {
                             children.clear();
                             expr.inputs_rev(&mut children);
                             for node in children.drain(..) {
-                                eval_stack.push((node, schema_idx));
+                                exprs.push((node, schema_idx));
                             }
                         },
                     }
