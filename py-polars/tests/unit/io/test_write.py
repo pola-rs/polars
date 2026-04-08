@@ -41,19 +41,19 @@ READ_WRITE_FUNC_PARAM = [
 )
 @pytest.mark.write_disk
 def test_write_async(
-    read_func: Callable[[Path], pl.DataFrame],
-    write_func: Callable[[pl.DataFrame, Path], None],
+    read_func: Callable[[str], pl.DataFrame],
+    write_func: Callable[[pl.DataFrame, str], None],
     tmp_path: Path,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = (tmp_path / "1").absolute()
-    path = format_file_uri(path)  # type: ignore[assignment]
+    path_str = format_file_uri(path)
 
     df = pl.DataFrame({"x": 1})
 
-    write_func(df, path)
+    write_func(df, path_str)
 
-    assert_frame_equal(read_func(path), df)
+    assert_frame_equal(read_func(path_str), df)
 
 
 @pytest.mark.parametrize(

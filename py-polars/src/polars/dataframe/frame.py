@@ -69,9 +69,9 @@ from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
+    NO_DEFAULT,
     _in_notebook,
     is_bool_sequence,
-    no_default,
     normalize_filepath,
     parse_version,
     qualified_type_name,
@@ -9168,7 +9168,7 @@ class DataFrame:
     def get_column(self, name: str, *, default: Any) -> Any: ...
 
     def get_column(
-        self, name: str, *, default: Any | NoDefault = no_default
+        self, name: str, *, default: Any | NoDefault = NO_DEFAULT
     ) -> Series | Any:
         """
         Get a single column by name.
@@ -9219,7 +9219,7 @@ class DataFrame:
         try:
             return wrap_s(self._df.get_column(name))
         except ColumnNotFoundError:
-            if default is no_default:
+            if default is NO_DEFAULT:
                 raise
             return default
 

@@ -11,7 +11,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import NdjsonCompression
+    from polars._typing import NdjsonCompression, PolarsDataType
     from tests.conftest import PlMonkeyPatch
 
 
@@ -43,7 +43,7 @@ def test_scan_ndjson(foods_ndjson_path: Path) -> None:
 
 
 def test_scan_ndjson_with_schema(foods_ndjson_path: Path) -> None:
-    schema = {
+    schema: dict[str, PolarsDataType] = {
         "category": pl.Categorical,
         "calories": pl.Int64,
         "fats_g": pl.Float64,

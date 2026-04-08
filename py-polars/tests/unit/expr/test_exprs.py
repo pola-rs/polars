@@ -826,34 +826,29 @@ def test_concat_deprecation() -> None:
     ],
 )
 def test_reinterpret_numeric_dtype_13659(compatible_set: list[pl.DataType]) -> None:
-    try:
-        for source_dtype, target_dtype in permutations(compatible_set, 2):
-            q = (
-                pl.DataFrame({"a": pl.Series([0, 1, 2]).cast(source_dtype)})
-                .lazy()
-                .select(pl.col("a").reinterpret(dtype=target_dtype))
+    for source_dtype, target_dtype in permutations(compatible_set, 2):
+        q = (
+            pl.DataFrame({"a": pl.Series([0, 1, 2]).cast(source_dtype)})
+            .lazy()
+            .select(pl.col("a").reinterpret(dtype=target_dtype))
+        )
+
+        assert q.collect_schema().dtypes() == [target_dtype]
+
+        expect = (
+            pl.DataFrame({"a": pl.Series([0, 1, 2]).cast(target_dtype)})
+            if source_dtype.is_integer() and target_dtype.is_integer()
+            else pl.DataFrame(
+                {
+                    "a": pl.Series([0, 1, 2])
+                    .cast(source_dtype)
+                    .to_numpy()
+                    .view(pl.Series([1]).cast(target_dtype).to_numpy().dtype)
+                }
             )
+        )
 
-            assert q.collect_schema().dtypes() == [target_dtype]
-
-            expect = (
-                pl.DataFrame({"a": pl.Series([0, 1, 2]).cast(target_dtype)})
-                if source_dtype.is_integer() and target_dtype.is_integer()
-                else pl.DataFrame(
-                    {
-                        "a": pl.Series([0, 1, 2])
-                        .cast(source_dtype)
-                        .to_numpy()
-                        .view(pl.Series([1]).cast(target_dtype).to_numpy().dtype)
-                    }
-                )
-            )
-
-            assert_frame_equal(q.collect(), expect)
-
-    except Exception as e:
-        msg = f"{e}; {(source_dtype, target_dtype) = }"
-        raise type(e)(msg) from e
+        assert_frame_equal(q.collect(), expect)
 
 
 def test_reinterpret_errors_13659() -> None:
