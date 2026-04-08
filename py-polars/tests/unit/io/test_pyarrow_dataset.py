@@ -563,3 +563,13 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
         with_columns=None,
         allow_pyarrow_filter=False,
     )[1]
+
+
+def test_pyarrow_dataset_streaming_source() -> None:
+    df = pl.DataFrame({"item": ["foo", "bar", "baz"], "price": [10.0, 20.0, 30.0]})
+    dataset = pl.scan_pyarrow_dataset(
+        ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+    )
+    assert "streaming-python-scan" in dataset.select(pl.all()).show_graph(
+        engine="streaming", plan_stage="physical", raw_output=True
+    )

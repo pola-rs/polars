@@ -1367,9 +1367,8 @@ fn to_graph_rec<'a>(
             });
 
             let (name, get_batch_fn) = match options.python_source {
-                S::Pyarrow => todo!(),
-                S::Cuda => todo!(),
-                S::IOPlugin => {
+                S::Cuda => unreachable!(),
+                S::IOPlugin | S::Pyarrow => {
                     let batch_size = Some(get_ideal_morsel_size());
                     let output_schema = output_schema.clone();
 
