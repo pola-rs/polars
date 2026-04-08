@@ -2482,3 +2482,11 @@ def test_setitem_invalid_series_dtype_27110() -> None:
     idx = pl.Series([0.0, 2.0])
     with pytest.raises(TypeError, match="cannot use Series of dtype"):
         s[idx] = 99
+
+
+def test_full_null_cast_to_empty_struct_23276() -> None:
+    s = pl.Series([None])
+    assert s.cast(pl.Struct({}))[0] is None
+
+    s = pl.Series([None, None, None])
+    assert s.cast(pl.Struct({})).to_list() == [None, None, None]
