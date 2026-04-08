@@ -20,7 +20,7 @@ polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true, features = ["python"] }
-polars-ooc = { workspace = true }
+polars-ooc = { workspace = true, default-features = false }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
@@ -282,7 +282,9 @@ nightly = ["polars/nightly"]
 pymethods = []
 allow_unused = []
 
-full = [
+fast_alloc = ["polars-ooc/fast_alloc"]
+
+full_functionality = [
   "async",
   "pymethods",
   "optimizations",
@@ -299,6 +301,8 @@ full = [
   "new_streaming",
 ]
 
+full = ["full_functionality", "fast_alloc"]
+
 rt32 = []
 rt64 = ["polars/bigidx"]
 rtcompat = ["polars/bigidx"]
@@ -310,7 +314,6 @@ rtcompat = ["polars/bigidx"]
 default = [
   "full",
 ]
-default_alloc = ["polars-ooc/default_alloc"]
 
 [lints]
 workspace = true

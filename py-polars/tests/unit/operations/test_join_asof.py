@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import itertools
 import math
 import random
@@ -1665,5 +1666,23 @@ def test_join_asof_nans(strategy: AsofJoinStrategy) -> None:
             "value": [100, 101, 102, 103],
             "value_right": [100, 200, 400, 400],
         }
+    )
+    assert_frame_equal(actual, expected)
+
+
+def test_join_asof_by_nulls_27165() -> None:
+    dataframe = functools.partial(
+        pl.DataFrame,
+        schema_overrides={
+            "group": pl.Int32,
+            "index": pl.get_index_type(),
+            "index_right": pl.get_index_type(),
+        },
+    )
+    left = dataframe({"key": [1.0], "group": [0]}).with_row_index()
+    right = dataframe({"key": [0.0], "group": [None]}).with_row_index()
+    actual = left.join_asof(right, on="key", by="group", strategy="nearest")
+    expected = dataframe(
+        {"index": 0, "key": [1.0], "group": [0], "index_right": [None]}
     )
     assert_frame_equal(actual, expected)

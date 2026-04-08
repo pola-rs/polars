@@ -15,6 +15,8 @@ mod len;
 mod mean;
 mod min_max;
 mod min_max_by;
+#[cfg(feature = "moment")]
+mod skew_kurtosis;
 mod sum;
 mod var_std;
 

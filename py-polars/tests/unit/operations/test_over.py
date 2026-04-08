@@ -197,3 +197,15 @@ def test_count_over_aggregated_list_respects_inner_nulls_27031() -> None:
     )
 
     assert result.get_column("x_count").to_list() == [2, 2, 2]
+
+
+def test_over_empty_order_by_27067() -> None:
+    # Empty order_by with no partition_by should raise, not panic.
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(x=1).select(pl.col.x.over(order_by=[]))
+
+    # Empty order_by with partition_by should work (order_by is ignored).
+    df = pl.DataFrame({"a": [1, 2, 3], "g": ["x", "x", "y"]})
+    result = df.select(pl.col("a").sum().over("g", order_by=[]))
+    expected = df.select(pl.col("a").sum().over("g"))
+    assert_frame_equal(result, expected)

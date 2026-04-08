@@ -176,6 +176,15 @@ impl OptimizationRule for SimplifyBooleanRule {
                 let ae = expr_arena.get(input.node());
                 eval_negate(ae)
             },
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::DynamicPred { pred },
+                options,
+            } if pred.id().is_none() => {
+                // The sender of this dynamic predicate was dropped,
+                // so the result is always true.
+                Some(AExpr::Literal(Scalar::from(true).into()))
+            },
             _ => None,
         };
         Ok(out)
@@ -437,6 +446,30 @@ impl OptimizationRule for SimplifyExprRule {
                             None
                         }
                     },
+                    _ => None,
+                }
+            },
+            // drop_nulls().first() -> first(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::First(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::FirstNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
+            // drop_nulls().last()  -> last(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::Last(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::LastNonNull(input[0].node()))),
                     _ => None,
                 }
             },

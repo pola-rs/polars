@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import os
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -45,6 +44,7 @@ from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
+    parse_into_list_of_expressions_require_selectors,
 )
 from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
@@ -5055,11 +5055,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 10        │
         └───────────┘
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select(pyexprs))
 
     def select_seq(
@@ -5085,11 +5081,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         select
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
     def group_by(
@@ -6566,11 +6558,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
     def with_columns_seq(
@@ -6605,11 +6593,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         with_columns
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 
     @deprecated(
@@ -7982,9 +7966,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         parsed_subset: list[PyExpr] | None = None
         if subset is not None:
-            parsed_subset = parse_into_list_of_expressions(
-                subset, __require_selectors=True
-            )
+            parsed_subset = parse_into_list_of_expressions_require_selectors(subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, parsed_subset, keep))
 
     def drop_nans(

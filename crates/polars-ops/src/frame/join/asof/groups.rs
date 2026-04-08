@@ -98,13 +98,11 @@ where
     let split_by_right = split_and_flatten(by_right, n_threads);
     let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
 
-    // TODO: handle nulls more efficiently. Right now we just join on the value
-    // ignoring the validity mask, and ignore the nulls later.
     let right_slices = split_by_right
         .iter()
         .map(|ca| {
             assert_eq!(ca.chunks().len(), 1);
-            ca.downcast_iter().next().unwrap().values_iter().copied()
+            ca.downcast_iter().next().unwrap().non_null_values_iter()
         })
         .collect();
     let hash_tbls = build_tables(right_slices, false);

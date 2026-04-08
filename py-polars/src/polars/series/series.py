@@ -1514,7 +1514,7 @@ class Series:
 
             - ``int``: a single row index.
             - ``Series`` (Boolean): a boolean mask.
-            - ``Series`` (UInt32/UInt64): an index array.
+            - ``Series`` (Integer): an index array.
             - ``ndarray``: a NumPy boolean mask or integer index array.
             - ``list`` / ``tuple``: an index sequence (cast to UInt32).
         value
@@ -1563,10 +1563,11 @@ class Series:
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
-            elif key.dtype == UInt64:
-                self._s = self.scatter(key.cast(UInt32), value)._s
-            elif key.dtype == UInt32:
+            elif key.dtype.is_integer():
                 self._s = self.scatter(key, value)._s
+            else:
+                msg = f"cannot use Series of dtype {key.dtype!r} for indexing; expected boolean or integer dtype"
+                raise TypeError(msg)
 
         # TODO: implement for these types without casting to series
         elif _check_for_numpy(key) and isinstance(key, np.ndarray):
@@ -2590,13 +2591,13 @@ class Series:
             Set the intervals to be left-closed instead of right-closed.
         include_breaks
             Include a column with the right endpoint of the bin each observation falls
-            in. This will change the data type of the output from a
-            :class:`Categorical` to a :class:`Struct`.
+            in. This will change the data type of the output from an
+            :class:`Enum` to a :class:`Struct`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Categorical` if `include_breaks` is set to
+            Series of data type :class:`Enum` if `include_breaks` is set to
             `False` (default), otherwise a Series of data type :class:`Struct`.
 
         See Also
@@ -2610,7 +2611,7 @@ class Series:
         >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
         >>> s.cut([-1, 1], labels=["a", "b", "c"])
         shape: (5,)
-        Series: 'foo' [cat]
+        Series: 'foo' [enum]
         [
             "a"
             "a"
@@ -2627,7 +2628,7 @@ class Series:
         ┌─────┬────────────┬────────────┐
         │ foo ┆ breakpoint ┆ category   │
         │ --- ┆ ---        ┆ ---        │
-        │ i64 ┆ f64        ┆ cat        │
+        │ i64 ┆ f64        ┆ enum       │
         ╞═════╪════════════╪════════════╡
         │ -2  ┆ -1.0       ┆ (-inf, -1] │
         │ -1  ┆ -1.0       ┆ (-inf, -1] │

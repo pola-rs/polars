@@ -399,6 +399,7 @@ def test_join_chunks_alignment_4720() -> None:
     )
 
 
+@pytest.mark.may_fail_auto_streaming  # SORTED_ASC flags
 def test_jit_sort_joins() -> None:
     n = 200
     # Explicitly specify numpy dtype because of different defaults on Windows

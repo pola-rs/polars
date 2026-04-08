@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::hash::Hash;
-use std::sync::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{RwLock, Weak};
 
 use polars_core::frame::column::ScalarColumn;
 use polars_utils::unique_id::UniqueId;
@@ -41,13 +41,35 @@ pub struct DynamicPred {
     inner: Arc<Inner>,
 }
 
+#[derive(Clone)]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+pub struct DynamicPredWeakRef {
+    inner: Weak<Inner>,
+}
+
 impl Debug for DynamicPred {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "dynamic_pred: {:}", self.id())
     }
 }
 
+impl Debug for DynamicPredWeakRef {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(id) = self.id() {
+            write!(f, "dynamic_pred: {:}", id)
+        } else {
+            write!(f, "dynamic_pred: dropped")
+        }
+    }
+}
+
 impl PartialEq for DynamicPred {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
+
+impl PartialEq for DynamicPredWeakRef {
     fn eq(&self, other: &Self) -> bool {
         self.id() == other.id()
     }
@@ -70,6 +92,14 @@ impl DynamicPred {
         }
     }
 
+    fn downgrade(&self) -> DynamicPredWeakRef {
+        DynamicPredWeakRef {
+            inner: Arc::downgrade(&self.inner),
+        }
+    }
+}
+
+impl DynamicPred {
     pub fn id(&self) -> &UniqueId {
         &self.inner.id
     }
@@ -81,10 +111,18 @@ impl DynamicPred {
         }
         self.inner.is_set.store(true, Ordering::Release);
     }
+}
+
+impl DynamicPredWeakRef {
+    pub fn id(&self) -> Option<UniqueId> {
+        Some(self.inner.upgrade()?.id)
+    }
 
     pub fn evaluate(&self, columns: &[Column]) -> PolarsResult<Column> {
-        if self.inner.is_set.load(Ordering::Acquire) {
-            let guard = self.inner.pred.read().unwrap();
+        if let Some(inner) = self.inner.upgrade()
+            && inner.is_set.load(Ordering::Acquire)
+        {
+            let guard = inner.pred.read().unwrap();
             let dyn_func = guard.as_ref().unwrap();
             if let Some(pred) = dyn_func.evaluate(columns)? {
                 return Ok(pred);
@@ -102,7 +140,9 @@ impl DynamicPred {
 
 pub fn new_dynamic_pred(node: Node, arena: &mut Arena<AExpr>) -> (Node, DynamicPred) {
     let pred = DynamicPred::new();
-    let function = IRFunctionExpr::DynamicPred { pred: pred.clone() };
+    let function = IRFunctionExpr::DynamicPred {
+        pred: pred.downgrade(),
+    };
     let options = function.function_options();
     let aexpr = AExpr::Function {
         input: vec![ExprIR::from_node(node, arena)],

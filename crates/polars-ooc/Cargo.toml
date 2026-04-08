@@ -17,17 +17,18 @@ polars-utils = { workspace = true, features = ["sysinfo"] }
 slotmap = { workspace = true }
 
 [target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
-mimalloc = { version = "0.1", default-features = false }
+mimalloc = { version = "0.1", default-features = false, optional = true }
 
 # Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
 [target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten")))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"] }
+tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"], optional = true }
 
 [target.'cfg(all(target_family = "unix", target_os = "macos"))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"] }
+tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"], optional = true }
 
 [lints]
 workspace = true
 
 [features]
-default_alloc = []
+default = ["fast_alloc"]
+fast_alloc = ["dep:mimalloc", "dep:tikv-jemallocator"]

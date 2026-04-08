@@ -324,7 +324,7 @@ fn timestamp_col() -> ParquetResult<()> {
     if let Array::Int96(array) = array {
         let a = array
             .into_iter()
-            .map(|x| x.map(int96_to_i64_ns))
+            .map(|x| x.and_then(int96_to_i64_ns))
             .collect::<Vec<_>>();
         assert_eq!(expected, a);
     } else {
