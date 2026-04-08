@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import typing
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -467,7 +466,7 @@ def test_merge_join(
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
 
-    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert "merge-join" in dot, "merge-join not used in plan"
     assert_frame_equal(actual, expected, check_row_order=check_row_order)
 
 
@@ -531,7 +530,7 @@ def test_join_dtypes(
     )
     expected = q_hashjoin.collect(engine="in-memory")
     actual = q_hashjoin.collect(engine="streaming")
-    assert "equi-join" in typing.cast("str", dot), "hash-join not used in plan"
+    assert "equi-join" in dot, "hash-join not used in plan"
     assert_frame_equal(actual, expected, check_row_order=False)
 
     q_mergejoin = df_sorted(df_left).join(
@@ -546,7 +545,7 @@ def test_join_dtypes(
     )
     expected = q_mergejoin.collect(engine="in-memory")
     actual = q_mergejoin.collect(engine="streaming")
-    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert "merge-join" in dot, "merge-join not used in plan"
     assert_frame_equal(actual, expected, check_row_order=False)
 
 
@@ -574,7 +573,7 @@ def test_merge_join_exprs() -> None:
         maintain_order="none",
     )
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
-    assert "merge-join" in typing.cast("str", dot), "merge-join not used in plan"
+    assert "merge-join" in dot, "merge-join not used in plan"
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
@@ -603,9 +602,9 @@ def test_merge_join_applicable(
         left_descending == right_descending
         and left_nulls_last == right_nulls_last is not None
     ):
-        assert "merge-join" in typing.cast("str", dot)
+        assert "merge-join" in dot
     else:
-        assert "merge-join" not in typing.cast("str", dot)
+        assert "merge-join" not in dot
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 

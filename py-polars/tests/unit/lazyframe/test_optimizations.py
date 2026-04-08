@@ -1,7 +1,6 @@
 import datetime as dt
 import io
 import itertools
-import typing
 
 import pyarrow as pa
 import pyarrow.dataset as pad
@@ -579,7 +578,7 @@ def test_concat_str_sortedness_26466() -> None:
         .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     )
 
-    assert "sorted-group-by" in typing.cast("str", dot)
+    assert "sorted-group-by" in dot
 
     for e in [pl.concat_str("x", pl.lit("c")), pl.concat_str("x", ignore_nulls=True)]:
         dot = (
@@ -589,7 +588,7 @@ def test_concat_str_sortedness_26466() -> None:
             .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
         )
 
-        assert "sorted-group-by" not in typing.cast("str", dot)
+        assert "sorted-group-by" not in dot
 
 
 def test_select_all_columns_no_projection() -> None:
