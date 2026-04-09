@@ -251,11 +251,12 @@ impl SlicePushDown {
         all_slice_ae_nodes_with_direct_col_input: &mut PlHashSet<Node>,
         maintain_errors: bool,
     ) {
-        aexpr_postvisit_traversal(
+        aexpr_property_pullup_traversal(
             current_ae_node,
             &mut expr_arena,
             self.ae_nodes_scratch.get(),
             self.ae_slice_pd_state_scratch.get(),
+            &mut |_, _| None,
             &mut |ae_node, inputs, expr_arena| {
                 aexpr_slice_pushdown_top(
                     ae_node,
