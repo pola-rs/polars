@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
@@ -14,10 +15,12 @@ use polars_ops::frame::{JoinArgs, JoinType};
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height};
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::{unique_column_name, unitvec};
 use slotmap::SlotMap;
 
@@ -32,7 +35,7 @@ type ExprNodeKey = Node;
 pub(crate) struct ExprCache {
     is_elementwise: PlHashMap<Node, bool>,
     is_input_independent: PlHashMap<Node, bool>,
-    is_length_preserving: PlHashMap<Node, bool>,
+    output_heights: PlHashMap<Node, ExprProjectionHeight>,
 }
 
 impl ExprCache {
@@ -40,7 +43,7 @@ impl ExprCache {
         Self {
             is_elementwise: PlHashMap::with_capacity(capacity),
             is_input_independent: PlHashMap::with_capacity(capacity),
-            is_length_preserving: PlHashMap::with_capacity(capacity),
+            output_heights: PlHashMap::with_capacity(capacity),
         }
     }
 }
@@ -51,6 +54,8 @@ struct LowerExprContext<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
     cache: &'a mut ExprCache,
+    node_scratch: &'a mut ScratchVec<Node>,
+    ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
 }
 
 impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
@@ -301,124 +306,25 @@ fn build_input_independent_node_with_ctx(
     )))
 }
 
-#[recursive::recursive]
-pub fn is_length_preserving_rec(
-    expr_key: ExprNodeKey,
-    arena: &Arena<AExpr>,
-    cache: &mut PlHashMap<ExprNodeKey, bool>,
-) -> bool {
-    if let Some(ret) = cache.get(&expr_key) {
-        return *ret;
-    }
-
-    let ret = match arena.get(expr_key) {
-        // Handled separately in `Eval`.
-        AExpr::Element => unreachable!(),
-        // Mapped to `Column` in `StructEval`.
-        AExpr::StructField(_) => unreachable!(),
-
-        AExpr::Gather { .. }
-        | AExpr::Explode { .. }
-        | AExpr::Filter { .. }
-        | AExpr::Agg(_)
-        | AExpr::Slice { .. }
-        | AExpr::Len
-        | AExpr::Literal(_) => false,
-
-        AExpr::Column(_) => true,
-
-        AExpr::Cast {
-            expr: inner,
-            dtype: _,
-            options: _,
-        }
-        | AExpr::Sort {
-            expr: inner,
-            options: _,
-        }
-        | AExpr::SortBy {
-            expr: inner,
-            by: _,
-            sort_options: _,
-        } => is_length_preserving_rec(*inner, arena, cache),
-
-        AExpr::BinaryExpr { left, op: _, right } => {
-            // As long as at least one input is length-preserving the other side
-            // should either broadcast or have the same length.
-            is_length_preserving_rec(*left, arena, cache)
-                || is_length_preserving_rec(*right, arena, cache)
-        },
-        AExpr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            is_length_preserving_rec(*predicate, arena, cache)
-                || is_length_preserving_rec(*truthy, arena, cache)
-                || is_length_preserving_rec(*falsy, arena, cache)
-        },
-        AExpr::AnonymousAgg { .. } => false,
-        AExpr::AnonymousFunction {
-            input,
-            function: _,
-            options,
-            fmt_str: _,
-        }
-        | AExpr::Function {
-            input,
-            function: _,
-            options,
-        } => {
-            // TODO: actually inspect the functions? This is overly conservative.
-            options.is_length_preserving()
-                && input
-                    .iter()
-                    .all(|expr| is_length_preserving_rec(expr.node(), arena, cache))
-        },
-        AExpr::Eval {
-            expr,
-            evaluation: _,
-            variant: _,
-        } => is_length_preserving_rec(*expr, arena, cache),
-        #[cfg(feature = "dynamic_group_by")]
-        AExpr::Rolling {
-            function: _,
-            index_column: _,
-            period: _,
-            offset: _,
-            closed_window: _,
-        } => true,
-        AExpr::StructEval {
-            expr,
-            evaluation: _,
-        } => is_length_preserving_rec(*expr, arena, cache),
-        AExpr::Over {
-            function: _, // Actually shouldn't matter for window functions.
-            partition_by: _,
-            order_by: _,
-            mapping,
-        } => !matches!(mapping, WindowMapping::Explode),
-    };
-
-    cache.insert(expr_key, ret);
-    ret
-}
-
-#[expect(dead_code)]
-pub fn is_length_preserving(
-    expr_key: ExprNodeKey,
-    expr_arena: &Arena<AExpr>,
-    cache: &mut ExprCache,
-) -> bool {
-    is_length_preserving_rec(expr_key, expr_arena, &mut cache.is_length_preserving)
-}
-
 fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
-    is_length_preserving_rec(
+    let cache = RefCell::new(&mut ctx.cache.output_heights);
+
+    let height = aexpr_property_pullup_traversal(
         expr_key,
-        ctx.expr_arena,
-        &mut ctx.cache.is_length_preserving,
-    )
+        &mut ctx.expr_arena,
+        ctx.node_scratch.get(),
+        ctx.ae_height_scratch.get(),
+        &mut |ae_node, _| cache.borrow().get(&ae_node).copied(),
+        &mut |ae_node, input_heights, expr_arena| {
+            let out = aexpr_projection_height(expr_arena.get(ae_node), input_heights);
+
+            cache.borrow_mut().insert(ae_node, out);
+
+            out
+        },
+    );
+
+    matches!(height, ExprProjectionHeight::Column)
 }
 
 fn build_fallback_node_with_ctx(
@@ -2604,6 +2510,8 @@ pub fn lower_exprs(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
@@ -2632,6 +2540,8 @@ pub fn build_select_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
 }
@@ -2711,6 +2621,8 @@ pub fn build_length_preserving_select_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     let already_length_preserving = exprs
         .iter()

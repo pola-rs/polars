@@ -3,7 +3,7 @@ use polars_utils::collection::{Collection, CollectionWrap};
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::WindowMapping;
-use crate::plans::{AExpr, aexpr_postvisit_traversal};
+use crate::plans::{AExpr, aexpr_property_pullup_traversal};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ExprProjectionHeight {
@@ -42,11 +42,12 @@ pub fn aexpr_projection_height_rec(
     stack: &mut ScratchVec<Node>,
     inputs_stack: &mut ScratchVec<ExprProjectionHeight>,
 ) -> ExprProjectionHeight {
-    aexpr_postvisit_traversal(
+    aexpr_property_pullup_traversal(
         ae_node,
         &mut expr_arena,
         stack.get(),
         inputs_stack.get(),
+        &mut |_, _| None,
         &mut |ae_node, input_heights, expr_arena| {
             aexpr_projection_height(expr_arena.get(ae_node), input_heights)
         },
