@@ -1342,18 +1342,19 @@ fn to_graph_rec<'a>(
             use pyo3::{IntoPyObjectExt, PyTypeInfo, intern};
 
             let mut options = options.clone();
-            let with_columns = options.with_columns.take();
-            let n_rows = options.n_rows.take();
-
-            let python_scan_function = options.scan_fn.take().unwrap().0;
-
-            let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
 
             let (pl_predicate, predicate_serialized) = polars_mem_engine::python_scan_predicate(
                 &mut options,
                 ctx.expr_arena,
                 &mut ctx.expr_conversion_state,
             )?;
+
+            let with_columns = options.with_columns.take();
+            let n_rows = options.n_rows.take();
+
+            let python_scan_function = options.scan_fn.take().unwrap().0;
+
+            let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
 
             let output_schema = options.output_schema.unwrap_or(options.schema);
             let validate_schema = options.validate_schema;
