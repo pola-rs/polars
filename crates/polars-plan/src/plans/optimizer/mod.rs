@@ -211,9 +211,6 @@ pub fn optimize(
         ir_arena.replace(root, ir);
 
         repeat_slice_pd_after_filter_pd = slice_pushdown_opt.slice_node_in_optimized_plan;
-
-        // Expressions use the stack optimizer.
-        rules.push(Box::new(slice_pushdown_opt));
     }
 
     if run_pushdowns {

@@ -443,6 +443,10 @@ def test_slice_pushdown_expr_25473() -> None:
     )
 
     assert_frame_equal(
+        lf.select((pl.col("a") + 1).slice(1, 2)).collect(), pl.DataFrame({"a": [2, 3]})
+    )
+
+    assert_frame_equal(
         lf.select(
             a=(
                 pl.when(pl.col("a") == 1).then(pl.lit("one")).otherwise(pl.lit("other"))
@@ -648,3 +652,260 @@ true,1
 false,2
 """
     assert pl.scan_csv(csv).filter(pl.col.a).select(pl.len()).collect().item() == 1
+
+
+def test_slice_pushdown_expr_create_ir_slice_26592() -> None:
+    lf = pl.scan_csv(
+        pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}).write_csv().encode()
+    )
+
+    q = lf.select(
+        a_first=pl.min_horizontal(
+            pl.min_horizontal(pl.all()), 99, pl.col("a") + pl.col("b") + 999
+        ).first()
+    )
+    plan = q.explain(optimizations=pl.QueryOptFlags(comm_subexpr_elim=False))
+
+    assert "SLICE: Positive { offset: 0, len: 1 }" in plan
+    # Temporarily inserted expr slice should be pruned
+    assert ".slice(" not in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_first", [0], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(a_first=pl.first("a"), b_first=pl.first("b"))
+    plan = q.explain()
+
+    assert "SLICE: Positive { offset: 0, len: 1 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a_first": 0, "b_first": 9}),
+    )
+
+    q = lf.select(
+        a_first=pl.first("a"),
+        a_head1=pl.col("a").head(1),
+        a_head3_sum=pl.col("a").head(3).sum(),
+    )
+    plan = q.explain()
+    assert "SLICE: Positive { offset: 0, len: 3 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_first", [0], dtype=pl.Int64),
+                pl.Series("a_head1", [0], dtype=pl.Int64),
+                pl.Series("a_head3_sum", [3], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(
+        a_first=pl.first("a"),
+        a_slice3=pl.col("a").slice(3, 1).sum(),
+    )
+    plan = q.explain()
+    assert "SLICE: Positive { offset: 0, len: 4 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_first", [0], dtype=pl.Int64),
+                pl.Series("a_slice3", [3], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(a_last=pl.last("a"))
+    plan = q.explain()
+    assert "SLICE: Negative { offset_from_end: 1, len: 1 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_last", [4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(a_last=pl.last("a"), tail_3=pl.col("a").tail(3))
+    plan = q.explain()
+    assert "SLICE: Negative { offset_from_end: 3, len: 3 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_last", [4, 4, 4], dtype=pl.Int64),
+                pl.Series("tail_3", [2, 3, 4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    # NULL length with negative offset -> set len to (-offset) as IdxSize
+    q = lf.select(a_off_neg3=pl.col("a").slice(-3))
+    plan = q.explain()
+    assert "SLICE: Negative { offset_from_end: 3, len: 3 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_off_neg3", [2, 3, 4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_slice_pushdown_expr_no_common_26592() -> None:
+    lf = pl.scan_csv(
+        pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}).write_csv().encode()
+    )
+
+    q = lf.select(
+        a_first=pl.first("a"),
+        b_sort_first=pl.col("b").sort().first(),
+    )
+    plan = q.explain()
+    assert "SLICE: " not in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a_first": 0, "b_sort_first": 5}))
+
+
+def test_slice_pushdown_expr_prune_slice_26592() -> None:
+    lf = pl.scan_csv(
+        pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}).write_csv().encode()
+    )
+
+    q = lf.select(
+        a_1_1=pl.col("a").slice(1, 1).max(),
+        b_1_2=pl.col("b").slice(1, 2),
+    )
+    plan = q.explain()
+
+    # slice(1, 2) should be pruned from the expression tree
+    assert 'col("b").alias("b_1_2")' in plan
+    assert '.slice(offset=0, length=1).max().alias("a_1_1")' in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a_1_1": [1, 1],
+                "b_1_2": [8, 7],
+            }
+        ),
+    )
+
+    q = lf.select(
+        a_n2_1=pl.col("a").slice(-2, 1).max(),
+        b_n2_2=pl.col("b").slice(-2, 2),
+    )
+    plan = q.explain()
+
+    # slice(-2, 2) should be pruned from the expression tree
+    assert 'col("b").alias("b_n2_2")' in plan
+    assert '.slice(offset=-2, length=1).max().alias("a_n2_1")' in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a_n2_1": [3, 3],
+                "b_n2_2": [6, 5],
+            }
+        ),
+    )
+
+
+def test_slice_pushdown_expr_create_ir_slice_offset_correction_26592() -> None:
+    lf = pl.scan_csv(
+        pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}).write_csv().encode()
+    )
+
+    q = lf.select(a_off2=pl.col("a").slice(2, 1), a_off3=pl.col("a").slice(3, 1))
+    plan = q.explain()
+    assert "SLICE: Positive { offset: 2, len: 2 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_off2", [2], dtype=pl.Int64),
+                pl.Series("a_off3", [3], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(a_off2=pl.col("a").slice(-2, 1), a_off3=pl.col("a").slice(-3, 1))
+    plan = q.explain()
+    assert "SLICE: Negative { offset_from_end: 3, len: 2 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_off2", [3], dtype=pl.Int64),
+                pl.Series("a_off3", [2], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    # NULL length -> IdxSize::MAX
+    q = lf.select(a_off2=pl.col("a").slice(2))
+    plan = q.explain()
+    assert "SLICE: Positive { offset: 2, len: " in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_off2", [2, 3, 4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_slice_pushdown_expr_height_rules() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+
+    # Single unknown height - push
+    q = lf.select((((pl.lit(pl.Series("x", [0, 1, 2, 3, 4])) + 1) + 2) + 3).head(1))
+    plan = q.explain()
+    assert "Series[x].slice(offset=0, length=1)" in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 6}))
+
+    # Multiple unknown heights - block at binary expr
+    q = lf.select(
+        (
+            (
+                (
+                    (pl.lit(pl.Series("x", [0, 1, 2, 3, 4])) + 1)
+                    + pl.lit(pl.Series([9, 9, 9, 9, 9]))
+                )
+                + 311
+            )
+            + 312
+        ).head(1)
+    )
+    plan = q.explain()
+    assert (
+        plan.index(".slice(offset=0, length=1)") < plan.index("311") < plan.index("312")
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 633}))
+
+    # Mixed column<>unknown, do not push
+    q = lf.select((pl.col("a") + pl.lit(pl.Series("x", [0, 1, 2, 3, 4]))).slice(1, 1))
+    plan = q.explain()
+    assert plan.index(".slice(offset=1, length=1)]") > plan.index("Series")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 2}))
+
+    # All column, push
+    q = lf.select((pl.col("a") + (pl.col("a") + 1)).slice(1, 1))
+    plan = q.explain()
+    assert ".slice(" not in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}))

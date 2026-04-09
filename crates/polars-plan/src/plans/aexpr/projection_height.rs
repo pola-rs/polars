@@ -1,4 +1,5 @@
 use polars_utils::arena::{Arena, Node};
+use polars_utils::collection::{Collection, CollectionWrap};
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::WindowMapping;
@@ -52,12 +53,14 @@ pub fn aexpr_projection_height_rec(
     )
 }
 
-pub fn aexpr_projection_height(
-    aexpr: &AExpr,
-    input_heights: &[ExprProjectionHeight],
-) -> ExprProjectionHeight {
+pub fn aexpr_projection_height<C>(aexpr: &AExpr, input_heights: C) -> ExprProjectionHeight
+where
+    C: Collection<ExprProjectionHeight>,
+{
     use AExpr::*;
     use ExprProjectionHeight as H;
+
+    let input_heights = CollectionWrap::new(input_heights);
 
     match aexpr {
         Column(_) => H::Column,

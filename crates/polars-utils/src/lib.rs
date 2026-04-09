@@ -91,5 +91,6 @@ pub mod kahan_sum;
 pub use either;
 pub use idx_vec::UnitVec;
 pub mod chunked_bytes_cursor;
+pub mod collection;
 pub mod concat_vec;
 pub mod scratch_vec;
