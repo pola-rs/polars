@@ -8,6 +8,7 @@ import warnings
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import hypothesis.strategies as st
 import numpy as np
 import pytest
 from hypothesis import given
@@ -1668,6 +1669,56 @@ def test_join_asof_nans(strategy: AsofJoinStrategy) -> None:
         }
     )
     assert_frame_equal(actual, expected)
+
+
+@pytest.mark.filterwarnings(
+    "ignore:Sortedness of columns cannot be checked when 'by' groups provided"
+)
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("allow_exact_matches", [False, True])
+@given(
+    df_left=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int32]),
+    df_right=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int32]),
+    data=st.data(),
+)
+def test_join_asof_group_matches_nogroup(
+    df_left: pl.DataFrame,
+    df_right: pl.DataFrame,
+    strategy: AsofJoinStrategy,
+    allow_exact_matches: bool,
+    data: st.DataObject,
+) -> None:
+    def groups(n: int) -> st.SearchStrategy[list[any]]:
+        return st.lists(st.sampled_from([None, 0]), min_size=n, max_size=n)
+
+    df_left = df_left.rename({"col0": "key"}).sort("key")
+    groups_left = pl.Series(data.draw(groups(len(df_left))), dtype=pl.Int32)
+    df_left = df_left.with_columns(group=groups_left).with_row_index()
+    df_right = df_right.rename({"col0": "key"}).sort("key")
+    groups_right = pl.Series(data.draw(groups(len(df_right))), dtype=pl.Int32)
+    df_right = df_right.with_columns(group=groups_right).with_row_index()
+
+    q_grouped = df_left.lazy().join_asof(
+        df_right.lazy(),
+        on="key",
+        by="group",
+        strategy=strategy,
+        allow_exact_matches=allow_exact_matches,
+    )
+    q_ungrouped = (
+        df_left.lazy()
+        .join_asof(
+            df_right.lazy(),
+            on="key",
+            strategy=strategy,
+            allow_exact_matches=allow_exact_matches,
+        )
+        .drop("group_right")
+    )
+
+    grouped = q_grouped.collect()
+    ungrouped = q_ungrouped.collect()
+    assert_frame_equal(grouped, ungrouped)
 
 
 def test_join_asof_by_nulls_27165() -> None:
