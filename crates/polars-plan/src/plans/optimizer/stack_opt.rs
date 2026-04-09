@@ -59,7 +59,7 @@ impl StackOptimizer {
                 let input_schema = get_input_schema(lp_arena, current_node);
 
                 schema_stack.clear();
-                let schema_idx = schema_stack.len();
+                let schema_idx = 0;
                 schema_stack.push(input_schema.into_owned());
 
                 while let Some(expr_ir) = scratch.pop() {
