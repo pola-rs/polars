@@ -41,9 +41,25 @@ fn create_rand_index_no_replacement(
         // should get rid of the extra copy already if IdxSize matches the IndexVec
         // size returned.
         buf = match rand::seq::index::sample(&mut rng, len, n) {
-            IndexVec::U32(v) => v.into_iter().map(|x| x as IdxSize).collect(),
+            IndexVec::U32(v) => {
+                if shuffle {
+                    v.into_iter().map(|x| x as IdxSize).collect()
+                } else {
+                    let mut v: Vec<_> = v.into_iter().map(|x| x as IdxSize).collect();
+                    v.sort_unstable();
+                    v
+                }
+            },
             #[cfg(target_pointer_width = "64")]
-            IndexVec::U64(v) => v.into_iter().map(|x| x as IdxSize).collect(),
+            IndexVec::U64(v) => {
+                if shuffle {
+                    v.into_iter().map(|x| x as IdxSize).collect()
+                } else {
+                    let mut v: Vec<_> = v.into_iter().map(|x| x as IdxSize).collect();
+                    v.sort_unstable();
+                    v
+                }
+            },
         };
     }
     IdxCa::new_vec(PlSmallStr::EMPTY, buf)
