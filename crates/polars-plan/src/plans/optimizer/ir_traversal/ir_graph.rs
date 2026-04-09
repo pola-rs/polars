@@ -5,7 +5,7 @@ use polars_utils::array::{array_concat, array_split};
 use polars_utils::unique_id::UniqueId;
 use slotmap::SlotMap;
 
-use crate::plans::simplify_ordering::ir_node_key::IRNodeKey;
+use crate::plans::ir_traversal::ir_node_key::IRNodeKey;
 use crate::prelude::IR;
 
 #[derive(Default, Debug)]
@@ -22,12 +22,12 @@ struct CacheNodes {
 }
 
 #[derive(Default)]
-pub(crate) struct CacheNodeUpdater {
+pub struct CacheNodeUpdater {
     inner: PlHashMap<UniqueId, CacheNodes>,
 }
 
 impl CacheNodeUpdater {
-    pub(crate) fn update_cache_nodes(self, ir_arena: &mut Arena<IR>) {
+    pub fn update_cache_nodes(self, ir_arena: &mut Arena<IR>) {
         for (_, CacheNodes { nodes, hits: _ }) in self.inner {
             let IR::Cache { input, .. } = ir_arena.get(nodes[0]) else {
                 unreachable!()
@@ -47,7 +47,7 @@ impl CacheNodeUpdater {
 /// Builds an IR traversal graph where caches are visited only after all of their consumers are
 /// visited.
 #[expect(clippy::type_complexity)]
-pub(crate) fn build_ir_traversal_graph<EdgeKey, Edge>(
+pub fn build_ir_traversal_graph<EdgeKey, Edge>(
     roots: &[Node],
     ir_arena: &mut Arena<IR>,
 ) -> (
@@ -162,7 +162,7 @@ where
     )
 }
 
-pub(crate) fn unpack_edges_mut<
+pub fn unpack_edges_mut<
     'a,
     EdgeKey: slotmap::Key,
     Edge,

@@ -46,18 +46,6 @@ impl<T> Default for Arena<T> {
     }
 }
 
-impl<T> AsRef<Arena<T>> for &Arena<T> {
-    fn as_ref(&self) -> &Arena<T> {
-        self
-    }
-}
-
-impl<T> AsRef<Arena<T>> for &mut Arena<T> {
-    fn as_ref(&self) -> &Arena<T> {
-        self
-    }
-}
-
 /// Simple Arena implementation
 /// Allocates memory and stores item in a Vec. Only deallocates when being dropped itself.
 impl<T> Arena<T> {

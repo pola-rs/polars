@@ -1,12 +1,13 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_utils::UnitVec;
-use polars_utils::collection::MappedCollection;
+use polars_utils::collection::{Collection, CollectionWrap, MappedCollection};
 
 use super::*;
 use crate::plans::optimizer::slice_pushdown_lp::{
     State as ExtractedSlice, combine_outer_inner_slice,
 };
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height};
+use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum CommonSlice {
@@ -245,36 +246,43 @@ impl SlicePushDown {
     pub(crate) fn aexpr_slice_pushdown_rec(
         &mut self,
         current_ae_node: Node,
-        mut expr_arena: &mut Arena<AExpr>,
+        expr_arena: &mut Arena<AExpr>,
         common_col_limit: &mut Option<CommonSlice>,
         col_hit_count: &mut Option<usize>,
         all_slice_ae_nodes_with_direct_col_input: &mut PlHashSet<Node>,
         maintain_errors: bool,
     ) {
-        aexpr_property_pullup_traversal(
-            current_ae_node,
-            &mut expr_arena,
-            self.ae_nodes_scratch.get(),
-            self.ae_slice_pd_state_scratch.get(),
-            &mut |_, _| None,
-            &mut |ae_node, inputs, expr_arena| {
-                aexpr_slice_pushdown_top(
+        let mut visitor = FnVisitors::new(
+            |_, _, _| Ok(SubtreeVisit::Visit),
+            |ae_node, arena, edges| {
+                edges.outputs()[0] = aexpr_slice_pushdown_top(
                     ae_node,
-                    inputs,
-                    expr_arena,
+                    &mut *edges.inputs(),
+                    arena,
                     common_col_limit,
                     col_hit_count,
                     all_slice_ae_nodes_with_direct_col_input,
                     maintain_errors,
-                )
+                );
+
+                Ok(())
             },
         );
+
+        aexpr_tree_traversal(
+            current_ae_node,
+            expr_arena,
+            self.ae_nodes_scratch.get(),
+            self.ae_slice_pd_state_scratch.get(),
+            &mut visitor,
+        )
+        .unwrap();
     }
 }
 
 fn aexpr_slice_pushdown_top(
     current_ae_node: Node,
-    input_states: &mut [State],
+    input_states: &mut dyn Collection<State>,
     expr_arena: &mut Arena<AExpr>,
     common_col_limit: &mut Option<CommonSlice>,
     col_hit_count: &mut Option<usize>,
@@ -283,6 +291,7 @@ fn aexpr_slice_pushdown_top(
 ) -> State {
     use ExprProjectionHeight as H;
 
+    let mut input_states = CollectionWrap::new(input_states);
     let ae = expr_arena.get(current_ae_node);
 
     // We propagate upwards the position of the last non-elementwise node(s), these represent
@@ -307,15 +316,18 @@ fn aexpr_slice_pushdown_top(
     //    └──────┘   └──────┘
     //
     // Push candidates are `col(A)` and `col(B)`.
-    let mut iter = input_states.iter_mut();
-    let mut state = iter
-        .find(|s| s.height != H::Scalar)
+    let idx = input_states
+        .iter()
+        .position(|s| s.height != H::Scalar)
+        .unwrap_or(input_states.len());
+    let mut state = input_states
+        .get_mut(idx)
         .map_or(State::default(), |s| State {
             candidate_push_locations: std::mem::take(&mut s.candidate_push_locations),
             height: s.height,
         });
 
-    for remainder in iter {
+    for remainder in (idx + 1..input_states.len()).map(|i| &input_states[i]) {
         match (state.height, remainder.height) {
             (_, H::Scalar) => {},
             (H::Column, H::Column) => state
@@ -330,7 +342,7 @@ fn aexpr_slice_pushdown_top(
 
     state.height = aexpr_projection_height(
         ae,
-        MappedCollection::new(input_states, |s| &s.height, |s| &mut s.height),
+        &mut MappedCollection::new(&mut *input_states, |s| &s.height, |s| &mut s.height),
     );
 
     if let AExpr::Column(_) = ae {

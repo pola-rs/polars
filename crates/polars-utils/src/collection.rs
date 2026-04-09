@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 
-pub trait Collection<T> {
+pub trait Collection<T: ?Sized> {
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -9,14 +9,6 @@ pub trait Collection<T> {
     fn len(&self) -> usize;
     fn get(&self, idx: usize) -> Option<&T>;
     fn get_mut(&mut self, idx: usize) -> Option<&mut T>;
-
-    /// We can't implement `iter_mut()` so expose this as an alternative.
-    fn map_mut<'a, F, O>(&'a mut self, mut f: F) -> impl Iterator<Item = O> + 'a
-    where
-        F: for<'b> FnMut(&'b mut T) -> O + 'a,
-    {
-        (0..self.len()).map(move |i| f(self.get_mut(i).unwrap()))
-    }
 }
 
 /// Wrapper that implements indexing.
@@ -34,7 +26,32 @@ impl<T, C: Collection<T>> CollectionWrap<T, C> {
     }
 
     pub fn iter(&self) -> CollectionIter<'_, T, C> {
-        CollectionIter { idx: 0, wrap: self }
+        CollectionIter {
+            idx: 0,
+            collection: &self.inner,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn for_each_mut<F>(&mut self, mut f: F)
+    where
+        F: for<'b> FnMut(&'b mut T),
+    {
+        self.map_mut(|v| {
+            f(v);
+        })
+        .for_each(|_| ())
+    }
+
+    pub fn map_mut<'a, B, F>(&'a mut self, mut f: F) -> impl Iterator<Item = B>
+    where
+        F: for<'b> FnMut(&'b mut T) -> B + 'a,
+    {
+        (0..self.len()).map(move |i| f(self.get_mut(i).unwrap()))
+    }
+
+    pub fn into_inner(self) -> C {
+        self.inner
     }
 }
 
@@ -87,22 +104,37 @@ impl<T, C: Collection<T>> From<C> for CollectionWrap<T, C> {
     }
 }
 
-pub struct CollectionIter<'a, T, C: Collection<T>> {
+impl<T> Collection<T> for &mut dyn Collection<T> {
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
+    fn get(&self, idx: usize) -> Option<&T> {
+        (**self).get(idx)
+    }
+
+    fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
+        (**self).get_mut(idx)
+    }
+}
+
+pub struct CollectionIter<'a, T: 'a, C: Collection<T>> {
     idx: usize,
-    wrap: &'a CollectionWrap<T, C>,
+    collection: &'a C,
+    phantom: PhantomData<T>,
 }
 
 impl<'a, T, C: Collection<T>> Iterator for CollectionIter<'a, T, C> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx == self.wrap.len() {
-            return None;
+        let item = self.collection.get(self.idx);
+
+        if item.is_some() {
+            self.idx += 1;
         }
 
-        self.idx += 1;
-
-        self.wrap.get(self.idx - 1)
+        item
     }
 }
 

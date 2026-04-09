@@ -3,7 +3,8 @@ use polars_utils::collection::{Collection, CollectionWrap};
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::WindowMapping;
-use crate::plans::{AExpr, aexpr_property_pullup_traversal};
+use crate::plans::{AExpr, aexpr_tree_traversal};
+use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ExprProjectionHeight {
@@ -40,28 +41,35 @@ pub fn aexpr_projection_height_rec(
     ae_node: Node,
     mut expr_arena: &Arena<AExpr>,
     stack: &mut ScratchVec<Node>,
-    inputs_stack: &mut ScratchVec<ExprProjectionHeight>,
+    edges_stack: &mut ScratchVec<ExprProjectionHeight>,
 ) -> ExprProjectionHeight {
-    aexpr_property_pullup_traversal(
+    let mut visitor = FnVisitors::new(
+        |_, _, _| Ok(SubtreeVisit::Visit),
+        |ae_node, expr_arena: &mut &Arena<AExpr>, edges| {
+            edges.outputs()[0] =
+                aexpr_projection_height(expr_arena.get(ae_node), &mut *edges.inputs());
+            Ok(())
+        },
+    );
+
+    aexpr_tree_traversal(
         ae_node,
         &mut expr_arena,
         stack.get(),
-        inputs_stack.get(),
-        &mut |_, _| None,
-        &mut |ae_node, input_heights, expr_arena| {
-            aexpr_projection_height(expr_arena.get(ae_node), input_heights)
-        },
+        edges_stack.get(),
+        &mut visitor,
     )
+    .unwrap()
 }
 
-pub fn aexpr_projection_height<C>(aexpr: &AExpr, input_heights: C) -> ExprProjectionHeight
-where
-    C: Collection<ExprProjectionHeight>,
-{
+pub fn aexpr_projection_height(
+    aexpr: &AExpr,
+    input_heights: &mut dyn Collection<ExprProjectionHeight>,
+) -> ExprProjectionHeight {
     use AExpr::*;
     use ExprProjectionHeight as H;
 
-    let input_heights = CollectionWrap::new(input_heights);
+    let input_heights = CollectionWrap::<ExprProjectionHeight, _>::new(input_heights);
 
     match aexpr {
         Column(_) => H::Column,

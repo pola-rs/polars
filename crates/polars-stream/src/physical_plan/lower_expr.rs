@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
@@ -17,6 +16,8 @@ use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height};
 use polars_plan::prelude::*;
+use polars_plan::traversal::edge_provider::NodeEdgesProvider;
+use polars_plan::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -307,22 +308,56 @@ fn build_input_independent_node_with_ctx(
 }
 
 fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
-    let cache = RefCell::new(&mut ctx.cache.output_heights);
+    struct CachingHeightPropagationVisitor<'a> {
+        cache: &'a mut PlHashMap<Node, ExprProjectionHeight>,
+    }
 
-    let height = aexpr_property_pullup_traversal(
+    impl<'visitor> NodeVisitor for CachingHeightPropagationVisitor<'visitor> {
+        type Edge = ExprProjectionHeight;
+        type Key = Node;
+        type Storage = Arena<AExpr>;
+
+        fn pre_visit(
+            &mut self,
+            ae_node: Node,
+            _expr_arena: &mut Arena<AExpr>,
+            edges: &mut dyn NodeEdgesProvider<ExprProjectionHeight>,
+        ) -> PolarsResult<SubtreeVisit> {
+            Ok(if let Some(height) = self.cache.get(&ae_node) {
+                edges.outputs()[0] = *height;
+                SubtreeVisit::Skip
+            } else {
+                SubtreeVisit::Visit
+            })
+        }
+
+        fn post_visit(
+            &mut self,
+            ae_node: Node,
+            expr_arena: &mut Arena<AExpr>,
+            edges: &mut dyn NodeEdgesProvider<ExprProjectionHeight>,
+        ) -> PolarsResult<()> {
+            let height = aexpr_projection_height(expr_arena.get(ae_node), &mut *edges.inputs());
+            edges.outputs()[0] = height;
+
+            self.cache.insert(ae_node, height);
+
+            Ok(())
+        }
+    }
+
+    let mut visitor = CachingHeightPropagationVisitor {
+        cache: &mut ctx.cache.output_heights,
+    };
+
+    let height = aexpr_tree_traversal(
         expr_key,
-        &mut ctx.expr_arena,
+        ctx.expr_arena,
         ctx.node_scratch.get(),
         ctx.ae_height_scratch.get(),
-        &mut |ae_node, _| cache.borrow().get(&ae_node).copied(),
-        &mut |ae_node, input_heights, expr_arena| {
-            let out = aexpr_projection_height(expr_arena.get(ae_node), input_heights);
-
-            cache.borrow_mut().insert(ae_node, out);
-
-            out
-        },
-    );
+        &mut visitor,
+    )
+    .unwrap();
 
     matches!(height, ExprProjectionHeight::Column)
 }

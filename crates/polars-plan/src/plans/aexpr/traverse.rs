@@ -1,4 +1,6 @@
 use super::*;
+use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
+use crate::traversal::visitor::NodeVisitor;
 
 impl AExpr {
     /// Push the inputs of this node to the given container, in field declaration order.
@@ -603,54 +605,35 @@ impl NodeInputs {
     }
 }
 
-#[recursive::recursive]
-pub fn aexpr_property_pullup_traversal<PreVisit, PostVisit, State, ArenaT>(
-    ae_node: Node,
+pub fn aexpr_tree_traversal<'visitor, ArenaT, Visitor, Edge>(
+    root_ae_node: Node,
     expr_arena: &mut ArenaT,
-    stack: &mut Vec<Node>,
-    inputs_stack: &mut Vec<State>,
-    pre_visit: &mut PreVisit,
-    post_visit: &mut PostVisit,
-) -> State
+    visit_stack: &mut Vec<Node>,
+    edges: &mut Vec<Edge>,
+    visitor: &'visitor mut Visitor,
+) -> PolarsResult<Edge>
 where
-    PreVisit: FnMut(Node, &mut ArenaT) -> Option<State>,
-    PostVisit: FnMut(Node, &mut [State], &mut ArenaT) -> State,
-    State: Default,
-    ArenaT: AsRef<Arena<AExpr>>,
+    ArenaT: GetNodeInputs<Node>,
+    Edge: Default,
+    Visitor: NodeVisitor<Edge = Edge, Key = Node, Storage = ArenaT> + ?Sized,
 {
-    if let Some(state) = pre_visit(ae_node, expr_arena) {
-        return state;
-    };
+    tree_traversal(root_ae_node, expr_arena, visit_stack, edges, visitor)
+}
 
-    let ae = expr_arena.as_ref().get(ae_node);
-
-    let base_stack_len = stack.len();
-    let base_inputs_stack_len = inputs_stack.len();
-    ae.inputs(stack);
-    let num_inputs = stack.len() - base_stack_len;
-
-    for i in base_stack_len..stack.len() {
-        let state = aexpr_property_pullup_traversal(
-            stack[i],
-            expr_arena,
-            stack,
-            inputs_stack,
-            pre_visit,
-            post_visit,
-        );
-        inputs_stack.push(state);
+impl GetNodeInputs<Node> for Arena<AExpr> {
+    fn push_inputs_for_key<C>(&self, key: Node, container: &mut C)
+    where
+        C: Extend<Node>,
+    {
+        self.get(key).inputs(container);
     }
+}
 
-    assert_eq!(stack.len(), base_stack_len + num_inputs);
-    stack.truncate(base_stack_len);
-
-    assert_eq!(inputs_stack.len(), base_inputs_stack_len + num_inputs);
-    let state = post_visit(
-        ae_node,
-        &mut inputs_stack[base_inputs_stack_len..],
-        expr_arena,
-    );
-    inputs_stack.truncate(base_inputs_stack_len);
-
-    state
+impl<'a> GetNodeInputs<Node> for &'a Arena<AExpr> {
+    fn push_inputs_for_key<C>(&self, key: Node, container: &mut C)
+    where
+        C: Extend<Node>,
+    {
+        self.get(key).inputs(container);
+    }
 }
