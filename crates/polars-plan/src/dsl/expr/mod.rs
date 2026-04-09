@@ -692,16 +692,6 @@ impl EvalVariant {
             EvalVariant::Cumulative { min_samples: _ } => false,
         }
     }
-
-    pub fn is_length_preserving(&self) -> bool {
-        match self {
-            EvalVariant::List
-            | EvalVariant::ListAgg
-            | EvalVariant::Array { .. }
-            | EvalVariant::ArrayAgg
-            | EvalVariant::Cumulative { .. } => true,
-        }
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
