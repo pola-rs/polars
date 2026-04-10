@@ -553,3 +553,100 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
         with_columns=None,
         allow_pyarrow_filter=False,
     )[1]
+
+
+@pytest.mark.write_disk
+def test_arrow_predicate_conversions(tmp_path: Path) -> None:
+    """Test that various arrow predicates are correctly converted and pushed down."""
+    # Create test data with various data types
+    df = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4, 5],
+            "value": [10, 20, 30, 40, 50],
+            "name": ["a", "b", "c", "d", "e"],
+            "is_active": [True, False, True, False, True],
+        }
+    )
+
+    file_path = tmp_path / "test_predicates.ipc"
+    df.write_ipc(file_path)
+
+    # Test simple equality comparison
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("id") == 2),
+        n_expected=1,
+        check_predicate_pushdown=True,
+    )
+
+    # Test greater than comparison
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("value") > 25),
+        n_expected=3,
+        check_predicate_pushdown=True,
+    )
+
+    # Test less than or equal comparison
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("value") <= 20),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+
+    # Test boolean column filter
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(pl.col("is_active")),
+        n_expected=3,
+        check_predicate_pushdown=True,
+    )
+
+    # Test NOT filter
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter(~pl.col("is_active")),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+
+    # Test AND logic
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter((pl.col("id") > 2) & (pl.col("value") < 45)),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+
+    # Test OR logic
+    helper_dataset_test(
+        file_path,
+        lambda lf: lf.filter((pl.col("id") == 1) | (pl.col("id") == 5)),
+        n_expected=2,
+        check_predicate_pushdown=True,
+    )
+
+    # Test is_null
+    df_with_nulls = pl.DataFrame(
+        {
+            "id": [1, 2, None, 4],
+            "value": [10, None, 30, 40],
+        }
+    )
+    file_path_nulls = tmp_path / "test_nulls.ipc"
+    df_with_nulls.write_ipc(file_path_nulls)
+
+    helper_dataset_test(
+        file_path_nulls,
+        lambda lf: lf.filter(pl.col("id").is_null()),
+        n_expected=1,
+        check_predicate_pushdown=True,
+    )
+
+    helper_dataset_test(
+        file_path_nulls,
+        lambda lf: lf.filter(pl.col("id").is_not_null()),
+        n_expected=3,
+        check_predicate_pushdown=True,
+    )
