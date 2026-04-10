@@ -345,3 +345,62 @@ def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
             df_chained_from_right = df.merge_sorted(df_chained_from_right, key="n")
 
         assert_frame_equal(df_chained_from_right, df_full)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_maintain_order(streaming: bool) -> None:
+    """Test that maintain_order=True guarantees left-biased ordering for equal keys."""
+    left = pl.DataFrame({"src": ["L1", "L2", "L3"], "key": [1, 2, 3]})
+    right = pl.DataFrame({"src": ["R1", "R2", "R3"], "key": [2, 3, 4]})
+
+    result = (
+        left.lazy()
+        .merge_sorted(right.lazy(), key="key", maintain_order=True)
+        .collect(engine="streaming" if streaming else "in-memory")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "src": ["L1", "L2", "R1", "L3", "R2", "R3"],
+            "key": [1, 2, 2, 3, 3, 4],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_maintain_order_all_equal(streaming: bool) -> None:
+    """Test maintain_order when all keys are equal."""
+    left = pl.DataFrame({"src": ["L1", "L2"], "key": [1, 1]})
+    right = pl.DataFrame({"src": ["R1", "R2"], "key": [1, 1]})
+
+    result = (
+        left.lazy()
+        .merge_sorted(right.lazy(), key="key", maintain_order=True)
+        .collect(engine="streaming" if streaming else "in-memory")
+    )
+
+    expected = pl.DataFrame(
+        {
+            "src": ["L1", "L2", "R1", "R2"],
+            "key": [1, 1, 1, 1],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_maintain_order_dataframe(streaming: bool) -> None:
+    """Test maintain_order via the DataFrame.merge_sorted API."""
+    left = pl.DataFrame({"src": ["L1", "L2"], "key": [1, 2]})
+    right = pl.DataFrame({"src": ["R1", "R2"], "key": [1, 2]})
+
+    result = left.merge_sorted(right, key="key", maintain_order=True)
+
+    expected = pl.DataFrame(
+        {
+            "src": ["L1", "R1", "L2", "R2"],
+            "key": [1, 1, 2, 2],
+        }
+    )
+    assert_frame_equal(result, expected)

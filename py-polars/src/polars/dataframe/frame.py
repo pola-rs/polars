@@ -12453,7 +12453,13 @@ class DataFrame:
             df.insert_column(0, cols)
         return df
 
-    def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
+    def merge_sorted(
+        self,
+        other: DataFrame,
+        key: str,
+        *,
+        maintain_order: bool = False,
+    ) -> DataFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
@@ -12470,6 +12476,10 @@ class DataFrame:
             Other DataFrame that must be merged
         key
             Key that is sorted.
+        maintain_order
+            If ``True``, the output is guaranteed to have left-biased ordering
+            for equal keys: rows from the left frame appear before rows from
+            the right frame when their keys are equal.
 
         Examples
         --------
@@ -12520,8 +12530,8 @@ class DataFrame:
 
         Notes
         -----
-        No guarantee is given over the output row order when the key is equal
-        between the both dataframes.
+        Unless ``maintain_order=True``, no guarantee is given over the output
+        row order when the key is equal between the both dataframes.
 
         The key must be sorted in ascending order.
         """
@@ -12531,7 +12541,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .merge_sorted(other.lazy(), key)
+            .merge_sorted(other.lazy(), key, maintain_order=maintain_order)
             .collect(optimizations=QueryOptFlags._eager())
         )
 

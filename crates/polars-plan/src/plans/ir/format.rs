@@ -246,6 +246,7 @@ impl<'a> IRDisplay<'a> {
                 input_left,
                 input_right,
                 key: _,
+                ..
             } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 write!(f, ":")?;
@@ -1002,6 +1003,7 @@ pub fn write_ir_non_recursive(
             input_left: _,
             input_right: _,
             key,
+            ..
         } => write!(f, "{:indent$}MERGE SORTED ON '{key}'", ""),
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
     }

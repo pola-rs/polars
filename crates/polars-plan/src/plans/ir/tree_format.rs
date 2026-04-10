@@ -386,6 +386,7 @@ impl<'a> TreeFmtNode<'a> {
                         input_left,
                         input_right,
                         key,
+                        ..
                     } => ND(
                         wh(h, &format!("MERGE SORTED ON '{key}")),
                         [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
