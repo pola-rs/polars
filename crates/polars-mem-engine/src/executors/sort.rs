@@ -13,10 +13,9 @@ impl SortExec {
     fn execute_impl(
         &mut self,
         state: &ExecutionState,
-        mut df: DataFrame,
+        df: DataFrame,
     ) -> PolarsResult<DataFrame> {
         state.should_stop()?;
-        df.rechunk_mut_par();
 
         let height = df.height();
 
