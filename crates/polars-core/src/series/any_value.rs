@@ -939,7 +939,6 @@ fn any_values_to_struct(
 #[cfg(feature = "object")]
 fn any_values_to_object(values: &[AnyValue]) -> PolarsResult<Series> {
     use crate::chunked_array::object::registry;
-    let converter = registry::get_object_converter();
     let mut builder = registry::get_object_builder(PlSmallStr::EMPTY, values.len());
     for av in values {
         match av {
@@ -948,6 +947,7 @@ fn any_values_to_object(values: &[AnyValue]) -> PolarsResult<Series> {
             _ => {
                 // This is needed because in Python users can send mixed types.
                 // This only works if you set a global converter.
+                let converter = registry::get_object_converter();
                 let any = converter(av.as_borrowed());
                 builder.append_value(&*any)
             },
