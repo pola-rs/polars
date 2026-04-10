@@ -9274,7 +9274,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return pc.LazyFrameRemote(
             lf=self,
-            context=context,
+            context=context,  # type: ignore[arg-type]
             plan_type=plan_type,
             n_retries=n_retries,
             engine=engine,
