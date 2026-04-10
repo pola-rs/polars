@@ -8848,9 +8848,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         The key must be sorted in ascending order.
         """
         require_same_type(self, other)
-        return self._from_pyldf(
-            self._ldf.merge_sorted(other._ldf, key, maintain_order)
-        )
+        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order))
 
     def set_sorted(
         self,
