@@ -754,7 +754,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
 
             // Report the error for missing columns
-            if let Some(lst) = found_missing_columns.first() {
+            if !found_missing_columns.is_empty() {
                 use std::fmt::Write;
                 let mut formatted = String::new();
                 write!(&mut formatted, "\"{}\"", found_missing_columns[0]).unwrap();
@@ -762,7 +762,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     write!(&mut formatted, ", \"{c}\"").unwrap();
                 }
 
-                write!(&mut formatted, "\"{lst}\"").unwrap();
                 polars_bail!(SchemaMismatch: "missing columns in `match_to_schema`: {formatted}");
             }
 

@@ -9315,23 +9315,23 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema
             Target schema to match or evolve to.
         missing_columns
-            Raise of insert missing columns from the input with respect to the `schema`.
+            Raise or insert missing columns from the input with respect to the `schema`.
 
             This can also be an expression per column with what to insert if it is
             missing.
         missing_struct_fields
-            Raise of insert missing struct fields from the input with respect to the
+            Raise or insert missing struct fields from the input with respect to the
             `schema`.
         extra_columns
-            Raise of ignore extra columns from the input with respect to the `schema`.
+            Raise or ignore extra columns from the input with respect to the `schema`.
         extra_struct_fields
-            Raise of ignore extra struct fields from the input with respect to the
+            Raise or ignore extra struct fields from the input with respect to the
             `schema`.
         integer_cast
-            Forbid of upcast for integer columns from the input to the respective column
+            Forbid or upcast for integer columns from the input to the respective column
             in `schema`.
         float_cast
-            Forbid of upcast for float columns from the input to the respective column
+            Forbid or upcast for float columns from the input to the respective column
             in `schema`.
 
         Examples
@@ -9350,7 +9350,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 2   ┆ B   │
         │ 3   ┆ C   │
         └─────┴─────┘
-        >>> (lf.match_to_schema({"a": pl.Int64}).collect())  # doctest: +SKIP
+        >>> lf.match_to_schema({"a": pl.Int64}).collect()  # doctest: +SKIP
         polars.exceptions.SchemaError: extra columns in `match_to_schema`: "b"
 
         Adding missing columns
