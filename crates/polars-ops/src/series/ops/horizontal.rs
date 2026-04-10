@@ -345,22 +345,64 @@ pub fn mean_horizontal(
     }
 }
 
-pub fn coalesce_columns(s: &[Column]) -> PolarsResult<Column> {
-    // TODO! this can be faster if we have more than two inputs.
-    polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
-    let mut out = s[0].clone();
-    for s in s {
-        if !out.null_count() == 0 {
+fn coalesce_binary_columns(left: &Column, right: &Column) -> PolarsResult<Column> {
+    let out_len = match (left.len(), right.len()) {
+        (left_len, right_len) if left_len == right_len => Some(left_len),
+        (1, right_len) => Some(right_len),
+        (left_len, 1) => Some(left_len),
+        _ => None,
+    };
+
+    if let Some(out_len) = out_len {
+        if left.null_count() == 0 {
+            return Ok(if left.len() == out_len {
+                left.clone()
+            } else {
+                left.new_from_index(0, out_len)
+            });
+        }
+
+        if left.null_count() == left.len() {
+            let mut out = if right.len() == out_len {
+                right.clone()
+            } else {
+                right.new_from_index(0, out_len)
+            };
+            out.rename(left.name().clone());
             return Ok(out);
-        } else {
-            let mask = out.is_not_null();
-            out = out
-                .as_materialized_series()
-                .zip_with_same_type(&mask, s.as_materialized_series())?
-                .into();
+        }
+
+        if right.null_count() == right.len() {
+            return Ok(if left.len() == out_len {
+                left.clone()
+            } else {
+                left.new_from_index(0, out_len)
+            });
         }
     }
-    Ok(out)
+
+    let mask = left.is_not_null();
+    left.as_materialized_series()
+        .zip_with_same_type(&mask, right.as_materialized_series())
+        .map(Column::from)
+}
+
+pub fn coalesce_columns(s: &[Column]) -> PolarsResult<Column> {
+    polars_ensure!(!s.is_empty(), NoData: "cannot coalesce empty list");
+
+    match s.len() {
+        1 => Ok(s[0].clone()),
+        2 => coalesce_binary_columns(&s[0], &s[1]),
+        _ => POOL.install(|| {
+            s.par_iter()
+                .map(|column| Ok(Cow::Borrowed(column)))
+                .try_reduce_with(|left, right| {
+                    coalesce_binary_columns(&left, &right).map(Cow::Owned)
+                })
+                .unwrap()
+                .map(|column| column.into_owned().with_name(s[0].name().clone()))
+        }),
+    }
 }
 
 #[cfg(test)]
