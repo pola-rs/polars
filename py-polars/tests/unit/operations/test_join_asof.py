@@ -1688,7 +1688,7 @@ def test_join_asof_group_matches_nogroup(
     allow_exact_matches: bool,
     data: st.DataObject,
 ) -> None:
-    def groups(n: int) -> st.SearchStrategy[list[any]]:
+    def groups(n: int) -> st.SearchStrategy[list[int | None]]:
         return st.lists(st.sampled_from([None, 0]), min_size=n, max_size=n)
 
     df_left = df_left.rename({"col0": "key"}).sort("key")
