@@ -955,20 +955,3 @@ def test_scan_delta_dv_delta_sink_mock(
         expected,
         check_row_order=False,
     )
-
-
-@pytest.mark.write_disk
-def test_scan_delta_dv_requires_deltalake_version(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    path = tmp_path / "delta_table"
-    df = pl.DataFrame({"a": [1, 2, 3]})
-    create_dv_table(path, df.to_arrow(), deleted_rows=[0])
-
-    import deltalake
-
-    monkeypatch.setattr(deltalake, "__version__", "1.4.1")
-
-    with pytest.raises(ImportError, match=r"deltalake >= 1.4.2"):
-        pl.scan_delta(path).collect()

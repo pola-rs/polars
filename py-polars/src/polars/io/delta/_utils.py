@@ -39,7 +39,7 @@ def _get_delta_lake_table(
 
     Notes
     -----
-    Make sure to install deltalake>=0.8.0. Read the documentation
+    Make sure to install deltalake>=1.5.0. Read the documentation
     `here <https://delta-io.github.io/delta-rs/usage/installation/>`_.
     """
     _check_if_delta_available()

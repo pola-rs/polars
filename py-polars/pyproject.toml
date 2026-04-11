@@ -72,7 +72,7 @@ database = ["polars[adbc,connectorx,sqlalchemy]"]
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 1.0.0"]
+deltalake = ["deltalake >= 1.5.0"]
 iceberg = ["pyiceberg >= 0.7.1"]
 
 # Other

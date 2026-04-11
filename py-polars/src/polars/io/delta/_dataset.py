@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 
 import polars as pl
 from polars._utils.logging import eprint
-from polars._utils.various import parse_version
 from polars.io.cloud.credential_provider._providers import (
     _get_credentials_from_provider_expiry_aware,
 )
@@ -156,17 +155,6 @@ class DeltaDataset:
 
         deletion_files: DeletionFiles | None = None
         if has_deletion_vectors:
-            import deltalake
-
-            dv_min_version = (1, 4, 2)
-            installed = parse_version(deltalake.__version__)
-            if installed < dv_min_version:
-                msg = (
-                    f"reading delta deletion vectors requires "
-                    f"deltalake >= {'.'.join(str(v) for v in dv_min_version)}, "
-                    f"found {installed}."
-                )
-                raise ImportError(msg)
 
             def _deletion_vector_callback(
                 requested_paths: pl.DataFrame,
