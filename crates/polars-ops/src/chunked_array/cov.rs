@@ -13,7 +13,7 @@ where
     ChunkedArray<T>: ChunkVar,
 {
     if a.len() == 1 || b.len() == 1 {
-        return Some(f64::NAN);
+        return Some(0.0); // (Broadcasted) constant -> zero covariance.
     }
     let (a, b) = align_chunks_binary(a, b);
     let mut out = CovState::default();
@@ -31,7 +31,7 @@ where
     ChunkedArray<T>: ChunkVar,
 {
     if a.len() == 1 || b.len() == 1 {
-        return Some(f64::NAN);
+        return Some(f64::NAN); // (Broadcasted) constant -> NaN correlation.
     }
     let (a, b) = align_chunks_binary(a, b);
     let mut out = PearsonState::default();

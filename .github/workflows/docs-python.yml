@@ -4,14 +4,14 @@ on:
   pull_request:
     paths:
       - py-polars/docs/**
-      - py-polars/polars/**
+      - py-polars/src/polars/**
       - .github/workflows/docs-python.yml
   push:
     branches:
       - main
     paths:
       - py-polars/docs/**
-      - py-polars/polars/**
+      - py-polars/src/polars/**
       - .github/workflows/docs-python.yml
   repository_dispatch:
     types:

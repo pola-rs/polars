@@ -219,7 +219,7 @@ pub fn extract_many(
             let (ca, patterns) = align_chunks_binary(ca, patterns);
 
             for (arr, pat_arr) in ca.downcast_iter().zip(patterns.downcast_iter()) {
-                for z in arr.into_iter().zip(pat_arr.into_iter()) {
+                for z in arr.into_iter().zip(pat_arr) {
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {
@@ -311,7 +311,7 @@ pub fn find_many(
             let (ca, patterns) = align_chunks_binary(ca, patterns);
 
             for (arr, pat_arr) in ca.downcast_iter().zip(patterns.downcast_iter()) {
-                for z in arr.into_iter().zip(pat_arr.into_iter()) {
+                for z in arr.into_iter().zip(pat_arr) {
                     match z {
                         (None, _) | (_, None) => builder.append_null(),
                         (Some(val), Some(pat)) => {

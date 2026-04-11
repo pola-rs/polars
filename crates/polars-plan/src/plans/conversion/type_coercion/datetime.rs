@@ -23,7 +23,8 @@ macro_rules! ensure_int {
         )
     }
 }
-pub use {ensure_datetime, ensure_int};
+pub use ensure_datetime;
+pub use ensure_int;
 
 /// Cast a date or datetime node to a supertype.
 ///

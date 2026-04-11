@@ -1,5 +1,5 @@
-use compare_inner::NullOrderCmp;
 use polars_utils::itertools::Itertools;
+use polars_utils::total_ord::TotalOrdWrap;
 
 use super::*;
 use crate::chunked_array::ops::row_encode::_get_rows_encoded;
@@ -21,7 +21,7 @@ pub(crate) fn args_validate<T: PolarsDataType>(
     Ok(())
 }
 
-pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
+pub(crate) fn arg_sort_multiple_impl<T: TotalOrd + IsNull + Send + Copy>(
     mut vals: Vec<(IdxSize, T)>,
     by: &[Column],
     options: &SortMultipleOptions,
@@ -37,19 +37,16 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
         .map(|c| c.into_total_ord_inner())
         .collect_trusted();
 
-    let first_descending = descending[0];
-    let first_nulls_last = nulls_last[0];
-
-    let compare = |tpl_a: &(_, T), tpl_b: &(_, T)| -> Ordering {
-        match (
-            first_descending,
-            tpl_a
-                .1
-                .null_order_cmp(&tpl_b.1, first_nulls_last ^ first_descending),
+    let compare = move |tpl_a: &(_, T), tpl_b: &(_, T)| -> Ordering {
+        match reorder_cmp(
+            &TotalOrdWrap(tpl_a.1),
+            &TotalOrdWrap(tpl_b.1),
+            descending[0],
+            nulls_last[0],
         ) {
             // if ordering is equal, we check the other arrays until we find a non-equal ordering
             // if we have exhausted all arrays, we keep the equal ordering.
-            (_, Ordering::Equal) => {
+            Ordering::Equal => {
                 let idx_a = tpl_a.0 as usize;
                 let idx_b = tpl_b.0 as usize;
                 unsafe {
@@ -62,9 +59,7 @@ pub(crate) fn arg_sort_multiple_impl<T: NullOrderCmp + Send + Copy>(
                     )
                 }
             },
-            (true, Ordering::Less) => Ordering::Greater,
-            (true, Ordering::Greater) => Ordering::Less,
-            (_, ord) => ord,
+            ord => ord,
         }
     };
 

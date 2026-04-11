@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
+use polars_utils::sort::reorder_cmp;
 use rayon::slice::ParallelSliceMut;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -758,13 +759,5 @@ fn binary_search_upper(
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {
-    match AnyValue::partial_cmp(lhs, rhs).unwrap() {
-        Ordering::Equal => Ordering::Equal,
-        _ if lhs.is_null() && params.key_nulls_last => Ordering::Greater,
-        _ if rhs.is_null() && params.key_nulls_last => Ordering::Less,
-        _ if lhs.is_null() => Ordering::Less,
-        _ if rhs.is_null() => Ordering::Greater,
-        ord if params.key_descending => ord.reverse(),
-        ord => ord,
-    }
+    reorder_cmp(lhs, rhs, params.key_descending, params.key_nulls_last)
 }

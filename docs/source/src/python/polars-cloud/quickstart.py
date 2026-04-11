@@ -25,9 +25,8 @@ lf = pl.LazyFrame(
 # We need to call `.remote()` to signal that we want to run
 # on Polars Cloud and then `.execute()` send the query and execute it.
 
-lf.remote(context=ctx).execute().await_result()
+lf.remote(context=ctx).execute()
 
-# We can then wait for the result with `await_result()`.
 # The query and compute used will also show up in the
 # portal at https://cloud.pola.rs/portal/
 # --8<-- [end:general]

@@ -60,12 +60,7 @@ def _patched_cloud(
 
             return prev_collect(
                 with_timeout(
-                    lambda: (
-                        lf.remote(plan_type="plain")
-                        .distributed()
-                        .execute()
-                        .await_result()
-                    )
+                    lambda: lf.remote(plan_type="plain").distributed().execute()
                 ).lazy()
             )
 
@@ -245,6 +240,11 @@ class PlMonkeyPatch(pytest.MonkeyPatch):  # type: ignore[misc]
 
     def setenv(self, name: str, value: str, prepend: str | None = None) -> None:
         super().setenv(name, value, prepend)
+        if name.startswith("POLARS_"):
+            pl.Config.reload_env_vars()
+
+    def delenv(self, name: str, raising: bool = True) -> None:
+        super().delenv(name, raising)
         if name.startswith("POLARS_"):
             pl.Config.reload_env_vars()
 

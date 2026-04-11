@@ -214,6 +214,9 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
     }
 
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
+        if df.height() == 0 {
+            return Ok(Bitmap::new());
+        }
         let array = self
             .skip_batch_predicate
             .evaluate(df, &Default::default())?;

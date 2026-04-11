@@ -17,6 +17,8 @@ pub mod in_memory_source;
 pub mod input_independent_select;
 pub mod io_sinks;
 pub mod io_sources;
+#[cfg(feature = "is_first_distinct")]
+pub mod is_first_distinct;
 pub mod joins;
 pub mod map;
 #[cfg(feature = "merge_sorted")]
@@ -35,7 +37,14 @@ pub mod select;
 pub mod shift;
 pub mod simple_projection;
 pub mod sorted_group_by;
+pub mod sorted_unique;
 pub mod streaming_slice;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+pub mod strptime_infer;
 pub mod top_k;
 pub mod unordered_union;
 pub mod with_row_index;
@@ -59,7 +68,7 @@ mod compute_node_prelude {
 use compute_node_prelude::*;
 
 use crate::execute::StreamingExecutionState;
-use crate::metrics::MetricsBuilder;
+use crate::metrics::NodeMetricsRegistrator;
 
 pub trait ComputeNode: Send {
     /// The name of this node.
@@ -100,7 +109,7 @@ pub trait ComputeNode: Send {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
 
-    fn set_metrics_builder(&mut self, _metrics_builder: MetricsBuilder) {}
+    fn set_phase_metrics_registrator(&mut self, _metrics_builder: NodeMetricsRegistrator) {}
 
     /// Called once after the last execution phase to extract output from
     /// in-memory nodes.

@@ -37,9 +37,9 @@ from polars._utils.parse import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    NO_DEFAULT,
     extend_bool,
     find_stacklevel,
-    no_default,
     normalize_filepath,
     sphinx_accessor,
     warn_null_comparison,
@@ -4520,13 +4520,13 @@ class Expr:
             Set the intervals to be left-closed instead of right-closed.
         include_breaks
             Include a column with the right endpoint of the bin each observation falls
-            in. This will change the data type of the output from a
-            :class:`Categorical` to a :class:`Struct`.
+            in. This will change the data type of the output from an
+            :class:`Enum` to a :class:`Struct`.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Categorical` if `include_breaks` is set to
+            Expression of data type :class:`Enum` if `include_breaks` is set to
             `False` (default), otherwise an expression of data type :class:`Struct`.
 
         See Also
@@ -4542,17 +4542,17 @@ class Expr:
         ...     pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut")
         ... )
         shape: (5, 2)
-        ┌─────┬─────┐
-        │ foo ┆ cut │
-        │ --- ┆ --- │
-        │ i64 ┆ cat │
-        ╞═════╪═════╡
-        │ -2  ┆ a   │
-        │ -1  ┆ a   │
-        │ 0   ┆ b   │
-        │ 1   ┆ b   │
-        │ 2   ┆ c   │
-        └─────┴─────┘
+        ┌─────┬──────┐
+        │ foo ┆ cut  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ -2  ┆ a    │
+        │ -1  ┆ a    │
+        │ 0   ┆ b    │
+        │ 1   ┆ b    │
+        │ 2   ┆ c    │
+        └─────┴──────┘
 
         Add both the category and the breakpoint.
 
@@ -4563,7 +4563,7 @@ class Expr:
         ┌─────┬────────────┬────────────┐
         │ foo ┆ breakpoint ┆ category   │
         │ --- ┆ ---        ┆ ---        │
-        │ i64 ┆ f64        ┆ cat        │
+        │ i64 ┆ f64        ┆ enum       │
         ╞═════╪════════════╪════════════╡
         │ -2  ┆ -1.0       ┆ (-inf, -1] │
         │ -1  ┆ -1.0       ┆ (-inf, -1] │
@@ -11347,9 +11347,9 @@ Consider using {self}.implode() instead"""
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
@@ -11490,7 +11490,7 @@ Consider using {self}.implode() instead"""
                 " Use `replace_strict` instead to set a return data type while replacing values.",
                 version="1.0.0",
             )
-        if default is not no_default:
+        if default is not NO_DEFAULT:
             issue_deprecation_warning(
                 "the `default` parameter for `replace` is deprecated."
                 " Use `replace_strict` instead to set a default while replacing values.",
@@ -11500,7 +11500,7 @@ Consider using {self}.implode() instead"""
                 old, new, default=default, return_dtype=return_dtype
             )
 
-        if new is no_default:
+        if new is NO_DEFAULT:
             if not isinstance(old, Mapping):
                 msg = (
                     "`new` argument is required if `old` argument is not a Mapping type"
@@ -11527,9 +11527,9 @@ Consider using {self}.implode() instead"""
     def replace_strict(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     ) -> Expr:
         """
@@ -11696,7 +11696,7 @@ Consider using {self}.implode() instead"""
         │ 3   ┆ 1.0 ┆ 10.0     │
         └─────┴─────┴──────────┘
         """  # noqa: W505
-        if new is no_default:
+        if new is NO_DEFAULT:
             if not isinstance(old, Mapping):
                 msg = (
                     "`new` argument is required if `old` argument is not a Mapping type"
@@ -11716,7 +11716,7 @@ Consider using {self}.implode() instead"""
 
         default_pyexpr = (
             None
-            if default is no_default
+            if default is NO_DEFAULT
             else parse_into_expression(default, str_as_lit=True)
         )
 

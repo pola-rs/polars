@@ -28,13 +28,6 @@ if TYPE_CHECKING:
     from polars._typing import ConcatMethod
 
 
-def test_error_on_empty_group_by() -> None:
-    with pytest.raises(
-        ComputeError, match="at least one key is required in a group_by operation"
-    ):
-        pl.DataFrame({"x": [0, 0, 1, 1]}).group_by([]).agg(pl.len())
-
-
 def test_error_on_reducing_map() -> None:
     df = pl.DataFrame(
         {"id": [0, 0, 0, 1, 1, 1], "t": [2, 4, 5, 10, 11, 14], "y": [0, 1, 1, 2, 3, 4]}
@@ -47,6 +40,14 @@ def test_error_on_reducing_map() -> None:
             pl.map_batches(["t", "y"], np.mean, return_dtype=pl.Float64)
         )
 
+    enum = pl.Enum(
+        [
+            "(-inf, 1]",
+            "(1, 2]",
+            "(2, 3]",
+            "(3, inf]",
+        ]
+    )
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(TypeError, match=r"`map` with `returns_scalar=False`"):
         df.select(
@@ -55,7 +56,10 @@ def test_error_on_reducing_map() -> None:
                 lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
                 is_elementwise=True,
                 return_dtype=pl.Struct(
-                    {"breakpoint": pl.Int64, "cat": pl.Categorical()}
+                    {
+                        "breakpoint": pl.Int64,
+                        "category": enum,
+                    }
                 ),
             )
             .over("group")
@@ -76,7 +80,7 @@ def test_error_on_reducing_map() -> None:
                 "breakpoint": [1.0, 2.0, 3.0, float("inf")],
                 "category": ["(-inf, 1]", "(1, 2]", "(2, 3]", "(3, inf]"],
             },
-            schema_overrides={"category": pl.Categorical()},
+            schema_overrides={"category": enum},
         ),
     )
 

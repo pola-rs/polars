@@ -2,12 +2,24 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_core::prelude::DataType;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
@@ -220,6 +232,26 @@ pub enum PhysNodeKind {
         format_str: Option<String>,
     },
 
+    /// Streaming strptime without an explicit format.
+    #[cfg(any(
+        feature = "dtype-date",
+        feature = "dtype-datetime",
+        feature = "dtype-time"
+    ))]
+    StrptimeInfer {
+        input: PhysStream,
+        dtype: DataType,
+        options: StrptimeOptions,
+
+        /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
+        ///
+        /// If it is broadcast and it is `raise` or `null`, we can actually execute it in this
+        /// node. So
+        /// - `false` -> "null"
+        /// - `true`  -> "raise"
+        ambiguous_is_raise: bool,
+    },
+
     SortedGroupBy {
         input: PhysStream,
         key: PlSmallStr,
@@ -270,6 +302,10 @@ pub enum PhysNodeKind {
     },
     Rle(PhysStream),
     RleId(PhysStream),
+    SortedUnique {
+        input: PhysStream,
+        keys: Vec<PlSmallStr>,
+    },
     PeakMinMax {
         input: PhysStream,
         is_peak_max: bool,
@@ -353,6 +389,13 @@ pub enum PhysNodeKind {
         closed: ClosedWindow,
         slice: Option<(IdxSize, IdxSize)>,
         aggs: Vec<ExprIR>,
+    },
+
+    #[cfg(feature = "is_first_distinct")]
+    IsFirstDistinct {
+        input: PhysStream,
+        out_name: PlSmallStr,
+        columns: Vec<PlSmallStr>,
     },
 
     EquiJoin {
@@ -495,7 +538,24 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::BackwardFill { input, .. }
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
+            | PhysNodeKind::SortedUnique { input, .. }
             | PhysNodeKind::PeakMinMax { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "is_first_distinct")]
+            PhysNodeKind::IsFirstDistinct { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
+            PhysNodeKind::StrptimeInfer { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -681,7 +741,7 @@ pub fn build_physical_plan(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
-    ctx: StreamingLowerIRContext,
+    ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysNodeKey> {
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());

@@ -442,7 +442,7 @@ impl Debug for ExpandedDataset {
                      scan_fn: _,
                      variant,
                  }| {
-                    format_pl_smallstr!("python-scan[{} @ {:?}]", name, variant)
+                    format_pl_smallstr!("streaming-python-scan[{} @ {:?}]", name, variant)
                 },
             ),
         }

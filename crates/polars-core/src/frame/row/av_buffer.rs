@@ -277,8 +277,8 @@ impl<'a> AnyValueBuffer<'a> {
         Ok(out)
     }
 
-    pub fn into_series(mut self) -> Series {
-        self.reset(0, false).unwrap()
+    pub fn into_series(mut self) -> PolarsResult<Series> {
+        self.reset(0, false)
     }
 
     pub fn new(dtype: &DataType, capacity: usize) -> AnyValueBuffer<'a> {
@@ -670,8 +670,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 let old_outer_validity = core::mem::take(outer_validity);
                 outer_validity.reserve(capacity);
 
-                StructChunked::from_series(PlSmallStr::EMPTY, length, v.iter())
-                    .unwrap()
+                StructChunked::from_series(PlSmallStr::EMPTY, length, v.iter())?
                     .with_outer_validity(Some(old_outer_validity.freeze()))
                     .into_series()
             },
@@ -683,8 +682,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
             All(dtype, vals) => {
                 let mut swap_vals = Vec::with_capacity(capacity);
                 std::mem::swap(vals, &mut swap_vals);
-                Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &swap_vals, dtype, false)
-                    .unwrap()
+                Series::from_any_values_and_dtype(PlSmallStr::EMPTY, &swap_vals, dtype, false)?
             },
         };
 

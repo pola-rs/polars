@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use num_traits::AsPrimitive;
 use parking_lot::Mutex;
@@ -503,6 +503,28 @@ fn to_graph_rec<'a>(
             )
         },
 
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        ))]
+        StrptimeInfer {
+            input,
+            dtype,
+            options,
+            ambiguous_is_raise,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::strptime_infer::StrptimeInferNode::new(
+                    dtype.clone(),
+                    options.clone(),
+                    *ambiguous_is_raise,
+                ),
+                [(input_key, input.port)],
+            )
+        },
+
         Map {
             input,
             map,
@@ -656,6 +678,15 @@ fn to_graph_rec<'a>(
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
                 nodes::rle_id::RleIdNode::new(dtype.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
+        SortedUnique { input, keys } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            ctx.graph.add_node(
+                nodes::sorted_unique::SortedUnique::new(keys, input_schema),
                 [(input_key, input.port)],
             )
         },
@@ -822,7 +853,6 @@ fn to_graph_rec<'a>(
                     n_readers_pre_init: RelaxedCell::new_usize(0),
                     max_concurrent_scans: RelaxedCell::new_usize(0),
                     disable_morsel_split,
-                    io_metrics: OnceLock::default(),
                     verbose,
                 })),
                 [],
@@ -965,6 +995,24 @@ fn to_graph_rec<'a>(
                     *slice,
                     aggs,
                 )?,
+                [(input_key, input.port)],
+            )
+        },
+
+        #[cfg(feature = "is_first_distinct")]
+        IsFirstDistinct {
+            input,
+            out_name,
+            columns,
+        } => {
+            let input_schema = &ctx.phys_sm[input.node].output_schema;
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::is_first_distinct::IsFirstDistinctNode::new(
+                    Arc::new(input_schema.try_project(columns)?),
+                    out_name.clone(),
+                    PlRandomState::default(),
+                ),
                 [(input_key, input.port)],
             )
         },
@@ -1294,18 +1342,19 @@ fn to_graph_rec<'a>(
             use pyo3::{IntoPyObjectExt, PyTypeInfo, intern};
 
             let mut options = options.clone();
-            let with_columns = options.with_columns.take();
-            let n_rows = options.n_rows.take();
-
-            let python_scan_function = options.scan_fn.take().unwrap().0;
-
-            let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
 
             let (pl_predicate, predicate_serialized) = polars_mem_engine::python_scan_predicate(
                 &mut options,
                 ctx.expr_arena,
                 &mut ctx.expr_conversion_state,
             )?;
+
+            let with_columns = options.with_columns.take();
+            let n_rows = options.n_rows.take();
+
+            let python_scan_function = options.scan_fn.take().unwrap().0;
+
+            let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
 
             let output_schema = options.output_schema.unwrap_or(options.schema);
             let validate_schema = options.validate_schema;
@@ -1319,9 +1368,8 @@ fn to_graph_rec<'a>(
             });
 
             let (name, get_batch_fn) = match options.python_source {
-                S::Pyarrow => todo!(),
-                S::Cuda => todo!(),
-                S::IOPlugin => {
+                S::Cuda => unreachable!(),
+                S::IOPlugin | S::Pyarrow => {
                     let batch_size = Some(get_ideal_morsel_size());
                     let output_schema = output_schema.clone();
 
@@ -1484,7 +1532,6 @@ fn to_graph_rec<'a>(
                     n_readers_pre_init: RelaxedCell::new_usize(0),
                     max_concurrent_scans: RelaxedCell::new_usize(0),
                     disable_morsel_split,
-                    io_metrics: OnceLock::default(),
                     verbose,
                 })),
                 [],

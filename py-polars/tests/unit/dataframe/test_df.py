@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     from polars import Expr
-    from polars._typing import JoinStrategy, UniqueKeepStrategy
+    from polars._typing import JoinStrategy, PolarsDataType, UniqueKeepStrategy
     from tests.conftest import PlMonkeyPatch
 
 
@@ -190,7 +190,7 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
         }
     )
     record_batches = tbl.to_batches(max_chunksize=1)
-    expected_schema = {
+    expected_schema: dict[str, PolarsDataType] = {
         "a": pl.Datetime("ms"),
         "b": pl.Datetime("ms"),
         "c": pl.Datetime("us"),
@@ -241,7 +241,7 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     # try a single column dtype override
     for t in (tbl, empty_tbl):
         df = pl.DataFrame(t, schema_overrides={"e": pl.Int8})
-        override_schema = expected_schema.copy()
+        override_schema: dict[str, PolarsDataType] = expected_schema.copy()
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
         assert df.rows() == expected_data[: (df.height)]
@@ -2860,6 +2860,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_europe = "Europe/Amsterdam"
 
     dtm = datetime(2022, 10, 12, 12, 30)
+    type_overrides: dict[str, Any]
     for time_unit in DTYPE_TEMPORAL_UNITS:
         for type_overrides in (
             {
@@ -3354,3 +3355,28 @@ def test_sort_errors_with_object_dtype_24677() -> None:
         match=r"column '.*' has a dtype of '.*', which does not support sorting",
     ):
         df.sort("a")
+
+
+def test_sample_respects_global_seed_26973() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5, 6, 7, 8]})
+
+    pl.set_random_seed(0)
+    result1 = df.sample(1)
+    pl.set_random_seed(0)
+    result2 = df.sample(1)
+
+    assert_frame_equal(result1, result2)
+
+
+def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [3, 4]],
+            "b": [[5, 6], [7, 8]],
+            "c": ["foo", "bar"],
+            "d": [["baz"], ["qux"]],
+        }
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.transpose()

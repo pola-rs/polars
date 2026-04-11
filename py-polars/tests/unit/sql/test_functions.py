@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -25,14 +26,65 @@ def test_sql_expr() -> None:
     )
     result = df.select(*sql_exprs)
     expected = pl.DataFrame(
-        {"a": [1, 1, 1], "aa": [1, 4, 27], "b2": ["yz", "bc", None]}
+        {
+            "a": [1, 1, 1],
+            "aa": [1, 4, 27],
+            "b2": ["yz", "bc", None],
+        }
     )
     assert_frame_equal(result, expected)
 
-    # expect expressions that can't reasonably be parsed as expressions to raise
-    # (for example: those that explicitly reference tables and/or use wildcards)
+
+@pytest.mark.parametrize(
+    ("expr", "clause"),
+    [
+        ("1 + 2 ORDER BY a", "ORDER"),
+        ("EXCEPT x", "EXCEPT"),
+        ("EXPLAIN SELECT 1", "EXPLAIN"),
+        ("FROM tbl", "FROM"),
+        ("GROUP BY a", "GROUP"),
+        ("HAVING count(*) > 1", "HAVING"),
+        ("INTERSECT y", "INTERSECT"),
+        ("INTO outfile", "INTO"),
+        ("LIMIT 10", "LIMIT"),
+        ("MAX(a) UNION SELECT b", "UNION"),
+        ("ORDER BY a", "ORDER"),
+        ("SELECT xyz", "SELECT"),
+        ("UNION ALL", "UNION"),
+        ("WHERE abcd = 1", "WHERE"),
+        ("WITH cte AS (SELECT 1)", "WITH"),
+        ("a = 3 WHERE x = 0", "WHERE"),
+        ("a SELECT b", "SELECT"),
+        ("x + 1 LIMIT 10", "LIMIT"),
+    ],
+)
+def test_sql_expr_rejects_clauses(expr: str, clause: str) -> None:
     with pytest.raises(
         SQLInterfaceError,
-        match=r"unable to parse 'xyz\.\*' as Expr",
+        match=rf"expected an expression \(found '{clause}' clause\)",
     ):
-        pl.sql_expr("xyz.*")
+        pl.sql_expr(expr)
+
+
+@pytest.mark.parametrize(
+    ("expr", "token"),
+    [("a, b", ","), ("x AS y %", "%"), ("a; DROP TABLE t", ";")],
+)
+def test_sql_expr_rejects_invalid_expressions(expr: str, token: str) -> None:
+    with pytest.raises(
+        SQLInterfaceError,
+        match=rf"invalid expression \(found unexpected token '{re.escape(token)}'\)",
+    ):
+        pl.sql_expr(expr)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    ["@#$$% = 100", "||| AS abcd", "xyz.*"],
+)
+def test_sql_expr_invalid_colnames(expr: str) -> None:
+    with pytest.raises(
+        SQLInterfaceError,
+        match=rf"unable to parse '{re.escape(expr)}' as Expr",
+    ):
+        pl.sql_expr(expr)

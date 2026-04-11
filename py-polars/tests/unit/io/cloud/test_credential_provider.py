@@ -673,7 +673,7 @@ def test_credential_provider_rebuild_clears_cache(
     # Set the cache
     provider_local()
 
-    # Now update the the retrieval function to return updated credentials.
+    # Now update the retrieval function to return updated credentials.
     plmonkeypatch.setattr(
         credential_provider_class,
         "retrieve_credentials_impl",

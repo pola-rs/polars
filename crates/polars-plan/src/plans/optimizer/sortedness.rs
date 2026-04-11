@@ -18,6 +18,54 @@ use crate::plans::{
     constant_evaluate, into_column,
 };
 
+/// Container for sortedness state at each stage in an IR plan.
+#[derive(Debug)]
+pub struct IRPlanSorted(PlHashMap<Node, IRSorted>);
+
+impl IRPlanSorted {
+    pub fn resolve(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
+        let mut seen = PlHashSet::default();
+        let mut sortedness = PlHashMap::default();
+        let mut cache_proxy = PlHashMap::default();
+        let mut amort_passed_columns = PlHashSet::default();
+        is_sorted_rec(
+            root,
+            ir_arena,
+            expr_arena,
+            &mut seen,
+            &mut sortedness,
+            &mut cache_proxy,
+            &mut amort_passed_columns,
+            true,
+        );
+        Self(sortedness)
+    }
+
+    pub fn get(&self, node: Node) -> Option<&IRSorted> {
+        self.0.get(&node)
+    }
+
+    pub fn is_expr_sorted(
+        &self,
+        at: Node,
+        expr: &ExprIR,
+        expr_arena: &Arena<AExpr>,
+        input_schema: &Schema,
+    ) -> Option<AExprSorted> {
+        expr_is_sorted(self.get(at), expr, expr_arena, input_schema)
+    }
+
+    pub fn are_keys_sorted_any(
+        &self,
+        at: Node,
+        keys: &[ExprIR],
+        expr_arena: &Arena<AExpr>,
+        input_schema: &Schema,
+    ) -> Option<Vec<AExprSorted>> {
+        are_keys_sorted_any(self.get(at), keys, expr_arena, input_schema)
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Debug, Default, PartialEq, Clone, Copy, Hash)]
@@ -120,6 +168,7 @@ pub fn expr_is_sorted(
 }
 
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
+    let mut seen = PlHashSet::default();
     let mut sortedness = PlHashMap::default();
     let mut cache_proxy = PlHashMap::default();
     let mut amort_passed_columns = PlHashSet::default();
@@ -128,23 +177,31 @@ pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) ->
         root,
         ir_arena,
         expr_arena,
+        &mut seen,
         &mut sortedness,
         &mut cache_proxy,
         &mut amort_passed_columns,
+        false,
     )
 }
 
+#[expect(clippy::too_many_arguments)]
 #[recursive::recursive]
 fn is_sorted_rec(
     root: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
-    sortedness: &mut PlHashMap<Node, Option<IRSorted>>,
+    seen: &mut PlHashSet<Node>,
+    sortedness: &mut PlHashMap<Node, IRSorted>,
     cache_proxy: &mut PlHashMap<UniqueId, Option<IRSorted>>,
     amort_passed_columns: &mut PlHashSet<PlSmallStr>,
+    create_full_map: bool,
 ) -> Option<IRSorted> {
     if let Some(s) = sortedness.get(&root) {
-        return s.clone();
+        return Some(s.clone());
+    }
+    if !seen.insert(root) {
+        return None;
     }
 
     macro_rules! rec {
@@ -153,14 +210,20 @@ fn is_sorted_rec(
                 $node,
                 ir_arena,
                 expr_arena,
+                seen,
                 sortedness,
                 cache_proxy,
                 amort_passed_columns,
+                create_full_map,
             )
         }};
     }
 
-    sortedness.insert(root, None);
+    if create_full_map {
+        for input in ir_arena.get(root).inputs() {
+            rec!(input);
+        }
+    }
 
     // @NOTE: Most of the below implementations are very very conservative.
     let sorted = match ir_arena.get(root) {
@@ -428,7 +491,9 @@ fn is_sorted_rec(
         IR::Invalid => unreachable!(),
     };
 
-    sortedness.insert(root, sorted.clone());
+    if let Some(sorted) = sorted.clone() {
+        sortedness.insert(root, sorted);
+    }
     sorted
 }
 

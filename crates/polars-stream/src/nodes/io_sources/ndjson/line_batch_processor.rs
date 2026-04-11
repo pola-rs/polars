@@ -47,7 +47,7 @@ impl LineBatchProcessor {
 
         if verbose {
             eprintln!(
-                "[NDJSON LineBatchProcessor {}]: begin run(): port_type: {}",
+                "[NDJson LineBatchProcessor {}]: begin run(): port_type: {}",
                 worker_idx,
                 output_port.port_type()
             );
@@ -71,7 +71,7 @@ impl LineBatchProcessor {
 
         if needs_total_row_count {
             if verbose {
-                eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: entering row count mode");
+                eprintln!("[NDJson LineBatchProcessor {worker_idx}]: entering row count mode");
             }
 
             while let Ok(LineBatch {
@@ -84,7 +84,7 @@ impl LineBatchProcessor {
         }
 
         if verbose {
-            eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: returning");
+            eprintln!("[NDJson LineBatchProcessor {worker_idx}]: returning");
         }
 
         Ok(n_rows_processed)

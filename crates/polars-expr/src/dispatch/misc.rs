@@ -4,7 +4,6 @@ use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::try_get_supertype;
 #[cfg(feature = "interpolate")]
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "rank")]
@@ -16,7 +15,7 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-use polars_plan::plans::{AExprSorted, DynamicPred, RowEncodingVariant};
+use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -160,24 +159,6 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
 
 pub fn rechunk(s: &Column) -> PolarsResult<Column> {
     Ok(s.rechunk())
-}
-
-pub fn append(s: &[Column], upcast: bool) -> PolarsResult<Column> {
-    assert_eq!(s.len(), 2);
-
-    let a = &s[0];
-    let b = &s[1];
-
-    if upcast {
-        let dtype = try_get_supertype(a.dtype(), b.dtype())?;
-        let mut a = a.cast(&dtype)?;
-        a.append_owned(b.cast(&dtype)?)?;
-        Ok(a)
-    } else {
-        let mut a = a.clone();
-        a.append(b)?;
-        Ok(a)
-    }
 }
 
 #[cfg(feature = "mode")]
@@ -561,6 +542,11 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
             }
 
             let fill_value = s[1].clone();
+
+            // Handle Null dtype columns: fill with the fill value (changes dtype)
+            if series.dtype() == &DataType::Null {
+                return Ok(fill_value.new_from_index(0, series.len()));
+            }
 
             // default branch
             fn default(series: Column, fill_value: Column) -> PolarsResult<Column> {
@@ -1056,6 +1042,6 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
     Ok(c.new_from_index(0, n))
 }
 
-pub fn dynamic_pred(columns: &[Column], pred: &DynamicPred) -> PolarsResult<Column> {
+pub fn dynamic_pred(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
     pred.evaluate(columns)
 }

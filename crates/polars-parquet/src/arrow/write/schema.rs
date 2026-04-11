@@ -93,6 +93,8 @@ pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
 
 /// Creates a [`ParquetType`] from a [`Field`].
 pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
+    const PARQUET_FIELD_ID_KEY: &str = "PARQUET:field_id";
+
     let name = field.name.clone();
     let repetition = if field.is_nullable {
         Repetition::Optional
@@ -100,7 +102,11 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         Repetition::Required
     };
 
-    let field_id: Option<i32> = None;
+    let field_id: Option<i32> = field
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get(PARQUET_FIELD_ID_KEY))
+        .and_then(|v| v.parse().ok());
 
     // create type from field
     let (physical_type, primitive_converted_type, primitive_logical_type) = match field

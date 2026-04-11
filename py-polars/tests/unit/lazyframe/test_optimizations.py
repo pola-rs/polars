@@ -1,7 +1,6 @@
 import datetime as dt
 import io
 import itertools
-import typing
 
 import pyarrow as pa
 import pyarrow.dataset as pad
@@ -579,7 +578,7 @@ def test_concat_str_sortedness_26466() -> None:
         .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     )
 
-    assert "sorted-group-by" in typing.cast("str", dot)
+    assert "sorted-group-by" in dot
 
     for e in [pl.concat_str("x", pl.lit("c")), pl.concat_str("x", ignore_nulls=True)]:
         dot = (
@@ -589,7 +588,7 @@ def test_concat_str_sortedness_26466() -> None:
             .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
         )
 
-        assert "sorted-group-by" not in typing.cast("str", dot)
+        assert "sorted-group-by" not in dot
 
 
 def test_select_all_columns_no_projection() -> None:
@@ -628,3 +627,24 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
         q.collect(),
         pl.DataFrame({"x": [4, 5]}),
     )
+
+
+def test_drop_nulls_first_last_optimization_25478() -> None:
+    lf = pl.LazyFrame({"a": [None, 1, None, 3, None]})
+    lf = lf.select(a=pl.col.a.drop_nulls().first(), b=pl.col.a.drop_nulls().last())
+
+    explain = lf.explain(engine="streaming")
+    assert "first(" not in explain
+    assert "first_non_null(" in explain
+    assert "last(" not in explain
+    assert "last_non_null(" in explain
+
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1], "b": [3]}))
+
+
+def test_fast_count_predicate_27168() -> None:
+    csv = b"""a,b
+true,1
+false,2
+"""
+    assert pl.scan_csv(csv).filter(pl.col.a).select(pl.len()).collect().item() == 1

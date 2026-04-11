@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import random
 from collections import defaultdict
 from collections.abc import (
     Generator,
@@ -70,9 +69,9 @@ from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
+    NO_DEFAULT,
     _in_notebook,
     is_bool_sequence,
-    no_default,
     normalize_filepath,
     parse_version,
     qualified_type_name,
@@ -1027,6 +1026,9 @@ class DataFrame:
 
         return arr
 
+    @deprecated(
+        "Support for the dataframe interchange protocol is deprecated since version 1.40.0"
+    )
     def __dataframe__(
         self,
         nan_as_null: bool = False,  # noqa: FBT001
@@ -1034,6 +1036,9 @@ class DataFrame:
     ) -> PolarsDataFrame:
         """
         Convert to a dataframe object implementing the dataframe interchange protocol.
+
+        .. deprecated:: 1.40.0
+            Support for the Dataframe Interchange Protocol is deprecated.
 
         Parameters
         ----------
@@ -4170,15 +4175,18 @@ class DataFrame:
         data_page_size
             Size of the data page in bytes. Defaults to 1024^2 bytes.
         use_pyarrow
-            Use C++ parquet implementation vs Rust parquet implementation.
-            At the moment C++ supports more features.
+            Use PyArrow's C++ parquet implementation instead of Polars' native
+            Rust implementation. This may be useful when specific PyArrow features
+            are needed via ``pyarrow_options``. Some options are not supported when
+            enabled (e.g. ``statistics="full"``, ``metadata``, ``mkdir``).
         pyarrow_options
             Arguments passed to `pyarrow.parquet.write_table`.
 
             If you pass `partition_cols` here, the dataset will be written
             using `pyarrow.parquet.write_to_dataset`.
             The `partition_cols` parameter leads to write the dataset to a directory.
-            Similar to Spark's partitioned datasets.
+            Similar to Spark's partitioned datasets. For native partitioned
+            writes, consider using ``partition_by`` instead.
         partition_by
             Column(s) to partition by. A partitioned dataset will be written if this is
             specified. This parameter is considered unstable and is subject to change.
@@ -4251,17 +4259,15 @@ class DataFrame:
         >>> path: pathlib.Path = dirpath / "new_file.parquet"
         >>> df.write_parquet(path)
 
-        We can use pyarrow with use_pyarrow_write_to_dataset=True
-        to write partitioned datasets. The following example will
-        write the first row to ../watermark=1/*.parquet and the
-        other rows to ../watermark=2/*.parquet.
+        We can write partitioned datasets. The following example will write
+        the first row to ../watermark=1/*.parquet and the other rows to
+        ../watermark=2/*.parquet.
 
         >>> df = pl.DataFrame({"a": [1, 2, 3], "watermark": [1, 2, 2]})
         >>> path: pathlib.Path = dirpath / "partitioned_object"
         >>> df.write_parquet(
         ...     path,
-        ...     use_pyarrow=True,
-        ...     pyarrow_options={"partition_cols": ["watermark"]},
+        ...     partition_by=["watermark"],
         ... )
         """
         if compression is None:
@@ -9162,7 +9168,7 @@ class DataFrame:
     def get_column(self, name: str, *, default: Any) -> Any: ...
 
     def get_column(
-        self, name: str, *, default: Any | NoDefault = no_default
+        self, name: str, *, default: Any | NoDefault = NO_DEFAULT
     ) -> Series | Any:
         """
         Get a single column by name.
@@ -9213,7 +9219,7 @@ class DataFrame:
         try:
             return wrap_s(self._df.get_column(name))
         except ColumnNotFoundError:
-            if default is no_default:
+            if default is NO_DEFAULT:
                 raise
             return default
 
@@ -11414,7 +11420,7 @@ class DataFrame:
             neither stable nor fully random.
         seed
             Seed for the random number generator. If set to None (default), a
-            random seed is generated for each sample operation.
+            random seed is generated for each time the sample is called.
 
         Examples
         --------
@@ -11439,9 +11445,6 @@ class DataFrame:
         if n is not None and fraction is not None:
             msg = "cannot specify both `n` and `fraction`"
             raise ValueError(msg)
-
-        if seed is None:
-            seed = random.randint(0, 10000)
 
         if n is None and fraction is not None:
             if not isinstance(fraction, pl.Series):
@@ -12294,7 +12297,7 @@ class DataFrame:
 
     def unnest(
         self,
-        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector],
+        columns: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
         *more_columns: ColumnNameOrSelector,
         separator: str | None = None,
     ) -> DataFrame:
@@ -12303,6 +12306,8 @@ class DataFrame:
 
         The new columns will be inserted into the dataframe at the location of the
         struct column.
+
+        If no columns are provided, all struct columns are unnested.
 
         Parameters
         ----------
@@ -12346,6 +12351,20 @@ class DataFrame:
         │ foo    ┆ 1   ┆ a   ┆ true ┆ [1, 2]    ┆ baz   │
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
+
+        Unnest all struct columns by calling without arguments:
+
+        >>> df.unnest()
+        shape: (2, 6)
+        ┌────────┬─────┬─────┬──────┬───────────┬───────┐
+        │ before ┆ t_a ┆ t_b ┆ t_c  ┆ t_d       ┆ after │
+        │ ---    ┆ --- ┆ --- ┆ ---  ┆ ---       ┆ ---   │
+        │ str    ┆ i64 ┆ str ┆ bool ┆ list[i64] ┆ str   │
+        ╞════════╪═════╪═════╪══════╪═══════════╪═══════╡
+        │ foo    ┆ 1   ┆ a   ┆ true ┆ [1, 2]    ┆ baz   │
+        │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
+        └────────┴─────┴─────┴──────┴───────────┴───────┘
+
         >>> df = pl.DataFrame(
         ...     {
         ...         "before": ["foo", "bar"],

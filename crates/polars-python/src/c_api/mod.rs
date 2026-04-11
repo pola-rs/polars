@@ -464,6 +464,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "allocator")]
     {
         m.add("_allocator", allocator::create_allocator_capsule(py)?)?;
+        m.add_wrapped(wrap_pyfunction!(allocator::_estimate_memory_usage))
+            .unwrap();
     }
 
     m.add("_debug", cfg!(debug_assertions))?;
