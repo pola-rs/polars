@@ -1737,3 +1737,43 @@ def test_join_asof_by_nulls_27165() -> None:
         {"index": 0, "key": [1.0], "group": [0], "index_right": [None]}
     )
     assert_frame_equal(actual, expected)
+
+
+def test_join_asof_by_nulls_27165_2() -> None:
+    dataframe = functools.partial(
+        pl.DataFrame,
+        schema_overrides={
+            "group": pl.Int32,
+            "index": pl.get_index_type(),
+            "index_right": pl.get_index_type(),
+        },
+    )
+    left = dataframe({"index": [0, 1], "key": [None, 0.0], "group": [None, 0]})
+    right = dataframe(
+        {
+            "index": [0, 1, 2, 3],
+            "key": [None, None, None, 1.0],
+            "group": [None, None, None, 0],
+        }
+    )
+
+    actual = (
+        left.lazy()
+        .join_asof(
+            right.lazy(),
+            on="key",
+            by="group",
+            strategy="nearest",
+            allow_exact_matches=False,
+        )
+        .collect(engine="in-memory")
+    )
+    expected = (
+        left.lazy()
+        .join_asof(
+            right.lazy(), on="key", strategy="nearest", allow_exact_matches=False
+        )
+        .collect(engine="in-memory")
+        .drop("group_right")
+    )
+    assert_frame_equal(actual, expected)
