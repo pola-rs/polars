@@ -53,6 +53,33 @@ if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
 
+_NON_CSV_EXTENSIONS: dict[str, str] = {
+    ".parquet": "read_parquet",
+    ".parq": "read_parquet",
+    ".ipc": "read_ipc",
+    ".arrow": "read_ipc",
+    ".feather": "read_ipc",
+    ".avro": "read_avro",
+    ".ndjson": "read_ndjson",
+    ".jsonl": "read_ndjson",
+    ".json": "read_json",
+    ".xlsx": "read_excel",
+    ".xls": "read_excel",
+    ".ods": "read_ods",
+}
+
+
+def _check_not_csv(path: Path) -> None:
+    ext = path.suffix.lower()
+    if ext in _NON_CSV_EXTENSIONS:
+        alt = _NON_CSV_EXTENSIONS[ext]
+        msg = (
+            f"the file extension {ext!r} suggests this is not a CSV file"
+            f"\n\nUse `pl.{alt}()` instead of `pl.read_csv()` for this file format."
+        )
+        raise ValueError(msg)
+
+
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
@@ -638,6 +665,8 @@ def _read_csv_impl(
 
     path: str | None
     if isinstance(source, (str, Path)):
+        source_path = Path(source)
+        _check_not_csv(source_path)
         path = normalize_filepath(source, check_not_directory=False)
     else:
         path = None
