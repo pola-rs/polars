@@ -1706,18 +1706,22 @@ def test_join_asof_group_matches_nogroup(
         allow_exact_matches=allow_exact_matches,
     )
     q_ungrouped = (
-        df_left.lazy()
-        .join_asof(
-            df_right.lazy(),
+        df_left.join_asof(
+            df_right.filter(pl.col("group").is_not_null()),
             on="key",
             strategy=strategy,
             allow_exact_matches=allow_exact_matches,
         )
         .drop("group_right")
+        .with_columns(
+            pl.when(pl.col("group").is_not_null())
+            .then(pl.col("index_right"))
+            .alias("index_right")
+        )
     )
 
     grouped = q_grouped.collect()
-    ungrouped = q_ungrouped.collect()
+    ungrouped = q_ungrouped
     assert_frame_equal(grouped, ungrouped)
 
 
