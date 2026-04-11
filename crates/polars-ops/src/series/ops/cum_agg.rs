@@ -393,7 +393,7 @@ pub fn cum_mean_with_init(
     state: &mut CumMeanState,
 ) -> PolarsResult<Series> {
     use DataType::*;
-    let out = match s.dtype() {
+    match s.dtype() {
         #[cfg(feature = "dtype-decimal")]
         Decimal(_precision, scale) => {
             use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add, dec128_div};
@@ -412,39 +412,39 @@ pub fn cum_mean_with_init(
                     Ok(None)
                 }
             };
-            if reverse {
-                ca.iter().rev().map(update).try_collect_ca_trusted_like(ca)?.into_decimal_unchecked(DEC128_MAX_PREC, *scale).into_series()
+            let out = if reverse {
+                ca.iter().rev().map(update).try_collect_ca_trusted_like(ca)?
             } else {
-                ca.iter().map(update).try_collect_ca_trusted_like(ca)?.into_decimal_unchecked(DEC128_MAX_PREC, *scale).into_series()
-            }
+                ca.iter().map(update).try_collect_ca_trusted_like(ca)?
+            };
+            Ok(out.into_decimal_unchecked(DEC128_MAX_PREC, *scale).into_series())
         }
         #[cfg(feature = "dtype-duration")]
-        Duration(tu) => {
-            let ca = s.cast(&Int64)?.i64()?.clone();
-            let out = cum_mean_scan_numeric::<Int64Type>(&ca, reverse, state);
-            out.cast(&Int64)?.i64()?.clone().into_duration(*tu).into_series()
+        Duration(_tu) => {
+            let phys = s.to_physical_repr();
+            let out = cum_mean_scan_numeric::<Int64Type>(phys.i64()?, reverse, state);
+            out.into_series().cast(s.dtype())
         }
         #[cfg(feature = "dtype-datetime")]
-        Datetime(tu, tz) => {
-            let ca = s.cast(&Int64)?.i64()?.clone();
-            let out = cum_mean_scan_numeric::<Int64Type>(&ca, reverse, state);
-            out.cast(&Int64)?.i64()?.clone().into_datetime(*tu, tz.clone()).into_series()
+        Datetime(_tu, _tz) => {
+            let phys = s.to_physical_repr();
+            let out = cum_mean_scan_numeric::<Int64Type>(phys.i64()?, reverse, state);
+            out.into_series().cast(s.dtype())
         }
         #[cfg(feature = "dtype-date")]
         Date => {
-            let ca = s.cast(&Int32)?.i32()?.clone();
-            let out = cum_mean_scan_numeric::<Int32Type>(&ca, reverse, state);
-            out.cast(&Int32)?.i32()?.clone().into_date().into_series()
+            let phys = s.to_physical_repr();
+            let out = cum_mean_scan_numeric::<Int32Type>(phys.i32()?, reverse, state);
+            out.into_series().cast(s.dtype())
         }
         Float64 => {
-            cum_mean_scan_numeric::<Float64Type>(s.f64()?, reverse, state).into_series()
+            Ok(cum_mean_scan_numeric::<Float64Type>(s.f64()?, reverse, state).into_series())
         }
         _ => {
             let ca = s.cast(&Float64)?;
-            cum_mean_scan_numeric::<Float64Type>(ca.f64()?, reverse, state).into_series()
+            Ok(cum_mean_scan_numeric::<Float64Type>(ca.f64()?, reverse, state).into_series())
         }
-    };
-    Ok(out)
+    }
 }
 
 pub fn cum_mean(s: &Series, reverse: bool) -> PolarsResult<Series> {
