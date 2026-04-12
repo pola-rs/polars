@@ -199,22 +199,7 @@ def test_streaming_interpolate_vs_in_memory(
 
 
 @given(
-    data=series(
-        name="a",
-        allowed_dtypes=[
-            pl.Int8,
-            pl.Int16,
-            pl.Int32,
-            pl.Int64,
-            pl.UInt8,
-            pl.UInt16,
-            pl.UInt32,
-            pl.UInt64,
-            pl.Float16,
-            pl.Float32,
-            pl.Float64,
-        ],
-    ),
+    data=series(name="a", allowed_dtypes=NUMERIC_DTYPES),
 )
 @pytest.mark.parametrize("method", ["linear", "nearest"])
 def test_streaming_interpolate_dtypes(
