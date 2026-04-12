@@ -109,13 +109,11 @@ impl ComputeNode for InterpolateNode {
             // Input exhausted. Flush pending trailing nulls as actual nulls.
             debug_assert!(*pending_nulls > 0);
 
-            let pending = *pending_nulls;
             let mut send = send.serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let morsel_size = get_ideal_morsel_size();
-                let mut remaining = pending as usize;
-                while remaining > 0 {
-                    let chunk_size = morsel_size.min(remaining);
+                while *pending_nulls > 0 && !source_token.stop_requested() {
+                    let chunk_size = morsel_size.min(*pending_nulls as usize);
                     let df =
                         Column::full_null(col_name.clone(), chunk_size, &output_dtype).into_frame();
                     if send
@@ -126,12 +124,10 @@ impl ComputeNode for InterpolateNode {
                         break;
                     }
                     *seq = seq.successor();
-                    remaining -= chunk_size;
+                    *pending_nulls -= chunk_size as IdxSize;
                 }
                 Ok(())
             }));
-
-            *pending_nulls = 0;
             return;
         };
 
