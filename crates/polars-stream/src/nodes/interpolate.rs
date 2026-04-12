@@ -103,12 +103,11 @@ impl ComputeNode for InterpolateNode {
         let last_non_null = &mut self.last_non_null;
         let seq = &mut self.seq;
 
-        let source_token = SourceToken::new();
-
         let Some(recv) = recv else {
             // Input exhausted. Flush pending trailing nulls as actual nulls.
             debug_assert!(*pending_nulls > 0);
 
+            let source_token = SourceToken::new();
             let mut send = send.serial();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let morsel_size = get_ideal_morsel_size();
@@ -140,7 +139,7 @@ impl ComputeNode for InterpolateNode {
         // Serial receive and state handling thread.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
-                let df = morsel.into_df();
+                let (df, _, source_token, _) = morsel.into_inner();
                 let mut columns = df.into_columns();
                 assert_eq!(columns.len(), 1);
                 let column = columns.pop().unwrap();
@@ -156,7 +155,13 @@ impl ComputeNode for InterpolateNode {
                 let ready_values = column.slice(0, last_non_null_idx + 1);
 
                 if distributor
-                    .send((*seq, *pending_nulls, last_non_null.clone(), ready_values))
+                    .send((
+                        *seq,
+                        source_token,
+                        *pending_nulls,
+                        last_non_null.clone(),
+                        ready_values,
+                    ))
                     .await
                     .is_err()
                 {
@@ -173,12 +178,13 @@ impl ComputeNode for InterpolateNode {
 
         // Parallel worker threads.
         for (mut send, mut recv) in senders.into_iter().zip(distr_receivers) {
-            let source_token = source_token.clone();
             let input_dtype = input_dtype.clone();
             let output_dtype = output_dtype.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let wait_group = WaitGroup::default();
-                while let Ok((seq, pending_nulls, last_non_null, mut column)) = recv.recv().await {
+                while let Ok((seq, source_token, pending_nulls, last_non_null, mut column)) =
+                    recv.recv().await
+                {
                     // Add back in the last non-null value and the pending nulls.
                     //
                     // If we have only seen nulls until now, last_non_null=Null and its just an
