@@ -237,35 +237,6 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(self.same_type(out))
     }
 
-    #[must_use]
-    fn lst_reverse(&self) -> ListChunked {
-        let ca = self.as_list();
-        // SAFETY: `reverse` doesn't change the dtype
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
-    }
-
-    fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
-        let ca = self.as_list();
-        ca.try_apply_amortized_generic(|s| {
-            let opt_v = s.map(|s| s.as_ref().n_unique()).transpose()?;
-            Ok(opt_v.map(|idx| idx as IdxSize))
-        })
-    }
-
-    fn lst_unique(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        // SAFETY: `unique` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique())? };
-        Ok(self.same_type(out))
-    }
-
-    fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        // SAFETY: `unique_stable` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique_stable())? };
-        Ok(self.same_type(out))
-    }
-
     fn lst_arg_min(&self) -> IdxCa {
         let ca = self.as_list();
         ca.apply_amortized_generic(|opt_s| {

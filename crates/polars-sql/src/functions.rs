@@ -1645,10 +1645,10 @@ impl SQLFunctionVisitor<'_> {
             ArrayMax => self.visit_unary(|e| e.list().max()),
             ArrayMean => self.visit_unary(|e| e.list().mean()),
             ArrayMin => self.visit_unary(|e| e.list().min()),
-            ArrayReverse => self.visit_unary(|e| e.list().reverse()),
+            ArrayReverse => self.visit_unary(|e| e.list().eval(element().reverse())),
             ArraySum => self.visit_unary(|e| e.list().sum()),
             ArrayToString => self.visit_arr_to_string(),
-            ArrayUnique => self.visit_unary(|e| e.list().unique_stable()),
+            ArrayUnique => self.visit_unary(|e| e.list().eval(element().unique_stable())),
             Explode => self.visit_unary(|e| {
                 e.explode(ExplodeOptions {
                     empty_as_null: true,
