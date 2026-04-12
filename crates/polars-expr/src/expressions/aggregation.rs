@@ -493,10 +493,9 @@ impl PhysicalExpr for AggregationExpr {
             }
         };
 
-        Ok(AggregationContext::from_agg_state(
-            out,
-            Cow::Borrowed(groups),
-        ))
+        let mut ac_out = AggregationContext::from_agg_state(out, Cow::Borrowed(groups));
+        ac_out.set_groups_for_undefined_agg_states();
+        Ok(ac_out)
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
