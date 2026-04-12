@@ -577,6 +577,31 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
+def test_group_by_next_raises_type_error() -> None:
+    # Calling next() directly on a GroupBy should raise TypeError,
+    # because GroupBy is an Iterable, not an Iterator. See #12868.
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
+    gb = df.group_by("a")
+    with pytest.raises(TypeError):
+        next(gb)
+
+    # But iter() should work and return an iterator
+    it = iter(gb)
+    name, data = next(it)
+    assert isinstance(name, tuple)
+    assert isinstance(data, pl.DataFrame)
+
+
+def test_group_by_multiple_iterations() -> None:
+    # A GroupBy should support being iterated multiple times. See #12868.
+    df = pl.DataFrame({"a": ["x", "y", "x"], "b": [1, 2, 3]})
+    gb = df.group_by("a", maintain_order=True)
+
+    result1 = [(name, data.rows()) for name, data in gb]
+    result2 = [(name, data.rows()) for name, data in gb]
+    assert result1 == result2
+
+
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
