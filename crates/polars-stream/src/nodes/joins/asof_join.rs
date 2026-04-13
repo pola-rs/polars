@@ -397,7 +397,7 @@ fn prune_right_side(
     left: &DataFrame,
     right: &mut DataFrameSearchBuffer,
     params: &AsOfJoinParams,
-    before_left_row: usize,
+    left_row_idx: usize,
 ) -> PolarsResult<()> {
     if left.height() == 0 || right.height() == 0 {
         return Ok(());
@@ -410,7 +410,7 @@ fn prune_right_side(
     for ((left_by, right_by), (descending, nulls_last)) in Iterator::zip(by_iter, reorder_iter) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
         // SAFETY: We checked earlier that the dataframes are not empty
-        let group_val = unsafe { left_by_col.get_unchecked(before_left_row) };
+        let group_val = unsafe { left_by_col.get_unchecked(left_row_idx) };
         let cmp =
             move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
         start = right.binary_search(|x| cmp(x, &group_val).is_ge(), right_by, start..end);
@@ -419,7 +419,7 @@ fn prune_right_side(
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     // SAFETY: We checked earlier that the dataframes are not empty
-    let key_val = unsafe { left_key.get_unchecked(before_left_row) };
+    let key_val = unsafe { left_key.get_unchecked(left_row_idx) };
     let mut right_range_start =
         right.binary_search(|x| *x >= key_val, params.right.key_col(), start..end);
     if matches!(params.as_of_options().strategy, Backward | Nearest) {
