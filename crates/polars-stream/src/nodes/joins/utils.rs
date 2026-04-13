@@ -34,6 +34,9 @@ impl DataFrameSearchBuffer {
         self.total_rows
     }
 
+    /// Get the `row_index`th value from the `column`.
+    ///
+    /// SAFETY: Caller must ensure that `row_index` is within bounds.
     pub(super) unsafe fn get_unchecked(&self, column: &str, row_index: usize) -> AnyValue<'_> {
         unsafe { self.get_bypass_validity(column, row_index, false) }
     }
