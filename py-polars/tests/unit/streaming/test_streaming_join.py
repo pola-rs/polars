@@ -16,7 +16,7 @@ from polars.datatypes.group import (
     INTEGER_DTYPES,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric.strategies.core import dataframes, column, dtypes
+from polars.testing.parametric.strategies.core import column, dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -681,8 +681,17 @@ def test_streaming_asof_join(
     right = right_df.rename({"col0": "key"}).sort("key").with_row_index().lazy()
 
     if group_cols:
-        q = left.sort("group", maintain_order=True).join_asof(
-            right.sort("group", maintain_order=True),
+        descending = data.draw(st.booleans())
+        nulls_last = data.draw(st.booleans())
+        q = left.sort(
+            "group", maintain_order=True, descending=descending, nulls_last=nulls_last
+        ).join_asof(
+            right.sort(
+                "group",
+                maintain_order=True,
+                descending=descending,
+                nulls_last=nulls_last,
+            ),
             on="key",
             by="group",
             strategy=strategy,
@@ -690,9 +699,10 @@ def test_streaming_asof_join(
             coalesce=coalesce,
             check_sortedness=False,
         )
-        import sys
 
-        # assert q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+        assert "asof-join" in q.show_graph(
+            engine="streaming", plan_stage="physical", raw_output=True
+        )
     else:
         q = left.join_asof(
             right,
@@ -702,6 +712,8 @@ def test_streaming_asof_join(
             coalesce=coalesce,
             check_sortedness=True,
         )
+
+    import sys
 
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")

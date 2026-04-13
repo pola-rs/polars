@@ -1781,3 +1781,12 @@ def test_join_asof_by_nulls_27165_2() -> None:
         .drop("group_right")
     )
     assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+@pytest.mask.parametrize("by", [[None], ["group"], ["group", "subgroup"]])
+@given(dataframes)
+def test_asof_by_streaming() -> None:
+    pass

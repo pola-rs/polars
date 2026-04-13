@@ -3,10 +3,12 @@ use std::collections::VecDeque;
 
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
-use polars_core::utils::Container;
-use polars_ops::frame::{AsOfOptions, AsofJoin, AsofStrategy, JoinArgs, JoinType};
+use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
+use polars_ops::frame::{
+    _check_asof_columns, _finish_join, _join_asof_dispatch, AsOfOptions, AsofStrategy, JoinArgs,
+    JoinType,
+};
 use polars_ops::series::{rle_lengths, rle_lengths_helper_ca};
-use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::sort::reorder_cmp;
@@ -39,7 +41,7 @@ impl AsOfJoinSideParams {
 
 #[derive(Debug)]
 struct AsOfJoinParams {
-    output_schema: SchemaRef,
+    _output_schema: SchemaRef,
     left: AsOfJoinSideParams,
     right: AsOfJoinSideParams,
     by_descending: Vec<bool>,
@@ -121,7 +123,7 @@ impl AsOfJoinNode {
         };
 
         let params = AsOfJoinParams {
-            output_schema,
+            _output_schema: output_schema,
             left,
             right,
             by_descending: by_descending.unwrap_or_default(),
@@ -454,21 +456,21 @@ async fn compute_and_emit_task(
 /// Provides run-length group boundaries and value comparison, abstracting over
 /// the single-column and multi-column cases.
 struct ByGroups<'a> {
-    kind: GroupEncodingKind<'a>,
+    kind: GroupEncodingKind,
     /// Run-lengths of consecutive equal group values (in sorted order).
     run_lengths: &'a mut Vec<IdxSize>,
 }
 
-enum GroupEncodingKind<'a> {
+enum GroupEncodingKind {
     /// Single by-column stored directly.
-    Single(&'a Column),
+    Single(Column),
     /// Multiple by-columns merged into a row-encoded binary column for comparison.
     Multi(ChunkedArray<BinaryOffsetType>),
 }
 
 impl<'a> ByGroups<'a> {
     fn find_groups(
-        df: &'a DataFrame,
+        df: &DataFrame,
         by: &[PlSmallStr],
         mut run_lengths: &'a mut Vec<IdxSize>,
         params: &AsOfJoinParams,
@@ -478,7 +480,7 @@ impl<'a> ByGroups<'a> {
             [col_name] => {
                 let col = df.column(col_name)?;
                 rle_lengths(col, &mut run_lengths)?;
-                GroupEncodingKind::Single(col)
+                GroupEncodingKind::Single(col.clone())
             },
             _ => {
                 let cols = by
@@ -539,7 +541,7 @@ impl<'a> ByGroups<'a> {
     }
 
     /// Iterates over groups as `(start_row, row_count)` pairs.
-    fn iter_groups(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+    fn iter_groups(&self) -> impl Iterator<Item = (usize, usize)> {
         self.run_lengths.iter().scan(0usize, |offset, &len| {
             let start = *offset;
             *offset += len as usize;
@@ -548,76 +550,69 @@ impl<'a> ByGroups<'a> {
     }
 }
 
-/// Removes temporary key columns, coalesces the real `on` columns, and drops the
-/// duplicated right `by` columns from a freshly joined output chunk.
-fn finalize_output(
-    mut out: DataFrame,
+fn drop_columns(
+    left_df: &mut DataFrame,
+    right_df: &mut DataFrame,
     params: &AsOfJoinParams,
-    any_key_is_temporary_col: bool,
-) -> PolarsResult<DataFrame> {
+) -> PolarsResult<()> {
     // Drop any temporary join-key columns that were added before calling _join_asof.
-    for tmp_col in [&params.left.tmp_key_col, &params.right.tmp_key_col] {
-        if let Some(col) = tmp_col
-            && out.schema().contains(col)
-        {
-            out.drop_in_place(col)?;
-        }
-    }
-
-    // When a temporary key column was used, the real `on` column from the right
-    // side is still present and needs to be coalesced away manually.
-    if any_key_is_temporary_col
-        && params.args.should_coalesce()
-        && params.left.on == params.right.on
+    if let Some(ref col) = params.left.tmp_key_col
+        && left_df.schema().contains(col)
     {
-        let right_on = format_pl_smallstr!("{}{}", params.right.on, params.args.suffix());
-        out.drop_in_place(&right_on)?;
+        left_df.drop_in_place(col)?;
+    }
+    if let Some(ref col) = params.right.tmp_key_col
+        && right_df.schema().contains(col)
+    {
+        right_df.drop_in_place(col)?;
     }
 
-    // Drop the right `by` columns (they appear either under their suffixed name
-    // when they collide with a left column, or under the original name).
+    // Only return one set of group columns in the result.
     for col in &params.right.by {
-        let suffixed = format_pl_smallstr!("{}{}", col, params.args.suffix());
-        if out.get_column_index(&suffixed).is_some() {
-            out.drop_in_place(&suffixed)?;
-        } else {
-            out.drop_in_place(col)?;
-        }
+        right_df.drop_in_place(col)?;
     }
 
-    Ok(out)
+    // Coalesce the key column.
+    if params.args.should_coalesce() && params.left.on == params.right.on {
+        right_df.drop_in_place(&params.right.on)?;
+    }
+    Ok(())
 }
 
 /// Calls `_join_asof` on a left/right pair and cleans up the output via
 /// [`finalize_output`].
 fn join_asof_ungrouped(
-    left_df: &DataFrame,
-    right_df: &DataFrame,
+    mut left_df: DataFrame,
+    mut right_df: DataFrame,
     left_key: &Series,
     right_key: &Series,
     options: &AsOfOptions,
     params: &AsOfJoinParams,
-    coalesce: bool,
-    any_key_is_temporary_col: bool,
 ) -> PolarsResult<DataFrame> {
-    let out = AsofJoin::_join_asof(
-        left_df,
-        right_df,
+    if options.check_sortedness {
+        _check_asof_columns(
+            left_key,
+            right_key,
+            options.tolerance.is_some(),
+            options.check_sortedness,
+            false,
+        )?;
+    }
+    let take_idx = _join_asof_dispatch(
         left_key,
         right_key,
         options.strategy,
         options.tolerance.clone().map(Scalar::into_value),
-        params.args.suffix.clone(),
-        None,
-        coalesce,
         options.allow_eq,
-        options.check_sortedness,
     )?;
-    finalize_output(out, params, any_key_is_temporary_col)
+    drop_columns(&mut left_df, &mut right_df, params)?;
+    // SAFETY: _join_asof_dispatch only returns in-bounds indices.
+    let right_df = unsafe { right_df.take_unchecked(&take_idx) };
+    _finish_join(left_df, right_df, params.args.suffix.clone())
 }
 
 fn compute_asof_join(
-    left_df: DataFrame,
+    mut left_df: DataFrame,
     right_dfsb: DataFrameSearchBuffer,
     params: &AsOfJoinParams,
     left_lengths_scratch: &mut ScratchVec<IdxSize>,
@@ -626,25 +621,19 @@ fn compute_asof_join(
     let left_lengths = left_lengths_scratch.get();
     let right_lengths = right_lengths_scratch.get();
 
-    let right_df = right_dfsb.into_df();
+    let mut right_df = right_dfsb.into_df();
     let options = params.as_of_options();
-    let any_key_is_temporary_col =
-        params.left.tmp_key_col.is_some() || params.right.tmp_key_col.is_some();
-    let coalesce = any_key_is_temporary_col || params.args.should_coalesce();
-
-    let left_key = left_df.column(params.left.key_col())?;
-    let right_key = right_df.column(params.right.key_col())?;
+    let left_key = left_df.column(params.left.key_col())?.clone();
+    let right_key = right_df.column(params.right.key_col())?.clone();
 
     if params.left.by.is_empty() {
         return join_asof_ungrouped(
-            &left_df,
-            &right_df,
+            left_df,
+            right_df,
             left_key.as_materialized_series(),
             right_key.as_materialized_series(),
             options,
             params,
-            coalesce,
-            any_key_is_temporary_col,
         );
     }
 
@@ -657,7 +646,9 @@ fn compute_asof_join(
     let mut right_groups_iter = right_groups.iter_groups();
     let mut right_group = right_groups_iter.next();
 
-    let mut acc = DataFrame::empty_with_arc_schema(params.output_schema.clone());
+    drop_columns(&mut left_df, &mut right_df, params)?;
+
+    let mut out_right = Vec::with_capacity(left_groups.run_lengths.len());
     for (left_start, left_group_len) in left_groups_iter {
         let right_chunk_len =
             // SAFETY: the iterator results will be in-bounds.
@@ -686,22 +677,26 @@ fn compute_asof_join(
             };
 
         let right_start = right_group.map_or(0, |(start, _len)| start);
-        let group_left = left_df.slice(left_start as i64, left_group_len);
-        let group_right = right_df.slice(right_start as i64, right_chunk_len);
         let group_left_key = left_key.slice(left_start as i64, left_group_len);
         let group_right_key = right_key.slice(right_start as i64, right_chunk_len);
-        let chunk = join_asof_ungrouped(
-            &group_left,
-            &group_right,
+
+        let take_idx = _join_asof_dispatch(
             group_left_key.as_materialized_series(),
             group_right_key.as_materialized_series(),
-            options,
-            params,
-            coalesce,
-            any_key_is_temporary_col,
+            options.strategy,
+            options.tolerance.clone().map(Scalar::into_value),
+            options.allow_eq,
         )?;
-        acc.vstack_mut_owned_unchecked(chunk);
+
+        out_right.push(
+            right_df
+                .slice(right_start as i64, right_chunk_len)
+                .take(&take_idx)?,
+        );
     }
 
-    Ok(acc)
+    let initial = DataFrame::empty_with_arc_schema(right_df.schema().clone());
+    let out_right =
+        accumulate_dataframes_vertical_unchecked([initial].into_iter().chain(out_right));
+    _finish_join(left_df, out_right, params.args.suffix.clone())
 }
