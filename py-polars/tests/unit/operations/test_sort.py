@@ -1290,6 +1290,7 @@ def test_sort_by_empty_list_eval_25433() -> None:
     expected = pl.DataFrame({"a": [sorted(some_list), []]})
     assert_frame_equal(out, expected)
 
+
 @pytest.mark.may_fail_auto_streaming
 def test_sort_already_sorted_no_rechunk_25733() -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
