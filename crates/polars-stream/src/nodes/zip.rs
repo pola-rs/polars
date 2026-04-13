@@ -6,7 +6,7 @@ use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::polars_ensure;
-use polars_ooc::{AccessPattern, SpillContext, mm};
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
@@ -28,7 +28,7 @@ struct InputHead {
     stream_exhausted: bool,
 
     // A FIFO queue of morsels belonging to this input stream.
-    morsels: VecDeque<(Token, SourceToken, Option<WaitToken>)>,
+    morsels: VecDeque<(SpillFrame, SourceToken, Option<WaitToken>)>,
 
     // The total length of the morsels in the input head.
     total_len: usize,
@@ -47,7 +47,7 @@ impl InputHead {
         }
     }
 
-    async fn add_morsel(&mut self, mut morsel: Morsel, ctx: &SpillContext) {
+    async fn add_morsel(&mut self, mut morsel: Morsel, ctx: &MostRecentSpillContext) {
         self.total_len += morsel.df().height();
 
         if self.is_broadcast.is_none() {
@@ -64,10 +64,9 @@ impl InputHead {
             // Zip is the exception: we keep the consume token alive until
             // the drain loop rather than dropping it before buffering.
             let consume_token = morsel.take_consume_token();
-            let (token, source_token) = morsel
-                .store_into_token_and_source(ctx, AccessPattern::Fifo)
-                .await;
-            self.morsels.push_back((token, source_token, consume_token));
+            let source_token = morsel.source_token().clone();
+            let sf = SpillFrame::new(morsel.into_df(), ctx).await;
+            self.morsels.push_back((sf, source_token, consume_token));
         }
     }
 
@@ -84,7 +83,9 @@ impl InputHead {
 
     async fn take(&mut self, len: usize) -> DataFrame {
         let columns: Vec<Column> = if self.is_broadcast.unwrap() && self.shape() != (0, 0) {
-            mm().df(&self.morsels[0].0)
+            self.morsels[0]
+                .0
+                .get()
                 .await
                 .columns()
                 .iter()
@@ -96,12 +97,10 @@ impl InputHead {
             return if self.morsels[0].0.height() == len {
                 self.morsels.pop_front().unwrap().0.into_df().await
             } else {
-                mm().with_df_mut(&self.morsels[0].0, |df| {
-                    let (head, tail) = df.split_at(len as i64);
-                    *df = tail;
-                    head
-                })
-                .await
+                let mut df = self.morsels[0].0.get_mut().await;
+                let (head, tail) = df.split_at(len as i64);
+                *df = tail;
+                head
             };
         } else {
             self.schema
@@ -135,7 +134,7 @@ pub struct ZipNode {
     zip_behavior: ZipBehavior,
     out_seq: MorselSeq,
     input_heads: Vec<InputHead>,
-    spill_ctx: Arc<SpillContext>,
+    spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl ZipNode {
@@ -148,7 +147,7 @@ impl ZipNode {
             zip_behavior,
             out_seq: MorselSeq::new(0),
             input_heads,
-            spill_ctx: mm().register_context(),
+            spill_ctx: MostRecentSpillContext::new(),
         }
     }
 }

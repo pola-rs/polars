@@ -11,7 +11,7 @@ use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
-use polars_ooc::{AccessPattern, SpillContext, mm};
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -305,7 +305,7 @@ impl SampleState {
         recv: &[PortState],
         params: &mut EquiJoinParams,
         state: &StreamingExecutionState,
-        spill_ctx: &SpillContext,
+        spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<Option<BuildState>> {
         let left_saturated = self.left_len >= params.sample_limit;
         let right_saturated = self.right_len >= params.sample_limit;
@@ -434,8 +434,8 @@ impl SampleState {
 
 #[derive(Default)]
 struct LocalBuilder {
-    // The complete list of tokens to morsels and their computed hashes seen by this builder.
-    morsels: Vec<(MorselSeq, Token, HashKeys)>,
+    // The complete list of morsels and their computed hashes seen by this builder.
+    morsels: Vec<(MorselSeq, SpillFrame, HashKeys)>,
 
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
@@ -479,7 +479,7 @@ impl BuildState {
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
         state: &StreamingExecutionState,
-        spill_ctx: &SpillContext,
+        spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<()> {
         let track_unmatchable = params.emit_unmatched_build();
         let (key_selectors, payload_selector);
@@ -514,10 +514,8 @@ impl BuildState {
             local
                 .morsel_idxs_offsets_per_p
                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-            let token = mm()
-                .store(payload, spill_ctx, AccessPattern::NoPattern)
-                .await;
-            local.morsels.push((morsel.seq(), token, hash_keys));
+            let sf = SpillFrame::new(payload, spill_ctx).await;
+            local.morsels.push((morsel.seq(), sf, hash_keys));
         }
         Ok(())
     }
@@ -581,7 +579,7 @@ impl BuildState {
                             }
 
                             let (_mseq, token, keys) = l.morsels.get_unchecked(idx_in_l);
-                            let payload = mm().df_blocking(token);
+                            let payload = token.get_blocking();
                             let p_morsel_idxs_start =
                                 l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
                             let p_morsel_idxs_stop =
@@ -686,7 +684,7 @@ impl BuildState {
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
                             let (_mseq, token, keys) = morsel;
-                            let payload = mm().df_blocking(token);
+                            let payload = token.get().await;
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -1198,7 +1196,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     table: Box<dyn IdxTable>,
-    spill_ctx: Arc<SpillContext>,
+    spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl EquiJoinNode {
@@ -1299,7 +1297,7 @@ impl EquiJoinNode {
                 sample_limit,
             },
             table: new_idx_table(unique_key_schema),
-            spill_ctx: mm().register_context(),
+            spill_ctx: MostRecentSpillContext::new(),
         })
     }
 }

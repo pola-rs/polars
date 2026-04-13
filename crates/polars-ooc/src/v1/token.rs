@@ -1,6 +1,6 @@
 use polars_core::prelude::DataFrame;
 
-use crate::memory_manager::mm;
+use super::memory_manager::mm;
 
 /// Ownerless slot identity — `(index, generation)` without the `Drop`
 /// that frees the slot. Used in the spill-tracking stack as a weak

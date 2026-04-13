@@ -7,7 +7,7 @@ use polars_io::ipc::{IpcReader, IpcWriter};
 use polars_io::path_utils::create_dir_owner_only;
 use polars_io::{SerReader, SerWriter};
 
-use crate::cleaner;
+use super::cleaner;
 
 /// On-disk layout:
 ///
