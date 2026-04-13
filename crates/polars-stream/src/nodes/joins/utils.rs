@@ -100,13 +100,11 @@ impl DataFrameSearchBuffer {
     }
 
     fn gc(&mut self) {
-        while let Some((_, df)) = self.dfs_at_offsets.first_key_value() {
-            if self.skip_rows > df.height() {
-                let (_, df) = self.dfs_at_offsets.pop_first().unwrap();
-                self.skip_rows -= df.height();
-            } else {
-                break;
-            }
+        while let Some((_, df)) = self.dfs_at_offsets.first_key_value()
+            && self.skip_rows > df.height()
+        {
+            let (_, gc_df) = self.dfs_at_offsets.pop_first().unwrap();
+            self.skip_rows -= gc_df.height();
         }
     }
 
