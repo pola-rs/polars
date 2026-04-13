@@ -168,6 +168,7 @@ nav:
           - polars-on-premises/bare-metal/configuration/resource-limits.md
           - polars-on-premises/bare-metal/configuration/shuffle-data.md
           - polars-on-premises/bare-metal/configuration/anonymous-results.md
+          - polars-on-premises/bare-metal/configuration/anonymous-users.md
           - polars-on-premises/bare-metal/configuration/network-addresses.md
           - polars-on-premises/bare-metal/configuration/static-leader.md
           - polars-on-premises/bare-metal/configuration/example-configurations.md
