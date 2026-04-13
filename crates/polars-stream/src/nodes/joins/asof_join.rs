@@ -474,11 +474,11 @@ impl<'a> ByGroups<'a> {
         run_lengths: &'a mut ScratchVec<IdxSize>,
         params: &AsOfJoinParams,
     ) -> PolarsResult<Self> {
-        let mut run_lengths = run_lengths.get();
+        let run_lengths = run_lengths.get();
         let kind = match by {
             [col_name] => {
                 let col = df.column(col_name)?;
-                rle_lengths(col, &mut run_lengths)?;
+                rle_lengths(col, run_lengths)?;
                 GroupEncodingKind::Single(col.clone())
             },
             _ => {
@@ -493,7 +493,7 @@ impl<'a> ByGroups<'a> {
                     &params.by_nulls_last,
                     true,
                 )?;
-                rle_lengths_helper_ca(&encoded, &mut run_lengths);
+                rle_lengths_helper_ca(&encoded, run_lengths);
                 GroupEncodingKind::Multi(encoded)
             },
         };
@@ -598,8 +598,8 @@ fn join_asof_ungrouped(
         )?;
     }
     let take_idx = _join_asof_dispatch(
-        &left_key,
-        &right_key,
+        left_key,
+        right_key,
         options.strategy,
         options.tolerance.clone().map(Scalar::into_value),
         options.allow_eq,

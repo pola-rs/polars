@@ -338,50 +338,50 @@ pub fn _join_asof_dispatch(
         },
         DataType::Int32 => {
             let ca = left_key.i32().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         DataType::Int64 => {
             let ca = left_key.i64().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         #[cfg(feature = "dtype-i128")]
         DataType::Int128 => {
             let ca = left_key.i128().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         DataType::UInt32 => {
             let ca = left_key.u32().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         DataType::UInt64 => {
             let ca = left_key.u64().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         #[cfg(feature = "dtype-u128")]
         DataType::UInt128 => {
             let ca = left_key.u128().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
             let ca = left_key.f16().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         DataType::Float32 => {
             let ca = left_key.f32().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         DataType::Float64 => {
             let ca = left_key.f64().unwrap();
-            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
         },
         DataType::Boolean => {
             let ca = left_key.bool().unwrap();
-            join_asof::<BooleanType>(ca, &right_key, strategy, allow_eq)
+            join_asof::<BooleanType>(ca, right_key, strategy, allow_eq)
         },
         DataType::Binary => {
             let ca = left_key.binary().unwrap();
-            join_asof::<BinaryType>(ca, &right_key, strategy, allow_eq)
+            join_asof::<BinaryType>(ca, right_key, strategy, allow_eq)
         },
         DataType::String => {
             let ca = left_key.str().unwrap();
