@@ -16,6 +16,7 @@ use polars_utils::sort::reorder_cmp;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::async_primitives::distributor_channel as dc;
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -417,14 +418,17 @@ async fn compute_and_emit_task(
     mut send: PortSender,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
+    let wait_group = WaitGroup::default();
     let mut scratch1 = ScratchVec::default();
     let mut scratch2 = ScratchVec::default();
     while let Ok((left_df, right_dfsb, seq, st)) = dist_recv.recv().await {
         let out = compute_asof_join(left_df, right_dfsb, params, &mut scratch1, &mut scratch2)?;
-        let morsel = Morsel::new(out, seq, st);
+        let mut morsel = Morsel::new(out, seq, st);
+        morsel.set_consume_token(wait_group.token());
         if send.send(morsel).await.is_err() {
             return Ok(());
         }
+        wait_group.wait().await;
     }
     Ok(())
 }
@@ -490,7 +494,7 @@ impl<'a> ByGroups<'a> {
         }
     }
 
-    /// Lexographically compare group `idx` with group `other_idx`.
+    /// Lexicographically compare group `idx` with group `other_idx`.
     ///
     /// # Safety
     /// Both indices must be valid row indices within their respective encodings.
@@ -576,8 +580,6 @@ fn join_asof_ungrouped(
             false,
         )?;
     }
-    let left_key = left_key.to_physical_repr();
-    let right_key = right_key.to_physical_repr();
     let take_idx = _join_asof_dispatch(
         &left_key,
         &right_key,
@@ -603,8 +605,11 @@ fn compute_asof_join(
 
     let mut right_df = right_dfsb.into_df();
     let options = params.as_of_options();
-    let left_key = left_df.column(params.left.key_col())?.clone();
-    let right_key = right_df.column(params.right.key_col())?.clone();
+    let left_key = left_df.column(params.left.key_col())?.to_physical_repr();
+    let right_key = right_df
+        .column(params.right.key_col())?
+        .clone()
+        .to_physical_repr();
 
     if params.left.by.is_empty() {
         return join_asof_ungrouped(

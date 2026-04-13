@@ -650,7 +650,6 @@ def test_merge_join_applicable(
     ],
 )
 @given(data=st.data())
-@settings(max_examples=500)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,

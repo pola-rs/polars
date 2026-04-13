@@ -11,8 +11,8 @@ description = "Data buffers for the Polars DataFrame library"
 [dependencies]
 bytemuck = { workspace = true }
 either = { workspace = true }
-serde = { workspace = true, optional = true }
 polars-utils = { workspace = true }
+serde = { workspace = true, optional = true }
 
 [dev-dependencies]
 
