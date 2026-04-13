@@ -1770,14 +1770,14 @@ def test_join_asof_by_nulls_27165_2() -> None:
             strategy="nearest",
             allow_exact_matches=False,
         )
-        .collect(engine="in-memory")
+        .collect()
     )
     expected = (
         left.lazy()
         .join_asof(
             right.lazy(), on="key", strategy="nearest", allow_exact_matches=False
         )
-        .collect(engine="in-memory")
+        .collect()
         .drop("group_right")
     )
     assert_frame_equal(actual, expected)
