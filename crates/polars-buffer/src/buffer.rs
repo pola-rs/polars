@@ -3,7 +3,6 @@ use std::sync::LazyLock;
 
 use bytemuck::{Pod, Zeroable};
 use either::Either;
-use polars_utils::range::{check_range, decode_range_unchecked};
 
 use crate::storage::SharedStorage;
 
@@ -216,7 +215,7 @@ impl<T> Buffer<T> {
     #[inline]
     pub fn slice_in_place<R: RangeBounds<usize>>(&mut self, range: R) {
         unsafe {
-            let Range { start, end } = check_range(range, ..self.len());
+            let Range { start, end } = crate::check_range(range, ..self.len());
             self.ptr = self.ptr.add(start);
             self.length = end - start;
         }
@@ -229,7 +228,7 @@ impl<T> Buffer<T> {
     #[inline]
     pub unsafe fn slice_in_place_unchecked<R: RangeBounds<usize>>(&mut self, range: R) {
         unsafe {
-            let Range { start, end } = decode_range_unchecked(range, ..self.len());
+            let Range { start, end } = crate::decode_range_unchecked(range, ..self.len());
             self.ptr = self.ptr.add(start);
             self.length = end - start;
         }
