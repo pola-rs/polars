@@ -376,7 +376,7 @@ fn need_more_right_side(
             if first_greater >= right.height() {
                 return Ok(true);
             }
-            // In the nearest cases, there may be a chunk of consecutive equal
+            // In the Nearest case, there may be a chunk of consecutive equal
             // values following the match value on the left side.  In this case,
             // the AsOf join is greedy and should until the *end* of that chunk.
 
