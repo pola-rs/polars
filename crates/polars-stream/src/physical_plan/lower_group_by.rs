@@ -599,6 +599,55 @@ fn try_lower_agg_input_expr(
             let trans_output = expr_arena.add(AExpr::Column(output_name));
             Ok(Some((stream, trans_output, false)))
         },
+        AExpr::Function {
+            input: inputs_ref,
+            function: function @ (IRFunctionExpr::DropNulls | IRFunctionExpr::DropNans),
+            options: _,
+        } => {
+            let input = &inputs_ref[0];
+            if !is_elementwise_rec_cached(input.node(), expr_arena, expr_cache) {
+                return Ok(None);
+            }
+
+            let output_name = unique_column_name();
+            let predicate_name = unique_column_name();
+            let mut select_exprs = keys.to_vec();
+            select_exprs.push(ExprIR::new(
+                input.node(),
+                OutputName::Alias(output_name.clone()),
+            ));
+            let predicate = AExprBuilder::function(
+                vec![inputs_ref[0].clone()],
+                if matches!(function, IRFunctionExpr::DropNulls) {
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull)
+                } else {
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan)
+                },
+                expr_arena,
+            )
+            .expr_ir(predicate_name.clone());
+            select_exprs.push(predicate);
+
+            let mut stream = build_select_stream(
+                input_stream,
+                &select_exprs,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
+            stream = build_filter_stream(
+                stream,
+                ExprIR::from_column_name(predicate_name, expr_arena),
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
+
+            let trans_output = expr_arena.add(AExpr::Column(output_name));
+            Ok(Some((stream, trans_output, false)))
+        },
         _ => Ok(None),
     }
 }
