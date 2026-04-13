@@ -25,8 +25,9 @@ use crate::nodes::ComputeNode;
 use crate::nodes::joins::utils::{DataFrameSearchBuffer, stop_and_buffer_pipe_contents};
 use crate::pipe::{PortReceiver, PortSender, RecvPort, SendPort};
 
-// TODO: [amber] Finalize after accumulating instead of doing it for each group.
-// TODO: [amber] Add a big parametrized test.
+// TODO: [amber] Update the docs
+
+const ROW_ENCODED_COL_NAME: PlSmallStr = PlSmallStr::from_static("__PL_ASOF_JOIN_BY");
 
 #[derive(Debug)]
 pub struct AsOfJoinSideParams {
@@ -347,7 +348,7 @@ fn need_more_right_side(
     for ((left_by, right_by), (descending, nulls_last)) in Iterator::zip(by_iter, reorder_iter) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
         // SAFETY: We checked earlier that the dataframes are not empty
-        let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) }.clone();
+        let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) };
         let cmp =
             move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
         start = right.binary_search(|x| cmp(x, &left_last_group).is_ge(), right_by, start..end);
@@ -411,7 +412,7 @@ fn prune_right_side(
     for ((left_by, right_by), (descending, nulls_last)) in Iterator::zip(by_iter, reorder_iter) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
         // SAFETY: We checked earlier that the dataframes are not empty
-        let group_val = unsafe { left_by_col.get_unchecked(before_left_row) }.clone();
+        let group_val = unsafe { left_by_col.get_unchecked(before_left_row) };
         let cmp =
             move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
         start = right.binary_search(|x| cmp(x, &group_val).is_ge(), right_by, start..end);
@@ -475,7 +476,6 @@ impl<'a> ByGroups<'a> {
         mut run_lengths: &'a mut Vec<IdxSize>,
         params: &AsOfJoinParams,
     ) -> PolarsResult<Self> {
-        const ROW_ENCODED_COL_NAME: PlSmallStr = PlSmallStr::from_static("__PL_ASOF_JOIN_BY");
         let kind = match by {
             [col_name] => {
                 let col = df.column(col_name)?;
