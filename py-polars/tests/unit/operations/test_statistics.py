@@ -4,9 +4,11 @@ import math
 from datetime import timedelta
 
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 
 def test_corr() -> None:
@@ -160,3 +162,49 @@ def test_corr_cov_lit_produces_zero_nan_26633() -> None:
     assert math.isnan(result_corr.item())
     result_cov = df.select(pl.cov(pl.lit(1), "a"))
     assert math.isclose(result_cov.item(), 0.0)
+
+
+_NUMERIC_DTYPES = [
+    pl.Int8,
+    pl.Int16,
+    pl.Int32,
+    pl.UInt8,
+    pl.UInt16,
+    pl.UInt32,
+    pl.Float32,
+    pl.Float64,
+    pl.Decimal,
+]
+
+
+@given(
+    s=series(allowed_dtypes=_NUMERIC_DTYPES, min_size=1),
+)
+@pytest.mark.parametrize("bias", [False, True])
+def test_skew_streaming_matches_in_memory(s: pl.Series, bias: bool) -> None:
+    df = s.to_frame("a")
+    in_memory = df.lazy().select(pl.col("a").skew(bias=bias)).collect()
+    streaming = (
+        df.lazy().select(pl.col("a").skew(bias=bias)).collect(engine="streaming")
+    )
+    assert_frame_equal(in_memory, streaming, rel_tol=1e-5)
+
+
+@given(
+    s=series(allowed_dtypes=_NUMERIC_DTYPES, min_size=1),
+)
+@pytest.mark.parametrize("fisher", [False, True])
+@pytest.mark.parametrize("bias", [False, True])
+def test_kurtosis_streaming_matches_in_memory(
+    s: pl.Series, fisher: bool, bias: bool
+) -> None:
+    df = s.to_frame("a")
+    in_memory = (
+        df.lazy().select(pl.col("a").kurtosis(fisher=fisher, bias=bias)).collect()
+    )
+    streaming = (
+        df.lazy()
+        .select(pl.col("a").kurtosis(fisher=fisher, bias=bias))
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(in_memory, streaming, rel_tol=1e-5)

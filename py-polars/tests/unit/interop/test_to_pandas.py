@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import hypothesis.strategies as st
 import numpy as np
@@ -48,7 +48,7 @@ def test_to_pandas() -> None:
     string_dtype = (
         pd.StringDtype(na_value=float("nan")) if pd_version >= (3,) else np.object_
     )
-    pd_out_dtypes_expected = [
+    pd_out_dtypes_expected: list[Any] = [
         np.dtype(np.uint8),
         np.dtype(np.float64),
         np.dtype(np.float64),

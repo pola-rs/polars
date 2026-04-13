@@ -122,12 +122,13 @@ fn test_projection_5086() -> PolarsResult<()> {
                 .gather("c")
                 .cum_sum(false)
                 .over([col("a")])
+                .unwrap()
                 .gt(lit(0)),
         ])
         .select([
             col("a"),
             col("b")
-                .xor(col("b").shift(lit(1)).over([col("a")]))
+                .xor(col("b").shift(lit(1)).over([col("a")]).unwrap())
                 .fill_null(lit(true))
                 .alias("keep"),
         ])

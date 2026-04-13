@@ -1,5 +1,7 @@
 use std::iter;
 
+use polars_utils::itertools::Itertools;
+
 use super::*;
 
 impl IR {
@@ -11,18 +13,9 @@ impl IR {
     where
         E: IntoIterator<Item = ExprIR>,
     {
-        let mut exprs_mut = self.exprs_mut();
-        let mut new_exprs = exprs.into_iter();
-
-        for (expr, new_expr) in exprs_mut.by_ref().zip(new_exprs.by_ref()) {
+        for (expr, new_expr) in self.exprs_mut().zip_eq(exprs) {
             *expr = new_expr;
         }
-
-        assert!(exprs_mut.next().is_none(), "not enough exprs");
-        assert!(new_exprs.next().is_none(), "too many exprs");
-
-        drop(exprs_mut);
-
         self
     }
 
@@ -34,18 +27,9 @@ impl IR {
     where
         I: IntoIterator<Item = Node>,
     {
-        let mut inputs_mut = self.inputs_mut();
-        let mut new_inputs = inputs.into_iter();
-
-        for (input, new_input) in inputs_mut.by_ref().zip(new_inputs.by_ref()) {
+        for (input, new_input) in self.inputs_mut().zip_eq(inputs) {
             *input = new_input;
         }
-
-        assert!(inputs_mut.next().is_none(), "not enough inputs");
-        assert!(new_inputs.next().is_none(), "too many inputs");
-
-        drop(inputs_mut);
-
         self
     }
 

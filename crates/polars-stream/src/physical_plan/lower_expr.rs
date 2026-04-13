@@ -1560,6 +1560,43 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(row_idx_col_aexpr);
             },
 
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function:
+                    IRFunctionExpr::StringExpr(IRStringFunction::Strptime(ref dtype, ref options)),
+                ..
+            } if options.format.is_none()
+                && matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if matches!(s.extract_str(), Some("raise" | "null"))) =>
+            {
+                let col_name = unique_column_name();
+                let select_stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(col_name.clone())],
+                    ctx,
+                )?;
+
+                let output_schema = Arc::new(Schema::from_iter([(
+                    col_name.clone(),
+                    dtype.as_ref().clone(),
+                )]));
+
+                let ambiguous_is_raise = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if s.extract_str() == Some("raise"));
+                let kind = PhysNodeKind::StrptimeInfer {
+                    input: select_stream,
+                    dtype: dtype.as_ref().clone(),
+                    options: options.clone(),
+                    ambiguous_is_raise,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(col_name)));
+            },
+
             // Lower arbitrary elementwise functions.
             ref node @ AExpr::Function {
                 input: ref inner_exprs,
@@ -2143,6 +2180,16 @@ fn lower_exprs_with_ctx(
                             polars_plan::plans::IRCorrelationMethod::Pearson
                             | polars_plan::plans::IRCorrelationMethod::Covariance(_),
                     },
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
+
+            #[cfg(feature = "moment")]
+            AExpr::Function {
+                function: IRFunctionExpr::Skew(_) | IRFunctionExpr::Kurtosis(_, _),
                 ..
             } => {
                 let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;

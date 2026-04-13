@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from math import ceil
 from types import ModuleType
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, cast, overload
 
 import pytest
 import sqlalchemy
@@ -195,11 +195,13 @@ def test_surrealdb_fetchall(batch_size: int | None) -> None:
             )
         )
         if batch_size:
-            frames = list(res)  # type: ignore[call-overload]
+            res = cast("Iterable[pl.DataFrame]", res)
+            frames = list(res)
             n_mock_rows = len(SURREAL_MOCK_DATA)
             assert len(frames) == ceil(n_mock_rows / batch_size)
             assert_frame_equal(df_expected[:batch_size], frames[0])
         else:
+            res = cast("pl.DataFrame", res)
             assert_frame_equal(df_expected, res)  # type: ignore[arg-type]
 
 

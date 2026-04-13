@@ -404,10 +404,16 @@ pub fn deserialize_all(
             use ArrowDataType as D;
             use ParquetPhysicalType as PPT;
             let (min_value, max_value) = match (field.dtype(), physical_type) {
-                (D::Null, _) => (
-                    NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                    NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                ),
+                (D::Null, _) => {
+                    for rg in row_groups {
+                        null_count.push(Some(rg.num_rows() as IdxSize));
+                        distinct_count.push(Some(0));
+                    }
+                    (
+                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                    )
+                },
 
                 (D::Boolean, _) => rmap!(
                     expect_boolean,
