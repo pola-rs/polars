@@ -6,7 +6,7 @@ backed by S3-compatible storage or another shared filesystem accessible from all
 the Python client. The data written to this location is not automatically deleted, so you need to
 configure a retention policy for this data yourself.
 
-If you want to disable 'anonymous sinks' for users, you may leave `anonymous_result_location` unset.
+If you want to disable anonymous results for users, you may leave `anonymous_result_location` unset.
 This ensures that all queries must have an output location specified.
 
 !!! note "Difference between Anonymous Users and Anonymous Results"
