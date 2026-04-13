@@ -471,9 +471,10 @@ impl<'a> ByGroups<'a> {
     fn find_groups(
         df: &DataFrame,
         by: &[PlSmallStr],
-        mut run_lengths: &'a mut Vec<IdxSize>,
+        run_lengths: &'a mut ScratchVec<IdxSize>,
         params: &AsOfJoinParams,
     ) -> PolarsResult<Self> {
+        let mut run_lengths = run_lengths.get();
         let kind = match by {
             [col_name] => {
                 let col = df.column(col_name)?;
@@ -613,12 +614,9 @@ fn compute_asof_join(
     mut left_df: DataFrame,
     right_dfsb: DataFrameSearchBuffer,
     params: &AsOfJoinParams,
-    left_lengths_scratch: &mut ScratchVec<IdxSize>,
-    right_lengths_scratch: &mut ScratchVec<IdxSize>,
+    left_lengths: &mut ScratchVec<IdxSize>,
+    right_lengths: &mut ScratchVec<IdxSize>,
 ) -> PolarsResult<DataFrame> {
-    let left_lengths = left_lengths_scratch.get();
-    let right_lengths = right_lengths_scratch.get();
-
     let mut right_df = right_dfsb.into_df();
     let options = params.as_of_options();
     let left_key = left_df.column(params.left.key_col())?.to_physical_repr();
