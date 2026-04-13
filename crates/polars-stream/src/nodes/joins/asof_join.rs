@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 
+use AsofStrategy::*;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
@@ -310,11 +311,17 @@ async fn distribute_work_task(
             }
         }
 
+        prune_right_side(&left_df, right_buffer, params, 0)?;
         distributor
             .send((left_df.clone(), right_buffer.clone(), seq, st))
             .await
             .unwrap();
-        prune_right_side(&left_df, right_buffer, params)?;
+        prune_right_side(
+            &left_df,
+            right_buffer,
+            params,
+            left_df.height().saturating_sub(1),
+        )?;
     }
 }
 
@@ -344,34 +351,39 @@ fn need_more_right_side(
         let cmp =
             move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
         start = right.binary_search(|x| cmp(x, &left_last_group).is_ge(), right_by, start..end);
-        end = right.binary_search(|x| cmp(x, &left_last_group).is_gt(), right_by, start..end)
+        end = right.binary_search(|x| cmp(x, &left_last_group).is_gt(), right_by, start..end);
+        if start >= right.height() {
+            return Ok(true);
+        } else if end < right.height() {
+            return Ok(false);
+        }
     }
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     // SAFETY: We checked earlier that the dataframes are not empty
     let left_last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
-        (AsofStrategy::Forward, true) => {
+        (Forward, true) | (Backward, false) => {
             right.binary_search(|x| *x >= left_last_val, params.right.key_col(), start..end)
         },
-        (AsofStrategy::Forward, false) | (AsofStrategy::Backward, true) => {
+        (Forward, false) | (Backward, true) => {
             right.binary_search(|x| *x > left_last_val, params.right.key_col(), start..end)
         },
-        (AsofStrategy::Backward, false) | (AsofStrategy::Nearest, _) => {
+        (Nearest, _) => {
             let first_greater =
                 right.binary_search(|x| *x > left_last_val, params.right.key_col(), start..end);
             if first_greater >= right.height() {
                 return Ok(true);
             }
-            // In the backward/nearest cases, there may be a chunk of consecutive equal
-            // values following the match value on the left side.  In this case, the AsOf
-            // join is greedy and should until the *end* of that chunk.
+            // In the nearest cases, there may be a chunk of consecutive equal
+            // values following the match value on the left side.  In this case,
+            // the AsOf join is greedy and should until the *end* of that chunk.
 
-            // SAFETY: We just checked that right_range_end is in bounds
-            let fst_greater_val =
+            // SAFETY: We just checked that first_greater is in bounds
+            let first_greater_val =
                 unsafe { right.get_unchecked(params.right.key_col(), first_greater) };
             right.binary_search(
-                |x| *x > fst_greater_val,
+                |x| *x > first_greater_val,
                 params.right.key_col(),
                 first_greater..end,
             )
@@ -380,10 +392,13 @@ fn need_more_right_side(
     Ok(right_range_end >= right.height())
 }
 
+/// Prune right-side rows that are no longer needed using a specific left row as the
+/// pruning reference point.
 fn prune_right_side(
     left: &DataFrame,
     right: &mut DataFrameSearchBuffer,
     params: &AsOfJoinParams,
+    before_left_row: usize,
 ) -> PolarsResult<()> {
     if left.height() == 0 || right.height() == 0 {
         return Ok(());
@@ -396,19 +411,22 @@ fn prune_right_side(
     for ((left_by, right_by), (descending, nulls_last)) in Iterator::zip(by_iter, reorder_iter) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
         // SAFETY: We checked earlier that the dataframes are not empty
-        let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) }.clone();
+        let group_val = unsafe { left_by_col.get_unchecked(before_left_row) }.clone();
         let cmp =
             move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
-        start = right.binary_search(|x| cmp(x, &left_last_group).is_ge(), right_by, start..end);
-        end = right.binary_search(|x| cmp(x, &left_last_group).is_gt(), right_by, start..end);
+        start = right.binary_search(|x| cmp(x, &group_val).is_ge(), right_by, start..end);
+        end = right.binary_search(|x| cmp(x, &group_val).is_gt(), right_by, start..end);
     }
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     // SAFETY: We checked earlier that the dataframes are not empty
-    let left_first_val = unsafe { left_key.get_unchecked(0) };
-    let right_range_start = right
-        .binary_search(|x| *x >= left_first_val, params.right.key_col(), start..end)
-        .saturating_sub(1);
+    let key_val = unsafe { left_key.get_unchecked(before_left_row) };
+    let mut right_range_start =
+        right.binary_search(|x| *x >= key_val, params.right.key_col(), start..end);
+    if matches!(params.as_of_options().strategy, Backward | Nearest) {
+        right_range_start = right_range_start.saturating_sub(1).max(start);
+    }
+
     right.split_at(right_range_start);
     Ok(())
 }

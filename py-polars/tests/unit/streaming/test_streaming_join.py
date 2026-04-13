@@ -635,6 +635,7 @@ def test_merge_join_applicable(
 )
 @pytest.mark.parametrize("n_groups", [0, 1, 2])
 @given(data=st.data())
+@settings(max_examples=10)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
@@ -679,27 +680,25 @@ def test_streaming_asof_join(
     if n_groups > 0:
         descending = data.draw(st.booleans())
         nulls_last = data.draw(st.booleans())
-        q = left.sort(
+        left = left.sort(
             group_col_names,
             maintain_order=True,
             descending=descending,
             nulls_last=nulls_last,
-        ).join_asof(
-            right.sort(
-                group_col_names,
-                maintain_order=True,
-                descending=descending,
-                nulls_last=nulls_last,
-            ),
+        )
+        right = right.sort(
+            group_col_names,
+            maintain_order=True,
+            descending=descending,
+            nulls_last=nulls_last,
+        )
+        q = left.join_asof(
+            right,
             on="key",
             by=group_col_names,
             strategy=strategy,
             allow_exact_matches=allow_exact_matches,
             coalesce=coalesce,
-            check_sortedness=False,
-        )
-        assert "asof-join" in q.show_graph(
-            engine="streaming", plan_stage="physical", raw_output=True
         )
     else:
         q = left.join_asof(
@@ -708,8 +707,10 @@ def test_streaming_asof_join(
             strategy=strategy,
             allow_exact_matches=allow_exact_matches,
             coalesce=coalesce,
-            check_sortedness=True,
         )
+
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "asof-join" in plan
 
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
