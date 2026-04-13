@@ -55,12 +55,16 @@ def test_implode_unordered() -> None:
     }
 
 
-def test_implode_and_list_sort_aggregated_25252() -> None:
+def test_implode_and_list_sort_aggregated_27252() -> None:
     df = pl.DataFrame(
         {"a": [1, 1, 1, 2, 2, 2, 3, 3, 3], "b": [1, 2, 1, 3, 1, 2, 3, 3, 1]}
     )
 
-    q = df.lazy().group_by("a").agg(pl.col.b.implode().list.unique().sort())
+    q = (
+        df.lazy()
+        .group_by("a")
+        .agg(pl.col.b.implode().list.unique(maintain_order=True).sort())
+    )
 
-    expected = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 2], [1, 2, 3], [1, 3]]})
+    expected = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 2], [3, 1, 2], [3, 1]]})
     assert_frame_equal(q.collect(), expected, check_row_order=False)
