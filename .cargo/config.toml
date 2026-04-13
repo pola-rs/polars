@@ -1,5 +1,0 @@
-[env]
-PYO3_ENVIRONMENT_SIGNATURE = "cpython-3.13-64bit"
-PYO3_PYTHON = "/home/amber/git/polars/.venv/bin/python"
-RUSTFLAGS = "-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe -Z tune-cpu=skylake"
-CFLAGS = "-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe -mtune=skylake"
