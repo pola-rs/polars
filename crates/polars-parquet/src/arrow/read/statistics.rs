@@ -1,4 +1,5 @@
 //! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
+
 use arrow::array::{
     Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray,
     MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray,
@@ -170,7 +171,8 @@ impl ColumnStatistics {
             }};
         }
 
-        use {ArrowDataType as D, ParquetPhysicalType as PPT};
+        use ArrowDataType as D;
+        use ParquetPhysicalType as PPT;
         let (min_value, max_value) = match (self.field.dtype(), &self.physical_type) {
             (D::Null, _) => (None, None),
 
@@ -210,7 +212,7 @@ impl ColumnStatistics {
 
             (D::Timestamp(time_unit, _), PPT::Int96) => {
                 rmap!(expect_int96, @prim [u32; 3], |x| {
-                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
                 })
             },
             (D::Timestamp(time_unit, _), PPT::Int64) => {
@@ -399,12 +401,19 @@ pub fn deserialize_all(
                 }};
             }
 
-            use {ArrowDataType as D, ParquetPhysicalType as PPT};
+            use ArrowDataType as D;
+            use ParquetPhysicalType as PPT;
             let (min_value, max_value) = match (field.dtype(), physical_type) {
-                (D::Null, _) => (
-                    NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                    NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                ),
+                (D::Null, _) => {
+                    for rg in row_groups {
+                        null_count.push(Some(rg.num_rows() as IdxSize));
+                        distinct_count.push(Some(0));
+                    }
+                    (
+                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                    )
+                },
 
                 (D::Boolean, _) => rmap!(
                     expect_boolean,
@@ -460,7 +469,7 @@ pub fn deserialize_all(
 
                 (D::Timestamp(time_unit, _), PPT::Int96) => {
                     rmap!(expect_int96, MutablePrimitiveArray::<i64>, @prim [u32; 3], |x| {
-                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
                     })
                 },
                 (D::Timestamp(time_unit, _), PPT::Int64) => {

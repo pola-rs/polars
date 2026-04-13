@@ -147,7 +147,8 @@ impl AnyValue<'static> {
         numeric_to_one: bool,
         num_list_values: usize,
     ) -> AnyValue<'static> {
-        use {AnyValue as AV, DataType as DT};
+        use AnyValue as AV;
+        use DataType as DT;
         match dtype {
             DT::Boolean => AV::Boolean(false),
             DT::UInt8 => AV::UInt8(numeric_to_one.into()),
@@ -793,6 +794,19 @@ impl<'a> AnyValue<'a> {
             AnyValue::BinaryOwned(v) => Some(v.as_slice()),
             _ => None,
         }
+    }
+}
+
+impl IsNull for AnyValue<'_> {
+    const HAS_NULLS: bool = true;
+    type Inner = Self;
+
+    fn is_null(&self) -> bool {
+        AnyValue::is_null(self)
+    }
+
+    fn unwrap_inner(self) -> Self::Inner {
+        self
     }
 }
 

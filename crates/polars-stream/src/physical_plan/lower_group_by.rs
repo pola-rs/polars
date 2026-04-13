@@ -381,6 +381,12 @@ fn try_lower_elementwise_scalar_agg_expr(
             ..
         } => Some(replace_agg_uniq!(expr)),
 
+        #[cfg(feature = "moment")]
+        AExpr::Function {
+            function: IRFunctionExpr::Skew(_) | IRFunctionExpr::Kurtosis(_, _),
+            ..
+        } => Some(replace_agg_uniq!(expr)),
+
         AExpr::AnonymousAgg { .. } => Some(replace_agg_uniq!(expr)),
 
         node @ AExpr::Function { input, options, .. }

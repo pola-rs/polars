@@ -49,20 +49,17 @@ impl NodeMetrics {
     }
 
     fn add_io(&mut self, io_metrics: &IOMetrics) {
-        // We consume the IOMetrics counters as they get re-used across phases.
-        let io_total_active_ns = io_metrics.io_timer.total_time_live_ns();
+        self.io_total_active_ns += io_metrics.io_timer.total_time_live_ns();
+        self.io_total_bytes_requested += io_metrics.bytes_requested.load();
+        self.io_total_bytes_received += io_metrics.bytes_received.load();
+        self.io_total_bytes_sent += io_metrics.bytes_sent.load();
+    }
 
-        let io_total_active_ns_prev_call =
-            io_metrics.io_timer_consumed.fetch_max(io_total_active_ns);
-
-        let io_total_active_ns_delta = io_total_active_ns - io_total_active_ns_prev_call;
-        self.io_total_active_ns += io_total_active_ns_delta;
-
-        // Load-swap received before requested to ensure received<=requested.
-        self.io_total_bytes_received += io_metrics.bytes_received.swap(0);
-        self.io_total_bytes_requested += io_metrics.bytes_requested.swap(0);
-
-        self.io_total_bytes_sent += io_metrics.bytes_sent.swap(0);
+    fn reset_io_metrics(&mut self) {
+        self.io_total_active_ns = 0;
+        self.io_total_bytes_requested = 0;
+        self.io_total_bytes_received = 0;
+        self.io_total_bytes_sent = 0;
     }
 
     fn start_state_update(&mut self) {
@@ -98,7 +95,7 @@ impl NodeMetrics {
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
-    in_progress_io_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<IOMetrics>>>,
+    in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
@@ -141,12 +138,10 @@ impl GraphMetrics {
             }
         }
 
-        for (key, in_progress_io_metrics) in self.in_progress_io_metrics.iter_mut() {
+        for (key, io_metrics) in self.in_progress_io_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
-            this_node_metrics.num_running_tasks = 0;
-            for io_metrics in in_progress_io_metrics.drain(..) {
-                this_node_metrics.add_io(&io_metrics);
-            }
+            this_node_metrics.reset_io_metrics();
+            this_node_metrics.add_io(io_metrics);
         }
 
         for (key, in_progress_pipe_metrics) in self.in_progress_pipe_metrics.iter_mut() {
@@ -186,16 +181,18 @@ impl NodeMetricsRegistrator {
     /// phase.
     pub fn register_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
         let mut guard = self.graph_metrics.lock();
-        let metrics_vec = guard
-            .in_progress_io_metrics
-            .entry(self.graph_key)
-            .unwrap()
-            .or_default();
 
-        // Currently not expecting a single compute node to register multiple
-        // IO metrics.
-        debug_assert!(metrics_vec.is_empty());
+        use slotmap::secondary::Entry;
 
-        metrics_vec.push(io_metrics);
+        match guard.in_progress_io_metrics.entry(self.graph_key).unwrap() {
+            Entry::Occupied(e) => {
+                // Each node should only have 1 set of metrics, identified by the Arc address.
+                // But the registration can be called multiple times (per phase).
+                assert!(Arc::ptr_eq(&io_metrics, e.get()));
+            },
+            Entry::Vacant(e) => {
+                e.insert(io_metrics);
+            },
+        };
     }
 }

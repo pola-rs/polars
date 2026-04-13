@@ -1387,3 +1387,12 @@ def test_scan_delta_filter_combined_predicates_statistics_27072(
         check_row_order=False,
     )
     assert "skipping 8 / 9 files" in capfd.readouterr().err
+
+
+@pytest.mark.write_disk
+def test_scan_delta_literal_filter_empty_df_27242(tmp_path: Path) -> None:
+    df = pl.DataFrame({"a": pl.Series([], dtype=pl.Int64)})
+    df.write_delta(tmp_path)
+
+    out = pl.scan_delta(tmp_path).filter(pl.lit(True)).collect()
+    assert_frame_equal(df, out)

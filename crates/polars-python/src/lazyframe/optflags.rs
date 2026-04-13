@@ -62,4 +62,5 @@ flag_getter_setters! {
 
     (EAGER, get_eager, set_eager, clear=true)
     (NEW_STREAMING, get_streaming, set_streaming, clear=true)
+    (GPU, get_gpu, set_gpu, clear=true)
 }

@@ -743,6 +743,12 @@ pub(super) fn replace(s: &[Column], literal: bool, n: i64) -> PolarsResult<Colum
     let val = &s[2];
     let all = n < 0;
 
+    // In streaming, a scalar value (like from `first()`) can look like a
+    // full column with length > 1. If we treat it like a normal column,
+    // replace_n and replace_all won’t recognize it as a scalar anymore.
+    let pat = pat.as_materialized_series_maintain_scalar();
+    let val = val.as_materialized_series_maintain_scalar();
+
     let column = column.str()?;
     let pat = pat.str()?;
     let val = val.str()?;

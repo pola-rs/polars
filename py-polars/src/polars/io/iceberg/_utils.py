@@ -30,7 +30,7 @@ from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Iterator, Sequence
     from datetime import date, datetime
 
     import pyiceberg
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table
     from pyiceberg.types import IcebergType
 
-    from polars import DataFrame, Series
+    from polars import DataFrame
 else:
     from polars._dependencies import pyiceberg
 
@@ -66,7 +66,7 @@ def _scan_pyarrow_dataset_impl(
     n_rows: int | None = None,
     snapshot_id: int | None = None,
     **kwargs: Any,  # noqa: ARG001
-) -> DataFrame | Series:
+) -> tuple[Iterator[DataFrame], bool]:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -89,7 +89,12 @@ def _scan_pyarrow_dataset_impl(
 
     Returns
     -------
-    DataFrame
+    tuple[Iterator[DataFrame], bool]
+    A generator over the DataFrames and a boolean indicating if the
+    predicates could be parsed.
+    This boolean is always `False` as there might be some predicates
+    that could not be converted
+    to pyarrow and need to be applied as post-predicate.
     """
     from polars import from_arrow
 
@@ -101,7 +106,9 @@ def _scan_pyarrow_dataset_impl(
     if iceberg_table_filter is not None:
         scan = scan.filter(iceberg_table_filter)
 
-    return from_arrow(scan.to_arrow())
+    batches = scan.to_arrow_batch_reader()
+
+    return ((from_arrow(batch) for batch in batches), False)  # type: ignore[misc]
 
 
 def _ensure_boolean_expression(result: Any) -> Any:

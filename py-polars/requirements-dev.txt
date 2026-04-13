@@ -65,6 +65,7 @@ orjson
 # TOOLING
 # -------
 
+tomlkit
 pytest==8.3.2
 pytest-codspeed==3.2.0
 pytest-cov==6.0.0

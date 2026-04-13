@@ -2273,8 +2273,7 @@ impl SQLFunctionVisitor<'_> {
             return Ok(expr.sort(
                 SortOptions::default()
                     .with_order_descending(desc_order)
-                    .with_nulls_last(nulls_last)
-                    .with_maintain_order(true),
+                    .with_nulls_last(nulls_last),
             ));
         }
         // Otherwise, fall back to `sort_by` (may need to handle further edge-cases later)
@@ -2340,7 +2339,7 @@ impl SQLFunctionVisitor<'_> {
         // Apply window spec
         Ok(match (partition_by, order_by) {
             (None, None) => expr,
-            (Some(part), None) => expr.over(part),
+            (Some(part), None) => expr.over(part)?,
             (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,
         })
     }

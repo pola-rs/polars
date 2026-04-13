@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import DuplicateError, InvalidOperationError
+from polars.exceptions import ComputeError, DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1897,3 +1897,23 @@ def test_join_struct_error_lazy_26276() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
         lhs.join(rhs, on="x").collect()
+
+
+def test_from_dicts_mixed_struct_schema_raises_not_panics_27170() -> None:
+    records = [{"id": f"id_{i}", "vals": [{"value": i}]} for i in range(200)]
+    records += [{"id": f"bad_{i}", "vals": [{"value": {"key": i}}]} for i in range(5)]
+
+    with pytest.raises(ComputeError):
+        pl.DataFrame(records)
+
+
+def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
+    df = pl.DataFrame({"s": [{"x": 10, "y": 11}, {"x": 20, "y": 21}]})
+
+    out = df.select(
+        pl.col.s.struct.with_fields(fma=pl.field("x") * pl.lit(2) + pl.field("y"))
+    )
+    expected = pl.concat(
+        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})], how="horizontal"
+    )
+    assert_frame_equal(out.unnest("s"), expected)

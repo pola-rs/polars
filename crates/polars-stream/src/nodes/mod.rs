@@ -15,6 +15,8 @@ pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod input_independent_select;
+#[cfg(feature = "interpolate")]
+pub mod interpolate;
 pub mod io_sinks;
 pub mod io_sources;
 #[cfg(feature = "is_first_distinct")]
@@ -39,6 +41,12 @@ pub mod simple_projection;
 pub mod sorted_group_by;
 pub mod sorted_unique;
 pub mod streaming_slice;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+pub mod strptime_infer;
 pub mod top_k;
 pub mod unordered_union;
 pub mod with_row_index;
