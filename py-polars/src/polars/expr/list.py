@@ -167,7 +167,8 @@ class ExprListNameSpace:
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Shuffle the order of sampled data points. Has no effect when
+            `with_replacement=True`.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
