@@ -4,9 +4,11 @@ from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric.strategies import column, dataframes, series
 from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
@@ -174,3 +176,39 @@ def test_interpolate_overflow_27184() -> None:
         "a", [-2147483410, 229279268, 229279268, -2147453395], pl.Int32
     ).interpolate("nearest")
     assert_series_equal(out, expected)
+
+
+@given(
+    df=dataframes(cols=[column("a", dtype=pl.Float64, allow_null=True)]),
+)
+@pytest.mark.parametrize("method", ["linear", "nearest"])
+def test_streaming_interpolate_vs_in_memory(
+    df: pl.DataFrame,
+    method: InterpolationMethod,
+) -> None:
+    lf = df.lazy().select(pl.col("a").interpolate(method=method))
+
+    dot = lf.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert isinstance(dot, str)
+    assert "interpolate" in dot, "interpolate node not used in streaming plan"
+
+    assert_frame_equal(
+        lf.collect(engine="streaming"),
+        lf.collect(engine="in-memory"),
+    )
+
+
+@given(
+    data=series(name="a", allowed_dtypes=NUMERIC_DTYPES),
+)
+@pytest.mark.parametrize("method", ["linear", "nearest"])
+def test_streaming_interpolate_dtypes(
+    data: pl.Series,
+    method: InterpolationMethod,
+) -> None:
+    lf = data.to_frame().lazy().select(pl.col("a").interpolate(method=method))
+
+    assert_frame_equal(
+        lf.collect(engine="streaming"),
+        lf.collect(engine="in-memory"),
+    )

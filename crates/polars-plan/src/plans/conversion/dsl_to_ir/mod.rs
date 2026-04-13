@@ -928,7 +928,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         expr_arena: &mut Arena<AExpr>,
                     ) -> AExprBuilder {
                         let e = AExprBuilder::col(on.clone(), expr_arena);
-                        e.eq(
+                        e.eq_validity(
                             AExprBuilder::lit_scalar(
                                 Scalar::new(
                                     on_column.dtype().clone(),

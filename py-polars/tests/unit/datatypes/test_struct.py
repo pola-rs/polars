@@ -1905,3 +1905,15 @@ def test_from_dicts_mixed_struct_schema_raises_not_panics_27170() -> None:
 
     with pytest.raises(ComputeError):
         pl.DataFrame(records)
+
+
+def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
+    df = pl.DataFrame({"s": [{"x": 10, "y": 11}, {"x": 20, "y": 21}]})
+
+    out = df.select(
+        pl.col.s.struct.with_fields(fma=pl.field("x") * pl.lit(2) + pl.field("y"))
+    )
+    expected = pl.concat(
+        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})], how="horizontal"
+    )
+    assert_frame_equal(out.unnest("s"), expected)
