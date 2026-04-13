@@ -608,14 +608,7 @@ def test_merge_join_applicable(
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))
 
 
-@pytest.mark.parametrize(
-    "strategy",
-    [
-        "backward",
-        "forward",
-        "nearest",
-    ],
-)
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize("coalesce", [False, True])
 @pytest.mark.parametrize(
@@ -640,15 +633,7 @@ def test_merge_join_applicable(
         {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
     ],
 )
-@pytest.mark.parametrize(
-    "group_dtypes",
-    [
-        None,
-        INTEGER_DTYPES,
-        {pl.Boolean},
-        {pl.String, pl.Binary, pl.Categorical},
-    ],
-)
+@pytest.mark.parametrize("n_groups", [0, 1, 2])
 @given(data=st.data())
 def test_streaming_asof_join(
     data: st.DataObject,
@@ -656,24 +641,32 @@ def test_streaming_asof_join(
     allow_exact_matches: bool,
     coalesce: bool,
     key_dtypes: set[pl.DataType],
-    group_dtypes: set[pl.DataType] | None,
+    n_groups: int,
 ) -> None:
+    GROUP_DTYPES = [
+        *INTEGER_DTYPES,
+        pl.Boolean,
+        pl.String,
+        pl.Binary,
+        pl.Categorical,
+    ]
+
     if key_dtypes & {pl.String, pl.Binary, pl.Boolean} and strategy == "nearest":
         pytest.skip(
             "asof join with string/binary/bool does not support 'nearest' strategy"
         )
 
-    group_dtype = None
-    group_cols = []
-    if group_dtypes is not None:
-        group_dtype = data.draw(st.sampled_from(list(group_dtypes)))
-        group_cols.append(column(name="group", dtype=group_dtype))
+    group_col_names = [f"group{i}" for i in range(n_groups)]
+    group_cols = [
+        column(name=name, dtype=data.draw(st.sampled_from(GROUP_DTYPES)))
+        for name in group_col_names
+    ]
 
-    key_dtype = data.draw(st.sampled_from(list(key_dtypes)))
+    val_dtype = data.draw(st.sampled_from(list(key_dtypes)))
     df_st = dataframes(
         min_cols=1,
         max_cols=1,
-        allowed_dtypes=[key_dtype],
+        allowed_dtypes=[val_dtype],
         allow_time_zones=False,
         include_cols=group_cols,
     )
@@ -683,26 +676,28 @@ def test_streaming_asof_join(
     left = left_df.rename({"col0": "key"}).sort("key").with_row_index().lazy()
     right = right_df.rename({"col0": "key"}).sort("key").with_row_index().lazy()
 
-    if group_cols:
+    if n_groups > 0:
         descending = data.draw(st.booleans())
         nulls_last = data.draw(st.booleans())
         q = left.sort(
-            "group", maintain_order=True, descending=descending, nulls_last=nulls_last
+            group_col_names,
+            maintain_order=True,
+            descending=descending,
+            nulls_last=nulls_last,
         ).join_asof(
             right.sort(
-                "group",
+                group_col_names,
                 maintain_order=True,
                 descending=descending,
                 nulls_last=nulls_last,
             ),
             on="key",
-            by="group",
+            by=group_col_names,
             strategy=strategy,
             allow_exact_matches=allow_exact_matches,
             coalesce=coalesce,
             check_sortedness=False,
         )
-
         assert "asof-join" in q.show_graph(
             engine="streaming", plan_stage="physical", raw_output=True
         )
@@ -718,4 +713,4 @@ def test_streaming_asof_join(
 
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
-    assert_frame_equal(actual, expected, check_row_order=group_cols is not None)
+    assert_frame_equal(actual, expected)
