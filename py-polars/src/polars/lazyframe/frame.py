@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import os
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -45,6 +44,7 @@ from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
+    parse_into_list_of_expressions_require_selectors,
 )
 from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
@@ -1160,7 +1160,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         @lru_cache
         def skip_minmax(dt: PolarsDataType) -> bool:
-            return dt.is_nested() or dt in (Categorical, Enum, Null, Object, Unknown)
+            return (
+                dt.is_nested()
+                or dt.is_extension()
+                or dt in (Categorical, Enum, Null, Object, Unknown)
+            )
 
         # determine which columns will produce std/mean/percentile/etc
         # statistics in a single pass over the frame schema
@@ -1429,6 +1433,48 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return self._ldf.describe_plan_tree()
         else:
             return self._ldf.describe_plan()
+
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: Literal[True],
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> str: ...
+
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: Literal[False] = ...,
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> None: ...
+
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: bool = ...,
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> str | None: ...
 
     @deprecate_streaming_parameter()
     @forward_old_opt_flags()
@@ -5051,11 +5097,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 10        │
         └───────────┘
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select(pyexprs))
 
     def select_seq(
@@ -5081,11 +5123,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         select
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
     def group_by(
@@ -6562,11 +6600,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
     def with_columns_seq(
@@ -6601,11 +6635,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         with_columns
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 
     @deprecated(
@@ -7978,9 +8008,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         parsed_subset: list[PyExpr] | None = None
         if subset is not None:
-            parsed_subset = parse_into_list_of_expressions(
-                subset, __require_selectors=True
-            )
+            parsed_subset = parse_into_list_of_expressions_require_selectors(subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, parsed_subset, keep))
 
     def drop_nans(
@@ -8337,20 +8365,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ b    ┆ 0.964028 ┆ 0.999954 │
         └──────┴──────────┴──────────┘
         """  # noqa: W505
-        if index is None and values is None:
+        on_selector = parse_list_into_selector(on)
+
+        if index is not None and values is not None:
+            index_selector = parse_list_into_selector(index)
+            values_selector = parse_list_into_selector(values)
+        elif index is not None:
+            index_selector = parse_list_into_selector(index)
+            values_selector = cs.all() - on_selector - index_selector
+        elif values is not None:
+            values_selector = parse_list_into_selector(values)
+            index_selector = cs.all() - on_selector - values_selector
+        else:
             msg = "`pivot` needs either `index or `values` needs to be specified"
             raise InvalidOperationError(msg)
-
-        on_selector = parse_list_into_selector(on)
-        if values is not None:
-            values_selector = parse_list_into_selector(values)
-        if index is not None:
-            index_selector = parse_list_into_selector(index)
-
-        if values is None:
-            values_selector = cs.all() - on_selector - index_selector
-        if index is None:
-            index_selector = cs.all() - on_selector - values_selector
 
         agg = F.element()
         if isinstance(aggregate_function, str):
@@ -8504,10 +8532,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         function: Callable[[DataFrame], DataFrame],
         *,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        slice_pushdown: bool = True,
-        no_optimizations: bool = False,
+        predicate_pushdown: bool = False,
+        projection_pushdown: bool = False,
+        slice_pushdown: bool = False,
+        no_optimizations: bool | None = None,
         schema: None | SchemaDict = None,
         validate_output_schema: bool = True,
         streamable: bool = False,
@@ -8528,7 +8556,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown
             Allow slice pushdown optimization to pass this node.
         no_optimizations
-            Turn off all optimizations past this point.
+            .. deprecated:: 1.30.0
+                This parameter is deprecated and will be removed in a future version.
+                The `_pushdown` parameters now default to `False`, so this parameter
+                is no longer needed.
         schema
             Output schema of the function, if set to `None` we assume that the schema
             will remain unchanged by the applied function.
@@ -8586,10 +8617,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ -2      ┆ 199998 │
         └─────────┴────────┘
         """
-        if no_optimizations:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
+        if no_optimizations is not None:
+            issue_deprecation_warning(
+                "the `no_optimizations` parameter for `LazyFrame.map_batches` is deprecated."
+                " The `_pushdown` parameters now default to `False`, so this parameter is no longer needed.",
+                version="1.39.3",
+            )
 
         return self._from_pyldf(
             self._ldf.map_batches(
@@ -9175,7 +9208,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def remote(
         self,
-        context: pc.ComputeContext | None = None,
+        context: pc.ClientContext | None = None,
         *,
         plan_type: pc._typing.PlanTypePreference = "dot",
         n_retries: int = 0,
@@ -9246,7 +9279,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return pc.LazyFrameRemote(
             lf=self,
-            context=context,
+            context=context,  # type: ignore[arg-type]
             plan_type=plan_type,
             n_retries=n_retries,
             engine=engine,
@@ -9259,7 +9292,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         schema: SchemaDict | Schema,
         *,
         missing_columns: Literal["insert", "raise"]
-        | Mapping[str, Literal["insert", "raise"] | Expr] = "raise",
+        | Mapping[str, Literal["insert", "raise"] | Expr]
+        | Expr = "raise",
         missing_struct_fields: Literal["insert", "raise"]
         | Mapping[str, Literal["insert", "raise"]] = "raise",
         extra_columns: Literal["ignore", "raise"] = "raise",
@@ -9425,7 +9459,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             schema_prep = schema
 
         missing_columns_pyexpr: (
-            Literal["insert", "raise"] | dict[str, Literal["insert", "raise"] | PyExpr]
+            Literal["insert", "raise"]
+            | dict[str, Literal["insert", "raise"] | PyExpr]
+            | PyExpr
         )
         if isinstance(missing_columns, Mapping):
             missing_columns_pyexpr = {

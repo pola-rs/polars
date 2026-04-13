@@ -348,6 +348,19 @@ impl SinkTypeIR {
             }) => unified_sink_args.maintain_order,
         }
     }
+
+    pub fn set_maintain_order(&mut self, maintain_order: bool) {
+        match self {
+            SinkTypeIR::Memory => {},
+            SinkTypeIR::Callback(s) => s.maintain_order = maintain_order,
+            SinkTypeIR::File(FileSinkOptions {
+                unified_sink_args, ..
+            })
+            | SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                unified_sink_args, ..
+            }) => unified_sink_args.maintain_order = maintain_order,
+        }
+    }
 }
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]

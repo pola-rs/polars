@@ -394,6 +394,115 @@ def test_group_by_key_sensitivity(
 
 
 @pytest.mark.parametrize(
+    ("expr", "expr_observes_or_produces_order"),
+    [
+        (pl.col.a, False),
+        (pl.col.a.map_batches(lambda x: x), True),
+        (
+            pl.col.a.map_batches(lambda x: x, is_elementwise=True),
+            False,
+        ),
+        (
+            pl.col.a.cast(pl.List(pl.Int64))
+            .map_batches(lambda x: x, is_elementwise=True)
+            .explode(),
+            True,
+        ),
+        (pl.col.a.sort(), True),
+        (pl.col.a.sort() + pl.col.a, True),
+        (pl.col.a.min() + pl.col.a, False),
+        (pl.col.a.first() + pl.col.a, True),
+    ],
+)
+def test_group_by_key_sensitivity_ordered_input(
+    expr: pl.Expr,
+    expr_observes_or_produces_order: bool,
+) -> None:
+    lf = pl.LazyFrame({"a": [2, 2, 1, 3], "b": ["A", "B", "C", "D"]}).unique(
+        maintain_order=True
+    )
+
+    q = lf.group_by(expr.alias("a"), maintain_order=False).agg(pl.max("b"))
+
+    plan = q.explain()
+    order_maintained = "UNIQUE[maintain_order: true" in plan
+    assert order_maintained == expr_observes_or_produces_order
+
+
+def test_group_by_input_ordering() -> None:
+    q = (
+        pl.LazyFrame({"a": [0, 1, 1]})
+        .unique(maintain_order=False)
+        .group_by(pl.col("a").sort(), maintain_order=True)
+        .agg(pl.len())
+    )
+
+    plan = q.explain()
+
+    # No deordering: Independent ordering produced by key expr observable in output
+    assert "AGGREGATE[maintain_order: true" in plan
+
+    q = (
+        pl.LazyFrame({"a": [0, 1, 1]})
+        .unique(maintain_order=True)
+        .group_by(pl.col("a").sort(), maintain_order=False)
+        .agg(pl.len())
+    )
+
+    plan = q.explain()
+
+    # No deordering: Mixed independent<>Column ordering (sort()<>col())
+    assert "UNIQUE[maintain_order: true" in plan
+
+    q = (
+        pl.LazyFrame({"a": [0, 1, 1]})
+        .unique(maintain_order=True)
+        .group_by("a", maintain_order=False)
+        .agg(first=pl.first("a"))
+    )
+
+    plan = q.explain()
+
+    # No deordering: Aggregation observes order
+    assert "UNIQUE[maintain_order: true" in plan
+
+    q = (
+        pl.LazyFrame({"a": [0, 1, 1]})
+        .unique(maintain_order=True)
+        .group_by("a", maintain_order=False)
+        .agg(first=pl.max("a"))
+    )
+
+    plan = q.explain()
+
+    assert "UNIQUE[maintain_order: false" in plan
+
+    q = (
+        pl.LazyFrame({"a": [0, 1, 1]})
+        .unique(maintain_order=False)
+        .group_by(pl.col("a").sort(), maintain_order=False)
+        .agg(pl.len())
+    )
+
+    plan = q.explain()
+
+    # Sort expr removed
+    assert 'BY [col("a")]' in plan
+
+    q = (
+        pl.LazyFrame({"a": [0, 1, 1]})
+        .unique(maintain_order=True)
+        .group_by(pl.col("a").sort(), maintain_order=False)
+        .agg(pl.len())
+    )
+
+    plan = q.explain()
+
+    # Keep sort expr: Independently ordered key expr with ordered input IR.
+    assert 'BY [col("a").sort(asc)]' in plan
+
+
+@pytest.mark.parametrize(
     ("expr", "is_ordered"),
     [
         (pl.col.a, False),
@@ -552,9 +661,9 @@ def test_reverse_non_order_observe() -> None:
 
 
 def test_order_optimize_cspe_26277() -> None:
-    df = pl.LazyFrame({"x": [1, 2]}).sort("x")
+    lf = pl.LazyFrame({"x": [1, 2]}).sort("x")
 
-    q1 = pl.concat([df, df])
+    q1 = pl.concat([lf, lf])
     q2 = pl.concat([q1, q1])
     q3 = q2.sort("x").with_columns("x")
 
@@ -562,3 +671,77 @@ def test_order_optimize_cspe_26277() -> None:
         q3.collect(),
         pl.DataFrame({"x": [1, 1, 1, 1, 2, 2, 2, 2]}),
     )
+
+
+def test_order_optimize_simple_projection_bidirectional_propagation() -> None:
+    q = (
+        pl.LazyFrame({"a": 1, "b": 1})
+        .group_by("a", maintain_order=True)
+        .agg(pl.first("b"))
+        .select("b", "a")
+        .unique(maintain_order=False)
+    )
+
+    plan = q.explain()
+
+    assert "AGGREGATE[maintain_order: false]" in plan
+
+    q = (
+        pl.LazyFrame({"a": 1, "b": 1})
+        .group_by("a", maintain_order=False)
+        .agg(pl.first("b"))
+        .select("b", "a")
+        .unique(maintain_order=True)
+    )
+
+    plan = q.explain()
+
+    assert "UNIQUE[maintain_order: false" in plan
+
+
+def test_order_simplify_exprs() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+
+    q = lf.with_columns(
+        rev=(pl.col("a").sort() + 1).sort().sort(descending=True),
+    )
+    plan = q.explain()
+    assert '(col("a")) + (1)].sort(desc).alias' in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a": [0, 1, 2, 3, 4],
+                "rev": [5, 4, 3, 2, 1],
+            }
+        ),
+    )
+
+    plan = pl.LazyFrame({"a": 1}).select(pl.col("a").sort().sort()).explain()
+
+    assert '("a").sort(asc)]' in plan
+
+    plan = (
+        pl.LazyFrame({"a": 1})
+        .select(pl.col("a").sort().unique(maintain_order=False))
+        .explain()
+    )
+
+    assert 'col("a").unique()' in plan
+
+    plan = (
+        pl.LazyFrame({"a": 1, "b": 1})
+        .select(pl.col("a").sort_by("b").unique(maintain_order=False))
+        .explain()
+    )
+
+    assert 'col("a").unique()' in plan
+
+    plan = (
+        pl.LazyFrame({"a": 1})
+        .select(pl.col("a").sort().unique(maintain_order=True))
+        .explain()
+    )
+
+    assert 'col("a").sort(asc).unique_stable()' in plan

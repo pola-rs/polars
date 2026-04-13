@@ -112,6 +112,7 @@ dtype-decimal = ["polars-core/dtype-decimal", "polars-plan/dtype-decimal"]
 dtype-extension = ["polars-core/dtype-extension", "polars-plan/dtype-extension"]
 ewma = ["polars-plan/ewma"]
 mode = ["polars-plan/mode"]
+moment = ["polars-plan/moment"]
 object = ["polars-ops/object"]
 physical_plan_visualization_schema = [
   "dep:schemars",

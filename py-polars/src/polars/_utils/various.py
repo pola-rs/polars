@@ -451,9 +451,9 @@ class _NoDefault(Enum):
         return "<no_default>"
 
 
-# the "no_default" sentinel should typically be used when one of the valid parameter
+# the "NO_DEFAULT" sentinel should typically be used when one of the valid parameter
 # values is None, as otherwise we cannot determine if the caller has set that value.
-no_default = _NoDefault.no_default
+NO_DEFAULT = _NoDefault.no_default
 NoDefault = Literal[_NoDefault.no_default]
 
 
@@ -680,7 +680,8 @@ def display_dot_graph(
 
     output_type = (
         "svg"
-        if _in_notebook()
+        if (output_path is not None and str(output_path).endswith(".svg"))
+        or _in_notebook()
         or _in_marimo_notebook()
         or "POLARS_DOT_SVG_VIEWER" in os.environ
         else "png"

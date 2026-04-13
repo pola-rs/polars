@@ -441,12 +441,12 @@ impl ToArrowConverter {
             for (pl_dtype, arrow_field) in iter {
                 match pl_dtype {
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(..) | DataType::Enum(..) => {
-                        if !matches!(arrow_field.dtype(), ArrowDataType::Dictionary(..)) {
-                            // IPC sink can hit here when it exports only the keys of the categorical.
-                            // In this case we do not want to attach categorical metadata.
-                            continue;
-                        }
+                    DataType::Categorical(..) | DataType::Enum(..)
+                        if !matches!(arrow_field.dtype(), ArrowDataType::Dictionary(..)) =>
+                    {
+                        // IPC sink can hit here when it exports only the keys of the categorical.
+                        // In this case we do not want to attach categorical metadata.
+                        continue;
                     },
                     _ => {},
                 }

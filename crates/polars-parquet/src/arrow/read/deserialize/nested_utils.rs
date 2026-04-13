@@ -299,7 +299,8 @@ pub enum InitNested {
 
 /// Initialize [`NestedState`] from `&[InitNested]`.
 pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
-    use {InitNested as IN, Nested as N};
+    use InitNested as IN;
+    use Nested as N;
 
     let container = init
         .iter()

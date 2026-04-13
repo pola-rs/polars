@@ -173,6 +173,8 @@ nav:
           - polars-on-premises/bare-metal/configuration/example-configurations.md
         - polars-on-premises/bare-metal/environment-variables.md
         - polars-on-premises/bare-metal/python-environment.md
+        - Integrations:
+          - polars-on-premises/bare-metal/integrations/slurm.md
 not_in_nav: |
     /_build/
 validation:

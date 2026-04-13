@@ -556,6 +556,16 @@ def _xl_setup_table_options(
     return table_style, table_options
 
 
+@overload
+def _xl_worksheet_in_workbook(
+    wb: Workbook, ws: Worksheet, *, return_worksheet: Literal[False] = ...
+) -> bool: ...
+@overload
+def _xl_worksheet_in_workbook(
+    wb: Workbook, ws: Worksheet, *, return_worksheet: Literal[True]
+) -> Worksheet: ...
+
+
 def _xl_worksheet_in_workbook(
     wb: Workbook, ws: Worksheet, *, return_worksheet: bool = False
 ) -> bool | Worksheet:

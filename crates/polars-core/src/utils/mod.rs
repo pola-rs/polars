@@ -9,16 +9,17 @@ use std::ops::{Deref, DerefMut};
 mod schema;
 
 pub use any_value::*;
+pub use arrow;
 use arrow::bitmap::Bitmap;
 pub use arrow::legacy::utils::*;
 pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
+pub use rayon;
 use rayon::prelude::*;
 pub use schema::*;
 pub use series::*;
 pub use supertype::*;
-pub use {arrow, rayon};
 
 use crate::POOL;
 use crate::prelude::*;

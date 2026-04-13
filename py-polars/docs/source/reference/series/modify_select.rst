@@ -7,6 +7,7 @@ Manipulation/selection
    :toctree: api/
 
     Series.__getitem__
+    Series.__setitem__
     Series.alias
     Series.append
     Series.arg_sort

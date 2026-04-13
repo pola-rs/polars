@@ -58,8 +58,8 @@ from polars._utils.getitem import get_series_item_by_key
 from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    NO_DEFAULT,
     _is_generator,
-    no_default,
     parse_version,
     qualified_type_name,
     require_same_type,
@@ -1504,6 +1504,49 @@ class Series:
         key: int | Series | np.ndarray[Any, Any] | Sequence[object] | tuple[object],
         value: Any,
     ) -> None:
+        """
+        Set Series values in-place using a single index, boolean mask, or index array.
+
+        Parameters
+        ----------
+        key
+            Determines which elements to update:
+
+            - ``int``: a single row index.
+            - ``Series`` (Boolean): a boolean mask.
+            - ``Series`` (Integer): an index array.
+            - ``ndarray``: a NumPy boolean mask or integer index array.
+            - ``list`` / ``tuple``: an index sequence (cast to UInt32).
+        value
+            Scalar or sequence of values to assign.
+
+        Examples
+        --------
+        Set a single element by index:
+
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s[0] = 10
+        >>> s
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            10
+            2
+            3
+        ]
+
+        Set elements with a boolean mask:
+
+        >>> s[pl.Series([False, True, True])] = 99
+        >>> s
+        shape: (3,)
+        Series: 'a' [i64]
+        [
+            10
+            99
+            99
+        ]
+        """
         # do the single idx as first branch as those are likely in a tight loop
         if isinstance(key, int) and not isinstance(key, bool):
             self.scatter(key, value)
@@ -1520,10 +1563,11 @@ class Series:
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
-            elif key.dtype == UInt64:
-                self._s = self.scatter(key.cast(UInt32), value)._s
-            elif key.dtype == UInt32:
+            elif key.dtype.is_integer():
                 self._s = self.scatter(key, value)._s
+            else:
+                msg = f"cannot use Series of dtype {key.dtype!r} for indexing; expected boolean or integer dtype"
+                raise TypeError(msg)
 
         # TODO: implement for these types without casting to series
         elif _check_for_numpy(key) and isinstance(key, np.ndarray):
@@ -2547,13 +2591,13 @@ class Series:
             Set the intervals to be left-closed instead of right-closed.
         include_breaks
             Include a column with the right endpoint of the bin each observation falls
-            in. This will change the data type of the output from a
-            :class:`Categorical` to a :class:`Struct`.
+            in. This will change the data type of the output from an
+            :class:`Enum` to a :class:`Struct`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Categorical` if `include_breaks` is set to
+            Series of data type :class:`Enum` if `include_breaks` is set to
             `False` (default), otherwise a Series of data type :class:`Struct`.
 
         See Also
@@ -2567,7 +2611,7 @@ class Series:
         >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
         >>> s.cut([-1, 1], labels=["a", "b", "c"])
         shape: (5,)
-        Series: 'foo' [cat]
+        Series: 'foo' [enum]
         [
             "a"
             "a"
@@ -2584,7 +2628,7 @@ class Series:
         ┌─────┬────────────┬────────────┐
         │ foo ┆ breakpoint ┆ category   │
         │ --- ┆ ---        ┆ ---        │
-        │ i64 ┆ f64        ┆ cat        │
+        │ i64 ┆ f64        ┆ enum       │
         ╞═════╪════════════╪════════════╡
         │ -2  ┆ -1.0       ┆ (-inf, -1] │
         │ -1  ┆ -1.0       ┆ (-inf, -1] │
@@ -8722,9 +8766,9 @@ class Series:
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
@@ -8827,9 +8871,9 @@ class Series:
     def replace_strict(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """

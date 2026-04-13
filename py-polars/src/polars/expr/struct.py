@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
-from polars._utils.parse import parse_into_list_of_expressions
+from polars._utils.parse import (
+    parse_into_list_of_expressions,
+)
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
 
@@ -23,6 +24,46 @@ class ExprStructNameSpace:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: str | int) -> Expr:
+        """
+        Return a struct field by name or by index.
+
+        Parameters
+        ----------
+        item
+            If a string, the name of the struct field. If an integer, the index
+            of the struct field.
+
+        Examples
+        --------
+        Access by field name:
+
+        >>> df = pl.DataFrame({"x": [1, 2], "y": ["a", "b"]}).select(
+        ...     pl.struct("x", "y").alias("s")
+        ... )
+        >>> df.select(pl.col("s").struct["x"])
+        shape: (2, 1)
+        ┌─────┐
+        │ x   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        └─────┘
+
+        Access by field index:
+
+        >>> df.select(pl.col("s").struct[0])
+        shape: (2, 1)
+        ┌─────┐
+        │ x   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        └─────┘
+        """
         if isinstance(item, str):
             return self.field(item)
         elif isinstance(item, int):
@@ -348,10 +389,5 @@ class ExprStructNameSpace:
         --------
         field
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
-
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return wrap_expr(self._pyexpr.struct_with_fields(pyexprs))
