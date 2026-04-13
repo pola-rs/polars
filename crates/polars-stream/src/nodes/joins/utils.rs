@@ -38,7 +38,8 @@ impl DataFrameSearchBuffer {
         unsafe { self.get_bypass_validity(column, row_index, false) }
     }
 
-    /// Get the `row_index`th value from the `column` bypassing its validity bitmap.
+    /// Get the `row_index`th value from the `column` potentially bypassing its
+    /// validity bitmap.
     ///
     /// SAFETY: Caller must ensure that `row_index` is within bounds.
     pub(super) unsafe fn get_bypass_validity(
@@ -115,7 +116,17 @@ impl DataFrameSearchBuffer {
 
     /// Find the index of the first item in the buffer that satisfies `predicate`,
     /// assuming it is first always false and then always true.
-    pub(super) fn binary_search<P, R>(
+    pub(super) fn binary_search<P, R>(&self, predicate: P, key_col_name: &str, range: R) -> usize
+    where
+        P: Fn(&AnyValue<'_>) -> bool,
+        R: RangeBounds<usize>,
+    {
+        self.binary_search_binary_offset_bypass_validity(predicate, key_col_name, range, false)
+    }
+
+    /// Find the index of the first item in the buffer that satisfies `predicate`,
+    /// assuming it is first always false and then always true.
+    pub(super) fn binary_search_binary_offset_bypass_validity<P, R>(
         &self,
         predicate: P,
         key_col_name: &str,

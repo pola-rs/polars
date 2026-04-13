@@ -749,7 +749,12 @@ fn binary_search_lower<R: RangeBounds<usize>>(
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_le();
-    dfsb.binary_search(predicate, sp.key_col(), range, params.keys_row_encoded)
+    dfsb.binary_search_binary_offset_bypass_validity(
+        predicate,
+        sp.key_col(),
+        range,
+        params.keys_row_encoded,
+    )
 }
 
 fn binary_search_upper<R: RangeBounds<usize>>(
@@ -760,7 +765,12 @@ fn binary_search_upper<R: RangeBounds<usize>>(
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_lt();
-    dfsb.binary_search(predicate, sp.key_col(), range, params.keys_row_encoded)
+    dfsb.binary_search_binary_offset_bypass_validity(
+        predicate,
+        sp.key_col(),
+        range,
+        params.keys_row_encoded,
+    )
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {

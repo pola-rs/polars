@@ -342,43 +342,23 @@ fn need_more_right_side(
         let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) }.clone();
         let cmp =
             move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
-        start = right.binary_search(
-            |x| cmp(x, &left_last_group).is_ge(),
-            right_by,
-            start..end,
-            false,
-        );
-        end = right.binary_search(
-            |x| cmp(x, &left_last_group).is_gt(),
-            right_by,
-            start..end,
-            false,
-        )
+        start = right.binary_search(|x| cmp(x, &left_last_group).is_ge(), right_by, start..end);
+        end = right.binary_search(|x| cmp(x, &left_last_group).is_gt(), right_by, start..end)
     }
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     // SAFETY: We checked earlier that the dataframes are not empty
     let left_last_val = unsafe { left_key.get_unchecked(left_key.len() - 1) };
     let right_range_end = match (options.strategy, options.allow_eq) {
-        (AsofStrategy::Forward, true) => right.binary_search(
-            |x| *x >= left_last_val,
-            params.right.key_col(),
-            start..end,
-            false,
-        ),
-        (AsofStrategy::Forward, false) | (AsofStrategy::Backward, true) => right.binary_search(
-            |x| *x > left_last_val,
-            params.right.key_col(),
-            start..end,
-            false,
-        ),
+        (AsofStrategy::Forward, true) => {
+            right.binary_search(|x| *x >= left_last_val, params.right.key_col(), start..end)
+        },
+        (AsofStrategy::Forward, false) | (AsofStrategy::Backward, true) => {
+            right.binary_search(|x| *x > left_last_val, params.right.key_col(), start..end)
+        },
         (AsofStrategy::Backward, false) | (AsofStrategy::Nearest, _) => {
-            let first_greater = right.binary_search(
-                |x| *x > left_last_val,
-                params.right.key_col(),
-                start..end,
-                false,
-            );
+            let first_greater =
+                right.binary_search(|x| *x > left_last_val, params.right.key_col(), start..end);
             if first_greater >= right.height() {
                 return Ok(true);
             }
@@ -393,7 +373,6 @@ fn need_more_right_side(
                 |x| *x > fst_greater_val,
                 params.right.key_col(),
                 first_greater..end,
-                false,
             )
         },
     };
@@ -411,24 +390,23 @@ fn prune_right_side(
 
     let mut start = 0;
     let mut end = right.height();
-    for (left_by, right_by) in Iterator::zip(params.left.by.iter(), params.right.by.iter()) {
+    let by_iter = Iterator::zip(params.left.by.iter(), params.right.by.iter());
+    let reorder_iter = Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter());
+    for ((left_by, right_by), (descending, nulls_last)) in Iterator::zip(by_iter, reorder_iter) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
         // SAFETY: We checked earlier that the dataframes are not empty
-        let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) };
-        start = right.binary_search(|x| x >= &left_last_group, right_by, start..end, false);
-        end = right.binary_search(|x| x > &left_last_group, right_by, start..end, false)
+        let left_last_group = unsafe { left_by_col.get_unchecked(left.height() - 1) }.clone();
+        let cmp =
+            move |a: &AnyValue<'_>, b: &AnyValue<'_>| reorder_cmp(a, b, *descending, *nulls_last);
+        start = right.binary_search(|x| cmp(x, &left_last_group).is_ge(), right_by, start..end);
+        end = right.binary_search(|x| cmp(x, &left_last_group).is_gt(), right_by, start..end);
     }
 
     let left_key = left.column(params.left.key_col())?.as_materialized_series();
     // SAFETY: We checked earlier that the dataframes are not empty
     let left_first_val = unsafe { left_key.get_unchecked(0) };
     let right_range_start = right
-        .binary_search(
-            |x| *x >= left_first_val,
-            params.right.key_col(),
-            start..end,
-            false,
-        )
+        .binary_search(|x| *x >= left_first_val, params.right.key_col(), start..end)
         .saturating_sub(1);
     right.split_at(right_range_start);
     Ok(())
@@ -598,9 +576,11 @@ fn join_asof_ungrouped(
             false,
         )?;
     }
+    let left_key = left_key.to_physical_repr();
+    let right_key = right_key.to_physical_repr();
     let take_idx = _join_asof_dispatch(
-        left_key,
-        right_key,
+        &left_key,
+        &right_key,
         options.strategy,
         options.tolerance.clone().map(Scalar::into_value),
         options.allow_eq,

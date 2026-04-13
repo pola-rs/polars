@@ -611,40 +611,42 @@ def test_merge_join_applicable(
 @pytest.mark.parametrize(
     "strategy",
     [
-        # "backward",
-        # "forward",
+        "backward",
+        "forward",
         "nearest",
     ],
 )
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize("coalesce", [False, True])
 @pytest.mark.parametrize(
-    "val_dtypes",
+    "key_dtypes",
     [
         FLOAT_DTYPES,
-        # INTEGER_DTYPES,
-        # {pl.String, pl.Binary},
-        # {pl.Date},
-        # {
-        #     pl.Datetime("ms"),
-        #     pl.Datetime("us"),
-        #     pl.Datetime("ns"),
-        # },
-        # {
-        #     pl.Datetime("ms", time_zone="Europe/Amsterdam"),
-        #     pl.Datetime("us", time_zone="Europe/Amsterdam"),
-        #     pl.Datetime("ns", time_zone="Europe/Amsterdam"),
-        # },
-        # {pl.Time},
-        # {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
+        INTEGER_DTYPES,
+        {pl.String, pl.Binary},
+        {pl.Boolean},
+        {pl.Date},
+        {
+            pl.Datetime("ms"),
+            pl.Datetime("us"),
+            pl.Datetime("ns"),
+        },
+        {
+            pl.Datetime("ms", time_zone="Europe/Amsterdam"),
+            pl.Datetime("us", time_zone="Europe/Amsterdam"),
+            pl.Datetime("ns", time_zone="Europe/Amsterdam"),
+        },
+        {pl.Time},
+        {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
     ],
 )
 @pytest.mark.parametrize(
     "group_dtypes",
     [
-        # None,
+        None,
         INTEGER_DTYPES,
-        # {pl.String, pl.Binary, pl.Categorical},
+        {pl.Boolean},
+        {pl.String, pl.Binary, pl.Categorical},
     ],
 )
 @given(data=st.data())
@@ -654,11 +656,13 @@ def test_streaming_asof_join(
     strategy: AsofJoinStrategy,
     allow_exact_matches: bool,
     coalesce: bool,
-    val_dtypes: set[pl.DataType],
+    key_dtypes: set[pl.DataType],
     group_dtypes: set[pl.DataType] | None,
 ) -> None:
-    if val_dtypes & {pl.String, pl.Binary} and strategy == "nearest":
-        pytest.skip("asof join with string/binary does not support 'nearest' strategy")
+    if key_dtypes & {pl.String, pl.Binary, pl.Boolean} and strategy == "nearest":
+        pytest.skip(
+            "asof join with string/binary/bool does not support 'nearest' strategy"
+        )
 
     group_dtype = None
     group_cols = []
@@ -666,11 +670,11 @@ def test_streaming_asof_join(
         group_dtype = data.draw(st.sampled_from(list(group_dtypes)))
         group_cols.append(column(name="group", dtype=group_dtype))
 
-    val_dtype = data.draw(st.sampled_from(list(val_dtypes)))
+    key_dtype = data.draw(st.sampled_from(list(key_dtypes)))
     df_st = dataframes(
         min_cols=1,
         max_cols=1,
-        allowed_dtypes=[val_dtype],
+        allowed_dtypes=[key_dtype],
         allow_time_zones=False,
         include_cols=group_cols,
     )
@@ -713,12 +717,6 @@ def test_streaming_asof_join(
             check_sortedness=True,
         )
 
-    import sys
-
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
-    print(f"{left.sort('group').collect() = }", file=sys.stderr)
-    print(f"{right.sort('group').collect() = }", file=sys.stderr)
-    print(f"{actual = }", file=sys.stderr)
-    print(f"{expected = }", file=sys.stderr)
-    assert_frame_equal(actual, expected)
+    assert_frame_equal(actual, expected, check_row_order=group_cols is not None)
