@@ -578,8 +578,8 @@ impl BuildState {
                                 kmerge.push(Priority(Reverse(next_seq), l_idx));
                             }
 
-                            let (_mseq, token, keys) = l.morsels.get_unchecked(idx_in_l);
-                            let payload = token.get_blocking();
+                            let (_mseq, sf, keys) = l.morsels.get_unchecked(idx_in_l);
+                            let payload = sf.get_blocking();
                             let p_morsel_idxs_start =
                                 l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
                             let p_morsel_idxs_stop =
@@ -683,8 +683,8 @@ impl BuildState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (_mseq, token, keys) = morsel;
-                            let payload = token.get().await;
+                            let (_mseq, sf, keys) = morsel;
+                            let payload = sf.get().await;
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];

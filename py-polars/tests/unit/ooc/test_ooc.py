@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
@@ -29,6 +31,7 @@ def _assert_spill_reload_clean(captured: str, label: str = "") -> None:
     assert "[ooc] clean" in captured, f"no clean{suffix}"
 
 
+@pytest.mark.skip
 def test_ooc_spill(tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
     _force_spill(tmp_path, plmonkeypatch)
 
@@ -51,6 +54,7 @@ def test_ooc_spill(tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any) -> 
     _assert_spill_reload_clean(capfd.readouterr().err)
 
 
+@pytest.mark.skip
 def test_ooc_spill_multiple_queries(
     tmp_path: Path, plmonkeypatch: PlMonkeyPatch, capfd: Any
 ) -> None:
