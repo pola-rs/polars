@@ -68,9 +68,11 @@ pub(super) async fn dsl_to_ir(
             #[cfg(feature = "python")]
             FileScanDsl::PythonDataset { dataset_object } => {
                 // Retrieve the user-provided table_uri, e.g. for lineage purposes.
-                original_sources = ScanSources::Paths(Buffer::from_iter([PlRefPath::new(
-                    dataset_object.uri().as_str(),
-                )]));
+                let uri = dataset_object
+                    .uri()
+                    .unwrap_or_else(|| dataset_object.name());
+                original_sources =
+                    ScanSources::Paths(Buffer::from_iter([PlRefPath::new(uri.as_str())]));
 
                 // There are a lot of places that short-circuit if the paths is empty,
                 // so we just give a dummy path here.
