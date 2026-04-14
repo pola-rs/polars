@@ -68,6 +68,7 @@ impl ShiftState {
                 let (head, tail) = src_df.split_at(len as i64);
                 *src_df = tail;
                 df = head;
+                drop(src_df);
                 if src.height() == 0 {
                     self.frames.pop_front();
                 }

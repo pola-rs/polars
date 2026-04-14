@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
 
 use polars_core::frame::DataFrame;
 
@@ -62,13 +63,19 @@ impl SpillFrame {
 
     /// Get a mutable reference to the underlying DataFrame, unspilling it if it
     /// was spilled.
-    pub async fn get_mut(&mut self) -> PinnedMut<'_, DataFrame> {
-        self.token.get_mut().await
+    pub async fn get_mut(&mut self) -> PinnedFrameMut<'_> {
+        PinnedFrameMut {
+            inner: self.token.get_mut().await,
+            height: &mut self.height,
+        }
     }
 
     /// Blocking version of get_mut.
-    pub fn get_mut_blocking(&mut self) -> PinnedMut<'_, DataFrame> {
-        self.token.get_mut_blocking()
+    pub fn get_mut_blocking(&mut self) -> PinnedFrameMut<'_> {
+        PinnedFrameMut {
+            inner: self.token.get_mut_blocking(),
+            height: &mut self.height,
+        }
     }
 
     /// Consumes this SpillFrame, unspilling it if it were spilled.
@@ -90,5 +97,30 @@ impl Debug for SpillFrame {
             None => s.field("df", &"spilled"),
         };
         s.finish()
+    }
+}
+
+pub struct PinnedFrameMut<'a> {
+    height: &'a mut usize,
+    inner: PinnedMut<'a, DataFrame>,
+}
+
+impl<'a> Deref for PinnedFrameMut<'a> {
+    type Target = DataFrame;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.inner
+    }
+}
+
+impl<'a> DerefMut for PinnedFrameMut<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.inner
+    }
+}
+
+impl<'a> Drop for PinnedFrameMut<'a> {
+    fn drop(&mut self) {
+        *self.height = self.inner.height();
     }
 }
