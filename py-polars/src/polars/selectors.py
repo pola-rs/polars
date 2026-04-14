@@ -80,6 +80,7 @@ __all__ = [
     "matches",
     "nested",
     "numeric",
+    "remaining",
     "signed_integer",
     "starts_with",
     "string",
@@ -2806,6 +2807,64 @@ def numeric() -> Selector:
     └─────┘
     """
     return Selector._from_pyselector(PySelector.numeric())
+
+
+def remaining() -> Selector:
+    """
+    Select all columns whose names do not appear as output names of other expressions.
+
+    This selector is useful in `select` and `with_columns` operations when you want
+    to perform an operation on specific columns while also keeping all other columns
+    that are not already produced by other expressions.
+
+    See Also
+    --------
+    all : Select all columns.
+    exclude : Select all columns except those matching the given columns, datatypes,
+        or selectors.
+
+    Examples
+    --------
+    >>> import polars as pl
+    >>> import polars.selectors as cs
+    >>> df = pl.DataFrame(
+    ...     {
+    ...         "b": [4, 5, 6],
+    ...         "a": [1, 2, 3],
+    ...         "c": [7, 8, 9],
+    ...     }
+    ... )
+
+    Transform column "a" and reorder columns:
+
+    >>> df.select(pl.col("a") * 10, cs.remaining())
+    shape: (3, 3)
+    ┌─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   │
+    │ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╡
+    │ 10  ┆ 4   ┆ 7   │
+    │ 20  ┆ 5   ┆ 8   │
+    │ 30  ┆ 6   ┆ 9   │
+    └─────┴─────┴─────┘
+
+    Use with `with_columns` to add new columns while transforming existing ones:
+
+    >>> df.select(pl.col("a"), cs.remaining().cast(pl.Float64), pl.col("a").alias("d"))
+    shape: (3, 4)
+    ┌─────┬─────┬─────┬─────┐
+    │ a   ┆ b   ┆ c   ┆ d   │
+    │ --- ┆ --- ┆ --- ┆ --- │
+    │ i64 ┆ f64 ┆ f64 ┆ i64 │
+    ╞═════╪═════╪═════╪═════╡
+    │ 1   ┆ 4.0 ┆ 7.0 ┆ 1   │
+    │ 2   ┆ 5.0 ┆ 8.0 ┆ 2   │
+    │ 3   ┆ 6.0 ┆ 9.0 ┆ 3   │
+    └─────┴─────┴─────┴─────┘
+
+    """
+    return Selector._from_pyselector(PySelector.remaining())
 
 
 def object() -> Selector:
