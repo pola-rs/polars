@@ -7888,11 +7888,11 @@ class DataFrame:
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        by
-            Join on these columns before doing asof join
         by_left
             Join on these columns before doing asof join
         by_right
+            Join on these columns before doing asof join
+        by
             Join on these columns before doing asof join
         strategy : {'backward', 'forward', 'nearest'}
             Join strategy.

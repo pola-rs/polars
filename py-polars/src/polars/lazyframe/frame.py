@@ -5764,11 +5764,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        by
-            Join on these columns before doing asof join.
         by_left
             Join on these columns before doing asof join.
         by_right
+            Join on these columns before doing asof join.
+        by
             Join on these columns before doing asof join.
         strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
@@ -5827,6 +5827,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             will error. Currently, sortedness cannot be checked if 'by' groups are
             provided.
 
+        Notes
+        -----
+        If 'by' is set, the implementation will compute the asof join over all of the
+        groups concurrently.  This can potentially lead to high memory usage if there
+        are many groups.
+
+        This can be mitigated by sorting (via :meth:`.sort() <polars.LazyFrame.sort>`)
+        both of the input LazyFrames by the 'by' keys (or using :meth:`.set_sorted()
+        <polars.LazyFrame.set_sorted>` if the columns are already sorted)
+        before computing the join operation; and using the streaming engine to collect
+        the results. For example:
+
+        >>> # Compute streaming asof join with 'by' groups
+        >>> result = (
+        ...     left.sort("by", "on").join_asof(  # Sort left manually
+        ...         right.set_sorted("by", "on"),  # Set right as already sorted
+        ...     )
+        ... ).collect(streaming=True)  # doctest: +SKIP
 
         Examples
         --------
