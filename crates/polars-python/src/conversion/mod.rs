@@ -16,11 +16,11 @@ use polars::frame::PivotColumnNaming;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
 use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
+use polars::prelude::{ColumnMapping, FileStatistics};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
@@ -1811,6 +1811,24 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ColumnMapping> {
                 )));
             },
         }))
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<FileStatistics> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let dict: Bound<'_, PyDict> = ob.extract()?;
+
+        let mut out = PlIndexMap::new();
+
+        for (k, v) in dict.iter() {
+            let k: usize = k.extract()?;
+            let v: (usize, usize) = v.extract()?;
+            out.insert(k, v);
+        }
+
+        Ok(Wrap(FileStatistics(Arc::new(out))))
     }
 }
 

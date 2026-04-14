@@ -5,7 +5,7 @@ use polars_core::config;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{FileStatistics, ScanSource};
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{FileReader, ParquetFileReader};
@@ -18,6 +18,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 pub struct ParquetReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
     pub options: Arc<ParquetOptions>,
+    pub file_statistics: Option<FileStatistics>,
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
@@ -133,6 +134,10 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             io_metrics: OptIOMetrics(self.io_metrics.get().cloned()),
             verbose,
 
+            file_size_hint: self
+                .file_statistics
+                .as_ref()
+                .and_then(|fs| fs.0.get(&scan_source_idx).copied()),
             init_data: None,
         };
 

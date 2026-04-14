@@ -480,6 +480,7 @@ def scan_parquet(
     _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
     _table_statistics: DataFrame | None = None,
+    _file_statistics: dict[int, tuple[int, int]] | None = None,
     _row_count: tuple[int, int] | None = None,
 ) -> LazyFrame:
     """
@@ -722,6 +723,7 @@ def scan_parquet(
             default_values=_default_values,
             deletion_files=_deletion_files,
             table_statistics=_table_statistics,
+            file_statistics=_file_statistics,
             row_count=_row_count,
         ),
     )

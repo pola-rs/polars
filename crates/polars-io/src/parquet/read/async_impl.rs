@@ -15,6 +15,7 @@ pub struct ParquetObjectStore {
     store: PolarsObjectStore,
     path: ObjectPath,
     length: Option<usize>,
+    footer_length: Option<usize>,
     metadata: Option<FileMetadataRef>,
     schema: Option<ArrowSchemaRef>,
 }
@@ -32,12 +33,23 @@ impl ParquetObjectStore {
             store,
             path,
             length: None,
+            footer_length: None,
             metadata,
             schema: None,
         })
     }
 
-    /// Initialize the length property of the object, unless it has already been fetched.
+    /// Set the known length of the object.
+    pub fn set_length(&mut self, length: usize) {
+        self.length = Some(length);
+    }
+
+    /// Set the known footer byte length (Thrift metadata size).
+    pub fn set_footer_length(&mut self, footer_length: usize) {
+        self.footer_length = Some(footer_length);
+    }
+
+    /// Initialize the length property of the object, unless it is already available.
     async fn length(&mut self) -> PolarsResult<usize> {
         if self.length.is_none() {
             self.length = Some(self.store.head(&self.path).await?.size as usize);
@@ -54,7 +66,10 @@ impl ParquetObjectStore {
     /// Fetch the metadata of the parquet file, do not memoize it.
     async fn fetch_metadata(&mut self) -> PolarsResult<FileMetadata> {
         let length = self.length().await?;
-        fetch_metadata(&self.store, &self.path, length).await
+        let (metadata, footer_byte_length) =
+            fetch_metadata(&self.store, &self.path, length, self.footer_length).await?;
+        self.footer_length = Some(footer_byte_length);
+        Ok(metadata)
     }
 
     /// Fetch and memoize the metadata of the parquet file.
@@ -98,21 +113,24 @@ pub async fn fetch_metadata(
     store: &PolarsObjectStore,
     path: &ObjectPath,
     file_byte_length: usize,
-) -> PolarsResult<FileMetadata> {
-    let footer_header_bytes = store
-        .get_range(
-            path,
-            file_byte_length
-                .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize)
-                .ok_or_else(|| {
-                    polars_parquet::parquet::error::ParquetError::OutOfSpec(
-                        "not enough bytes to contain parquet footer".to_string(),
-                    )
-                })?..file_byte_length,
-        )
-        .await?;
+    footer_byte_length_hint: Option<usize>,
+) -> PolarsResult<(FileMetadata, usize)> {
+    let footer_byte_length = if let Some(hint) = footer_byte_length_hint {
+        hint
+    } else {
+        let footer_header_bytes = store
+            .get_range(
+                path,
+                file_byte_length
+                    .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize)
+                    .ok_or_else(|| {
+                        polars_parquet::parquet::error::ParquetError::OutOfSpec(
+                            "not enough bytes to contain parquet footer".to_string(),
+                        )
+                    })?..file_byte_length,
+            )
+            .await?;
 
-    let footer_byte_length: usize = {
         let reader = &mut footer_header_bytes.as_ref();
         let footer_byte_size = read_i32le(reader).unwrap();
         let magic = read_n(reader).unwrap();
@@ -143,11 +161,12 @@ pub async fn fetch_metadata(
         )
         .await?;
 
-    Ok(polars_parquet::parquet::read::deserialize_metadata(
+    let metadata = polars_parquet::parquet::read::deserialize_metadata(
         std::io::Cursor::new(footer_bytes.as_ref()),
         // TODO: Describe why this makes sense. Taken from the previous
         // implementation which said "a highly nested but sparse struct could
         // result in many allocations".
         footer_bytes.as_ref().len() * 2 + 1024,
-    )?)
+    )?;
+    Ok((metadata, footer_byte_length))
 }

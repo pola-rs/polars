@@ -56,5 +56,6 @@ class ScanOptions:
     default_values: DefaultFieldValues | None = None
     deletion_files: DeletionFiles | None = None
     table_statistics: DataFrame | None = None
+    file_statistics: dict[int, tuple[int, int]] | None = None
     # (physical, deleted)
     row_count: tuple[int, int] | None = None

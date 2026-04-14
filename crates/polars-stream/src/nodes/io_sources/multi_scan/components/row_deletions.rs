@@ -70,6 +70,8 @@ impl DeletionFilesProvider {
                         low_memory: false,
                         use_statistics: false,
                     }),
+                    // TODO: Allow specifying file statistics for deletion files as well
+                    file_statistics: None,
                     prefetch_limit: RelaxedCell::new_usize(0),
                     prefetch_semaphore: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),

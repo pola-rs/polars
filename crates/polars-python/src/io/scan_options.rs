@@ -3,8 +3,8 @@ use std::sync::Arc;
 use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::{
-    CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, MissingColumnsPolicy,
-    PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
+    CastColumnsPolicy, CloudScheme, ColumnMapping, ExtraColumnsPolicy, FileStatistics,
+    MissingColumnsPolicy, PlSmallStr, Schema, TableStatistics, UnifiedScanArgs,
 };
 use polars_io::{HiveOptions, RowIndex};
 use polars_utils::IdxSize;
@@ -66,6 +66,7 @@ impl PyScanOptions<'_> {
             credential_provider: Option<Py<PyAny>>,
             deletion_files: Option<Wrap<DeletionFilesList>>,
             table_statistics: Option<Wrap<TableStatistics>>,
+            file_statistics: Option<Wrap<FileStatistics>>,
             row_count: Option<(u64, u64)>,
         }
 
@@ -89,6 +90,7 @@ impl PyScanOptions<'_> {
             credential_provider,
             deletion_files,
             table_statistics,
+            file_statistics,
             row_count,
         } = self.0.extract()?;
 
@@ -110,6 +112,7 @@ impl PyScanOptions<'_> {
         };
 
         let deletion_files = DeletionFilesList::filter_empty(deletion_files.map(|x| x.0));
+        let file_statistics = FileStatistics::filter_empty(file_statistics.map(|x| x.0));
 
         let unified_scan_args = UnifiedScanArgs {
             // Schema is currently still stored inside the options per scan type, but we do eventually
@@ -135,6 +138,7 @@ impl PyScanOptions<'_> {
             include_file_paths: include_file_paths.map(|x| x.0),
             deletion_files,
             table_statistics: table_statistics.map(|x| x.0),
+            file_statistics,
             row_count,
         };
 

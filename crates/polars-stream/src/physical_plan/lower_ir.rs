@@ -720,6 +720,7 @@ pub fn lower_ir(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
                             first_metadata: first_metadata.clone(),
+                            file_statistics: unified_scan_args.file_statistics.clone(),
                             prefetch_limit: RelaxedCell::new_usize(0),
                             prefetch_semaphore: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),

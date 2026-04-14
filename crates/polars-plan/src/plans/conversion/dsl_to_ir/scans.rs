@@ -241,6 +241,7 @@ pub(super) async fn parquet_file_info(
     row_index: Option<&RowIndex>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
     n_sources: usize,
+    #[allow(unused)] file_size_hint: Option<(usize, usize)>,
 ) -> PolarsResult<(FileInfo, Option<FileMetadataRef>)> {
     use polars_core::error::feature_gated;
 
@@ -250,6 +251,11 @@ pub(super) async fn parquet_file_info(
             feature_gated!("cloud", {
                 let mut reader =
                     ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None).await?;
+
+                if let Some((file_size, footer_size)) = file_size_hint {
+                    reader.set_length(file_size);
+                    reader.set_footer_length(footer_size);
+                }
 
                 (
                     reader.schema().await?,
@@ -860,11 +866,17 @@ this scan to succeed with an empty DataFrame.",
                             )
                         }
 
+                        let file_size_hint = unified_scan_args
+                            .file_statistics
+                            .as_ref()
+                            .and_then(|fs| fs.0.get(&0).copied());
+
                         let (mut file_info, mut metadata) = scans::parquet_file_info(
                             first_scan_source,
                             unified_scan_args.row_index.as_ref(),
                             cloud_options,
                             n_sources,
+                            file_size_hint,
                         )
                         .await?;
 
