@@ -109,13 +109,13 @@ impl<'a> Deref for PinnedFrameMut<'a> {
     type Target = DataFrame;
 
     fn deref(&self) -> &Self::Target {
-        &*self.inner
+        &self.inner
     }
 }
 
 impl<'a> DerefMut for PinnedFrameMut<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.inner
+        &mut self.inner
     }
 }
 
