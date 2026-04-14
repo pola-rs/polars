@@ -15,6 +15,8 @@ pub static DATASET_PROVIDER_VTABLE: OnceLock<PythonDatasetProviderVTable> = Once
 pub struct PythonDatasetProviderVTable {
     pub name: fn(dataset_object: &PythonObject) -> PlSmallStr,
 
+    pub uri: fn(dataset_object: &PythonObject) -> PlSmallStr,
+
     pub schema: fn(dataset_object: &PythonObject) -> PolarsResult<SchemaRef>,
 
     #[expect(clippy::type_complexity)]
@@ -49,6 +51,10 @@ impl PythonDatasetProvider {
 
     pub fn name(&self) -> PlSmallStr {
         (dataset_provider_vtable().unwrap().name)(&self.dataset_object)
+    }
+
+    pub fn uri(&self) -> PlSmallStr {
+        (dataset_provider_vtable().unwrap().uri)(&self.dataset_object)
     }
 
     pub fn schema(&self) -> PolarsResult<SchemaRef> {

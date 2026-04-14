@@ -342,6 +342,7 @@ impl PredicatePushDown {
             },
             Scan {
                 sources,
+                original_sources,
                 file_info,
                 hive_parts: scan_hive_parts,
                 ref predicate,
@@ -383,6 +384,7 @@ impl PredicatePushDown {
                 let lp = if do_optimization {
                     Scan {
                         sources,
+                        original_sources,
                         file_info,
                         hive_parts,
                         predicate,
@@ -394,6 +396,7 @@ impl PredicatePushDown {
                 } else {
                     let lp = Scan {
                         sources,
+                        original_sources,
                         file_info,
                         hive_parts,
                         predicate: None,

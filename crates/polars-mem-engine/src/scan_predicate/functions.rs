@@ -428,6 +428,7 @@ where
 {
     let IR::Scan {
         sources,
+        original_sources: _,
         file_info:
             FileInfo {
                 schema: _,

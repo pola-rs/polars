@@ -604,6 +604,7 @@ pub fn lower_ir(
         v @ IR::Scan { .. } => {
             let IR::Scan {
                 sources: scan_sources,
+                original_sources: _,
                 file_info,
                 mut hive_parts,
                 output_schema: _,

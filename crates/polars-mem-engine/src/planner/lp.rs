@@ -428,6 +428,7 @@ fn create_physical_plan_impl(
         #[allow(unused_variables)]
         Scan {
             sources,
+            original_sources: _,
             file_info,
             hive_parts,
             output_schema,

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 from polars._utils.wrap import wrap_ldf
 from polars.io.cloud._utils import NoPickleOption
 from polars.io.delta._dataset import DeltaDataset
+from polars.io.delta._utils import _to_table_uri
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -322,7 +323,7 @@ def scan_delta(
 
     dataset = DeltaDataset(
         table_=NoPickleOption(table),
-        table_uri_=str(source) if table is None else None,
+        table_uri_=_to_table_uri(source),
         version=version,
         storage_options=storage_options,
         credential_provider_builder=credential_provider_builder,

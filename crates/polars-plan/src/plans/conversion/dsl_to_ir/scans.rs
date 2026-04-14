@@ -46,35 +46,42 @@ pub(super) async fn dsl_to_ir(
             }
         }
 
-        let sources_before_expansion = &sources;
+        let mut original_sources = sources;
 
         let sources = match &*scan_type {
             #[cfg(feature = "parquet")]
             FileScanDsl::Parquet { .. } => {
-                sources
+                original_sources
                     .expand_paths_with_hive_update(unified_scan_args)
                     .await?
             },
             #[cfg(feature = "ipc")]
             FileScanDsl::Ipc { .. } => {
-                sources
+                original_sources
                     .expand_paths_with_hive_update(unified_scan_args)
                     .await?
             },
             #[cfg(feature = "csv")]
-            FileScanDsl::Csv { .. } => sources.expand_paths(unified_scan_args).await?,
+            FileScanDsl::Csv { .. } => original_sources.expand_paths(unified_scan_args).await?,
             #[cfg(feature = "json")]
-            FileScanDsl::NDJson { .. } => sources.expand_paths(unified_scan_args).await?,
+            FileScanDsl::NDJson { .. } => original_sources.expand_paths(unified_scan_args).await?,
             #[cfg(feature = "python")]
-            FileScanDsl::PythonDataset { .. } => {
+            FileScanDsl::PythonDataset { dataset_object } => {
+                // Retrieve the user-provided table_uri, e.g. for lineage purposes.
+                original_sources = ScanSources::Paths(Buffer::from_iter([PlRefPath::new(
+                    dataset_object.uri().as_str(),
+                )]));
+
                 // There are a lot of places that short-circuit if the paths is empty,
                 // so we just give a dummy path here.
                 ScanSources::Paths(Buffer::from_iter([PlRefPath::new("PL_PY_DSET")]))
             },
             #[cfg(feature = "scan_lines")]
-            FileScanDsl::Lines { .. } => sources.expand_paths(unified_scan_args).await?,
-            FileScanDsl::ExpandedPaths { .. } => sources.expand_paths(unified_scan_args).await?,
-            FileScanDsl::Anonymous { .. } => sources.clone(),
+            FileScanDsl::Lines { .. } => original_sources.expand_paths(unified_scan_args).await?,
+            FileScanDsl::ExpandedPaths { .. } => {
+                original_sources.expand_paths(unified_scan_args).await?
+            },
+            FileScanDsl::Anonymous { .. } => original_sources.clone(),
         };
 
         // For cloud we must deduplicate files. Serialization/deserialization leads to Arc's losing there
@@ -84,7 +91,7 @@ pub(super) async fn dsl_to_ir(
                 .get_or_insert(
                     &scan_type,
                     &sources,
-                    sources_before_expansion,
+                    &original_sources,
                     unified_scan_args,
                     verbose,
                 )
@@ -174,6 +181,7 @@ pub(super) async fn dsl_to_ir(
 
             IR::Scan {
                 sources,
+                original_sources,
                 file_info,
                 hive_parts,
                 predicate: None,

@@ -26,6 +26,17 @@ pub fn name(dataset_object: &PythonObject) -> PlSmallStr {
     .unwrap()
 }
 
+pub fn uri(dataset_object: &PythonObject) -> PlSmallStr {
+    Python::attach(|py| {
+        PyResult::Ok(PlSmallStr::from_str(
+            &dataset_object
+                .getattr(py, intern!(py, "table_uri_"))?
+                .extract::<PyBackedStr>(py)?,
+        ))
+    })
+    .unwrap()
+}
+
 pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
     Python::attach(|py| {
         let pyarrow_schema_cls = py
