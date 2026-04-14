@@ -4,12 +4,12 @@ from functools import partial
 from typing import TYPE_CHECKING, Any, Literal, overload
 
 import polars._reexport as pl
-from polars._dependencies import pyarrow as pa
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from polars import DataFrame, LazyFrame
+    from polars._dependencies import pyarrow as pa
 
 
 def _scan_pyarrow_dataset(
@@ -53,7 +53,7 @@ def _scan_pyarrow_dataset(
 def _scan_pyarrow_dataset_impl(
     ds: pa.dataset.Dataset,
     with_columns: list[str] | None,
-    predicate: str | bytes | None,
+    predicate: pa.compute.Expression | None,
     n_rows: int | None,
     batch_size: int | None = ...,
     *,
@@ -66,7 +66,7 @@ def _scan_pyarrow_dataset_impl(
 def _scan_pyarrow_dataset_impl(
     ds: pa.dataset.Dataset,
     with_columns: list[str] | None,
-    predicate: str | bytes | None,
+    predicate: pa.compute.Expression | None,
     n_rows: int | None,
     batch_size: int | None = ...,
     *,
@@ -78,7 +78,7 @@ def _scan_pyarrow_dataset_impl(
 def _scan_pyarrow_dataset_impl(
     ds: pa.dataset.Dataset,
     with_columns: list[str] | None,
-    predicate: str | bytes | None,
+    predicate: pa.compute.Expression | None,
     n_rows: int | None,
     batch_size: int | None = None,
     *,
@@ -121,32 +121,10 @@ def _scan_pyarrow_dataset_impl(
     filter_post_slice_ = None
 
     if allow_pyarrow_filter and predicate is not None:
-        from polars._utils.convert import (
-            to_py_date,
-            to_py_datetime,
-            to_py_time,
-            to_py_timedelta,
-        )
-        from polars.datatypes import Date, Datetime, Duration
-
-        v = eval(
-            predicate,
-            {
-                "pa": pa,
-                "Date": Date,
-                "Datetime": Datetime,
-                "Duration": Duration,
-                "to_py_date": to_py_date,
-                "to_py_datetime": to_py_datetime,
-                "to_py_time": to_py_time,
-                "to_py_timedelta": to_py_timedelta,
-            },
-        )
-
         if n_rows is None:
-            filter_ = v
+            filter_ = predicate
         else:
-            filter_post_slice_ = v
+            filter_post_slice_ = predicate
 
     common_params: dict[str, Any] = {"columns": with_columns, "filter": filter_}
     batch_size = user_batch_size if user_batch_size is not None else batch_size

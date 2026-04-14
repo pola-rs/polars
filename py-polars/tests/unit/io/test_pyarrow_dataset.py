@@ -237,11 +237,13 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
     capture = capfd.readouterr().err
 
     # Verify: partial predicate was pushed to pyarrow
-    assert "(pa.compute.field('a') > 1)" in capture
-    assert (
+    binop_pred = 'converted pyarrow predicate: Comparison { left: Column("a"), op: Gt, right: Literal(Int(1)) }'
+    assert binop_pred in capture
+
+    resid_pred = (
         'residual predicate: Some([([(col("a").cast(Float64)) * (col("b"))]) > (25.0)])'
-        in capture
     )
+    assert resid_pred in capture
     # Verify: correctness
     expected = (
         df.lazy().filter((pl.col("a") > 1) & (pl.col("a") * pl.col("b") > 25)).collect()
@@ -266,8 +268,11 @@ def test_pyarrow_dataset_is_in_predicate_pushdown(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "(pa.compute.field('id')).isin([1,3])" in capture
-    assert "residual predicate: None" in capture
+    isin_pred = 'predicate node: col("id").is_in([[1, 3]])'
+    assert isin_pred in capture
+
+    resid_pred = "residual predicate: None"
+    assert resid_pred in capture
 
     assert_frame_equal(result, expected)
     assert_frame_equal(df.filter(pred), expected)
@@ -282,8 +287,11 @@ def test_pyarrow_dataset_is_in_predicate_pushdown(
 
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
 
-    assert "(pa.compute.field('id')).isin([1,2,3])" in capture
-    assert "residual predicate: None" in capture
+    isin_pred = 'predicate node: col("id").is_in([[1, 2, 3]])'
+    assert isin_pred in capture
+
+    resid_pred = "residual predicate: None"
+    assert resid_pred in capture
 
     assert_frame_equal(result, expected)
     assert_frame_equal(df.filter(pred), expected)
@@ -306,7 +314,10 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "(pa.compute.field('id')).isin([1,3])" in capture
+    isin_pred = 'converted pyarrow predicate: IsIn { expr: Column("id"), values: [Int(1), Int(3)] }'
+    assert isin_pred in capture
+
+    resid_pred = "residual predicate: None"
     assert "residual predicate: None" in capture
 
     assert_frame_equal(result, expected)
@@ -320,7 +331,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "(pa.compute.field('id')).isin([1,None,3])" in capture
+    assert 'IsIn { expr: Column("id"), values: [Int(1), Null, Int(3)] }' in capture
     assert "residual predicate: None" in capture
 
     assert_frame_equal(result, expected)
@@ -334,7 +345,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "converted pyarrow predicate: pa.compute.scalar(False)" in capture
+    assert "converted pyarrow predicate: Literal(Bool(false))" in capture
     assert "residual predicate: None" in capture
 
     assert_frame_equal(q.collect(), expected)
@@ -350,7 +361,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
 
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
 
-    assert "converted pyarrow predicate: pa.compute.scalar(False)" in capture
+    assert "converted pyarrow predicate: Literal(Bool(false))" in capture
     assert "residual predicate: None" in capture
 
     assert_frame_equal(q.collect(), expected)
@@ -403,7 +414,7 @@ def test_pyarrow_dataset_predicate_verbose_log(
     assert (
         "[SENSITIVE]: python_scan_predicate: "
         'predicate node: [(col("a")) < (3)], '
-        "converted pyarrow predicate: (pa.compute.field('a') < 3), "
+        'converted pyarrow predicate: Comparison { left: Column("a"), op: Lt, right: Literal(Int(3)) }, '
         "residual predicate: None"
     ) in capture
 
@@ -511,13 +522,17 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
         pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
     )
 
+    import pyarrow.compute as pc
+
     import polars.io.pyarrow_dataset.anonymous_scan
+
+    year_eq_2026 = pc.field("year") == 2026
 
     assert_frame_equal(
         polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
             dataset,
             n_rows=2,
-            predicate="pa.compute.field('year') == 2026",
+            predicate=year_eq_2026,
             with_columns=None,
         ),
         pl.DataFrame({"index": 1, "year": 2026, "month": 0}),
@@ -527,7 +542,7 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
         polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
             dataset,
             n_rows=0,
-            predicate="pa.compute.field('year') == 2026",
+            predicate=year_eq_2026,
             with_columns=None,
         ),
         pl.DataFrame(schema={"index": pl.Int64, "year": pl.Int64, "month": pl.Int64}),
@@ -549,7 +564,7 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
     assert not polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
         dataset,
         n_rows=0,
-        predicate="pa.compute.field('year') == 2026",
+        predicate=year_eq_2026,
         with_columns=None,
         allow_pyarrow_filter=False,
     )[1]
