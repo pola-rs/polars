@@ -63,7 +63,7 @@ fn hash_python_predicate<H: Hasher>(
     std::mem::discriminant(pred).hash(state);
     match pred {
         PythonPredicate::None => {},
-        PythonPredicate::PyArrow(s) => s.hash(state),
+        PythonPredicate::PyArrow(p) => format!("{:?}", p).hash(state),
         PythonPredicate::Polars(e) => e.traverse_and_hash(expr_arena, state),
     }
 }

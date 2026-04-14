@@ -1365,7 +1365,10 @@ fn to_graph_rec<'a>(
 
                             let mut could_serialize_predicate = true;
                             let predicate = match &options.predicate {
-                                PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
+                                PythonPredicate::PyArrow(pred) => {
+                                    polars_mem_engine::arrow_predicate_pyo3::arrow_predicate_to_pyobject(py, pred)
+                                        .map_err(|e| polars_err!(ComputeError: "failed to build pyarrow predicate: {}", e))?
+                                },
                                 PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
                                 PythonPredicate::Polars(_) => {
                                     assert!(pl_predicate.is_some(), "should be set");

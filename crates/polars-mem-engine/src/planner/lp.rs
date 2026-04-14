@@ -196,13 +196,14 @@ pub fn python_scan_predicate(
         // Convert to a pyarrow eval string.
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
             use polars_core::config::verbose_print_sensitive;
+            use polars_io::arrow_predicate::ArrowPredicate;
             use polars_plan::plans::MintermIter;
 
             // Split into AND-minterms and convert each independently.
             let mut residual_predicate_nodes: Vec<Node> = vec![];
-            let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
+            let parts: Vec<ArrowPredicate> = MintermIter::new(e.node(), expr_arena)
                 .filter_map(|node| {
-                    let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                    let result = polars_plan::plans::python::pyarrow::predicate_to_arrow_pred(
                         node,
                         expr_arena,
                         Default::default(),
@@ -217,11 +218,17 @@ pub fn python_scan_predicate(
             let predicate_pa = match parts.len() {
                 0 => None,
                 1 => Some(parts.into_iter().next().unwrap()),
-                _ => Some(format!("({})", parts.join(" & "))),
+                _ => {
+                    let combined = parts
+                        .into_iter()
+                        .reduce(|acc, p| ArrowPredicate::And(Box::new(acc), Box::new(p)))
+                        .unwrap();
+                    Some(combined)
+                },
             };
 
-            let residual_predicate_expr_ir = if let Some(eval_str) = predicate_pa {
-                options.predicate = PythonPredicate::PyArrow(eval_str);
+            let residual_predicate_expr_ir = if let Some(pred) = predicate_pa {
+                options.predicate = PythonPredicate::PyArrow(pred);
 
                 residual_predicate_nodes
                     .into_iter()
@@ -241,8 +248,8 @@ pub fn python_scan_predicate(
 
             verbose_print_sensitive(|| {
                 let predicate_pa_verbose_msg = match &options.predicate {
-                    PythonPredicate::PyArrow(p) => p,
-                    _ => "<conversion failed>",
+                    PythonPredicate::PyArrow(p) => format!("{:?}", p),
+                    _ => "<conversion failed>".to_string(),
                 };
 
                 format!(

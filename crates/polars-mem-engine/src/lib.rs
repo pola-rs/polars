@@ -2,6 +2,8 @@
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
 )] // Maybe be caused by some feature
+#[cfg(feature = "python")]
+pub mod arrow_predicate_pyo3;
 mod executors;
 mod planner;
 mod prelude;

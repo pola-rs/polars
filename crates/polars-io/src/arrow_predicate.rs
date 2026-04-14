@@ -1,4 +1,6 @@
 use polars_core::datatypes::{TimeUnit, TimeZone};
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
 
 /// IR describing a predicate that can be pushed down to the pyarrow / iceberg
 /// reader in python.
@@ -6,7 +8,8 @@ use polars_core::datatypes::{TimeUnit, TimeZone};
 /// This is produced on the Rust side in `polars-plan` and is later converted
 /// to a real `pyarrow.compute.Expression` via pyo3 in `polars-mem-engine`,
 /// so the Python side does not need to `eval()` a string.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ArrowPredicate {
     /// Reference to a column by name
     Column(String),
@@ -22,6 +25,8 @@ pub enum ArrowPredicate {
     And(Box<ArrowPredicate>, Box<ArrowPredicate>),
     /// Logical OR of two predicates
     Or(Box<ArrowPredicate>, Box<ArrowPredicate>),
+    /// Logical XOR of two predicates
+    Xor(Box<ArrowPredicate>, Box<ArrowPredicate>),
     /// Logical NOT of a predicate
     Not(Box<ArrowPredicate>),
     /// `expr.is_null()`
@@ -34,6 +39,7 @@ pub enum ArrowPredicate {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ComparisonOp {
     Eq,
     NotEq,
@@ -43,7 +49,8 @@ pub enum ComparisonOp {
     Gte,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum LiteralValue {
     Null,
     Int(i64),

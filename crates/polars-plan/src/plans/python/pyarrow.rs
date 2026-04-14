@@ -3,6 +3,7 @@ use std::fmt::Write;
 use polars_core::datatypes::AnyValue;
 use polars_core::prelude::{DataType, TimeUnit, TimeZone};
 use polars_core::series::Series;
+use polars_io::arrow_predicate::{ArrowPredicate, ComparisonOp, LiteralValue as ArrowLiteralValue};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::prelude::*;
@@ -273,6 +274,225 @@ pub fn predicate_to_pa(
                 IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => {
                     Some(format!("~({input}).is_null()"))
                 },
+                _ => None,
+            }
+        },
+        _ => None,
+    }
+}
+
+fn comparison_op(op: &Operator) -> Option<ComparisonOp> {
+    Some(match op {
+        Operator::Eq => ComparisonOp::Eq,
+        Operator::NotEq => ComparisonOp::NotEq,
+        Operator::Lt => ComparisonOp::Lt,
+        Operator::LtEq => ComparisonOp::Lte,
+        Operator::Gt => ComparisonOp::Gt,
+        Operator::GtEq => ComparisonOp::Gte,
+        _ => return None,
+    })
+}
+
+fn anyvalue_to_arrow_literal(av: AnyValue<'_>) -> Option<ArrowLiteralValue> {
+    let dtype = av.dtype();
+    match av.as_borrowed() {
+        AnyValue::Null => Some(ArrowLiteralValue::Null),
+        AnyValue::Boolean(v) => Some(ArrowLiteralValue::Bool(v)),
+        AnyValue::String(s) => {
+            let s = sanitize(s)?;
+            Some(ArrowLiteralValue::String(s.to_string()))
+        },
+        #[cfg(feature = "dtype-date")]
+        AnyValue::Date(v) => Some(ArrowLiteralValue::Date(v)),
+        #[cfg(feature = "dtype-datetime")]
+        AnyValue::Datetime(v, tu, tz) => Some(ArrowLiteralValue::Datetime {
+            value: v,
+            time_unit: tu,
+            time_zone: tz.cloned(),
+        }),
+        AnyValue::Binary(_) | AnyValue::List(_) => None,
+        #[cfg(feature = "dtype-array")]
+        AnyValue::Array(_, _) => None,
+        #[cfg(feature = "dtype-struct")]
+        AnyValue::Struct(_, _, _) => None,
+        av => {
+            if dtype.is_float() {
+                av.extract::<f64>().map(ArrowLiteralValue::Float)
+            } else if dtype.is_integer() {
+                av.extract::<i64>().map(ArrowLiteralValue::Int)
+            } else {
+                None
+            }
+        },
+    }
+}
+
+fn series_to_arrow_literal_list(s: &Series) -> Option<Vec<ArrowLiteralValue>> {
+    let mut out = Vec::with_capacity(s.len());
+    for av in s.iter() {
+        out.push(anyvalue_to_arrow_literal(av)?);
+    }
+    Some(out)
+}
+
+/// Build a structured [`ArrowPredicate`] IR from a polars expression node.
+///
+/// Returns `None` if the expression contains any sub-expression that cannot be
+/// pushed down to pyarrow.
+pub fn predicate_to_arrow_pred(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+    args: PyarrowArgs,
+) -> Option<ArrowPredicate> {
+    match expr_arena.get(predicate) {
+        AExpr::BinaryExpr { left, right, op } => {
+            if !op.is_comparison_or_bitwise() {
+                return None;
+            }
+            let left = predicate_to_arrow_pred(*left, expr_arena, args)?;
+            let right = predicate_to_arrow_pred(*right, expr_arena, args)?;
+            if let Some(cmp) = comparison_op(op) {
+                Some(ArrowPredicate::Comparison {
+                    left: Box::new(left),
+                    op: cmp,
+                    right: Box::new(right),
+                })
+            } else {
+                match op {
+                    Operator::And | Operator::LogicalAnd => {
+                        Some(ArrowPredicate::And(Box::new(left), Box::new(right)))
+                    },
+                    Operator::Or | Operator::LogicalOr => {
+                        Some(ArrowPredicate::Or(Box::new(left), Box::new(right)))
+                    },
+                    Operator::Xor => Some(ArrowPredicate::Xor(Box::new(left), Box::new(right))),
+                    _ => None,
+                }
+            }
+        },
+        AExpr::Column(name) => {
+            let name = sanitize(name)?;
+            Some(ArrowPredicate::Column(name.to_string()))
+        },
+        AExpr::Literal(LiteralValue::Series(_)) => None,
+        AExpr::Literal(lv) => {
+            let av = lv.to_any_value()?;
+            let lit = anyvalue_to_arrow_literal(av)?;
+            Some(ArrowPredicate::Literal(lit))
+        },
+        #[cfg(feature = "is_in")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            input,
+            ..
+        } => {
+            let col = predicate_to_arrow_pred(input.first()?.node(), expr_arena, args)?;
+            let rhs_node = input.get(1)?.node();
+
+            let values = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
+                && lv.get_datatype().is_list()
+            {
+                use polars_core::prelude::ExplodeOptions;
+
+                let mut haystack_series = if let LiteralValue::Series(s) = lv
+                    && s.dtype().is_list()
+                    && s.len() == 1
+                {
+                    if s.null_count() == 0 {
+                        s.explode(ExplodeOptions {
+                            empty_as_null: false,
+                            keep_nulls: false,
+                        })
+                        .ok()?
+                    } else {
+                        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
+                    }
+                } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
+                    s
+                } else if lv.is_null() {
+                    Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
+                } else {
+                    return None;
+                };
+
+                let converted_len = haystack_series.len()
+                    - if *nulls_equal {
+                        0
+                    } else {
+                        haystack_series.null_count()
+                    };
+
+                if converted_len > LIST_ITEM_LIMIT {
+                    return None;
+                }
+
+                if !*nulls_equal {
+                    haystack_series = haystack_series.drop_nulls();
+                }
+
+                series_to_arrow_literal_list(&haystack_series)?
+            } else {
+                return None;
+            };
+
+            Some(ArrowPredicate::IsIn {
+                expr: Box::new(col),
+                values,
+            })
+        },
+        #[cfg(feature = "is_between")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
+            input,
+            ..
+        } => {
+            if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
+                return None;
+            }
+            let col = predicate_to_arrow_pred(input.first()?.node(), expr_arena, args)?;
+            let left_cmp_op = match closed {
+                ClosedInterval::None | ClosedInterval::Right => ComparisonOp::Gt,
+                ClosedInterval::Both | ClosedInterval::Left => ComparisonOp::Gte,
+            };
+            let right_cmp_op = match closed {
+                ClosedInterval::None | ClosedInterval::Left => ComparisonOp::Lt,
+                ClosedInterval::Both | ClosedInterval::Right => ComparisonOp::Lte,
+            };
+
+            let lower = predicate_to_arrow_pred(input.get(1)?.node(), expr_arena, args)?;
+            let upper = predicate_to_arrow_pred(input.get(2)?.node(), expr_arena, args)?;
+
+            let lower_cmp = ArrowPredicate::Comparison {
+                left: Box::new(col.clone()),
+                op: left_cmp_op,
+                right: Box::new(lower),
+            };
+            let upper_cmp = ArrowPredicate::Comparison {
+                left: Box::new(col),
+                op: right_cmp_op,
+                right: Box::new(upper),
+            };
+            Some(ArrowPredicate::And(
+                Box::new(lower_cmp),
+                Box::new(upper_cmp),
+            ))
+        },
+        AExpr::Function {
+            function, input, ..
+        } => {
+            let input = input.first().unwrap().node();
+            let input = predicate_to_arrow_pred(input, expr_arena, args)?;
+
+            match function {
+                IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
+                    Some(ArrowPredicate::Not(Box::new(input)))
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNull) => {
+                    Some(ArrowPredicate::IsNull(Box::new(input)))
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => Some(ArrowPredicate::Not(
+                    Box::new(ArrowPredicate::IsNull(Box::new(input))),
+                )),
                 _ => None,
             }
         },
