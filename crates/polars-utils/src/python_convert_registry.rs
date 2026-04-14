@@ -23,6 +23,7 @@ pub struct ToPythonConvertRegistry {
     pub series: ToPython,
     pub dsl_plan: ToPython,
     pub schema: ToPython,
+    pub anyvalue: ToPython,
 }
 
 impl ToPythonConvertRegistry {
@@ -65,12 +66,54 @@ impl PythonConvertRegistry {
         &CLS
     }
 
-    pub fn py_sinked_paths_callback_args_dataclass(&self) -> &'static Py<PyAny> {
+    pub fn py_sinked_files_callback_args_dataclass(&self) -> &'static Py<PyAny> {
         static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
             Python::attach(|py| {
                 py.import("polars.io.partition")
                     .unwrap()
-                    .getattr("SinkedPathsCallbackArgs")
+                    .getattr("SinkedFilesCallbackArgs")
+                    .unwrap()
+                    .unbind()
+            })
+        });
+
+        &CLS
+    }
+
+    pub fn py_sinked_file_info_dataclass(&self) -> &'static Py<PyAny> {
+        static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
+            Python::attach(|py| {
+                py.import("polars.io.partition")
+                    .unwrap()
+                    .getattr("SinkedFileInfo")
+                    .unwrap()
+                    .unbind()
+            })
+        });
+
+        &CLS
+    }
+
+    pub fn py_parquet_file_metadata_dataclass(&self) -> &'static Py<PyAny> {
+        static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
+            Python::attach(|py| {
+                py.import("polars.io.partition")
+                    .unwrap()
+                    .getattr("ParquetFileMetadata")
+                    .unwrap()
+                    .unbind()
+            })
+        });
+
+        &CLS
+    }
+
+    pub fn py_parquet_column_stats_dataclass(&self) -> &'static Py<PyAny> {
+        static CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
+            Python::attach(|py| {
+                py.import("polars.io.partition")
+                    .unwrap()
+                    .getattr("ParquetColumnStats")
                     .unwrap()
                     .unbind()
             })

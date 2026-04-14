@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
 use polars_io::pl_async;
-use polars_plan::dsl::sink::SinkedPathInfo;
+use polars_plan::dsl::sink::SinkedFileInfo;
 use polars_plan::dsl::{SinkTarget, UnifiedSinkArgs};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -14,8 +14,8 @@ use crate::async_primitives::connector;
 use crate::execute::StreamingExecutionState;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks::components::morsel_resize_pipeline::MorselResizePipeline;
-use crate::nodes::io_sinks::components::sinked_path_info_list::{
-    SinkedPathInfoList, call_sinked_paths_callback,
+use crate::nodes::io_sinks::components::sinked_file_info_list::{
+    SinkedFileInfoList, call_sinked_files_callback,
 };
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget};
 use crate::nodes::io_sinks::writers::create_file_writer_starter;
@@ -45,7 +45,7 @@ pub fn start_single_file_sink_pipeline(
                 maintain_order: _,
                 sync_on_close,
                 cloud_options,
-                sinked_paths_callback,
+                sinked_files_callback,
             },
         input_schema,
     } = config
@@ -53,18 +53,11 @@ pub fn start_single_file_sink_pipeline(
         unreachable!()
     };
 
-    let sinked_path_info_list: Option<SinkedPathInfoList> = if sinked_paths_callback.is_some() {
-        let v = SinkedPathInfoList::default();
-
-        match &target {
-            SinkTarget::Path(path) => v
-                .path_info_list
-                .lock()
-                .push(SinkedPathInfo { path: path.clone() }),
-            SinkTarget::Dyn(_) => return Err(v.non_path_error()),
-        };
-
-        Some(v)
+    let sinked_path = if sinked_files_callback.is_some() {
+        match target {
+            SinkTarget::Path(ref path) => Some(path.clone()),
+            SinkTarget::Dyn(_) => Err(SinkedFileInfoList::non_path_error())?,
+        }
     } else {
         None
     };
@@ -108,13 +101,24 @@ pub fn start_single_file_sink_pipeline(
             upload_chunk_size,
             upload_max_concurrency,
             io_metrics.is_some(),
-            sinked_path_info_list.is_some(),
+            sinked_files_callback.is_some(),
         )
     }
 
     let (writer_tx, writer_rx) = connector::connector();
-    let writer_handle =
-        file_writer_starter.start_file_writer(writer_rx, file_open_task, num_pipelines_per_sink)?;
+    let (file_stats_tx, file_stats_rx) = if sinked_files_callback.is_some() {
+        let (tx, rx) = connector::connector();
+        (Some(tx), Some(rx))
+    } else {
+        (None, None)
+    };
+
+    let writer_handle = file_writer_starter.start_file_writer(
+        writer_rx,
+        file_open_task,
+        num_pipelines_per_sink,
+        file_stats_tx,
+    )?;
 
     let empty_with_schema_df = DataFrame::empty_with_arc_schema(file_schema.clone());
     let inflight_morsel_semaphore =
@@ -143,13 +147,23 @@ pub fn start_single_file_sink_pipeline(
                 eprintln!("{node_name}: Statistics: total_size: {sent_size:?}");
             }
 
-            if let Some(sinked_paths_callback) = sinked_paths_callback {
+            if let Some(sinked_files_callback) = sinked_files_callback {
+                let stats = file_stats_rx.and_then(|mut rx| rx.try_recv().ok());
+                let sinked_file_info_list = SinkedFileInfoList::default();
+                sinked_file_info_list
+                    .file_info_list
+                    .lock()
+                    .push(SinkedFileInfo {
+                        path: sinked_path.unwrap(),
+                        partition_keys: Arc::new(DataFrame::empty()),
+                        stats,
+                    });
+
                 if verbose {
-                    eprintln!("{node_name}: Call sinked path info callback");
+                    eprintln!("{node_name}: Call sinked file info callback");
                 }
 
-                call_sinked_paths_callback(sinked_paths_callback, sinked_path_info_list.unwrap())
-                    .await?;
+                call_sinked_files_callback(sinked_files_callback, sinked_file_info_list).await?;
             }
 
             Ok(())

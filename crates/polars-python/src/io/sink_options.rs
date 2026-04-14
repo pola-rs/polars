@@ -31,7 +31,7 @@ impl PySinkOptions<'_> {
             sync_on_close: Option<Wrap<SyncOnCloseType>>,
             storage_options: OptPyCloudOptions<'a>,
             credential_provider: Option<Py<PyAny>>,
-            sinked_paths_callback: Option<Py<PyAny>>,
+            sinked_files_callback: Option<Py<PyAny>>,
         }
 
         let Extract {
@@ -40,7 +40,7 @@ impl PySinkOptions<'_> {
             sync_on_close,
             storage_options,
             credential_provider,
-            sinked_paths_callback,
+            sinked_files_callback,
         } = self.0.extract()?;
 
         let cloud_options =
@@ -53,7 +53,7 @@ impl PySinkOptions<'_> {
             maintain_order,
             sync_on_close,
             cloud_options: cloud_options.map(Arc::new),
-            sinked_paths_callback: sinked_paths_callback
+            sinked_files_callback: sinked_files_callback
                 .map(|x| PlanCallback::Python(SpecialEq::new(Arc::new(PythonObject(x))))),
         };
 

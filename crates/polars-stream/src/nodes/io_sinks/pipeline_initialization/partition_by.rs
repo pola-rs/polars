@@ -17,8 +17,8 @@ use crate::nodes::io_sinks::components::partition_morsel_sender::PartitionMorsel
 use crate::nodes::io_sinks::components::partition_sink_starter::PartitionSinkStarter;
 use crate::nodes::io_sinks::components::partitioner::Partitioner;
 use crate::nodes::io_sinks::components::partitioner_pipeline::PartitionerPipeline;
-use crate::nodes::io_sinks::components::sinked_path_info_list::{
-    SinkedPathInfoList, call_sinked_paths_callback,
+use crate::nodes::io_sinks::components::sinked_file_info_list::{
+    SinkedFileInfoList, call_sinked_files_callback,
 };
 use crate::nodes::io_sinks::components::size::NonZeroRowCountAndSize;
 use crate::nodes::io_sinks::config::{IOSinkNodeConfig, IOSinkTarget, PartitionedTarget};
@@ -49,7 +49,7 @@ pub fn start_partition_sink_pipeline(
                 maintain_order: _,
                 sync_on_close,
                 cloud_options,
-                sinked_paths_callback,
+                sinked_files_callback,
             },
         input_schema: _,
     } = config
@@ -79,9 +79,9 @@ pub fn start_partition_sink_pipeline(
         write!(file_part_prefix, "{uuid}").unwrap();
     }
 
-    let sinked_path_info_list: Option<SinkedPathInfoList> = sinked_paths_callback
+    let sinked_file_info_list: Option<SinkedFileInfoList> = sinked_files_callback
         .is_some()
-        .then(SinkedPathInfoList::default);
+        .then(SinkedFileInfoList::default);
 
     let file_provider = Arc::new(FileProvider {
         base_path,
@@ -90,7 +90,7 @@ pub fn start_partition_sink_pipeline(
         upload_chunk_size,
         upload_max_concurrency: upload_max_concurrency.get(),
         io_metrics,
-        sinked_path_info_list: sinked_path_info_list.clone(),
+        sinked_file_info_list: sinked_file_info_list.clone(),
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
@@ -126,7 +126,7 @@ pub fn start_partition_sink_pipeline(
             upload_chunk_size,
             upload_max_concurrency,
             io_metrics_is_some,
-            sinked_path_info_list.is_some(),
+            sinked_file_info_list.is_some(),
         );
     }
 
@@ -159,6 +159,7 @@ pub fn start_partition_sink_pipeline(
         writer_starter: Arc::clone(&file_writer_starter),
         sync_on_close,
         num_pipelines_per_sink,
+        compute_file_stats: sinked_file_info_list.is_some(),
     };
 
     let partition_morsel_sender = PartitionMorselSender {
@@ -195,12 +196,12 @@ pub fn start_partition_sink_pipeline(
             partitioner_handle.await;
             partition_distributor_handle.await?;
 
-            if let Some(sinked_paths_callback) = sinked_paths_callback {
+            if let Some(sinked_files_callback) = sinked_files_callback {
                 if verbose {
-                    eprintln!("{node_name}: Call sinked path info callback");
+                    eprintln!("{node_name}: Call sinked file info callback");
                 }
 
-                call_sinked_paths_callback(sinked_paths_callback, sinked_path_info_list.unwrap())
+                call_sinked_files_callback(sinked_files_callback, sinked_file_info_list.unwrap())
                     .await?;
             }
 

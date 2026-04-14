@@ -6,6 +6,7 @@ use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
 use polars_io::pl_async;
+use polars_plan::dsl::sink::SinkedFileStats;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
@@ -75,6 +76,7 @@ impl FileWriterStarter for IpcWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
+        _file_stats_tx: Option<connector::Sender<SinkedFileStats>>,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let file_schema = Arc::clone(&self.schema);
         let options = Arc::clone(&self.options);

@@ -8,6 +8,7 @@ use polars_io::prelude::{ParquetWriteOptions, get_encodings};
 use polars_parquet::write::{
     CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
 };
+use polars_plan::dsl::sink::SinkedFileStats;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
@@ -80,6 +81,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
+        file_stats_tx: Option<connector::Sender<SinkedFileStats>>,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
         let InitializedState {
             encodings,
@@ -127,7 +129,7 @@ impl FileWriterStarter for ParquetWriterStarter {
                     key_value_metadata,
                     num_leaf_columns,
                 }
-                .run(),
+                .run(file_stats_tx.is_some()),
             ),
         );
 
@@ -148,7 +150,11 @@ impl FileWriterStarter for ParquetWriterStarter {
 
         Ok(async_executor::spawn(TaskPriority::Low, async move {
             compute_handle.await?;
-            io_handle.await.unwrap()?;
+            if let Some(file_stats) = io_handle.await.unwrap()?
+                && let Some(mut tx) = file_stats_tx
+            {
+                tx.send(file_stats).await.unwrap();
+            }
             Ok(())
         }))
     }

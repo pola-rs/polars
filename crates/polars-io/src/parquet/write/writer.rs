@@ -142,8 +142,8 @@ where
     }
 
     /// Write the given DataFrame in the writer `W`.
-    /// Returns the total size of the file.
-    pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
+    /// Returns (1) the total size of the file and (2) the size of the metadata.
+    pub fn finish(self, df: &mut DataFrame) -> PolarsResult<(u64, u64)> {
         let chunked_df = chunk_df_for_writing(df, self.row_group_size.unwrap_or(512 * 512))?;
         let mut batched = self.batched(chunked_df.schema())?;
         batched.write_batch(&chunked_df)?;

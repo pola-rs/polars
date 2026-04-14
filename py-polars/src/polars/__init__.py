@@ -213,8 +213,13 @@ from polars.functions import (
 from polars.interchange import CompatLevel
 from polars.io import (
     FileProviderArgs,
+    ParquetColumnStats,
+    ParquetFileMetadata,
     PartitionBy,
     ScanCastOptions,
+    SinkedFileInfo,
+    SinkedFilesCallback,
+    SinkedFilesCallbackArgs,
     defer,
     read_avro,
     read_clipboard,
@@ -332,8 +337,13 @@ __all__ = [
     # polars.io
     "defer",
     "FileProviderArgs",
+    "ParquetColumnStats",
+    "ParquetFileMetadata",
     "PartitionBy",
     "ScanCastOptions",
+    "SinkedFileInfo",
+    "SinkedFilesCallback",
+    "SinkedFilesCallbackArgs",
     "read_avro",
     "read_clipboard",
     "read_csv",

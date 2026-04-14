@@ -5,6 +5,7 @@ use arrow::record_batch::RecordBatch;
 use polars_buffer::Buffer;
 use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_parquet::parquet::metadata::ThriftFileMetadata;
 use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
     CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
@@ -124,8 +125,9 @@ impl<W: Write> BatchedWriter<W> {
         Ok(())
     }
 
-    /// Writes the footer of the parquet file. Returns the total size of the file.
-    pub fn finish(&self) -> PolarsResult<u64> {
+    /// Writes the footer of the parquet file. Returns (1) the total size of the file and (2) the
+    /// size of the metadata.
+    pub fn finish(&self) -> PolarsResult<(u64, u64)> {
         let mut writer = self.writer.lock().unwrap();
 
         let key_value_metadata = self
@@ -146,6 +148,18 @@ impl<W: Write> BatchedWriter<W> {
 
         let size = writer.end(key_value_metadata)?;
         Ok(size)
+    }
+
+    /// Consumes the writer and returns the metadata that was written.
+    ///
+    /// # Panics
+    /// This function panics if [`Self::finish`] has not yet been called.
+    pub fn into_metadata(self) -> ThriftFileMetadata {
+        self.writer
+            .into_inner()
+            .unwrap()
+            .into_inner_and_metadata()
+            .1
     }
 }
 

@@ -4,6 +4,7 @@ use futures::FutureExt;
 use polars_error::PolarsResult;
 use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
+use polars_plan::dsl::sink::SinkedFileStats;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -28,6 +29,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: NonZeroUsize,
+        file_stats_tx: Option<connector::Sender<SinkedFileStats>>,
     ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>>;
 }
 

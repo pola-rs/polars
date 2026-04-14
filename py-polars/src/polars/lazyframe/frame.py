@@ -118,7 +118,7 @@ if TYPE_CHECKING:
     import pyiceberg.table
 
     import polars.io.iceberg
-    from polars.io.partition import PartitionBy, SinkedPathsCallback
+    from polars.io.partition import PartitionBy, SinkedFilesCallback
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -2690,7 +2690,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_files_callback: SinkedFilesCallback | None = None,
     ) -> None: ...
 
     @overload
@@ -2716,7 +2716,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_files_callback: SinkedFilesCallback | None = None,
     ) -> LazyFrame: ...
 
     def sink_parquet(
@@ -2741,7 +2741,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         lazy: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
-        _sinked_paths_callback: SinkedPathsCallback | None = None,
+        sinked_files_callback: SinkedFilesCallback | None = None,
     ) -> LazyFrame | None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2874,6 +2874,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
+        sinked_files_callback
+            A callback function that is called with the list of files that were written
+            to disk after the sink operation is completed.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Returns
         -------
@@ -2961,7 +2968,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             sync_on_close=sync_on_close,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
-            sinked_paths_callback=_sinked_paths_callback,
+            sinked_files_callback=sinked_files_callback,
         )
 
         ldf_py = self._ldf.sink_parquet(

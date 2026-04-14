@@ -76,6 +76,7 @@ pub enum SendError<T> {
     Closed(T),
 }
 
+#[derive(Debug)]
 pub enum RecvError {
     Empty,
     Closed,

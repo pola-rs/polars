@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, TypeAlias
 
 from polars._utils.parse.expr import parse_into_list_of_expressions
 from polars._utils.unstable import issue_unstable_warning
@@ -169,13 +169,101 @@ class _PartitionByInner:
 
 
 @dataclass(kw_only=True)
-class SinkedPathsCallbackArgs:
-    """Information on sinked paths."""
+class SinkedFileInfo:
+    """
+    Information about a sinked file.
 
-    paths: list[str]
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    Attributes
+    ----------
+    path
+        File path.
+    partition_keys
+        Partition key for this file as a single-row DataFrame.
+    num_rows
+        Total number of rows in the file.
+    file_size_bytes
+        Total file size in bytes.
+    parquet
+        Parquet-specific metadata, or None if not a Parquet file.
+    """
+
+    path: str
+    partition_keys: DataFrame
+    num_rows: int
+    file_size_bytes: int
+    parquet: ParquetFileMetadata | None = None
 
 
-SinkedPathsCallback: TypeAlias = Callable[[SinkedPathsCallbackArgs], None]
+@dataclass(kw_only=True)
+class ParquetFileMetadata:
+    """
+    Parquet-specific metadata for a sinked file.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    Attributes
+    ----------
+    footer_size_bytes
+        Parquet footer size in bytes.
+    column_stats
+        Per-column statistics. A column is only included if it has a field ID.
+    """
+
+    footer_size_bytes: int
+    column_stats: list[ParquetColumnStats]
+
+
+@dataclass(kw_only=True)
+class ParquetColumnStats:
+    """
+    Statistics for a single column in a Parquet file.
+
+    .. warning::
+        This functionality is currently considered **unstable**. It may be
+        changed at any point without it being considered a breaking change.
+
+    Attributes
+    ----------
+    field_id
+        The field ID of the column.
+    compressed_size_bytes
+        Total compressed size of this column across all row groups.
+    null_count
+        Total number of null values, or None if not available.
+    min_value
+        Minimum value for the column, or None if not available.
+        The type depends on the column's type.
+    max_value
+        Maximum value for the column, or None if not available.
+        The type depends on the column's type.
+    """
+
+    field_id: int
+    compressed_size_bytes: int
+    null_count: int | None
+    min_value: Any | None
+    max_value: Any | None
+
+
+@dataclass(kw_only=True)
+class SinkedFilesCallbackArgs:
+    """Information on sinked files."""
+
+    files: list[SinkedFileInfo]
+
+    @property
+    def paths(self) -> list[str]:
+        """Accessor for file paths."""
+        return [f.path for f in self.files]
+
+
+SinkedFilesCallback: TypeAlias = Callable[[SinkedFilesCallbackArgs], None]
 
 
 @dataclass(kw_only=True)
@@ -193,7 +281,7 @@ class _SinkOptions:
     # Cloud
     storage_options: StorageOptionsDict | None = None
     credential_provider: CredentialProviderBuilder | None = None
-    sinked_paths_callback: SinkedPathsCallback | None = None
+    sinked_files_callback: SinkedFilesCallback | None = None
 
 
 def _parse_to_pyexpr_list(

@@ -246,6 +246,16 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
                         .into_py_any(py)
                     })
                 }),
+                anyvalue: Arc::new(|av| {
+                    Python::attach(|py| {
+                        Wrap(
+                            av.downcast_ref::<AnyValue<'static>>()
+                                .unwrap()
+                                .clone(),
+                        )
+                        .into_py_any(py)
+                    })
+                }),
             },
         });
 

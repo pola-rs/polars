@@ -82,10 +82,11 @@ impl<W: Write> FileWriter<W> {
         Ok(self.writer.write(num_rows, row_group)?)
     }
 
-    /// Writes the footer of the parquet file. Returns the total size of the file.
+    /// Writes the footer of the parquet file. Returns (1) the total size of the file and (2) the
+    /// size of the metadata.
     /// If `key_value_metadata` is provided, the value is taken as-is. If it is not provided,
     /// the Arrow schema is added to the metadata.
-    pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<u64> {
+    pub fn end(&mut self, key_value_metadata: Option<Vec<KeyValue>>) -> PolarsResult<(u64, u64)> {
         let key_value_metadata =
             key_value_metadata.unwrap_or_else(|| vec![schema_to_metadata_key(&self.schema)]);
         Ok(self.writer.end(Some(key_value_metadata))?)
