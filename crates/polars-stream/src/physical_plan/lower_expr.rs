@@ -24,7 +24,9 @@ use slotmap::SlotMap;
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::ZipBehavior;
-use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::physical_plan::lower_group_by::{
+    GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
+};
 use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
 
 type ExprNodeKey = Node;
@@ -2555,6 +2557,40 @@ fn lower_exprs_with_ctx(
                 )?;
                 input_streams.insert(input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Over {
+                function,
+                partition_by,
+                order_by: None,
+                mapping: WindowMapping::GroupsToRows,
+            } => {
+                let out_name = unique_column_name();
+                let function_ir = AExprBuilder::new_from_node(function).expr_ir(out_name.clone());
+                let key_ir = partition_by
+                    .iter()
+                    .map(|n| AExprBuilder::new_from_node(*n).expr_ir(unique_column_name()))
+                    .collect_vec();
+
+                if let Some(gb) = try_build_streaming_group_by(
+                    input,
+                    &key_ir,
+                    &[function_ir],
+                    false,
+                    Arc::new(GroupbyOptions::default()),
+                    None,
+                    GroupByLowerKind::Over,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext::from(&*ctx),
+                )? {
+                    input_streams.insert(gb);
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                } else {
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                }
             },
 
             AExpr::AnonymousFunction { .. }
