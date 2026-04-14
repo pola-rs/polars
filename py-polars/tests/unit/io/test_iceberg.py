@@ -75,6 +75,8 @@ from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
 
 if TYPE_CHECKING:
+    AlwaysFalse = Any
+    AlwaysTrue = Any
     from tests.conftest import PlMonkeyPatch
 
     # Mypy does not understand the constructors and we can't construct the inputs
@@ -92,6 +94,8 @@ if TYPE_CHECKING:
     Reference = Any
 else:
     from pyiceberg.expressions import (
+        AlwaysFalse,
+        AlwaysTrue,
         And,
         EqualTo,
         GreaterThan,
@@ -256,6 +260,26 @@ class TestIcebergScanIO:
             (3, "3", datetime(2023, 3, 2, 22, 0)),
         ]
 
+    def test_scan_iceberg_filter_is_in_empty(self, tmp_path: Path) -> None:
+        tbl, _ = new_iceberg_table(
+            tmp_path,
+            schema=IcebergSchema(
+                NestedField(1, "my_column", LongType(), required=False)
+            ),
+        )
+
+        tbl.append(
+            pa.table(
+                {"my_column": [1, 2, 3, 4, 5]},
+                schema=pa.schema([("my_column", pa.int64())]),
+            )
+        )
+
+        result = pl.scan_iceberg(tbl).filter(pl.col("my_column").is_in([])).collect()
+
+        assert result.is_empty()
+        assert result.schema == {"my_column": pl.Int64}
+
 
 @pytest.mark.ci_only
 class TestIcebergExpressions:
@@ -321,6 +345,14 @@ class TestIcebergExpressions:
     def test_bare_boolean_field_negated(self) -> None:
         expr = try_convert_pyarrow_predicate("~pa.compute.field('is_active')")
         assert expr == Not(EqualTo("is_active", True))
+
+    def test_scalar_false_expression(self) -> None:
+        expr = try_convert_pyarrow_predicate("pa.compute.scalar(False)")
+        assert expr == AlwaysFalse()
+
+    def test_scalar_true_expression(self) -> None:
+        expr = try_convert_pyarrow_predicate("pa.compute.scalar(True)")
+        assert expr == AlwaysTrue()
 
 
 @dataclass(kw_only=True)
