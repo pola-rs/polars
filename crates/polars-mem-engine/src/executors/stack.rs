@@ -95,6 +95,30 @@ impl StackExec {
                         }
                     }
                 }
+
+                // When DataFrame is empty (0 rows, 0 columns), broadcast scalars to length 0.
+                // This ensures with_columns on an empty DataFrame doesn't create rows from scalars.
+                // Non-scalars with length > 0 should error (length mismatch).
+                let res = if df_height == 0 && df_width == 0 {
+                    let mut result = Vec::with_capacity(res.len());
+                    for (i, c) in res.into_iter().enumerate() {
+                        if c.len() == 1 {
+                            // Broadcast scalar to length 0
+                            result.push(c.new_from_index(0, 0));
+                        } else if c.is_empty() {
+                            // Already empty, keep as is
+                            result.push(c);
+                        } else {
+                            // Non-scalar with length > 1: this is a shape mismatch
+                            polars_bail!(ShapeMismatch: "unable to add column {:?} of length {} to a DataFrame of height 0",
+                                c.name(), c.len());
+                        }
+                    }
+                    result
+                } else {
+                    res
+                };
+
                 df.with_columns_mut(res, schema)?;
             }
             df
