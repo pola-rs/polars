@@ -34,7 +34,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     },
                     None,
                 )
-                .over(["Type 1"])
+                .over(["Type 1"])?
                 .alias("Speed rank"),
         ])
         .collect()?;
@@ -76,7 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("Speed"),
             col("Speed")
                 .mean()
-                .over(["Type 1"])
+                .over(["Type 1"])?
                 .alias("Mean speed in group"),
         ])
         .collect()?;
@@ -93,11 +93,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("Type 2"),
             col("Attack")
                 .mean()
-                .over(["Type 1"])
+                .over(["Type 1"])?
                 .alias("avg_attack_by_type"),
             col("Defense")
                 .mean()
-                .over(["Type 1", "Type 2"])
+                .over(["Type 1", "Type 2"])?
                 .alias("avg_defense_by_type_combination"),
             col("Attack").mean().alias("avg_attack"),
         ])
@@ -126,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ["Speed"],
                 SortMultipleOptions::default().with_order_descending(true),
             )
-            .over(["Type 1"])])
+            .over(["Type 1"])?])
         .collect()?;
     println!("{result}");
     // --8<-- [end:sort]

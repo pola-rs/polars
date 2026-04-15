@@ -20,6 +20,8 @@ use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
+#[cfg(feature = "moment")]
+use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
 use crate::reduce::sum::new_sum_reduction;
 use crate::reduce::var_std::new_var_std_reduction;
 
@@ -260,6 +262,30 @@ pub fn into_reduction(
                 _ => unreachable!(),
             };
             return Ok((gr, vec![input_x, input_y]));
+        },
+
+        #[cfg(feature = "moment")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Skew(bias),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_skew_reduction(get_dt(input)?, *bias)?;
+            (out, input)
+        },
+
+        #[cfg(feature = "moment")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Kurtosis(fisher, bias),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_kurtosis_reduction(get_dt(input)?, *fisher, *bias)?;
+            (out, input)
         },
 
         _ => unreachable!(),

@@ -536,7 +536,8 @@ impl utils::Decoder for BinViewDecoder {
             return Ok(false);
         };
 
-        use {SpecializedParquetColumnExpr as Spce, StateTranslation as St};
+        use SpecializedParquetColumnExpr as Spce;
+        use StateTranslation as St;
         match (&state.translation, predicate) {
             (St::Plain(iter), Spce::Equal(needle)) => {
                 assert!(!needle.is_null());

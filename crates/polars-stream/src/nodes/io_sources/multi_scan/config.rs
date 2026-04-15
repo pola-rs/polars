@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
 use polars_io::RowIndex;
@@ -15,7 +15,6 @@ use polars_utils::slice_enum::Slice;
 use reader_interface::builder::FileReaderBuilder;
 use reader_interface::capabilities::ReaderCapabilities;
 
-use crate::metrics::IOMetrics;
 use crate::nodes::io_sources::multi_scan::components::forbid_extra_columns::ForbidExtraColumns;
 use crate::nodes::io_sources::multi_scan::components::projection::builder::ProjectionBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface;
@@ -51,7 +50,6 @@ pub struct MultiScanConfig {
     pub n_readers_pre_init: RelaxedCell<usize>,
     pub max_concurrent_scans: RelaxedCell<usize>,
     pub disable_morsel_split: bool,
-    pub io_metrics: OnceLock<Arc<IOMetrics>>,
 
     pub verbose: bool,
 }
@@ -67,10 +65,6 @@ impl MultiScanConfig {
 
     pub fn max_concurrent_scans(&self) -> usize {
         self.max_concurrent_scans.load()
-    }
-
-    pub fn io_metrics(&self) -> Option<Arc<IOMetrics>> {
-        self.io_metrics.get().cloned()
     }
 
     pub fn reader_capabilities(&self) -> ReaderCapabilities {

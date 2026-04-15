@@ -82,7 +82,7 @@ def test_empty_iterator_io_plugin() -> None:
 
 def test_scan_lines() -> None:
     def scan_lines(f: io.BytesIO) -> pl.LazyFrame:
-        schema = pl.Schema({"lines": pl.String()})
+        schema = pl.Schema({"line": pl.String()})
 
         def generator(
             with_columns: list[str] | None,
@@ -103,13 +103,10 @@ def test_scan_lines() -> None:
                     n_rows -= remaining_rows
 
                 while remaining_rows != 0 and (line := x.readline().rstrip()):
-                    if isinstance(line, str):
-                        batch_lines += [batch_lines]
-                    else:
-                        batch_lines += [line.decode()]
+                    batch_lines += [line.decode()]
                     remaining_rows -= 1
 
-                df = pl.Series("lines", batch_lines, pl.String()).to_frame()
+                df = pl.Series("line", batch_lines, pl.String()).to_frame()
 
                 if with_columns is not None:
                     df = df.select(with_columns)
@@ -133,7 +130,7 @@ This allows it to read into multiple rows.
 
     assert_series_equal(
         scan_lines(f).collect().to_series(),
-        pl.Series("lines", text.splitlines(), pl.String()),
+        pl.Series("line", text.splitlines(), pl.String()),
     )
 
 

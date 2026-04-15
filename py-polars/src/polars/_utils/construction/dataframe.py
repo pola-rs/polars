@@ -112,36 +112,23 @@ def dict_to_pydf(
         if count_numpy >= 3:
             # yes, multi-threading was easier in python here; we cannot have multiple
             # threads running python and release the gil in pyo3 (it will deadlock).
+            from concurrent.futures import ThreadPoolExecutor
 
-            # (note: 'dummy' is threaded)
-            # We catch FileNotFoundError: see 16675
-            try:
-                import multiprocessing.dummy
-
-                pool_size = thread_pool_size()
-                with multiprocessing.dummy.Pool(pool_size) as pool:
-                    data = dict(
-                        zip(
-                            column_names,
-                            pool.map(
-                                lambda t: (
-                                    pl.Series(t[0], t[1], nan_to_null=nan_to_null)
-                                    if isinstance(t[1], np.ndarray)
-                                    else t[1]
-                                ),
-                                list(data.items()),
+            pool_size = thread_pool_size()
+            with ThreadPoolExecutor(max_workers=pool_size) as pool:
+                data = dict(
+                    zip(
+                        column_names,
+                        pool.map(
+                            lambda t: (
+                                pl.Series(t[0], t[1], nan_to_null=nan_to_null)
+                                if isinstance(t[1], np.ndarray)
+                                else t[1]
                             ),
-                            strict=True,
-                        )
+                            list(data.items()),
+                        ),
+                        strict=True,
                     )
-            except FileNotFoundError:
-                return dict_to_pydf(
-                    data=data,
-                    schema=schema,
-                    schema_overrides=schema_overrides,
-                    strict=strict,
-                    nan_to_null=nan_to_null,
-                    allow_multithreaded=False,
                 )
 
     if not data and schema_overrides:
@@ -318,13 +305,15 @@ def _post_apply_columns(
     for i, col in enumerate(columns):
         dtype = dtypes.get(col)
         pydf_dtype = pydf_dtypes[i]
+        if dtype is None:
+            continue
         if dtype == Categorical != pydf_dtype:
             column_casts.append(F.col(col).cast(Categorical, strict=strict)._pyexpr)
         elif dtype == Enum != pydf_dtype:
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
         elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
             column_casts.append(F.col(col).cast(struct, strict=strict)._pyexpr)
-        elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
+        elif dtype != Unknown and dtype != pydf_dtype:
             if dtype.is_temporal() and dtype != Duration and pydf_dtype == String:
                 temporal_cast = F.col(col).str.strptime(dtype, strict=strict)._pyexpr  # type: ignore[arg-type]
                 column_casts.append(temporal_cast)
@@ -439,7 +428,9 @@ def _expand_dict_data(
 
     (Note that `range` is sized, and will take a fast-path on Series init).
     """
-    expanded_data = {}
+    expanded_data: dict[
+        str, Sequence[object] | Mapping[str, Sequence[object]] | Series
+    ] = {}
     for name, val in data.items():
         expanded_data[name] = (
             pl.Series(name, val, dtypes.get(name), strict=strict)

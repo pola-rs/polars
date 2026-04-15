@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, get_args
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import ConcatMethod
+from polars._utils.reduce_balanced import reduce_balanced
+from polars._utils.unstable import unstable
 from polars._utils.various import ordered_unique, qualified_type_name
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
@@ -17,7 +19,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import FrameType, JoinStrategy, PolarsType
@@ -218,7 +220,7 @@ def concat(
 
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
-            lf = _balanced_reduce(join_frames, join_fn)
+            lf = reduce_balanced(join_fn, join_frames)
         else:
             # not associative => linear chain, recursion depth is O(n)
             lf = reduce(join_fn, join_frames)
@@ -509,7 +511,7 @@ def union(
 
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
-            lf = _balanced_reduce(join_frames, join_fn)
+            lf = reduce_balanced(join_fn, join_frames)
         else:
             # not associative => linear chain, recursion depth is O(n)
             lf = reduce(join_fn, join_frames)
@@ -599,6 +601,84 @@ def union(
         raise TypeError(msg)
 
     return out
+
+
+@unstable()
+def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
+    """
+    Merge multiple sorted DataFrames or LazyFrames by the sorted key.
+
+    The output of this operation will also be sorted.
+    It is the callers responsibility that the frames
+    are sorted in ascending order by that key otherwise
+    the output will not make sense.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    items
+        DataFrames or LazyFrames to merge.
+    key
+        Key that is sorted.
+
+    Examples
+    --------
+    >>> df0 = pl.DataFrame(
+    ...     {"name": ["steve", "elise", "bob"], "age": [42, 44, 18]}
+    ... ).sort("age")
+    >>> df1 = pl.DataFrame(
+    ...     {"name": ["anna", "megan", "steve", "thomas"], "age": [21, 33, 17, 20]}
+    ... ).sort("age")
+    >>> df2 = pl.DataFrame({"name": ["ida", "maya"], "age": [37, 27]}).sort("age")
+    >>> pl.merge_sorted([df0, df1, df2], key="age")
+    shape: (9, 2)
+    ┌────────┬─────┐
+    │ name   ┆ age │
+    │ ---    ┆ --- │
+    │ str    ┆ i64 │
+    ╞════════╪═════╡
+    │ steve  ┆ 17  │
+    │ bob    ┆ 18  │
+    │ thomas ┆ 20  │
+    │ anna   ┆ 21  │
+    │ maya   ┆ 27  │
+    │ megan  ┆ 33  │
+    │ ida    ┆ 37  │
+    │ steve  ┆ 42  │
+    │ elise  ┆ 44  │
+    └────────┴─────┘
+
+
+    Notes
+    -----
+    No guarantee is given over the output row order when the key is equal
+    between dataframes.
+
+    The key must be sorted in ascending order.
+    """
+    elems = list(items)
+
+    if not elems:
+        msg = "cannot merge_sort empty list"
+        raise ValueError(msg)
+    if len(elems) == 1 and isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
+        return elems[0]
+
+    if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
+        msg = f"merge_sorted is not supported for {qualified_type_name(elems[0])!r}"
+        raise TypeError(msg)
+
+    frames = [df.lazy() for df in elems]
+
+    def reduce_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
+        return x.merge_sorted(y, key=key)
+
+    lf = reduce_balanced(reduce_fn, frames)
+    eager = isinstance(elems[0], pl.DataFrame)
+    return lf.collect() if eager else lf  # type: ignore[return-value]
 
 
 def _alignment_join(
@@ -817,18 +897,3 @@ def align_frames(
         aligned_frames.append(f)
 
     return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]
-
-
-def _balanced_reduce(
-    frames: list[LazyFrame], join_fn: Callable[[LazyFrame, LazyFrame], LazyFrame]
-) -> LazyFrame:
-    """Reduce a list of frames into a single frame using a balanced binary tree."""
-    while len(frames) > 1:
-        next_level = []
-        for i in range(0, len(frames), 2):
-            if i + 1 < len(frames):
-                next_level.append(join_fn(frames[i], frames[i + 1]))
-            else:
-                next_level.append(frames[i])
-        frames = next_level
-    return frames[0]

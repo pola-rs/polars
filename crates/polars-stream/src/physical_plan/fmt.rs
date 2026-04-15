@@ -198,7 +198,7 @@ fn visualize_plan_rec(
             &[][..],
         ),
         #[cfg(feature = "python")]
-        PhysNodeKind::PythonScan { .. } => ("python-scan".to_string(), &[][..]),
+        PhysNodeKind::PythonScan { .. } => ("streaming-python-scan".to_string(), &[][..]),
         PhysNodeKind::SinkMultiple { sinks } => {
             for sink in sinks {
                 visualize_plan_rec(*sink, phys_sm, expr_arena, visited, out);
@@ -453,6 +453,10 @@ fn visualize_plan_rec(
             },
             &[*input][..],
         ),
+        #[cfg(feature = "interpolate")]
+        PhysNodeKind::Interpolate { input, method } => {
+            (format!("interpolate\\nmethod: {method:?}"), &[*input][..])
+        },
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::SortedUnique { input, keys } => {
@@ -811,6 +815,25 @@ fn visualize_plan_rec(
         PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmStd { input, options: _ } => ("ewm-std".to_string(), &[*input][..]),
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        ))]
+        PhysNodeKind::StrptimeInfer {
+            input,
+            dtype,
+            ambiguous_is_raise,
+            ..
+        } => {
+            let mut s = String::new();
+            let mut f = EscapeLabel(&mut s);
+            writeln!(f, "strptime-infer").unwrap();
+            writeln!(f, "dtype: {dtype}").unwrap();
+            let ambiguous = if *ambiguous_is_raise { "raise" } else { "null" };
+            write!(f, "ambiguous: {ambiguous}").unwrap();
+            (s, &[*input][..])
+        },
     };
 
     let node_id = node_key.data().as_ffi();

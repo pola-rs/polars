@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 
@@ -37,12 +37,11 @@ def _scan_pyarrow_dataset(
     """
     # when `allow_pyarrow_filter=False`, the Rust side passes `batch_size`
     # positionally, so we set as `user_batch_size` to avoid collision
-    batch_size_key = "batch_size" if allow_pyarrow_filter else "user_batch_size"
     func = partial(
         _scan_pyarrow_dataset_impl,
         ds,
         allow_pyarrow_filter=allow_pyarrow_filter,
-        **{batch_size_key: batch_size},
+        user_batch_size=batch_size,
     )
     return pl.LazyFrame._scan_python_function(
         ds.schema, func, pyarrow=allow_pyarrow_filter
@@ -75,6 +74,7 @@ def _scan_pyarrow_dataset_impl(
 ) -> tuple[Iterator[DataFrame], bool]: ...
 
 
+
 def _scan_pyarrow_dataset_impl(
     ds: pa.dataset.Dataset,
     with_columns: list[str] | None,
@@ -84,7 +84,7 @@ def _scan_pyarrow_dataset_impl(
     *,
     allow_pyarrow_filter: bool = True,
     user_batch_size: int | None = None,
-) -> DataFrame | tuple[Iterator[DataFrame], bool]:
+) -> tuple[Iterator[DataFrame], bool]:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -115,10 +115,14 @@ def _scan_pyarrow_dataset_impl(
 
     Returns
     -------
-    DataFrame or tuple[Iterator[DataFrame], bool]
+    tuple[Iterator[DataFrame], bool]
+    A generator over the DataFrames and a boolean indicating if the
+    predicates is applied.
     """
+    # If this is None, the engine will post-apply a predicate if there is one.
+    # If the dataset cannot do it at the source, we want that to happen in the engine
+    # so that we have better parallelism
     filter_ = None
-    filter_post_slice_ = None
 
     if allow_pyarrow_filter and predicate is not None:
         if n_rows is None:
@@ -132,19 +136,25 @@ def _scan_pyarrow_dataset_impl(
         common_params["batch_size"] = batch_size
 
     def frames() -> Iterator[DataFrame]:
-        yield pl.DataFrame(
-            (
-                ds.head(n_rows, **common_params).filter(filter_post_slice_)
-                if filter_post_slice_ is not None
-                else ds.head(n_rows, **common_params)
-            )
-            if n_rows is not None
-            else ds.to_table(**common_params)
-        )
+        if n_rows == 0:
+            yield pl.DataFrame(ds.head(n_rows, **common_params))
+            return
 
-    if allow_pyarrow_filter:
-        [x] = frames()
-        return x
+        remaining = n_rows  # None = unlimited
 
-    else:
-        return frames(), False
+        for batch in ds.to_batches(**common_params):
+            if batch.num_rows == 0:
+                continue
+
+            # 1. Slice to row limit first (zero-copy)
+            if remaining is not None:
+                if remaining <= 0:
+                    break
+                if batch.num_rows > remaining:
+                    batch = batch.slice(0, remaining)
+                remaining -= batch.num_rows
+
+            yield pl.from_arrow(batch)  # type: ignore[misc]
+
+    applies_predicate_in_this_function = filter_ is not None
+    return frames(), applies_predicate_in_this_function

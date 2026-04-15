@@ -2,12 +2,24 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_core::prelude::DataType;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
@@ -220,6 +232,26 @@ pub enum PhysNodeKind {
         format_str: Option<String>,
     },
 
+    /// Streaming strptime without an explicit format.
+    #[cfg(any(
+        feature = "dtype-date",
+        feature = "dtype-datetime",
+        feature = "dtype-time"
+    ))]
+    StrptimeInfer {
+        input: PhysStream,
+        dtype: DataType,
+        options: StrptimeOptions,
+
+        /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
+        ///
+        /// If it is broadcast and it is `raise` or `null`, we can actually execute it in this
+        /// node. So
+        /// - `false` -> "null"
+        /// - `true`  -> "raise"
+        ambiguous_is_raise: bool,
+    },
+
     SortedGroupBy {
         input: PhysStream,
         key: PlSmallStr,
@@ -267,6 +299,11 @@ pub enum PhysNodeKind {
     BackwardFill {
         input: PhysStream,
         limit: Option<IdxSize>,
+    },
+    #[cfg(feature = "interpolate")]
+    Interpolate {
+        input: PhysStream,
+        method: polars_ops::series::InterpolationMethod,
     },
     Rle(PhysStream),
     RleId(PhysStream),
@@ -512,8 +549,24 @@ fn visit_node_inputs_mut(
                 visit(input);
             },
 
+            #[cfg(feature = "interpolate")]
+            PhysNodeKind::Interpolate { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
             #[cfg(feature = "is_first_distinct")]
             PhysNodeKind::IsFirstDistinct { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
+            PhysNodeKind::StrptimeInfer { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },

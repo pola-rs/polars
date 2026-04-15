@@ -10,7 +10,6 @@ from operator import or_
 from typing import (
     TYPE_CHECKING,
     Any,
-    Literal,
     NoReturn,
     overload,
 )
@@ -37,10 +36,16 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 from types import NoneType
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
     from polars._typing import PolarsDataType, PythonDataType, TimeUnit
+
+    if sys.version_info >= (3, 13):
+        from typing import TypeIs
+    else:
+        from typing_extensions import TypeIs
 
 __all__ = [
     # class
@@ -85,15 +90,7 @@ __all__ = [
 ]
 
 
-@overload
-def is_selector(obj: Selector) -> Literal[True]: ...
-
-
-@overload
-def is_selector(obj: Any) -> Literal[False]: ...
-
-
-def is_selector(obj: Any) -> bool:
+def is_selector(obj: Any) -> TypeIs[Selector]:
     """
     Indicate whether the given object/expression is a selector.
 
@@ -1955,7 +1952,7 @@ def datetime(
     time_zone_lst: builtins.list[str | pydatetime.timezone | None]
     if time_zone is None:
         time_zone_lst = [None]
-    elif time_zone:
+    else:
         time_zone_lst = (
             [time_zone]
             if isinstance(time_zone, (str, pydatetime.timezone))

@@ -6,6 +6,13 @@ backed by S3-compatible storage or another shared filesystem accessible from all
 the Python client. The data written to this location is not automatically deleted, so you need to
 configure a retention policy for this data yourself.
 
+If you want to disable anonymous results for users, you may leave `anonymous_result_location` unset.
+This ensures that all queries must have an output location specified.
+
+!!! note "Difference between Anonymous Users and Anonymous Results"
+
+    Note that Anonymous Users and Anonymous Results are different. Anonymous Users refer to queries that are submitted without a username, while Anonymous Results refer to queries without an explicit output sink.
+
 ## Shared filesystem
 
 If your infrastructure has some shared storage file system, such as NFS (or CephFs, etc.), you can
@@ -15,7 +22,7 @@ use that here. An example configuration is shown below:
 [scheduler]
 enabled = true
 allow_local_sinks = true # required for local anonymous results
-anonymous_results.local.path = "/mnt/storage/polars/anonymous-results"
+anonymous_result_location.local.path = "/mnt/storage/polars/anonymous-results"
 ```
 
 Note that you must enable `allow_local_sinks` to allow query results to be written to a local path.
@@ -34,9 +41,9 @@ location.
 ```toml
 [scheduler]
 enabled = true
-anonymous_results.s3.url = "s3://bucket/path/to/key"
-anonymous_results.s3.aws_secret_access_key = "YOURSECRETKEY"
-anonymous_results.s3.aws_access_key_id = "YOURACCESSKEY"
+anonymous_result_location.s3.url = "s3://bucket/path/to/key"
+anonymous_result_location.s3.aws_secret_access_key = "YOURSECRETKEY"
+anonymous_result_location.s3.aws_access_key_id = "YOURACCESSKEY"
 ```
 
 If you self-host an S3 compatible storage solution, you can override the `aws_endpoint_url`
@@ -44,15 +51,15 @@ configuration option.
 
 ```toml
 [scheduler]
-anonymous_results.s3.url = "s3://bucket/path/to/key"
-anonymous_results.s3.aws_endpoint_url = "http://your-s3-compatible-storage-host:8080"
+anonymous_result_location.s3.url = "s3://bucket/path/to/key"
+anonymous_result_location.s3.aws_endpoint_url = "http://your-s3-compatible-storage-host:8080"
 ```
 
 Make sure that this endpoint is reachable from all worker nodes and the Python client. If the Python
 client does not have access to this endpoint, it won't be able to download the anonymous results,
 but it will still be able to receive query status updates.
 
-The allowed keys under `anonymous_results.s3` are the same as in
+The allowed keys under `anonymous_result_location.s3` are the same as in
 [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)(_e.g._
 `aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`). We currently only
 support the AWS keys of the `storage_options` dictionary, but note that you can use any other cloud

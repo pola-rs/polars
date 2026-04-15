@@ -11,8 +11,7 @@ use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
-use polars_ooc::AccessPattern::NoPattern;
-use polars_ooc::mm;
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -25,7 +24,7 @@ use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
-use super::{BufferedStream, JOIN_SAMPLE_LIMIT, LOPSIDED_SAMPLE_FACTOR};
+use super::{BufferedStream, LOPSIDED_SAMPLE_FACTOR};
 use crate::async_executor;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
@@ -48,6 +47,7 @@ struct EquiJoinParams {
     right_payload_schema: Arc<Schema>,
     args: JoinArgs,
     random_state: PlRandomState,
+    sample_limit: usize,
 }
 
 impl EquiJoinParams {
@@ -212,7 +212,7 @@ fn estimate_cardinality(
     params: &EquiJoinParams,
     state: &ExecutionState,
 ) -> PolarsResult<f64> {
-    let sample_limit = *JOIN_SAMPLE_LIMIT;
+    let sample_limit = params.sample_limit;
     if morsels.is_empty() || sample_limit == 0 {
         return Ok(0.0);
     }
@@ -255,6 +255,16 @@ fn estimate_cardinality(
     })
 }
 
+fn estimate_size_per_row(morsels: &[Morsel]) -> f64 {
+    let mut total_size = 0;
+    let mut total_height = 0;
+    for m in morsels {
+        total_size += m.df().estimated_size();
+        total_height += m.df().height();
+    }
+    total_size as f64 / total_height as f64
+}
+
 #[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
@@ -270,10 +280,11 @@ impl SampleState {
         len: &mut usize,
         this_final_len: Arc<RelaxedCell<usize>>,
         other_final_len: Arc<RelaxedCell<usize>>,
+        join_sample_limit: usize,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
-            if *len >= *JOIN_SAMPLE_LIMIT
+            if *len >= join_sample_limit
                 || *len
                     >= other_final_len
                         .load()
@@ -294,9 +305,10 @@ impl SampleState {
         recv: &[PortState],
         params: &mut EquiJoinParams,
         state: &StreamingExecutionState,
+        spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<Option<BuildState>> {
-        let left_saturated = self.left_len >= *JOIN_SAMPLE_LIMIT;
-        let right_saturated = self.right_len >= *JOIN_SAMPLE_LIMIT;
+        let left_saturated = self.left_len >= params.sample_limit;
+        let right_saturated = self.right_len >= params.sample_limit;
         let left_done = recv[0] == PortState::Done || left_saturated;
         let right_done = recv[1] == PortState::Done || right_saturated;
         #[expect(clippy::nonminimal_bool)]
@@ -351,9 +363,11 @@ impl SampleState {
                     Some(JoinBuildSide::PreferRight) => false,
                     Some(JoinBuildSide::ForceLeft | JoinBuildSide::ForceRight) => unreachable!(),
                     None => {
-                        // Estimate cardinality and choose smaller.
+                        // Estimate cardinality and choose smaller, minimizing expected memory usage.
                         let (lc, rc) = estimate_cardinalities()?;
-                        lc < rc
+                        let ls = estimate_size_per_row(&self.left);
+                        let rs = estimate_size_per_row(&self.right);
+                        lc * ls < rc * rs
                     },
                 }
             },
@@ -400,6 +414,7 @@ impl SampleState {
                             partitioner.clone(),
                             params,
                             state,
+                            spill_ctx,
                         ),
                     ));
                 }
@@ -419,8 +434,8 @@ impl SampleState {
 
 #[derive(Default)]
 struct LocalBuilder {
-    // The complete list of tokens to morsels and their computed hashes seen by this builder.
-    morsels: Vec<(MorselSeq, Token, HashKeys)>,
+    // The complete list of morsels and their computed hashes seen by this builder.
+    morsels: Vec<(MorselSeq, SpillFrame, HashKeys)>,
 
     // A cardinality sketch per partition for the keys seen by this builder.
     sketch_per_p: Vec<CardinalitySketch>,
@@ -464,6 +479,7 @@ impl BuildState {
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
         state: &StreamingExecutionState,
+        spill_ctx: &MostRecentSpillContext,
     ) -> PolarsResult<()> {
         let track_unmatchable = params.emit_unmatched_build();
         let (key_selectors, payload_selector);
@@ -498,8 +514,8 @@ impl BuildState {
             local
                 .morsel_idxs_offsets_per_p
                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-            let token = mm().store(payload, NoPattern).await;
-            local.morsels.push((morsel.seq(), token, hash_keys));
+            let sf = SpillFrame::new(payload, spill_ctx).await;
+            local.morsels.push((morsel.seq(), sf, hash_keys));
         }
         Ok(())
     }
@@ -562,8 +578,8 @@ impl BuildState {
                                 kmerge.push(Priority(Reverse(next_seq), l_idx));
                             }
 
-                            let (_mseq, token, keys) = l.morsels.get_unchecked(idx_in_l);
-                            let payload = mm().df_blocking(token);
+                            let (_mseq, sf, keys) = l.morsels.get_unchecked(idx_in_l);
+                            let payload = sf.get_blocking();
                             let p_morsel_idxs_start =
                                 l.morsel_idxs_offsets_per_p[idx_in_l * num_partitions + p];
                             let p_morsel_idxs_stop =
@@ -667,8 +683,8 @@ impl BuildState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (_mseq, token, keys) = morsel;
-                            let payload = mm().df_blocking(token);
+                            let (_mseq, sf, keys) = morsel;
+                            let payload = sf.get().await;
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -1180,6 +1196,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     table: Box<dyn IdxTable>,
+    spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl EquiJoinNode {
@@ -1195,12 +1212,16 @@ impl EquiJoinNode {
         args: JoinArgs,
         num_pipelines: usize,
     ) -> PolarsResult<Self> {
+        let sample_limit: usize = polars_config::config()
+            .join_sample_limit()
+            .try_into()
+            .unwrap();
         let left_is_build = match args.maintain_order {
             MaintainOrderJoin::None => match args.build_side {
                 Some(JoinBuildSide::ForceLeft) => Some(true),
                 Some(JoinBuildSide::ForceRight) => Some(false),
                 Some(JoinBuildSide::PreferLeft) | Some(JoinBuildSide::PreferRight) | None => {
-                    if *JOIN_SAMPLE_LIMIT == 0 {
+                    if sample_limit == 0 {
                         Some(args.build_side != Some(JoinBuildSide::PreferRight))
                     } else {
                         None
@@ -1273,8 +1294,10 @@ impl EquiJoinNode {
                 right_payload_schema,
                 args,
                 random_state: PlRandomState::default(),
+                sample_limit,
             },
             table: new_idx_table(unique_key_schema),
+            spill_ctx: MostRecentSpillContext::new(),
         })
     }
 }
@@ -1299,9 +1322,12 @@ impl ComputeNode for EquiJoinNode {
 
         // If we are sampling and both sides are done/filled, transition to building.
         if let EquiJoinState::Sample(sample_state) = &mut self.state {
-            if let Some(build_state) =
-                sample_state.try_transition_to_build(recv, &mut self.params, state)?
-            {
+            if let Some(build_state) = sample_state.try_transition_to_build(
+                recv,
+                &mut self.params,
+                state,
+                &self.spill_ctx,
+            )? {
                 self.state = EquiJoinState::Build(build_state);
             }
         }
@@ -1363,14 +1389,14 @@ impl ComputeNode for EquiJoinNode {
             EquiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
                 if recv[0] != PortState::Done {
-                    recv[0] = if sample_state.left_len < *JOIN_SAMPLE_LIMIT {
+                    recv[0] = if sample_state.left_len < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
                     };
                 }
                 if recv[1] != PortState::Done {
-                    recv[1] = if sample_state.right_len < *JOIN_SAMPLE_LIMIT {
+                    recv[1] = if sample_state.right_len < self.params.sample_limit {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1469,6 +1495,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.left_len,
                             left_final_len.clone(),
                             right_final_len.clone(),
+                            self.params.sample_limit,
                         ),
                     ));
                 }
@@ -1481,6 +1508,7 @@ impl ComputeNode for EquiJoinNode {
                             &mut sample_state.right_len,
                             right_final_len,
                             left_final_len,
+                            self.params.sample_limit,
                         ),
                     ));
                 }
@@ -1500,6 +1528,7 @@ impl ComputeNode for EquiJoinNode {
                             partitioner.clone(),
                             &self.params,
                             state,
+                            &self.spill_ctx,
                         ),
                     ));
                 }

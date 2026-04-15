@@ -24,7 +24,9 @@ use slotmap::SlotMap;
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::ZipBehavior;
-use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::physical_plan::lower_group_by::{
+    GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
+};
 use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
 
 type ExprNodeKey = Node;
@@ -1266,6 +1268,37 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
+            #[cfg(feature = "interpolate")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Interpolate(method),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let value_key = unique_column_name();
+                // Use the dtype of the full interpolate expression, not the inner expression,
+                // since interpolate may change the dtype (e.g. Int64 -> Float64).
+                let value_dtype = ExprIR::new(expr, OutputName::Alias(value_key.clone()))
+                    .dtype(input_schema, ctx.expr_arena)?
+                    .clone();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::Interpolate { input, method };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), value_dtype.clone())]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
+            },
+
             #[cfg(feature = "diff")]
             AExpr::Function {
                 input: ref inner_exprs,
@@ -1527,6 +1560,43 @@ fn lower_exprs_with_ctx(
                 )?;
                 input_streams.insert(row_idx_stream);
                 transformed_exprs.push(row_idx_col_aexpr);
+            },
+
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function:
+                    IRFunctionExpr::StringExpr(IRStringFunction::Strptime(ref dtype, ref options)),
+                ..
+            } if options.format.is_none()
+                && matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if matches!(s.extract_str(), Some("raise" | "null"))) =>
+            {
+                let col_name = unique_column_name();
+                let select_stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(col_name.clone())],
+                    ctx,
+                )?;
+
+                let output_schema = Arc::new(Schema::from_iter([(
+                    col_name.clone(),
+                    dtype.as_ref().clone(),
+                )]));
+
+                let ambiguous_is_raise = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if s.extract_str() == Some("raise"));
+                let kind = PhysNodeKind::StrptimeInfer {
+                    input: select_stream,
+                    dtype: dtype.as_ref().clone(),
+                    options: options.clone(),
+                    ambiguous_is_raise,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(col_name)));
             },
 
             // Lower arbitrary elementwise functions.
@@ -2119,6 +2189,90 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(trans_expr);
             },
 
+            #[cfg(feature = "moment")]
+            AExpr::Function {
+                function: IRFunctionExpr::Skew(_) | IRFunctionExpr::Kurtosis(_, _),
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
+            #[cfg(feature = "log")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Entropy { base, normalize },
+                ..
+            } => {
+                // x.entropy() ->
+                //   normalize=false: -sum(x * log(x, base))
+                //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
+                //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                let inner = inner_exprs[0].node();
+                let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let x = AExprBuilder::new_from_node(trans_inner[0]);
+                let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
+                let log_x = AExprBuilder::function(
+                    vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                    IRFunctionExpr::Log,
+                    ctx.expr_arena,
+                );
+                let x_log_x = x.multiply(log_x, ctx.expr_arena);
+                let sum_x_log_x = x_log_x.sum(ctx.expr_arena);
+
+                if !normalize {
+                    let entropy = sum_x_log_x.negate(ctx.expr_arena);
+                    let (trans_stream, trans_expr) =
+                        lower_exprs_with_ctx(trans_input, &[entropy.node()], ctx)?;
+                    input_streams.insert(trans_stream);
+                    transformed_exprs.push(trans_expr[0]);
+                } else {
+                    // Compute sum(x) and sum(x*log(x, base)) in a single Reduce node,
+                    // then combine elementwise.
+                    let sum_x_name = unique_column_name();
+                    let sum_x_log_x_name = unique_column_name();
+                    let sum_x_expr = ExprIR::new(
+                        x.sum(ctx.expr_arena).node(),
+                        OutputName::Alias(sum_x_name.clone()),
+                    );
+                    let sum_x_log_x_expr = ExprIR::new(
+                        sum_x_log_x.node(),
+                        OutputName::Alias(sum_x_log_x_name.clone()),
+                    );
+                    let output_schema = schema_for_select(
+                        trans_input,
+                        &[sum_x_expr.clone(), sum_x_log_x_expr.clone()],
+                        ctx,
+                    )?;
+                    let reduce_key = ctx.phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::Reduce {
+                            input: trans_input,
+                            exprs: vec![sum_x_expr, sum_x_log_x_expr],
+                        },
+                    ));
+                    let reduce_stream = PhysStream::first(reduce_key);
+
+                    let sum_x = AExprBuilder::col(sum_x_name, ctx.expr_arena);
+                    let sum_x_log_x = AExprBuilder::col(sum_x_log_x_name, ctx.expr_arena);
+                    let log_sum_x = AExprBuilder::function(
+                        vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                        IRFunctionExpr::Log,
+                        ctx.expr_arena,
+                    );
+                    // log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                    let result = log_sum_x
+                        .minus(
+                            sum_x_log_x.true_divide(sum_x, ctx.expr_arena),
+                            ctx.expr_arena,
+                        )
+                        .node();
+
+                    input_streams.insert(reduce_stream);
+                    transformed_exprs.push(result);
+                }
+            },
+
             // Length-based expressions.
             AExpr::Len => {
                 let out_name = unique_column_name();
@@ -2403,6 +2557,40 @@ fn lower_exprs_with_ctx(
                 )?;
                 input_streams.insert(input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Over {
+                function,
+                partition_by,
+                order_by: None,
+                mapping: WindowMapping::GroupsToRows,
+            } => {
+                let out_name = unique_column_name();
+                let function_ir = AExprBuilder::new_from_node(function).expr_ir(out_name.clone());
+                let key_ir = partition_by
+                    .iter()
+                    .map(|n| AExprBuilder::new_from_node(*n).expr_ir(unique_column_name()))
+                    .collect_vec();
+
+                if let Some(gb) = try_build_streaming_group_by(
+                    input,
+                    &key_ir,
+                    &[function_ir],
+                    false,
+                    Arc::new(GroupbyOptions::default()),
+                    None,
+                    GroupByLowerKind::Over,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext::from(&*ctx),
+                )? {
+                    input_streams.insert(gb);
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                } else {
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                }
             },
 
             AExpr::AnonymousFunction { .. }

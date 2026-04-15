@@ -1,6 +1,7 @@
 use std::cell::LazyCell;
 use std::sync::Arc;
 
+use arrow::bitmap::Bitmap;
 use polars_core::config;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{IDX_DTYPE, IdxCa, InitHashMaps, PlHashMap, PlIndexMap, PlIndexSet};
@@ -211,85 +212,118 @@ pub fn initialize_scan_predicate<'a>(
     table_statistics: Option<&TableStatistics>,
     verbose: bool,
 ) -> PolarsResult<(Option<SkipFilesMask>, Option<&'a ScanIOPredicate>)> {
-    'create_skip_files_mask: {
-        let Some(predicate) = predicate else {
-            break 'create_skip_files_mask;
-        };
+    let Some(predicate) = predicate else {
+        return Ok((None, None));
+    };
 
-        let expected_mask_len: usize;
+    let mut hive_inclusion: Option<Bitmap> = None;
+    let mut stats_exclusion: Option<Bitmap> = None;
 
-        let (skip_files_mask, send_predicate_to_readers) = if let Some(hive_parts) = hive_parts
-            && let Some(hive_predicate) = &predicate.hive_predicate
-        {
-            if verbose {
-                eprintln!(
-                    "initialize_scan_predicate: Source filter mask initialization via hive partitions"
-                );
-            }
+    // Hive partitioning pruning.
+    if let Some(hive_parts) = hive_parts
+        && let Some(hive_predicate) = &predicate.hive_predicate
+    {
+        if verbose {
+            eprintln!(
+                "initialize_scan_predicate: Source filter mask initialization via hive partitions"
+            );
+        }
 
-            expected_mask_len = hive_parts.df().height();
+        let hive_inclusion_bitmap = hive_predicate
+            .evaluate_io(hive_parts.df())?
+            .bool()?
+            .rechunk()
+            .into_owned()
+            .downcast_into_iter()
+            .next()
+            .unwrap()
+            .values()
+            .clone();
 
-            let inclusion_mask = hive_predicate
-                .evaluate_io(hive_parts.df())?
-                .bool()?
-                .rechunk()
-                .into_owned()
-                .downcast_into_iter()
-                .next()
-                .unwrap()
-                .values()
-                .clone();
+        let hive_len = hive_parts.df().height();
+        let mask_len = hive_inclusion_bitmap.len();
 
-            (
-                SkipFilesMask::Inclusion(inclusion_mask),
-                !predicate.hive_predicate_is_full_predicate,
-            )
-        } else if let Some(table_statistics) = table_statistics
-            && let Some(skip_batch_predicate) = &predicate.skip_batch_predicate
-        {
-            if verbose {
-                eprintln!(
-                    "initialize_scan_predicate: Source filter mask initialization via table statistics"
-                );
-            }
-
-            expected_mask_len = table_statistics.0.height();
-
-            let exclusion_mask = skip_batch_predicate.evaluate_with_stat_df(&table_statistics.0)?;
-
-            (SkipFilesMask::Exclusion(exclusion_mask), true)
-        } else {
-            break 'create_skip_files_mask;
-        };
-
-        if skip_files_mask.len() != expected_mask_len {
+        if hive_len != mask_len {
             polars_warn!(
                 "WARNING: \
-                initialize_scan_predicate: \
-                filter mask length mismatch (length: {}, expected: {}). Files \
-                will not be skipped. This is a bug; please open an issue with \
-                a reproducible example if possible.",
-                skip_files_mask.len(),
-                expected_mask_len
+            initialize_scan_predicate: \
+            filter mask length mismatch \
+            (mask: {}, hive: {:?}). \
+            Files will not be skipped. This is a bug; \
+            please open an issue with a reproducible example if possible.",
+                mask_len,
+                hive_len
             );
             return Ok((None, Some(predicate)));
         }
 
+        if predicate.hive_predicate_is_full_predicate {
+            let skip_files_mask = SkipFilesMask::Inclusion(hive_inclusion_bitmap);
+            if verbose {
+                eprintln!(
+                    "initialize_scan_predicate: Predicate pushdown allows skipping {} / {} files",
+                    skip_files_mask.num_skipped_files(),
+                    skip_files_mask.len(),
+                );
+            }
+            return Ok((Some(skip_files_mask), None));
+        }
+
+        hive_inclusion = Some(hive_inclusion_bitmap);
+    }
+
+    // Non-hive table statistics pruning.
+    if let Some(table_statistics) = table_statistics
+        && let Some(skip_batch_predicate) = &predicate.skip_batch_predicate
+    {
         if verbose {
             eprintln!(
-                "initialize_scan_predicate: Predicate pushdown allows skipping {} / {} files",
-                skip_files_mask.num_skipped_files(),
-                skip_files_mask.len()
+                "initialize_scan_predicate: Source filter mask initialization via table statistics"
             );
         }
 
-        return Ok((
-            Some(skip_files_mask),
-            send_predicate_to_readers.then_some(predicate),
-        ));
+        let stats_exclusion_bitmap =
+            skip_batch_predicate.evaluate_with_stat_df(&table_statistics.0)?;
+
+        let stats_len = table_statistics.0.height();
+        let mask_len = stats_exclusion_bitmap.len();
+
+        if stats_len != mask_len {
+            polars_warn!(
+                "WARNING: \
+            initialize_scan_predicate: \
+            filter mask length mismatch \
+            (mask: {}, stats: {:?}). \
+            Files will not be skipped. This is a bug; \
+            please open an issue with a reproducible example if possible.",
+                mask_len,
+                stats_len
+            );
+            return Ok((None, Some(predicate)));
+        }
+
+        stats_exclusion = Some(stats_exclusion_bitmap);
     }
 
-    Ok((None, predicate))
+    // Merge masks.
+    let skip_files_mask = match (hive_inclusion, stats_exclusion) {
+        (Some(ref hive_inclusion), Some(ref stats_exclusion)) => {
+            SkipFilesMask::Exclusion(&!hive_inclusion | stats_exclusion)
+        },
+        (Some(hive_inclusion), None) => SkipFilesMask::Inclusion(hive_inclusion),
+        (None, Some(stats_exclusion)) => SkipFilesMask::Exclusion(stats_exclusion),
+        (None, None) => return Ok((None, Some(predicate))),
+    };
+
+    if verbose {
+        eprintln!(
+            "initialize_scan_predicate: Predicate pushdown allows skipping {} / {} files",
+            skip_files_mask.num_skipped_files(),
+            skip_files_mask.len(),
+        );
+    }
+
+    Ok((Some(skip_files_mask), Some(predicate)))
 }
 
 /// Filters the list of files in an `IR::Scan` based on the contained predicate. This is possible

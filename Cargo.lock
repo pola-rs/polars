@@ -3330,11 +3330,14 @@ name = "polars-ooc"
 version = "0.53.0"
 dependencies = [
  "boxcar",
- "parking_lot",
+ "libc",
+ "mimalloc",
  "polars-config",
  "polars-core",
+ "polars-io",
  "polars-utils",
- "slotmap",
+ "tikv-jemallocator",
+ "tokio",
 ]
 
 [[package]]
@@ -3483,7 +3486,6 @@ dependencies = [
  "hashbrown 0.16.1",
  "itoa",
  "libc",
- "mimalloc",
  "ndarray",
  "num-traits",
  "numpy",
@@ -3501,6 +3503,7 @@ dependencies = [
  "polars-io",
  "polars-lazy",
  "polars-mem-engine",
+ "polars-ooc",
  "polars-ops",
  "polars-parquet",
  "polars-plan",
@@ -3512,7 +3515,6 @@ dependencies = [
  "rayon",
  "recursive",
  "serde_json",
- "tikv-jemallocator",
  "uuid",
  "version_check",
 ]

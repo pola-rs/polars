@@ -632,6 +632,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
         # ...load back from config file/string...
+        assert isinstance(cfg, str)
         if file is None:
             pl.Config.load(cfg)
         else:
