@@ -42,7 +42,6 @@ impl AsOfJoinSideParams {
 
 #[derive(Debug)]
 struct AsOfJoinParams {
-    _output_schema: SchemaRef,
     left: AsOfJoinSideParams,
     right: AsOfJoinSideParams,
     by_descending: Vec<bool>,
@@ -84,7 +83,6 @@ impl AsOfJoinNode {
     pub fn new(
         left_input_schema: SchemaRef,
         right_input_schema: SchemaRef,
-        output_schema: SchemaRef,
         left_on: PlSmallStr,
         right_on: PlSmallStr,
         tmp_left_key_col: Option<PlSmallStr>,
@@ -124,7 +122,6 @@ impl AsOfJoinNode {
         };
 
         let params = AsOfJoinParams {
-            _output_schema: output_schema,
             left,
             right,
             by_descending: by_descending.unwrap_or_default(),
