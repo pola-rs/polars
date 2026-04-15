@@ -265,6 +265,7 @@ pub enum FunctionExpr {
     UpperBound,
     LowerBound,
     ConcatExpr(bool),
+    ConcatList,
     #[cfg(feature = "cov")]
     Correlation {
         method: correlation::CorrelationMethod,
@@ -596,6 +597,7 @@ impl Hash for FunctionExpr {
             UpperBound => {},
             LowerBound => {},
             ConcatExpr(rechunk) => rechunk.hash(state),
+            ConcatList => {},
             #[cfg(feature = "peaks")]
             PeakMin => {},
             #[cfg(feature = "peaks")]
@@ -834,6 +836,7 @@ impl Display for FunctionExpr {
             UpperBound => "upper_bound",
             LowerBound => "lower_bound",
             ConcatExpr(..) => "concat_expr",
+            ConcatList => "concat_list",
             #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]

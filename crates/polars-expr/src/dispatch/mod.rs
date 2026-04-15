@@ -371,6 +371,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "fused")]
         F::Fused(op) => map_as_slice!(misc::fused, op),
         F::ConcatExpr { rechunk } => map_as_slice!(misc::concat_expr, rechunk),
+        F::ConcatList => wrap!(list::concat),
         #[cfg(feature = "cov")]
         F::Correlation { method } => map_as_slice!(misc::corr, method),
         #[cfg(feature = "peaks")]

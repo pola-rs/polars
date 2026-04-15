@@ -112,7 +112,7 @@ pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult
 
     Ok(Expr::Function {
         input: s,
-        function: FunctionExpr::ListExpr(ListFunction::Concat),
+        function: FunctionExpr::ConcatList,
     })
 }
 

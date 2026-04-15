@@ -1024,6 +1024,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             };
         },
         IF::ConcatExpr { rechunk } => F::ConcatExpr(rechunk),
+        IF::ConcatList => F::ConcatList,
         #[cfg(feature = "cov")]
         IF::Correlation { method } => {
             use CorrelationMethod as C;

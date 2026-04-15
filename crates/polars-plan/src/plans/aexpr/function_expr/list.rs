@@ -73,7 +73,7 @@ impl IRListFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRListFunction::*;
         match self {
-            Concat => mapper.map_to_list_supertype(),
+            Concat => mapper.ensure_is_list()?.map_to_list_supertype(),
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_drop_nulls")]

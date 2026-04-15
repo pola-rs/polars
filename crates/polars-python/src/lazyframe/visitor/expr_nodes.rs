@@ -1352,6 +1352,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::ConcatExpr { .. } => {
                     return Err(PyNotImplementedError::new_err("concat expr"));
                 },
+                IRFunctionExpr::ConcatList => {
+                    return Err(PyNotImplementedError::new_err("concat list"));
+                },
                 IRFunctionExpr::Correlation { .. } => {
                     return Err(PyNotImplementedError::new_err("corr"));
                 },

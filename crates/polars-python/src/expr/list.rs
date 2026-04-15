@@ -39,6 +39,12 @@ impl PyExpr {
         self.inner.clone().list().eval(expr.inner).into()
     }
 
+
+    fn list_concat(&self, other: Vec<PyExpr>) -> Self {
+        let other: Vec<_> = other.into_iter().map(|e| e.inner).collect();
+        self.inner.clone().list().concat(&other).into()
+    }
+
     fn list_agg(&self, expr: PyExpr) -> Self {
         self.inner.clone().list().agg(expr.inner).into()
     }

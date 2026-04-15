@@ -296,6 +296,17 @@ impl ListNameSpace {
         }
     }
 
+    /// Concatenate the list with another list.
+    pub fn concat<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, other: E) -> Expr {
+        let mut input: Vec<_> = other.as_ref().iter().map(|e| e.clone().into()).collect();
+        input.insert(0, self.0);
+
+        Expr::Function {
+            input,
+            function: FunctionExpr::ListExpr(ListFunction::Concat),
+        }
+    }
+
     pub fn agg<E: Into<Expr>>(self, other: E) -> Expr {
         Expr::Eval {
             expr: Arc::new(self.0),
