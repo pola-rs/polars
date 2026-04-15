@@ -23,6 +23,7 @@ mod collapse_sort;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;
+mod simplify_group_by;
 pub mod simplify_ordering;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
@@ -247,6 +248,8 @@ pub fn optimize(
     }
 
     if !opt_flags.eager() {
+        // Move literal group_by keys out of the grouping
+        rules.push(Box::new(simplify_group_by::SimplifyGroupBy::new()));
         rules.push(Box::new(FlattenUnionRule {}));
     }
 

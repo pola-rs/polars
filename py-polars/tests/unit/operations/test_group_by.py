@@ -3080,3 +3080,33 @@ def test_group_by_max_by_min_by_string_single_element_27171() -> None:
     result = df.group_by("key", maintain_order=True).agg(pl.col("val").min_by("by"))
     assert result.filter(pl.col("key") == "a")["val"][0] == 10
     assert result.filter(pl.col("key") == "b")["val"][0] == 30
+
+
+def test_group_by_literal_keys_optimization_all_literals_22623() -> None:
+    """When all group_by keys are literals, rewrite to select (no AGGREGATE)."""
+    lf = pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+
+    q = lf.group_by(pl.lit(1)).agg(pl.col("x").sum())
+    plan = q.explain()
+
+    # Should NOT have AGGREGATE since all keys are literals
+    assert "AGGREGATE" not in plan
+    # Should have SELECT instead
+    assert "SELECT" in plan
+
+
+def test_group_by_literal_keys_optimization_mixed_keys_22623() -> None:
+    """When some group_by keys are literals, remove them from grouping."""
+    lf = pl.LazyFrame({"x": [1, 2, 3, 1, 2, 3], "g": ["a", "a", "a", "b", "b", "b"]})
+
+    q = lf.group_by(pl.lit(1).alias("literal"), pl.col("g")).agg(pl.col("x").sum())
+    plan = q.explain()
+
+    # Should have AGGREGATE but only with non-literal key
+    assert "AGGREGATE" in plan
+    # The literal key should be moved to SELECT
+    assert "SELECT" in plan
+
+    # Column order checks
+    result = q.collect()
+    assert result.columns == ["literal", "g", "x"]
