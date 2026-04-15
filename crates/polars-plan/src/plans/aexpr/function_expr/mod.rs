@@ -52,7 +52,7 @@ pub use list::IRListFunction;
 pub use polars_core::datatypes::ReshapeDimension;
 use polars_core::prelude::*;
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::{SuperTypeFlags, SuperTypeOptions};
+use polars_core::utils::SuperTypeFlags;
 #[cfg(feature = "random")]
 pub use random::IRRandomMethod;
 use schema::FieldsMapper;
