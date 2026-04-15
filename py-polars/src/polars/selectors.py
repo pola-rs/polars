@@ -2809,9 +2809,14 @@ def numeric() -> Selector:
     return Selector._from_pyselector(PySelector.numeric())
 
 
+@unstable()
 def remaining() -> Selector:
     """
     Select all columns whose names do not appear as output names of other expressions.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
 
     This selector is useful in `select` and `with_columns` operations when you want
     to perform an operation on specific columns while also keeping all other columns
