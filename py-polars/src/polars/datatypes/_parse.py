@@ -131,6 +131,8 @@ def _parse_generic_into_dtype(input: Any) -> PolarsDataType:
             _raise_on_invalid_dtype(input)
 
     inner_type = inner_types[0]
+    if isinstance(inner_type, UnionType) or get_origin(inner_type) is Union:
+        return _parse_union_type_into_dtype(input)
     inner_dtype = parse_py_type_into_dtype(inner_type)
     return List(inner_dtype)
 

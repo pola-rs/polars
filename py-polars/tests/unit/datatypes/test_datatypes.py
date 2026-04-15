@@ -134,7 +134,7 @@ def test_dtypes_hashable() -> None:
 
 @pytest.mark.parametrize(
     "python_type",
-    [int, int | None, Optional[int], Union[int, None]],  # noqa: UP007,UP045
+    [int, int | None, Optional[int], Union[int, None], list[Optional[int]]],  # noqa: UP007,UP045
 )
 def test_inference_from_python_type(python_type: Any) -> None:
     polars_type = pl.DataType.from_python(python_type)
