@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-import polars._reexport as pl
+import polars as pl
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -48,33 +48,6 @@ def _scan_pyarrow_dataset(
     )
 
 
-@overload
-def _scan_pyarrow_dataset_impl(
-    ds: pa.dataset.Dataset,
-    with_columns: list[str] | None,
-    predicate: pa.compute.Expression | None,
-    n_rows: int | None,
-    batch_size: int | None = ...,
-    *,
-    allow_pyarrow_filter: Literal[True] = ...,
-    user_batch_size: int | None = ...,
-) -> DataFrame: ...
-
-
-@overload
-def _scan_pyarrow_dataset_impl(
-    ds: pa.dataset.Dataset,
-    with_columns: list[str] | None,
-    predicate: pa.compute.Expression | None,
-    n_rows: int | None,
-    batch_size: int | None = ...,
-    *,
-    allow_pyarrow_filter: Literal[False],
-    user_batch_size: int | None = ...,
-) -> tuple[Iterator[DataFrame], bool]: ...
-
-
-
 def _scan_pyarrow_dataset_impl(
     ds: pa.dataset.Dataset,
     with_columns: list[str] | None,
@@ -95,7 +68,7 @@ def _scan_pyarrow_dataset_impl(
     with_columns
         Columns that are projected.
     predicate
-        pyarrow expression string (when `allow_pyarrow_filter=True`) or
+        pyarrow expression (when `allow_pyarrow_filter=True`) or
         serialized Polars predicate bytes (when `allow_pyarrow_filter=False`).
     n_rows:
         Materialize only `n` rows from the arrow dataset.
@@ -106,12 +79,6 @@ def _scan_pyarrow_dataset_impl(
         If False, return `(generator, False)` tuple for IOPlugin path.
     user_batch_size
         User-specified `batch_size` (takes precedence over Rust-provided `batch_size`).
-
-    Warnings
-    --------
-    Don't use this if you accept untrusted user inputs. Predicates will be evaluated
-    with python 'eval'. There is sanitation in place, but it is a possible attack
-    vector.
 
     Returns
     -------
@@ -127,8 +94,6 @@ def _scan_pyarrow_dataset_impl(
     if allow_pyarrow_filter and predicate is not None:
         if n_rows is None:
             filter_ = predicate
-        else:
-            filter_post_slice_ = predicate
 
     common_params: dict[str, Any] = {"columns": with_columns, "filter": filter_}
     batch_size = user_batch_size if user_batch_size is not None else batch_size
