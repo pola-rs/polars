@@ -83,6 +83,7 @@ def deprecate_streaming_parameter() -> IdentityFunction:
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            __tracebackhide__ = True
             if "streaming" in kwargs:
                 issue_deprecation_warning(
                     "the `streaming` parameter was deprecated in 1.25.0; use `engine` instead."
