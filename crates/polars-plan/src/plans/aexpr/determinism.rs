@@ -319,6 +319,7 @@ fn is_inherently_nondeterministic_list_fn(f: &IRListFunction) -> bool {
     use IRListFunction as L;
     match f {
         L::Concat
+        | L::Explode(_)
         | L::Slice
         | L::Shift
         | L::Get(_)
