@@ -313,4 +313,11 @@ impl ListNameSpace {
             variant: EvalVariant::ListAgg,
         }
     }
+
+    /// Zip this list with another list to create a list of structs.
+    #[cfg(feature = "list_zip")]
+    pub fn zip(self, other: Expr, pad: bool) -> Expr {
+        self.0
+            .map_binary(FunctionExpr::ListExpr(ListFunction::Zip(pad)), other)
+    }
 }
