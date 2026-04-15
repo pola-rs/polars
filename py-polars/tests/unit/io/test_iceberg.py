@@ -75,23 +75,23 @@ from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
 
 if TYPE_CHECKING:
-    AlwaysFalse = Any
-    AlwaysTrue = Any
     from tests.conftest import PlMonkeyPatch
 
     # Mypy does not understand the constructors and we can't construct the inputs
     # explicitly since they are abstract base classes.
-    And = Any
-    EqualTo = Any
-    GreaterThan = Any
-    GreaterThanOrEqual = Any
-    In = Any
-    IsNull = Any
-    LessThan = Any
-    LessThanOrEqual = Any
-    Not = Any
-    Or = Any
-    Reference = Any
+    AlwaysFalse: Any
+    AlwaysTrue: Any
+    And: Any
+    EqualTo: Any
+    GreaterThan: Any
+    GreaterThanOrEqual: Any
+    In: Any
+    IsNull: Any
+    LessThan: Any
+    LessThanOrEqual: Any
+    Not: Any
+    Or: Any
+    Reference: Any
 else:
     from pyiceberg.expressions import (
         AlwaysFalse,
