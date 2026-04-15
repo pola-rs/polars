@@ -2881,7 +2881,10 @@ class Expr:
         )
 
     def gather(
-        self, indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any]
+        self,
+        indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
     ) -> Expr:
         """
         Take values by index.
@@ -2890,6 +2893,11 @@ class Expr:
         ----------
         indices
             An expression that leads to a UInt32 dtyped Series.
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            - True  -> set the result to null
+            - False -> raise an error
 
         Returns
         -------
@@ -2927,6 +2935,21 @@ class Expr:
         │ one   ┆ [2, 98]   │
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
+
+        Use `null_on_oob=True` to return null for out-of-bounds indices.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").gather([0, 1, 10], null_on_oob=True))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        │ 2    │
+        │ null │
+        └──────┘
         """
         if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
@@ -2934,7 +2957,7 @@ class Expr:
             indices_lit_pyexpr = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
             indices_lit_pyexpr = parse_into_expression(indices)
-        return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr))
+        return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr, null_on_oob))
 
     def get(self, index: int | Expr, *, null_on_oob: bool = False) -> Expr:
         """

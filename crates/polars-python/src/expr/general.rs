@@ -355,8 +355,9 @@ impl PyExpr {
             .into()
     }
 
-    fn gather(&self, idx: Self) -> Self {
-        self.inner.clone().gather(idx.inner).into()
+    #[pyo3(signature = (idx, null_on_oob=false))]
+    fn gather(&self, idx: Self, null_on_oob: bool) -> Self {
+        self.inner.clone().gather(idx.inner, null_on_oob).into()
     }
 
     #[pyo3(signature = (idx, null_on_oob=false))]
