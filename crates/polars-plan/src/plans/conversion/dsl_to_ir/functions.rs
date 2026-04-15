@@ -134,6 +134,7 @@ pub(super) fn convert_functions(
             use IRListFunction as IL;
             use ListFunction as L;
             I::ListExpr(match list_function {
+                L::Explode(options) => IL::Explode(options),
                 L::Concat => IL::Concat,
                 #[cfg(feature = "is_in")]
                 L::Contains { nulls_equal } => IL::Contains { nulls_equal },
