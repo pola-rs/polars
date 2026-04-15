@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 class _GroupByIter:
     """Iterator object for GroupBy iteration."""
 
-    __slots__ = ("_df", "_group_indices", "_group_names", "_current_index")
+    __slots__ = ("_current_index", "_df", "_group_indices", "_group_names")
 
     def __init__(
         self,

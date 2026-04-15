@@ -3086,4 +3086,4 @@ def test_group_by_next_raises_type_error_12868() -> None:
     df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
     gb = df.group_by("a")
     with pytest.raises(TypeError, match="GroupBy"):
-        next(gb)
+        next(gb)  # type: ignore[call-overload]
