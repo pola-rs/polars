@@ -3080,3 +3080,10 @@ def test_group_by_max_by_min_by_string_single_element_27171() -> None:
     result = df.group_by("key", maintain_order=True).agg(pl.col("val").min_by("by"))
     assert result.filter(pl.col("key") == "a")["val"][0] == 10
     assert result.filter(pl.col("key") == "b")["val"][0] == 30
+
+
+def test_group_by_next_raises_type_error_12868() -> None:
+    df = pl.DataFrame({"a": [1, 1, 2], "b": [3, 4, 5]})
+    gb = df.group_by("a")
+    with pytest.raises(TypeError, match="GroupBy"):
+        next(gb)
