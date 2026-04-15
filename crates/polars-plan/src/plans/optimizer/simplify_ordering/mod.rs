@@ -457,7 +457,7 @@ impl SimplifyIRNodeOrder<'_> {
                 }
             },
 
-            IR::HConcat { .. } | IR::Slice { .. } | IR::ExtContext { .. } => {
+            IR::HConcat { .. } | IR::Slice { .. } | IR::ExtContext { .. } | IR::Gather { .. } => {
                 if in_edges.iter().all(|k| get_edge!(*k).is_unordered()) {
                     for k in out_edges.iter() {
                         *get_edge_mut!(*k) = Edge::Unordered
