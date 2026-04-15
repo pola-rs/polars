@@ -158,3 +158,5 @@ Do you want Polars to run on an old CPU (e.g. dating from before 2011), or on an
 Python on Apple Silicon under Rosetta? Install `pip install polars[rtcompat]`. This version of
 Polars is compiled without [AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) target
 features.
+
+## LGTM
