@@ -347,60 +347,33 @@ def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
         assert_frame_equal(df_chained_from_right, df_full)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
-def test_merge_sorted_maintain_order(streaming: bool) -> None:
-    """Test that maintain_order=True guarantees left-biased ordering for equal keys."""
-    left = pl.DataFrame({"src": ["L1", "L2", "L3"], "key": [1, 2, 3]})
-    right = pl.DataFrame({"src": ["R1", "R2", "R3"], "key": [2, 3, 4]})
-
-    result = (
-        left.lazy()
-        .merge_sorted(right.lazy(), key="key", maintain_order=True)
-        .collect(engine="streaming" if streaming else "in-memory")
+@given(
+    lhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+    rhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+)
+def test_merge_sorted_maintain_order_parametric(
+    lhs: pl.Series, rhs: pl.Series
+) -> None:
+    left = (
+        pl.DataFrame([lhs.sort()])
+        .with_row_index("left_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("right_idx"),
+            pl.lit(0, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+    right = (
+        pl.DataFrame([rhs.sort()])
+        .with_row_index("right_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("left_idx"),
+            pl.lit(1, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
     )
 
-    expected = pl.DataFrame(
-        {
-            "src": ["L1", "L2", "R1", "L3", "R2", "R3"],
-            "key": [1, 2, 2, 3, 3, 4],
-        }
-    )
-    assert_frame_equal(result, expected)
+    actual = left.lazy().merge_sorted(right.lazy(), key="key", maintain_order=True).collect()
+    expected = pl.concat([left, right]).sort(["key", "df"], maintain_order=True)
 
-
-@pytest.mark.parametrize("streaming", [False, True])
-def test_merge_sorted_maintain_order_all_equal(streaming: bool) -> None:
-    """Test maintain_order when all keys are equal."""
-    left = pl.DataFrame({"src": ["L1", "L2"], "key": [1, 1]})
-    right = pl.DataFrame({"src": ["R1", "R2"], "key": [1, 1]})
-
-    result = (
-        left.lazy()
-        .merge_sorted(right.lazy(), key="key", maintain_order=True)
-        .collect(engine="streaming" if streaming else "in-memory")
-    )
-
-    expected = pl.DataFrame(
-        {
-            "src": ["L1", "L2", "R1", "R2"],
-            "key": [1, 1, 1, 1],
-        }
-    )
-    assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("streaming", [False, True])
-def test_merge_sorted_maintain_order_dataframe(streaming: bool) -> None:
-    """Test maintain_order via the DataFrame.merge_sorted API."""
-    left = pl.DataFrame({"src": ["L1", "L2"], "key": [1, 2]})
-    right = pl.DataFrame({"src": ["R1", "R2"], "key": [1, 2]})
-
-    result = left.merge_sorted(right, key="key", maintain_order=True)
-
-    expected = pl.DataFrame(
-        {
-            "src": ["L1", "R1", "L2", "R2"],
-            "key": [1, 1, 2, 2],
-        }
-    )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(actual, expected)

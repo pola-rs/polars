@@ -123,8 +123,28 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 .into_series()
         },
         #[cfg(feature = "dtype-array")]
-        Array(_, _) => merge_nested_series(lhs, rhs, merge_indicator)?,
-        List(_) => merge_nested_series(lhs, rhs, merge_indicator)?,
+        Array(_, _) => {
+            // @Optimize. This is horrendous
+            let lhs = lhs.row_encode_unordered()?;
+            let rhs = rhs.row_encode_unordered()?;
+            let fields = std::slice::from_ref(lhs.ref_field());
+            merge_ca(&lhs, &rhs, merge_indicator)
+                .row_decode_unordered(fields)?
+                .fields_as_series()
+                .pop()
+                .unwrap()
+        },
+        List(_) => {
+            // @Optimize. This is horrendous
+            let lhs = lhs.row_encode_unordered()?;
+            let rhs = rhs.row_encode_unordered()?;
+            let fields = std::slice::from_ref(lhs.ref_field());
+            merge_ca(&lhs, &rhs, merge_indicator)
+                .row_decode_unordered(fields)?
+                .fields_as_series()
+                .pop()
+                .unwrap()
+        },
         dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
@@ -223,32 +243,6 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
         dt => polars_bail!(op = "merge_sorted", dt),
     };
     Ok(out)
-}
-
-#[cfg(feature = "dtype-struct")]
-fn merge_nested_series(
-    lhs: &Series,
-    rhs: &Series,
-    merge_indicator: &[bool],
-) -> PolarsResult<Series> {
-    // Nested series are row-encoded as a single-field struct and decoded after merge.
-    let lhs = lhs.row_encode_unordered()?;
-    let rhs = rhs.row_encode_unordered()?;
-    let fields = std::slice::from_ref(lhs.ref_field());
-    Ok(merge_ca(&lhs, &rhs, merge_indicator)
-        .row_decode_unordered(fields)?
-        .fields_as_series()
-        .pop()
-        .unwrap())
-}
-
-#[cfg(not(feature = "dtype-struct"))]
-fn merge_nested_series(
-    lhs: &Series,
-    _rhs: &Series,
-    _merge_indicator: &[bool],
-) -> PolarsResult<Series> {
-    polars_bail!(op = "merge_sorted", lhs.dtype())
 }
 
 // get a boolean values, left: true, right: false
