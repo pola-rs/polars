@@ -342,15 +342,14 @@ fn series_to_arrow_literal_list(s: &Series) -> Option<Vec<ArrowLiteralValue>> {
 pub fn predicate_to_arrow_pred(
     predicate: Node,
     expr_arena: &Arena<AExpr>,
-    args: PyarrowArgs,
 ) -> Option<ArrowPredicate> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
             if !op.is_comparison_or_bitwise() {
                 return None;
             }
-            let left = predicate_to_arrow_pred(*left, expr_arena, args)?;
-            let right = predicate_to_arrow_pred(*right, expr_arena, args)?;
+            let left = predicate_to_arrow_pred(*left, expr_arena)?;
+            let right = predicate_to_arrow_pred(*right, expr_arena)?;
             if let Some(cmp) = comparison_op(op) {
                 Some(ArrowPredicate::Comparison {
                     left: Box::new(left),
@@ -386,7 +385,7 @@ pub fn predicate_to_arrow_pred(
             input,
             ..
         } => {
-            let col = predicate_to_arrow_pred(input.first()?.node(), expr_arena, args)?;
+            let col = predicate_to_arrow_pred(input.first()?.node(), expr_arena)?;
             let rhs_node = input.get(1)?.node();
 
             let values = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
@@ -435,10 +434,15 @@ pub fn predicate_to_arrow_pred(
                 return None;
             };
 
-            Some(ArrowPredicate::IsIn {
-                expr: Box::new(col),
-                values,
-            })
+            // We can simplify this to a false mask if the list is empty.
+            if values.is_empty() {
+                Some(ArrowPredicate::Literal(ArrowLiteralValue::Bool(false)))
+            } else {
+                Some(ArrowPredicate::IsIn {
+                    expr: Box::new(col),
+                    values,
+                })
+            }
         },
         #[cfg(feature = "is_between")]
         AExpr::Function {
@@ -449,7 +453,7 @@ pub fn predicate_to_arrow_pred(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 return None;
             }
-            let col = predicate_to_arrow_pred(input.first()?.node(), expr_arena, args)?;
+            let col = predicate_to_arrow_pred(input.first()?.node(), expr_arena)?;
             let left_cmp_op = match closed {
                 ClosedInterval::None | ClosedInterval::Right => ComparisonOp::Gt,
                 ClosedInterval::Both | ClosedInterval::Left => ComparisonOp::Gte,
@@ -459,8 +463,8 @@ pub fn predicate_to_arrow_pred(
                 ClosedInterval::Both | ClosedInterval::Right => ComparisonOp::Lte,
             };
 
-            let lower = predicate_to_arrow_pred(input.get(1)?.node(), expr_arena, args)?;
-            let upper = predicate_to_arrow_pred(input.get(2)?.node(), expr_arena, args)?;
+            let lower = predicate_to_arrow_pred(input.get(1)?.node(), expr_arena)?;
+            let upper = predicate_to_arrow_pred(input.get(2)?.node(), expr_arena)?;
 
             let lower_cmp = ArrowPredicate::Comparison {
                 left: Box::new(col.clone()),
@@ -481,7 +485,7 @@ pub fn predicate_to_arrow_pred(
             function, input, ..
         } => {
             let input = input.first().unwrap().node();
-            let input = predicate_to_arrow_pred(input, expr_arena, args)?;
+            let input = predicate_to_arrow_pred(input, expr_arena)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
