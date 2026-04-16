@@ -128,4 +128,5 @@ together.
 
 | Key                       | Type   | Description                                                                                    |
 | ------------------------- | ------ | ---------------------------------------------------------------------------------------------- |
+| `enabled`                 | bool   | Enable the OpenLineage service.                                                                |
 | `transport.http.endpoint` | string | HTTP or HTTPS endpoint of the OpenLineage collector.<br>e.g. `https://lineage_collector:5000`. |
