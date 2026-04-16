@@ -171,6 +171,7 @@ nav:
         - polars-on-premises/bare-metal/configuration/anonymous-users.md
         - polars-on-premises/bare-metal/configuration/network-addresses.md
         - polars-on-premises/bare-metal/configuration/static-leader.md
+        - polars-on-premises/bare-metal/configuration/openlineage.md
         - polars-on-premises/bare-metal/configuration/example-configurations.md
       - polars-on-premises/bare-metal/environment-variables.md
       - polars-on-premises/bare-metal/python-environment.md
