@@ -1,8 +1,13 @@
+use std::marker::PhantomData;
+use std::ops::ControlFlow;
+
 use polars_utils::arena::{Arena, Node};
+use polars_utils::collection::{Collection, CollectionWrap};
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::WindowMapping;
-use crate::plans::{AExpr, aexpr_postvisit_traversal};
+use crate::plans::{AExpr, aexpr_tree_traversal};
+use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ExprProjectionHeight {
@@ -39,27 +44,75 @@ pub fn aexpr_projection_height_rec(
     ae_node: Node,
     mut expr_arena: &Arena<AExpr>,
     stack: &mut ScratchVec<Node>,
-    inputs_stack: &mut ScratchVec<ExprProjectionHeight>,
+    edges_stack: &mut ScratchVec<ExprProjectionHeight>,
 ) -> ExprProjectionHeight {
-    aexpr_postvisit_traversal(
+    let mut visitor = ExprHeightVisitor::default();
+
+    aexpr_tree_traversal(
         ae_node,
         &mut expr_arena,
         stack.get(),
-        inputs_stack.get(),
-        &mut |ae_node, input_heights, expr_arena| {
-            aexpr_projection_height(expr_arena.get(ae_node), input_heights)
-        },
+        edges_stack.get(),
+        &mut visitor,
     )
+    .continue_value()
+    .unwrap()
 }
 
+#[derive(Default)]
+pub struct ExprHeightVisitor<'a>(PhantomData<&'a ()>);
+
+impl<'a> NodeVisitor for ExprHeightVisitor<'a> {
+    type Key = Node;
+    type Edge = ExprProjectionHeight;
+    type Storage = &'a Arena<AExpr>;
+    type BreakValue = ();
+
+    fn default_edge(&mut self) -> Self::Edge {
+        ExprProjectionHeight::Unknown
+    }
+
+    fn pre_visit(
+        &mut self,
+        key: Self::Key,
+        storage: &mut Self::Storage,
+        edges: &mut dyn crate::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
+    ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
+        ControlFlow::Continue(
+            if let Some(height) = aexpr_projection_height(storage.get(key), None) {
+                edges.outputs()[0] = height;
+                SubtreeVisit::Skip
+            } else {
+                SubtreeVisit::Visit
+            },
+        )
+    }
+
+    fn post_visit(
+        &mut self,
+        key: Self::Key,
+        storage: &mut Self::Storage,
+        edges: &mut dyn crate::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
+    ) -> ControlFlow<Self::BreakValue> {
+        edges.outputs()[0] =
+            aexpr_projection_height(storage.get(key), Some(&mut *edges.inputs())).unwrap();
+        ControlFlow::Continue(())
+    }
+}
+
+/// # Returns
+/// Returns `None` if the output height is dependent on input heights and input heights were not
+/// provided.
 pub fn aexpr_projection_height(
     aexpr: &AExpr,
-    input_heights: &[ExprProjectionHeight],
-) -> ExprProjectionHeight {
+    input_heights: Option<&mut dyn Collection<ExprProjectionHeight>>,
+) -> Option<ExprProjectionHeight> {
     use AExpr::*;
     use ExprProjectionHeight as H;
 
-    match aexpr {
+    let input_heights = input_heights.map(CollectionWrap::<ExprProjectionHeight, _>::new);
+
+    Some(match aexpr {
         Column(_) => H::Column,
 
         Element => H::Column,
@@ -73,9 +126,9 @@ pub fn aexpr_projection_height(
             }
         },
 
-        Eval { .. } => input_heights[0],
+        Eval { .. } => input_heights?[0],
         #[cfg(feature = "dtype-struct")]
-        StructEval { .. } => input_heights[0],
+        StructEval { .. } => input_heights?[0],
 
         Filter { .. } | Slice { .. } | Explode { .. } => H::Unknown,
 
@@ -83,27 +136,27 @@ pub fn aexpr_projection_height(
         Len => H::Scalar,
 
         BinaryExpr { .. } => {
-            let [l, r] = input_heights.try_into().unwrap();
+            let [l, r] = input_heights?.try_into().unwrap();
             l.zip_with(r)
         },
         Ternary { .. } => {
-            let [pred, truthy, falsy] = input_heights.try_into().unwrap();
+            let [pred, truthy, falsy] = input_heights?.try_into().unwrap();
             pred.zip_with(truthy).zip_with(falsy)
         },
 
         Cast { .. } | Sort { .. } => {
-            let [h] = input_heights.try_into().unwrap();
+            let [h] = input_heights?.try_into().unwrap();
             h
         },
 
-        SortBy { .. } => H::zipped_projection_height(input_heights.iter().copied()),
+        SortBy { .. } => H::zipped_projection_height(input_heights?.iter().copied()),
 
         Gather { returns_scalar, .. } => {
             if *returns_scalar {
                 // This is `get()` from the API
                 H::Scalar
             } else {
-                let indices_height = input_heights[1];
+                let indices_height = input_heights?[1];
 
                 match indices_height {
                     H::Column => H::Column,
@@ -116,7 +169,7 @@ pub fn aexpr_projection_height(
             if options.flags.returns_scalar() {
                 H::Scalar
             } else if options.flags.is_elementwise() || options.flags.is_length_preserving() {
-                H::zipped_projection_height(input_heights.iter().copied())
+                H::zipped_projection_height(input_heights?.iter().copied())
             } else {
                 H::Unknown
             }
@@ -124,6 +177,7 @@ pub fn aexpr_projection_height(
 
         #[cfg(feature = "dynamic_group_by")]
         Rolling { .. } => H::Column,
+
         Over { mapping, .. } => {
             if matches!(mapping, WindowMapping::Explode) {
                 H::Unknown
@@ -131,5 +185,5 @@ pub fn aexpr_projection_height(
                 H::Column
             }
         },
-    }
+    })
 }
