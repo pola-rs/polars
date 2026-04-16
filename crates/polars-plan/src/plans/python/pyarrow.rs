@@ -335,10 +335,6 @@ fn series_to_arrow_literal_list(s: &Series) -> Option<Vec<ArrowLiteralValue>> {
     Some(out)
 }
 
-/// Build a structured [`ArrowPredicate`] IR from a polars expression node.
-///
-/// Returns `None` if the expression contains any sub-expression that cannot be
-/// pushed down to pyarrow.
 pub fn predicate_to_arrow_pred(
     predicate: Node,
     expr_arena: &Arena<AExpr>,
@@ -362,7 +358,7 @@ pub fn predicate_to_arrow_pred(
                         Some(ArrowPredicate::And(Box::new(left), Box::new(right)))
                     },
                     Operator::Or | Operator::LogicalOr => {
-                        Some(ArrowPredicate::Or(Box::new(left), Box::new(right)))
+                        Some(ArrowPredicate::Or(Box::new(left), Box::new(right)))``
                     },
                     Operator::Xor => Some(ArrowPredicate::Xor(Box::new(left), Box::new(right))),
                     _ => None,

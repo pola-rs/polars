@@ -2,36 +2,27 @@ use polars_core::datatypes::{TimeUnit, TimeZone};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-/// IR describing a predicate that can be pushed down to the pyarrow / iceberg
-/// reader in python.
-///
-/// This is produced on the Rust side in `polars-plan` and is later converted
-/// to a real `pyarrow.compute.Expression` via pyo3 in `polars-mem-engine`,
-/// so the Python side does not need to `eval()` a string.
+
+// This is meant to mimic `pyarrow.compute.Expression` API as closely as possible to make it
+// easier to convert directly to pyarrow predicates applied at the python/scan level.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ArrowPredicate {
-    /// Reference to a column by name
     Column(String),
-    /// Literal value
     Literal(LiteralValue),
-    /// Binary comparison: left OP right
+    // Binary ops
     Comparison {
         left: Box<ArrowPredicate>,
         op: ComparisonOp,
         right: Box<ArrowPredicate>,
     },
-    /// Logical AND of two predicates
+    // Logicals
     And(Box<ArrowPredicate>, Box<ArrowPredicate>),
-    /// Logical OR of two predicates
     Or(Box<ArrowPredicate>, Box<ArrowPredicate>),
-    /// Logical XOR of two predicates
     Xor(Box<ArrowPredicate>, Box<ArrowPredicate>),
-    /// Logical NOT of a predicate
     Not(Box<ArrowPredicate>),
-    /// `expr.is_null()`
+    // Methods that turn into masks
     IsNull(Box<ArrowPredicate>),
-    /// `expr.isin(values)`
     IsIn {
         expr: Box<ArrowPredicate>,
         values: Vec<LiteralValue>,
@@ -58,6 +49,7 @@ pub enum LiteralValue {
     String(String),
     Bool(bool),
     Date(i32),
+    // Should mimic python datetime module semantics
     Datetime {
         value: i64,
         time_unit: TimeUnit,

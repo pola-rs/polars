@@ -4,7 +4,6 @@ use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-// Convert an [`ArrowPredicate`] python PyArrow expression.
 pub fn arrow_predicate_to_pyobject<'py>(
     py: Python<'py>,
     pred: &ArrowPredicate,
@@ -13,12 +12,12 @@ pub fn arrow_predicate_to_pyobject<'py>(
     build_expr(py, &pc, pred)
 }
 
+// Conversion of ArrowPredicate enums to pyarrow expressions
 fn build_expr<'py>(
     py: Python<'py>,
     pc: &Bound<'py, PyAny>,
     p: &ArrowPredicate,
 ) -> PyResult<Bound<'py, PyAny>> {
-    // Build the pyarrow expression based on ArrowPredicate `p`.
     match p {
         ArrowPredicate::Column(name) => pc.call_method1("field", (name.as_str(),)),
         ArrowPredicate::Literal(lv) => {
@@ -28,6 +27,7 @@ fn build_expr<'py>(
         ArrowPredicate::Comparison { left, op, right } => {
             let l = build_expr(py, pc, left)?;
             let r = build_expr(py, pc, right)?;
+            // This would stop working if pyarrow changed their overloaded operators, btw.
             let method = match op {
                 ComparisonOp::Eq => "__eq__",
                 ComparisonOp::NotEq => "__ne__",
