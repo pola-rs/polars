@@ -1,7 +1,6 @@
 use std::marker::PhantomData;
 use std::ops::{ControlFlow, Range};
 
-use polars_error::PolarsResult;
 use polars_utils::collection::{Collection, CollectionWrap};
 
 use crate::traversal::edge_provider::NodeEdgesProvider;
@@ -68,8 +67,6 @@ where
     Key: Clone,
     Storage: GetNodeInputs<Key>,
 {
-    use ControlFlow as CF;
-
     let base_visit_stack_len = visit_stack.len();
     let base_edges_len = edges.len();
 

@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
 use crate::traversal::edge_provider::NodeEdgesProvider;
