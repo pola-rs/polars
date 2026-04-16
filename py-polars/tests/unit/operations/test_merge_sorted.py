@@ -351,9 +351,7 @@ def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
     lhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
     rhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
 )
-def test_merge_sorted_maintain_order_parametric(
-    lhs: pl.Series, rhs: pl.Series
-) -> None:
+def test_merge_sorted_maintain_order_parametric(lhs: pl.Series, rhs: pl.Series) -> None:
     left = (
         pl.DataFrame([lhs.sort()])
         .with_row_index("left_idx")
@@ -373,7 +371,9 @@ def test_merge_sorted_maintain_order_parametric(
         .select("key", "left_idx", "right_idx", "df")
     )
 
-    actual = left.lazy().merge_sorted(right.lazy(), key="key", maintain_order=True).collect()
+    actual = (
+        left.lazy().merge_sorted(right.lazy(), key="key", maintain_order=True).collect()
+    )
     expected = pl.concat([left, right]).sort(["key", "df"], maintain_order=True)
 
     assert_frame_equal(actual, expected)
