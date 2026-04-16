@@ -12,7 +12,7 @@ To install the Python wheel, use our private PyPi index with your license key.
 $ export LICENSE_KEY=$(cat license.json)
 $ uv auth login https://get.onprem.pola.rs/pypi/simple --token $LICENSE_KEY
 $ uv venv && source .venv/bin/activate
-$ uv pip install --index-url=https://get.onprem.pola.rs/pypi/simple polars-on-premises==0.1.0
+$ uv pip install --extra-index-url=https://get.onprem.pola.rs/pypi/simple polars-on-premises==0.1.0
 ```
 
 `polars-on-premises` is then available within your virtual environment and ready to get going.
