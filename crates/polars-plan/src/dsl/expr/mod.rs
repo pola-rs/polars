@@ -512,13 +512,11 @@ impl Expr {
     pub fn extract_usize(&self) -> PolarsResult<usize> {
         match self {
             Expr::Literal(n) => n.extract_usize(),
-            Expr::Cast { expr, dtype, .. } => {
+            Expr::Cast { expr, dtype, .. }
+                if dtype.as_literal().is_some_and(|dt| dt.is_integer()) =>
+            {
                 // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
-                if dtype.as_literal().is_some_and(|dt| dt.is_integer()) {
-                    expr.extract_usize()
-                } else {
-                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
-                }
+                expr.extract_usize()
             },
             _ => {
                 polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
@@ -537,12 +535,11 @@ impl Expr {
                 },
                 _ => unreachable!(),
             },
-            Expr::Cast { expr, dtype, .. } => {
-                if dtype.as_literal().is_some_and(|dt| dt.is_integer()) {
-                    expr.extract_i64()
-                } else {
-                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
-                }
+            Expr::Cast { expr, dtype, .. }
+                if dtype.as_literal().is_some_and(|dt| dt.is_integer()) =>
+            {
+                // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
+                expr.extract_i64()
             },
             _ => {
                 polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
@@ -638,6 +635,13 @@ impl EvalVariant {
             (Self::List | Self::ListAgg, DataType::List(inner)) => Ok(inner.as_ref()),
             #[cfg(feature = "dtype-array")]
             (Self::Array { .. } | Self::ArrayAgg, DataType::Array(inner, _)) => Ok(inner.as_ref()),
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg { .. }, dtype) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "expected Array datatype for array operation, got: {dtype:?}"
+                );
+            },
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -675,6 +679,13 @@ impl EvalVariant {
                     Ok(DataType::List(Box::new(output_element_dtype)))
                 }
             },
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg, dtype) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "expected Array datatype for array operation, got: {dtype:?}"
+                );
+            },
             (Self::Cumulative { min_samples: _ }, _) => Ok(output_element_dtype),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -693,16 +704,6 @@ impl EvalVariant {
             EvalVariant::List | EvalVariant::ListAgg => true,
             EvalVariant::Array { .. } | EvalVariant::ArrayAgg => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
-        }
-    }
-
-    pub fn is_length_preserving(&self) -> bool {
-        match self {
-            EvalVariant::List
-            | EvalVariant::ListAgg
-            | EvalVariant::Array { .. }
-            | EvalVariant::ArrayAgg
-            | EvalVariant::Cumulative { .. } => true,
         }
     }
 }

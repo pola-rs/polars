@@ -5,6 +5,7 @@ use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_error::feature_gated;
 use polars_io::ExternalCompression;
 use polars_io::pl_async::get_runtime;
 use polars_utils::format_pl_smallstr;
@@ -284,19 +285,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         expanded.push_str("\t...\n")
                     }
 
-                    if cfg!(feature = "python") {
-                        polars_bail!(
-                            ComputeError:
-                            "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                                This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
-                        )
-                    } else {
-                        polars_bail!(
-                            ComputeError:
-                            "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                                This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
-                        )
-                    };
+                    polars_bail!(
+                        ComputeError:
+                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
+                    )
                 },
             };
             let predicate_ae = to_expr_ir(
@@ -610,15 +603,48 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             ctxt.conversion_optimizer
                 .fill_scratch(&aggs, ctxt.expr_arena);
 
-            let lp = IR::GroupBy {
-                input,
-                keys,
-                aggs,
-                schema,
-                apply,
-                maintain_order,
-                options,
+            // Should not be constructable from Python API, as it has mutually exclusive
+            // `group_by().agg()` or `group_by().map_groups()`.
+            let has_aggs = !aggs.is_empty();
+            debug_assert!(!(apply.is_some() && has_aggs));
+            debug_assert!(
+                aggs.iter()
+                    .all(|eir| is_scalar_ae(eir.node(), ctxt.expr_arena))
+            );
+
+            // Rewrite empty group_by() -> select(aggs).
+            let lp = if !(options.is_dynamic() || options.is_rolling())
+                && keys
+                    .iter()
+                    .all(|eir| is_scalar_ae(eir.node(), ctxt.expr_arena))
+            {
+                polars_ensure!(
+                    apply.is_none(),
+                    ComputeError:
+                    "not implemented: map_groups with empty key exprs"
+                );
+
+                let mut exprs = keys;
+                exprs.extend(aggs);
+
+                IR::Select {
+                    input,
+                    expr: exprs,
+                    schema,
+                    options: ProjectionOptions::default(),
+                }
+            } else {
+                IR::GroupBy {
+                    input,
+                    keys,
+                    aggs,
+                    schema,
+                    apply,
+                    maintain_order,
+                    options,
+                }
             };
+
             return run_conversion(lp, ctxt, "group_by")
                 .map_err(|e| e.context(failed_here!(group_by)));
         },
@@ -903,7 +929,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         expr_arena: &mut Arena<AExpr>,
                     ) -> AExprBuilder {
                         let e = AExprBuilder::col(on.clone(), expr_arena);
-                        e.eq(
+                        e.eq_validity(
                             AExprBuilder::lit_scalar(
                                 Scalar::new(
                                     on_column.dtype().clone(),
@@ -1329,10 +1355,54 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::Sink { input, payload } => {
+            if let SinkType::Iceberg(state) = payload {
+                feature_gated!("python", {
+                    use polars_utils::python_convert_registry::get_python_convert_registry;
+                    use pyo3::{Python, intern};
+
+                    use crate::dsl::sink::SinkedPathsCallback;
+
+                    let py_sink_state = state.clone().into_sink_state_obj()?;
+
+                    let reg = get_python_convert_registry();
+
+                    let py_lf = (reg.to_py.dsl_plan)(input.as_ref())?;
+
+                    let out = Python::attach(|py| {
+                        py_sink_state.call_method1(
+                            py,
+                            intern!(py, "_attach_resolved_sink"),
+                            (py_lf,),
+                        )
+                    })?;
+
+                    let mut plan: Box<DslPlan> = (reg.from_py.dsl_plan)(out)?.downcast().unwrap();
+
+                    let DslPlan::Sink {
+                        input: _,
+                        payload:
+                            SinkType::Partitioned(PartitionedSinkOptions {
+                                unified_sink_args, ..
+                            }),
+                    } = plan.as_mut()
+                    else {
+                        unreachable!()
+                    };
+
+                    debug_assert!(unified_sink_args.sinked_paths_callback.is_none());
+
+                    unified_sink_args.sinked_paths_callback =
+                        Some(SinkedPathsCallback::IcebergCommit(state));
+
+                    return to_alp_impl(*plan, ctxt);
+                })
+            }
+
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
             let payload = match payload {
+                SinkType::Iceberg(_) => unreachable!(),
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(mut options) => {
@@ -1606,7 +1676,7 @@ fn resolve_group_by(
 
     // Add aggregation column(s)
     let aggs = rewrite_projections(aggs, &key_names, input_schema, opt_flags)?;
-    let aggs = to_expr_irs(
+    let mut aggs = to_expr_irs(
         aggs,
         &mut ExprToIRContext::new_with_opt_eager(expr_arena, input_schema, opt_flags),
     )?;
@@ -1624,10 +1694,13 @@ fn resolve_group_by(
         }
     }
 
-    // Coerce aggregation column(s) into List unless not needed (auto-implode)
-    debug_assert!(aggs_schema.len() == aggs.len());
-    for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(&aggs) {
+    assert!(aggs_schema.len() == aggs.len());
+    for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(aggs.iter_mut()) {
         if !expr.is_scalar(expr_arena) {
+            expr.set_node(expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                input: expr.node(),
+                maintain_order: true,
+            })));
             *dtype = dtype.clone().implode();
         }
     }

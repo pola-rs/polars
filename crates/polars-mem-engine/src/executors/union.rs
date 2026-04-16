@@ -1,4 +1,5 @@
 use polars_core::utils::concat_df;
+use recursive::recursive;
 
 use super::*;
 
@@ -8,6 +9,7 @@ pub(crate) struct UnionExec {
 }
 
 impl Executor for UnionExec {
+    #[recursive]
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
         #[cfg(debug_assertions)]

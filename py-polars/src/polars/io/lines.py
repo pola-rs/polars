@@ -37,7 +37,7 @@ def read_lines(
         | list[IO[bytes]]
     ),
     *,
-    name: str = "lines",
+    name: str = "line",
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -104,7 +104,7 @@ def read_lines(
     >>> pl.read_lines(b"Hello\nworld")
     shape: (2, 1)
     ┌───────┐
-    │ lines │
+    │ line  │
     │ ---   │
     │ str   │
     ╞═══════╡
@@ -139,7 +139,7 @@ def scan_lines(
         | list[IO[bytes]]
     ),
     *,
-    name: str = "lines",
+    name: str = "line",
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -206,7 +206,7 @@ def scan_lines(
     >>> pl.scan_lines(b"Hello\nworld").collect()
     shape: (2, 1)
     ┌───────┐
-    │ lines │
+    │ line  │
     │ ---   │
     │ str   │
     ╞═══════╡

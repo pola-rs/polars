@@ -8,6 +8,7 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::PlHashSet;
 use polars_core::schema::Schema;
+use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::file::Writeable;
@@ -19,6 +20,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::FileWriteFormat;
 use crate::dsl::file_provider::FileProviderType;
+use crate::dsl::iceberg_sink_state::IcebergSinkState;
 use crate::dsl::{AExpr, Expr, SpecialEq};
 use crate::plans::{ExprIR, ToFieldContext};
 use crate::prelude::PlanCallback;
@@ -33,6 +35,7 @@ pub struct UnifiedSinkArgs {
     pub maintain_order: bool,
     pub sync_on_close: SyncOnCloseType,
     pub cloud_options: Option<Arc<CloudOptions>>,
+    pub sinked_paths_callback: Option<SinkedPathsCallback>,
 }
 
 impl Default for UnifiedSinkArgs {
@@ -42,6 +45,7 @@ impl Default for UnifiedSinkArgs {
             maintain_order: true,
             sync_on_close: SyncOnCloseType::None,
             cloud_options: None,
+            sinked_paths_callback: None,
         }
     }
 }
@@ -225,6 +229,7 @@ pub enum SinkType {
     Callback(CallbackSinkType),
     File(FileSinkOptions),
     Partitioned(PartitionedSinkOptions),
+    Iceberg(IcebergSinkState),
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -346,6 +351,19 @@ impl SinkTypeIR {
             }) => unified_sink_args.maintain_order,
         }
     }
+
+    pub fn set_maintain_order(&mut self, maintain_order: bool) {
+        match self {
+            SinkTypeIR::Memory => {},
+            SinkTypeIR::Callback(s) => s.maintain_order = maintain_order,
+            SinkTypeIR::File(FileSinkOptions {
+                unified_sink_args, ..
+            })
+            | SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                unified_sink_args, ..
+            }) => unified_sink_args.maintain_order = maintain_order,
+        }
+    }
 }
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
@@ -448,4 +466,95 @@ pub struct FileSinkOptions {
     pub target: SinkTarget,
     pub file_format: FileWriteFormat,
     pub unified_sink_args: UnifiedSinkArgs,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub enum SinkedPathsCallback {
+    IcebergCommit(IcebergSinkState),
+    Callback(PlanCallback<SinkedPathsCallbackArgs, ()>),
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct SinkedPathsCallbackArgs {
+    pub path_info_list: Vec<SinkedPathInfo>,
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub struct SinkedPathInfo {
+    pub path: PlRefPath,
+}
+
+impl SinkedPathsCallback {
+    pub fn call(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<()> {
+        use PlanCallback as CB;
+
+        match self {
+            Self::IcebergCommit(sink_state) => {
+                feature_gated!("python", {
+                    use pyo3::Python;
+
+                    Python::attach(|py| {
+                        use pyo3::intern;
+                        use pyo3::types::PyList;
+
+                        let py_paths = PyList::empty(py);
+
+                        let SinkedPathsCallbackArgs { path_info_list } = args;
+
+                        for SinkedPathInfo { path } in path_info_list {
+                            use pyo3::types::PyListMethods;
+
+                            let path: &str = path.as_str();
+
+                            py_paths.append(path)?;
+                        }
+
+                        sink_state.clone().into_sink_state_obj()?.call_method1(
+                            py,
+                            intern!(py, "commit"),
+                            (py_paths,),
+                        )?;
+
+                        PolarsResult::Ok(())
+                    })
+                })
+            },
+            Self::Callback(CB::Rust(func)) => (func)(args),
+            #[cfg(feature = "python")]
+            Self::Callback(CB::Python(object)) => pyo3::Python::attach(|py| {
+                use pyo3::intern;
+                use pyo3::types::{PyAnyMethods, PyDict, PyList};
+
+                let SinkedPathsCallbackArgs { path_info_list } = args;
+
+                let py_paths = PyList::empty(py);
+
+                for SinkedPathInfo { path } in path_info_list {
+                    use pyo3::types::PyListMethods;
+
+                    let path: &str = path.as_str();
+
+                    py_paths.append(path)?;
+                }
+
+                let kwargs = PyDict::new(py);
+                kwargs.set_item(intern!(py, "paths"), py_paths)?;
+
+                let args_dataclass =
+                    polars_utils::python_convert_registry::get_python_convert_registry()
+                        .py_sinked_paths_callback_args_dataclass()
+                        .call(py, (), Some(&kwargs))?;
+
+                object.call1(py, (args_dataclass,))?;
+
+                Ok(())
+            }),
+        }
+    }
 }

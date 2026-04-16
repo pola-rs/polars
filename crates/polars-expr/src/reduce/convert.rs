@@ -11,6 +11,8 @@ use crate::reduce::bitwise::{
     new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
 };
 use crate::reduce::count::{CountReduce, NullCountReduce};
+#[cfg(feature = "cov")]
+use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
 use crate::reduce::implode::new_unordered_implode_reduction;
@@ -18,6 +20,8 @@ use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
+#[cfg(feature = "moment")]
+use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
 use crate::reduce::sum::new_sum_reduction;
 use crate::reduce::var_std::new_var_std_reduction;
 
@@ -232,6 +236,58 @@ pub fn into_reduction(
                 .unwrap();
             (reduction.new_empty(), input)
         },
+
+        #[cfg(feature = "cov")]
+        AExpr::Function {
+            input: inner_exprs,
+            function:
+                IRFunctionExpr::Correlation {
+                    method:
+                        method @ (polars_plan::plans::IRCorrelationMethod::Covariance(_)
+                        | polars_plan::plans::IRCorrelationMethod::Pearson),
+                },
+            options: _,
+        } => {
+            use polars_plan::plans::IRCorrelationMethod;
+            assert!(inner_exprs.len() == 2);
+            let input_x = inner_exprs[0].node();
+            let input_y = inner_exprs[1].node();
+            let dtype_x = get_dt(input_x)?;
+            let dtype_y = get_dt(input_y)?;
+            let gr: Box<dyn GroupedReduction> = match method {
+                IRCorrelationMethod::Covariance(ddof) => {
+                    new_cov_reduction(dtype_x, dtype_y, *ddof)?
+                },
+                IRCorrelationMethod::Pearson => new_pearson_corr_reduction(dtype_x, dtype_y)?,
+                _ => unreachable!(),
+            };
+            return Ok((gr, vec![input_x, input_y]));
+        },
+
+        #[cfg(feature = "moment")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Skew(bias),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_skew_reduction(get_dt(input)?, *bias)?;
+            (out, input)
+        },
+
+        #[cfg(feature = "moment")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Kurtosis(fisher, bias),
+            options: _,
+        } => {
+            assert!(inner_exprs.len() == 1);
+            let input = inner_exprs[0].node();
+            let out = new_kurtosis_reduction(get_dt(input)?, *fisher, *bias)?;
+            (out, input)
+        },
+
         _ => unreachable!(),
     };
     Ok((gr, vec![in_node]))

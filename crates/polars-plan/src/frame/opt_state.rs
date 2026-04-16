@@ -37,6 +37,10 @@ bitflags! {
         /// Check if operations are order dependent and unset maintaining_order if
         /// the order would not be observed.
         const CHECK_ORDER_OBSERVE = 1 << 15;
+        /// Collapse consecutive sort nodes and pull them up through selecting nodes.
+        const SORT_COLLAPSE = 1 << 16;
+        /// Is the query going to run on the GPU engine.
+        const GPU = 1 << 17;
     }
 }
 
@@ -72,11 +76,14 @@ impl OptFlags {
     pub fn fast_projection(&self) -> bool {
         self.contains(OptFlags::FAST_PROJECTION)
     }
+    pub fn gpu(&self) -> bool {
+        self.contains(OptFlags::GPU)
+    }
 }
 
 impl Default for OptFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::EAGER
+        Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::EAGER & !Self::GPU
     }
 }
 

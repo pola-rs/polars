@@ -216,7 +216,7 @@ class _DataTypeMappings:
 
     @property
     @functools.lru_cache  # noqa: B019
-    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.lib.DataType]:
+    def PY_TYPE_TO_ARROW_TYPE(self) -> dict[PythonDataType, pa.DataType]:
         return {
             bool: pa.bool_(),
             date: pa.date32(),
@@ -269,7 +269,7 @@ def dtype_to_py_type(dtype: PolarsDataType) -> PythonDataType:
         raise NotImplementedError(msg) from None
 
 
-def py_type_to_arrow_type(dtype: PythonDataType) -> pa.lib.DataType:
+def py_type_to_arrow_type(dtype: PythonDataType) -> pa.DataType:
     """Convert a Python dtype to an Arrow dtype."""
     try:
         return DataTypeMappings.PY_TYPE_TO_ARROW_TYPE[dtype]

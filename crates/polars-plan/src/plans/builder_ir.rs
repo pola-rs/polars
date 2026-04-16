@@ -273,7 +273,7 @@ impl<'a> IRBuilder<'a> {
     pub fn group_by(
         self,
         keys: Vec<ExprIR>,
-        aggs: Vec<ExprIR>,
+        mut aggs: Vec<ExprIR>,
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
@@ -301,9 +301,13 @@ impl<'a> IRBuilder<'a> {
         let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena)?;
 
         // Coerce aggregation column(s) into List unless not needed (auto-implode)
-        debug_assert!(aggs_schema.len() == aggs.len());
-        for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(&aggs) {
+        assert!(aggs_schema.len() == aggs.len());
+        for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(aggs.iter_mut()) {
             if !expr.is_scalar(self.expr_arena) {
+                expr.set_node(self.expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                    input: expr.node(),
+                    maintain_order: true,
+                })));
                 *dtype = dtype.clone().implode();
             }
         }

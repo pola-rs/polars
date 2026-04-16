@@ -15,6 +15,7 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
+    from polars.io.partition import SinkedPathsCallbackArgs
     from tests.conftest import PlMonkeyPatch
 
 
@@ -431,3 +432,42 @@ def test_sink_file_provider_forbid_parent_dir_component(s: str) -> None:
     expect_err(f"{s}..")
     expect_err(f"..{s}")
     expect_err(f"{s}..{s}")
+
+
+@pytest.mark.write_disk
+def test_sinked_paths_callback(tmp_path: Path) -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+
+    out_path = tmp_path / "a.parquet"
+    lst: list[SinkedPathsCallbackArgs] = []
+    lf.sink_parquet(out_path, _sinked_paths_callback=lst.append)
+
+    assert [Path(x) for x in lst[0].paths] == [out_path]
+
+    out_dir = tmp_path / "multiple"
+    lst = []
+    lf.sink_parquet(
+        pl.PartitionBy(
+            out_dir,
+            max_rows_per_file=1,
+        ),
+        _sinked_paths_callback=lst.append,
+    )
+
+    assert [Path(x) for x in lst[0].paths] == [
+        out_dir / "00000000.parquet",
+        out_dir / "00000001.parquet",
+        out_dir / "00000002.parquet",
+        out_dir / "00000003.parquet",
+        out_dir / "00000004.parquet",
+    ]
+
+    with pytest.raises(ComputeError, match="encountered non-path sink target"):
+        lf.sink_parquet(
+            pl.PartitionBy(
+                out_dir,
+                file_path_provider=lambda _: io.BytesIO(),
+                max_rows_per_file=1,
+            ),
+            _sinked_paths_callback=lambda _: None,
+        )

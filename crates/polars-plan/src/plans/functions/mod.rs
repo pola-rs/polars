@@ -231,10 +231,8 @@ impl FunctionIR {
             },
             RowIndex { name, offset, .. } => df.with_row_index(name.clone(), *offset),
             Hint(hint) => {
-                #[expect(irrefutable_let_patterns)]
-                if let HintIR::Sorted(s) = &hint
-                    && let Some(s) = s.first()
-                {
+                let HintIR::Sorted(s) = &hint;
+                if let Some(s) = s.first() {
                     let idx = df.try_get_column_index(&s.column)?;
                     let col = &mut unsafe { df.columns_mut_retain_schema() }[idx];
                     if let Some(d) = s.descending {

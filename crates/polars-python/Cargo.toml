@@ -20,6 +20,7 @@ polars-ffi = { workspace = true }
 polars-io = { workspace = true }
 polars-lazy = { workspace = true, features = ["python"] }
 polars-mem-engine = { workspace = true, features = ["python"] }
+polars-ooc = { workspace = true, default-features = false }
 polars-ops = { workspace = true, features = ["bitwise"] }
 polars-parquet = { workspace = true, optional = true }
 polars-plan = { workspace = true }
@@ -51,22 +52,11 @@ recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 uuid = { workspace = true }
 
-[target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
-mimalloc = { version = "0.1", default-features = false }
-
-# Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
-[target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten")))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"] }
-
-[target.'cfg(all(target_family = "unix", target_os = "macos"))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"] }
-
 [dependencies.polars]
 workspace = true
 features = [
   "abs",
   "approx_unique",
-  "array_any_all",
   "arg_where",
   "bitwise",
   "business",
@@ -189,8 +179,6 @@ list_count = ["polars/list_count"]
 array_count = ["polars/array_count", "polars/dtype-array"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
-list_any_all = ["polars/list_any_all"]
-array_any_all = ["polars/array_any_all", "polars/dtype-array"]
 list_drop_nulls = ["polars/list_drop_nulls"]
 list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
@@ -230,7 +218,6 @@ dtypes = [
 
 operations = [
   "approx_unique",
-  "array_any_all",
   "array_count",
   "bitwise",
   "is_in",
@@ -242,7 +229,6 @@ operations = [
   "list_filter",
   "list_count",
   "list_sets",
-  "list_any_all",
   "list_drop_nulls",
   "list_sample",
   "cutqcut",
@@ -291,7 +277,9 @@ nightly = ["polars/nightly"]
 pymethods = []
 allow_unused = []
 
-full = [
+fast_alloc = ["polars-ooc/fast_alloc"]
+
+full_functionality = [
   "async",
   "pymethods",
   "optimizations",
@@ -308,6 +296,8 @@ full = [
   "new_streaming",
 ]
 
+full = ["full_functionality", "fast_alloc"]
+
 rt32 = []
 rt64 = ["polars/bigidx"]
 rtcompat = ["polars/bigidx"]
@@ -319,7 +309,6 @@ rtcompat = ["polars/bigidx"]
 default = [
   "full",
 ]
-default_alloc = []
 
 [lints]
 workspace = true

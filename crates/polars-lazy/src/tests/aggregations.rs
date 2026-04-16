@@ -551,6 +551,7 @@ fn test_take_in_groups() -> PolarsResult<()> {
         .select([col("B")
             .get(lit(0u32), false)
             .over([col("fruits")])
+            .unwrap()
             .alias("taken")])
         .collect()?;
 

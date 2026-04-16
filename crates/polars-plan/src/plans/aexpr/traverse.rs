@@ -1,6 +1,96 @@
+use std::ops::ControlFlow;
+
 use super::*;
+use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
+use crate::traversal::visitor::NodeVisitor;
 
 impl AExpr {
+    /// Push the inputs of this node to the given container, in field declaration order.
+    ///
+    /// This function and its users must be updated if the field declaration order changes.
+    pub fn inputs<E>(&self, container: &mut E)
+    where
+        E: Extend<Node>,
+    {
+        use AExpr::*;
+
+        match self {
+            Element | Column(_) | Literal(_) | Len => {},
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => {},
+            BinaryExpr { left, op: _, right } => {
+                container.extend([*left, *right]);
+            },
+            Cast { expr, .. } => container.extend([*expr]),
+            Sort { expr, .. } => container.extend([*expr]),
+            Gather { expr, idx, .. } => {
+                container.extend([*expr, *idx]);
+            },
+            SortBy { expr, by, .. } => {
+                container.extend([*expr]);
+                container.extend(by.iter().cloned());
+            },
+            Filter { input, by } => {
+                container.extend([*input, *by]);
+            },
+            Agg(agg_e) => match agg_e.get_input() {
+                NodeInputs::Single(node) => container.extend([node]),
+                NodeInputs::Many(nodes) => container.extend(nodes),
+                NodeInputs::Leaf => {},
+            },
+            Ternary {
+                truthy,
+                falsy,
+                predicate,
+            } => {
+                container.extend([*predicate, *truthy, *falsy]);
+            },
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousAgg { input, .. } => container.extend(input.iter().map(|e| e.node())),
+            Explode { expr: e, .. } => container.extend([*e]),
+            #[cfg(feature = "dynamic_group_by")]
+            Rolling {
+                function,
+                index_column,
+                period: _,
+                offset: _,
+                closed_window: _,
+            } => {
+                container.extend([*function, *index_column]);
+            },
+            Over {
+                function,
+                partition_by,
+                order_by,
+                mapping: _,
+            } => {
+                container.extend([*function]);
+                container.extend(partition_by.iter().cloned());
+                container.extend(order_by.as_ref().map(|(n, _)| *n));
+            },
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => {
+                container.extend([*expr, *evaluation]);
+            },
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => {
+                container.extend([*expr]);
+                container.extend(evaluation.iter().map(|x| x.node()));
+            },
+            Slice {
+                input,
+                offset,
+                length,
+            } => {
+                container.extend([*input, *offset, *length]);
+            },
+        }
+    }
+
     /// Push the inputs of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
     ///
@@ -514,5 +604,36 @@ impl NodeInputs {
             NodeInputs::Many(nodes) => nodes[0],
             NodeInputs::Leaf => panic!(),
         }
+    }
+}
+
+pub fn aexpr_tree_traversal<ArenaT, Edge, BreakValue>(
+    root_ae_node: Node,
+    expr_arena: &mut ArenaT,
+    visit_stack: &mut Vec<Node>,
+    edges: &mut Vec<Edge>,
+    visitor: &mut dyn NodeVisitor<Key = Node, Storage = ArenaT, Edge = Edge, BreakValue = BreakValue>,
+) -> ControlFlow<BreakValue, Edge>
+where
+    ArenaT: GetNodeInputs<Node>,
+{
+    tree_traversal(root_ae_node, expr_arena, visit_stack, edges, visitor)
+}
+
+impl GetNodeInputs<Node> for Arena<AExpr> {
+    fn push_inputs_for_key<C>(&self, key: Node, container: &mut C)
+    where
+        C: Extend<Node>,
+    {
+        self.get(key).inputs(container);
+    }
+}
+
+impl GetNodeInputs<Node> for &Arena<AExpr> {
+    fn push_inputs_for_key<C>(&self, key: Node, container: &mut C)
+    where
+        C: Extend<Node>,
+    {
+        self.get(key).inputs(container);
     }
 }

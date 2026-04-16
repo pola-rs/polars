@@ -1,10 +1,9 @@
-use std::sync::LazyLock;
+use std::sync::Arc;
 
 use crossbeam_queue::ArrayQueue;
 use polars_core::POOL;
 use polars_error::PolarsResult;
-use polars_ooc::AccessPattern::Fifo;
-use polars_ooc::{Token, mm};
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -25,36 +24,33 @@ pub mod range_join;
 pub mod semi_anti_join;
 mod utils;
 
-static JOIN_SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
-    std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
-        .map(|limit| limit.parse().unwrap())
-        .unwrap_or(10_000_000)
-});
-
 // If one side is this much bigger than the other side we'll always use the
 // smaller side as the build side without checking cardinalities.
 const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 
 // TODO: improve, generalize this, and move it away from here.
 struct BufferedStream {
-    morsels: ArrayQueue<(Token, MorselSeq)>,
+    morsels: ArrayQueue<(SpillFrame, MorselSeq)>,
     post_buffer_offset: MorselSeq,
+    _spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl BufferedStream {
     pub fn new(morsels: Vec<Morsel>, start_offset: MorselSeq) -> Self {
         // Relabel so we can insert into parallel streams later.
         let mut seq = start_offset;
+        let ctx = MostRecentSpillContext::new();
         let queue = ArrayQueue::new(morsels.len().max(1));
         for morsel in morsels {
-            let token = mm().store_blocking(morsel.into_df(), Fifo);
-            queue.push((token, seq)).unwrap();
+            let sf = SpillFrame::new_blocking(morsel.into_df(), &*ctx);
+            queue.push((sf, seq)).unwrap();
             seq = seq.successor();
         }
 
         Self {
             morsels: queue,
             post_buffer_offset: seq,
+            _spill_ctx: ctx,
         }
     }
 
@@ -86,10 +82,10 @@ impl BufferedStream {
                 // Act like an InMemorySource node until cached morsels are consumed.
                 let wait_group = WaitGroup::default();
                 loop {
-                    let Some((token, seq)) = self.morsels.pop() else {
+                    let Some((sf, seq)) = self.morsels.pop() else {
                         break;
                     };
-                    let df = token.into_df().await;
+                    let df = sf.into_df().await;
                     let mut morsel = Morsel::new(df, seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if new_send.send(morsel).await.is_err() {
@@ -126,6 +122,7 @@ impl Default for BufferedStream {
         Self {
             morsels: ArrayQueue::new(1),
             post_buffer_offset: MorselSeq::default(),
+            _spill_ctx: MostRecentSpillContext::new(),
         }
     }
 }

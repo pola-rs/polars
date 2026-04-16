@@ -380,7 +380,7 @@ def scan_ipc(
     ),
     *,
     n_rows: int | None = None,
-    cache: bool = True,
+    cache: bool | None = None,
     rechunk: bool = False,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -416,6 +416,9 @@ def scan_ipc(
         Stop reading from IPC file after reading `n_rows`.
     cache
         Cache the result after reading.
+
+        .. deprecated:: 1.40.0
+            File cache is no longer supported.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
     row_index_name
@@ -452,6 +455,9 @@ def scan_ipc(
         Try to memory map the file. This can greatly improve performance on repeated
         queries as the OS may cache pages.
         Only uncompressed IPC files can be memory mapped.
+
+        .. deprecated:: 1.40.0
+            Controlling memory map behavior is no longer supported.
     retries
         Number of retries if accessing a cloud instance fails.
 
@@ -462,8 +468,8 @@ def scan_ipc(
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
         (which defaults to 1 hour) if not given.
 
-        .. deprecated:: 1.37.1
-            Pass {"file_cache_ttl": n} via `storage_options` instead.
+        .. deprecated:: 1.40.0
+            File cache is no longer supported.
     hive_partitioning
         Infer statistics and schema from Hive partitioned URL and use them
         to prune reads. This is unset by default (i.e. `None`), meaning it is
@@ -492,11 +498,11 @@ def scan_ipc(
         storage_options = storage_options or {}
         storage_options["max_retries"] = retries
 
-    if file_cache_ttl is not None:
-        msg = "the `file_cache_ttl` parameter was deprecated in 1.37.1; specify 'file_cache_ttl' in `storage_options` instead."
+    if file_cache_ttl is not None or cache is not None:
+        msg = "file cache is no longer supported as of 1.40.0."
         issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["file_cache_ttl"] = file_cache_ttl
+
+    cache_deprecated = False
 
     credential_provider_builder = _init_credential_provider_builder(
         credential_provider, sources, storage_options, "scan_parquet"
@@ -519,7 +525,7 @@ def scan_ipc(
             hive_schema=hive_schema,
             try_parse_hive_dates=try_parse_hive_dates,
             rechunk=rechunk,
-            cache=cache,
+            cache=cache_deprecated,
             storage_options=storage_options,
             credential_provider=credential_provider_builder,
         ),

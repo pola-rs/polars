@@ -252,7 +252,18 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Count { include_nulls } => {
-                    if include_nulls || ac.get_values().null_count() == 0 {
+                    let values_have_no_nulls = match ac.agg_state() {
+                        AggState::AggregatedList(s) => {
+                            let list = s.list()?;
+                            list.null_count() == 0
+                                && list
+                                    .downcast_iter()
+                                    .all(|arr| arr.values().null_count() == 0)
+                        },
+                        _ => ac.get_values().null_count() == 0,
+                    };
+
+                    if include_nulls || values_have_no_nulls {
                         // a few fast paths that prevent materializing new groups
                         match ac.update_groups {
                             UpdateGroups::WithSeriesLen => {

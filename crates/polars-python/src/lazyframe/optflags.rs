@@ -58,7 +58,9 @@ flag_getter_setters! {
     (COMM_SUBEXPR_ELIM, get_comm_subexpr_elim, set_comm_subexpr_elim, clear=true)
     (CHECK_ORDER_OBSERVE, get_check_order_observe, set_check_order_observe, clear=true)
     (FAST_PROJECTION, get_fast_projection, set_fast_projection, clear=true)
+    (SORT_COLLAPSE, get_sort_collapse, set_sort_collapse, clear=true)
 
     (EAGER, get_eager, set_eager, clear=true)
     (NEW_STREAMING, get_streaming, set_streaming, clear=true)
+    (GPU, get_gpu, set_gpu, clear=true)
 }

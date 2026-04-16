@@ -78,7 +78,8 @@ impl Statistics {
         statistics: &ParquetStatistics,
         primitive_type: PrimitiveType,
     ) -> ParquetResult<Self> {
-        use {PhysicalType as T, PrimitiveStatistics as PrimStat};
+        use PhysicalType as T;
+        use PrimitiveStatistics as PrimStat;
         let mut stats: Self = match primitive_type.physical_type {
             T::ByteArray => BinaryStatistics::deserialize(statistics, primitive_type)?.into(),
             T::Boolean => BooleanStatistics::deserialize(statistics)?.into(),

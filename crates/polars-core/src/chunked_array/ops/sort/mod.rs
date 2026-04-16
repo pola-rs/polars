@@ -16,6 +16,8 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::legacy::trusted_len::TrustedLenPush;
 use compare_inner::NonNull;
 use polars_buffer::Buffer;
+use polars_utils::nulls::IsNull;
+use polars_utils::sort::reorder_cmp;
 use rayon::prelude::*;
 pub use slice::*;
 
@@ -352,13 +354,12 @@ fn ordering_other_columns<'a>(
     idx_a: usize,
     idx_b: usize,
 ) -> Ordering {
-    for ((cmp, descending), null_last) in compare_inner.iter().zip(descending).zip(nulls_last) {
+    for ((cmp, descending), nulls_last) in compare_inner.iter().zip(descending).zip(nulls_last) {
         // SAFETY: indices are in bounds
-        let ordering = unsafe { cmp.cmp_element_unchecked(idx_a, idx_b, null_last ^ descending) };
-        match (ordering, descending) {
-            (Ordering::Equal, _) => continue,
-            (_, true) => return ordering.reverse(),
-            _ => return ordering,
+        let ordering =
+            unsafe { (**cmp).cmp_element_unchecked(idx_a, idx_b, *descending, *nulls_last) };
+        if !ordering.is_eq() {
+            return ordering;
         }
     }
     // all arrays/columns exhausted, ordering equal it is.
@@ -751,13 +752,19 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             }
         }
 
-        Self::from_chunk_iter(
+        let mut ca = Self::from_chunk_iter(
             self.name().clone(),
             Some(BooleanArray::from_data_default(
                 bitmap.freeze(),
                 validity.map(|v| v.freeze()),
             )),
-        )
+        );
+        ca.set_sorted_flag(if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        });
+        ca
     }
 
     fn sort(&self, descending: bool) -> BooleanChunked {

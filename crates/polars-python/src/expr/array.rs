@@ -56,14 +56,6 @@ impl PyExpr {
         self.inner.clone().arr().to_list().into()
     }
 
-    fn arr_all(&self) -> Self {
-        self.inner.clone().arr().all().into()
-    }
-
-    fn arr_any(&self) -> Self {
-        self.inner.clone().arr().any().into()
-    }
-
     fn arr_sort(&self, descending: bool, nulls_last: bool) -> Self {
         self.inner
             .clone()

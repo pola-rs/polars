@@ -5,6 +5,7 @@ use polars_ops::frame::_merge_sorted_dfs;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 
@@ -134,12 +135,12 @@ fn find_mergeable(
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
             let gt_mask = right_key.gt(&left_key_last)?;
-            right_cutoff = gt_mask.downcast_as_array().values().leading_zeros();
+            right_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
         } else if left_key_last.gt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
             let gt_mask = left_key.gt(&right_key_last)?;
-            left_cutoff = gt_mask.downcast_as_array().values().leading_zeros();
+            left_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
         }
 
         let left_mergeable: DataFrame;
@@ -444,6 +445,7 @@ impl ComputeNode for MergeSortedNode {
                 join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
                     let ideal_morsel_size = get_ideal_morsel_size();
                     scope.spawn_task(TaskPriority::High, async move {
+                        let wait_group = WaitGroup::default();
                         while let Ok((mut left, mut right)) = recv.recv().await {
                             // When we are flushing the buffer, we will just send one morsel from
                             // the input. We don't want to mess with the source token or wait group
@@ -457,9 +459,7 @@ impl ComputeNode for MergeSortedNode {
                                 continue;
                             }
 
-                            let (mut left, seq, source_token, wg) = left.into_inner();
-                            assert!(wg.is_none());
-
+                            let (mut left, seq, source_token, _) = left.into_inner();
                             let left_s = left
                                 .columns()
                                 .last()
@@ -490,16 +490,19 @@ impl ComputeNode for MergeSortedNode {
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
-                                let morsel = Morsel::new(m2, seq, source_token.clone());
+                                let mut morsel = Morsel::new(m2, seq, source_token.clone());
+                                morsel.set_consume_token(wait_group.token());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
                             } else {
-                                let morsel = Morsel::new(merged, seq, source_token.clone());
+                                let mut morsel = Morsel::new(merged, seq, source_token.clone());
+                                morsel.set_consume_token(wait_group.token());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
                             }
+                            wait_group.wait().await;
                         }
 
                         Ok(())

@@ -15,12 +15,12 @@ from polars._utils.convert import (
     to_py_time,
     to_py_timedelta,
 )
-from polars._utils.various import NoDefault, _polars_warn, is_column, no_default
+from polars._utils.various import NO_DEFAULT, NoDefault, _polars_warn, is_column
 
 __all__ = [
     "NoDefault",
     "is_column",
-    "no_default",
+    "NO_DEFAULT",
     # Required for Rust bindings
     "date_to_int",
     "datetime_to_int",

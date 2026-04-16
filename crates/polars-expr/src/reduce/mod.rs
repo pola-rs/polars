@@ -6,6 +6,8 @@ mod approx_n_unique;
 mod bitwise;
 mod convert;
 mod count;
+#[cfg(feature = "cov")]
+mod cov;
 mod first_last;
 mod first_last_nonnull;
 mod implode;
@@ -13,6 +15,8 @@ mod len;
 mod mean;
 mod min_max;
 mod min_max_by;
+#[cfg(feature = "moment")]
+mod skew_kurtosis;
 mod sum;
 mod var_std;
 

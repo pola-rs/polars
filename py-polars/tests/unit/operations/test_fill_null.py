@@ -169,3 +169,14 @@ def test_fill_streaming_matches_in_memory(
     expected = q.collect(engine="in-memory")
     result = q.collect(engine="streaming")
     assert_series_equal(result["a"], expected["a"])
+
+
+def test_fill_null_null_dtype_24451() -> None:
+    # Test that fill_null changes Null dtype to fill value's dtype and fills values
+    df = pl.DataFrame({"col1": [None, None, None], "col2": [None, None, None]})
+
+    result = df.fill_null("rabbit")
+    assert result.dtypes == [pl.String, pl.String]
+    # Values are filled with the fill value
+    assert result["col1"].to_list() == ["rabbit", "rabbit", "rabbit"]
+    assert result["col2"].to_list() == ["rabbit", "rabbit", "rabbit"]

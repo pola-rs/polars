@@ -25,7 +25,9 @@ use sqlparser::ast::{
     UnaryOperator as SQLUnaryOperator, Value as SQLValue, ValueWithSpan,
 };
 use sqlparser::dialect::GenericDialect;
+use sqlparser::keywords;
 use sqlparser::parser::{Parser, ParserOptions};
+use sqlparser::tokenizer::Token;
 
 use crate::SQLContext;
 use crate::functions::SQLFunctionVisitor;
@@ -1294,6 +1296,7 @@ impl SQLExprVisitor<'_> {
 /// ```
 pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
     let mut ctx = SQLContext::new();
+    let s = s.as_ref();
 
     let mut parser = Parser::new(&GenericDialect);
     parser = parser.with_options(ParserOptions {
@@ -1301,18 +1304,34 @@ pub fn sql_expr<S: AsRef<str>>(s: S) -> PolarsResult<Expr> {
         ..Default::default()
     });
 
-    let mut ast = parser
-        .try_with_sql(s.as_ref())
-        .map_err(to_sql_interface_err)?;
-    let expr = ast.parse_select_item().map_err(to_sql_interface_err)?;
+    // `sql_expr` should only translate expressions, not statements or clauses
+    let mut ast = parser.try_with_sql(s).map_err(to_sql_interface_err)?;
+    if let Token::Word(word) = &ast.peek_token().token {
+        if keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&word.keyword) {
+            polars_bail!(SQLInterface: "expected an expression (found '{}' clause)", word.value)
+        }
+    }
+    let expr = ast
+        .parse_select_item()
+        .map_err(|_| polars_err!(SQLInterface: "unable to parse '{}' as Expr", s))?;
 
+    // ensure all input was consumed; remaining tokens indicate invalid trailing SQL
+    match &ast.peek_token().token {
+        Token::EOF => {},
+        Token::Word(word) if keywords::RESERVED_FOR_COLUMN_ALIAS.contains(&word.keyword) => {
+            polars_bail!(SQLInterface: "expected an expression (found '{}' clause)", word.value)
+        },
+        token => {
+            polars_bail!(SQLInterface: "invalid expression (found unexpected token '{}')", token)
+        },
+    }
     Ok(match &expr {
         SelectItem::ExprWithAlias { expr, alias } => {
             let expr = parse_sql_expr(expr, &mut ctx, None)?;
             expr.alias(alias.value.as_str())
         },
         SelectItem::UnnamedExpr(expr) => parse_sql_expr(expr, &mut ctx, None)?,
-        _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s.as_ref()),
+        _ => polars_bail!(SQLInterface: "unable to parse '{}' as Expr", s),
     })
 }
 

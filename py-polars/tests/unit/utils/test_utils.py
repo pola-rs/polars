@@ -15,6 +15,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,
@@ -296,3 +297,26 @@ def test_is_str_sequence_check(
     assert is_str_sequence(sequence, include_series=include_series) == expected
     if expected:
         assert is_sequence(sequence, include_series=include_series)
+
+
+def test_reduce_balanced() -> None:
+    values = [[0], [1], [2], [3], [4]]
+
+    seen = []
+
+    def reducer(left: list[int], right: list[int]) -> list[int]:
+        seen.append((left, right))
+        return left + right
+
+    acc = reduce_balanced(reducer, values)
+
+    assert acc == [0, 1, 2, 3, 4]
+    assert seen == [
+        ([0], [1]),
+        ([2], [3]),
+        ([0, 1], [2, 3]),
+        ([0, 1, 2, 3], [4]),
+    ]
+
+    with pytest.raises(TypeError):
+        reduce_balanced(reducer, [])
