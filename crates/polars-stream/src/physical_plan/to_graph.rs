@@ -1265,6 +1265,10 @@ fn to_graph_rec<'a>(
             right_on,
             tmp_left_key_col,
             tmp_right_key_col,
+            left_by,
+            right_by,
+            by_descending,
+            by_nulls_last,
             args,
         } => {
             let args = args.clone();
@@ -1272,6 +1276,7 @@ fn to_graph_rec<'a>(
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             let left_input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
             let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
+
             #[cfg(feature = "asof_join")]
             {
                 ctx.graph.add_node(
@@ -1282,6 +1287,10 @@ fn to_graph_rec<'a>(
                         right_on.clone(),
                         tmp_left_key_col.clone(),
                         tmp_right_key_col.clone(),
+                        left_by.clone(),
+                        right_by.clone(),
+                        by_descending.clone(),
+                        by_nulls_last.clone(),
                         args,
                     ),
                     [

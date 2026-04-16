@@ -42,10 +42,6 @@ pub(super) fn convert_functions(
                 A::Var(v) => IA::Var(v),
                 A::Mean => IA::Mean,
                 A::Median => IA::Median,
-                #[cfg(feature = "array_any_all")]
-                A::Any => IA::Any,
-                #[cfg(feature = "array_any_all")]
-                A::All => IA::All,
                 A::Sort(sort_options) => IA::Sort(sort_options),
                 A::Reverse => IA::Reverse,
                 A::ArgMin => IA::ArgMin,
@@ -182,10 +178,6 @@ pub(super) fn convert_functions(
                 L::NUnique => IL::NUnique,
                 #[cfg(feature = "list_sets")]
                 L::SetOperation(set_operation) => IL::SetOperation(set_operation),
-                #[cfg(feature = "list_any_all")]
-                L::Any => IL::Any,
-                #[cfg(feature = "list_any_all")]
-                L::All => IL::All,
                 L::Join(v) => IL::Join(v),
                 #[cfg(feature = "dtype-array")]
                 L::ToArray(v) => IL::ToArray(v),

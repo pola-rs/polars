@@ -248,7 +248,7 @@ fn try_lower_elementwise_scalar_agg_expr(
     }
 
     if is_input_independent(expr, expr_arena, expr_cache) {
-        if expr_arena.get(expr).is_scalar(expr_arena) {
+        if is_scalar_ae(expr, expr_arena) {
             return Some(expr);
         } else {
             let agg = IRAggExpr::Implode {

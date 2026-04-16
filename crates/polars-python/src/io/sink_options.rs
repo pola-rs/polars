@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars::prelude::sink::SinkedPathsCallback;
 use polars::prelude::sync_on_close::SyncOnCloseType;
 use polars::prelude::{CloudScheme, PlanCallback, SpecialEq, UnifiedSinkArgs};
 use polars_utils::python_function::PythonObject;
@@ -53,8 +54,11 @@ impl PySinkOptions<'_> {
             maintain_order,
             sync_on_close,
             cloud_options: cloud_options.map(Arc::new),
-            sinked_paths_callback: sinked_paths_callback
-                .map(|x| PlanCallback::Python(SpecialEq::new(Arc::new(PythonObject(x))))),
+            sinked_paths_callback: sinked_paths_callback.map(|x| {
+                SinkedPathsCallback::Callback(PlanCallback::Python(SpecialEq::new(Arc::new(
+                    PythonObject(x),
+                ))))
+            }),
         };
 
         Ok(unified_sink_args)

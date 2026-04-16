@@ -2,6 +2,7 @@ use super::functions::convert_functions;
 use super::*;
 use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 use crate::plans::iterator::ArenaExprIter;
+use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl(expr, ctx)?;
@@ -518,7 +519,11 @@ pub(super) fn to_aexpr_impl(
                 EvalVariant::List | EvalVariant::ListAgg => {},
                 EvalVariant::Array { as_list } => {
                     polars_ensure!(
-                        as_list || is_length_preserving_ae(evaluation, ctx.arena),
+                        as_list ||
+                        matches!(
+                            aexpr_projection_height_rec(evaluation, ctx.arena, &mut Default::default(), &mut Default::default()),
+                            ExprProjectionHeight::Column
+                        ),
                         InvalidOperation: "`array.eval` is not allowed with non-length preserving expressions. Enable `as_list` if you want to output a variable amount of items per row."
                     )
                 },

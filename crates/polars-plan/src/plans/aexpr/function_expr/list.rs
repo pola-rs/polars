@@ -49,10 +49,6 @@ pub enum IRListFunction {
     NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
-    #[cfg(feature = "list_any_all")]
-    Any,
-    #[cfg(feature = "list_any_all")]
-    All,
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
@@ -129,10 +125,6 @@ impl IRListFunction {
             Length => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_sets")]
             SetOperation(_) => mapper.ensure_is_list()?.with_same_dtype(),
-            #[cfg(feature = "list_any_all")]
-            Any => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
-            #[cfg(feature = "list_any_all")]
-            All => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
             Join(_) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
                     polars_bail!(
@@ -213,8 +205,6 @@ impl IRListFunction {
             | L::Unique(_)
             | L::Join(_)
             | L::NUnique => FunctionOptions::elementwise(),
-            #[cfg(feature = "list_any_all")]
-            L::Any | L::All => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-array")]
             L::ToArray(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
@@ -283,10 +273,6 @@ impl Display for IRListFunction {
             NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
-            #[cfg(feature = "list_any_all")]
-            Any => "any",
-            #[cfg(feature = "list_any_all")]
-            All => "all",
             Join(_) => "join",
             #[cfg(feature = "dtype-array")]
             ToArray(_) => "to_array",

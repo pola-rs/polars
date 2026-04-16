@@ -5,6 +5,7 @@ use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_error::feature_gated;
 use polars_io::ExternalCompression;
 use polars_io::pl_async::get_runtime;
 use polars_utils::format_pl_smallstr;
@@ -1354,10 +1355,54 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             }
         },
         DslPlan::Sink { input, payload } => {
+            if let SinkType::Iceberg(state) = payload {
+                feature_gated!("python", {
+                    use polars_utils::python_convert_registry::get_python_convert_registry;
+                    use pyo3::{Python, intern};
+
+                    use crate::dsl::sink::SinkedPathsCallback;
+
+                    let py_sink_state = state.clone().into_sink_state_obj()?;
+
+                    let reg = get_python_convert_registry();
+
+                    let py_lf = (reg.to_py.dsl_plan)(input.as_ref())?;
+
+                    let out = Python::attach(|py| {
+                        py_sink_state.call_method1(
+                            py,
+                            intern!(py, "_attach_resolved_sink"),
+                            (py_lf,),
+                        )
+                    })?;
+
+                    let mut plan: Box<DslPlan> = (reg.from_py.dsl_plan)(out)?.downcast().unwrap();
+
+                    let DslPlan::Sink {
+                        input: _,
+                        payload:
+                            SinkType::Partitioned(PartitionedSinkOptions {
+                                unified_sink_args, ..
+                            }),
+                    } = plan.as_mut()
+                    else {
+                        unreachable!()
+                    };
+
+                    debug_assert!(unified_sink_args.sinked_paths_callback.is_none());
+
+                    unified_sink_args.sinked_paths_callback =
+                        Some(SinkedPathsCallback::IcebergCommit(state));
+
+                    return to_alp_impl(*plan, ctxt);
+                })
+            }
+
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
             let payload = match payload {
+                SinkType::Iceberg(_) => unreachable!(),
                 SinkType::Memory => SinkTypeIR::Memory,
                 SinkType::Callback(f) => SinkTypeIR::Callback(f),
                 SinkType::File(mut options) => {

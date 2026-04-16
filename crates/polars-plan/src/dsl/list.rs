@@ -10,16 +10,6 @@ use crate::prelude::*;
 pub struct ListNameSpace(pub Expr);
 
 impl ListNameSpace {
-    #[cfg(feature = "list_any_all")]
-    pub fn any(self) -> Expr {
-        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Any))
-    }
-
-    #[cfg(feature = "list_any_all")]
-    pub fn all(self) -> Expr {
-        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::All))
-    }
-
     #[cfg(feature = "list_drop_nulls")]
     pub fn drop_nulls(self) -> Expr {
         self.0

@@ -38,6 +38,7 @@ pub mod pl_path;
 mod pl_ref_str;
 pub mod pl_str;
 pub mod priority;
+pub mod range;
 pub mod regex_cache;
 pub mod relaxed_cell;
 pub mod reuse_vec;

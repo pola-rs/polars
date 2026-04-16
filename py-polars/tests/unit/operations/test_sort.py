@@ -1289,3 +1289,14 @@ def test_sort_by_empty_list_eval_25433() -> None:
     out = df.select(pl.col.a.list.eval(pl.element().sort_by(pl.element())))
     expected = pl.DataFrame({"a": [sorted(some_list), []]})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_sort_already_sorted_no_rechunk_25733() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    df2 = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
+    df = pl.concat([df1, df2], rechunk=False).with_columns(pl.col("a").set_sorted())
+    assert df.n_chunks() == 2
+
+    result = df.sort("a")
+    assert result.n_chunks() == 2  # No rechunk happened
