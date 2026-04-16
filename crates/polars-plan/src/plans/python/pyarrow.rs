@@ -358,7 +358,7 @@ pub fn predicate_to_arrow_pred(
                         Some(ArrowPredicate::And(Box::new(left), Box::new(right)))
                     },
                     Operator::Or | Operator::LogicalOr => {
-                        Some(ArrowPredicate::Or(Box::new(left), Box::new(right)))``
+                        Some(ArrowPredicate::Or(Box::new(left), Box::new(right)))
                     },
                     Operator::Xor => Some(ArrowPredicate::Xor(Box::new(left), Box::new(right))),
                     _ => None,

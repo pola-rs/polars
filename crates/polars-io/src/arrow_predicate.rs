@@ -2,7 +2,6 @@ use polars_core::datatypes::{TimeUnit, TimeZone};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-
 // This is meant to mimic `pyarrow.compute.Expression` API as closely as possible to make it
 // easier to convert directly to pyarrow predicates applied at the python/scan level.
 #[derive(Debug, Clone, PartialEq)]
