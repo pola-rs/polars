@@ -25,6 +25,7 @@ Marquez.
 
 ```toml
 [lineage.transport.http]
+enabled = true
 endpoint = "http://localhost:5000"
 ```
 
