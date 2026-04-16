@@ -24,9 +24,9 @@ is the only supported transport protocol. The following example points at a loca
 Marquez.
 
 ```toml
-[lineage.transport.http]
+[lineage]
 enabled = true
-endpoint = "http://localhost:5000"
+transport.http.endpoint = "http://localhost:5000"
 ```
 
 ## Query annotation
