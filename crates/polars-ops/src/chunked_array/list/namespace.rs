@@ -13,8 +13,6 @@ use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;
 
 use super::*;
-#[cfg(feature = "list_any_all")]
-use crate::chunked_array::list::any_all::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
 use crate::chunked_array::list::sum_mean::sum_with_nulls;
 #[cfg(feature = "diff")]
@@ -174,18 +172,6 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_max(&self) -> PolarsResult<Series> {
         list_max_function(self.as_list())
-    }
-
-    #[cfg(feature = "list_any_all")]
-    fn lst_all(&self) -> PolarsResult<Series> {
-        let ca = self.as_list();
-        list_all(ca)
-    }
-
-    #[cfg(feature = "list_any_all")]
-    fn lst_any(&self) -> PolarsResult<Series> {
-        let ca = self.as_list();
-        list_any(ca)
     }
 
     fn lst_min(&self) -> PolarsResult<Series> {

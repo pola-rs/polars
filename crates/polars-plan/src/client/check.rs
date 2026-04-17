@@ -55,6 +55,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                         // The sink destination is passed around separately, can't check the
                         // eligibility here.
                     },
+                    SinkType::Iceberg(_) => {},
                 }
             },
             _ => (),

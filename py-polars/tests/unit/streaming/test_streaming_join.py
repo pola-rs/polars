@@ -16,7 +16,7 @@ from polars.datatypes.group import (
     INTEGER_DTYPES,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from polars.testing.parametric.strategies.core import dataframes
+from polars.testing.parametric.strategies.core import column, dataframes
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -612,11 +612,12 @@ def test_merge_join_applicable(
 @pytest.mark.parametrize("allow_exact_matches", [False, True])
 @pytest.mark.parametrize("coalesce", [False, True])
 @pytest.mark.parametrize(
-    "dtypes",
+    "key_dtypes",
     [
         FLOAT_DTYPES,
         INTEGER_DTYPES,
         {pl.String, pl.Binary},
+        {pl.Boolean},
         {pl.Date},
         {
             pl.Datetime("ms"),
@@ -632,34 +633,85 @@ def test_merge_join_applicable(
         {pl.Duration("ms"), pl.Duration("us"), pl.Duration("ns")},
     ],
 )
+@pytest.mark.parametrize("n_groups", [0, 1, 2])
 @given(data=st.data())
+@settings(max_examples=10)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
     allow_exact_matches: bool,
     coalesce: bool,
-    dtypes: set[pl.DataType],
+    key_dtypes: set[pl.DataType],
+    n_groups: int,
 ) -> None:
-    if dtypes & {pl.String, pl.Binary} and strategy == "nearest":
-        pytest.skip("asof join with string/binary does not support 'nearest' strategy")
+    GROUP_DTYPES = [
+        *INTEGER_DTYPES,
+        pl.Boolean,
+        pl.String,
+        pl.Binary,
+        pl.Categorical,
+    ]
 
-    dtype = data.draw(st.sampled_from(list(dtypes)))
+    if key_dtypes & {pl.String, pl.Binary, pl.Boolean} and strategy == "nearest":
+        pytest.skip(
+            "asof join with string/binary/bool does not support 'nearest' strategy"
+        )
+
+    group_col_names = [f"group{i}" for i in range(n_groups)]
+    group_cols = [
+        column(name=name, dtype=data.draw(st.sampled_from(GROUP_DTYPES)))
+        for name in group_col_names
+    ]
+
+    val_dtype = data.draw(st.sampled_from(list(key_dtypes)))
     df_st = dataframes(
-        min_cols=1, max_cols=1, allowed_dtypes=[dtype], allow_time_zones=False
+        min_cols=1,
+        max_cols=1,
+        allowed_dtypes=[val_dtype],
+        allow_time_zones=False,
+        include_cols=group_cols,
     )
     left_df = data.draw(df_st)
     right_df = data.draw(df_st)
 
-    left = left_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
-    right = right_df.rename(lambda _: "key").sort("key").with_row_index().lazy()
+    left = left_df.rename({"col0": "key"}).sort("key").with_row_index().lazy()
+    right = right_df.rename({"col0": "key"}).sort("key").with_row_index().lazy()
 
-    q = left.join_asof(
-        right,
-        on="key",
-        strategy=strategy,
-        allow_exact_matches=allow_exact_matches,
-        coalesce=coalesce,
-    )
+    if n_groups > 0:
+        descending = data.draw(st.booleans())
+        nulls_last = data.draw(st.booleans())
+        left = left.sort(
+            group_col_names,
+            maintain_order=True,
+            descending=descending,
+            nulls_last=nulls_last,
+        )
+        right = right.sort(
+            group_col_names,
+            maintain_order=True,
+            descending=descending,
+            nulls_last=nulls_last,
+        )
+        q = left.join_asof(
+            right,
+            on="key",
+            by=group_col_names,
+            strategy=strategy,
+            allow_exact_matches=allow_exact_matches,
+            coalesce=coalesce,
+        )
+    else:
+        q = left.join_asof(
+            right,
+            on="key",
+            strategy=strategy,
+            allow_exact_matches=allow_exact_matches,
+            coalesce=coalesce,
+        )
+
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert "asof-join" in plan
+
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
     assert_frame_equal(actual, expected)

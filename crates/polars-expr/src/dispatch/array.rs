@@ -24,10 +24,6 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Var(ddof) => map!(var, ddof),
         Mean => map!(mean),
         Median => map!(median),
-        #[cfg(feature = "array_any_all")]
-        Any => map!(any),
-        #[cfg(feature = "array_any_all")]
-        All => map!(all),
         Sort(options) => map!(sort, options),
         Reverse => map!(reverse),
         ArgMin => map!(arg_min),
@@ -117,16 +113,6 @@ pub(super) fn to_list(s: &Column) -> PolarsResult<Column> {
     } else {
         polars_bail!(ComputeError: "expected array dtype")
     }
-}
-
-#[cfg(feature = "array_any_all")]
-pub(super) fn any(s: &Column) -> PolarsResult<Column> {
-    s.array()?.array_any().map(Column::from)
-}
-
-#[cfg(feature = "array_any_all")]
-pub(super) fn all(s: &Column) -> PolarsResult<Column> {
-    s.array()?.array_all().map(Column::from)
 }
 
 pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {

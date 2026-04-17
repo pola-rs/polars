@@ -14,7 +14,7 @@ within virtual environments.
 $ export LICENSE_KEY=$(cat license.json)
 $ uv auth login https://get.onprem.pola.rs/pypi/simple --token $LICENSE_KEY
 $ uv venv && source .venv/bin/activate
-$ uv pip install --index-url=https://get.onprem.pola.rs/pypi/simple polars-on-premises==0.1.0
+$ uv pip install --extra-index-url=https://get.onprem.pola.rs/pypi/simple polars-on-premises==0.1.0
 ```
 
 The `polars-on-premises` command will then be available within your virtual environment.

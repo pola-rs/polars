@@ -57,7 +57,6 @@ workspace = true
 features = [
   "abs",
   "approx_unique",
-  "array_any_all",
   "arg_where",
   "bitwise",
   "business",
@@ -180,8 +179,6 @@ list_count = ["polars/list_count"]
 array_count = ["polars/array_count", "polars/dtype-array"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
-list_any_all = ["polars/list_any_all"]
-array_any_all = ["polars/array_any_all", "polars/dtype-array"]
 list_drop_nulls = ["polars/list_drop_nulls"]
 list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
@@ -221,7 +218,6 @@ dtypes = [
 
 operations = [
   "approx_unique",
-  "array_any_all",
   "array_count",
   "bitwise",
   "is_in",
@@ -233,7 +229,6 @@ operations = [
   "list_filter",
   "list_count",
   "list_sets",
-  "list_any_all",
   "list_drop_nulls",
   "list_sample",
   "cutqcut",

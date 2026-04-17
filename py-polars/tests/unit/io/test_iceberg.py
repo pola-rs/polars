@@ -75,23 +75,23 @@ from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
 
 if TYPE_CHECKING:
-    AlwaysFalse = Any
-    AlwaysTrue = Any
     from tests.conftest import PlMonkeyPatch
 
     # Mypy does not understand the constructors and we can't construct the inputs
     # explicitly since they are abstract base classes.
-    And = Any
-    EqualTo = Any
-    GreaterThan = Any
-    GreaterThanOrEqual = Any
-    In = Any
-    IsNull = Any
-    LessThan = Any
-    LessThanOrEqual = Any
-    Not = Any
-    Or = Any
-    Reference = Any
+    AlwaysFalse: Any
+    AlwaysTrue: Any
+    And: Any
+    EqualTo: Any
+    GreaterThan: Any
+    GreaterThanOrEqual: Any
+    In: Any
+    IsNull: Any
+    LessThan: Any
+    LessThanOrEqual: Any
+    Not: Any
+    Or: Any
+    Reference: Any
 else:
     from pyiceberg.expressions import (
         AlwaysFalse,
@@ -524,7 +524,7 @@ def test_sink_iceberg_raises_on_static_table(tmp_path: Path) -> None:
     )
 
     with err_cx:
-        IcebergSinkState(StaticTable.from_metadata(tbl.metadata_location))
+        IcebergSinkState.new(StaticTable.from_metadata(tbl.metadata_location))
 
     with err_cx:
         pl.LazyFrame({"a": 1}).sink_iceberg(
@@ -546,25 +546,29 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
         schema=IcebergSchema(NestedField(1, "a", LongType())),
     )
 
-    sink_state = IcebergSinkState(tbl)
+    sink_state = IcebergSinkState.new(tbl)
     sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 1}))
     sink_q.collect()
-    new_md_path = sink_state.commit().item(0, "metadata_path")
+    rdf = sink_state.commit_result_df.get()
+    assert rdf is not None
+    new_md_path = rdf.item(0, "metadata_path")
+
+    tbl = sink_state.table()
 
     assert_frame_equal(pl.scan_iceberg(tbl).collect(), pl.DataFrame({"a": 1}))
     assert new_md_path == tbl.metadata_location
 
-    sink_state = IcebergSinkState(tbl)
+    sink_state = IcebergSinkState.new(tbl)
     sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 2}))
     sink_q = pickle.loads(pickle.dumps(sink_q))
     sink_q.collect()
-    new_md_path = (
-        pickle.loads(pickle.dumps(sink_state)).commit().item(0, "metadata_path")
-    )
 
-    assert new_md_path != tbl.metadata_location
+    new_tbl = catalog.load_table(tbl.name())
+    new_md_path = new_tbl.metadata_location
 
-    tbl = catalog.load_table(tbl.name())
+    assert new_tbl.metadata_location != tbl.metadata_location
+
+    tbl = new_tbl
 
     assert_frame_equal(
         pl.scan_iceberg(tbl).collect(),
@@ -575,39 +579,10 @@ def test_sink_iceberg_pickle(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_sink_iceberg_simulate_from_multiple_workers(tmp_path: Path) -> None:
-    tbl, catalog = new_iceberg_table(
-        tmp_path,
-        schema=IcebergSchema(NestedField(1, "a", LongType())),
-    )
-
-    sink_state = IcebergSinkState(tbl)
-    sink_q = sink_state.attach_sink(pl.LazyFrame({"a": 1}))
-    pl.collect_all(
-        [
-            pickle.loads(pickle.dumps(sink_q)),
-            pickle.loads(pickle.dumps(sink_q)),
-            pickle.loads(pickle.dumps(sink_q)),
-            sink_state.attach_sink(pl.LazyFrame({"a": 2})),
-            sink_state.attach_sink(pl.LazyFrame({"a": 3})),
-        ]
-    )
-
-    new_md_path = sink_state.commit().item(0, "metadata_path")
-
-    tbl = catalog.load_table(tbl.name())
-
-    assert tbl.metadata_location == new_md_path
-
-    assert_frame_equal(
-        pl.scan_iceberg(tbl).collect().sort("a"),
-        pl.DataFrame({"a": [1, 1, 1, 2, 3]}),
-    )
-
-
-@pytest.mark.write_disk
-def test_sink_iceberg_attach_sink_deferred_to_ir_resolution(tmp_path: Path) -> None:
-    sink_state = IcebergSinkState(
+def test_sink_iceberg__attach_resolved_sink_deferred_to_ir_resolution(
+    tmp_path: Path,
+) -> None:
+    sink_state = IcebergSinkState.new(
         "x.x",
         catalog=SqlCatalog(
             "default",

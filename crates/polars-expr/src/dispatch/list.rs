@@ -57,10 +57,6 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
         Unique(is_stable) => map!(unique, is_stable),
         #[cfg(feature = "list_sets")]
         SetOperation(s) => map_as_slice!(set_operation, s),
-        #[cfg(feature = "list_any_all")]
-        Any => map!(lst_any),
-        #[cfg(feature = "list_any_all")]
-        All => map!(lst_all),
         Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
         #[cfg(feature = "dtype-array")]
         ToArray(width) => map!(to_array, width),
@@ -393,16 +389,6 @@ pub(super) fn set_operation(
 
     polars_ops::prelude::list_set_operation(s0.list()?, s1.list()?, set_type)
         .map(|ca| ca.into_column())
-}
-
-#[cfg(feature = "list_any_all")]
-pub(super) fn lst_any(s: &Column) -> PolarsResult<Column> {
-    s.list()?.lst_any().map(Column::from)
-}
-
-#[cfg(feature = "list_any_all")]
-pub(super) fn lst_all(s: &Column) -> PolarsResult<Column> {
-    s.list()?.lst_all().map(Column::from)
 }
 
 pub(super) fn join(s: &[Column], ignore_nulls: bool) -> PolarsResult<Column> {
