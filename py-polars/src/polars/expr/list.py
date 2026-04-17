@@ -35,13 +35,20 @@ class ExprListNameSpace:
     def __getitem__(self, item: int) -> Expr:
         return self.get(item)
 
-    def all(self) -> Expr:
+    def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether all boolean values in a list are true.
 
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `True`.
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -63,15 +70,22 @@ class ExprListNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.list_all())
+        return self.agg(F.element().all(ignore_nulls=ignore_nulls))
 
-    def any(self) -> Expr:
+    def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value in a list is true.
 
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `False`.
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -93,7 +107,7 @@ class ExprListNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.list_any())
+        return self.agg(F.element().any(ignore_nulls=ignore_nulls))
 
     def len(self) -> Expr:
         """

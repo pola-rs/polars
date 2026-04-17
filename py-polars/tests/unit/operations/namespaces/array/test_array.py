@@ -184,12 +184,6 @@ def test_array_any_all() -> None:
     expected_all = pl.Series([True, False, False, True, None])
     assert_series_equal(s.arr.all(), expected_all)
 
-    s = pl.Series([[1, 2], [3, 4], [5, 6]], dtype=pl.Array(pl.Int64, 2))
-    with pytest.raises(ComputeError, match="expected boolean elements in array"):
-        s.arr.any()
-    with pytest.raises(ComputeError, match="expected boolean elements in array"):
-        s.arr.all()
-
 
 def test_array_sort() -> None:
     s = pl.Series([[2, None, 1], [1, 3, 2]], dtype=pl.Array(pl.UInt32, 3))

@@ -84,7 +84,9 @@ where
     T: PolarsDataType,
     S: PolarsNumericType,
     S::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <S::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+    Option<S::Native>: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <Option<S::Native> as ToTotalOrd>::TotalOrdItem:
+        Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
@@ -102,7 +104,11 @@ where
         .iter()
         .map(|ca| {
             assert_eq!(ca.chunks().len(), 1);
-            ca.downcast_iter().next().unwrap().non_null_values_iter()
+            ca.downcast_iter()
+                .next()
+                .unwrap()
+                .iter()
+                .map(|v| v.copied())
         })
         .collect();
     let hash_tbls = build_tables(right_slices, false);
@@ -124,7 +130,7 @@ where
                     results.push(NullableIdxSize::null());
                     continue;
                 };
-                let by_left_k = by_left_k.to_total_ord();
+                let by_left_k = Some(*by_left_k).to_total_ord();
                 let idx_left = (rel_idx_left + offset) as IdxSize;
                 let Some(left_val) = left_val_arr.get(idx_left as usize) else {
                     results.push(NullableIdxSize::null());
@@ -541,7 +547,7 @@ pub trait AsofJoinBy: IntoDf {
         let right_asof = right_key.to_physical_repr();
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
-        check_asof_columns(
+        _check_asof_columns(
             &left_asof,
             &right_asof,
             tolerance.is_some(),

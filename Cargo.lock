@@ -3026,6 +3026,7 @@ version = "0.53.0"
 dependencies = [
  "bytemuck",
  "either",
+ "polars-utils",
  "serde",
  "version_check",
 ]
@@ -3330,13 +3331,14 @@ name = "polars-ooc"
 version = "0.53.0"
 dependencies = [
  "boxcar",
+ "libc",
  "mimalloc",
- "parking_lot",
  "polars-config",
  "polars-core",
+ "polars-io",
  "polars-utils",
- "slotmap",
  "tikv-jemallocator",
+ "tokio",
 ]
 
 [[package]]
@@ -3535,7 +3537,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "1.39.3"
+version = "1.40.0"
 dependencies = [
  "either",
  "libc",
@@ -3546,7 +3548,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "1.39.3"
+version = "1.40.0"
 dependencies = [
  "either",
  "libc",
@@ -3557,7 +3559,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "1.39.3"
+version = "1.40.0"
 dependencies = [
  "either",
  "libc",
