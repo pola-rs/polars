@@ -66,11 +66,11 @@ analysis, correlation, and visualization purposes.
 
 For example, Marquez visualizes the above query as follows, by default at `http://localhost:3000`,
 
-![lineage jobs](../../../assets/images/lineage_demo_jobs.png)
+![lineage jobs](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/openlineage/lineage_demo_jobs.png)
 
 and lists the collected events.
 
-![lineage events](../../../assets/images/lineage_demo_events.png)
+![lineage events](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/docs/openlineage/lineage_demo_events.png)
 
 For more information, consult the documentation of your collector.
 
