@@ -68,7 +68,7 @@ For example, Marquez visualizes the above query as follows, by default at `http:
 
 ![lineage jobs](../../../assets/images/lineage_demo_jobs.png)
 
-and lists the events as collected.
+and lists the collected events.
 
 ![lineage events](../../../assets/images/lineage_demo_events.png)
 
@@ -86,7 +86,7 @@ This aspect of the implementation is **unstable**.
 ## Supported facets
 
 OpenLineage is extensible through the use of [facets](https://openlineage.io/docs/spec/facets/). In
-addition to the core `RunEvent` and `DatasetEvent`, Polars supports the following facets:
+addition to the core `RunEvent` and optional `DatasetEvent`, Polars supports the following facets:
 
 - Run Facets
   - Error Message Facet
