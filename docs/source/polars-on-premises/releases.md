@@ -27,33 +27,14 @@ curl -L 'https://get.onprem.pola.rs?version=<TAG>' --data @license.json --output
 - `polars` [1.39.3](https://github.com/pola-rs/polars/releases/tag/py-1.39.3)
 - `polars-cloud` [0.6.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.0)
 
-Bug fixes and improvements
-
-### 0.2.2
-
-- `polars` [1.38.1](https://github.com/pola-rs/polars/releases/tag/py-1.38.1)
-- `polars-cloud` [0.5.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.5.0)
-
-Bug fixes and improvements
-
-### 0.2.1
-
-- `polars` [1.38.1](https://github.com/pola-rs/polars/releases/tag/py-1.38.1)
-- `polars-cloud` [0.5.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.5.0)
-
-Bug fixes and feature stabilization
-
-### 0.2.0
-
-- `polars` [1.38.1](https://github.com/pola-rs/polars/releases/tag/py-1.38.1)
-- `polars-cloud` [0.5.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.5.0)
-
 **Highlights**
 
 - Scratchpad
 - Per-query historical profiling data in Control Plane
 - Add config download and export query database endpoints
 - Single-node lowering for memory-intensive operations
+- Fix multi-partition bugs in the observatory (still one remaining for IO time)
+- Add data skew and worker time information
 
 ### 0.1.1
 
@@ -70,11 +51,6 @@ Bug fixes and feature stabilization
 - More distributed nodes: (stable sort, top-k, distinct)
 - Pre-aggregate more aggregations: std, var, first, last
 - Streaming ASOF joins
-
-### 0.1.0
-
-- `polars` [1.38.1](https://github.com/pola-rs/polars/releases/tag/py-1.38.1)
-- `polars-cloud` [0.5.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.5.0)
 
 ## Helm chart
 
