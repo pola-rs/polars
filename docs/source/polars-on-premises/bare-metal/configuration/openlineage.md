@@ -79,7 +79,8 @@ For more information, consult the documentation of your collector.
 Polars strives to align with the
 [DataSet naming convention](https://openlineage.io/docs/spec/naming/). However, it may deviate when
 there is a better way to capture the logical identity of the dataset, e.g. when using cloud-based
-prefixes for multi-file stores.
+prefixes for multi-file stores, single-file datasets in cloud context, glob patterns, or 
+hive partitioning.
 
 This aspect of the implementation is **unstable**.
 
