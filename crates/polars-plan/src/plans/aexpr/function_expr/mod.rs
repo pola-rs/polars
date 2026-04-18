@@ -277,6 +277,7 @@ pub enum IRFunctionExpr {
     ConcatExpr {
         rechunk: bool,
     },
+    ConcatList,
     #[cfg(feature = "cov")]
     Correlation {
         method: correlation::IRCorrelationMethod,
@@ -613,6 +614,7 @@ impl Hash for IRFunctionExpr {
             #[cfg(feature = "round_series")]
             Ceil => {},
             ConcatExpr { rechunk } => rechunk.hash(state),
+            ConcatList => {},
             #[cfg(feature = "peaks")]
             PeakMin => {},
             #[cfg(feature = "peaks")]
@@ -853,6 +855,7 @@ impl Display for IRFunctionExpr {
             #[cfg(feature = "fused")]
             Fused(fused) => return Display::fmt(fused, f),
             ConcatExpr { .. } => "concat_expr",
+            ConcatList => "concat_list",
             #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]
@@ -1172,6 +1175,8 @@ impl IRFunctionExpr {
             F::ConcatExpr { .. } => FunctionOptions::groupwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION)
                 .with_supertyping(Default::default()),
+            F::ConcatList => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "cov")]
             F::Correlation { .. } => {
                 FunctionOptions::aggregation().with_supertyping(Default::default())

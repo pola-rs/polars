@@ -914,6 +914,7 @@ pub(super) fn convert_functions(
             ));
         },
         F::ConcatExpr(rechunk) => I::ConcatExpr { rechunk },
+        F::ConcatList => I::ConcatList,
         #[cfg(feature = "cov")]
         F::Correlation { method } => {
             use CorrelationMethod as C;

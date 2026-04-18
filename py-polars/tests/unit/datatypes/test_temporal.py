@@ -1088,12 +1088,6 @@ def test_from_dict_tu_consistency() -> None:
 def test_date_arr_concat() -> None:
     expected = {"d": [[date(2000, 1, 1), date(2000, 1, 1)]]}
 
-    # type date
-    df = pl.DataFrame({"d": [date(2000, 1, 1)]})
-    assert (
-        df.select(pl.col("d").list.concat(pl.col("d"))).to_dict(as_series=False)
-        == expected
-    )
     # type list[date]
     df = pl.DataFrame({"d": [[date(2000, 1, 1)]]})
     assert (

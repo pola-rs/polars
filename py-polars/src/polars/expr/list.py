@@ -530,8 +530,8 @@ class ExprListNameSpace:
         other_list: list[Expr | str | Series]
         other_list = [other] if not isinstance(other, list) else copy.copy(other)  # type: ignore[arg-type]
 
-        other_list.insert(0, wrap_expr(self._pyexpr))
-        return F.concat_list(other_list)
+        other_exprs = [parse_into_expression(e) for e in other_list]
+        return wrap_expr(self._pyexpr.list_concat(other_exprs))
 
     def get(
         self,
