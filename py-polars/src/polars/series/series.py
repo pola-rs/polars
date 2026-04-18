@@ -14,7 +14,6 @@ from typing import (
     ClassVar,
     Literal,
     NoReturn,
-    Union,
     overload,
 )
 
@@ -130,8 +129,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
-        ArrowArrayExportable,
-        ArrowStreamExportable,
+        ArrayLike,
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -171,18 +169,6 @@ elif BUILDING_SPHINX_DOCS:
     # (ref: https://github.com/davidhalter/jedi/issues/2057)
     current_module = sys.modules[__name__]
     current_module.property = sphinx_accessor
-
-ArrayLike = Union[
-    Sequence[Any],
-    "Series",
-    "pa.Array",
-    "pa.ChunkedArray",
-    "np.ndarray[Any, Any]",
-    "pd.Series[Any]",
-    "pd.DatetimeIndex",
-    "ArrowArrayExportable",
-    "ArrowStreamExportable",
-]
 
 
 @expr_dispatch
