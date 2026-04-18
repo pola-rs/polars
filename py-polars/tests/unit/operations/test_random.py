@@ -146,3 +146,321 @@ def test_sample_16232() -> None:
     assert df.select(pl.col("b").list.sample(n=pl.col("a"), seed=0)).to_dict(
         as_series=False
     ) == {"b": [[], [], [1]]}
+
+
+# ---------------------------------------------------------------------------
+# Reproducibility of `.over()` with `pl.set_random_seed` — issues #27307, #15464
+# ---------------------------------------------------------------------------
+
+
+# Category 1: Core reproducibility — parametrised 20x to catch scheduling-
+# dependent regressions that a single-pair comparison might pass by coincidence.
+
+
+@pytest.mark.parametrize("run", range(20))
+def test_shuffle_over_respects_global_seed_15464(run: int) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["A", "A", "A", "B", "B", "C", "C", "D"],
+            "val": [1, 2, 3, 4, 5, 6, 7, 8],
+        }
+    )
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(pl.int_range(pl.len()).shuffle().over("grp"))
+
+    pl.set_random_seed(0)
+    result2 = df.with_columns(pl.int_range(pl.len()).shuffle().over("grp"))
+
+    assert_frame_equal(result1, result2)
+
+
+@pytest.mark.parametrize("run", range(20))
+def test_sample_over_respects_global_seed(run: int) -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["A", "A", "A", "B", "B", "C", "C"],
+            "val": [1, 2, 3, 4, 5, 6, 7],
+        }
+    )
+
+    pl.set_random_seed(42)
+    result1 = df.with_columns(
+        pl.col("val").sample(n=pl.len(), shuffle=True).over("grp")
+    )
+
+    pl.set_random_seed(42)
+    result2 = df.with_columns(
+        pl.col("val").sample(n=pl.len(), shuffle=True).over("grp")
+    )
+
+    assert_frame_equal(result1, result2)
+
+
+@pytest.mark.parametrize("run", range(20))
+def test_shuffle_over_reproducible_second_seed(run: int) -> None:
+    # Belt-and-braces: different seed + different shape than test 1 to guard
+    # against a fix that happens to work only for one (seed, shape) combination.
+    df = pl.DataFrame(
+        {
+            "grp": ["A", "A", "A", "B", "B", "B", "C", "C", "C"],
+            "val": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        }
+    )
+
+    pl.set_random_seed(123)
+    result1 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    pl.set_random_seed(123)
+    result2 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    assert_frame_equal(result1, result2)
+
+
+# Category 2: Per-group seed independence.
+
+
+def test_shuffle_over_different_per_group_seeds() -> None:
+    # With size-10 identical-data groups, P(collision for a fixed seed)
+    # ≈ 1/10! ≈ 2.8e-7. Using a fixed seed rather than a search loop —
+    # if this specific seed ever collides, change the literal; do NOT
+    # reintroduce a loop (CI-hostile).
+    n = 10
+    df = pl.DataFrame(
+        {"grp": ["A"] * n + ["B"] * n, "val": list(range(n)) * 2}
+    )
+
+    pl.set_random_seed(0)
+    result = df.with_columns(pl.col("val").shuffle().over("grp"))
+    a_vals = result.filter(pl.col("grp") == "A")["val"].to_list()
+    b_vals = result.filter(pl.col("grp") == "B")["val"].to_list()
+
+    assert a_vals != b_vals, (
+        f"Groups A and B got identical shuffles: {a_vals}. "
+        "Per-group seeds aren't being differentiated."
+    )
+
+
+def test_shuffle_over_different_seeds_different_results() -> None:
+    # Verifies the fix actually consumes the global seed (not hardcoded).
+    # Size-10 groups → 10! × 10! ≈ 1.3e13 combinations → no accidental collision.
+    n = 10
+    df = pl.DataFrame(
+        {"grp": ["A"] * n + ["B"] * n, "val": list(range(n * 2))}
+    )
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    pl.set_random_seed(999)
+    result2 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    assert not result1.equals(result2)
+
+
+# Category 3: Backward compatibility — explicit seeds.
+
+
+def test_shuffle_over_explicit_seed_deterministic() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["A", "A", "A", "B", "B", "C", "C", "D"],
+            "val": [1, 2, 3, 4, 5, 6, 7, 8],
+        }
+    )
+
+    result1 = df.with_columns(pl.col("val").shuffle(seed=42).over("grp"))
+    result2 = df.with_columns(pl.col("val").shuffle(seed=42).over("grp"))
+
+    assert_frame_equal(result1, result2)
+
+
+def test_shuffle_over_explicit_seed_same_per_group() -> None:
+    # With identical data and the same explicit seed, both groups must
+    # produce identical shuffles — preserving the documented pre-fix behavior.
+    df = pl.DataFrame(
+        {"grp": ["A", "A", "A", "B", "B", "B"], "val": [1, 2, 3, 1, 2, 3]}
+    )
+
+    result = df.with_columns(pl.col("val").shuffle(seed=42).over("grp"))
+    a_vals = result.filter(pl.col("grp") == "A")["val"].to_list()
+    b_vals = result.filter(pl.col("grp") == "B")["val"].to_list()
+
+    assert a_vals == b_vals
+
+
+# Category 4: Backward compatibility — sequential operations.
+
+
+def test_shuffle_over_does_not_break_subsequent_random_ops() -> None:
+    # .over() must advance the global RNG by a deterministic count so that
+    # downstream random ops (without a seed reset) see identical state.
+    df = pl.DataFrame({"grp": ["A", "A", "B", "B"], "val": [1, 2, 3, 4]})
+
+    pl.set_random_seed(0)
+    _ = df.with_columns(pl.col("val").shuffle().over("grp"))
+    after1 = df.with_columns(pl.col("val").shuffle())
+
+    pl.set_random_seed(0)
+    _ = df.with_columns(pl.col("val").shuffle().over("grp"))
+    after2 = df.with_columns(pl.col("val").shuffle())
+
+    assert_frame_equal(after1, after2)
+
+
+def test_multiple_shuffle_over_calls_reproducible() -> None:
+    # Multiple .over() expressions in the same with_columns — exercises
+    # the window-cache interaction between partitioned random ops.
+    df = pl.DataFrame(
+        {
+            "grp": ["A", "A", "A", "B", "B", "B"],
+            "x": [1, 2, 3, 4, 5, 6],
+            "y": [10, 20, 30, 40, 50, 60],
+        }
+    )
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(
+        pl.col("x").shuffle().over("grp").alias("x_shuffled"),
+        pl.col("y").shuffle().over("grp").alias("y_shuffled"),
+    )
+
+    pl.set_random_seed(0)
+    result2 = df.with_columns(
+        pl.col("x").shuffle().over("grp").alias("x_shuffled"),
+        pl.col("y").shuffle().over("grp").alias("y_shuffled"),
+    )
+
+    assert_frame_equal(result1, result2)
+
+
+# Category 5: Edge cases.
+
+
+def test_shuffle_over_single_element_groups() -> None:
+    df = pl.DataFrame({"grp": ["A", "B", "C", "D"], "val": [1, 2, 3, 4]})
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    pl.set_random_seed(0)
+    result2 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    assert_frame_equal(result1, result2)
+    assert_series_equal(result1["val"], df["val"])
+
+
+def test_shuffle_over_single_group() -> None:
+    df = pl.DataFrame({"grp": ["A", "A", "A", "A", "A"], "val": [1, 2, 3, 4, 5]})
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    pl.set_random_seed(0)
+    result2 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    assert_frame_equal(result1, result2)
+
+
+def test_shuffle_over_many_groups() -> None:
+    # 200 groups → rayon will use multiple workers. Most likely scenario
+    # to expose a remaining scheduling-dependent regression.
+    n_groups = 200
+    group_size = 10
+    df = pl.DataFrame(
+        {
+            "grp": [i for i in range(n_groups) for _ in range(group_size)],
+            "val": list(range(group_size)) * n_groups,
+        }
+    )
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    pl.set_random_seed(0)
+    result2 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    assert_frame_equal(result1, result2)
+
+
+def test_shuffle_over_with_null_values() -> None:
+    df = pl.DataFrame(
+        {"grp": ["A", "A", "A", "B", "B", "B"], "val": [1, None, 3, None, 5, None]}
+    )
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    pl.set_random_seed(0)
+    result2 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    assert_frame_equal(result1, result2)
+    # Shuffle is an intra-group permutation, so the total null count is invariant.
+    assert result1["val"].null_count() == 3
+
+
+def test_shuffle_over_multi_column_partition() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["X", "X", "X", "X", "Y", "Y", "Y", "Y"],
+            "b": [1, 1, 2, 2, 1, 1, 2, 2],
+            "val": [10, 20, 30, 40, 50, 60, 70, 80],
+        }
+    )
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(pl.col("val").shuffle().over("a", "b"))
+
+    pl.set_random_seed(0)
+    result2 = df.with_columns(pl.col("val").shuffle().over("a", "b"))
+
+    assert_frame_equal(result1, result2)
+
+
+def test_shuffle_over_unequal_group_sizes() -> None:
+    df = pl.DataFrame(
+        {
+            "grp": ["A"] * 1 + ["B"] * 5 + ["C"] * 20 + ["D"] * 2,
+            "val": list(range(28)),
+        }
+    )
+
+    pl.set_random_seed(0)
+    result1 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    pl.set_random_seed(0)
+    result2 = df.with_columns(pl.col("val").shuffle().over("grp"))
+
+    assert_frame_equal(result1, result2)
+
+
+# Category 6: Non-regression — non-`.over()` paths must be untouched.
+
+
+def test_shuffle_without_over_still_works() -> None:
+    s = pl.Series("a", range(20))
+
+    pl.set_random_seed(1)
+    result1 = pl.select(pl.lit(s).shuffle()).to_series()
+
+    pl.set_random_seed(1)
+    result2 = pl.select(pl.lit(s).shuffle()).to_series()
+
+    assert_series_equal(result1, result2)
+
+
+def test_shuffle_group_by_agg_still_works() -> None:
+    # group_by().agg() takes a different code path than .over() — this
+    # test pins the non-regression.
+    df = pl.DataFrame(
+        {"grp": ["A", "A", "A", "B", "B", "B"], "val": [1, 2, 3, 4, 5, 6]}
+    )
+
+    result1 = df.group_by("grp", maintain_order=True).agg(
+        pl.col("val").shuffle(seed=0xDEADBEEF)
+    )
+    result2 = df.group_by("grp", maintain_order=True).agg(
+        pl.col("val").shuffle(seed=0xDEADBEEF)
+    )
+
+    assert_frame_equal(result1, result2)
