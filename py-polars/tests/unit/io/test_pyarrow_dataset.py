@@ -594,7 +594,8 @@ def test_arrow_predicate_conversions(tmp_path: Path) -> None:
     )
 
     file_path = tmp_path / "test_predicates.ipc"
-    df.write_ipc(file_path)
+    # array_filter can't handle string_view
+    df.write_ipc(file_path, compat_level=pl.CompatLevel.oldest())
 
     # Test simple equality comparison
     helper_dataset_test(
