@@ -299,24 +299,47 @@ def test_is_str_sequence_check(
         assert is_sequence(sequence, include_series=include_series)
 
 
-def test_reduce_balanced() -> None:
-    values = [[0], [1], [2], [3], [4]]
-
+@pytest.mark.parametrize(
+    ("values", "expected_acc", "expected_seen"),
+    [
+        pytest.param(
+            [[0], [1], [2], [3], [4]],
+            [0, 1, 2, 3, 4],
+            [
+                ([0], [1]),
+                ([2], [3]),
+                ([0, 1], [2, 3]),
+                ([0, 1, 2, 3], [4]),
+            ],
+            id="length_5",
+        ),
+        pytest.param(
+            [[0], [1], [2], [3], [4], [5]],
+            [0, 1, 2, 3, 4, 5],
+            [
+                ([0], [1]),
+                ([2], [3]),
+                ([4], [5]),
+                ([0, 1], [2, 3]),
+                ([0, 1, 2, 3], [4, 5]),
+            ],
+            id="length_6",
+        ),
+    ],
+)
+def test_reduce_balanced(
+    values: list[list[int]],
+    expected_acc: list[int],
+    expected_seen: list[tuple[list[int], list[int]]],
+) -> None:
     seen = []
 
     def reducer(left: list[int], right: list[int]) -> list[int]:
         seen.append((left, right))
         return left + right
 
-    acc = reduce_balanced(reducer, values)
-
-    assert acc == [0, 1, 2, 3, 4]
-    assert seen == [
-        ([0], [1]),
-        ([2], [3]),
-        ([0, 1], [2, 3]),
-        ([0, 1, 2, 3], [4]),
-    ]
+    assert reduce_balanced(reducer, values) == expected_acc
+    assert seen == expected_seen
 
     with pytest.raises(TypeError):
         reduce_balanced(reducer, [])
