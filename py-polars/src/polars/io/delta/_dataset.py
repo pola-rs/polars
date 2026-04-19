@@ -101,6 +101,8 @@ class DeltaDataset:
 
             pa_predicate_expr = None
             if pyarrow_predicate is not None:
+                import pyarrow as pa  # noqa: F401
+
                 pa_predicate_expr = eval(pyarrow_predicate)
 
             func = partial(
