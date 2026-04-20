@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::prelude::{
-    ChunkExpandAtIndex, Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions,
+    ChunkExpandAtIndex, Column, DataType, ExplodeOptions, IDX_DTYPE, IntoColumn, ListChunked,
+    SortOptions,
 };
 use polars_core::utils::CustomIterTools;
 use polars_ops::prelude::ListNameSpaceImpl;
@@ -14,6 +15,7 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
     use IRListFunction::*;
     match func {
         Concat => wrap!(concat),
+        Explode(options) => map_as_slice!(explode, options),
         #[cfg(feature = "is_in")]
         Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
         #[cfg(feature = "list_drop_nulls")]
@@ -416,4 +418,8 @@ pub(super) fn to_struct(s: &Column, names: &Arc<[PlSmallStr]>) -> PolarsResult<C
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_n_unique()?.into_column())
+}
+
+fn explode(c: &[Column], options: ExplodeOptions) -> PolarsResult<Column> {
+    c[0].explode(options)
 }

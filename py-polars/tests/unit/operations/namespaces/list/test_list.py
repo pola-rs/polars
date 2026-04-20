@@ -1362,3 +1362,14 @@ def test_list_sample_fraction_boundary_values_22024() -> None:
     s.list.sample(fraction=0.0)
     s.list.sample(fraction=1.0)
     s.list.sample(fraction=pl.Series([0.0, 1.0]))
+
+
+def test_list_explode_on_non_list_raises_25649() -> None:
+    """Test that list.explode on a non-list column raises during schema collection."""
+    lf = pl.LazyFrame({"a": ["a", "b", "c"]})
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected List data type for list operation",
+    ):
+        lf.select(pl.col("a").list.explode()).collect_schema()

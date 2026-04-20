@@ -296,6 +296,12 @@ impl ListNameSpace {
         }
     }
 
+    /// Returns a column with a separate row for every list element.
+    pub fn explode(self, options: ExplodeOptions) -> Expr {
+        self.0
+            .map_unary(FunctionExpr::ListExpr(ListFunction::Explode(options)))
+    }
+
     pub fn agg<E: Into<Expr>>(self, other: E) -> Expr {
         Expr::Eval {
             expr: Arc::new(self.0),
