@@ -890,7 +890,7 @@ class Series:
 
         elif isinstance(other, timedelta) and self.dtype == Duration:
             time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
-            td = timedelta_to_int(other, time_unit)  # type: ignore[arg-type]
+            td = timedelta_to_int(other, time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(td))
