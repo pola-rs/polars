@@ -10,8 +10,13 @@ pub(crate) struct SortExec {
 }
 
 impl SortExec {
-    fn execute_impl(&mut self, state: &ExecutionState, df: DataFrame) -> PolarsResult<DataFrame> {
+    fn execute_impl(
+        &mut self,
+        state: &ExecutionState,
+        mut df: DataFrame,
+    ) -> PolarsResult<DataFrame> {
         state.should_stop()?;
+        df.rechunk_mut_par();
 
         let height = df.height();
 

@@ -345,3 +345,35 @@ def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
             df_chained_from_right = df.merge_sorted(df_chained_from_right, key="n")
 
         assert_frame_equal(df_chained_from_right, df_full)
+
+
+@given(
+    lhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+    rhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+)
+def test_merge_sorted_maintain_order_parametric(lhs: pl.Series, rhs: pl.Series) -> None:
+    left = (
+        pl.DataFrame([lhs.sort()])
+        .with_row_index("left_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("right_idx"),
+            pl.lit(0, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+    right = (
+        pl.DataFrame([rhs.sort()])
+        .with_row_index("right_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("left_idx"),
+            pl.lit(1, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+
+    actual = (
+        left.lazy().merge_sorted(right.lazy(), key="key", maintain_order=True).collect()
+    )
+    expected = pl.concat([left, right]).sort(["key", "df"], maintain_order=True)
+
+    assert_frame_equal(actual, expected)

@@ -3143,3 +3143,33 @@ def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -
 def test_read_batch_csv_deprecations_26479(foods_file_path: Path) -> None:
     with pytest.warns(DeprecationWarning, match=r"`read_csv_batched` is deprecated"):
         pl.read_csv_batched(foods_file_path)
+
+
+def test_scan_csv_missing_columns_27268() -> None:
+    files = [io.StringIO(), io.StringIO()]
+    pl.DataFrame(
+        {
+            "b": "b1",
+        }
+    ).write_csv(files[0])
+    pl.DataFrame(
+        {
+            "a": "a1",
+            "b": "b2",
+        }
+    ).write_csv(files[1])
+
+    files[0].seek(0)
+    files[1].seek(0)
+
+    df = pl.scan_csv(files, missing_columns="insert").collect()  # type: ignore[arg-type]
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "b": ["b1", "b2"],
+                "a": [None, "a1"],
+            }
+        ),
+    )
