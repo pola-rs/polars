@@ -248,12 +248,12 @@ fn is_sorted_rec(
                     IsSorted::Ascending => Some(Sorted {
                         column: c.name().clone(),
                         descending: Some(false),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                        nulls_last: Some(c.get(c.len() - 1).is_ok_and(|v| v.is_null())),
                     }),
                     IsSorted::Descending => Some(Sorted {
                         column: c.name().clone(),
                         descending: Some(true),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                        nulls_last: Some(c.get(c.len() - 1).is_ok_and(|v| v.is_null())),
                     }),
                 })
                 .collect_vec();
