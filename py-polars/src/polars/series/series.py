@@ -1695,7 +1695,10 @@ class Series:
                 else:
                     allocate_output = ufunc_input == ufunc_output
             else:
-                allocate_output = True
+                # For Array dtypes, we can't use Rust pre-allocation because the
+                # numpy array shape is (N, *array_shape), not (N,). Set allocate_output
+                # to False so numpy allocates and we convert back via pl.Series().
+                allocate_output = self.dtype != Array
 
             f = get_ffi_func("apply_ufunc_<>", numpy_char_code_to_dtype(dtype_char), s)
 
