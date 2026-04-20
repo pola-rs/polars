@@ -12,26 +12,23 @@ def reduce_balanced(function: Callable[[T, T], T], iterable: Iterable[T]) -> T:
         msg = "reduce_balanced() of empty iterable"
         raise TypeError(msg)
 
-    while len(values) > 2:
-        half_floor = len(values) // 2
+    while len(values) > 1:
+        split_at = len(values) if len(values) <= 3 else len(values) // 2
 
-        for i in range(0, half_floor, 2):
-            values[i // 2] = (
-                values[i] if i + 1 == half_floor else function(values[i], values[i + 1])
-            )
+        for i in range(0, split_at, 2):
+            if i + 1 == split_at:
+                prev = i // 2 - 1
+                values[prev] = function(values[prev], values[i])
+            else:
+                values[i // 2] = function(values[i], values[i + 1])
 
-        rtree_offset = half_floor % 2
+        for i in range(split_at, len(values), 2):
+            if i + 1 == len(values):
+                prev = i // 2 - 1
+                values[prev] = function(values[prev], values[i])
+            else:
+                values[i // 2] = function(values[i], values[i + 1])
 
-        for i in range(half_floor, len(values), 2):
-            values[i // 2 + rtree_offset] = (
-                values[i]
-                if i + 1 == len(values)
-                else function(values[i], values[i + 1])
-            )
+        del values[split_at // 2 + (len(values) - split_at) // 2 :]
 
-        n_ltree = -(half_floor // -2)
-        n_rtree = -((len(values) - half_floor) // -2)
-
-        del values[n_ltree + n_rtree :]
-
-    return values.pop() if len(values) == 1 else function(values[0], values[1])
+    return values.pop()
