@@ -1,7 +1,6 @@
 # https://embarkstudios.github.io/cargo-deny/checks/cfg.html
 
 [advisories]
-unused-ignored-advisory = "allow"
 yanked = "deny"
 ignore = [
   # THESE ISSUES ARE ALLOW-LISTED HERE TO SILENCE THE CI TEMPORARILY
@@ -37,7 +36,6 @@ ignore = [
 ]
 
 [licenses]
-unused-allowed-license = "allow"
 allow = [
   # Permissive, most common
   "Apache-2.0",
@@ -48,21 +46,12 @@ allow = [
   "MIT",
   # Unicode data / text processing
   "Unicode-3.0",
-  "Unicode-DFS-2016",
   # Public domain / no-rights-reserved
   "CC0-1.0",
-  # Weak copyleft, file-level only; MPL-2.0 requires changes to MPL-licensed *files* to be
-  # released, but does not infect surrounding code
-  "MPL-2.0",
-  # Data license used by webpki-roots for Mozilla's CA root certificate bundle
-  "CDLA-Permissive-2.0",
   # Other permissive / widely-used
-  "BlueOak-1.0.0",
   "BSL-1.0",
   "OpenSSL",
   "Zlib",
-  # License to mark proprietary crates
-  "LicenseRef-Proprietary",
 ]
 
 [bans]
@@ -74,7 +63,6 @@ wildcards = "deny"
 allow-wildcard-paths = true
 
 [sources]
-unused-allowed-source = "allow"
 # Reject crates from registries we have not explicitly approved
 unknown-registry = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
@@ -85,6 +73,4 @@ unknown-git = "deny"
 allow-git = [
   "https://github.com/kdn36/arrow-rs-object-store",
   "https://github.com/pola-rs/jemallocator",
-  "https://github.com/pola-rs/polars",
-  "https://github.com/pola-rs/pyo3",
 ]
