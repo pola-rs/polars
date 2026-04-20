@@ -307,9 +307,9 @@ def test_is_str_sequence_check(
             [0, 1, 2, 3, 4],
             [
                 ([0], [1]),
-                ([2], [3]),
-                ([2, 3], [4]),
-                ([0, 1], [2, 3, 4]),
+                ([0, 1], [2]),
+                ([3], [4]),
+                ([0, 1, 2], [3, 4]),
             ],
             id="length_5",
         ),
@@ -318,8 +318,8 @@ def test_is_str_sequence_check(
             [0, 1, 2, 3, 4, 5],
             [
                 ([0], [1]),
-                ([0, 1], [2]),
                 ([3], [4]),
+                ([0, 1], [2]),
                 ([3, 4], [5]),
                 ([0, 1, 2], [3, 4, 5]),
             ],
@@ -330,13 +330,13 @@ def test_is_str_sequence_check(
             [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             [
                 ([0], [1]),
-                ([2], [3]),
-                ([2, 3], [4]),
                 ([5], [6]),
-                ([7], [8]),
-                ([7, 8], [9]),
-                ([0, 1], [2, 3, 4]),
-                ([5, 6], [7, 8, 9]),
+                ([0, 1], [2]),
+                ([3], [4]),
+                ([5, 6], [7]),
+                ([8], [9]),
+                ([0, 1, 2], [3, 4]),
+                ([5, 6, 7], [8, 9]),
                 ([0, 1, 2, 3, 4], [5, 6, 7, 8, 9]),
             ],
             id="length_9",
@@ -363,4 +363,16 @@ def test_reduce_balanced(
 
 @pytest.mark.parametrize("n", range(1, 99))
 def test_reduce_balanced_parametric(n: int) -> None:
-    assert reduce_balanced(list.__add__, [[i] for i in range(n)]) == [*range(n)]
+    values = [[i] for i in range(n)]
+    expected_acc = [*range(n)]
+
+    seen = []
+
+    def reducer(left: list[int], right: list[int]) -> list[int]:
+        seen.append((left, right))
+        return left + right
+
+    assert reduce_balanced(reducer, values) == expected_acc
+
+    for seq_lsubtree, seq_rsubtree in seen:
+        assert abs(len(seq_lsubtree) - len(seq_rsubtree)) <= 1
