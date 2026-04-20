@@ -13,15 +13,16 @@ def reduce_balanced(function: Callable[[T, T], T], iterable: Iterable[T]) -> T:
         raise TypeError(msg)
 
     while len(values) > 1:
-        last = [values.pop()] if len(values) % 2 != 0 else []
+        rem = len(values) % 2
 
-        for i in range(0, len(values), 2):
-            v = function(values[i], values[i + 1])
-            values[i // 2] = v
+        for i in range(0, len(values) - rem, 2):
+            values[i // 2] = function(values[i], values[i + 1])
 
-        del values[len(values) // 2 :]
+        new_len = (len(values) // 2) + rem
 
-        if last:
-            values.append(last[0])
+        if rem:
+            values[new_len - 1] = values[-1]
 
-    return values[0]
+        del values[new_len:]
+
+    return values.pop()
