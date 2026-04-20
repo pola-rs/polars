@@ -36,4 +36,4 @@ def reduce_balanced(function: Callable[[T, T], T], iterable: Iterable[T]) -> T:
     for idx_l, idx_r in reversed(stack):
         values[idx_l] = function(values[idx_l], values[idx_r])
 
-    return values[stack[0][0]]
+    return values[0]
