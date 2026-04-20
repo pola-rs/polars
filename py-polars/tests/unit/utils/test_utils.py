@@ -308,8 +308,8 @@ def test_is_str_sequence_check(
             [
                 ([0], [1]),
                 ([2], [3]),
-                ([0, 1], [2, 3]),
-                ([0, 1, 2, 3], [4]),
+                ([2, 3], [4]),
+                ([0, 1], [2, 3, 4]),
             ],
             id="length_5",
         ),
@@ -318,12 +318,28 @@ def test_is_str_sequence_check(
             [0, 1, 2, 3, 4, 5],
             [
                 ([0], [1]),
-                ([2], [3]),
-                ([4], [5]),
-                ([0, 1], [2, 3]),
-                ([0, 1, 2, 3], [4, 5]),
+                ([3], [4]),
+                ([0, 1], [2]),
+                ([3, 4], [5]),
+                ([0, 1, 2], [3, 4, 5]),
             ],
             id="length_6",
+        ),
+        pytest.param(
+            [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            [
+                ([0], [1]),
+                ([2], [3]),
+                ([5], [6]),
+                ([7], [8]),
+                ([0, 1], [2, 3]),
+                ([5, 6], [7, 8]),
+                ([0, 1, 2, 3], [4]),
+                ([5, 6, 7, 8], [9]),
+                ([0, 1, 2, 3, 4], [5, 6, 7, 8, 9]),
+            ],
+            id="length_9",
         ),
     ],
 )
@@ -339,7 +355,13 @@ def test_reduce_balanced(
         return left + right
 
     assert reduce_balanced(reducer, values) == expected_acc
+    print()
     assert seen == expected_seen
 
     with pytest.raises(TypeError):
         reduce_balanced(reducer, [])
+
+
+@pytest.mark.parametrize("n", range(1, 99))
+def test_reduce_balanced_parametric(n: int) -> None:
+    assert reduce_balanced(list.__add__, [[i] for i in range(n)]) == [*range(n)]
