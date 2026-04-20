@@ -165,6 +165,7 @@ nav:
         - polars-on-premises/bare-metal/configuration/reference.md
         - polars-on-premises/bare-metal/configuration/license.md
         - polars-on-premises/bare-metal/configuration/monitoring.md
+        - polars-on-premises/bare-metal/configuration/persistence.md
         - polars-on-premises/bare-metal/configuration/resource-limits.md
         - polars-on-premises/bare-metal/configuration/shuffle-data.md
         - polars-on-premises/bare-metal/configuration/anonymous-results.md

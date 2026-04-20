@@ -22,13 +22,11 @@ database_path = "./observatory/"
 enabled = true
 ```
 
-## Observatory data stores and persistence
+## Observatory data stores
 
 The observatory stores profiling data in an SQLite database file. The location of this file can be
-configured as shown above using the `database_path` key. Restarting a Polars on-premises cluster
-with the same database path will allow the observatory to read back historical query data. The
-storage needed for this file is in the order of several tens of MB, depending on the number of
-queries and their complexity.
+configured as shown above using the `database_path` key. The storage needed for this file is in the
+order of several tens of MB, depending on the number of queries and their complexity.
 
 The location of the observatory database can be configured through the `observatory.database_path`
 configuration option. If this points to a directory, a file in that directory will be created.

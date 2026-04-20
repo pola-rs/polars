@@ -4,7 +4,7 @@ license key with which you can download Polars On-Premises.
 
 ## Downloading Polars On-Premises
 
-#### Using UV
+#### Using `uv`
 
 The simplest way to get started is to use our private PyPi index. You can log in to the index using
 the given license key. This will automatically install the correct Polars version and work well
@@ -52,6 +52,13 @@ $ polars-on-premises service --config-path /etc/polars-cloud/config.toml
 However, the service requires quite some configuration to get started. Below you can find an example
 scheduler and worker config, and you can find the full configuration reference
 [here](/polars-on-premises/bare-metal/config-reference).
+
+## Telemetry
+
+Polars on-premises uses OpenTelemetry as its telemetry framework. To receive OTLP metrics and
+traces, configure the `OTLP_ENDPOINT` environment variable to point to your OTLP collector. Logs are
+written to standard output/error in JSON format. The log level can be configured using the
+`PLC_LOG_LEVEL` environment variable.
 
 ## Quick start
 
