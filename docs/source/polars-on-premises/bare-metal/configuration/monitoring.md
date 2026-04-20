@@ -77,3 +77,10 @@ enabled = false
 [monitoring]
 enabled = false
 ```
+
+## Telemetry
+
+Polars on-premises uses OpenTelemetry as its telemetry framework. To receive OTLP metrics and
+traces, configure the `OTLP_ENDPOINT` environment variable to point to your OTLP collector. Logs are
+written to standard output/error in JSON format. The log level can be configured using the
+`PLC_LOG_LEVEL` environment variable.

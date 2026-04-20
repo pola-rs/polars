@@ -53,13 +53,6 @@ However, the service requires quite some configuration to get started. Below you
 scheduler and worker config, and you can find the full configuration reference
 [here](/polars-on-premises/bare-metal/config-reference).
 
-## Telemetry
-
-Polars on-premises uses OpenTelemetry as its telemetry framework. To receive OTLP metrics and
-traces, configure the `OTLP_ENDPOINT` environment variable to point to your OTLP collector. Logs are
-written to standard output/error in JSON format. The log level can be configured using the
-`PLC_LOG_LEVEL` environment variable.
-
 ## Quick start
 
 To get started fast, you can use the following configuration. It enables the scheduler, worker,
