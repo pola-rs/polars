@@ -355,7 +355,6 @@ def test_reduce_balanced(
         return left + right
 
     assert reduce_balanced(reducer, values) == expected_acc
-    print()
     assert seen == expected_seen
 
     with pytest.raises(TypeError):
