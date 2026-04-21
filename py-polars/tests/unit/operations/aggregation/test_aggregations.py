@@ -10,7 +10,17 @@ from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.asserts.series import assert_series_equal
 from polars.testing.parametric import dataframes
+from polars.testing.parametric.strategies.core import column
+from tests.unit.conftest import (
+    DATETIME_DTYPES,
+    DURATION_DTYPES,
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+    NUMERIC_DTYPES,
+    TEMPORAL_DTYPES,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1570,3 +1580,36 @@ def test_min_max_by_all_null_by_group_slice(agg: Callable[..., pl.Expr]) -> None
         .collect()
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "input", "expected"),
+    [
+        (
+            pl.Date,
+            [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 2)],
+            [[date(2020, 1, 1), date(2020, 1, 2)], [date(2020, 1, 2)]],
+        ),
+        (pl.Decimal(), [1, 2, 2], [[1, 2], [2]]),
+        (pl.Categorical, ["A", "B", "B"], [["A", "B"], ["B"]]),
+        (pl.Enum(["A", "B"]), ["A", "B", "B"], [["A", "B"], ["B"]]),
+    ],
+)
+def test_unordered_implode_reduction_27373(
+    dtype: pl.DataType, input: list[Any], expected: list[Any]
+) -> None:
+    df = pl.DataFrame(
+        {"group": ["a", "a", "b"], "val": input},
+        schema={"group": pl.String, "val": dtype},
+    )
+    expected = pl.DataFrame(
+        {"group": ["a", "b"], "val": expected},
+        schema={"group": pl.String, "val": pl.List(dtype)},
+    )
+    q = df.lazy().group_by("group").agg(pl.col("val").unique())
+    actual = (
+        q.collect(engine="streaming")
+        .with_columns(pl.col("val").map_elements(sorted, return_dtype=pl.List(dtype)))
+        .sort("group")
+    )
+    assert_frame_equal(actual, expected)
