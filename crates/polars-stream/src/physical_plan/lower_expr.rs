@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
@@ -14,10 +15,13 @@ use polars_ops::frame::{JoinArgs, JoinType};
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::projection_height::{ExprHeightVisitor, ExprProjectionHeight};
 use polars_plan::prelude::*;
+use polars_plan::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::{unique_column_name, unitvec};
 use slotmap::SlotMap;
 
@@ -53,6 +57,8 @@ struct LowerExprContext<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
     cache: &'a mut ExprCache,
+    node_scratch: &'a mut ScratchVec<Node>,
+    ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
 }
 
 impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
@@ -303,124 +309,75 @@ fn build_input_independent_node_with_ctx(
     )))
 }
 
-#[recursive::recursive]
-pub fn is_length_preserving_rec(
-    expr_key: ExprNodeKey,
-    arena: &Arena<AExpr>,
-    cache: &mut PlHashMap<ExprNodeKey, bool>,
-) -> bool {
-    if let Some(ret) = cache.get(&expr_key) {
-        return *ret;
+fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
+    struct CachedLengthPreservingVisitor<'a> {
+        height_resolver: &'a mut ExprHeightVisitor<'a>,
+        cache: &'a mut PlHashMap<Node, bool>,
     }
 
-    let ret = match arena.get(expr_key) {
-        // Handled separately in `Eval`.
-        AExpr::Element => unreachable!(),
-        // Mapped to `Column` in `StructEval`.
-        AExpr::StructField(_) => unreachable!(),
+    impl<'a> NodeVisitor for CachedLengthPreservingVisitor<'a> {
+        type Edge = ExprProjectionHeight;
+        type Key = Node;
+        type Storage = &'a Arena<AExpr>;
+        type BreakValue = ();
 
-        AExpr::Gather { .. }
-        | AExpr::Explode { .. }
-        | AExpr::Filter { .. }
-        | AExpr::Agg(_)
-        | AExpr::Slice { .. }
-        | AExpr::Len
-        | AExpr::Literal(_) => false,
-
-        AExpr::Column(_) => true,
-
-        AExpr::Cast {
-            expr: inner,
-            dtype: _,
-            options: _,
+        fn default_edge(&mut self) -> Self::Edge {
+            self.height_resolver.default_edge()
         }
-        | AExpr::Sort {
-            expr: inner,
-            options: _,
-        }
-        | AExpr::SortBy {
-            expr: inner,
-            by: _,
-            sort_options: _,
-        } => is_length_preserving_rec(*inner, arena, cache),
 
-        AExpr::BinaryExpr { left, op: _, right } => {
-            // As long as at least one input is length-preserving the other side
-            // should either broadcast or have the same length.
-            is_length_preserving_rec(*left, arena, cache)
-                || is_length_preserving_rec(*right, arena, cache)
-        },
-        AExpr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            is_length_preserving_rec(*predicate, arena, cache)
-                || is_length_preserving_rec(*truthy, arena, cache)
-                || is_length_preserving_rec(*falsy, arena, cache)
-        },
-        AExpr::AnonymousAgg { .. } => false,
-        AExpr::AnonymousFunction {
-            input,
-            function: _,
-            options,
-            fmt_str: _,
+        fn pre_visit(
+            &mut self,
+            key: Self::Key,
+            storage: &mut Self::Storage,
+            edges: &mut dyn polars_plan::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
+        ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
+            use ControlFlow as CF;
+
+            if let Some(length_preserving) = self.cache.get(&key) {
+                edges.outputs()[0] = if *length_preserving {
+                    ExprProjectionHeight::Column
+                } else {
+                    ExprProjectionHeight::Unknown
+                };
+
+                CF::Continue(SubtreeVisit::Skip)
+            } else {
+                self.height_resolver.pre_visit(key, storage, edges)
+            }
         }
-        | AExpr::Function {
-            input,
-            function: _,
-            options,
-        } => {
-            // TODO: actually inspect the functions? This is overly conservative.
-            options.is_length_preserving()
-                && input
-                    .iter()
-                    .all(|expr| is_length_preserving_rec(expr.node(), arena, cache))
-        },
-        AExpr::Eval {
-            expr,
-            evaluation: _,
-            variant: _,
-        } => is_length_preserving_rec(*expr, arena, cache),
-        #[cfg(feature = "dynamic_group_by")]
-        AExpr::Rolling {
-            function: _,
-            index_column: _,
-            period: _,
-            offset: _,
-            closed_window: _,
-        } => true,
-        AExpr::StructEval {
-            expr,
-            evaluation: _,
-        } => is_length_preserving_rec(*expr, arena, cache),
-        AExpr::Over {
-            function: _, // Actually shouldn't matter for window functions.
-            partition_by: _,
-            order_by: _,
-            mapping,
-        } => !matches!(mapping, WindowMapping::Explode),
+
+        fn post_visit(
+            &mut self,
+            key: Self::Key,
+            storage: &mut Self::Storage,
+            edges: &mut dyn polars_plan::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
+        ) -> ControlFlow<Self::BreakValue> {
+            let control_flow = self.height_resolver.post_visit(key, storage, edges);
+
+            let length_preserving = matches!(edges.outputs()[0], ExprProjectionHeight::Column);
+
+            self.cache.insert(key, length_preserving);
+
+            control_flow
+        }
+    }
+
+    let mut visitor = CachedLengthPreservingVisitor {
+        cache: &mut ctx.cache.is_length_preserving,
+        height_resolver: &mut Default::default(),
     };
 
-    cache.insert(expr_key, ret);
-    ret
-}
-
-#[expect(dead_code)]
-pub fn is_length_preserving(
-    expr_key: ExprNodeKey,
-    expr_arena: &Arena<AExpr>,
-    cache: &mut ExprCache,
-) -> bool {
-    is_length_preserving_rec(expr_key, expr_arena, &mut cache.is_length_preserving)
-}
-
-fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
-    is_length_preserving_rec(
+    let height = aexpr_tree_traversal(
         expr_key,
-        ctx.expr_arena,
-        &mut ctx.cache.is_length_preserving,
+        &mut &*ctx.expr_arena,
+        ctx.node_scratch.get(),
+        ctx.ae_height_scratch.get(),
+        &mut visitor,
     )
+    .continue_value()
+    .unwrap();
+
+    matches!(height, ExprProjectionHeight::Column)
 }
 
 fn build_fallback_node_with_ctx(
@@ -2745,6 +2702,8 @@ pub fn lower_exprs(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
@@ -2773,6 +2732,8 @@ pub fn build_select_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
 }
@@ -2852,6 +2813,8 @@ pub fn build_length_preserving_select_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     let already_length_preserving = exprs
         .iter()

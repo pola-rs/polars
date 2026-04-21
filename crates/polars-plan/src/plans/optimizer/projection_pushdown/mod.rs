@@ -779,6 +779,7 @@ impl ProjectionPushDown {
                 input_left,
                 input_right,
                 key,
+                maintain_order,
             } => {
                 if ctx.has_pushed_down() {
                     // make sure that the filter column is projected
@@ -792,6 +793,7 @@ impl ProjectionPushDown {
                     input_left,
                     input_right,
                     key,
+                    maintain_order,
                 })
             },
             Invalid => unreachable!(),
