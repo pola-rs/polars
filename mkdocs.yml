@@ -178,6 +178,8 @@ nav:
       - polars-on-premises/bare-metal/python-environment.md
       - Integrations:
         - polars-on-premises/bare-metal/integrations/slurm.md
+    - Integrations:
+      - polars-on-premises/integrations/openlineage.md
     - Distribution:
       - polars-on-premises/releases.md
 not_in_nav: |
