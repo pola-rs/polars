@@ -877,3 +877,8 @@ def test_reinterpret_errors_13659() -> None:
         match="cannot reinterpret from Int8 to Int16",
     ):
         q.collect_schema()
+
+
+def test_append_no_upcast_27345() -> None:
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.select(pl.lit("Bob").append(1, upcast=False))

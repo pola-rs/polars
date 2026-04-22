@@ -1362,3 +1362,10 @@ def test_list_sample_fraction_boundary_values_22024() -> None:
     s.list.sample(fraction=0.0)
     s.list.sample(fraction=1.0)
     s.list.sample(fraction=pl.Series([0.0, 1.0]))
+
+
+def test_list_sample_fraction_with_replacement_27344() -> None:
+    df = pl.DataFrame({"x": [[1]]})
+
+    result = df.select(pl.col("x").list.sample(fraction=2, with_replacement=True))
+    assert result["x"][0].to_list() == [1, 1]

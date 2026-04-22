@@ -1719,9 +1719,9 @@ class Series:
 
             # We're using a regular ufunc, that operates value by value. That
             # means we allowed missing data in the input, so filter it out:
-            validity_mask = self.is_not_null()
+            validity_mask = self.is_not_null() if self.has_nulls() else F.lit(True)
             for arg in inputs:
-                if isinstance(arg, Series):
+                if isinstance(arg, Series) and arg.has_nulls():
                     validity_mask &= arg.is_not_null()
             return (
                 result.to_frame()

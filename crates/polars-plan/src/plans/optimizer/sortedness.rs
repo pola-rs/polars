@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{FillNullStrategy, PlHashMap, PlHashSet};
+use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_utils::arena::{Arena, Node};
@@ -240,6 +240,7 @@ fn is_sorted_rec(
         } => rec!(*input),
         IR::Scan { .. } => None,
         IR::DataFrameScan { df, .. } => {
+            let last_is_null = |c: &Column| Some(c.get(c.len().checked_sub(1)?).ok()?.is_null());
             let sorted_cols = df
                 .columns()
                 .iter()
@@ -248,12 +249,12 @@ fn is_sorted_rec(
                     IsSorted::Ascending => Some(Sorted {
                         column: c.name().clone(),
                         descending: Some(false),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                        nulls_last: Some(last_is_null(c).unwrap_or(false)),
                     }),
                     IsSorted::Descending => Some(Sorted {
                         column: c.name().clone(),
                         descending: Some(true),
-                        nulls_last: Some(c.get(0).is_ok_and(|v| !v.is_null())),
+                        nulls_last: Some(last_is_null(c).unwrap_or(false)),
                     }),
                 })
                 .collect_vec();
