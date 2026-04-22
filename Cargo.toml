@@ -170,10 +170,6 @@ color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62
 inherits = "dev"
 debug = "line-tables-only"
 
-[profile.coverage]
-inherits = "test"
-debug = "line-tables-only"
-
 [profile.release]
 lto = "thin"
 debug = "line-tables-only"
