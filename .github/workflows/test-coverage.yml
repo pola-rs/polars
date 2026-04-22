@@ -88,6 +88,11 @@ jobs:
           name: coverage-rust
           path: coverage-rust.lcov
 
+      - name: Report free disk space
+        if: success() || failure()
+        continue-on-error: true
+        run: df -h
+
   coverage-python:
     # Running under ubuntu doesn't seem to work:
     # https://github.com/pola-rs/polars/issues/14255
@@ -202,6 +207,11 @@ jobs:
             py-polars/auto-streaming.xml
             py-polars/small-morsel.xml
             py-polars/async.xml
+
+      - name: Report free disk space
+        if: success() || failure()
+        continue-on-error: true
+        run: df -h
 
   upload-coverage:
     needs: [coverage-rust, coverage-python]
