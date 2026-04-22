@@ -25,14 +25,13 @@ defaults:
 env:
   RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
   RUST_BACKTRACE: 1
-  # Coverage data comes from instrumentation, not DWARF symbols.
-  # Keep macOS test binaries smaller to avoid linker/disk exhaustion.
-  CARGO_PROFILE_DEV_DEBUG: 0
-  CARGO_PROFILE_TEST_DEBUG: 0
-  LLVM_PROFILE_FILE: ${{ github.workspace }}/target/polars-%p-%3m.profraw
+  # Coverage artifacts go to target/coverage/ via the 'coverage' Cargo profile. This keeps them
+  # isolated from any non-coverage cache restored to target/debug/, which would otherwise create
+  # 3-4x duplicate rlib copies and exhaust disk space.
+  LLVM_PROFILE_FILE: ${{ github.workspace }}/target/coverage/polars-%p-%3m.profraw
   CARGO_LLVM_COV: 1
   CARGO_LLVM_COV_SHOW_ENV: 1
-  CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target
+  CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target/coverage
   # We use the stable ABI, silences error from PyO3 that the system Python is too new.
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
 
@@ -60,7 +59,7 @@ jobs:
 
       - name: Run tests
         run: >
-          cargo test --all-features
+          cargo test --all-features --profile coverage
           -p polars-arrow
           -p polars-compute
           -p polars-core
@@ -77,10 +76,10 @@ jobs:
       # Unfortunately we run out of disk space when running integration tests with coverage enabled.
       # Skipping for now.
       # - name: Run integration tests
-      #   run: cargo test --all-features -p polars --test it
+      #   run: cargo test --all-features --profile coverage -p polars --test it
 
       - name: Report coverage
-        run: cargo llvm-cov report --lcov --output-path coverage-rust.lcov
+        run: cargo llvm-cov report --profile coverage --lcov --output-path coverage-rust.lcov
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v6
@@ -145,7 +144,7 @@ jobs:
           # Make sure we use the Polars we're about to build.
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           uv pip install --no-deps -e py-polars
-          make build
+          make build ARGS="--profile coverage"
 
       - name: Run Python tests
         working-directory: py-polars
@@ -195,7 +194,7 @@ jobs:
           --cov --cov-report xml:async.xml --cov-fail-under=0
 
       - name: Report Rust coverage
-        run: cargo llvm-cov report --lcov --output-path coverage-python.lcov
+        run: cargo llvm-cov report --profile coverage --lcov --output-path coverage-python.lcov
 
       - name: Upload coverage reports
         uses: actions/upload-artifact@v6
