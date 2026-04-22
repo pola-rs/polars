@@ -132,6 +132,11 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - name: Report free disk space
+        if: success() || failure()
+        continue-on-error: true
+        run: df -h
+
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
@@ -146,6 +151,11 @@ jobs:
           uv pip uninstall polars-runtime-32 polars-runtime-64 polars-runtime-compat
           uv pip install --no-deps -e py-polars
           make build
+
+      - name: Report free disk space
+        if: success() || failure()
+        continue-on-error: true
+        run: df -h
 
       - name: Run Python tests
         working-directory: py-polars
