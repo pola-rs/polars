@@ -380,6 +380,28 @@ def test_merge_sorted_maintain_order_parametric(lhs: pl.Series, rhs: pl.Series) 
 
 
 @pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_maintain_order(n_frames: int) -> None:
+    dfs = [
+        pl.DataFrame(
+            {
+                "key": [0, 0, 1, 1],
+                "src": [i, i, i, i],
+                "pos": [0, 1, 0, 1],
+            }
+        )
+        for i in range(n_frames)
+    ]
+
+    chained = dfs[0].lazy()
+    for df in dfs[1:]:
+        chained = chained.merge_sorted(df.lazy(), key="key", maintain_order=True)
+
+    expected = pl.concat(dfs).sort(["key", "src", "pos"], maintain_order=True)
+
+    assert_frame_equal(chained.collect(), expected)
+
+
+@pytest.mark.parametrize("n_frames", [4, 5])
 def test_merge_sorted_deep_chain_with_sort_collect(n_frames: int) -> None:
     dfs = [
         pl.DataFrame(
