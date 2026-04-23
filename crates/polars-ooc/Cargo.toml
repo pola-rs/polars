@@ -17,7 +17,13 @@ polars-io = { workspace = true, features = ["ipc"] }
 polars-utils = { workspace = true, features = ["sysinfo"] }
 tokio = { workspace = true, features = ["sync"] }
 
-[target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
+[target.'cfg(target_os = "windows")'.dependencies]
+mimalloc = { version = "0.1", default-features = false, features = ["v3"], optional = true }
+
+[target.'cfg(all(not(target_family = "unix"), not(target_os = "windows"), not(target_os = "emscripten")))'.dependencies]
+mimalloc = { version = "0.1", default-features = false, optional = true }
+
+[target.'cfg(target_os = "emscripten")'.dependencies]
 mimalloc = { version = "0.1", default-features = false, optional = true }
 
 # Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
