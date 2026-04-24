@@ -4135,3 +4135,56 @@ def test_parquet_duplicate_column_names_27393(tmp_path: Path) -> None:
 
     with pytest.raises(pl.exceptions.DuplicateError):
         pl.scan_parquet(path).collect_schema()
+
+
+def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
+    path = io_files_path / "nested_maps.snappy.parquet"
+
+    expected = pl.DataFrame(
+        {
+            "a": [
+                [
+                    {
+                        "key": "a",
+                        "value": [
+                            {"key": 1, "value": True},
+                            {"key": 2, "value": False},
+                        ],
+                    }
+                ],
+                [{"key": "b", "value": [{"key": 1, "value": True}]}],
+                [{"key": "c", "value": []}],
+                [{"key": "d", "value": []}],
+                [{"key": "e", "value": [{"key": 1, "value": True}]}],
+                [
+                    {
+                        "key": "f",
+                        "value": [
+                            {"key": 3, "value": True},
+                            {"key": 4, "value": False},
+                            {"key": 5, "value": True},
+                        ],
+                    }
+                ],
+            ],
+            "b": [1, 1, 1, 1, 1, 1],
+            "c": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        },
+        schema={
+            "a": pl.List(
+                pl.Struct(
+                    {
+                        "key": pl.String,
+                        "value": pl.List(
+                            pl.Struct({"key": pl.Int32, "value": pl.Boolean})
+                        ),
+                    }
+                )
+            ),
+            "b": pl.Int32,
+            "c": pl.Float64,
+        },
+    )
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)
