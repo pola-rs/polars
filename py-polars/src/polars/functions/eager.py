@@ -604,7 +604,12 @@ def union(
 
 
 @unstable()
-def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
+def merge_sorted(
+    items: Iterable[PolarsType],
+    key: str,
+    *,
+    maintain_order: bool = False,
+) -> PolarsType:
     """
     Merge multiple sorted DataFrames or LazyFrames by the sorted key.
 
@@ -623,6 +628,10 @@ def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
         DataFrames or LazyFrames to merge.
     key
         Key that is sorted.
+    maintain_order
+        If ``True``, the output is guaranteed to have left-biased ordering
+        for equal keys: rows from the left frame appear before rows from
+        the right frame when their keys are equal.
 
     Examples
     --------
@@ -654,8 +663,8 @@ def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
 
     Notes
     -----
-    No guarantee is given over the output row order when the key is equal
-    between dataframes.
+    Unless ``maintain_order=True``, no guarantee is given over the output
+    row order when the key is equal between dataframes.
 
     The key must be sorted in ascending order.
     """
@@ -674,7 +683,7 @@ def merge_sorted(items: Iterable[PolarsType], key: str) -> PolarsType:
     frames = [df.lazy() for df in elems]
 
     def reduce_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
-        return x.merge_sorted(y, key=key)
+        return x.merge_sorted(y, key=key, maintain_order=maintain_order)
 
     lf = reduce_balanced(reduce_fn, frames)
     eager = isinstance(elems[0], pl.DataFrame)

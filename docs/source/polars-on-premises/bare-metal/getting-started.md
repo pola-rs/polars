@@ -4,7 +4,7 @@ license key with which you can download Polars On-Premises.
 
 ## Downloading Polars On-Premises
 
-#### Using UV
+#### Using `uv`
 
 The simplest way to get started is to use our private PyPi index. You can log in to the index using
 the given license key. This will automatically install the correct Polars version and work well

@@ -1,6 +1,10 @@
 use arrow::legacy::utils::CustomIterTools;
+#[cfg(feature = "dtype-categorical")]
+use polars_core::datatypes::CategoricalPhysical;
 use polars_core::prelude::*;
-use polars_core::{with_match_categorical_physical_type, with_match_physical_numeric_polars_type};
+#[cfg(feature = "dtype-categorical")]
+use polars_core::with_match_categorical_physical_type;
+use polars_core::with_match_physical_numeric_polars_type;
 
 pub fn _merge_sorted_dfs(
     left: &DataFrame,
@@ -185,6 +189,7 @@ where
 }
 
 fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
+    #[cfg(feature = "dtype-categorical")]
     if lhs.dtype().is_categorical() || lhs.dtype().is_enum() {
         let cat_phys = lhs.dtype().cat_physical().unwrap();
         with_match_categorical_physical_type!(cat_phys, |$C| {

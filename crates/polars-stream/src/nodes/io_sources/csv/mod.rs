@@ -338,10 +338,12 @@ impl FileReader for CsvFileReader {
                     _ = tx.send(used_schema.clone())
                 }
 
-                let projection: Vec<usize> = projected_schema
+                let mut projection: Vec<usize> = projected_schema
                     .iter_names()
                     .filter_map(|name| used_schema.index_of(name))
                     .collect();
+
+                projection.sort_unstable();
 
                 if verbose {
                     eprintln!(

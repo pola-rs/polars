@@ -386,8 +386,15 @@ impl<'a> TreeFmtNode<'a> {
                         input_left,
                         input_right,
                         key,
+                        maintain_order,
                     } => ND(
-                        wh(h, &format!("MERGE SORTED ON '{key}")),
+                        wh(
+                            h,
+                            &format!(
+                                "MERGE SORTED[maintain_order: {:?}] ON '{key}'",
+                                maintain_order
+                            ),
+                        ),
                         [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
                             .into_iter()
                             .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
