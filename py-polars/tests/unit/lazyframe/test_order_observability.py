@@ -181,25 +181,12 @@ def test_merge_sorted_deep_chain_to_union(n_frames: int) -> None:
     assert "UNION" in explain
 
 
-@pytest.mark.parametrize("n_frames", [4, 5])
+@pytest.mark.parametrize("n_frames", [4, 5, 6])
 def test_merge_sorted_deep_chain_explain_matches_balanced(n_frames: int) -> None:
-    def balanced_merge_sorted(lfs: list[pl.LazyFrame]) -> pl.LazyFrame:
-        items = lfs[:]
-
-        while len(items) > 1:
-            items = [
-                items[i].merge_sorted(items[i + 1], "a")
-                if i + 1 < len(items)
-                else items[i]
-                for i in range(0, len(items), 2)
-            ]
-
-        return items[0]
-
     lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(n_frames)]
 
     chained = functools.reduce(lambda left, right: left.merge_sorted(right, "a"), lfs)
-    balanced = balanced_merge_sorted(lfs)
+    balanced = pl.merge_sorted(lfs, key="a")
 
     assert chained.sort("a").explain() == balanced.sort("a").explain()
 

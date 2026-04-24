@@ -56,12 +56,28 @@ impl OptimizationRule for FlattenMergeSortedRule {
             return Ok(None);
         }
 
-        Ok(Some(rebuild_merge_sorted_tree(
-            &mut self.collected_inputs,
-            key,
+        let inputs = &self.collected_inputs;
+        let split = inputs.len().div_ceil(2);
+        let input_left = build_merge_sorted_subtree(
+            &inputs[..split],
+            &key,
             maintain_order,
             lp_arena,
-        )))
+            &mut self.optimized_nodes,
+        );
+        let input_right = build_merge_sorted_subtree(
+            &inputs[split..],
+            &key,
+            maintain_order,
+            lp_arena,
+            &mut self.optimized_nodes,
+        );
+        Ok(Some(IR::MergeSorted {
+            input_left,
+            input_right,
+            key,
+            maintain_order,
+        }))
     }
 }
 
@@ -92,48 +108,39 @@ fn collect_merge_sorted_inputs(
     }
 }
 
-fn rebuild_merge_sorted_tree(
-    inputs: &mut [Node],
-    key: PlSmallStr,
+fn build_merge_sorted_subtree(
+    inputs: &[Node],
+    key: &PlSmallStr,
     maintain_order: bool,
     lp_arena: &mut Arena<IR>,
-) -> IR {
-    debug_assert!(inputs.len() > 2);
-
-    let mut len = inputs.len();
-
-    while len > 2 {
-        let pair_len = len & !1;
-        let mut read = 0;
-        let mut write = 0;
-
-        while read < pair_len {
-            inputs[write] = lp_arena.add(IR::MergeSorted {
-                input_left: inputs[read],
-                input_right: inputs[read + 1],
+    optimized_nodes: &mut PlHashSet<Node>,
+) -> Node {
+    match inputs {
+        [node] => *node,
+        _ => {
+            let split = inputs.len().div_ceil(2);
+            let input_left = build_merge_sorted_subtree(
+                &inputs[..split],
+                key,
+                maintain_order,
+                lp_arena,
+                optimized_nodes,
+            );
+            let input_right = build_merge_sorted_subtree(
+                &inputs[split..],
+                key,
+                maintain_order,
+                lp_arena,
+                optimized_nodes,
+            );
+            let node = lp_arena.add(IR::MergeSorted {
+                input_left,
+                input_right,
                 key: key.clone(),
                 maintain_order,
             });
-            read += 2;
-            write += 1;
-        }
-
-        if pair_len != len {
-            inputs[write] = inputs[pair_len];
-            write += 1;
-        }
-
-        len = write;
-    }
-
-    if let [input_left, input_right, ..] = inputs {
-        IR::MergeSorted {
-            input_left: *input_left,
-            input_right: *input_right,
-            key,
-            maintain_order,
-        }
-    } else {
-        unreachable!("rebuild_merge_sorted_tree requires at least 3 inputs")
+            optimized_nodes.insert(node);
+            node
+        },
     }
 }
