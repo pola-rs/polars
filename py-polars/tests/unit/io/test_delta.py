@@ -954,10 +954,10 @@ def _df_many_types() -> pl.DataFrame:
 @pytest.mark.parametrize(
     "expr",
     [
-        # Bool
-        # pl.col.bool == False,  ## see github issue #26290, to be confirmed
-        # pl.col.bool <= False,
-        # pl.col.bool < True,
+        # Bool (requires deltalake >= 1.5.1)
+        # ~pl.col.bool, ## see github issue #26290
+        pl.col.bool <= False,
+        pl.col.bool < True,
         pl.col.bool.is_null(),
         # Integer
         pl.col.int == 2,
@@ -965,10 +965,10 @@ def _df_many_types() -> pl.DataFrame:
         pl.col.int < 3,
         pl.col.int.is_null(),
         (pl.col.int < 2) & (pl.col.int.is_not_null()),
-        # Float ## see github issue #26238
-        # pl.col.float == 2.0,
-        # pl.col.float <= 2.0,
-        # pl.col.float < 3.0,
+        # Float
+        pl.col.float == 2.0,
+        pl.col.float <= 2.0,
+        pl.col.float < 3.0,
         pl.col.float.is_null(),
         # mixed
         (pl.col.int == 2) & (pl.col.float.is_not_null()),
@@ -1036,15 +1036,15 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
         pl.DataFrame(
             [
                 pl.Series('len', [2, 2, 2], dtype=pl.Int64),
-                pl.Series('p_nc', [None, None, None], dtype=pl.UInt32),
+                pl.Series('p_nc', [None, None, None], dtype=pl.Int64),
                 pl.Series('p_min', [None, None, None], dtype=pl.Int64),
                 pl.Series('p_max', [None, None, None], dtype=pl.Int64),
                 pl.Series('a_nc', [0, 1, 0], dtype=pl.Int64),
                 pl.Series('a_min', [1, 5, 3], dtype=pl.Int64),
                 pl.Series('a_max', [2, 5, 4], dtype=pl.Int64),
                 pl.Series('bool_nc', [0, 1, 0], dtype=pl.Int64),
-                pl.Series('bool_min', [None, None, None], dtype=pl.Boolean),
-                pl.Series('bool_max', [None, None, None], dtype=pl.Boolean),
+                pl.Series('bool_min', [False, True, True], dtype=pl.Boolean),
+                pl.Series('bool_max', [False, True, True], dtype=pl.Boolean),
                 pl.Series('int_nc', [0, 1, 0], dtype=pl.Int64),
                 pl.Series('int_min', [1, 5, 3], dtype=pl.Int64),
                 pl.Series('int_max', [2, 5, 4], dtype=pl.Int64),
@@ -1076,7 +1076,13 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
     ("expr", "n_cols", "expect_n_files_skipped"),
     [
         (pl.col.a == 2, "0", 0),
-        (pl.col.a == 2, "1", 1),
+        # inconclusive pending resolution of https://github.com/delta-io/delta-rs/issues/4398
+        pytest.param(
+            pl.col.a == 2,
+            "1",
+            1,
+            marks=pytest.mark.xfail(reason="pending delta-rs #4398"),
+        ),
         (pl.col.b == 2, "1", 0),
         (pl.col.a == 2, "2", 1),
     ],
