@@ -25,6 +25,10 @@ defaults:
 env:
   RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
   RUST_BACKTRACE: 1
+  # Coverage data comes from instrumentation, not DWARF symbols.
+  # Keep macOS test binaries smaller to avoid linker/disk exhaustion.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
   LLVM_PROFILE_FILE: ${{ github.workspace }}/target/polars-%p-%3m.profraw
   CARGO_LLVM_COV: 1
   CARGO_LLVM_COV_SHOW_ENV: 1

@@ -261,8 +261,10 @@ impl Hash for IRHashWrap<'_> {
                 input_left: _,
                 input_right: _,
                 key,
+                maintain_order,
             } => {
                 key.hash(state);
+                maintain_order.hash(state);
             },
             IR::Invalid => unreachable!(),
         }

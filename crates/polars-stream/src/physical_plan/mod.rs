@@ -482,6 +482,7 @@ pub enum PhysNodeKind {
     MergeSorted {
         input_left: PhysStream,
         input_right: PhysStream,
+        maintain_order: bool,
     },
 
     #[cfg(feature = "ewma")]

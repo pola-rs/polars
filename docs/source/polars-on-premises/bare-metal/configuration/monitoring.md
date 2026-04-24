@@ -28,6 +28,17 @@ The observatory stores profiling data in an SQLite database file. The location o
 configured as shown above using the `database_path` key. The storage needed for this file is in the
 order of several tens of MB, depending on the number of queries and their complexity.
 
+The location of the observatory database can be configured through the `observatory.database_path`
+configuration option. If this points to a directory, a file in that directory will be created.
+Polars on-premises will automatically add the `cluster_id` to this file name to ensure uniqueness
+within the directory.
+
+```toml
+[observatory]
+enabled = true
+database_path = "/mnt/data/observatory.db"
+```
+
 The observatory stores host metrics in a pre-allocated buffer in memory. The size of this buffer can
 be configured using the `max_metrics_bytes_total` key. And since the required memory for these
 metrics can quickly rise if a cluster is kept alive for a long time, there is no default value for
@@ -66,3 +77,10 @@ enabled = false
 [monitoring]
 enabled = false
 ```
+
+## Telemetry
+
+Polars on-premises uses OpenTelemetry as its telemetry framework. To receive OTLP metrics and
+traces, configure the `OTLP_ENDPOINT` environment variable to point to your OTLP collector. Logs are
+written to standard output/error in JSON format. The log level can be configured using the
+`PLC_LOG_LEVEL` environment variable.

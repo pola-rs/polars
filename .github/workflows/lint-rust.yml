@@ -103,3 +103,15 @@ jobs:
           --features object
           -p polars-core
 #          -p polars-arrow
+
+  deny:
+    if: github.ref_name != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Run cargo deny
+        run: cargo deny check

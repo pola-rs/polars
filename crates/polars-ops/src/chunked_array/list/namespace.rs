@@ -645,11 +645,13 @@ pub trait ListNameSpaceImpl: AsList {
         let fraction_s = fraction.cast(&DataType::Float64)?;
         let fraction = fraction_s.f64()?;
 
-        for frac in fraction.iter().flatten() {
-            polars_ensure!(
-                (0.0..=1.0).contains(&frac),
-                ComputeError: "fraction must be between 0.0 and 1.0, got: {}", frac
-            )
+        if !with_replacement {
+            for frac in fraction.iter().flatten() {
+                polars_ensure!(
+                    (0.0..=1.0).contains(&frac),
+                    ComputeError: "fraction must be between 0.0 and 1.0, got: {}", frac
+                )
+            }
         }
 
         polars_ensure!(
