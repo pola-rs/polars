@@ -645,8 +645,8 @@ fn compute_asof_join(
         );
     }
 
-    let left_groups = ByGroups::find_groups(&left_df, &params.left_by(), left_lengths, params)?;
-    let right_groups = ByGroups::find_groups(&right_df, &params.right_by(), right_lengths, params)?;
+    let left_groups = ByGroups::find_groups(&left_df, params.left_by(), left_lengths, params)?;
+    let right_groups = ByGroups::find_groups(&right_df, params.right_by(), right_lengths, params)?;
     let cmp_at = |left_idx, right_idx| unsafe {
         ByGroups::cmp_at(&left_groups, left_idx, &right_groups, right_idx, params)
     };
