@@ -245,7 +245,7 @@ def read_excel(
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str, ...] | None = None,
     table_name: str | None = None,
-    engine: ExcelSpreadsheetEngine = "calamine",
+    engine: ExcelSpreadsheetEngine = "fastexcel",
     engine_options: dict[str, Any] | None = None,
     read_options: dict[str, Any] | None = None,
     has_header: bool = True,
@@ -264,6 +264,8 @@ def read_excel(
         Support loading data from named table objects with `table_name` parameter.
     .. versionadded:: 1.18
         Support loading data from a list (or glob pattern) of multiple workbooks.
+    .. versionchanged:: 1.x.x
+        Default engine is now "fastexcel" (was "calamine").
     .. versionchanged:: 1.0
         Default engine is now "calamine" (was "xlsx2csv").
     .. versionchanged:: 0.20.7
@@ -290,14 +292,15 @@ def read_excel(
         the workbook, so additionally specifying a sheet id or name is optional;
         if one of those parameters *is* specified, an error will be raised if
         the named table is not found in that particular sheet.
-    engine : {'calamine', 'openpyxl', 'xlsx2csv'}
-        Library used to parse the spreadsheet file; defaults to "calamine".
+    engine : {'fastexcel', 'calamine', 'openpyxl', 'xlsx2csv'}
+        Library used to parse the spreadsheet file; defaults to "fastexcel".
 
-        * "calamine": this engine can be used for reading all major types of Excel
+        * "fastexcel": this engine can be used for reading all major types of Excel
           Workbook (`.xlsx`, `.xlsb`, `.xls`) and is dramatically faster than the
           other options, using the `fastexcel` module to bind the Rust-based Calamine
           parser.
-        * "openpyxl": this engine is significantly slower than both `calamine` and
+        * "calamine": alias for "fastexcel".
+        * "openpyxl": this engine is significantly slower than both `fastexcel` and
           `xlsx2csv`, but can provide a useful fallback if you are otherwise unable
           to read data from your workbook.
         * "xlsx2csv": converts the data to an in-memory CSV before using the native
@@ -306,7 +309,7 @@ def read_excel(
         Additional options passed to the underlying engine's primary parsing
         constructor (given below), if supported:
 
-        * "calamine": n/a (can only provide `read_options`)
+        * "fastexcel": n/a (can only provide `read_options`)
         * "openpyxl": `load_workbook <https://openpyxl.readthedocs.io/en/stable/api/openpyxl.reader.excel.html#openpyxl.reader.excel.load_workbook>`_
         * "xlsx2csv": `Xlsx2csv <https://github.com/dilshod/xlsx2csv/blob/f35734aa453d65102198a77e7b8cd04928e6b3a2/xlsx2csv.py#L157>`_
     read_options
@@ -314,7 +317,7 @@ def read_excel(
         Where supported, this allows for additional control over parsing. The
         specific read methods associated with each engine are:
 
-        * "calamine": `load_sheet_by_name <https://fastexcel.toucantoco.dev/fastexcel.html#ExcelReader.load_sheet_by_name>`_
+        * "fastexcel": `load_sheet_by_name <https://fastexcel.toucantoco.dev/fastexcel.html#ExcelReader.load_sheet_by_name>`_
           (or `load_table <https://fastexcel.toucantoco.dev/fastexcel.html#ExcelReader.load_table>`_
           if using the `table_name` parameter).
         * "openpyxl": n/a (can only provide `engine_options`)
@@ -331,7 +334,7 @@ def read_excel(
     infer_schema_length
         The maximum number of rows to scan for schema inference. If set to `None`, the
         entire dataset is scanned to determine the dtypes, which can slow parsing for
-        large workbooks. Note that only the "calamine" and "xlsx2csv" engines support
+        large workbooks. Note that only the "fastexcel" and "xlsx2csv" engines support
         this parameter.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
@@ -358,7 +361,7 @@ def read_excel(
 
     Notes
     -----
-    * Where possible, prefer the default "calamine" engine for reading Excel Workbooks,
+    * Where possible, prefer the default "fastexcel" engine for reading Excel Workbooks,
       as it is significantly faster than the other options.
     * When using the `xlsx2csv` engine the target Excel sheet is first converted
       to CSV using `xlsx2csv.Xlsx2csv(source).convert()` and then parsed with Polars'
@@ -399,6 +402,9 @@ def read_excel(
     ...     read_options={"has_header": False, "new_columns": ["a", "b", "c"]},
     ... )  # doctest: +SKIP
     """
+    if engine == "fastexcel":
+        engine = "calamine"
+
     sources, read_multiple_workbooks = _sources(source)
     frames: list[pl.DataFrame] | list[dict[str, pl.DataFrame]] = [  # type: ignore[assignment]
         _read_spreadsheet(
@@ -619,7 +625,7 @@ def read_ods(
             sheet_id=sheet_id,
             sheet_name=sheet_name,
             table_name=None,
-            engine="calamine",
+            engine="fastexcel",
             engine_options={},
             read_options=None,
             schema_overrides=schema_overrides,
@@ -729,7 +735,7 @@ def _get_read_options(
     """Normalise top-level parameters to engine-specific 'read_options' dict."""
     read_options = (read_options or {}).copy()
 
-    if engine == "calamine":
+    if engine in ("calamine", "fastexcel"):
         if ("use_columns" in read_options) and columns:
             msg = 'cannot specify both `columns` and `read_options["use_columns"]`'
             raise ParameterCollisionError(msg)
@@ -859,7 +865,7 @@ def _initialise_spreadsheet_parser(
         sheets = [{"index": i + 1, "name": ws.title} for i, ws in enumerate(parser)]
         return _read_spreadsheet_openpyxl, parser, sheets
 
-    elif engine == "calamine":
+    elif engine in ("calamine", "fastexcel"):
         fastexcel = import_optional("fastexcel", min_version="0.7.0")
         reading_bytesio, reading_bytes = (
             isinstance(source, BytesIO),
@@ -886,7 +892,7 @@ def _initialise_spreadsheet_parser(
         sheets = [
             {"index": i + 1, "name": nm} for i, nm in enumerate(parser.sheet_names)
         ]
-        return _read_spreadsheet_calamine, parser, sheets
+        return _read_spreadsheet_fastexcel, parser, sheets
 
     msg = f"unrecognized engine: {engine!r}"
     raise NotImplementedError(msg)
@@ -1015,7 +1021,7 @@ def _reorder_columns(
     return df
 
 
-def _read_spreadsheet_calamine(
+def _read_spreadsheet_fastexcel(
     parser: Any,
     *,
     sheet_name: str | None,

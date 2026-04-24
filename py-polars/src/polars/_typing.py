@@ -362,7 +362,7 @@ FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
 BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
-ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
+ExcelSpreadsheetEngine: TypeAlias = Literal["fastexcel", "calamine", "openpyxl", "xlsx2csv"]
 
 
 class SeriesBuffers(TypedDict):
