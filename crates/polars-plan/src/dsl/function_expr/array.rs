@@ -37,8 +37,8 @@ pub enum ArrayFunction {
     Concat,
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<super::DslNameGenerator>),
-    #[cfg(feature = "list_gather")]
-    GatherEvery,
+    #[cfg(feature = "array_gather")]
+    GatherEvery(i64, i64),
 }
 
 impl fmt::Display for ArrayFunction {
@@ -72,8 +72,8 @@ impl fmt::Display for ArrayFunction {
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
-            #[cfg(feature = "list_gather")]
-            GatherEvery => "gather_every",
+            #[cfg(feature = "array_gather")]
+            GatherEvery(_, _) => "gather_every",
         };
         write!(f, "arr.{name}")
     }
