@@ -31,6 +31,9 @@ ignore = [
   # error[vulnerability]: CRLs not considered authoritative by Distribution Point due to faulty matching logic
   "RUSTSEC-2026-0049",
 
+  # error[unmaintained]: core2 is unmaintained, all versions yanked
+  "RUSTSEC-2026-0105",
+
   # error[yanked]: detected yanked crate (try `cargo update -p core2`)
   { name = "core2", version = "0.4.0" },
 ]
