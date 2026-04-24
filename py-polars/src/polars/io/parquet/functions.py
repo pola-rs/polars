@@ -336,7 +336,11 @@ def _read_parquet_with_pyarrow(
             if columns is not None and is_int_sequence(columns):
                 # pyarrow's read_table needs column names; resolve int indices
                 # via the file's schema. For list sources, peek the first file.
-                peek = source_prep[0] if isinstance(source_prep, list) else source_prep
+                peek = (
+                    source_prep[0]
+                    if isinstance(source_prep, list)  # type: ignore[redundant-expr]
+                    else source_prep
+                )
                 schema = pyarrow_parquet.read_schema(peek)
                 resolved_columns = [schema.names[i] for i in columns]
             else:
