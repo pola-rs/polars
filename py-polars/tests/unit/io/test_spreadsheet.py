@@ -293,7 +293,7 @@ def test_read_excel_all_sheets(
 
 @pytest.mark.parametrize(
     "engine",
-    ["calamine", "openpyxl", "xlsx2csv"],
+    ["fastexcel", "calamine", "openpyxl", "xlsx2csv"],
 )
 def test_read_excel_basic_datatypes(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
@@ -699,7 +699,7 @@ def test_unsupported_binary_workbook(path_xlsb: Path) -> None:
         pl.read_excel(path_xlsb, engine="openpyxl")
 
 
-@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+@pytest.mark.parametrize("engine", ["fastexcel", "calamine", "openpyxl", "xlsx2csv"])
 def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> None:
     with pytest.raises(
         ValueError,
@@ -858,7 +858,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         assert_frame_equal(df, xldf)
 
 
-@pytest.mark.parametrize("engine", ["calamine", "xlsx2csv"])
+@pytest.mark.parametrize("engine", ["fastexcel", "calamine", "xlsx2csv"])
 def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {
@@ -980,7 +980,7 @@ def test_excel_read_named_table_with_total_row(tmp_path: Path) -> None:
     assert xldf.row(3) == (None, 0, 0)
 
 
-@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+@pytest.mark.parametrize("engine", ["fastexcel", "calamine", "openpyxl", "xlsx2csv"])
 def test_excel_write_to_bytesio(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame({"colx": [1.5, -2, 0], "coly": ["a", None, "c"]})
 
@@ -1027,7 +1027,7 @@ def test_excel_write_to_file_object(
         assert_frame_equal(df, pl.read_excel(src, engine=engine))
 
 
-@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+@pytest.mark.parametrize("engine", ["fastexcel", "calamine", "openpyxl", "xlsx2csv"])
 def test_excel_read_no_headers(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {"colx": [1, 2, 3], "coly": ["aaa", "bbb", "ccc"], "colz": [0.5, 0.0, -1.0]}
@@ -1330,7 +1330,7 @@ def test_excel_mixed_calamine_float_data(io_files_path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+@pytest.mark.parametrize("engine", ["fastexcel", "calamine", "openpyxl", "xlsx2csv"])
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch, _read_spreadsheet_xlsx2csv needs to be changed not to call `_reorder_columns` on the df
 def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
