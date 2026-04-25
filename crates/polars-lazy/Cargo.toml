@@ -249,7 +249,7 @@ range = [
 ]
 mode = ["polars-expr/mode", "polars-stream?/mode"]
 cum_agg = ["polars-expr/cum_agg", "polars-stream?/cum_agg"]
-interpolate = ["polars-expr/interpolate"]
+interpolate = ["polars-expr/interpolate", "polars-stream?/interpolate"]
 interpolate_by = ["polars-expr/interpolate_by"]
 rolling_window = [
   "polars-expr/rolling_window",
@@ -261,7 +261,7 @@ rolling_window_by = [
 rank = ["polars-expr/rank"]
 diff = ["polars-expr/diff", "polars-stream?/diff"]
 pct_change = ["polars-expr/pct_change"]
-moment = ["polars-expr/moment", "polars-ops/moment"]
+moment = ["polars-expr/moment", "polars-ops/moment", "polars-stream?/moment"]
 abs = ["polars-expr/abs"]
 random = ["polars-expr/random"]
 dynamic_group_by = [
@@ -277,7 +277,7 @@ ewma_by = ["polars-expr/ewma_by"]
 dot_diagram = ["polars-plan/dot_diagram"]
 diagonal_concat = []
 unique_counts = ["polars-expr/unique_counts"]
-log = ["polars-expr/log"]
+log = ["polars-expr/log", "polars-stream?/log"]
 list_eval = []
 cumulative_eval = []
 list_to_struct = ["polars-expr/list_to_struct"]
@@ -321,8 +321,6 @@ serde = [
 ]
 fused = ["polars-expr/fused", "polars-ops/fused"]
 list_sets = ["polars-expr/list_sets", "polars-ops/list_sets"]
-list_any_all = ["polars-ops/list_any_all", "polars-expr/list_any_all"]
-array_any_all = ["polars-ops/array_any_all", "polars-expr/array_any_all", "dtype-array"]
 list_drop_nulls = ["polars-ops/list_drop_nulls", "polars-expr/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample", "polars-expr/list_sample"]
 cutqcut = ["polars-expr/cutqcut", "polars-ops/cutqcut"]
@@ -428,7 +426,6 @@ features = [
   "is_last_distinct",
   "is_unique",
   "json",
-  "list_any_all",
   "list_count",
   "list_drop_nulls",
   "list_eval",

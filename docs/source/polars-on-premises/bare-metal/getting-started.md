@@ -4,7 +4,7 @@ license key with which you can download Polars On-Premises.
 
 ## Downloading Polars On-Premises
 
-#### Using UV
+#### Using `uv`
 
 The simplest way to get started is to use our private PyPi index. You can log in to the index using
 the given license key. This will automatically install the correct Polars version and work well
@@ -14,7 +14,7 @@ within virtual environments.
 $ export LICENSE_KEY=$(cat license.json)
 $ uv auth login https://get.onprem.pola.rs/pypi/simple --token $LICENSE_KEY
 $ uv venv && source .venv/bin/activate
-$ uv pip install --index-url=https://get.onprem.pola.rs/pypi/simple polars-on-premises==0.1.0
+$ uv pip install --extra-index-url=https://get.onprem.pola.rs/pypi/simple polars-on-premises==0.1.0
 ```
 
 The `polars-on-premises` command will then be available within your virtual environment.

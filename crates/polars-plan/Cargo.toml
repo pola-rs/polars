@@ -200,9 +200,7 @@ cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = ["polars-ops/fused"]
-array_any_all = ["polars-ops/array_any_all", "dtype-array"]
 list_sets = ["polars-ops/list_sets"]
-list_any_all = ["polars-ops/list_any_all"]
 list_drop_nulls = ["polars-ops/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample"]
 cutqcut = ["polars-ops/cutqcut"]
@@ -243,7 +241,6 @@ features = [
   "dtype-array",
   "is_last_distinct",
   "dtype-time",
-  "array_any_all",
   "month_start",
   "month_end",
   "offset_by",
@@ -254,7 +251,6 @@ features = [
   "python",
   "cloud",
   "string_to_integer",
-  "list_any_all",
   "pct_change",
   "list_gather",
   "list_filter",

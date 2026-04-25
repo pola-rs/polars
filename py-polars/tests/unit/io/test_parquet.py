@@ -4105,3 +4105,33 @@ def test_parquet_float_zero_normalization_26733(values: list[float]) -> None:
     )
     expected = pl.DataFrame({"min_sign": [-1.0], "max_sign": [1.0]})
     assert_frame_equal(result, expected)
+
+
+def test_predicate_pushdown_null_column_schema_override_26974() -> None:
+    f = io.BytesIO()
+    pl.LazyFrame({"x": [None]}).sink_parquet(f)
+    f.seek(0)
+
+    lf = pl.scan_parquet(f, schema={"x": pl.Boolean}).filter("x")
+
+    assert_frame_equal(
+        lf.collect(),
+        lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+@pytest.mark.write_disk
+def test_parquet_duplicate_column_names_27393(tmp_path: Path) -> None:
+    schema = pa.schema([("ra", pa.int64()), ("ra", pa.int64())])
+    table = pa.Table.from_arrays(
+        [pa.array([1, 2, 3]), pa.array([4, 5, 6])],
+        schema=schema,
+    )
+    path = tmp_path / "duplicated.parquet"
+    pq.write_table(table, path)
+
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.read_parquet(path)
+
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.scan_parquet(path).collect_schema()

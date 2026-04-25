@@ -6,7 +6,7 @@ import polars._reexport as pl
 import polars.functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
-from polars._utils.various import no_default
+from polars._utils.various import NO_DEFAULT
 from polars._utils.wrap import wrap_s
 from polars.datatypes import Int64
 from polars.datatypes.classes import Datetime
@@ -2029,7 +2029,7 @@ class StringNameSpace:
     def replace_many(
         self,
         patterns: Series | list[str] | Mapping[str, str],
-        replace_with: Series | list[str] | str | NoDefault = no_default,
+        replace_with: Series | list[str] | str | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
         leftmost: bool = False,

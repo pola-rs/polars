@@ -1,6 +1,7 @@
 pub mod builder;
 
 use std::cmp::Reverse;
+use std::io::Cursor;
 use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::metrics::OptIOMetrics;
 use polars_io::pl_async;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource, DynByteSourceBuilder};
-use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
+use polars_io::utils::compression::SupportedCompression;
 use polars_io::utils::stream_buf_reader::{ReaderSource, StreamBufReader};
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
@@ -408,9 +409,9 @@ impl FileReader for NDJsonFileReader {
             reverse: is_negative_slice,
         };
 
-        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with transparent
-        // decompression), into one unified reader object.
-        let byte_source_reader: ByteSourceReader<ReaderSource> = if use_async_prefetch {
+        // Unify the two source options (uncompressed local file mmapp'ed, or streaming async with
+        // transparent decompression), into one unified reader source.
+        let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
             const DEFAULT_NDJSON_CHUNK_SIZE: usize = 32 * 1024 * 1024;
             let memory_prefetch_func = get_memory_prefetch_func(verbose);
@@ -465,16 +466,15 @@ impl FileReader for NDJsonFileReader {
                 }))
             };
 
-            // Wrap into ByteSourceReader to enable sync `BufRead` access.
             let stream_buf_reader = StreamBufReader::new(prefetch_recv, prefetch_task);
-            ByteSourceReader::try_new(ReaderSource::Streaming(stream_buf_reader), compression)?
+            ReaderSource::Streaming(stream_buf_reader)
         } else {
             let memslice = self
                 .scan_source
                 .as_scan_source_ref()
                 .to_buffer_async_assume_latest(self.scan_source.run_async())?;
 
-            ByteSourceReader::from_memory(memslice)?
+            ReaderSource::Memory(Cursor::new(memslice))
         };
 
         const ASSUMED_COMPRESSION_RATIO: usize = 4;
@@ -486,11 +486,14 @@ impl FileReader for NDJsonFileReader {
         let line_batch_distributor_task_handle = AbortOnDropHandle::new(spawn(
             TaskPriority::Low,
             line_batch_distributor::LineBatchDistributor {
-                reader: byte_source_reader,
+                reader: reader_source,
                 reverse: is_negative_slice,
                 row_skipper,
                 line_batch_distribute_tx,
+                compression,
                 uncompressed_file_size_hint,
+                use_async_prefetch,
+                verbose,
             }
             .run(),
         ));

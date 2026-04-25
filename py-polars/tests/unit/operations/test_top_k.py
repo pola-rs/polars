@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import re
-from collections.abc import Callable
+from typing import TYPE_CHECKING, Protocol
 
 import pytest
 from hypothesis import given
@@ -10,6 +12,24 @@ import polars.selectors as cs
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
+
+    from polars._typing import IntoExpr
+
+    class TopKFunction(Protocol):
+        """Function signature of `DataFrame.top_k` / `DataFrame.bottom_k`."""
+
+        def __call__(
+            self,
+            df: pl.DataFrame,
+            /,
+            k: int,
+            *,
+            by: IntoExpr | Iterable[IntoExpr],
+            reverse: bool | Sequence[bool] = False,
+        ) -> pl.DataFrame: ...
 
 
 def test_top_k() -> None:
@@ -487,12 +507,13 @@ def test_sorted_top_k_20719(descending: bool) -> None:
     # Note: Output stability is guaranteed by the input sortedness as an
     # implementation detail.
 
+    func: TopKFunction
     for func, reverse in [
-        [pl.DataFrame.top_k, False],
-        [pl.DataFrame.bottom_k, True],
+        (pl.DataFrame.top_k, False),
+        (pl.DataFrame.bottom_k, True),
     ]:
         assert_frame_equal(
-            df.pipe(func, 2, by="a", reverse=reverse),  # type: ignore[arg-type]
+            df.pipe(func, 2, by="a", reverse=reverse),
             pl.DataFrame(
                 [
                     {"a": 10, "b": 20},
@@ -502,11 +523,11 @@ def test_sorted_top_k_20719(descending: bool) -> None:
         )
 
     for func, reverse in [
-        [pl.DataFrame.top_k, True],
-        [pl.DataFrame.bottom_k, False],
+        (pl.DataFrame.top_k, True),
+        (pl.DataFrame.bottom_k, False),
     ]:
         assert_frame_equal(
-            df.pipe(func, 2, by="a", reverse=reverse),  # type: ignore[arg-type]
+            df.pipe(func, 2, by="a", reverse=reverse),
             pl.DataFrame(
                 [
                     {"a": 1, "b": 1},
@@ -527,13 +548,13 @@ def test_sorted_top_k_20719(descending: bool) -> None:
 )
 @pytest.mark.parametrize("descending", [True, False])
 def test_sorted_top_k_duplicates(
-    func: Callable[[pl.DataFrame], pl.DataFrame],
+    func: TopKFunction,
     reverse: bool,
     expect: pl.DataFrame,
     descending: bool,
 ) -> None:
     assert_frame_equal(
-        pl.DataFrame({"a": [1, 2, 2]})  # type: ignore[call-arg]
+        pl.DataFrame({"a": [1, 2, 2]})
         .sort("a", descending=descending)
         .pipe(func, 2, by="a", reverse=reverse),
         expect,

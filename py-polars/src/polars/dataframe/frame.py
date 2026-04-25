@@ -69,9 +69,9 @@ from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
+    NO_DEFAULT,
     _in_notebook,
     is_bool_sequence,
-    no_default,
     normalize_filepath,
     parse_version,
     qualified_type_name,
@@ -1026,6 +1026,9 @@ class DataFrame:
 
         return arr
 
+    @deprecated(
+        "Support for the dataframe interchange protocol is deprecated since version 1.40.0"
+    )
     def __dataframe__(
         self,
         nan_as_null: bool = False,  # noqa: FBT001
@@ -1033,6 +1036,9 @@ class DataFrame:
     ) -> PolarsDataFrame:
         """
         Convert to a dataframe object implementing the dataframe interchange protocol.
+
+        .. deprecated:: 1.40.0
+            Support for the Dataframe Interchange Protocol is deprecated.
 
         Parameters
         ----------
@@ -1058,10 +1064,10 @@ class DataFrame:
         properties.
 
         >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-        >>> dfi = df.__dataframe__()
-        >>> dfi.num_rows()
+        >>> dfi = df.__dataframe__()  # doctest: +SKIP
+        >>> dfi.num_rows()  # doctest: +SKIP
         2
-        >>> dfi.get_column(1).dtype
+        >>> dfi.get_column(1).dtype  # doctest: +SKIP
         (<DtypeKind.FLOAT: 2>, 64, 'g', '=')
         """
         if nan_as_null:
@@ -6110,6 +6116,8 @@ class DataFrame:
         """
         from polars.lazyframe import QueryOptFlags
 
+        optimizations = QueryOptFlags._eager()
+        optimizations.sort_collapse = True
         return (
             self.lazy()
             .sort(
@@ -6120,7 +6128,7 @@ class DataFrame:
                 multithreaded=multithreaded,
                 maintain_order=maintain_order,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            .collect(optimizations=optimizations)
         )
 
     def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
@@ -7882,11 +7890,11 @@ class DataFrame:
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        by
-            Join on these columns before doing asof join
         by_left
             Join on these columns before doing asof join
         by_right
+            Join on these columns before doing asof join
+        by
             Join on these columns before doing asof join
         strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
@@ -9162,7 +9170,7 @@ class DataFrame:
     def get_column(self, name: str, *, default: Any) -> Any: ...
 
     def get_column(
-        self, name: str, *, default: Any | NoDefault = no_default
+        self, name: str, *, default: Any | NoDefault = NO_DEFAULT
     ) -> Series | Any:
         """
         Get a single column by name.
@@ -9213,7 +9221,7 @@ class DataFrame:
         try:
             return wrap_s(self._df.get_column(name))
         except ColumnNotFoundError:
-            if default is no_default:
+            if default is NO_DEFAULT:
                 raise
             return default
 
@@ -12447,7 +12455,13 @@ class DataFrame:
             df.insert_column(0, cols)
         return df
 
-    def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
+    def merge_sorted(
+        self,
+        other: DataFrame,
+        key: str,
+        *,
+        maintain_order: bool = False,
+    ) -> DataFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
@@ -12464,6 +12478,10 @@ class DataFrame:
             Other DataFrame that must be merged
         key
             Key that is sorted.
+        maintain_order
+            If ``True``, the output is guaranteed to have left-biased ordering
+            for equal keys: rows from the left frame appear before rows from
+            the right frame when their keys are equal.
 
         Examples
         --------
@@ -12514,8 +12532,8 @@ class DataFrame:
 
         Notes
         -----
-        No guarantee is given over the output row order when the key is equal
-        between the both dataframes.
+        Unless ``maintain_order=True``, no guarantee is given over the output
+        row order when the key is equal between the both dataframes.
 
         The key must be sorted in ascending order.
         """
@@ -12525,7 +12543,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .merge_sorted(other.lazy(), key)
+            .merge_sorted(other.lazy(), key, maintain_order=maintain_order)
             .collect(optimizations=QueryOptFlags._eager())
         )
 

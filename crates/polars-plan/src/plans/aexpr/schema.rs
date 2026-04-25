@@ -196,6 +196,8 @@ impl AExpr {
                             },
                             Boolean => Some(IDX_DTYPE),
                             UInt8 | Int8 | Int16 | UInt16 => Some(Int64),
+                            #[cfg(feature = "dtype-decimal")]
+                            Decimal(_, scale) => Some(Decimal(DEC128_MAX_PREC, *scale)),
                             _ => None,
                         };
                         if let Some(dt) = dt {

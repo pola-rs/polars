@@ -303,3 +303,77 @@ def test_merge_sorted_chain_streaming_21789_b(streaming: bool) -> None:
     out = pq.collect(engine="streaming" if streaming else "in-memory")
 
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("n_dfs", [3, 4, 5])  # balanced tree +/- 1
+@pytest.mark.parametrize("lazy", [True, False])
+def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
+    dfs = [
+        pl.DataFrame({"foo": ["a1", "a2"], "n": [10, 20]}),
+        pl.DataFrame({"foo": ["b1", "b2"], "n": [11, 21]}),
+        pl.DataFrame({"foo": ["c1", "c2"], "n": [12, 22]}),
+        pl.DataFrame({"foo": ["d1", "d2"], "n": [13, 23]}),
+        pl.DataFrame({"foo": ["e1", "e2"], "n": [14, 24]}),
+    ][:n_dfs]
+
+    if lazy:
+        lfs = [df.lazy() for df in dfs]
+        full = pl.merge_sorted(lfs, key="n").collect()
+
+        chained_from_left = lfs[0]
+        for lf in lfs[1:]:
+            chained_from_left = chained_from_left.merge_sorted(lf, key="n")
+
+        assert_frame_equal(chained_from_left.collect(), full)
+
+        chained_from_right = lfs[-1]
+        for lf in reversed(lfs[:-1]):
+            chained_from_right = lf.merge_sorted(chained_from_right, key="n")
+
+        assert_frame_equal(chained_from_right.collect(), full)
+    else:
+        df_full: pl.DataFrame = pl.merge_sorted(dfs, key="n")
+
+        df_chained_from_left: pl.DataFrame = dfs[0]
+        for df in dfs[1:]:
+            df_chained_from_left = df_chained_from_left.merge_sorted(df, key="n")
+
+        assert_frame_equal(df_chained_from_left, df_full)
+
+        df_chained_from_right: pl.DataFrame = dfs[-1]
+        for df in reversed(dfs[:-1]):
+            df_chained_from_right = df.merge_sorted(df_chained_from_right, key="n")
+
+        assert_frame_equal(df_chained_from_right, df_full)
+
+
+@given(
+    lhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+    rhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+)
+def test_merge_sorted_maintain_order_parametric(lhs: pl.Series, rhs: pl.Series) -> None:
+    left = (
+        pl.DataFrame([lhs.sort()])
+        .with_row_index("left_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("right_idx"),
+            pl.lit(0, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+    right = (
+        pl.DataFrame([rhs.sort()])
+        .with_row_index("right_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("left_idx"),
+            pl.lit(1, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+
+    actual = (
+        left.lazy().merge_sorted(right.lazy(), key="key", maintain_order=True).collect()
+    )
+    expected = pl.concat([left, right]).sort(["key", "df"], maintain_order=True)
+
+    assert_frame_equal(actual, expected)

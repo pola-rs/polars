@@ -1680,7 +1680,7 @@ def test_cast_datetime_to_time(unit: TimeUnit) -> None:
 
 
 def test_init_categorical() -> None:
-    for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
+    for values in ([None], ["foo", "bar"], [None, "foo", "bar"]):
         expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
         a = pl.Series("a", values, dtype=pl.Categorical)
         assert_series_equal(a, expected)
@@ -2458,3 +2458,35 @@ def test_multiply_int_series_by_timedelta_26205() -> None:
         [timedelta(seconds=5), timedelta(seconds=10), timedelta(seconds=15)]
     )
     assert_series_equal(expected, result)
+
+
+@pytest.mark.parametrize(
+    "dtype", [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16]
+)
+def test_setitem_integer_dtypes_27110(dtype: pl.DataType) -> None:
+    s = pl.Series("a", [1, 2, 3])
+    idx = pl.Series([0, 2], dtype=dtype)
+    s[idx] = 99
+    assert s.to_list() == [99, 2, 99]
+
+
+def test_setitem_negative_index_27110() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    idx = pl.Series([-1])
+    s[idx] = 99
+    assert s.to_list() == [1, 2, 99]
+
+
+def test_setitem_invalid_series_dtype_27110() -> None:
+    s = pl.Series("a", [1, 2, 3])
+    idx = pl.Series([0.0, 2.0])
+    with pytest.raises(TypeError, match="cannot use Series of dtype"):
+        s[idx] = 99
+
+
+def test_full_null_cast_to_empty_struct_23276() -> None:
+    s = pl.Series([None])
+    assert s.cast(pl.Struct({}))[0] is None
+
+    s = pl.Series([None, None, None])
+    assert s.cast(pl.Struct({})).to_list() == [None, None, None]

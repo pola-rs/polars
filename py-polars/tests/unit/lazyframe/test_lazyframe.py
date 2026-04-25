@@ -1828,3 +1828,13 @@ def test_cache_hit_child_removal() -> None:
     assert_frame_equal(df1.tail(3), df, check_row_order=False)
     assert_frame_equal(df2.head(3), df, check_row_order=False)
     assert_frame_equal(df2.tail(3), df, check_row_order=False)
+
+
+def test_sum_decimal_widens_precision_27269() -> None:
+    from decimal import Decimal
+
+    lf = pl.LazyFrame(
+        {"x": [Decimal("5000000000000.00"), Decimal("5000000000000.00")]},
+        schema={"x": pl.Decimal(15, 2)},
+    )
+    assert lf.select(pl.sum("x")).collect_schema()["x"] == pl.Decimal(38, 2)

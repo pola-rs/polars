@@ -2339,7 +2339,7 @@ impl SQLFunctionVisitor<'_> {
         // Apply window spec
         Ok(match (partition_by, order_by) {
             (None, None) => expr,
-            (Some(part), None) => expr.over(part),
+            (Some(part), None) => expr.over(part)?,
             (part, Some(order)) => expr.over_with_options(part, Some(order), Default::default())?,
         })
     }

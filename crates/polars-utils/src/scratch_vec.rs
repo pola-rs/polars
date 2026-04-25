@@ -3,6 +3,10 @@
 pub struct ScratchVec<T>(Vec<T>);
 
 impl<T> ScratchVec<T> {
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self(Vec::with_capacity(capacity))
+    }
+
     /// Clear the vec and return a mutable reference to it.
     pub fn get(&mut self) -> &mut Vec<T> {
         self.0.clear();

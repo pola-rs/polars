@@ -42,10 +42,6 @@ pub(super) fn convert_functions(
                 A::Var(v) => IA::Var(v),
                 A::Mean => IA::Mean,
                 A::Median => IA::Median,
-                #[cfg(feature = "array_any_all")]
-                A::Any => IA::Any,
-                #[cfg(feature = "array_any_all")]
-                A::All => IA::All,
                 A::Sort(sort_options) => IA::Sort(sort_options),
                 A::Reverse => IA::Reverse,
                 A::ArgMin => IA::ArgMin,
@@ -182,10 +178,6 @@ pub(super) fn convert_functions(
                 L::NUnique => IL::NUnique,
                 #[cfg(feature = "list_sets")]
                 L::SetOperation(set_operation) => IL::SetOperation(set_operation),
-                #[cfg(feature = "list_any_all")]
-                L::Any => IL::Any,
-                #[cfg(feature = "list_any_all")]
-                L::All => IL::All,
                 L::Join(v) => IL::Join(v),
                 #[cfg(feature = "dtype-array")]
                 L::ToArray(v) => IL::ToArray(v),
@@ -784,7 +776,6 @@ pub(super) fn convert_functions(
                     e[1].dtype(ctx.schema, ctx.arena)?.clone(),
                 ];
                 let supertype = try_get_supertype(&dtypes[0], &dtypes[1])?;
-
                 for i in 0..2 {
                     if dtypes[i] != supertype {
                         let node = ctx.arena.add(AExpr::Cast {
@@ -794,6 +785,12 @@ pub(super) fn convert_functions(
                         });
                         e[i] = ExprIR::new(node, e[i].output_name_inner().clone());
                     }
+                }
+            } else {
+                let lhs = e[0].dtype(ctx.schema, ctx.arena)?;
+                let rhs = e[1].dtype(ctx.schema, ctx.arena)?;
+                if lhs != rhs {
+                    polars_bail!(SchemaMismatch: "type {} is incompatible with expected type {}", rhs, lhs);
                 }
             }
             I::ConcatExpr { rechunk: false }

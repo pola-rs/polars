@@ -861,7 +861,7 @@ def test_timelike_init() -> None:
     dates = [date(2022, 1, 1), date(2022, 1, 2)]
     datetimes = [datetime(2022, 1, 1), datetime(2022, 1, 2)]
 
-    for ts in [durations, dates, datetimes]:
+    for ts in (durations, dates, datetimes):
         s = pl.Series(ts)
         assert s.to_list() == ts
 

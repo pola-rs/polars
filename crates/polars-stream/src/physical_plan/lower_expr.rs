@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
@@ -14,17 +15,22 @@ use polars_ops::frame::{JoinArgs, JoinType};
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
 use polars_plan::plans::AExpr;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
+use polars_plan::plans::projection_height::{ExprHeightVisitor, ExprProjectionHeight};
 use polars_plan::prelude::*;
+use polars_plan::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::{unique_column_name, unitvec};
 use slotmap::SlotMap;
 
 use super::fmt::fmt_exprs;
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream, StreamingLowerIRContext};
 use crate::physical_plan::ZipBehavior;
-use crate::physical_plan::lower_group_by::build_group_by_stream;
+use crate::physical_plan::lower_group_by::{
+    GroupByLowerKind, build_group_by_stream, try_build_streaming_group_by,
+};
 use crate::physical_plan::lower_ir::{build_filter_stream, build_row_idx_stream};
 
 type ExprNodeKey = Node;
@@ -51,6 +57,8 @@ struct LowerExprContext<'a> {
     expr_arena: &'a mut Arena<AExpr>,
     phys_sm: &'a mut SlotMap<PhysNodeKey, PhysNode>,
     cache: &'a mut ExprCache,
+    node_scratch: &'a mut ScratchVec<Node>,
+    ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
 }
 
 impl<'a> From<LowerExprContext<'a>> for StreamingLowerIRContext<'a> {
@@ -301,124 +309,75 @@ fn build_input_independent_node_with_ctx(
     )))
 }
 
-#[recursive::recursive]
-pub fn is_length_preserving_rec(
-    expr_key: ExprNodeKey,
-    arena: &Arena<AExpr>,
-    cache: &mut PlHashMap<ExprNodeKey, bool>,
-) -> bool {
-    if let Some(ret) = cache.get(&expr_key) {
-        return *ret;
+fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
+    struct CachedLengthPreservingVisitor<'a> {
+        height_resolver: &'a mut ExprHeightVisitor<'a>,
+        cache: &'a mut PlHashMap<Node, bool>,
     }
 
-    let ret = match arena.get(expr_key) {
-        // Handled separately in `Eval`.
-        AExpr::Element => unreachable!(),
-        // Mapped to `Column` in `StructEval`.
-        AExpr::StructField(_) => unreachable!(),
+    impl<'a> NodeVisitor for CachedLengthPreservingVisitor<'a> {
+        type Edge = ExprProjectionHeight;
+        type Key = Node;
+        type Storage = &'a Arena<AExpr>;
+        type BreakValue = ();
 
-        AExpr::Gather { .. }
-        | AExpr::Explode { .. }
-        | AExpr::Filter { .. }
-        | AExpr::Agg(_)
-        | AExpr::Slice { .. }
-        | AExpr::Len
-        | AExpr::Literal(_) => false,
-
-        AExpr::Column(_) => true,
-
-        AExpr::Cast {
-            expr: inner,
-            dtype: _,
-            options: _,
+        fn default_edge(&mut self) -> Self::Edge {
+            self.height_resolver.default_edge()
         }
-        | AExpr::Sort {
-            expr: inner,
-            options: _,
-        }
-        | AExpr::SortBy {
-            expr: inner,
-            by: _,
-            sort_options: _,
-        } => is_length_preserving_rec(*inner, arena, cache),
 
-        AExpr::BinaryExpr { left, op: _, right } => {
-            // As long as at least one input is length-preserving the other side
-            // should either broadcast or have the same length.
-            is_length_preserving_rec(*left, arena, cache)
-                || is_length_preserving_rec(*right, arena, cache)
-        },
-        AExpr::Ternary {
-            predicate,
-            truthy,
-            falsy,
-        } => {
-            is_length_preserving_rec(*predicate, arena, cache)
-                || is_length_preserving_rec(*truthy, arena, cache)
-                || is_length_preserving_rec(*falsy, arena, cache)
-        },
-        AExpr::AnonymousAgg { .. } => false,
-        AExpr::AnonymousFunction {
-            input,
-            function: _,
-            options,
-            fmt_str: _,
+        fn pre_visit(
+            &mut self,
+            key: Self::Key,
+            storage: &mut Self::Storage,
+            edges: &mut dyn polars_plan::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
+        ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
+            use ControlFlow as CF;
+
+            if let Some(length_preserving) = self.cache.get(&key) {
+                edges.outputs()[0] = if *length_preserving {
+                    ExprProjectionHeight::Column
+                } else {
+                    ExprProjectionHeight::Unknown
+                };
+
+                CF::Continue(SubtreeVisit::Skip)
+            } else {
+                self.height_resolver.pre_visit(key, storage, edges)
+            }
         }
-        | AExpr::Function {
-            input,
-            function: _,
-            options,
-        } => {
-            // TODO: actually inspect the functions? This is overly conservative.
-            options.is_length_preserving()
-                && input
-                    .iter()
-                    .all(|expr| is_length_preserving_rec(expr.node(), arena, cache))
-        },
-        AExpr::Eval {
-            expr,
-            evaluation: _,
-            variant: _,
-        } => is_length_preserving_rec(*expr, arena, cache),
-        #[cfg(feature = "dynamic_group_by")]
-        AExpr::Rolling {
-            function: _,
-            index_column: _,
-            period: _,
-            offset: _,
-            closed_window: _,
-        } => true,
-        AExpr::StructEval {
-            expr,
-            evaluation: _,
-        } => is_length_preserving_rec(*expr, arena, cache),
-        AExpr::Over {
-            function: _, // Actually shouldn't matter for window functions.
-            partition_by: _,
-            order_by: _,
-            mapping,
-        } => !matches!(mapping, WindowMapping::Explode),
+
+        fn post_visit(
+            &mut self,
+            key: Self::Key,
+            storage: &mut Self::Storage,
+            edges: &mut dyn polars_plan::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
+        ) -> ControlFlow<Self::BreakValue> {
+            let control_flow = self.height_resolver.post_visit(key, storage, edges);
+
+            let length_preserving = matches!(edges.outputs()[0], ExprProjectionHeight::Column);
+
+            self.cache.insert(key, length_preserving);
+
+            control_flow
+        }
+    }
+
+    let mut visitor = CachedLengthPreservingVisitor {
+        cache: &mut ctx.cache.is_length_preserving,
+        height_resolver: &mut Default::default(),
     };
 
-    cache.insert(expr_key, ret);
-    ret
-}
-
-#[expect(dead_code)]
-pub fn is_length_preserving(
-    expr_key: ExprNodeKey,
-    expr_arena: &Arena<AExpr>,
-    cache: &mut ExprCache,
-) -> bool {
-    is_length_preserving_rec(expr_key, expr_arena, &mut cache.is_length_preserving)
-}
-
-fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
-    is_length_preserving_rec(
+    let height = aexpr_tree_traversal(
         expr_key,
-        ctx.expr_arena,
-        &mut ctx.cache.is_length_preserving,
+        &mut &*ctx.expr_arena,
+        ctx.node_scratch.get(),
+        ctx.ae_height_scratch.get(),
+        &mut visitor,
     )
+    .continue_value()
+    .unwrap();
+
+    matches!(height, ExprProjectionHeight::Column)
 }
 
 fn build_fallback_node_with_ctx(
@@ -1266,6 +1225,37 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
             },
 
+            #[cfg(feature = "interpolate")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Interpolate(method),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let value_key = unique_column_name();
+                // Use the dtype of the full interpolate expression, not the inner expression,
+                // since interpolate may change the dtype (e.g. Int64 -> Float64).
+                let value_dtype = ExprIR::new(expr, OutputName::Alias(value_key.clone()))
+                    .dtype(input_schema, ctx.expr_arena)?
+                    .clone();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::Interpolate { input, method };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), value_dtype.clone())]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key)));
+            },
+
             #[cfg(feature = "diff")]
             AExpr::Function {
                 input: ref inner_exprs,
@@ -1527,6 +1517,43 @@ fn lower_exprs_with_ctx(
                 )?;
                 input_streams.insert(row_idx_stream);
                 transformed_exprs.push(row_idx_col_aexpr);
+            },
+
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function:
+                    IRFunctionExpr::StringExpr(IRStringFunction::Strptime(ref dtype, ref options)),
+                ..
+            } if options.format.is_none()
+                && matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if matches!(s.extract_str(), Some("raise" | "null"))) =>
+            {
+                let col_name = unique_column_name();
+                let select_stream = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(col_name.clone())],
+                    ctx,
+                )?;
+
+                let output_schema = Arc::new(Schema::from_iter([(
+                    col_name.clone(),
+                    dtype.as_ref().clone(),
+                )]));
+
+                let ambiguous_is_raise = matches!(ctx.expr_arena.get(inner_exprs[1].node()), AExpr::Literal(s) if s.extract_str() == Some("raise"));
+                let kind = PhysNodeKind::StrptimeInfer {
+                    input: select_stream,
+                    dtype: dtype.as_ref().clone(),
+                    options: options.clone(),
+                    ambiguous_is_raise,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(col_name)));
             },
 
             // Lower arbitrary elementwise functions.
@@ -2119,6 +2146,90 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(trans_expr);
             },
 
+            #[cfg(feature = "moment")]
+            AExpr::Function {
+                function: IRFunctionExpr::Skew(_) | IRFunctionExpr::Kurtosis(_, _),
+                ..
+            } => {
+                let (trans_stream, trans_expr) = lower_reduce_node(input, expr, ctx)?;
+                input_streams.insert(trans_stream);
+                transformed_exprs.push(trans_expr);
+            },
+            #[cfg(feature = "log")]
+            AExpr::Function {
+                input: ref inner_exprs,
+                function: IRFunctionExpr::Entropy { base, normalize },
+                ..
+            } => {
+                // x.entropy() ->
+                //   normalize=false: -sum(x * log(x, base))
+                //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
+                //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                let inner = inner_exprs[0].node();
+                let (trans_input, trans_inner) = lower_exprs_with_ctx(input, &[inner], ctx)?;
+                let x = AExprBuilder::new_from_node(trans_inner[0]);
+                let base = AExprBuilder::lit_scalar(Scalar::from(base), ctx.expr_arena);
+                let log_x = AExprBuilder::function(
+                    vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                    IRFunctionExpr::Log,
+                    ctx.expr_arena,
+                );
+                let x_log_x = x.multiply(log_x, ctx.expr_arena);
+                let sum_x_log_x = x_log_x.sum(ctx.expr_arena);
+
+                if !normalize {
+                    let entropy = sum_x_log_x.negate(ctx.expr_arena);
+                    let (trans_stream, trans_expr) =
+                        lower_exprs_with_ctx(trans_input, &[entropy.node()], ctx)?;
+                    input_streams.insert(trans_stream);
+                    transformed_exprs.push(trans_expr[0]);
+                } else {
+                    // Compute sum(x) and sum(x*log(x, base)) in a single Reduce node,
+                    // then combine elementwise.
+                    let sum_x_name = unique_column_name();
+                    let sum_x_log_x_name = unique_column_name();
+                    let sum_x_expr = ExprIR::new(
+                        x.sum(ctx.expr_arena).node(),
+                        OutputName::Alias(sum_x_name.clone()),
+                    );
+                    let sum_x_log_x_expr = ExprIR::new(
+                        sum_x_log_x.node(),
+                        OutputName::Alias(sum_x_log_x_name.clone()),
+                    );
+                    let output_schema = schema_for_select(
+                        trans_input,
+                        &[sum_x_expr.clone(), sum_x_log_x_expr.clone()],
+                        ctx,
+                    )?;
+                    let reduce_key = ctx.phys_sm.insert(PhysNode::new(
+                        output_schema,
+                        PhysNodeKind::Reduce {
+                            input: trans_input,
+                            exprs: vec![sum_x_expr, sum_x_log_x_expr],
+                        },
+                    ));
+                    let reduce_stream = PhysStream::first(reduce_key);
+
+                    let sum_x = AExprBuilder::col(sum_x_name, ctx.expr_arena);
+                    let sum_x_log_x = AExprBuilder::col(sum_x_log_x_name, ctx.expr_arena);
+                    let log_sum_x = AExprBuilder::function(
+                        vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                        IRFunctionExpr::Log,
+                        ctx.expr_arena,
+                    );
+                    // log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+                    let result = log_sum_x
+                        .minus(
+                            sum_x_log_x.true_divide(sum_x, ctx.expr_arena),
+                            ctx.expr_arena,
+                        )
+                        .node();
+
+                    input_streams.insert(reduce_stream);
+                    transformed_exprs.push(result);
+                }
+            },
+
             // Length-based expressions.
             AExpr::Len => {
                 let out_name = unique_column_name();
@@ -2405,6 +2516,40 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
+            AExpr::Over {
+                function,
+                partition_by,
+                order_by: None,
+                mapping: WindowMapping::GroupsToRows,
+            } => {
+                let out_name = unique_column_name();
+                let function_ir = AExprBuilder::new_from_node(function).expr_ir(out_name.clone());
+                let key_ir = partition_by
+                    .iter()
+                    .map(|n| AExprBuilder::new_from_node(*n).expr_ir(unique_column_name()))
+                    .collect_vec();
+
+                if let Some(gb) = try_build_streaming_group_by(
+                    input,
+                    &key_ir,
+                    &[function_ir],
+                    false,
+                    Arc::new(GroupbyOptions::default()),
+                    None,
+                    GroupByLowerKind::Over,
+                    ctx.expr_arena,
+                    ctx.phys_sm,
+                    ctx.cache,
+                    StreamingLowerIRContext::from(&*ctx),
+                )? {
+                    input_streams.insert(gb);
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                } else {
+                    fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
+                    transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+                }
+            },
+
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }
             | AExpr::Over { .. }
@@ -2557,6 +2702,8 @@ pub fn lower_exprs(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) =
@@ -2585,6 +2732,8 @@ pub fn build_select_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
 }
@@ -2664,6 +2813,8 @@ pub fn build_length_preserving_select_stream(
         cache: expr_cache,
         prepare_visualization: ctx.prepare_visualization,
         sortedness: ctx.sortedness,
+        node_scratch: &mut Default::default(),
+        ae_height_scratch: &mut Default::default(),
     };
     let already_length_preserving = exprs
         .iter()

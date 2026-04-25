@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import JoinStrategy, PolarsDataType
@@ -158,3 +158,12 @@ def test_extension_join_payload(how: JoinStrategy) -> None:
     )
     print(result, expected)
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_extension_native_to_extension_cast_27193() -> None:
+    native = pl.Series("inner", [[1, 2], [3, 4]], pl.Array(pl.Int8, 2))
+    casted = native.arr.eval(pl.element().ext.to(PythonTestExtension(storage=pl.Int8)))
+    expected = pl.Series(
+        "inner", [[1, 2], [3, 4]], pl.Array(PythonTestExtension(storage=pl.Int8), 2)
+    )
+    assert_series_equal(casted, expected)

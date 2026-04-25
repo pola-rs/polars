@@ -2,38 +2,141 @@ use std::cmp;
 use std::num::NonZeroUsize;
 
 use polars_buffer::Buffer;
-use polars_core::config;
 use polars_error::PolarsResult;
-use polars_io::utils::compression::ByteSourceReader;
+use polars_io::pl_async;
+use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
 use polars_io::utils::stream_buf_reader::ReaderSource;
 use polars_utils::mem::prefetch::prefetch_l2;
 
 use super::line_batch_processor::LineBatch;
 use crate::async_primitives::distributor_channel;
+use crate::utils::tokio_handle_ext;
 
 const LF: u8 = b'\n';
 
 pub(super) struct LineBatchDistributor {
-    pub(super) reader: ByteSourceReader<ReaderSource>,
+    pub(super) reader: ReaderSource,
     pub(super) reverse: bool,
     pub(super) row_skipper: RowSkipper,
     pub(super) line_batch_distribute_tx: distributor_channel::Sender<LineBatch>,
+    pub(super) compression: Option<SupportedCompression>,
     pub(super) uncompressed_file_size_hint: Option<usize>,
+    pub(super) use_async_prefetch: bool,
+    pub(super) verbose: bool,
 }
 
 impl LineBatchDistributor {
     /// Returns the number of rows skipped (i.e. were not sent to LineBatchProcessors).
-    pub(super) async fn run(self) -> PolarsResult<usize> {
+    pub(crate) async fn run(self) -> PolarsResult<usize> {
+        if self.use_async_prefetch {
+            self.run_async().await
+        } else {
+            self.run_direct().await
+        }
+    }
+
+    /// Direct path for memory-mapped / non-streaming sources. No blocking calls.
+    async fn run_direct(self) -> PolarsResult<usize> {
+        if self.verbose {
+            eprintln!("[NDJsonFileReader]: Start line batch distributor direct");
+        }
+
+        let reader = ByteSourceReader::try_new(self.reader, self.compression)?;
+        let mut line_batch_tx = self.line_batch_distribute_tx;
+        let use_prefetch_l2 = true;
+
+        let mut producer = LineBatchProducer::new(
+            reader,
+            self.reverse,
+            self.row_skipper,
+            self.uncompressed_file_size_hint,
+            use_prefetch_l2,
+            self.verbose,
+        )?;
+
+        while let Some(batch) = producer.next_batch()? {
+            if line_batch_tx.send(batch).await.is_err() {
+                break;
+            }
+        }
+
+        Ok(producer.n_rows_skipped())
+    }
+
+    /// Streaming path for async-prefetched / compressed sources.
+    /// The blocking read loop runs on tokio's elastic blocking pool to avoid
+    /// starvation of the polars-stream executor.
+    async fn run_async(self) -> PolarsResult<usize> {
         let LineBatchDistributor {
-            mut reader,
+            reader: reader_source,
             reverse,
-            mut row_skipper,
-            mut line_batch_distribute_tx,
+            row_skipper,
+            line_batch_distribute_tx: mut line_batch_tx,
+            compression,
             uncompressed_file_size_hint,
+            use_async_prefetch: _,
+            verbose,
         } = self;
 
-        let verbose = config::verbose();
+        let read_loop_handle = tokio_handle_ext::AbortOnDropHandle(
+            pl_async::get_runtime().spawn_blocking(move || {
+                let handle = tokio::runtime::Handle::current();
+                if verbose {
+                    eprintln!("[NDJsonFileReader]: Start line batch distributor async");
+                }
 
+                let reader = ByteSourceReader::try_new(reader_source, compression)?;
+                let use_prefetch_l2 = false;
+
+                let mut producer = LineBatchProducer::new(
+                    reader,
+                    reverse,
+                    row_skipper,
+                    uncompressed_file_size_hint,
+                    use_prefetch_l2,
+                    verbose,
+                )?;
+
+                while let Some(batch) = producer.next_batch()? {
+                    // Effectively, this is `blocking_send`.
+                    if handle.block_on(line_batch_tx.send(batch)).is_err() {
+                        break;
+                    }
+                }
+
+                PolarsResult::Ok(producer.n_rows_skipped())
+            }),
+        );
+
+        let n_rows_skipped = read_loop_handle.await.unwrap()?;
+
+        Ok(n_rows_skipped)
+    }
+}
+
+/// Produces LineBatches from a ByteSourceReader.
+struct LineBatchProducer {
+    reader: ByteSourceReader<ReaderSource>,
+    reverse: bool,
+    row_skipper: RowSkipper,
+    use_prefetch_l2: bool,
+    fixed_read_size: Option<NonZeroUsize>,
+    full_input_opt: Option<(Buffer<u8>, usize)>,
+    prev_leftover: Buffer<u8>,
+    read_size: usize,
+    chunk_idx: usize,
+    finished: bool,
+}
+
+impl LineBatchProducer {
+    fn new(
+        mut reader: ByteSourceReader<ReaderSource>,
+        reverse: bool,
+        row_skipper: RowSkipper,
+        uncompressed_file_size_hint: Option<usize>,
+        use_prefetch_l2: bool,
+        verbose: bool,
+    ) -> PolarsResult<Self> {
         let fixed_read_size = std::env::var("POLARS_FORCE_NDJSON_READ_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>().ok().unwrap_or_else(|| {
@@ -42,19 +145,21 @@ impl LineBatchDistributor {
             })
             .ok();
 
+        let read_size = fixed_read_size
+            .map(NonZeroUsize::get)
+            .unwrap_or_else(ByteSourceReader::<ReaderSource>::initial_read_size);
+
         if verbose {
             eprintln!(
-                "\
-                [NDJSON LineBatchDistributor]: \
+                "[NDJson LineBatchDistributor]: \
                 n_rows_to_skip: {}, \
-                reverse: {reverse} \
-                fixed_read_size: {fixed_read_size:?} \
-                ",
+                reverse: {reverse}, \
+                fixed_read_size: {fixed_read_size:?}",
                 row_skipper.cfg_n_rows_to_skip,
             );
         }
 
-        let mut full_input_opt = if reverse {
+        let full_input_opt = if reverse {
             // Since decompression doesn't support reverse decompression, we have to fully
             // decompress the input. It's crucial for the streaming property that this doesn't get
             // called in the non-reverse case.
@@ -70,92 +175,108 @@ impl LineBatchDistributor {
             None
         };
 
-        let mut read_size = fixed_read_size
-            .map(NonZeroUsize::get)
-            .unwrap_or_else(ByteSourceReader::<ReaderSource>::initial_read_size);
-        let mut prev_leftover = Buffer::new();
-        let mut chunk_idx = 0;
+        Ok(Self {
+            reader,
+            reverse,
+            row_skipper,
+            use_prefetch_l2,
+            fixed_read_size,
+            full_input_opt,
+            prev_leftover: Buffer::new(),
+            read_size,
+            chunk_idx: 0,
+            finished: false,
+        })
+    }
+
+    fn next_batch(&mut self) -> PolarsResult<Option<LineBatch>> {
+        if self.finished {
+            return Ok(None);
+        }
 
         loop {
-            let (mem_slice, bytes_read) = if reverse {
-                let (full_input, offset) = full_input_opt.as_mut().unwrap();
-                let new_offset = offset.saturating_sub(read_size);
+            let (mem_slice, bytes_read) = if self.reverse {
+                let (full_input, offset) = self.full_input_opt.as_mut().unwrap();
+                let new_offset = offset.saturating_sub(self.read_size);
                 let bytes_read = *offset - new_offset;
                 let new_slice = full_input
                     .clone()
-                    .sliced(new_offset..(*offset + prev_leftover.len()));
+                    .sliced(new_offset..(*offset + self.prev_leftover.len()));
                 *offset = new_offset;
                 (new_slice, bytes_read)
             } else {
-                reader.read_next_slice(
-                    &prev_leftover,
-                    read_size,
-                    Some(prev_leftover.len() + read_size),
+                self.reader.read_next_slice(
+                    &self.prev_leftover,
+                    self.read_size,
+                    Some(self.prev_leftover.len() + self.read_size),
                 )?
             };
 
             if mem_slice.is_empty() {
-                break;
+                self.finished = true;
+                return Ok(None);
             }
 
-            prefetch_l2(&mem_slice);
+            if self.use_prefetch_l2 {
+                prefetch_l2(&mem_slice);
+            }
 
             let is_eof = bytes_read == 0;
-            let (unconsumed_offset, done) = process_chunk(
+            let (batch, unconsumed_offset) = process_chunk(
                 mem_slice.clone(),
                 is_eof,
-                reverse,
-                &mut chunk_idx,
-                &mut row_skipper,
-                &mut line_batch_distribute_tx,
-            )
-            .await;
+                self.reverse,
+                &mut self.chunk_idx,
+                &mut self.row_skipper,
+            );
 
-            if done || is_eof {
-                break;
+            if is_eof {
+                self.finished = true;
+                return Ok(batch);
             }
 
             if let Some(offset) = unconsumed_offset {
-                prev_leftover = if reverse {
+                self.prev_leftover = if self.reverse {
                     mem_slice.sliced(..offset)
                 } else {
                     mem_slice.sliced(offset..)
                 };
             } else {
-                if fixed_read_size.is_none() {
-                    // This allows the slice to grow until at least a single row is included. To avoid a quadratic run-time for large row sizes, we double the read size.
-                    read_size = read_size.saturating_mul(2);
+                if self.fixed_read_size.is_none() {
+                    self.read_size = self.read_size.saturating_mul(2);
                 }
-                prev_leftover = mem_slice;
+                self.prev_leftover = mem_slice;
                 continue;
             }
 
-            if read_size < ByteSourceReader::<ReaderSource>::ideal_read_size()
-                && fixed_read_size.is_none()
+            if self.read_size < ByteSourceReader::<ReaderSource>::ideal_read_size()
+                && self.fixed_read_size.is_none()
             {
-                read_size *= 4;
+                self.read_size *= 4;
+            }
+
+            if batch.is_some() {
+                return Ok(batch);
             }
         }
+    }
 
-        if verbose {
-            eprintln!("[NDJSON LineBatchDistributor]: returning");
-        }
-
-        Ok(row_skipper.n_rows_skipped)
+    fn n_rows_skipped(&self) -> usize {
+        self.row_skipper.n_rows_skipped
     }
 }
 
-async fn process_chunk(
+/// Processes a raw buffer and returns a newline-aligned batch and the matching offset.
+fn process_chunk(
     chunk: Buffer<u8>,
     is_eof: bool,
     reverse: bool,
     chunk_idx: &mut usize,
     row_skipper: &mut RowSkipper,
-    line_batch_distribute_tx: &mut distributor_channel::Sender<LineBatch>,
-) -> (Option<usize>, bool) {
+) -> (Option<LineBatch>, Option<usize>) {
     let len = chunk.len();
     if len == 0 {
-        return (None, is_eof);
+        return (None, None);
     }
 
     let unconsumed_offset = if is_eof {
@@ -167,8 +288,7 @@ async fn process_chunk(
     }
     .map(|offset| cmp::min(offset + 1, len));
 
-    let mut done = false;
-    if let Some(offset) = unconsumed_offset {
+    let batch = if let Some(offset) = unconsumed_offset {
         let line_chunk = if is_eof {
             // Consume full input in EOF case.
             chunk
@@ -187,12 +307,16 @@ async fn process_chunk(
                 bytes: batch_chunk,
                 chunk_idx: *chunk_idx,
             };
-            done = line_batch_distribute_tx.send(batch).await.is_err();
             *chunk_idx += 1;
+            Some(batch)
+        } else {
+            None
         }
-    }
+    } else {
+        None
+    };
 
-    (unconsumed_offset, done)
+    (batch, unconsumed_offset)
 }
 
 pub(super) struct RowSkipper {

@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use num_traits::FromPrimitive;
 
+use crate::nulls::IsNull;
 use crate::total_ord::TotalOrd;
 
 unsafe fn assume_init_mut<T>(slice: &mut [MaybeUninit<T>]) -> &mut [T] {
@@ -105,29 +106,29 @@ impl<T: Ord, const DESCENDING: bool, const NULLS_LAST: bool> Ord
     for ReorderWithNulls<T, DESCENDING, NULLS_LAST>
 {
     fn cmp(&self, other: &Self) -> Ordering {
-        match (&self.0, &other.0) {
-            (None, None) => Ordering::Equal,
-            (None, Some(_)) => {
-                if NULLS_LAST {
-                    Ordering::Greater
-                } else {
-                    Ordering::Less
-                }
-            },
-            (Some(_), None) => {
-                if NULLS_LAST {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
-            },
-            (Some(l), Some(r)) => {
-                if DESCENDING {
-                    r.cmp(l)
-                } else {
-                    l.cmp(r)
-                }
-            },
-        }
+        reorder_cmp(&self.0, &other.0, DESCENDING, NULLS_LAST)
+    }
+}
+
+/// Compare two values with support for sort direction and nulls position.
+///
+/// # Panics
+///
+/// Panics if `T::partial_cmp(lhs, rhs)` returns `None`.
+#[inline]
+pub fn reorder_cmp<T: PartialOrd + IsNull>(
+    lhs: &T,
+    rhs: &T,
+    descending: bool,
+    nulls_last: bool,
+) -> Ordering {
+    match PartialOrd::partial_cmp(lhs, rhs).expect("expected total ordering") {
+        Ordering::Equal => Ordering::Equal,
+        _ if lhs.is_null() && nulls_last => Ordering::Greater,
+        _ if rhs.is_null() && nulls_last => Ordering::Less,
+        _ if lhs.is_null() => Ordering::Less,
+        _ if rhs.is_null() => Ordering::Greater,
+        ord if descending => ord.reverse(),
+        ord => ord,
     }
 }

@@ -112,7 +112,11 @@ def _scan_pyarrow_dataset_impl(
 
 
 def _ensure_boolean_expression(result: Any) -> Any:
-    """Wrap bare field references as EqualTo(field, True)."""
+    """Convert scalar booleans and bare fields into PyIceberg boolean expressions."""
+    if result is True:
+        return pyiceberg.expressions.AlwaysTrue()  # type: ignore[misc]
+    if result is False:
+        return pyiceberg.expressions.AlwaysFalse()  # type: ignore[misc]
     if isinstance(result, list) and len(result) == 1:
         return pyiceberg.expressions.EqualTo(result[0], True)  # type: ignore[misc, call-arg, arg-type]
     return result

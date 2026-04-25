@@ -331,10 +331,12 @@ pub fn lower_ir(
             input_left,
             input_right,
             key,
+            maintain_order,
         } => {
             let input_left = *input_left;
             let input_right = *input_right;
             let key = key.clone();
+            let maintain_order = *maintain_order;
 
             let mut phys_left = lower_ir!(input_left)?;
             let mut phys_right = lower_ir!(input_right)?;
@@ -379,6 +381,7 @@ pub fn lower_ir(
             PhysNodeKind::MergeSorted {
                 input_left: phys_left,
                 input_right: phys_right,
+                maintain_order,
             }
         },
 
@@ -1018,58 +1021,8 @@ pub fn lower_ir(
         },
 
         #[cfg(feature = "python")]
-        v @ IR::PythonScan { options } => {
-            use polars_plan::dsl::python_dsl::PythonScanSource;
-
-            match options.python_source {
-                PythonScanSource::Pyarrow => {
-                    // Fallback to in-memory engine.
-                    let input = PhysNodeKind::InMemorySource {
-                        df: Arc::new(DataFrame::default()),
-                        disable_morsel_split: disable_morsel_split.unwrap_or(true),
-                    };
-                    let input_key =
-                        phys_sm.insert(PhysNode::new(Arc::new(Schema::default()), input));
-                    let phys_input = PhysStream::first(input_key);
-
-                    let lmdf = Arc::new(LateMaterializedDataFrame::default());
-                    let mut lp_arena = Arena::default();
-                    let scan_lp_node = lp_arena.add(v.clone());
-
-                    let executor = Mutex::new(create_physical_plan(
-                        scan_lp_node,
-                        &mut lp_arena,
-                        expr_arena,
-                        None,
-                    )?);
-
-                    let format_str = ctx.prepare_visualization.then(|| {
-                        let mut buffer = String::new();
-                        write_ir_non_recursive(
-                            &mut buffer,
-                            ir_arena.get(node),
-                            expr_arena,
-                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
-                            0,
-                        )
-                        .unwrap();
-                        buffer
-                    });
-
-                    PhysNodeKind::InMemoryMap {
-                        input: phys_input,
-                        map: Arc::new(move |df| {
-                            lmdf.set_materialized_dataframe(df);
-                            let mut state = ExecutionState::new();
-                            executor.lock().execute(&mut state)
-                        }),
-                        format_str,
-                    }
-                },
-                _ => PhysNodeKind::PythonScan {
-                    options: options.clone(),
-                },
-            }
+        IR::PythonScan { options } => PhysNodeKind::PythonScan {
+            options: options.clone(),
         },
         IR::Cache { input, id } => {
             let id = *id;
@@ -1146,6 +1099,11 @@ pub fn lower_ir(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let options = options.options.clone();
+            #[cfg(feature = "asof_join")]
+            let asof_options = || match args.how {
+                JoinType::AsOf(ref asof_options) => asof_options,
+                _ => unreachable!(),
+            };
 
             #[cfg(feature = "iejoin")]
             if args.how.is_range() {
@@ -1241,12 +1199,40 @@ pub fn lower_ir(
                 && join_keys_sorted_together
                 && key_descending.is_some()
                 && key_nulls_last.is_some();
+
             #[cfg(feature = "asof_join")]
-            let use_streaming_asof_join = if let JoinType::AsOf(ref asof_options) = args.how {
-                // Grouped asof-join is not yet supported in the streaming engine.
-                asof_options.left_by.is_none() && asof_options.right_by.is_none()
-            } else {
-                false
+            let (mut by_descending, mut by_nulls_last) = (Default::default(), Default::default());
+            #[cfg(feature = "asof_join")]
+            let use_streaming_asof_join = 'use_asof_join: {
+                if !args.how.is_asof() {
+                    break 'use_asof_join false;
+                }
+                let (Some(left_by), Some(right_by)) =
+                    (&asof_options().left_by, &asof_options().right_by)
+                else {
+                    break 'use_asof_join true;
+                };
+                let col = |by: &PlSmallStr, ea: &mut Arena<AExpr>| {
+                    AExprBuilder::col(by.clone(), ea).expr_ir_retain_name(ea)
+                };
+                let mut by_sorted = |by: &Vec<_>, input, input_schema| {
+                    let by_expr = by.iter().map(|s| col(s, expr_arena)).collect_vec();
+                    ctx.sortedness
+                        .are_keys_sorted_any(input, &by_expr, expr_arena, input_schema)
+                };
+                let left_by_sorted = by_sorted(left_by, input_left, &input_left_schema);
+                let right_by_sorted = by_sorted(right_by, input_right, &input_right_schema);
+                let use_streaming_asof_join = match (&left_by_sorted, &right_by_sorted) {
+                    (Some(lbs), Some(rbs)) => lbs == rbs,
+                    _ => break 'use_asof_join false,
+                };
+                by_descending = left_by_sorted
+                    .as_ref()
+                    .map(|v| v.iter().map(|s| s.descending.unwrap()).collect_vec());
+                by_nulls_last = left_by_sorted
+                    .as_ref()
+                    .map(|v| v.iter().map(|s| s.nulls_last.unwrap()).collect_vec());
+                use_streaming_asof_join
             };
             #[cfg(not(feature = "asof_join"))]
             let use_streaming_asof_join = false;
@@ -1395,6 +1381,10 @@ pub fn lower_ir(
                                 right_on: right_on_names[0].clone(),
                                 tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
                                 tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
+                                left_by: asof_options().left_by.clone(),
+                                right_by: asof_options().right_by.clone(),
+                                by_descending,
+                                by_nulls_last,
                                 args: args.clone(),
                             },
                         ))
