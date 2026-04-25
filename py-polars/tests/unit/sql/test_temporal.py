@@ -76,19 +76,19 @@ def test_datetime_to_time(time_unit: Literal["ns", "us", "ms"]) -> None:
 @pytest.mark.parametrize(
     ("parts", "dtype", "expected"),
     [
-        (["decade", "decades"], pl.Int32, [202, 202, 200]),
-        (["isoyear"], pl.Int32, [2024, 2020, 2005]),
-        (["year", "y"], pl.Int32, [2024, 2020, 2006]),
-        (["quarter"], pl.Int8, [1, 4, 1]),
-        (["month", "months", "mon", "mons"], pl.Int8, [1, 12, 1]),
-        (["week", "weeks"], pl.Int8, [1, 53, 52]),
-        (["doy"], pl.Int16, [7, 365, 1]),
-        (["isodow"], pl.Int8, [7, 3, 7]),
-        (["dow"], pl.Int8, [0, 3, 0]),
-        (["day", "days", "d"], pl.Int8, [7, 30, 1]),
+        (["decade", "decades"], pl.Int64, [202, 202, 200]),
+        (["isoyear"], pl.Int64, [2024, 2020, 2005]),
+        (["year", "y"], pl.Int64, [2024, 2020, 2006]),
+        (["quarter"], pl.Int64, [1, 4, 1]),
+        (["month", "months", "mon", "mons"], pl.Int64, [1, 12, 1]),
+        (["week", "weeks"], pl.Int64, [1, 53, 52]),
+        (["doy"], pl.Int64, [7, 365, 1]),
+        (["isodow"], pl.Int64, [7, 3, 7]),
+        (["dow"], pl.Int64, [0, 3, 0]),
+        (["day", "days", "d"], pl.Int64, [7, 30, 1]),
         (["hour", "hours", "h"], pl.Int64, [1, 10, 23]),
-        (["minute", "min", "mins", "m"], pl.Int8, [2, 30, 59]),
-        (["second", "seconds", "secs", "sec"], pl.Int8, [3, 45, 59]),
+        (["minute", "min", "mins", "m"], pl.Int64, [2, 30, 59]),
+        (["second", "seconds", "secs", "sec"], pl.Int64, [3, 45, 59]),
         (
             ["millisecond", "milliseconds", "ms"],
             pl.Float64,
@@ -193,7 +193,7 @@ def test_extract_century_millennium(dt: date, expected: list[int]) -> None:
                 data=[expected + expected],
                 schema=["c1", "c2", "c3", "c4"],
                 orient="row",
-            ).cast(pl.Int32),
+            ).cast(pl.Int64),
         )
 
 

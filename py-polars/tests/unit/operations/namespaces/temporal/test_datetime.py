@@ -45,16 +45,16 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
 @pytest.mark.parametrize(
     ("unit_attr", "expected"),
     [
-        ("millennium", pl.Series(values=[2, 2, 3, 3], dtype=pl.Int32)),
-        ("century", pl.Series(values=[20, 20, 21, 21], dtype=pl.Int32)),
-        ("year", pl.Series(values=[1993, 1997, 2024, 2052], dtype=pl.Int32)),
-        ("iso_year", pl.Series(values=[1992, 1997, 2024, 2052], dtype=pl.Int32)),
-        ("quarter", pl.Series(values=[1, 2, 4, 1], dtype=pl.Int8)),
-        ("month", pl.Series(values=[1, 5, 10, 2], dtype=pl.Int8)),
-        ("week", pl.Series(values=[53, 21, 40, 8], dtype=pl.Int8)),
-        ("day", pl.Series(values=[1, 19, 4, 20], dtype=pl.Int8)),
-        ("weekday", pl.Series(values=[5, 1, 5, 2], dtype=pl.Int8)),
-        ("ordinal_day", pl.Series(values=[1, 139, 278, 51], dtype=pl.Int16)),
+        ("millennium", pl.Series(values=[2, 2, 3, 3], dtype=pl.Int64)),
+        ("century", pl.Series(values=[20, 20, 21, 21], dtype=pl.Int64)),
+        ("year", pl.Series(values=[1993, 1997, 2024, 2052], dtype=pl.Int64)),
+        ("iso_year", pl.Series(values=[1992, 1997, 2024, 2052], dtype=pl.Int64)),
+        ("quarter", pl.Series(values=[1, 2, 4, 1], dtype=pl.Int64)),
+        ("month", pl.Series(values=[1, 5, 10, 2], dtype=pl.Int64)),
+        ("week", pl.Series(values=[53, 21, 40, 8], dtype=pl.Int64)),
+        ("day", pl.Series(values=[1, 19, 4, 20], dtype=pl.Int64)),
+        ("weekday", pl.Series(values=[5, 1, 5, 2], dtype=pl.Int64)),
+        ("ordinal_day", pl.Series(values=[1, 139, 278, 51], dtype=pl.Int64)),
     ],
 )
 @pytest.mark.parametrize("time_zone", ["Asia/Kathmandu", None])
@@ -78,11 +78,11 @@ def test_dt_extract_datetime_component(
     ("unit_attr", "expected"),
     [
         ("hour", pl.Series(values=[0, 3], dtype=pl.Int64)),
-        ("minute", pl.Series(values=[0, 20], dtype=pl.Int8)),
-        ("second", pl.Series(values=[0, 10], dtype=pl.Int8)),
-        ("millisecond", pl.Series(values=[0, 987], dtype=pl.Int32)),
-        ("microsecond", pl.Series(values=[0, 987654], dtype=pl.Int32)),
-        ("nanosecond", pl.Series(values=[0, 987654321], dtype=pl.Int32)),
+        ("minute", pl.Series(values=[0, 20], dtype=pl.Int64)),
+        ("second", pl.Series(values=[0, 10], dtype=pl.Int64)),
+        ("millisecond", pl.Series(values=[0, 987], dtype=pl.Int64)),
+        ("microsecond", pl.Series(values=[0, 987654], dtype=pl.Int64)),
+        ("nanosecond", pl.Series(values=[0, 987654321], dtype=pl.Int64)),
     ],
 )
 def test_strptime_extract_times(
@@ -1050,7 +1050,7 @@ def test_offset_by_saturating_8217_8474(
 
 def test_year_empty_df() -> None:
     df = pl.DataFrame(pl.Series(name="date", dtype=pl.Date))
-    assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int32]
+    assert df.select(pl.col("date").dt.year()).dtypes == [pl.Int64]
 
 
 def test_epoch_invalid() -> None:

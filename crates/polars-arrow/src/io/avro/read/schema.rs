@@ -48,7 +48,7 @@ fn schema_to_field(
         AvroSchema::Boolean => ArrowDataType::Boolean,
         AvroSchema::Int(logical) => match logical {
             Some(logical) => match logical {
-                avro_schema::schema::IntLogical::Date => ArrowDataType::Date64,
+                avro_schema::schema::IntLogical::Date => ArrowDataType::Date32,
                 avro_schema::schema::IntLogical::Time => {
                     ArrowDataType::Time32(TimeUnit::Millisecond)
                 },

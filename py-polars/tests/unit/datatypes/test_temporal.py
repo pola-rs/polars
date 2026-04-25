@@ -2370,10 +2370,10 @@ def test_year_null_backed_by_out_of_range_15313() -> None:
     s = pl.Series([None, 2**63 - 1])
     s -= 2**63 - 1
     result = s.cast(pl.Datetime).dt.year()
-    expected = pl.Series([None, 1970], dtype=pl.Int32)
+    expected = pl.Series([None, 1970], dtype=pl.Int64)
     assert_series_equal(result, expected)
     result = s.cast(pl.Date).dt.year()
-    expected = pl.Series([None, 1970], dtype=pl.Int32)
+    expected = pl.Series([None, 1970], dtype=pl.Int64)
     assert_series_equal(result, expected)
 
 

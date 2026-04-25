@@ -497,7 +497,7 @@ impl DataType {
     pub fn to_physical(&self) -> DataType {
         use DataType::*;
         match self {
-            Date => Int64,
+            Date => Int32,
             Datetime(_, _) => Int64,
             Duration(_) => Int64,
             Time => Int64,
@@ -997,7 +997,7 @@ impl DataType {
                 };
                 Ok(dt)
             },
-            Date => Ok(ArrowDataType::Date64),
+            Date => Ok(ArrowDataType::Date32),
             Datetime(unit, tz) => Ok(ArrowDataType::Timestamp(
                 unit.to_arrow(),
                 tz.as_deref().cloned(),
