@@ -138,23 +138,23 @@ pub(super) fn datetime(
 
     let max_len = s.iter().map(|s| s.len()).max().unwrap();
 
-    let mut year = year.cast(&DataType::Int32)?;
+    let mut year = year.cast(&DataType::Int64)?;
     if year.len() < max_len {
         year = year.new_from_index(0, max_len)
     }
-    let year = year.i32()?;
+    let year = year.i64()?;
 
-    let mut month = month.cast(&DataType::Int8)?;
+    let mut month = month.cast(&DataType::Int64)?;
     if month.len() < max_len {
         month = month.new_from_index(0, max_len);
     }
-    let month = month.i8()?;
+    let month = month.i64()?;
 
-    let mut day = day.cast(&DataType::Int8)?;
+    let mut day = day.cast(&DataType::Int64)?;
     if day.len() < max_len {
         day = day.new_from_index(0, max_len);
     }
-    let day = day.i8()?;
+    let day = day.i64()?;
 
     let mut hour = hour.cast(&DataType::Int64)?;
     if hour.len() < max_len {
@@ -162,23 +162,23 @@ pub(super) fn datetime(
     }
     let hour = hour.i64()?;
 
-    let mut minute = minute.cast(&DataType::Int8)?;
+    let mut minute = minute.cast(&DataType::Int64)?;
     if minute.len() < max_len {
         minute = minute.new_from_index(0, max_len);
     }
-    let minute = minute.i8()?;
+    let minute = minute.i64()?;
 
-    let mut second = second.cast(&DataType::Int8)?;
+    let mut second = second.cast(&DataType::Int64)?;
     if second.len() < max_len {
         second = second.new_from_index(0, max_len);
     }
-    let second = second.i8()?;
+    let second = second.i64()?;
 
-    let mut nanosecond = microsecond.cast(&DataType::Int32)? * 1_000;
+    let mut nanosecond = microsecond.cast(&DataType::Int64)? * 1_000;
     if nanosecond.len() < max_len {
         nanosecond = nanosecond.new_from_index(0, max_len);
     }
-    let nanosecond = nanosecond.i32()?;
+    let nanosecond = nanosecond.i64()?;
 
     let mut _ambiguous = ambiguous.cast(&DataType::String)?;
     if _ambiguous.len() < max_len {

@@ -76,7 +76,7 @@ pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<d
             DataType::Float64 => Box::new(SK::<Float64Type>::new(dt, ng)),
 
             #[cfg(feature = "dtype-date")]
-            DataType::Date => Box::new(SK::<Int32Type>::new(dt, ng)),
+            DataType::Date => Box::new(SK::<Int64Type>::new(dt, ng)),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => Box::new(SK::<Int64Type>::new(dt, ng)),
             #[cfg(feature = "dtype-duration")]

@@ -97,7 +97,7 @@ pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
             DataType::Float64 => Box::new(SKIT::<Float64Type>::new()),
 
             #[cfg(feature = "dtype-date")]
-            DataType::Date => Box::new(SKIT::<Int32Type>::new()),
+            DataType::Date => Box::new(SKIT::<Int64Type>::new()),
             #[cfg(feature = "dtype-datetime")]
             DataType::Datetime(_, _) => Box::new(SKIT::<Int64Type>::new()),
             #[cfg(feature = "dtype-duration")]

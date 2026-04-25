@@ -16,9 +16,9 @@ pub(crate) fn naive_datetime_to_date(v: NaiveDateTime) -> i32 {
 pub trait DateMethods: AsDate {
     /// Extract month from underlying NaiveDate representation.
     /// Returns the year number in the calendar date.
-    fn year(&self) -> Int32Chunked {
+    fn year(&self) -> Int64Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int32Type>(&date_to_year)
+        ca.physical().apply_kernel_cast::<Int64Type>(&date_to_year)
     }
 
     /// Extract year from underlying NaiveDate representation.
@@ -30,15 +30,15 @@ pub trait DateMethods: AsDate {
     }
 
     /// This year number might not match the calendar year number.
-    fn iso_year(&self) -> Int32Chunked {
+    fn iso_year(&self) -> Int64Chunked {
         let ca = self.as_date();
         ca.physical()
-            .apply_kernel_cast::<Int32Type>(&date_to_iso_year)
+            .apply_kernel_cast::<Int64Type>(&date_to_iso_year)
     }
 
     /// Extract month from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
-    fn quarter(&self) -> Int8Chunked {
+    fn quarter(&self) -> Int64Chunked {
         let months = self.month();
         months_to_quarters(months)
     }
@@ -47,52 +47,52 @@ pub trait DateMethods: AsDate {
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
-    fn month(&self) -> Int8Chunked {
+    fn month(&self) -> Int64Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_month)
+        ca.physical().apply_kernel_cast::<Int64Type>(&date_to_month)
     }
 
     /// Returns the number of days in the month of the underlying NaiveDate
     /// representation.
-    fn days_in_month(&self) -> Int8Chunked {
+    fn days_in_month(&self) -> Int64Chunked {
         let ca = self.as_date();
         ca.physical()
-            .apply_kernel_cast::<Int8Type>(&date_to_days_in_month)
+            .apply_kernel_cast::<Int64Type>(&date_to_days_in_month)
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-    fn week(&self) -> Int8Chunked {
+    fn week(&self) -> Int64Chunked {
         let ca = self.as_date();
         ca.physical()
-            .apply_kernel_cast::<Int8Type>(&date_to_iso_week)
+            .apply_kernel_cast::<Int64Type>(&date_to_iso_week)
     }
 
     /// Extract day from underlying NaiveDate representation.
     /// Returns the day of month starting from 1.
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    fn day(&self) -> Int8Chunked {
+    fn day(&self) -> Int64Chunked {
         let ca = self.as_date();
-        ca.physical().apply_kernel_cast::<Int8Type>(&date_to_day)
+        ca.physical().apply_kernel_cast::<Int64Type>(&date_to_day)
     }
 
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    fn ordinal(&self) -> Int16Chunked {
+    fn ordinal(&self) -> Int64Chunked {
         let ca = self.as_date();
         ca.physical()
-            .apply_kernel_cast::<Int16Type>(&date_to_ordinal)
+            .apply_kernel_cast::<Int64Type>(&date_to_ordinal)
     }
 
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked;
 
     /// Construct a date ChunkedArray from individual time components.
     fn new_from_parts(
-        year: &Int32Chunked,
-        month: &Int8Chunked,
-        day: &Int8Chunked,
+        year: &Int64Chunked,
+        month: &Int64Chunked,
+        day: &Int64Chunked,
         name: PlSmallStr,
     ) -> PolarsResult<DateChunked> {
         let ca: Int32Chunked = year
@@ -101,7 +101,7 @@ pub trait DateMethods: AsDate {
             .zip(day)
             .map(|((y, m), d)| {
                 if let (Some(y), Some(m), Some(d)) = (y, m, d) {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
+                    NaiveDate::from_ymd_opt(y as i32, m as u32, d as u32).map_or_else(
                         // We have an invalid date.
                         || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
                         // We have a valid date.

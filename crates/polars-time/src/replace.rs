@@ -7,13 +7,13 @@ use crate::prelude::*;
 #[allow(clippy::too_many_arguments)]
 pub fn replace_datetime(
     ca: &DatetimeChunked,
-    year: &Int32Chunked,
-    month: &Int8Chunked,
-    day: &Int8Chunked,
+    year: &Int64Chunked,
+    month: &Int64Chunked,
+    day: &Int64Chunked,
     hour: &Int64Chunked,
-    minute: &Int8Chunked,
-    second: &Int8Chunked,
-    nanosecond: &Int32Chunked,
+    minute: &Int64Chunked,
+    second: &Int64Chunked,
+    nanosecond: &Int64Chunked,
     ambiguous: &StringChunked,
 ) -> PolarsResult<DatetimeChunked> {
     let n = [
@@ -61,7 +61,7 @@ pub fn replace_datetime(
     // 3. Value was supplied and is Series   --> Update all elements with the non-null values
     let year = if year.len() == 1 {
         if let Some(value) = year.get(0) {
-            &Int32Chunked::full(PlSmallStr::EMPTY, value, n)
+            &Int64Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.year()
         }
@@ -70,7 +70,7 @@ pub fn replace_datetime(
     };
     let month = if month.len() == 1 {
         if let Some(value) = month.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
+            &Int64Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.month()
         }
@@ -79,7 +79,7 @@ pub fn replace_datetime(
     };
     let day = if day.len() == 1 {
         if let Some(value) = day.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
+            &Int64Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.day()
         }
@@ -97,7 +97,7 @@ pub fn replace_datetime(
     };
     let minute = if minute.len() == 1 {
         if let Some(value) = minute.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
+            &Int64Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.minute()
         }
@@ -106,7 +106,7 @@ pub fn replace_datetime(
     };
     let second = if second.len() == 1 {
         if let Some(value) = second.get(0) {
-            &Int8Chunked::full(PlSmallStr::EMPTY, value, n)
+            &Int64Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.second()
         }
@@ -115,7 +115,7 @@ pub fn replace_datetime(
     };
     let nanosecond = if nanosecond.len() == 1 {
         if let Some(value) = nanosecond.get(0) {
-            &Int32Chunked::full(PlSmallStr::EMPTY, value, n)
+            &Int64Chunked::full(PlSmallStr::EMPTY, value, n)
         } else {
             &ca.nanosecond()
         }
@@ -149,15 +149,15 @@ pub fn replace_datetime(
 #[cfg(feature = "dtype-date")]
 pub fn replace_date(
     ca: &DateChunked,
-    year: &Int32Chunked,
-    month: &Int8Chunked,
-    day: &Int8Chunked,
+    year: &Int64Chunked,
+    month: &Int64Chunked,
+    day: &Int64Chunked,
 ) -> PolarsResult<DateChunked> {
     let n = ca.len();
 
     let year = if year.len() == 1 {
         if let Some(value) = year.get(0) {
-            &Int32Chunked::full("".into(), value, n)
+            &Int64Chunked::full("".into(), value, n)
         } else {
             &ca.year()
         }
@@ -166,7 +166,7 @@ pub fn replace_date(
     };
     let month = if month.len() == 1 {
         if let Some(value) = month.get(0) {
-            &Int8Chunked::full("".into(), value, n)
+            &Int64Chunked::full("".into(), value, n)
         } else {
             &ca.month()
         }
@@ -175,7 +175,7 @@ pub fn replace_date(
     };
     let day = if day.len() == 1 {
         if let Some(value) = day.get(0) {
-            &Int8Chunked::full("".into(), value, n)
+            &Int64Chunked::full("".into(), value, n)
         } else {
             &ca.day()
         }

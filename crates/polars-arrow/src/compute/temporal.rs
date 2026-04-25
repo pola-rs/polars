@@ -74,37 +74,37 @@ macro_rules! date_like {
     };
 }
 
-/// Extracts the years of a temporal array as [`PrimitiveArray<i32>`].
-pub fn year(array: &dyn Array) -> PolarsResult<PrimitiveArray<i32>> {
-    date_like!(year, array, ArrowDataType::Int32)
+/// Extracts the years of a temporal array as [`PrimitiveArray<i64>`].
+pub fn year(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    date_like!(year, array, ArrowDataType::Int64)
 }
 
-/// Extracts the months of a temporal array as [`PrimitiveArray<i8>`].
+/// Extracts the months of a temporal array as [`PrimitiveArray<i64>`].
 ///
 /// Value ranges from 1 to 12.
-pub fn month(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
-    date_like!(month, array, ArrowDataType::Int8)
+pub fn month(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    date_like!(month, array, ArrowDataType::Int64)
 }
 
-/// Extracts the days of a temporal array as [`PrimitiveArray<i8>`].
+/// Extracts the days of a temporal array as [`PrimitiveArray<i64>`].
 ///
 /// Value ranges from 1 to 32 (Last day depends on month).
-pub fn day(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
-    date_like!(day, array, ArrowDataType::Int8)
+pub fn day(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    date_like!(day, array, ArrowDataType::Int64)
 }
 
-/// Extracts weekday of a temporal array as [`PrimitiveArray<i8>`].
+/// Extracts weekday of a temporal array as [`PrimitiveArray<i64>`].
 ///
 /// Monday is 1, Tuesday is 2, ..., Sunday is 7.
-pub fn weekday(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
-    date_like!(i8_weekday, array, ArrowDataType::Int8)
+pub fn weekday(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    date_like!(i8_weekday, array, ArrowDataType::Int64)
 }
 
-/// Extracts ISO week of a temporal array as [`PrimitiveArray<i8>`].
+/// Extracts ISO week of a temporal array as [`PrimitiveArray<i64>`].
 ///
 /// Value ranges from 1 to 53 (Last week depends on the year).
-pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
-    date_like!(i8_iso_week, array, ArrowDataType::Int8)
+pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    date_like!(i8_iso_week, array, ArrowDataType::Int64)
 }
 
 // Macro to avoid repetition in functions, that apply
@@ -145,27 +145,27 @@ pub fn hour(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
     time_like!(hour, array, ArrowDataType::Int64)
 }
 
-/// Extracts the minutes of a temporal array as [`PrimitiveArray<i8>`].
+/// Extracts the minutes of a temporal array as [`PrimitiveArray<i64>`].
 /// Value ranges from 0 to 59.
 /// Use [`can_minute`] to check if this operation is supported for the target [`ArrowDataType`].
-pub fn minute(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
-    time_like!(minute, array, ArrowDataType::Int8)
+pub fn minute(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    time_like!(minute, array, ArrowDataType::Int64)
 }
 
-/// Extracts the seconds of a temporal array as [`PrimitiveArray<i8>`].
+/// Extracts the seconds of a temporal array as [`PrimitiveArray<i64>`].
 /// Value ranges from 0 to 59.
 /// Use [`can_second`] to check if this operation is supported for the target [`ArrowDataType`].
-pub fn second(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
-    time_like!(second, array, ArrowDataType::Int8)
+pub fn second(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    time_like!(second, array, ArrowDataType::Int64)
 }
 
-/// Extracts the nanoseconds of a temporal array as [`PrimitiveArray<i32>`].
+/// Extracts the nanoseconds of a temporal array as [`PrimitiveArray<i64>`].
 ///
 /// Value ranges from 0 to 1_999_999_999.
 /// The range from 1_000_000_000 to 1_999_999_999 represents the leap second.
 /// Use [`can_nanosecond`] to check if this operation is supported for the target [`ArrowDataType`].
-pub fn nanosecond(array: &dyn Array) -> PolarsResult<PrimitiveArray<i32>> {
-    time_like!(nanosecond, array, ArrowDataType::Int32)
+pub fn nanosecond(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
+    time_like!(nanosecond, array, ArrowDataType::Int64)
 }
 
 fn date_variants<F, O>(

@@ -13,25 +13,25 @@ use super::super::windows::calendar::*;
 use super::*;
 
 trait PolarsIso {
-    fn week(&self) -> i8;
-    fn iso_year(&self) -> i32;
+    fn week(&self) -> i64;
+    fn iso_year(&self) -> i64;
 }
 
 impl PolarsIso for NaiveDateTime {
-    fn week(&self) -> i8 {
+    fn week(&self) -> i64 {
         self.iso_week().week().try_into().unwrap()
     }
-    fn iso_year(&self) -> i32 {
-        self.iso_week().year()
+    fn iso_year(&self) -> i64 {
+        self.iso_week().year() as i64
     }
 }
 
 impl PolarsIso for NaiveDate {
-    fn week(&self) -> i8 {
+    fn week(&self) -> i64 {
         self.iso_week().week().try_into().unwrap()
     }
-    fn iso_year(&self) -> i32 {
-        self.iso_week().year()
+    fn iso_year(&self) -> i64 {
+        self.iso_week().year() as i64
     }
 }
 
@@ -90,8 +90,8 @@ to_temporal_unit!(
     week,
     date32_to_datetime_opt,
     i32,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
@@ -99,8 +99,8 @@ to_temporal_unit!(
     iso_year,
     date32_to_datetime_opt,
     i32,
-    i32,
-    ArrowDataType::Int32
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
@@ -108,8 +108,8 @@ to_temporal_unit!(
     year,
     date32_to_datetime_opt,
     i32,
-    i32,
-    ArrowDataType::Int32
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-date")]
 to_boolean_temporal_unit!(
@@ -125,8 +125,8 @@ to_temporal_unit!(
     month,
     date32_to_datetime_opt,
     i32,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
@@ -134,8 +134,8 @@ to_temporal_unit!(
     day,
     date32_to_datetime_opt,
     i32,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
@@ -143,8 +143,8 @@ to_temporal_unit!(
     ordinal,
     date32_to_datetime_opt,
     i32,
-    i16,
-    ArrowDataType::Int16
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-date")]
 to_calendar_value!(
@@ -153,8 +153,8 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     date32_to_datetime_opt,
     i32,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 
 // Times
@@ -173,8 +173,8 @@ to_temporal_unit!(
     minute,
     time64ns_to_time_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
@@ -182,8 +182,8 @@ to_temporal_unit!(
     second,
     time64ns_to_time_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
@@ -191,8 +191,8 @@ to_temporal_unit!(
     nanosecond,
     time64ns_to_time_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i64,
+    ArrowDataType::Int64
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -201,8 +201,8 @@ to_temporal_unit!(
     ordinal,
     timestamp_ns_to_datetime_opt,
     i64,
-    i16,
-    ArrowDataType::Int16
+    i64,
+    ArrowDataType::Int64
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -211,8 +211,8 @@ to_temporal_unit!(
     ordinal,
     timestamp_ms_to_datetime_opt,
     i64,
-    i16,
-    ArrowDataType::Int16
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
@@ -220,8 +220,8 @@ to_temporal_unit!(
     ordinal,
     timestamp_us_to_datetime_opt,
     i64,
-    i16,
-    ArrowDataType::Int16
+    i64,
+    ArrowDataType::Int64
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -230,8 +230,8 @@ to_temporal_unit!(
     iso_year,
     timestamp_ns_to_datetime_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i64,
+    ArrowDataType::Int64
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -240,8 +240,8 @@ to_temporal_unit!(
     iso_year,
     timestamp_us_to_datetime_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i64,
+    ArrowDataType::Int64
 );
 
 #[cfg(feature = "dtype-datetime")]
@@ -250,8 +250,8 @@ to_temporal_unit!(
     iso_year,
     timestamp_ms_to_datetime_opt,
     i64,
-    i32,
-    ArrowDataType::Int32
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-datetime")]
 to_boolean_temporal_unit!(
@@ -285,8 +285,8 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     timestamp_ns_to_datetime_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-datetime")]
 to_calendar_value!(
@@ -295,8 +295,8 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     timestamp_us_to_datetime_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );
 #[cfg(feature = "dtype-datetime")]
 to_calendar_value!(
@@ -305,6 +305,6 @@ to_calendar_value!(
     days_in_month(dt.year(), dt.month() as u8),
     timestamp_ms_to_datetime_opt,
     i64,
-    i8,
-    ArrowDataType::Int8
+    i64,
+    ArrowDataType::Int64
 );

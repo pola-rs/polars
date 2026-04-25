@@ -433,23 +433,23 @@ pub(super) fn round(s: &[Column]) -> PolarsResult<Column> {
 
 pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
     let time_series = &s[0];
-    let s_year = &s[1].strict_cast(&DataType::Int32)?;
-    let s_month = &s[2].strict_cast(&DataType::Int8)?;
-    let s_day = &s[3].strict_cast(&DataType::Int8)?;
-    let year = s_year.i32()?;
-    let month = s_month.i8()?;
-    let day = s_day.i8()?;
+    let s_year = &s[1].strict_cast(&DataType::Int64)?;
+    let s_month = &s[2].strict_cast(&DataType::Int64)?;
+    let s_day = &s[3].strict_cast(&DataType::Int64)?;
+    let year = s_year.i64()?;
+    let month = s_month.i64()?;
+    let day = s_day.i64()?;
 
     match time_series.dtype() {
         DataType::Datetime(_, _) => {
             let s_hour = &s[4].strict_cast(&DataType::Int64)?;
-            let s_minute = &s[5].strict_cast(&DataType::Int8)?;
-            let s_second = &s[6].strict_cast(&DataType::Int8)?;
-            let s_microsecond = &s[7].strict_cast(&DataType::Int32)?;
+            let s_minute = &s[5].strict_cast(&DataType::Int64)?;
+            let s_second = &s[6].strict_cast(&DataType::Int64)?;
+            let s_microsecond = &s[7].strict_cast(&DataType::Int64)?;
             let hour = s_hour.i64()?;
-            let minute = s_minute.i8()?;
-            let second = s_second.i8()?;
-            let nanosecond = &(s_microsecond.i32()? * 1_000);
+            let minute = s_minute.i64()?;
+            let second = s_second.i64()?;
+            let nanosecond = &(s_microsecond.i64()? * 1_000);
             let s_ambiguous = &s[8].strict_cast(&DataType::String)?;
             let ambiguous = s_ambiguous.str()?;
 

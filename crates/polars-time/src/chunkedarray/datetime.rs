@@ -33,7 +33,7 @@ fn cast_and_apply<
 pub trait DatetimeMethods: AsDatetime {
     /// Extract month from underlying NaiveDateTime representation.
     /// Returns the year number in the calendar date.
-    fn year(&self) -> Int32Chunked {
+    fn year(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::year)
     }
 
@@ -60,7 +60,7 @@ pub trait DatetimeMethods: AsDatetime {
         ca_local.physical().apply_kernel_cast::<BooleanType>(&f)
     }
 
-    fn iso_year(&self) -> Int32Chunked {
+    fn iso_year(&self) -> Int64Chunked {
         let ca = self.as_datetime();
         let f = match ca.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_iso_year_ns,
@@ -78,12 +78,12 @@ pub trait DatetimeMethods: AsDatetime {
             .expect("Removing time zone is infallible"),
             _ => ca,
         };
-        ca_local.physical().apply_kernel_cast::<Int32Type>(&f)
+        ca_local.physical().apply_kernel_cast::<Int64Type>(&f)
     }
 
     /// Extract quarter from underlying NaiveDateTime representation.
     /// Quarters range from 1 to 4.
-    fn quarter(&self) -> Int8Chunked {
+    fn quarter(&self) -> Int64Chunked {
         let months = self.month();
         months_to_quarters(months)
     }
@@ -92,13 +92,13 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the month number starting from 1.
     ///
     /// The return value ranges from 1 to 12.
-    fn month(&self) -> Int8Chunked {
+    fn month(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::month)
     }
 
     /// Returns the number of days in the month of the underlying NaiveDateTime
     /// representation.
-    fn days_in_month(&self) -> Int8Chunked {
+    fn days_in_month(&self) -> Int64Chunked {
         let ca = self.as_datetime();
         let f = match ca.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_days_in_month_ns,
@@ -116,18 +116,18 @@ pub trait DatetimeMethods: AsDatetime {
             .expect("Removing time zone is infallible"),
             _ => ca,
         };
-        ca_local.physical().apply_kernel_cast::<Int8Type>(&f)
+        ca_local.physical().apply_kernel_cast::<Int64Type>(&f)
     }
 
     /// Extract ISO weekday from underlying NaiveDateTime representation.
     /// Returns the weekday number where monday = 1 and sunday = 7
-    fn weekday(&self) -> Int8Chunked {
+    fn weekday(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::weekday)
     }
 
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
-    fn week(&self) -> Int8Chunked {
+    fn week(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::iso_week)
     }
 
@@ -135,7 +135,7 @@ pub trait DatetimeMethods: AsDatetime {
     /// Returns the day of month starting from 1.
     ///
     /// The return value ranges from 1 to 31. (The last day of month differs by months.)
-    fn day(&self) -> Int8Chunked {
+    fn day(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::day)
     }
 
@@ -147,27 +147,27 @@ pub trait DatetimeMethods: AsDatetime {
 
     /// Extract minute from underlying NaiveDateTime representation.
     /// Returns the minute number from 0 to 59.
-    fn minute(&self) -> Int8Chunked {
+    fn minute(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::minute)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the second number from 0 to 59.
-    fn second(&self) -> Int8Chunked {
+    fn second(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::second)
     }
 
     /// Extract second from underlying NaiveDateTime representation.
     /// Returns the number of nanoseconds since the whole non-leap second.
     /// The range from 1,000,000,000 to 1,999,999,999 represents the leap second.
-    fn nanosecond(&self) -> Int32Chunked {
+    fn nanosecond(&self) -> Int64Chunked {
         cast_and_apply(self.as_datetime(), temporal::nanosecond)
     }
 
     /// Returns the day of year starting from 1.
     ///
     /// The return value ranges from 1 to 366. (The last day of year differs by years.)
-    fn ordinal(&self) -> Int16Chunked {
+    fn ordinal(&self) -> Int64Chunked {
         let ca = self.as_datetime();
         let f = match ca.time_unit() {
             TimeUnit::Nanoseconds => datetime_to_ordinal_ns,
@@ -185,7 +185,7 @@ pub trait DatetimeMethods: AsDatetime {
             .expect("Removing time zone is infallible"),
             _ => ca,
         };
-        ca_local.physical().apply_kernel_cast::<Int16Type>(&f)
+        ca_local.physical().apply_kernel_cast::<Int64Type>(&f)
     }
 
     fn parse_from_str_slice(
@@ -211,13 +211,13 @@ pub trait DatetimeMethods: AsDatetime {
     /// Construct a datetime ChunkedArray from individual time components.
     #[allow(clippy::too_many_arguments)]
     fn new_from_parts(
-        year: &Int32Chunked,
-        month: &Int8Chunked,
-        day: &Int8Chunked,
+        year: &Int64Chunked,
+        month: &Int64Chunked,
+        day: &Int64Chunked,
         hour: &Int64Chunked,
-        minute: &Int8Chunked,
-        second: &Int8Chunked,
-        nanosecond: &Int32Chunked,
+        minute: &Int64Chunked,
+        second: &Int64Chunked,
+        nanosecond: &Int64Chunked,
         ambiguous: &StringChunked,
         time_unit: &TimeUnit,
         time_zone: Option<TimeZone>,
@@ -235,7 +235,7 @@ pub trait DatetimeMethods: AsDatetime {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
                     (y, m, d, h, mnt, s, ns)
                 {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
+                    NaiveDate::from_ymd_opt(y as i32, m as u32, d as u32).map_or_else(
                         // We have an invalid date.
                         || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
                         // We have a valid date.
