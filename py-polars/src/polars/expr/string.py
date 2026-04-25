@@ -2077,6 +2077,8 @@ class ExprStringNameSpace:
         Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
         to the first capture group in the `pattern`, `$2` or `${2}` to refer to the
         second capture group, and so on. You can also use *named* capture groups.
+        Python-style backreferences such as `\1` and `\g<name>` are not supported
+        in replacement strings; use `$1` or `${name}` instead.
 
         >>> df = pl.DataFrame({"word": ["hat", "hut"]})
         >>> df.with_columns(
@@ -2196,6 +2198,8 @@ class ExprStringNameSpace:
         Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
         to the first capture group in the `pattern`, `$2` or `${2}` to refer to the
         second capture group, and so on. You can also use *named* capture groups.
+        Python-style backreferences such as `\1` and `\g<name>` are not supported
+        in replacement strings; use `$1` or `${name}` instead.
 
         >>> df = pl.DataFrame({"word": ["hat", "hut"]})
         >>> df.with_columns(
