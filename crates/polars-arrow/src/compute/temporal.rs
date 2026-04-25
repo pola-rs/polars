@@ -27,26 +27,26 @@ use crate::temporal_conversions::*;
 use crate::types::NativeType;
 
 // Create and implement a trait that converts chrono's `Weekday`
-// type into `i8`
-trait Int8Weekday: Datelike {
-    fn i8_weekday(&self) -> i8 {
-        self.weekday().number_from_monday().try_into().unwrap()
+// type into `i64`
+trait Int64Weekday: Datelike {
+    fn i64_weekday(&self) -> i64 {
+        self.weekday().number_from_monday().into()
     }
 }
 
-impl Int8Weekday for chrono::NaiveDateTime {}
-impl<T: chrono::TimeZone> Int8Weekday for chrono::DateTime<T> {}
+impl Int64Weekday for chrono::NaiveDateTime {}
+impl<T: chrono::TimeZone> Int64Weekday for chrono::DateTime<T> {}
 
 // Create and implement a trait that converts chrono's `IsoWeek`
-// type into `i8`
-trait Int8IsoWeek: Datelike {
-    fn i8_iso_week(&self) -> i8 {
-        self.iso_week().week().try_into().unwrap()
+// type into `i64`
+trait Int64IsoWeek: Datelike {
+    fn i64_iso_week(&self) -> i64 {
+        self.iso_week().week().into()
     }
 }
 
-impl Int8IsoWeek for chrono::NaiveDateTime {}
-impl<T: chrono::TimeZone> Int8IsoWeek for chrono::DateTime<T> {}
+impl Int64IsoWeek for chrono::NaiveDateTime {}
+impl<T: chrono::TimeZone> Int64IsoWeek for chrono::DateTime<T> {}
 
 // Macro to avoid repetition in functions, that apply
 // `chrono::Datelike` methods on Arrays
@@ -97,14 +97,14 @@ pub fn day(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
 ///
 /// Monday is 1, Tuesday is 2, ..., Sunday is 7.
 pub fn weekday(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
-    date_like!(i8_weekday, array, ArrowDataType::Int64)
+    date_like!(i64_weekday, array, ArrowDataType::Int64)
 }
 
 /// Extracts ISO week of a temporal array as [`PrimitiveArray<i64>`].
 ///
 /// Value ranges from 1 to 53 (Last week depends on the year).
 pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<i64>> {
-    date_like!(i8_iso_week, array, ArrowDataType::Int64)
+    date_like!(i64_iso_week, array, ArrowDataType::Int64)
 }
 
 // Macro to avoid repetition in functions, that apply
