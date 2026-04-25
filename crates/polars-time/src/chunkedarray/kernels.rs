@@ -19,7 +19,7 @@ trait PolarsIso {
 
 impl PolarsIso for NaiveDateTime {
     fn week(&self) -> i64 {
-        self.iso_week().week().try_into().unwrap()
+        self.iso_week().week().into()
     }
     fn iso_year(&self) -> i64 {
         self.iso_week().year() as i64
@@ -28,7 +28,7 @@ impl PolarsIso for NaiveDateTime {
 
 impl PolarsIso for NaiveDate {
     fn week(&self) -> i64 {
-        self.iso_week().week().try_into().unwrap()
+        self.iso_week().week().into()
     }
     fn iso_year(&self) -> i64 {
         self.iso_week().year() as i64

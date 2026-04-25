@@ -10,7 +10,7 @@ pub(crate) const fn is_leap_year(year: i32) -> bool {
 
 /// Get the number of days in the given month of the given year
 pub(crate) const fn days_in_month(year: i32, month: u8) -> i64 {
-    DAYS_PER_MONTH[is_leap_year(year) as usize][(month - 1) as usize] as i64
+    DAYS_PER_MONTH[is_leap_year(year) as usize][(month - 1) as usize]
 }
 
 /// nanoseconds per unit

@@ -108,7 +108,7 @@ pub trait TemporalMethods: AsSeries {
                         };
                         unary_elementwise_values(ca.physical(), |t| {
                             let t = t / divisor - ((t < 0 && t % divisor != 0) as i64);
-                            (((t - 4) % 7 + 7) % 7 + 1) as i64
+                            ((t - 4) % 7 + 7) % 7 + 1
                         })
                     },
                     _ => ca.weekday(),
