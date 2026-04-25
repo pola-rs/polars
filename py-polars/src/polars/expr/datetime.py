@@ -794,7 +794,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -815,7 +815,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬──────┐
         │ date       ┆ mlnm │
         │ ---        ┆ ---  │
-        │ date       ┆ i32  │
+        │ date       ┆ i64  │
         ╞════════════╪══════╡
         │ 0999-12-31 ┆ 1    │
         │ 1897-05-07 ┆ 2    │
@@ -837,7 +837,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -858,7 +858,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬──────┐
         │ date       ┆ cent │
         │ ---        ┆ ---  │
-        │ date       ┆ i32  │
+        │ date       ┆ i64  │
         ╞════════════╪══════╡
         │ 0999-12-31 ┆ 10   │
         │ 1897-05-07 ┆ 19   │
@@ -880,7 +880,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -896,7 +896,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬───────────────┬──────────┐
         │ date       ┆ calendar_year ┆ iso_year │
         │ ---        ┆ ---           ┆ ---      │
-        │ date       ┆ i32           ┆ i32      │
+        │ date       ┆ i64           ┆ i64      │
         ╞════════════╪═══════════════╪══════════╡
         │ 1977-01-01 ┆ 1977          ┆ 1976     │
         │ 1978-01-01 ┆ 1978          ┆ 1977     │
@@ -1044,7 +1044,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1061,7 +1061,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬───────────────┬──────────┐
         │ date       ┆ calendar_year ┆ iso_year │
         │ ---        ┆ ---           ┆ ---      │
-        │ date       ┆ i32           ┆ i32      │
+        │ date       ┆ i64           ┆ i64      │
         ╞════════════╪═══════════════╪══════════╡
         │ 1977-01-01 ┆ 1977          ┆ 1976     │
         │ 1978-01-01 ┆ 1978          ┆ 1977     │
@@ -1081,7 +1081,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1094,7 +1094,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬─────────┐
         │ date       ┆ quarter │
         │ ---        ┆ ---     │
-        │ date       ┆ i8      │
+        │ date       ┆ i64     │
         ╞════════════╪═════════╡
         │ 2001-01-01 ┆ 1       │
         │ 2001-06-30 ┆ 2       │
@@ -1115,7 +1115,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1128,7 +1128,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬───────┐
         │ date       ┆ month │
         │ ---        ┆ ---   │
-        │ date       ┆ i8    │
+        │ date       ┆ i64   │
         ╞════════════╪═══════╡
         │ 2001-01-01 ┆ 1     │
         │ 2001-06-30 ┆ 6     │
@@ -1149,7 +1149,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8`.
+            Expression of data type :class:`Int64`.
 
         See Also
         --------
@@ -1167,7 +1167,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬───────────────┐
         │ date       ┆ days_in_month │
         │ ---        ┆ ---           │
-        │ date       ┆ i8            │
+        │ date       ┆ i64           │
         ╞════════════╪═══════════════╡
         │ 2001-01-01 ┆ 31            │
         │ 2001-02-01 ┆ 28            │
@@ -1188,7 +1188,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1201,7 +1201,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬──────┐
         │ date       ┆ week │
         │ ---        ┆ ---  │
-        │ date       ┆ i8   │
+        │ date       ┆ i64  │
         ╞════════════╪══════╡
         │ 2001-01-01 ┆ 1    │
         │ 2001-06-30 ┆ 26   │
@@ -1221,7 +1221,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8`.
+            Expression of data type :class:`Int64`.
 
         See Also
         --------
@@ -1247,7 +1247,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬─────────┬──────────────┬─────────────┐
         │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
         │ ---        ┆ ---     ┆ ---          ┆ ---         │
-        │ date       ┆ i8      ┆ i8           ┆ i16         │
+        │ date       ┆ i64     ┆ i64          ┆ i64         │
         ╞════════════╪═════════╪══════════════╪═════════════╡
         │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
         │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
@@ -1269,7 +1269,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8`.
+            Expression of data type :class:`Int64`.
 
         See Also
         --------
@@ -1295,7 +1295,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬─────────┬──────────────┬─────────────┐
         │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
         │ ---        ┆ ---     ┆ ---          ┆ ---         │
-        │ date       ┆ i8      ┆ i8           ┆ i16         │
+        │ date       ┆ i64     ┆ i64          ┆ i64         │
         ╞════════════╪═════════╪══════════════╪═════════════╡
         │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
         │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
@@ -1317,7 +1317,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int16`.
+            Expression of data type :class:`Int64`.
 
         See Also
         --------
@@ -1343,7 +1343,7 @@ class ExprDateTimeNameSpace:
         ┌────────────┬─────────┬──────────────┬─────────────┐
         │ date       ┆ weekday ┆ day_of_month ┆ day_of_year │
         │ ---        ┆ ---     ┆ ---          ┆ ---         │
-        │ date       ┆ i8      ┆ i8           ┆ i16         │
+        │ date       ┆ i64     ┆ i64          ┆ i64         │
         ╞════════════╪═════════╪══════════════╪═════════════╡
         │ 2001-12-22 ┆ 6       ┆ 22           ┆ 356         │
         │ 2001-12-23 ┆ 7       ┆ 23           ┆ 357         │
@@ -1484,7 +1484,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1508,7 +1508,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────────┬──────┬────────┬────────┬─────────────┐
         │ datetime                ┆ hour ┆ minute ┆ second ┆ millisecond │
         │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---         │
-        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32         │
+        │ datetime[μs]            ┆ i64  ┆ i64    ┆ i64    ┆ i64         │
         ╞═════════════════════════╪══════╪════════╪════════╪═════════════╡
         │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0           │
         │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500         │
@@ -1528,7 +1528,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1552,7 +1552,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────────┬──────┬────────┬────────┬─────────────┐
         │ datetime                ┆ hour ┆ minute ┆ second ┆ millisecond │
         │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---         │
-        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32         │
+        │ datetime[μs]            ┆ i64  ┆ i64    ┆ i64    ┆ i64         │
         ╞═════════════════════════╪══════╪════════╪════════╪═════════════╡
         │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0           │
         │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500         │
@@ -1579,7 +1579,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int8` or :class:`Float64`.
+            Expression of data type :class:`Int64` or :class:`Float64`.
 
         Examples
         --------
@@ -1602,7 +1602,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────────┬──────┬────────┬────────┐
         │ datetime                ┆ hour ┆ minute ┆ second │
         │ ---                     ┆ ---  ┆ ---    ┆ ---    │
-        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     │
+        │ datetime[μs]            ┆ i64  ┆ i64    ┆ i64    │
         ╞═════════════════════════╪══════╪════════╪════════╡
         │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      │
         │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     │
@@ -1617,7 +1617,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────────┬──────┬────────┬────────┐
         │ datetime                ┆ hour ┆ minute ┆ second │
         │ ---                     ┆ ---  ┆ ---    ┆ ---    │
-        │ datetime[μs]            ┆ i8   ┆ i8     ┆ f64    │
+        │ datetime[μs]            ┆ i64  ┆ i64    ┆ f64    │
         ╞═════════════════════════╪══════╪════════╪════════╡
         │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1.0    │
         │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14.5   │
@@ -1640,7 +1640,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1664,7 +1664,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────────┬──────┬────────┬────────┬─────────────┐
         │ datetime                ┆ hour ┆ minute ┆ second ┆ millisecond │
         │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---         │
-        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32         │
+        │ datetime[μs]            ┆ i64  ┆ i64    ┆ i64    ┆ i64         │
         ╞═════════════════════════╪══════╪════════╪════════╪═════════════╡
         │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0           │
         │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500         │
@@ -1682,7 +1682,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1706,7 +1706,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────────┬──────┬────────┬────────┬─────────────┐
         │ datetime                ┆ hour ┆ minute ┆ second ┆ microsecond │
         │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---         │
-        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32         │
+        │ datetime[μs]            ┆ i64  ┆ i64    ┆ i64    ┆ i64         │
         ╞═════════════════════════╪══════╪════════╪════════╪═════════════╡
         │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0           │
         │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500000      │
@@ -1724,7 +1724,7 @@ class ExprDateTimeNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`Int32`.
+            Expression of data type :class:`Int64`.
 
         Examples
         --------
@@ -1748,7 +1748,7 @@ class ExprDateTimeNameSpace:
         ┌─────────────────────────┬──────┬────────┬────────┬────────────┐
         │ datetime                ┆ hour ┆ minute ┆ second ┆ nanosecond │
         │ ---                     ┆ ---  ┆ ---    ┆ ---    ┆ ---        │
-        │ datetime[μs]            ┆ i8   ┆ i8     ┆ i8     ┆ i32        │
+        │ datetime[μs]            ┆ i64  ┆ i64    ┆ i64    ┆ i64        │
         ╞═════════════════════════╪══════╪════════╪════════╪════════════╡
         │ 1978-01-01 01:01:01     ┆ 1    ┆ 1      ┆ 1      ┆ 0          │
         │ 2024-10-13 05:30:14.500 ┆ 5    ┆ 30     ┆ 14     ┆ 500000000  │
