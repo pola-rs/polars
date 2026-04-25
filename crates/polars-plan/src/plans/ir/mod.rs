@@ -158,6 +158,7 @@ pub enum IR {
         input_left: Node,
         input_right: Node,
         key: PlSmallStr,
+        maintain_order: bool,
     },
     #[default]
     Invalid,

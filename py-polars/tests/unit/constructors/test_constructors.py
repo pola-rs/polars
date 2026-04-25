@@ -1020,7 +1020,11 @@ def test_init_errors() -> None:
 
     # Unmatched input
     with pytest.raises(TypeError):
-        pl.DataFrame(0)
+        # Note: the `type: ignore` is correct here, as `0` is
+        # an invalid type. If you make a PR which removes this
+        # `type: ignore`, you may have inadvertently introduced
+        # an `Any` type in the `DataFrame.__init__` signature.
+        pl.DataFrame(0)  # type: ignore[arg-type]
 
 
 def test_init_records() -> None:

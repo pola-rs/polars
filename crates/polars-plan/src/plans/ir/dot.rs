@@ -320,11 +320,17 @@ impl<'a> IRDotDisplay<'a> {
                 input_left,
                 input_right,
                 key,
+                maintain_order,
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
-                write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
+                write_label(f, id, |f| {
+                    write!(
+                        f,
+                        "MERGE_SORTED[maintain_order: {maintain_order}] ON '{key}'",
+                    )
+                })?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }

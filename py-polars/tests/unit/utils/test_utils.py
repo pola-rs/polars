@@ -299,8 +299,72 @@ def test_is_str_sequence_check(
         assert is_sequence(sequence, include_series=include_series)
 
 
-def test_reduce_balanced() -> None:
-    values = [[0], [1], [2], [3], [4]]
+@pytest.mark.parametrize(
+    ("values", "expected_acc", "expected_seen"),
+    [
+        pytest.param(
+            [[0], [1], [2], [3], [4]],
+            [0, 1, 2, 3, 4],
+            [
+                ([0], [1]),
+                ([0, 1], [2]),
+                ([3], [4]),
+                ([0, 1, 2], [3, 4]),
+            ],
+            id="length_5",
+        ),
+        pytest.param(
+            [[0], [1], [2], [3], [4], [5]],
+            [0, 1, 2, 3, 4, 5],
+            [
+                ([0], [1]),
+                ([3], [4]),
+                ([0, 1], [2]),
+                ([3, 4], [5]),
+                ([0, 1, 2], [3, 4, 5]),
+            ],
+            id="length_6",
+        ),
+        pytest.param(
+            [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            [
+                ([0], [1]),
+                ([5], [6]),
+                ([0, 1], [2]),
+                ([3], [4]),
+                ([5, 6], [7]),
+                ([8], [9]),
+                ([0, 1, 2], [3, 4]),
+                ([5, 6, 7], [8, 9]),
+                ([0, 1, 2, 3, 4], [5, 6, 7, 8, 9]),
+            ],
+            id="length_10",
+        ),
+    ],
+)
+def test_reduce_balanced(
+    values: list[list[int]],
+    expected_acc: list[int],
+    expected_seen: list[tuple[list[int], list[int]]],
+) -> None:
+    seen = []
+
+    def reducer(left: list[int], right: list[int]) -> list[int]:
+        seen.append((left, right))
+        return left + right
+
+    assert reduce_balanced(reducer, values) == expected_acc
+    assert seen == expected_seen
+
+    with pytest.raises(TypeError):
+        reduce_balanced(reducer, [])
+
+
+@pytest.mark.parametrize("n", range(1, 99))
+def test_reduce_balanced_parametric(n: int) -> None:
+    values = [[i] for i in range(n)]
+    expected_acc = [*range(n)]
 
     seen = []
 
@@ -308,15 +372,7 @@ def test_reduce_balanced() -> None:
         seen.append((left, right))
         return left + right
 
-    acc = reduce_balanced(reducer, values)
+    assert reduce_balanced(reducer, values) == expected_acc
 
-    assert acc == [0, 1, 2, 3, 4]
-    assert seen == [
-        ([0], [1]),
-        ([2], [3]),
-        ([0, 1], [2, 3]),
-        ([0, 1, 2, 3], [4]),
-    ]
-
-    with pytest.raises(TypeError):
-        reduce_balanced(reducer, [])
+    for seq_lsubtree, seq_rsubtree in seen:
+        assert abs(len(seq_lsubtree) - len(seq_rsubtree)) <= 1

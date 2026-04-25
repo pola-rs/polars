@@ -123,3 +123,10 @@ together.
 | `observatory_service.public_addr.ip`       | string  | IP address for the observatory service public address.<br>e.g. `192.168.1.1`.                                             |
 | `observatory_service.public_addr.port`     | integer | Port for the observatory service public address.<br>e.g. `5049`.                                                          |
 | `observatory_service.public_addr.hostname` | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                       |
+
+### `[lineage]` section
+
+| Key                       | Type   | Description                                                                                    |
+| ------------------------- | ------ | ---------------------------------------------------------------------------------------------- |
+| `enabled`                 | bool   | Enable the OpenLineage service.                                                                |
+| `transport.http.endpoint` | string | HTTP or HTTPS endpoint of the OpenLineage collector.<br>e.g. `https://lineage_collector:5000`. |

@@ -1680,7 +1680,7 @@ def test_cast_datetime_to_time(unit: TimeUnit) -> None:
 
 
 def test_init_categorical() -> None:
-    for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
+    for values in ([None], ["foo", "bar"], [None, "foo", "bar"]):
         expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
         a = pl.Series("a", values, dtype=pl.Categorical)
         assert_series_equal(a, expected)
