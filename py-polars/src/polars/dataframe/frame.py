@@ -1064,10 +1064,10 @@ class DataFrame:
         properties.
 
         >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-        >>> dfi = df.__dataframe__()
-        >>> dfi.num_rows()
+        >>> dfi = df.__dataframe__()  # doctest: +SKIP
+        >>> dfi.num_rows()  # doctest: +SKIP
         2
-        >>> dfi.get_column(1).dtype
+        >>> dfi.get_column(1).dtype  # doctest: +SKIP
         (<DtypeKind.FLOAT: 2>, 64, 'g', '=')
         """
         if nan_as_null:

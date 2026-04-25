@@ -4118,3 +4118,20 @@ def test_predicate_pushdown_null_column_schema_override_26974() -> None:
         lf.collect(),
         lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
     )
+
+
+@pytest.mark.write_disk
+def test_parquet_duplicate_column_names_27393(tmp_path: Path) -> None:
+    schema = pa.schema([("ra", pa.int64()), ("ra", pa.int64())])
+    table = pa.Table.from_arrays(
+        [pa.array([1, 2, 3]), pa.array([4, 5, 6])],
+        schema=schema,
+    )
+    path = tmp_path / "duplicated.parquet"
+    pq.write_table(table, path)
+
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.read_parquet(path)
+
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.scan_parquet(path).collect_schema()

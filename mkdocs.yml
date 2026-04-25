@@ -176,8 +176,10 @@ nav:
         - polars-on-premises/bare-metal/configuration/example-configurations.md
       - polars-on-premises/bare-metal/environment-variables.md
       - polars-on-premises/bare-metal/python-environment.md
-      - Integrations:
-        - polars-on-premises/bare-metal/integrations/slurm.md
+      - Misc:
+        - polars-on-premises/bare-metal/misc/slurm.md
+    - Integrations:
+      - polars-on-premises/integrations/openlineage.md
     - Distribution:
       - polars-on-premises/releases.md
 not_in_nav: |
@@ -279,4 +281,5 @@ plugins:
               "polars-on-premise/bare-metal/environment-variables.md": "polars-on-premises/bare-metal/environment-variables.md"
               "polars-on-premise/bare-metal/python-environment.md": "polars-on-premises/bare-metal/python-environment.md"
               "polars-on-premises/bare-metal/config-reference.md": "polars-on-premises/bare-metal/configuration/reference.md"
+              "polars-on-premises/bare-metal/integrations/slurm.md": "polars-on-premises/bare-metal/misc/slurm.md"
 
