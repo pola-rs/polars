@@ -9,6 +9,7 @@ use num_traits::{Float, Num, NumCast};
 
 mod mean;
 mod min_max;
+mod min_max_by;
 mod moment;
 mod quantile;
 pub mod rank;
@@ -16,6 +17,7 @@ mod sum;
 
 pub use mean::*;
 pub use min_max::*;
+pub use min_max_by::*;
 pub use moment::*;
 pub use quantile::*;
 pub use rank::*;
