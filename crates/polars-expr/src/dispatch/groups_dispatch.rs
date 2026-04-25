@@ -7,19 +7,21 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::POOL;
-use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
+use polars_core::chunked_array::builder::get_list_builder;
+use polars_core::chunked_array::from_iterator_par::try_list_from_par_iter;
+use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
-    AnyValue, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions, GroupsType,
-    IDX_DTYPE, IntoColumn,
+    AnyValue, ChunkCast, Column, CompatLevel, DataType, Float64Chunked, GroupPositions,
+    GroupsType, IDX_DTYPE, IntoColumn, IntoSeries, ListChunked,
 };
 use polars_core::scalar::Scalar;
 use polars_core::series::{ChunkCompareEq, Series};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::prelude::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 use crate::state::ExecutionState;
@@ -783,4 +785,223 @@ pub fn backward_fill_null<'a>(
         arg_backward_fill!(iter, validity, length),
         arg_backward_fill!(iter, validity, length),
     )
+}
+
+/// Build a seed vector aligned with `groups`, where each non-null group receives
+/// a seed drawn in canonical (first-row-idx sorted) order. This decouples the
+/// seed-to-group assignment from the hashmap iteration order of `groups` while
+/// keeping `ac.groups` untouched (so the downstream `map_by_arg_sort` pointer-
+/// equality path at `window.rs` stays on its correct branch).
+#[cfg(feature = "random")]
+fn canonical_per_group_seeds(
+    items_mask: &[bool],
+    groups_type: &GroupsType,
+) -> Vec<Option<u64>> {
+    let n_groups = items_mask.len();
+
+    // first[i] = the first row-index of group i (in the iteration order that the
+    // ListChunked was produced in, which matches ac.groups / gb.get_groups()).
+    let first_rows: Vec<IdxSize> = match groups_type {
+        GroupsType::Idx(groups) => groups.first().to_vec(),
+        GroupsType::Slice { groups, .. } => groups.iter().map(|[f, _]| *f).collect(),
+    };
+    debug_assert_eq!(first_rows.len(), n_groups);
+
+    // Canonical ordering over non-null groups: sort their indices by first-row-idx.
+    let mut non_null: Vec<usize> = (0..n_groups).filter(|&i| items_mask[i]).collect();
+    non_null.sort_by_key(|&i| first_rows[i]);
+
+    // Draw exactly as many seeds as non-null groups (no wasted advancement).
+    let drawn = polars_core::random::draw_n_global_seeds(non_null.len());
+
+    // Distribute: the k-th non-null group (canonical order) gets drawn[k].
+    let mut seed_of: Vec<Option<u64>> = vec![None; n_groups];
+    for (k, &i) in non_null.iter().enumerate() {
+        seed_of[i] = Some(drawn[k]);
+    }
+
+    seed_of
+}
+
+#[cfg(feature = "random")]
+pub fn shuffle_over_groups<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 1);
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    ac.groups();
+    // NOTE: the per-group list produced below is in the iteration order of the
+    // ORIGINAL `groups` parameter (upstream from WindowExpr), regardless of
+    // whether the inner expression returned NotAggregated or AggregatedList.
+    // We therefore derive canonical seed ordering from `groups` directly —
+    // NOT from `ac.groups`, because for AggregatedList inputs `ac.groups()`
+    // above runs a WithSeriesLen transform that replaces ac.groups with
+    // Slice-based groups whose "first" values are cumulative list offsets
+    // rather than original row indices.
+
+    // IMPORTANT: we intentionally do NOT call `ac.groups.to_mut().sort()`.
+    // Sorting clones the Cow, which breaks the `std::ptr::eq(ac.groups, gb.get_groups())`
+    // check in `window.rs::map_list_agg_by_arg_sort`. When the pointer check fails
+    // it takes the else-branch, which assumes ac.groups and gb.get_groups() describe
+    // the *same groups in the same order* and pairs their row-indices positionally.
+    // A reordered clone violates that contract and mis-maps values across groups
+    // (see issue #27307 analysis). Instead, we leave ac.groups alone (preserving
+    // pointer equality) and stabilise seed assignment via a canonical first-row-idx
+    // ordering computed below — giving the same determinism guarantee without
+    // disturbing the upstream group representation.
+
+    // Mirror AggregatedScalar / LiteralScalar handling from apply_single_group_aware
+    // (apply.rs:154-157).
+    let agg = match ac.agg_state() {
+        AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) => s.as_list().into_column(),
+        _ => ac.aggregated(),
+    };
+    let ca = agg.list().unwrap();
+    let name = agg.name().clone();
+
+    let items: Vec<Option<Series>> = ca.into_iter().collect();
+    let n_groups = items.len();
+    debug_assert_eq!(
+        n_groups,
+        ac.groups.len(),
+        "aggregated ListChunked length ({}) must equal group count ({})",
+        n_groups,
+        ac.groups.len(),
+    );
+
+    // Pre-draw seeds in canonical order; see `canonical_per_group_seeds`.
+    let items_mask: Vec<bool> = items.iter().map(|o| o.is_some()).collect();
+    let seeds = canonical_per_group_seeds(&items_mask, groups.as_ref());
+
+    // Parallel dispatch is now safe — each group's seed is pre-determined
+    // regardless of rayon scheduling.
+    let out: ListChunked = POOL.install(|| {
+        try_list_from_par_iter(
+            items
+                .into_par_iter()
+                .zip(seeds.into_par_iter())
+                .map(|(opt_s, opt_seed)| -> PolarsResult<Option<Series>> {
+                    Ok(match (opt_s, opt_seed) {
+                        (Some(s), Some(seed)) => Some(s.shuffle(Some(seed))),
+                        _ => None,
+                    })
+                }),
+            PlSmallStr::EMPTY,
+        )
+    })?;
+
+    // Finalise using the same contract as ApplyExpr::finish_apply_groups (apply.rs:99-103).
+    let out_col = out.with_name(name).into_series().into_column();
+    ac.with_update_groups(UpdateGroups::WithSeriesLen);
+    ac.with_values_and_args(out_col, true, None, false, false)?;
+    Ok(ac)
+}
+
+#[cfg(feature = "random")]
+pub fn sample_over_groups<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    is_fraction: bool,
+    with_replacement: bool,
+    shuffle: bool,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 2);
+
+    let mut ac_data = inputs[0].evaluate_on_groups(df, groups, state)?;
+    let mut ac_n = inputs[1].evaluate_on_groups(df, groups, state)?;
+    ac_data.groups();
+    ac_n.groups();
+
+    // Same rationale as shuffle_over_groups: do NOT mutate ac_data.groups (it
+    // would break pointer-equality in `map_list_agg_by_arg_sort`), and derive
+    // canonical seed ordering from the ORIGINAL `groups` parameter so that
+    // AggregatedList upstream states (which trigger a WithSeriesLen transform
+    // replacing ac.groups with Slice-based list-offsets) are handled correctly.
+
+    let agg_data = match ac_data.agg_state() {
+        AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) => s.as_list().into_column(),
+        _ => ac_data.aggregated(),
+    };
+    let ca_data = agg_data.list().unwrap();
+    let name = agg_data.name().clone();
+    let n_groups = ca_data.len();
+
+    // For `n`/`frac`: a LiteralScalar has length 1 regardless of group count and
+    // must be broadcast to n_groups. This mirrors the broadcast in
+    // `groups_dispatch::unique` for the scalar-state early-return path.
+    let agg_n = match ac_n.agg_state() {
+        AggState::LiteralScalar(s) => {
+            let mut list = s.as_list().into_column();
+            if list.len() == 1 && n_groups != 1 {
+                list = list.new_from_index(0, n_groups);
+            }
+            list
+        },
+        AggState::AggregatedScalar(s) => s.as_list().into_column(),
+        _ => ac_n.aggregated(),
+    };
+    let ca_n = agg_n.list().unwrap();
+
+    debug_assert_eq!(
+        n_groups,
+        ac_data.groups.len(),
+        "aggregated data ListChunked length ({}) must equal group count ({})",
+        n_groups,
+        ac_data.groups.len(),
+    );
+    debug_assert_eq!(n_groups, ca_n.len(), "data and n group counts must match");
+
+    // Collect into parallel arrays so we can build per-group seeds.
+    let items_data: Vec<Option<Series>> = ca_data.into_iter().collect();
+    let items_n: Vec<Option<Series>> = ca_n.into_iter().collect();
+    let items_mask: Vec<bool> = items_data
+        .iter()
+        .zip(items_n.iter())
+        .map(|(d, n)| d.is_some() && n.is_some())
+        .collect();
+    let seeds = canonical_per_group_seeds(&items_mask, groups.as_ref());
+
+    let inner_dtype = ca_data.inner_dtype().clone();
+    let mut builder = get_list_builder(&inner_dtype, n_groups * 5, n_groups, name.clone());
+
+    for ((opt_data, opt_n), opt_seed) in items_data
+        .into_iter()
+        .zip(items_n.into_iter())
+        .zip(seeds.into_iter())
+    {
+        match (opt_data, opt_n, opt_seed) {
+            (Some(data), Some(n_series), Some(seed)) => {
+                let seed_opt = Some(seed);
+                let out = if is_fraction {
+                    let frac_s = n_series.cast(&DataType::Float64)?;
+                    let frac = frac_s
+                        .f64()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(ComputeError: "sample fraction is null"))?;
+                    data.sample_frac(frac, with_replacement, shuffle, seed_opt)?
+                } else {
+                    let n_s = n_series.strict_cast(&IDX_DTYPE)?;
+                    let n = n_s
+                        .idx()?
+                        .get(0)
+                        .ok_or_else(|| polars_err!(ComputeError: "sample size is null"))?
+                        as usize;
+                    data.sample_n(n, with_replacement, shuffle, seed_opt)?
+                };
+                builder.append_series(&out)?;
+            },
+            _ => builder.append_null(),
+        }
+    }
+
+    let ca = builder.finish();
+    let out_col = ca.into_series().into_column();
+    ac_data.with_update_groups(UpdateGroups::WithSeriesLen);
+    ac_data.with_values_and_args(out_col, true, None, false, false)?;
+    Ok(ac_data)
 }

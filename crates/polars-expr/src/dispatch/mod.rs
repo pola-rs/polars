@@ -4,6 +4,8 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
+#[cfg(feature = "random")]
+use polars_plan::plans::IRRandomMethod;
 use polars_plan::plans::{IRBooleanFunction, IRFunctionExpr, IRPowFunction};
 use polars_utils::IdxSize;
 
@@ -602,6 +604,29 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         },
         F::FillNullWithStrategy(polars_core::prelude::FillNullStrategy::Backward(limit)) => {
             wrap_groups!(groups_dispatch::backward_fill_null, (*limit, v: Option<IdxSize>))
+        },
+
+        #[cfg(feature = "random")]
+        F::Random {
+            method: IRRandomMethod::Shuffle,
+            seed: None,
+        } => wrap_groups!(groups_dispatch::shuffle_over_groups),
+        #[cfg(feature = "random")]
+        F::Random {
+            method:
+                IRRandomMethod::Sample {
+                    is_fraction,
+                    with_replacement,
+                    shuffle,
+                },
+            seed: None,
+        } => {
+            wrap_groups!(
+                groups_dispatch::sample_over_groups,
+                (*is_fraction, v1: bool),
+                (*with_replacement, v2: bool),
+                (*shuffle, v3: bool)
+            )
         },
 
         _ => return None,
