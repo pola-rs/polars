@@ -2275,7 +2275,8 @@ class ExprStringNameSpace:
         Parameters
         ----------
         offset
-            Start index. Negative indexing is supported.
+            Start index. Negative indexing is supported. The index is zero-based,
+            so an offset of 0 starts at the first character.
         length
             Length of the slice. If set to `None` (default), the slice is taken to the
             end of the string.
@@ -2329,6 +2330,26 @@ class ExprStringNameSpace:
         │ papaya      ┆ 5   ┆ a      │
         │ dragonfruit ┆ 7   ┆ rui    │
         └─────────────┴─────┴────────┘
+
+        The `offset` uses zero-based indexing. For example:
+
+        >>> df.select(
+        ...     "s",
+        ...     slice_0_3=pl.col("s").str.slice(0, length=3),
+        ...     slice_1_3=pl.col("s").str.slice(1, length=3),
+        ...     slice_4_3=pl.col("s").str.slice(4, length=3),
+        ... )
+        shape: (4, 4)
+        ┌─────────────┬───────────┬───────────┬───────────┐
+        │ s           ┆ slice_0_3 ┆ slice_1_3 ┆ slice_4_3 │
+        │ ---         ┆ ---       ┆ ---       ┆ ---       │
+        │ str         ┆ str       ┆ str       ┆ str       │
+        ╞═════════════╪═══════════╪═══════════╪═══════════╡
+        │ pear        ┆ pea       ┆ ear       ┆           │
+        │ null        ┆ null      ┆ null      ┆ null      │
+        │ papaya      ┆ pap       ┆ apa       ┆ ya        │
+        │ dragonfruit ┆ dra       ┆ rag       ┆ onf       │
+        └─────────────┴───────────┴───────────┴───────────┘
         """
         offset_pyexpr = parse_into_expression(offset)
         length_pyexpr = parse_into_expression(length)
