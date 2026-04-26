@@ -399,7 +399,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -416,7 +416,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.millennium()
         shape: (5,)
-        Series: 'dt' [i32]
+        Series: 'dt' [i64]
         [
             1
             2
@@ -437,7 +437,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -454,7 +454,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.century()
         shape: (5,)
-        Series: 'dt' [i32]
+        Series: 'dt' [i64]
         [
             10
             19
@@ -475,7 +475,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -483,7 +483,7 @@ class DateTimeNameSpace:
         >>> s = pl.Series("date", [date(2001, 1, 1), date(2002, 1, 1)])
         >>> s.dt.year()
         shape: (2,)
-        Series: 'date' [i32]
+        Series: 'date' [i64]
         [
                 2001
                 2002
@@ -604,7 +604,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -612,7 +612,7 @@ class DateTimeNameSpace:
         >>> dt = datetime(2022, 1, 1, 7, 8, 40)
         >>> pl.Series([dt]).dt.iso_year()
         shape: (1,)
-        Series: '' [i32]
+        Series: '' [i64]
         [
                 2021
         ]
@@ -629,7 +629,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -639,7 +639,7 @@ class DateTimeNameSpace:
         ... ).alias("date")
         >>> date.dt.quarter()
         shape: (4,)
-        Series: 'date' [i8]
+        Series: 'date' [i64]
         [
                 1
                 1
@@ -660,7 +660,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -670,7 +670,7 @@ class DateTimeNameSpace:
         ... ).alias("date")
         >>> date.dt.month()
         shape: (4,)
-        Series: 'date' [i8]
+        Series: 'date' [i64]
         [
                 1
                 2
@@ -691,7 +691,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            Series of data type :class:`Int64`.
 
         See Also
         --------
@@ -706,7 +706,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.days_in_month()
         shape: (3,)
-        Series: 'date' [i8]
+        Series: 'date' [i64]
         [
                 31
                 28
@@ -726,7 +726,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -736,7 +736,7 @@ class DateTimeNameSpace:
         ... ).alias("date")
         >>> date.dt.week()
         shape: (4,)
-        Series: 'date' [i8]
+        Series: 'date' [i64]
         [
                 1
                 5
@@ -756,7 +756,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -766,7 +766,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.weekday()
         shape: (7,)
-        Series: 'date' [i8]
+        Series: 'date' [i64]
         [
                 1
                 2
@@ -790,7 +790,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -800,7 +800,7 @@ class DateTimeNameSpace:
         ... ).alias("date")
         >>> s.dt.day()
         shape: (5,)
-        Series: 'date' [i8]
+        Series: 'date' [i64]
         [
                 1
                 3
@@ -822,7 +822,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int16`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -832,7 +832,7 @@ class DateTimeNameSpace:
         ... ).alias("date")
         >>> s.dt.ordinal_day()
         shape: (3,)
-        Series: 'date' [i16]
+        Series: 'date' [i64]
         [
                 1
                 32
@@ -951,7 +951,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -972,7 +972,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.hour()
         shape: (4,)
-        Series: 'datetime' [i8]
+        Series: 'datetime' [i64]
         [
                 0
                 1
@@ -992,7 +992,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -1012,7 +1012,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.minute()
         shape: (3,)
-        Series: 'datetime' [i8]
+        Series: 'datetime' [i64]
         [
                 0
                 2
@@ -1038,7 +1038,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int8` or :class:`Float64`.
+            Series of data type :class:`Int64` or :class:`Float64`.
 
         Examples
         --------
@@ -1053,7 +1053,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.second()
         shape: (3,)
-        Series: 'datetime' [i8]
+        Series: 'datetime' [i64]
         [
                 0
                 3
@@ -1078,7 +1078,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -1090,7 +1090,7 @@ class DateTimeNameSpace:
         ... )
         >>> s.dt.millisecond()
         shape: (9,)
-        Series: 'datetime' [i32]
+        Series: 'datetime' [i64]
         [
                 0
                 500
@@ -1113,7 +1113,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -1139,7 +1139,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.microsecond()
         shape: (9,)
-        Series: 'datetime' [i32]
+        Series: 'datetime' [i64]
         [
                 0
                 500000
@@ -1162,7 +1162,7 @@ class DateTimeNameSpace:
         Returns
         -------
         Series
-            Series of data type :class:`Int32`.
+            Series of data type :class:`Int64`.
 
         Examples
         --------
@@ -1188,7 +1188,7 @@ class DateTimeNameSpace:
         ]
         >>> date.dt.nanosecond()
         shape: (9,)
-        Series: 'datetime' [i32]
+        Series: 'datetime' [i64]
         [
                 0
                 500000000
