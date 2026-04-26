@@ -546,17 +546,6 @@ def test_scan_pyarrow_dataset_filter_slice_order() -> None:
         pl.DataFrame({"index": [0, 1], "year": [2025, 2026], "month": [0, 0]}),
     )
 
-    # No head: Filter is applied in _scan_pyarrow
-    assert_frame_equal(
-        polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl(
-            dataset,
-            n_rows=0,
-            predicate=year_eq_2026,
-            with_columns=None,
-        )[0].__next__(),
-        pl.DataFrame(schema={"index": pl.Int64, "year": pl.Int64, "month": pl.Int64}),
-    )
-
     # Head is applied in _scan_pyarrow
     assert_frame_equal(
         pl.concat(

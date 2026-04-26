@@ -101,10 +101,6 @@ def _scan_pyarrow_dataset_impl(
         common_params["batch_size"] = batch_size
 
     def frames() -> Iterator[DataFrame]:
-        if n_rows == 0:
-            yield pl.DataFrame(ds.head(n_rows, **common_params))
-            return
-
         remaining = n_rows  # None = unlimited
 
         for batch in ds.to_batches(**common_params):
