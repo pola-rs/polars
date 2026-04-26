@@ -9869,7 +9869,7 @@ Consider using {self}.implode() instead"""
 
     def sin(self) -> Expr:
         """
-        Compute the element-wise value for the sine.
+        Compute the element-wise value for the sine (in radians).
 
         Returns
         -------
@@ -9893,7 +9893,7 @@ Consider using {self}.implode() instead"""
 
     def cos(self) -> Expr:
         """
-        Compute the element-wise value for the cosine.
+        Compute the element-wise value for the cosine (in radians).
 
         Returns
         -------
@@ -9917,7 +9917,7 @@ Consider using {self}.implode() instead"""
 
     def tan(self) -> Expr:
         """
-        Compute the element-wise value for the tangent.
+        Compute the element-wise value for the tangent (in radians).
 
         Returns
         -------
@@ -9941,7 +9941,7 @@ Consider using {self}.implode() instead"""
 
     def cot(self) -> Expr:
         """
-        Compute the element-wise value for the cotangent.
+        Compute the element-wise value for the cotangent (in radians).
 
         Returns
         -------
@@ -9965,7 +9965,7 @@ Consider using {self}.implode() instead"""
 
     def arcsin(self) -> Expr:
         """
-        Compute the element-wise value for the inverse sine.
+        Compute the element-wise value for the inverse sine (in radians).
 
         Returns
         -------
@@ -9989,7 +9989,7 @@ Consider using {self}.implode() instead"""
 
     def arccos(self) -> Expr:
         """
-        Compute the element-wise value for the inverse cosine.
+        Compute the element-wise value for the inverse cosine (in radians).
 
         Returns
         -------
@@ -10013,7 +10013,7 @@ Consider using {self}.implode() instead"""
 
     def arctan(self) -> Expr:
         """
-        Compute the element-wise value for the inverse tangent.
+        Compute the element-wise value for the inverse tangent (in radians).
 
         Returns
         -------

@@ -5887,7 +5887,7 @@ class Series:
 
     def sin(self) -> Series:
         """
-        Compute the element-wise value for the sine.
+        Compute the element-wise value for the sine (in radians).
 
         Examples
         --------
@@ -5905,7 +5905,7 @@ class Series:
 
     def cos(self) -> Series:
         """
-        Compute the element-wise value for the cosine.
+        Compute the element-wise value for the cosine (in radians).
 
         Examples
         --------
@@ -5923,7 +5923,7 @@ class Series:
 
     def tan(self) -> Series:
         """
-        Compute the element-wise value for the tangent.
+        Compute the element-wise value for the tangent (in radians).
 
         Examples
         --------
@@ -5941,7 +5941,7 @@ class Series:
 
     def cot(self) -> Series:
         """
-        Compute the element-wise value for the cotangent.
+        Compute the element-wise value for the cotangent (in radians).
 
         Examples
         --------
@@ -5959,7 +5959,7 @@ class Series:
 
     def arcsin(self) -> Series:
         """
-        Compute the element-wise value for the inverse sine.
+        Compute the element-wise value for the inverse sine (in radians).
 
         Examples
         --------
@@ -5976,7 +5976,7 @@ class Series:
 
     def arccos(self) -> Series:
         """
-        Compute the element-wise value for the inverse cosine.
+        Compute the element-wise value for the inverse cosine (in radians).
 
         Examples
         --------
@@ -5993,7 +5993,7 @@ class Series:
 
     def arctan(self) -> Series:
         """
-        Compute the element-wise value for the inverse tangent.
+        Compute the element-wise value for the inverse tangent (in radians).
 
         Examples
         --------
