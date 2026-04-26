@@ -86,12 +86,9 @@ impl IRTemporalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRTemporalFunction::*;
         match self {
-            Millennium | Century | Year | IsoYear => mapper.with_dtype(DataType::Int32),
-            OrdinalDay => mapper.with_dtype(DataType::Int16),
-            Month | DaysInMonth | Quarter | Week | WeekDay | Day | Hour | Minute | Second => {
-                mapper.with_dtype(DataType::Int8)
-            },
-            Millisecond | Microsecond | Nanosecond => mapper.with_dtype(DataType::Int32),
+            Millennium | Century | Year | IsoYear | OrdinalDay | Month | DaysInMonth | Quarter
+            | Week | WeekDay | Day | Hour | Minute | Second | Millisecond | Microsecond
+            | Nanosecond => mapper.with_dtype(DataType::Int64),
             #[cfg(feature = "dtype-duration")]
             TotalDays { fractional }
             | TotalHours { fractional }

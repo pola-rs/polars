@@ -168,7 +168,7 @@ pub trait TemporalMethods: AsSeries {
             #[cfg(feature = "dtype-date")]
             DataType::Date => s.date().map(|ca| (ca.year() - 1i64).div(100f64) + 1),
             #[cfg(feature = "dtype-datetime")]
-            DataType::Datetime(_, _) => s.datetime().map(|ca| (ca.year() - 1i32).div(100f64) + 1),
+            DataType::Datetime(_, _) => s.datetime().map(|ca| (ca.year() - 1i64).div(100f64) + 1),
             dt => polars_bail!(opq = century, dt),
         }
     }

@@ -33,49 +33,49 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
      - DataType
    * - 'millennium', 'millennia'
      - Millennium number
-     - Int32
+     - Int64
    * - 'century', 'centuries', 'c'
      - Century number
-     - Int32
+     - Int64
    * - 'decade', 'decades'
      - Decade number (year / 10)
-     - Int32
+     - Int64
    * - 'isoyear'
      - ISO year number
-     - Int32
+     - Int64
    * - 'year', 'years', 'y'
      - Calendar year
-     - Int32
+     - Int64
    * - 'quarter', 'quarters'
      - Quarter of the year (1–4)
-     - Int8
+     - Int64
    * - 'month', 'months', 'mon', 'mons'
      - Month of the year (1–12)
-     - Int8
+     - Int64
    * - 'dayofyear', 'doy'
      - Day of the year (1–366)
-     - Int16
+     - Int64
    * - 'dayofweek', 'dow', 'weekday'
      - Day of the week (0:Sunday – 6:Saturday)
-     - Int8
+     - Int64
    * - 'isoweek', 'week'
      - ISO week number (1–53)
-     - Int8
+     - Int64
    * - 'isodow'
      - ISO day of the week (1:Monday – 7:Sunday)
-     - Int8
+     - Int64
    * - 'day', 'days', 'dayofmonth', d'
      - Day of the month (1–31)
-     - Int8
+     - Int64
    * - 'hour', 'hours', 'h'
      - Hour of the day (0–23)
-     - Int8
+     - Int64
    * - 'minute', 'minutes', 'mins', 'min', 'm'
      - Minute of the hour (0–59)
-     - Int8
+     - Int64
    * - 'second', 'seconds', 'sec', 'secs', 's'
      - Second of the minute (0–59)
-     - Int8
+     - Int64
    * - 'millisecond', 'milliseconds', 'ms'
      - Sub-minute seconds and milliseconds (0–59999.)
      - Float64
@@ -121,7 +121,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     # ┌────────────────────────────┬──────┬───────┬─────┬───────────┐
     # │ dt                         ┆ year ┆ month ┆ day ┆ secs_ms   │
     # │ ---                        ┆ ---  ┆ ---   ┆ --- ┆ ---       │
-    # │ datetime[μs]               ┆ i32  ┆ i8    ┆ i8  ┆ f64       │
+    # │ datetime[μs]               ┆ i64  ┆ i64   ┆ i64 ┆ f64       │
     # ╞════════════════════════════╪══════╪═══════╪═════╪═══════════╡
     # │ 1969-12-31 04:30:45.123456 ┆ 1969 ┆ 12    ┆ 31  ┆ 45123.456 │
     # │ 2026-07-12 10:23:59.999999 ┆ 2026 ┆ 7     ┆ 12  ┆ 59999.999 │
@@ -146,49 +146,49 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
      - DataType
    * - 'millennium', 'millennia'
      - Millennium number
-     - Int32
+     - Int64
    * - 'century', 'centuries', 'c'
      - Century number
-     - Int32
+     - Int64
    * - 'decade', 'decades'
      - Decade number (year / 10)
-     - Int32
+     - Int64
    * - 'isoyear'
      - ISO year number
-     - Int32
+     - Int64
    * - 'year', 'years', 'y'
      - Calendar year
-     - Int32
+     - Int64
    * - 'quarter', 'quarters'
      - Quarter of the year (1–4)
-     - Int8
+     - Int64
    * - 'month', 'months', 'mon', 'mons'
      - Month of the year (1–12)
-     - Int8
+     - Int64
    * - 'dayofyear', 'doy'
      - Day of the year (1–366)
-     - Int16
+     - Int64
    * - 'dayofweek', 'dow', 'weekday'
      - Day of the week (0:Sunday – 6:Saturday)
-     - Int8
+     - Int64
    * - 'isoweek', 'week'
      - ISO week number (1–53)
-     - Int8
+     - Int64
    * - 'isodow'
      - ISO day of the week (1:Monday – 7:Sunday)
-     - Int8
+     - Int64
    * - 'day', 'days', 'dayofmonth', d'
      - Day of the month (1–31)
-     - Int8
+     - Int64
    * - 'hour', 'hours', 'h'
      - Hour of the day (0–23)
-     - Int8
+     - Int64
    * - 'minute', 'minutes', 'mins', 'min', 'm'
      - Minute of the hour (0–59)
-     - Int8
+     - Int64
    * - 'second', 'seconds', 'sec', 'secs', 's'
      - Second of the minute (0–59)
-     - Int8
+     - Int64
    * - 'millisecond', 'milliseconds', 'ms'
      - Sub-minute seconds and milliseconds (0–59999.)
      - Float64
@@ -233,7 +233,7 @@ Extracts a part of a date (or datetime) such as 'year', 'month', etc.
     # ┌────────────┬────────┬──────┬─────────┐
     # │ dt         ┆ decade ┆ year ┆ quarter │
     # │ ---        ┆ ---    ┆ ---  ┆ ---     │
-    # │ date       ┆ i32    ┆ i32  ┆ i8      │
+    # │ date       ┆ i64    ┆ i64  ┆ i64     │
     # ╞════════════╪════════╪══════╪═════════╡
     # │ 1969-12-31 ┆ 196    ┆ 1969 ┆ 4       │
     # │ 2026-08-22 ┆ 202    ┆ 2026 ┆ 3       │
