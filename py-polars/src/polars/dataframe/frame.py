@@ -6039,7 +6039,7 @@ class DataFrame:
         maintain_order: bool = False,
     ) -> DataFrame:
         """
-        Sort the dataframe by the given columns.
+        Return a new DataFrame sorted by the given columns.
 
         Parameters
         ----------
