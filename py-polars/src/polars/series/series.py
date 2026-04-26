@@ -4030,6 +4030,8 @@ class Series:
         """
         Get unique elements in series.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Parameters
         ----------
         maintain_order
@@ -8200,9 +8202,11 @@ class Series:
         """
         Count the number of unique values in this Series.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s = pl.Series("a", [1, 2, 2, None])
         >>> s.n_unique()
         3
         """
