@@ -67,6 +67,10 @@ class ExprStringNameSpace:
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d"`.
+            Note that `"%Y"` can parse years with fewer than four digits by padding
+            them with leading zeroes. For example, parsing `"12-AUG-20"` with
+            `"%d-%b-%Y"` yields the year 20, not 2020. Use `"%y"` when parsing
+            two-digit years.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
@@ -115,6 +119,10 @@ class ExprStringNameSpace:
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
+            Note that `"%Y"` can parse years with fewer than four digits by padding
+            them with leading zeroes. For example, parsing `"12-AUG-20"` with
+            `"%d-%b-%Y"` yields the year 20, not 2020. Use `"%y"` when parsing
+            two-digit years.
             If set to None (default), the format is inferred from the data.
         time_unit : {None, 'us', 'ns', 'ms'}
             Unit of time for the resulting Datetime column. If set to None (default),
@@ -236,6 +244,10 @@ class ExprStringNameSpace:
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
+            Note that `"%Y"` can parse years with fewer than four digits by padding
+            them with leading zeroes. For example, parsing `"12-AUG-20"` with
+            `"%d-%b-%Y"` yields the year 20, not 2020. Use `"%y"` when parsing
+            two-digit years.
             If set to None (default), the format is inferred from the data.
         strict
             Raise an error if any conversion fails.
