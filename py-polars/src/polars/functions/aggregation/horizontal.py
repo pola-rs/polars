@@ -21,6 +21,8 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     """
     Compute the logical AND horizontally across columns.
 
+    Non-boolean inputs are cast to Boolean before evaluating the result.
+
     Parameters
     ----------
     *exprs
@@ -65,6 +67,8 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     """
     Compute the logical OR horizontally across columns.
+
+    Non-boolean inputs are cast to Boolean before evaluating the result.
 
     Parameters
     ----------
