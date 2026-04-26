@@ -6042,6 +6042,21 @@ Consider using {self}.implode() instead"""
         │ d   ┆ e   ┆ f   ┆ def │
         │ g   ┆ h   ┆ i   ┆ ghi │
         └─────┴─────┴─────┴─────┘
+
+        Null values are propagated.
+
+        >>> df = pl.DataFrame({"x": [1, None, 3]})
+        >>> df.with_columns(pl.col("x").add(1).alias("x_plus_1"))
+        shape: (3, 2)
+        ┌──────┬──────────┐
+        │ x    ┆ x_plus_1 │
+        │ ---  ┆ ---      │
+        │ i64  ┆ i64      │
+        ╞══════╪══════════╡
+        │ 1    ┆ 2        │
+        │ null ┆ null     │
+        │ 3    ┆ 4        │
+        └──────┴──────────┘
         """
         return self.__add__(other)
 
