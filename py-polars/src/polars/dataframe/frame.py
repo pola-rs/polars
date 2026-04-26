@@ -8249,10 +8249,10 @@ class DataFrame:
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
                  - Returns rows from the left table that have a match in the right
-                   table.
+                   table. Does not return columns from the right table.
                * - **anti**
                  - Returns rows from the left table that have no match in the right
-                   table.
+                   table. Does not return columns from the right table.
 
         left_on
             Name(s) of the left join column(s).
