@@ -65,7 +65,82 @@ fn get_upper_predicates(
 
 type TwoParents = [Option<Node>; 2];
 
-// 1. This will ensure that all equal caches communicate the amount of columns
+fn should_remove_cache_for_predicates(
+    child: Node,
+    predicate_union: &PlHashMap<Expr, u32>,
+    lp_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    predicate_union.keys().any(|pred| {
+        let predicate_cols: PlHashSet<_> = expr_to_leaf_column_names(pred).into_iter().collect();
+
+        if predicate_cols.is_empty() {
+            return true;
+        }
+
+        let mut stack = vec![child];
+        let mut scratch = vec![];
+
+        while let Some(node) = stack.pop() {
+            let ir = lp_arena.get(node);
+
+            match ir {
+                IR::HStack { exprs, input, .. } => {
+                    if exprs
+                        .iter()
+                        .any(|expr| predicate_cols.contains(expr.output_name()))
+                    {
+                        return false;
+                    }
+                    stack.push(*input);
+                },
+
+                IR::GroupBy {
+                    keys, input, apply, ..
+                } => {
+                    if apply.is_some() {
+                        return false;
+                    }
+
+                    let input_schema = lp_arena.get(*input).schema(lp_arena);
+                    let mut key_schema = Schema::with_capacity(keys.len());
+
+                    for key in keys {
+                        if let AExpr::Column(c) = expr_arena.get(key.node()) {
+                            if let Some(dtype) = input_schema.get(c) {
+                                key_schema.insert(key.output_name().clone(), dtype.clone());
+                            }
+                        }
+                    }
+
+                    if predicate_cols
+                        .iter()
+                        .any(|col| !key_schema.contains(col.as_str()))
+                    {
+                        return false;
+                    }
+
+                    stack.push(*input);
+                },
+
+                IR::Select { input, .. } => {
+                    stack.push(*input);
+                },
+
+                IR::Slice { .. } | IR::HConcat { .. } => {
+                    return false;
+                },
+
+                _ => {
+                    ir.copy_inputs(&mut scratch);
+                    stack.append(&mut scratch);
+                },
+            }
+        }
+
+        true
+    })
+} // 1. This will ensure that all equal caches communicate the amount of columns
 //    they need to project.
 // 2. This will ensure we apply predicate in the subtrees below the caches.
 //    If the predicate above the cache is the same for all matching caches, that filter will be
@@ -285,9 +360,15 @@ pub(crate) fn set_cache_states(
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
             // # CHECK IF WE NEED TO REMOVE CACHES
-            // If we encounter multiple predicates we remove the cache nodes completely as we don't
-            // want to loose predicate pushdown in favor of scan sharing.
-            if v.predicate_union.len() > 1 {
+
+            let should_remove_cache = v.predicate_union.len() > 1
+                && should_remove_cache_for_predicates(
+                    *v.children.first().unwrap(),
+                    &v.predicate_union,
+                    lp_arena,
+                    expr_arena,
+                );
+            if should_remove_cache {
                 if verbose {
                     eprintln!("cache nodes will be removed because predicates don't match")
                 }

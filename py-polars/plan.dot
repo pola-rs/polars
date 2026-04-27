@@ -1,0 +1,29 @@
+digraph polars {
+rankdir="BT"
+node [fontname="Monospace"]
+fontname="Helvetica"
+fontsize="10"
+labelloc="b"
+label=<<BR/><BR/><B>Legend</B><BR/><BR/>◯ streaming engine node <FONT COLOR="0.16 0.3 1.0">⬤</FONT> potentially memory-intensive node <FONT COLOR="0.0 0.3 1.0">⬤</FONT> in-memory engine fallback>
+4294967304 [label="ordered-union"];
+4294967299 [label="filter\nx2 = [(col(\"x2\")) == (0)]\n"];
+4294967305 [label="multiplexer",style=filled,fillcolor="0.16 0.3 1.0"];
+4294967298 [label="with-columns\nx2 = [(col(\"x\")) * (col(\"x\"))]\n"];
+4294967297 [label="in-memory-source\ncols: x",style=filled,fillcolor="0.16 0.3 1.0"];
+4294967297 -> 4294967298;
+4294967298 -> 4294967305;
+4294967305 -> 4294967299;
+4294967299 -> 4294967304;
+4294967300 [label="filter\nx2 = [(col(\"x2\")) == (1)]\n"];
+4294967305 -> 4294967300;
+4294967300 -> 4294967304;
+4294967301 [label="filter\nx2 = [(col(\"x2\")) == (2)]\n"];
+4294967305 -> 4294967301;
+4294967301 -> 4294967304;
+4294967302 [label="filter\nx2 = [(col(\"x2\")) == (3)]\n"];
+4294967305 -> 4294967302;
+4294967302 -> 4294967304;
+4294967303 [label="filter\nx2 = [(col(\"x2\")) == (4)]\n"];
+4294967305 -> 4294967303;
+4294967303 -> 4294967304;
+}

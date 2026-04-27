@@ -1,0 +1,185 @@
+
+    Initialize the optimizer with a "pass allowance" of 1 so it can see through exactly one Cache node mod.rs:57-60 .
+    Run the optimizer on the common subplan.
+    Inspect the result: If the optimizer moved the predicates past the top node, that node is "partitionable" and can be pulled above the cache.
+
+1. Initializing the "Test" Optimizer
+
+In set_cache_states.rs, when you detect multiple predicates in v.predicate_union, you currently trigger a cache removal cache_states.rs:264-267 . The maintainer wants you to do this instead:
+
+// Create a pushdown optimizer that is allowed to pass through the cache we are inspecting  
+let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)  
+    .block_at_cache(1); [3](#2-2)   
+  
+// Try to optimize the child node with the accumulated predicates  
+let optimized_lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?; [5](#2-4)
+
+2. Inspecting "Partitionable" Nodes
+
+The "partitionable" nodes are those that PredicatePushDown knows how to push filters through, such as HStack, Select, or SimpleProjection mod.rs:631-636 .
+
+If optimized_lp returns one of these nodes at the top, it means the filters successfully moved past it. You can then:
+
+    Keep the Cache node.
+    Duplicate the partitionable node (e.g., the HStack) so it exists above the cache in each branch.
+    This allows the filters to stay pushed down without losing the benefits of the cache.
+
+3. Why this avoids "Duplicated Logic"
+
+In your PR, you manually implemented checks for IR::HStack and IR::GroupBy. However, PredicatePushDown already has complex logic for these:
+
+    HStack/Select: Uses pushdown_and_continue(..., true) mod.rs:631-636 .
+    GroupBy: Uses process_group_by to check if predicates only use keys mod.rs:565-577 .
+
+By calling pred_pd.optimize(), you use this existing logic automatically. If a new node is added to Polars that supports predicate pushdown, you won't need to update cache_states.rs because the optimizer will already know how to handle it.
+Notes
+
+    The current "remove cache" logic is a simple check: if v.predicate_union.len() > 1 cache_states.rs:264 .
+    block_at_cache(1) is key because it allows the optimizer to "see" the first Cache node but stop at any nested ones mod.rs:646-653 .
+    "Iteratively" likely refers to trying this pushdown check for each level of the IR until the predicates are truly blocked.
+maybe this should be the function
+fn predicates_partition_subtree(...) -> PolarsResult<bool>
+Look at current node
+Run PPD
+Check whether filters crossed current node
+If yes:
+this node is partitionable
+continue deeper
+If no:
+predicates blocked here
+stop
+fn predicates_partition_subtree(
+    mut current: Node,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    pushdown_maintain_errors: bool,
+    new_streaming: bool,
+) -> PolarsResult<bool> {
+
+    loop {
+        let current_ir = lp_arena.get(current).clone();
+
+        // Only nodes that may be movable above cache.
+        let input = match current_ir {
+            IR::HStack { input, .. }
+            | IR::Select { input, .. }
+            | IR::SimpleProjection { input, .. }
+            | IR::GroupBy { input, .. }
+            | IR::Scan { .. } => {
+                input
+            },
+
+            _ => return Ok(false),
+        };
+
+        // Run PPD on CURRENT NODE.
+        let mut pred_pd =
+            PredicatePushDown::new(
+                pushdown_maintain_errors,
+                new_streaming,
+            )
+            .block_at_cache(1);
+
+        let optimized =
+            pred_pd.optimize(current_ir, lp_arena, expr_arena)?;
+
+        // INSPECTION STEP:
+        //
+        // Did predicates move BELOW current node?
+
+        let predicates_passed = match &optimized {
+            IR::HStack { input: new_input, .. }
+            | IR::Select { input: new_input, .. }
+            | IR::SimpleProjection { input: new_input, .. }
+            | IR::GroupBy { input: new_input, .. } => {
+
+                matches!(
+                    lp_arena.get(*new_input),
+                    IR::Filter { .. }
+                )
+            },
+
+            _ => false,
+        };
+
+        if !predicates_passed {
+            return Ok(false);
+        }
+
+        // Predicates passed current node.
+        // Continue descending.
+        current = input;
+    }
+}
+fn predicates_can_pass_subtree(
+    child: Node,
+    predicate_union: &PlHashMap<Expr, u32>,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    pushdown_maintain_errors: bool,
+    new_streaming: bool,
+) -> PolarsResult<bool> {
+    // Deep copy so PPD doesn't mutate the real plan
+    let child_copy = deep_copy_ir_delete_caches(child, lp_arena, expr_arena);
+
+    // Stack predicates as Filter nodes above the copy
+    let mut top = child_copy;
+    for expr in predicate_union.keys() {
+        let node = to_aexpr(expr.clone(), expr_arena)?;
+        let expr_ir = ExprIR::new(node, OutputName::Alias("__pred__".into()));
+        top = lp_arena.add(IR::Filter {
+            input: top,
+            predicate: expr_ir,
+        });
+    }
+
+    // Run PPD on the temporary plan
+    let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)
+        .block_at_cache(1);
+    let optimized = pred_pd.optimize(lp_arena.take(top), lp_arena, expr_arena)?;
+    lp_arena.replace(top, optimized);
+
+    // If the top node is no longer a Filter, predicates moved down past child_copy
+    // meaning pushdown would be beneficial → remove cache
+    // If it's still a Filter, predicates are stuck → keep cache
+    let predicates_moved = !matches!(lp_arena.get(top), IR::Filter { .. });
+
+    Ok(predicates_moved)
+}
+fn predicates_can_pass_subtree(
+    child: Node,
+    predicate_union: &PlHashMap<Expr, u32>,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    pushdown_maintain_errors: bool,
+    new_streaming: bool,
+) -> PolarsResult<bool> {
+    // Deep copy so PPD doesn't mutate the real plan
+    let child_copy = deep_copy_ir_delete_caches(child, lp_arena, expr_arena);
+
+    // Get schema from child for ExprToIRContext
+    let schema = lp_arena.get(child_copy).schema(lp_arena).into_owned();
+
+    // Stack predicates as Filter nodes above the copy
+    let mut top = child_copy;
+    for expr in predicate_union.keys() {
+        let expr_ir = to_expr_ir(
+            expr.clone(),
+            &mut ExprToIRContext::new(expr_arena, &schema),
+        )?;
+        top = lp_arena.add(IR::Filter {
+            input: top,
+            predicate: expr_ir,
+        });
+    }
+
+    // Run PPD on the temporary plan
+    let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)
+        .block_at_cache(1);
+    let optimized = pred_pd.optimize(lp_arena.take(top), lp_arena, expr_arena)?;
+    lp_arena.replace(top, optimized);
+
+    // If top is no longer a Filter, predicates moved down → removal is worth it
+    // If still a Filter, predicates stuck → keep cache
+    Ok(!matches!(lp_arena.get(top), IR::Filter { .. }))
+}
