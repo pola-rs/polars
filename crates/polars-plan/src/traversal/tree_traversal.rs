@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 use std::ops::{ControlFlow, Range};
 
 use polars_utils::collection::{Collection, CollectionWrap};
@@ -7,23 +6,14 @@ use crate::traversal::edge_provider::NodeEdgesProvider;
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 
 pub trait GetNodeInputs<Key> {
-    fn push_inputs_for_key<C>(&self, key: Key, container: &mut C)
-    where
-        C: Extend<Key>;
+    fn get_node_inputs(&self, key: Key, push_fn: &mut dyn FnMut(Key));
 
     fn num_inputs(&self, key: Key) -> usize {
-        struct Counter<T>(usize, PhantomData<T>);
+        let mut n: usize = 0;
 
-        impl<T> Extend<T> for Counter<T> {
-            fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-                iter.into_iter().for_each(|_| self.0 += 1);
-            }
-        }
+        self.get_node_inputs(key, &mut |_| n += 1);
 
-        let mut c = Counter::<Key>(0, PhantomData);
-        self.push_inputs_for_key(key, &mut c);
-
-        c.0
+        n
     }
 }
 
@@ -41,83 +31,130 @@ where
     let root_edge_idx = edges.len();
     edges.push(visitor.default_edge());
 
-    tree_traversal_impl::<Key, Storage, Edge, BreakValue>(
-        root_key,
-        root_edge_idx,
+    TreeTraversalImpl {
         storage,
         visit_stack,
         edges,
+        persist_input_edge_idxs: None,
         visitor,
-    )?;
+    }
+    .traverse_rec(root_key, root_edge_idx)?;
 
     assert_eq!(edges.len(), root_edge_idx + 1);
+
     ControlFlow::Continue(edges.pop().unwrap())
 }
 
-#[recursive::recursive]
-pub fn tree_traversal_impl<Key, Storage, Edge, BreakValue>(
-    current_key: Key,
-    current_key_out_edge_idx: usize,
-    storage: &mut Storage,
-    visit_stack: &mut Vec<Key>,
-    edges: &mut Vec<Edge>,
-    visitor: &mut dyn NodeVisitor<Key = Key, Storage = Storage, Edge = Edge, BreakValue = BreakValue>,
-) -> ControlFlow<BreakValue>
+pub enum PersistInputEdgeIdxs<'a> {
+    Build(&'a mut Vec<usize>),
+    Use(&'a [usize]),
+}
+
+pub struct TreeTraversalImpl<'a, Key, Storage, Edge, BreakValue> {
+    pub storage: &'a mut Storage,
+    pub visit_stack: &'a mut Vec<Key>,
+    pub edges: &'a mut Vec<Edge>,
+    pub persist_input_edge_idxs: Option<&'a mut PersistInputEdgeIdxs<'a>>,
+    pub visitor: &'a mut dyn NodeVisitor<Key = Key, Storage = Storage, Edge = Edge, BreakValue = BreakValue>,
+}
+
+impl<'a, Key, Storage, Edge, BreakValue> TreeTraversalImpl<'a, Key, Storage, Edge, BreakValue>
 where
     Key: Clone,
     Storage: GetNodeInputs<Key>,
 {
-    let base_visit_stack_len = visit_stack.len();
-    let base_edges_len = edges.len();
-
-    storage.push_inputs_for_key(current_key.clone(), visit_stack);
-
-    let num_inputs = visit_stack.len() - base_visit_stack_len;
-
-    edges.extend((0..num_inputs).map(|_| visitor.default_edge()));
-
-    match visitor.pre_visit(
-        current_key.clone(),
-        storage,
-        &mut SliceEdgeProvider {
+    #[recursive::recursive]
+    pub fn traverse_rec(
+        &mut self,
+        current_key: Key,
+        current_key_out_edge_idx: usize,
+    ) -> ControlFlow<BreakValue> {
+        let Self {
+            storage,
+            visit_stack,
             edges,
-            input_range: base_edges_len..base_edges_len + num_inputs,
-            output_idx: current_key_out_edge_idx,
-        },
-    )? {
-        SubtreeVisit::Visit => {
-            for i in 0..num_inputs {
-                tree_traversal_impl(
-                    visit_stack[base_visit_stack_len + i].clone(),
-                    base_edges_len + i,
-                    storage,
-                    visit_stack,
-                    edges,
-                    visitor,
-                )?;
-            }
-        },
-        SubtreeVisit::Skip => {},
+            persist_input_edge_idxs,
+            visitor,
+        } = self;
+
+        let base_visit_stack_len = visit_stack.len();
+
+        storage.get_node_inputs(current_key.clone(), &mut |key| visit_stack.push(key));
+
+        let num_inputs = visit_stack.len() - base_visit_stack_len;
+
+        let input_edges_start_idx: usize = match persist_input_edge_idxs {
+            Some(PersistInputEdgeIdxs::Use(idxs)) => idxs[current_key_out_edge_idx],
+            _ => {
+                let base_edges_len = edges.len();
+
+                edges.extend((0..num_inputs).map(|_| visitor.default_edge()));
+
+                match persist_input_edge_idxs {
+                    Some(PersistInputEdgeIdxs::Build(idxs)) => {
+                        idxs[current_key_out_edge_idx] = base_edges_len;
+                        idxs.extend((0..num_inputs).map(|_| usize::MAX));
+                        assert_eq!(edges.len(), idxs.len());
+                    },
+                    None => {},
+                    Some(PersistInputEdgeIdxs::Use(_)) => unreachable!(),
+                };
+
+                base_edges_len
+            },
+        };
+
+        assert!(input_edges_start_idx != usize::MAX); // Visiting a node that was not visited during `PersistInputEdgeIdxs::Build()`
+
+        match visitor.pre_visit(
+            current_key.clone(),
+            storage,
+            &mut SliceEdgeProvider {
+                edges,
+                input_range: input_edges_start_idx..input_edges_start_idx + num_inputs,
+                output_idx: current_key_out_edge_idx,
+            },
+        )? {
+            SubtreeVisit::Visit => {
+                for i in 0..num_inputs {
+                    let key = self.visit_stack[base_visit_stack_len + i].clone();
+                    self.traverse_rec(key, input_edges_start_idx + i)?;
+                }
+            },
+            SubtreeVisit::Skip => {},
+        }
+
+        let Self {
+            storage,
+            visit_stack,
+            edges,
+            persist_input_edge_idxs,
+            visitor,
+        } = self;
+
+        assert_eq!(visit_stack.len(), base_visit_stack_len + num_inputs);
+        visit_stack.truncate(base_visit_stack_len);
+
+        if persist_input_edge_idxs.is_none() {
+            assert_eq!(edges.len(), input_edges_start_idx + num_inputs);
+        }
+
+        visitor.post_visit(
+            current_key,
+            storage,
+            &mut SliceEdgeProvider {
+                edges,
+                input_range: input_edges_start_idx..input_edges_start_idx + num_inputs,
+                output_idx: current_key_out_edge_idx,
+            },
+        )?;
+
+        if persist_input_edge_idxs.is_none() {
+            edges.truncate(input_edges_start_idx);
+        }
+
+        ControlFlow::Continue(())
     }
-
-    assert_eq!(visit_stack.len(), base_visit_stack_len + num_inputs);
-    visit_stack.truncate(base_visit_stack_len);
-
-    assert_eq!(edges.len(), base_edges_len + num_inputs);
-
-    let control_flow = visitor.post_visit(
-        current_key,
-        storage,
-        &mut SliceEdgeProvider {
-            edges,
-            input_range: base_edges_len..base_edges_len + num_inputs,
-            output_idx: current_key_out_edge_idx,
-        },
-    );
-
-    edges.truncate(base_edges_len);
-
-    control_flow
 }
 
 struct SliceEdgeProvider<'a, Edge> {

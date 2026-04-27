@@ -1,11 +1,10 @@
 mod cache_states;
 mod csee;
-mod cspe;
+pub mod cspe;
 
 use cache_states::set_cache_states;
 pub(super) use csee::CommonSubExprOptimizer;
 pub use csee::NaiveExprMerger;
-use cspe::elim_cmn_subplans;
 
 use super::*;
 
@@ -36,7 +35,7 @@ impl CommonSubPlanOptimizer {
         verbose: bool,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
-        let (root, inserted_cache, _) = cse::elim_cmn_subplans(root, ir_arena, expr_arena);
+        let inserted_cache = cspe::common_subplan_elimination(root, ir_arena, expr_arena);
 
         run_projection_predicate_pushdown(
             root,
