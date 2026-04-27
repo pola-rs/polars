@@ -169,9 +169,10 @@ def read_csv(
         `infer_schema=False` to read all columns as `pl.String` to check which
         values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like formats can
-        be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.String`.
+        Try to automatically parse dates. CSV date inference supports a limited set of
+        unambiguous date and datetime formats. Ambiguous or locale-specific formats are
+        not inferred automatically. If this does not succeed, the column remains of data
+        type `pl.String`.
         If `use_pyarrow=True`, dates will always be parsed.
     n_threads
         Number of threads to use in csv parsing.
@@ -871,9 +872,10 @@ def read_csv_batched(
         First try `infer_schema_length=0` to read all columns as
         `pl.String` to check which values might cause an issue.
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like formats can
-        be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.String`.
+        Try to automatically parse dates. CSV date inference supports a limited set of
+        unambiguous date and datetime formats. Ambiguous or locale-specific formats are
+        not inferred automatically. If this does not succeed, the column remains of data
+        type `pl.String`.
     n_threads
         Number of threads to use in csv parsing.
         Defaults to the number of physical cpu's of your system.
@@ -1245,9 +1247,10 @@ def scan_csv(
     row_index_offset
         Offset to start the row index column (only used if the name is set).
     try_parse_dates
-        Try to automatically parse dates. Most ISO8601-like formats
-        can be inferred, as well as a handful of others. If this does not succeed,
-        the column remains of data type `pl.String`.
+        Try to automatically parse dates. CSV date inference supports a limited set of
+        unambiguous date and datetime formats. Ambiguous or locale-specific formats are
+        not inferred automatically. If this does not succeed, the column remains of data
+        type `pl.String`.
     eol_char
         Single byte end of line character (default: `\n`). When encountering a file
         with windows line endings (`\r\n`), one can go with the default `\n`. The extra

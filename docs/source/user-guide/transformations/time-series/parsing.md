@@ -27,6 +27,13 @@ is set to `True`:
 --8<-- "python/user-guide/transformations/time-series/parsing.py:df"
 ```
 
+CSV date inference supports a limited set of unambiguous date and datetime formats. The exact set of
+formats may change between Polars versions.
+
+Ambiguous or locale-specific formats, such as month-day-year dates (`MM-DD-YYYY`) or two-digit
+years, are not inferred automatically. For those formats, read the column as `String` and parse it
+explicitly with `str.strptime`.
+
 This flag will trigger schema inference on a number of rows, as configured by the
 `infer_schema_length` setting (100 rows by default). Schema inference is computationally expensive
 and can slow down file loading if a high number of rows is used.
