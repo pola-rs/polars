@@ -162,4 +162,15 @@ impl PyExpr {
     fn arr_agg(&self, expr: PyExpr) -> Self {
         self.inner.clone().arr().agg(expr.inner).into()
     }
+
+    #[cfg(feature = "array_gather")]
+    fn arr_gather_every(&self, n: PyExpr, offset: PyExpr, as_array: bool) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .arr()
+            .gather_every(n.inner, offset.inner, as_array)
+            .map_err(PyPolarsErr::from)?
+            .into())
+    }
 }

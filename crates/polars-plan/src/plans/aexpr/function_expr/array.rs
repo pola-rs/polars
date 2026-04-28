@@ -35,6 +35,8 @@ pub enum IRArrayFunction {
     Slice(i64, i64),
     #[cfg(feature = "array_to_struct")]
     ToStruct(Option<DslNameGenerator>),
+    #[cfg(feature = "array_gather")]
+    GatherEvery(i64, i64),
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -113,6 +115,10 @@ impl IRArrayFunction {
                     .collect::<PolarsResult<Vec<Field>>>()
                     .map(DataType::Struct)
             }),
+            #[cfg(feature = "array_gather")]
+            GatherEvery(n, offset) => mapper
+                .ensure_is_array()?
+                .try_map_dtype(map_array_gather_every_dtype(n, offset)),
         }
     }
 
@@ -144,6 +150,8 @@ impl IRArrayFunction {
             | A::Join(_)
             | A::Shift
             | A::Slice(_, _) => FunctionOptions::elementwise(),
+            #[cfg(feature = "array_gather")]
+            A::GatherEvery(_, _) => FunctionOptions::elementwise(),
             A::Explode { .. } => FunctionOptions::row_separable(),
             #[cfg(feature = "array_to_struct")]
             A::ToStruct(_) => FunctionOptions::elementwise(),
@@ -174,6 +182,30 @@ fn map_to_array_fixed_length(
             })?;
             let (_, slice_offset) = slice_offsets(*offset, length, *array_len);
             Ok(DataType::Array(inner.clone(), slice_offset))
+        } else {
+            polars_bail!(ComputeError: "expected array dtype, got {}", datatype);
+        }
+    }
+}
+
+#[cfg(feature = "array_gather")]
+fn map_array_gather_every_dtype(
+    n: &i64,
+    offset: &i64,
+) -> impl FnOnce(&DataType) -> PolarsResult<DataType> {
+    let n = *n;
+    let offset = *offset;
+    move |datatype: &DataType| {
+        if let DataType::Array(inner, width) = datatype {
+            polars_ensure!(n > 0, ComputeError: "cannot gather every for `n=0`");
+            let n = n as usize;
+            let offset = offset as usize;
+            let new_width = if offset >= *width {
+                0
+            } else {
+                (*width - offset).div_ceil(n)
+            };
+            Ok(DataType::Array(inner.clone(), new_width))
         } else {
             polars_bail!(ComputeError: "expected array dtype, got {}", datatype);
         }
@@ -211,6 +243,8 @@ impl Display for IRArrayFunction {
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "array_gather")]
+            GatherEvery(_, _) => "gather_every",
         };
         write!(f, "arr.{name}")
     }

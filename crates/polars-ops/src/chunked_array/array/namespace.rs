@@ -191,6 +191,55 @@ pub trait ArrayNameSpace: AsArray {
         Ok(out.into_series())
     }
 
+    #[cfg(feature = "array_gather")]
+    fn array_gather_every(&self, n: i64, offset: i64) -> PolarsResult<Series> {
+        let ca = self.as_array();
+        polars_ensure!(n > 0, ComputeError: "cannot gather every for `n=0`");
+        let n = n as usize;
+        let offset = offset as usize;
+        let width = ca.width();
+        let new_width = if offset >= width {
+            0
+        } else {
+            (width - offset).div_ceil(n)
+        };
+
+        let result: ArrayChunked =
+            unary_kernel(ca, move |arr: &FixedSizeListArray| -> FixedSizeListArray {
+                let mut builder = make_builder(arr.values().dtype());
+                builder.reserve(new_width * arr.len());
+                let mut validity = BitmapBuilder::with_capacity(arr.len());
+                let values = arr.values().as_ref();
+
+                for row in 0..arr.len() {
+                    if !arr.is_valid(row) {
+                        validity.push(false);
+                        builder.extend_nulls(new_width);
+                        continue;
+                    }
+                    let base = row * arr.size();
+                    for i in (offset..arr.size()).step_by(n) {
+                        builder.subslice_extend(values, base + i, 1, ShareStrategy::Always);
+                    }
+                    validity.push(true);
+                }
+
+                let new_dtype = match arr.dtype() {
+                    ArrowDataType::FixedSizeList(inner, _) => {
+                        ArrowDataType::FixedSizeList(inner.clone(), new_width)
+                    },
+                    _ => unreachable!(),
+                };
+                FixedSizeListArray::new(
+                    new_dtype,
+                    arr.len(),
+                    builder.freeze_reset(),
+                    validity.into_opt_validity(),
+                )
+            });
+        Ok(result.into_series())
+    }
+
     fn array_slice(&self, offset: i64, length: i64) -> PolarsResult<Series> {
         let slice_arr: ArrayChunked = unary_kernel(
             self.as_array(),
