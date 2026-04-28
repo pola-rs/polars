@@ -5,6 +5,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::unique_id::UniqueId;
 
 use super::*;
+use crate::plans::deep_copy::deep_copy_ir_delete_caches;
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
@@ -261,7 +262,7 @@ pub(super) fn set_cache_states(
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
         let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming);
-        for (_cache_id, mut v) in cache_schema_and_children {
+        for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
             // want to loose predicate pushdown in favor of scan sharing.
@@ -269,45 +270,11 @@ pub(super) fn set_cache_states(
                 if verbose {
                     eprintln!("cache nodes will be removed because predicates don't match")
                 }
-                for ((child, cache), parents) in
-                    v.children.iter_mut().zip(v.cache_nodes).zip(v.parents)
+                for ((&child, cache), parents) in
+                    v.children.iter().zip(v.cache_nodes).zip(v.parents)
                 {
-                    // Copy this subtree to ensure we don't affect other consumers of this cache.
-                    let new_child_node = tree_traversal(
-                        *child,
-                        lp_arena,
-                        &mut vec![],
-                        &mut vec![],
-                        &mut FnVisitors::new(
-                            || *child,
-                            |node, ir_arena: &mut Arena<IR>, edges| {
-                                ControlFlow::Continue(SubtreeVisit::Visit)
-                            },
-                            |node, ir_arena, edges| {
-                                let mut copy = ir_arena.get(node).clone();
-
-                                for (orig_input, copied_input) in
-                                    copy.inputs_mut().zip_eq(edges.inputs().iter().copied())
-                                {
-                                    *orig_input = copied_input
-                                }
-
-                                for e in copy.exprs_mut() {
-                                    e.set_node(deep_clone_ae(e.node(), expr_arena));
-                                }
-
-                                edges.outputs()[0] = ir_arena.add(copy);
-                                ControlFlow::<()>::Continue(())
-                            },
-                        ),
-                    )
-                    .continue_value()
-                    .unwrap();
-
-                    *child = new_child_node;
-
                     // Remove the cache and assign the child the cache location.
-                    lp_arena.swap(cache, new_child_node);
+                    lp_arena.swap(child, cache);
 
                     // Restart predicate and projection pushdown from most top parent.
                     // This to ensure we continue the optimization where it was blocked initially.
@@ -323,6 +290,8 @@ pub(super) fn set_cache_states(
                             break;
                         }
                     }
+
+                    node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
 
                     let lp = lp_arena.take(node);
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
