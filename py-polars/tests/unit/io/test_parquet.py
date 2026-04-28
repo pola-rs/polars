@@ -3738,7 +3738,7 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
         (pl.Float64, pa.float64()),
         (pl.Decimal(38, 10), pa.decimal128(38, 10)),
         (pl.Categorical, pa.dictionary(pa.uint32(), pa.string())),
-        (pl.Enum(["x", "y", "z"]), pa.dictionary(pa.uint8(), pa.string())),
+        (pl.Enum(["x", "y", "z"]), pa.dictionary(pa.uint8(), pa.string(), ordered=True)),
         (pl.List(pl.Int32), pa.large_list(pa.int32())),
         (pl.Array(pl.Int32, 3), pa.list_(pa.int32(), 3)),
         (

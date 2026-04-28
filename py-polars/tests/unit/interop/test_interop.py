@@ -97,7 +97,7 @@ def test_arrow_array_logical() -> None:
     pa_data1 = (
         pa.array(["a", "b", "c", "d"])
         .dictionary_encode()
-        .cast(pa.dictionary(pa.uint8(), pa.large_string()))
+        .cast(pa.dictionary(pa.uint8(), pa.large_string(), ordered=True))
     )
     pa_array_logical1 = pa.FixedSizeListArray.from_arrays(pa_data1, 2)
 
