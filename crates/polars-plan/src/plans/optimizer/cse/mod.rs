@@ -59,8 +59,6 @@ impl CommonSubPlanOptimizer {
 
             use std::ops::ControlFlow;
 
-            use polars_utils::unitvec;
-
             use crate::traversal::tree_traversal::tree_traversal;
             use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
@@ -101,9 +99,7 @@ impl CommonSubPlanOptimizer {
             .continue_value()
             .unwrap();
 
-            for (cache_input_node, cache_consumer_node) in
-                cache_hits.into_values().filter_map(|x| x)
-            {
+            for (cache_input_node, cache_consumer_node) in cache_hits.into_values().flatten() {
                 *ir_arena
                     .get_mut(cache_consumer_node)
                     .inputs_mut()
