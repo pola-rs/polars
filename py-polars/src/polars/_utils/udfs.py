@@ -21,6 +21,7 @@ from typing import (
     Final,
     Literal,
     NamedTuple,
+    TypedDict,
 )
 
 from polars._utils.cache import LRUCache
@@ -219,7 +220,21 @@ _PYTHON_METHODS_MAP: Final[dict[str, str]] = {
     "year": "dt.year",
 }
 
-_MODULE_FUNCTIONS: list[dict[str, list[AbstractSet[str]]]] = [
+
+class ModuleFunction(TypedDict, total=False):
+    argument_1_opname: list[AbstractSet[str]]
+    argument_2_opname: list[AbstractSet[str]]
+    argument_1_unary_opname: list[AbstractSet[str]]
+    argument_2_unary_opname: list[AbstractSet[str]]
+    module_opname: list[AbstractSet[str]]
+    attribute_opname: list[AbstractSet[str]]
+    module_name: list[AbstractSet[str]]
+    attribute_name: list[AbstractSet[str]]
+    function_name: list[AbstractSet[str]]
+    check_load_global: bool
+
+
+_MODULE_FUNCTIONS: list[ModuleFunction] = [
     # lambda x: numpy.func(x)
     # lambda x: numpy.func(CONSTANT)
     {
@@ -261,7 +276,7 @@ _MODULE_FUNCTIONS: list[dict[str, list[AbstractSet[str]]]] = [
         "module_name": [{"datetime"}],
         "attribute_name": [],
         "function_name": [{"strptime"}],
-        "check_load_global": False,  # type: ignore[dict-item]
+        "check_load_global": False,
     },
     # lambda x: module.attribute.func(x, CONSTANT)
     {
@@ -272,15 +287,16 @@ _MODULE_FUNCTIONS: list[dict[str, list[AbstractSet[str]]]] = [
         "module_name": [{"datetime", "dt"}],
         "attribute_name": [{"datetime"}],
         "function_name": [{"strptime"}],
-        "check_load_global": False,  # type: ignore[dict-item]
+        "check_load_global": False,
     },
 ]
 # In addition to `lambda x: func(x)`, also support cases when a unary operation
 # has been applied to `x`, like `lambda x: func(-x)` or `lambda x: func(~x)`.
+_UNARIES: list[list[AbstractSet[str]]] = [[set(OpNames.UNARY)], []]
 _MODULE_FUNCTIONS = [
-    {**kind, "argument_1_unary_opname": unary}  # type: ignore[dict-item]
+    {**kind, "argument_1_unary_opname": unary}
     for kind in _MODULE_FUNCTIONS
-    for unary in [[set(OpNames.UNARY)], []]
+    for unary in _UNARIES
 ]
 # Lookup for module functions that have different names as polars expressions
 _MODULE_FUNC_TO_EXPR_NAME: Final[dict[str, str]] = {
