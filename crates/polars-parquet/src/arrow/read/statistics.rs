@@ -9,7 +9,6 @@ use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit
 use arrow::types::{days_ms, i256};
 use ethnum::I256;
 use num_traits::{AsPrimitive, FromBytes};
-use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -293,7 +292,7 @@ pub fn deserialize_all(
     field: &Field,
     row_groups: &[RowGroupMetadata],
     field_idx: usize,
-    footer_buf: &Buffer<u8>,
+    footer_buf: &[u8],
 ) -> ParquetResult<Option<ArrowColumnStatisticsArrays>> {
     assert!(!row_groups.is_empty());
     use ArrowDataType as D;
@@ -553,7 +552,7 @@ pub fn deserialize_all(
 pub fn deserialize<'a>(
     field: &Field,
     columns: &mut impl ExactSizeIterator<Item = &'a ColumnChunkMetadata>,
-    footer_buf: &Buffer<u8>,
+    footer_buf: &[u8],
 ) -> ParquetResult<Option<Statistics>> {
     use ArrowDataType as D;
     match field.dtype() {

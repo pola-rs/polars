@@ -173,7 +173,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
 fn load_parquet_column_statistics(
     row_groups: &[RowGroupMetadata],
     projection: &ArrowFieldProjection,
-    footer_buf: &polars_buffer::Buffer<u8>,
+    footer_buf: &[u8],
 ) -> PolarsResult<StatisticsColumns> {
     let arrow_field = projection.arrow_field();
 
