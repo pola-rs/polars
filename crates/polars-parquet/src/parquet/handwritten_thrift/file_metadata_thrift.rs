@@ -8,6 +8,8 @@
 //!   offsets into the input buffer rather than per-stat `Vec<u8>` allocations.
 //!   The caller passes the footer as [`Buffer<u8>`] so those offsets stay
 //!   resolvable for the lifetime of the resulting metadata.
+//!
+//!   See <https://github.com/apache/parquet-format/blob/96edf77704b60b6f3ca2232c218c64eff6c874d3/src/main/thrift/parquet.thrift> for spec
 
 use polars_buffer::Buffer;
 use polars_parquet_format::{ColumnOrder, KeyValue, SchemaElement, SortingColumn};
