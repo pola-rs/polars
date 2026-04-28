@@ -1381,8 +1381,6 @@ pub fn lower_ir(
                                 right_on: right_on_names[0].clone(),
                                 tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
                                 tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
-                                left_by: asof_options().left_by.clone(),
-                                right_by: asof_options().right_by.clone(),
                                 by_descending,
                                 by_nulls_last,
                                 args: args.clone(),
