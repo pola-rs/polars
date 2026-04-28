@@ -274,7 +274,13 @@ pub(super) fn set_cache_states(
                     for p_node in parents.into_iter().flatten() {
                         match lp_arena.get(p_node) {
                             IR::Filter { .. } | IR::SimpleProjection { .. } => true,
-                            IR::Cache { id, .. } => *id == cache_id,
+                            IR::Cache { id, .. } => {
+                                if cfg!(debug_assertions) {
+                                    panic!()
+                                }
+
+                                *id == cache_id
+                            },
                             _ => break,
                         };
 
