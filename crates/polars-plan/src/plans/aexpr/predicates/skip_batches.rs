@@ -458,6 +458,34 @@ fn aexpr_to_skip_batch_predicate_rec(
                             _ => None,
                         }
                     },
+                    IRBooleanFunction::Not => {
+                        let col = into_column(input[0].node(), arena)?;
+                        let dtype = schema.get(col)?;
+                        if !can_use_min_max_stats(dtype, None, None) {
+                            return None;
+                        }
+
+                        let col = col.clone();
+                        let col_nc = col!(null_count: col);
+                        let len = col!(len);
+                        let col_min = col!(min: col);
+                        let col_max = col!(max: col);
+                        let col_min_is_true = col_min.eq(lv!(true), arena);
+                        let col_max_is_true = col_max.eq(lv!(true), arena);
+                        let min_is_defined = is_stat_defined(col_min, dtype, arena);
+                        let max_is_defined = is_stat_defined(col_max, dtype, arena);
+
+                        // col(A).Not() ->
+                        //     null_count(A) == LEN ||
+                        //         min(A) == max(A) == True
+                        let all_null = col_nc.eq(len, arena);
+                        let all_true = min_is_defined
+                            .and(max_is_defined, arena)
+                            .and(col_min_is_true, arena)
+                            .and(col_max_is_true, arena);
+
+                        Some(all_null.or(all_true, arena).node())
+                    },
                     IRBooleanFunction::IsNull => {
                         let col = into_column(input[0].node(), arena)?;
 
