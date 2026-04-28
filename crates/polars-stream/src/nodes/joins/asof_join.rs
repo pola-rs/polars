@@ -31,7 +31,6 @@ const ROW_ENCODED_COL_NAME: PlSmallStr = PlSmallStr::from_static("__PL_ASOF_JOIN
 pub struct AsOfJoinSideParams {
     pub on: PlSmallStr,
     pub tmp_key_col: Option<PlSmallStr>,
-    pub by: Vec<PlSmallStr>,
 }
 
 impl AsOfJoinSideParams {
@@ -52,9 +51,23 @@ struct AsOfJoinParams {
 impl AsOfJoinParams {
     fn as_of_options(&self) -> &AsOfOptions {
         let JoinType::AsOf(ref options) = self.args.how else {
-            unreachable!("incorrect join type");
+            unreachable!();
         };
         options
+    }
+
+    fn left_by(&self) -> &[PlSmallStr] {
+        self.as_of_options()
+            .left_by
+            .as_ref()
+            .map_or(&[], |x| &x[..])
+    }
+
+    fn right_by(&self) -> &[PlSmallStr] {
+        self.as_of_options()
+            .right_by
+            .as_ref()
+            .map_or(&[], |x| &x[..])
     }
 }
 
@@ -87,20 +100,21 @@ impl AsOfJoinNode {
         right_on: PlSmallStr,
         tmp_left_key_col: Option<PlSmallStr>,
         tmp_right_key_col: Option<PlSmallStr>,
-        left_by: Option<Vec<PlSmallStr>>,
-        right_by: Option<Vec<PlSmallStr>>,
         by_descending: Option<Vec<bool>>,
         by_nulls_last: Option<Vec<bool>>,
         args: JoinArgs,
     ) -> Self {
+        let JoinType::AsOf(ref options) = args.how else {
+            unreachable!();
+        };
         assert!({
-            let by_len = || left_by.as_ref().unwrap().len();
-            let by_all_none = left_by.is_none()
-                && right_by.is_none()
+            let by_len = || options.left_by.as_ref().unwrap().len();
+            let by_all_none = options.left_by.is_none()
+                && options.right_by.is_none()
                 && by_descending.is_none()
                 && by_nulls_last.is_none();
             by_all_none
-                || (right_by.as_ref().unwrap().len() == by_len()
+                || (options.right_by.as_ref().unwrap().len() == by_len()
                     && by_descending.as_ref().unwrap().len() == by_len()
                     && by_nulls_last.as_ref().unwrap().len() == by_len())
         });
@@ -113,12 +127,10 @@ impl AsOfJoinNode {
         let left = AsOfJoinSideParams {
             on: left_on,
             tmp_key_col: tmp_left_key_col,
-            by: left_by.unwrap_or_default(),
         };
         let right = AsOfJoinSideParams {
             on: right_on,
             tmp_key_col: tmp_right_key_col,
-            by: right_by.unwrap_or_default(),
         };
 
         let params = AsOfJoinParams {
@@ -338,7 +350,7 @@ fn need_more_right_side(
 
     let mut start = 0;
     let mut end = right.height();
-    let by_iter = Iterator::zip(params.left.by.iter(), params.right.by.iter());
+    let by_iter = Iterator::zip(params.left_by().iter(), params.right_by().iter());
     let reorder_iter = Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter());
     for ((left_by, right_by), (descending, nulls_last)) in Iterator::zip(by_iter, reorder_iter) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
@@ -402,7 +414,7 @@ fn prune_right_side(
 
     let mut start = 0;
     let mut end = right.height();
-    let by_iter = Iterator::zip(params.left.by.iter(), params.right.by.iter());
+    let by_iter = Iterator::zip(params.left_by().iter(), params.right_by().iter());
     let reorder_iter = Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter());
     for ((left_by, right_by), (descending, nulls_last)) in Iterator::zip(by_iter, reorder_iter) {
         let left_by_col = left.column(left_by)?.as_materialized_series();
@@ -564,7 +576,7 @@ fn drop_columns(
     }
 
     // Only return one set of group columns in the result.
-    for col in &params.right.by {
+    for col in params.right_by() {
         right_df.drop_in_place(col)?;
     }
 
@@ -622,7 +634,7 @@ fn compute_asof_join(
         .clone()
         .to_physical_repr();
 
-    if params.left.by.is_empty() {
+    if params.left_by().is_empty() {
         return join_asof_ungrouped(
             left_df,
             right_df,
@@ -633,8 +645,8 @@ fn compute_asof_join(
         );
     }
 
-    let left_groups = ByGroups::find_groups(&left_df, &params.left.by, left_lengths, params)?;
-    let right_groups = ByGroups::find_groups(&right_df, &params.right.by, right_lengths, params)?;
+    let left_groups = ByGroups::find_groups(&left_df, params.left_by(), left_lengths, params)?;
+    let right_groups = ByGroups::find_groups(&right_df, params.right_by(), right_lengths, params)?;
     let cmp_at = |left_idx, right_idx| unsafe {
         ByGroups::cmp_at(&left_groups, left_idx, &right_groups, right_idx, params)
     };
