@@ -48,13 +48,12 @@ fn convert_field(field: &mut Field) {
             );
 
             if is_pl_enum_or_categorical {
-                let is_pl_enum = 
-                    field.metadata.as_ref().is_some_and(|md| {
-                        md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
-                            || md.contains_key(DTYPE_ENUM_VALUES_NEW)
-                    });
+                let is_pl_enum = field.metadata.as_ref().is_some_and(|md| {
+                    md.contains_key(DTYPE_ENUM_VALUES_LEGACY)
+                        || md.contains_key(DTYPE_ENUM_VALUES_NEW)
+                });
                 convert_dtype(ArrowDataType::Dictionary(key_type, value_type, is_pl_enum))
-            } else if is_int_to_str  {
+            } else if is_int_to_str {
                 convert_dtype(ArrowDataType::Dictionary(key_type, value_type, ordered))
             } else {
                 convert_dtype(*value_type)

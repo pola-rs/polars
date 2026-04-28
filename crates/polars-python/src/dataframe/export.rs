@@ -126,7 +126,11 @@ impl PyDataFrame {
                 })
                 .map(|(i, _)| i)
                 .collect_vec();
-            let is_enum_col = df.columns().iter().map(|c| matches!(c.dtype(), DataType::Enum(_, _))).collect_vec();
+            let is_enum_col = df
+                .columns()
+                .iter()
+                .map(|c| matches!(c.dtype(), DataType::Enum(_, _)))
+                .collect_vec();
 
             let enum_dtype = ArrowDataType::Dictionary(
                 IntegerType::Int64,
@@ -152,14 +156,22 @@ impl PyDataFrame {
                             let mut schema = schema.as_ref().clone();
                             for i in &dict_columns {
                                 let (_, field) = schema.get_at_index_mut(*i).unwrap();
-                                field.dtype = if is_enum_col[*i] { enum_dtype.clone() } else { categorical_dtype.clone() };
+                                field.dtype = if is_enum_col[*i] {
+                                    enum_dtype.clone()
+                                } else {
+                                    categorical_dtype.clone()
+                                };
                             }
                             Arc::new(schema)
                         });
 
                     for i in &dict_columns {
                         let arr = arrays.get_mut(*i).unwrap();
-                        let cast_dtype = if is_enum_col[*i] { &enum_dtype } else { &categorical_dtype };
+                        let cast_dtype = if is_enum_col[*i] {
+                            &enum_dtype
+                        } else {
+                            &categorical_dtype
+                        };
                         let out = polars_compute::cast::cast(
                             &**arr,
                             cast_dtype,
