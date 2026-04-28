@@ -70,6 +70,7 @@ mod phys_node {
     use std::sync::Arc;
 
     use polars_core::schema::Schema;
+    use polars_utils::{UnitVec, unitvec};
 
     use crate::PhysNodeKind;
 
@@ -79,48 +80,28 @@ mod phys_node {
     /// acyclic graph of operations that can run on the streaming engine.
     #[derive(Clone, Debug)]
     pub struct PhysNode {
-        output_schema: OutputSchema,
+        output_schemas: UnitVec<Arc<Schema>>,
         pub(super) kind: PhysNodeKind,
-    }
-
-    #[derive(Clone, Debug)]
-    enum OutputSchema {
-        /// Same output schema across all ports
-        Shared(Arc<Schema>),
-        #[expect(unused)]
-        PerPort(Vec<Arc<Schema>>),
     }
 
     impl PhysNode {
         pub fn new(output_schema: Arc<Schema>, kind: PhysNodeKind) -> Self {
             Self {
-                output_schema: OutputSchema::Shared(output_schema),
+                output_schemas: unitvec![output_schema],
                 kind,
             }
         }
 
         pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {
-            use OutputSchema::*;
-
-            match &self.output_schema {
-                Shared(schema) => {
-                    assert_eq!(port_idx, 0);
-                    schema
-                },
-                PerPort(v) => &v[port_idx],
-            }
+            &self.output_schemas[port_idx]
         }
 
         pub fn output_schema_mut(&mut self, port_idx: usize) -> &mut Arc<Schema> {
-            use OutputSchema::*;
+            &mut self.output_schemas[port_idx]
+        }
 
-            match &mut self.output_schema {
-                Shared(schema) => {
-                    assert_eq!(port_idx, 0);
-                    schema
-                },
-                PerPort(v) => &mut v[port_idx],
-            }
+        pub fn output_schemas_mut(&mut self) -> &mut UnitVec<Arc<Schema>> {
+            &mut self.output_schemas
         }
 
         pub fn kind(&self) -> &PhysNodeKind {
@@ -766,7 +747,7 @@ fn visit_node_inputs_mut(
 }
 
 fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
-    let mut refcount = PlHashMap::new();
+    let mut refcount: PlHashMap<_, usize> = PlHashMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
     });
@@ -774,13 +755,23 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
     let mut multiplexer_map: PlHashMap<PhysStream, PhysStream> = refcount
         .into_iter()
         .filter(|(_stream, refcount)| *refcount > 1)
-        .map(|(stream, _refcount)| {
+        .map(|(stream, refcount)| {
             let input_schema = phys_sm[stream.node].output_schema(stream.port).clone();
-            let multiplexer_node = phys_sm.insert(PhysNode::new(
-                input_schema,
+
+            let mut multiplexer_node = PhysNode::new(
+                Arc::clone(&input_schema),
                 PhysNodeKind::Multiplexer { input: stream },
-            ));
-            (stream, PhysStream::first(multiplexer_node))
+            );
+
+            let output_schemas = multiplexer_node.output_schemas_mut();
+
+            for _ in 0..refcount - 1 {
+                output_schemas.push(Arc::clone(&input_schema))
+            }
+
+            let multiplexer_node_key = phys_sm.insert(multiplexer_node);
+
+            (stream, PhysStream::first(multiplexer_node_key))
         })
         .collect();
 
