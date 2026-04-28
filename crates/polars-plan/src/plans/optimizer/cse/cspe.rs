@@ -1,19 +1,17 @@
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
-use std::ops::{ControlFlow, Deref, DerefMut};
+use std::ops::ControlFlow;
 
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
-use polars_utils::itertools::Itertools;
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::unitvec;
 
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::visitor::hash::IRHashWrap;
 use crate::plans::{AExpr, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
-use crate::traversal::tree_traversal::{GetNodeInputs, PersistInputEdgeIdxs, TreeTraversalImpl};
+use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
 use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 
 /// Inserts `IR::Cache` on common subplans.

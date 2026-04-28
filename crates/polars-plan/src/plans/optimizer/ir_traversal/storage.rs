@@ -1,12 +1,9 @@
-use std::ops::{ControlFlow, Deref, DerefMut};
+use std::ops::{Deref, DerefMut};
 
-use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
-use polars_utils::scratch_vec::ScratchVec;
 
-use crate::plans::{AExpr, IR};
-use crate::traversal::tree_traversal::{GetNodeInputs, PersistInputEdgeIdxs, TreeTraversalImpl};
-use crate::traversal::visitor::{FnVisitors, NodeVisitor};
+use crate::plans::IR;
+use crate::traversal::tree_traversal::GetNodeInputs;
 
 pub struct IRTraversalStorage<'a> {
     pub arena: &'a mut Arena<IR>,
