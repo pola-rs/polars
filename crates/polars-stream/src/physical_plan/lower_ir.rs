@@ -893,53 +893,27 @@ pub fn lower_ir(
                         *row_index_to_multiscan = row_index_post.take();
                     }
 
-                    // TODO
-                    // Projection pushdown could change the row index column position. Ideally it shouldn't,
-                    // and instead just put a projection on top of the scan node in the IR. But for now
-                    // we do that step here.
-                    let mut schema_after_row_index_post = multi_scan_output_schema.clone();
-                    let mut reorder_after_row_index_post = false;
-
-                    // Remove row index from multiscan schema if not pushed.
+                    // Projection pushdown should not have changed the row-index column position.
                     if let Some(ri) = row_index_post.as_ref() {
-                        let row_index_post_position =
-                            multi_scan_output_schema.index_of(&ri.name).unwrap();
-                        let (_, dtype) = Arc::make_mut(multi_scan_output_schema)
-                            .shift_remove_index(row_index_post_position)
-                            .unwrap();
-
-                        if row_index_post_position != 0 {
-                            reorder_after_row_index_post = true;
-                            let mut schema =
-                                Schema::with_capacity(multi_scan_output_schema.len() + 1);
-                            schema.extend([(ri.name.clone(), dtype)]);
-                            schema.extend(
-                                multi_scan_output_schema
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone())),
-                            );
-                            schema_after_row_index_post = Arc::new(schema);
-                        }
+                        debug_assert_eq!(multi_scan_output_schema.index_of(&ri.name).unwrap(), 0);
+                        // Row index is not inserted by the multiscan itself; remove it from the
+                        // multiscan schema (it will be added back by the WithRowIndex node below).
+                        Arc::make_mut(multi_scan_output_schema).shift_remove_index(0);
                     }
 
                     // If we have no predicate and no slice or positive slice, we can reorder the row index to after
                     // the slice by adjusting the offset. This can remove a serial synchronization step in multiscan
                     // and allow the reader to still skip rows.
-                    let row_index_post_after_slice = (|| {
-                        let mut row_index = row_index_post.take()?;
-
-                        let positive_offset = match pre_slice_to_multiscan {
-                            Some(Slice::Positive { offset, .. }) => Some(*offset),
-                            None => Some(0),
+                    if let Some(row_index) = row_index_post.as_mut() {
+                        let positive_offset = match &pre_slice_to_multiscan {
+                            Some(Slice::Positive { offset, .. }) => *offset,
                             Some(Slice::Negative { .. }) => unreachable!(),
-                        }?;
-
+                            None => 0,
+                        };
                         row_index.offset = row_index.offset.saturating_add(
                             IdxSize::try_from(positive_offset).unwrap_or(IdxSize::MAX),
                         );
-
-                        Some(row_index)
-                    })();
+                    }
 
                     let mut stream = {
                         let node_key = phys_sm.insert(PhysNode::new(
@@ -957,64 +931,12 @@ pub fn lower_ir(
                         };
 
                         let node_key = phys_sm.insert(PhysNode {
-                            output_schema: schema_after_row_index_post.clone(),
+                            output_schema: output_schema.clone(),
                             kind: node,
                         });
 
                         stream = PhysStream::first(node_key);
-
-                        if reorder_after_row_index_post {
-                            let columns = output_schema
-                                .iter_names_cloned()
-                                .map(|c| (c.clone(), c))
-                                .collect();
-                            let node = PhysNodeKind::SimpleProjection {
-                                input: stream,
-                                columns,
-                            };
-
-                            let node_key = phys_sm.insert(PhysNode {
-                                output_schema: output_schema.clone(),
-                                kind: node,
-                            });
-
-                            stream = PhysStream::first(node_key);
-                        }
                     }
-
-                    if let Some(ri) = row_index_post_after_slice {
-                        let node = PhysNodeKind::WithRowIndex {
-                            input: stream,
-                            name: ri.name,
-                            offset: Some(ri.offset),
-                        };
-
-                        let node_key = phys_sm.insert(PhysNode {
-                            output_schema: schema_after_row_index_post,
-                            kind: node,
-                        });
-
-                        stream = PhysStream::first(node_key);
-
-                        if reorder_after_row_index_post {
-                            let columns = output_schema
-                                .iter_names_cloned()
-                                .map(|c| (c.clone(), c))
-                                .collect();
-                            let node = PhysNodeKind::SimpleProjection {
-                                input: stream,
-                                columns,
-                            };
-
-                            let node_key = phys_sm.insert(PhysNode {
-                                output_schema: output_schema.clone(),
-                                kind: node,
-                            });
-
-                            stream = PhysStream::first(node_key);
-                        }
-                    }
-
                     return Ok(stream);
                 }
             }

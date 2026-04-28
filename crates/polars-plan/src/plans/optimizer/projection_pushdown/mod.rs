@@ -192,6 +192,7 @@ fn update_scan_schema(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
     sort_projections: bool,
+    row_index_name: Option<&PlSmallStr>,
 ) -> PolarsResult<Schema> {
     let mut new_schema = Schema::with_capacity(acc_projections.len());
     let mut new_cols = Vec::with_capacity(acc_projections.len());
@@ -200,10 +201,16 @@ fn update_scan_schema(
         let item = schema.try_get_full(name)?;
         new_cols.push(item);
     }
-    // make sure that the projections are sorted by the schema.
     if sort_projections {
+        // Make sure that the projections are sorted by the schema.
         new_cols.sort_unstable_by_key(|item| item.0);
+    } else if let Some(name) = row_index_name
+        && let Some(index) = new_cols.iter().position(|item| item.1 == name)
+    {
+        // If the projections are not sorted, move the row-index to the front.
+        new_cols[..=index].rotate_right(1);
     }
+
     for item in new_cols {
         new_schema.with_column(item.1.clone(), item.2.clone());
     }
@@ -398,6 +405,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         &schema,
                         false,
+                        None,
                     )?);
                     // If the projected schema is identical to the full schema, there is no
                     // need to keep an explicit output_schema — leave it as None (project all).
@@ -451,6 +459,7 @@ impl ProjectionPushDown {
                                 expr_arena,
                                 &options.schema,
                                 true,
+                                None,
                             )?);
                             // If the projected schema equals the full schema, clear the
                             // explicit projection — it is a no-op.
@@ -554,13 +563,15 @@ impl ProjectionPushDown {
                                 None,
                             );
 
+                            let row_index_name =
+                                unified_scan_args.row_index.as_ref().map(|ri| &ri.name);
                             output_schema = if unified_scan_args.projection.is_some() {
                                 let mut schema = update_scan_schema(
                                     &ctx.acc_projections,
                                     expr_arena,
                                     &file_info.schema,
-                                    scan_type
-                                        .sort_projection(unified_scan_args.row_index.is_some()),
+                                    scan_type.sort_projection(row_index_name.is_some()),
+                                    row_index_name,
                                 )?;
 
                                 if let Some(ref file_path_col) =
