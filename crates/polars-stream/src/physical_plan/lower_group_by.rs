@@ -981,8 +981,8 @@ pub fn try_build_streaming_group_by(
 
         // TODO: projection pushdown on left side (original input).
         // All the aggregates should have unique names so, schema should be simple.
-        let preselect_schema = &phys_sm[pre_select.node].output_schema;
-        let agg_schema = &phys_sm[post_select_input.node].output_schema;
+        let preselect_schema = phys_sm[pre_select.node].output_schema(pre_select.port);
+        let agg_schema = phys_sm[post_select_input.node].output_schema(post_select_input.port);
         let mut join_schema = (**preselect_schema).clone();
         join_schema.merge((**agg_schema).clone());
         let args = JoinArgs {
