@@ -420,7 +420,7 @@ def test_rolling_key_projected_13617() -> None:
     df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
     ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
     plan = ldf.explain(optimizations=pl.QueryOptFlags(projection_pushdown=True))
-    assert r"2/2 COLUMNS" in plan
+    assert r"*/2 COLUMNS" in plan
     out = ldf.collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
 
