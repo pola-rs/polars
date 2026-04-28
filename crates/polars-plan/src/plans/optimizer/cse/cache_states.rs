@@ -273,9 +273,6 @@ pub(super) fn set_cache_states(
                 for ((&child, cache), parents) in
                     v.children.iter().zip(v.cache_nodes).zip(v.parents)
                 {
-                    // Remove the cache and assign the child the cache location.
-                    lp_arena.swap(child, cache);
-
                     // Restart predicate and projection pushdown from most top parent.
                     // This to ensure we continue the optimization where it was blocked initially.
                     // We pick up the blocked filter and projection.
