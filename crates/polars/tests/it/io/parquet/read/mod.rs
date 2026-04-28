@@ -237,7 +237,7 @@ pub fn read_column(
     let mut statistics = metadata.row_groups[row_group]
         .columns_under_root_iter(field.name())
         .unwrap()
-        .map(|column_meta| column_meta.statistics().transpose())
+        .map(|column_meta| column_meta.statistics(&metadata.footer_buf).transpose())
         .collect::<ParquetResult<Vec<_>>>()?;
 
     let array = columns_to_array(columns, field)?;

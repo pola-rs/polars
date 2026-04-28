@@ -1,6 +1,52 @@
-Some of the code in this crate is subject to the Apache 2 license below, as it
-was taken from the arrow2 and parquet2 Rust crate in October 2023. Later changes are subject
-to the MIT license in ../../LICENSE.
+Some of the code in this crate is subject to the Apache 2 license below.
+
+The original code was taken from the arrow2 and parquet2 Rust crates in
+October 2023.
+
+Additional code in `src/parquet/handwritten_thrift/` was ported from
+apache/arrow-rs 57.0 (https://github.com/apache/arrow-rs) in April 2026.
+Both files below carry the upstream Apache-2.0 license header at file
+top. The unmodified arrow-rs 57.0 sources are preserved alongside this
+repository so the divergence below is auditable line by line.
+
+  - `parquet_macros.rs` is verbatim arrow-rs 57.0 except for two
+    `OrderedF64` `$crate::` path edits, each preceded by a one-line
+    polars-integration comment. No other lines differ from upstream.
+
+  - `parquet_thrift.rs` is the arrow-rs 57.0 source with the changes
+    listed below; every other line is byte-identical to upstream:
+      * Integration shims:
+          - use-path remap of `ParquetError` / `Result` to polars's
+            `parquet::error` module;
+          - file-local `general_err!` / `eof_err!` macros producing
+            the same `ParquetError::OutOfSpec(format!(...))` value
+            arrow-rs's crate-global versions construct;
+          - explicit `std::result::Result` aliasing for the
+            `ThriftProtocolResult` alias.
+      * Polars-side removal:
+          - `impl ReadThrift for String` is dropped. arrow-rs's version
+            does `String::from_utf8(...)?` and would force
+            `From<std::string::FromUtf8Error> for ParquetError` into
+            polars's error module. Polars doesn't invoke that impl
+            (the file-metadata decoder uses `prot.read_string()`
+            directly), so dropping the impl plus the `From` shim is
+            cleaner than carrying both. A short comment marks the
+            location in this file.
+      * Polars-side additions:
+          - 1-byte varint fast-path peel in `read_vlq` with a
+            `#[cold] #[inline(never)]` `read_vlq_slow` continuation;
+          - `skip_list_of_varint` and `skip_list_of_binary` helpers
+            used by the inline-skip optimisation in the file-metadata
+            decoder;
+          - `offset_from(origin_ptr) -> u32` on
+            `ThriftSliceInputProtocol`, used to record stats
+            `ByteRange` offsets relative to the footer buffer;
+          - module-level `#![allow(dead_code, private_interfaces)]`
+            so the file body stays an unmodified copy of arrow-rs
+            despite shipping write-side primitives polars doesn't
+            currently use.
+
+Later changes are subject to the MIT license in ../../LICENSE.
 
 
 

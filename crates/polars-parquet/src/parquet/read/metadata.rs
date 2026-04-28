@@ -1,14 +1,15 @@
 use std::cmp::min;
 use std::io::{Read, Seek, SeekFrom};
 
-use polars_parquet_format::FileMetaData as TFileMetadata;
-use polars_parquet_format::thrift::protocol::TCompactInputProtocol;
+use polars_buffer::Buffer;
 
 use super::super::metadata::FileMetadata;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC};
 use crate::parquet::error::{ParquetError, ParquetResult};
+use crate::parquet::handwritten_thrift::decode_file_metadata;
 
-pub(super) fn metadata_len(buffer: &[u8], len: usize) -> u32 {
+pub(super) fn metadata_len(buffer: &[u8]) -> u32 {
+    let len = buffer.len();
     u32::from_le_bytes(buffer[len - 8..len - 4].try_into().unwrap())
 }
 
@@ -40,7 +41,7 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 ) -> ParquetResult<FileMetadata> {
     if file_size < HEADER_SIZE + FOOTER_SIZE {
         return Err(ParquetError::oos(
-            "A parquet file must contain a header and footer with at least 12 bytes",
+            "A Parquet file must contain a header and footer with at least 12 bytes",
         ));
     }
 
@@ -48,9 +49,9 @@ pub fn read_metadata_with_size<R: Read + Seek>(
     let default_end_len = min(DEFAULT_FOOTER_READ_SIZE, file_size) as usize;
     reader.seek(SeekFrom::End(-(default_end_len as i64)))?;
 
-    let mut buffer = Vec::with_capacity(default_end_len);
+    let mut buffer = vec![];
+    buffer.try_reserve(default_end_len)?;
     reader
-        .by_ref()
         .take(default_end_len as u64)
         .read_to_end(&mut buffer)?;
 
@@ -59,7 +60,7 @@ pub fn read_metadata_with_size<R: Read + Seek>(
         return Err(ParquetError::oos("The file must end with PAR1"));
     }
 
-    let metadata_len: u32 = metadata_len(&buffer, default_end_len);
+    let metadata_len: u32 = metadata_len(&buffer);
     let metadata_len: u64 = metadata_len as u64;
 
     let footer_len = FOOTER_SIZE + metadata_len;
@@ -69,31 +70,34 @@ pub fn read_metadata_with_size<R: Read + Seek>(
         ));
     }
 
-    let reader: &[u8] = if (footer_len as usize) < buffer.len() {
-        // the whole metadata is in the bytes we already read
+    // Footer bytes need to outlive the FileMetadata so stats `ByteRange`s
+    // stay resolvable, wrap in a `Buffer`. Both branches end with a
+    // zero-copy move from the source `Vec<u8>` into the buffer.
+    let footer_buf: Buffer<u8> = if (footer_len as usize) <= buffer.len() {
+        // The full footer is already in the bytes we prefetched, slice into
+        // the existing buffer.
         let remaining = buffer.len() - footer_len as usize;
-        &buffer[remaining..]
+        Buffer::from_vec(buffer).sliced(remaining..)
     } else {
-        // the end of file read by default is not long enough, read again including the metadata.
+        // the end of file read by default is not long enough, read again
+        // including the metadata.
         reader.seek(SeekFrom::End(-(footer_len as i64)))?;
 
         buffer.clear();
         buffer.try_reserve(footer_len as usize)?;
         reader.take(footer_len).read_to_end(&mut buffer)?;
 
-        &buffer
+        Buffer::from_vec(buffer)
     };
-
-    // a highly nested but sparse struct could result in many allocations
-    let max_size = reader.len() * 2 + 1024;
-
-    deserialize_metadata(reader, max_size)
+    deserialize_metadata(footer_buf)
 }
 
-/// Parse loaded metadata bytes
-pub fn deserialize_metadata<R: Read>(reader: R, max_size: usize) -> ParquetResult<FileMetadata> {
-    let mut prot = TCompactInputProtocol::new(reader, max_size);
-    let metadata = TFileMetadata::read_from_in_protocol(&mut prot)?;
-
-    FileMetadata::try_from_thrift(metadata)
+/// Parse loaded metadata bytes via the hand-written Thrift compact decoder.
+///
+/// `footer` must be a [`Buffer<u8>`] because [`FileMetadata`] holds the buffer
+/// for the lifetime of the metadata; column-chunk statistics store
+/// `ByteRange`s into it instead of allocating per-stat byte vecs.
+pub fn deserialize_metadata(footer: Buffer<u8>) -> ParquetResult<FileMetadata> {
+    let compact = decode_file_metadata(footer)?;
+    FileMetadata::from_compact(compact)
 }
