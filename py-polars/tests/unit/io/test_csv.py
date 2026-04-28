@@ -3173,3 +3173,15 @@ def test_scan_csv_missing_columns_27268() -> None:
             }
         ),
     )
+
+
+@pytest.mark.write_disk
+def test_read_csv_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
+    path = tmp_path / "test.csv"
+    path.write_text("h1,h2\n1,2\n2,3\n")
+
+    expected = pl.DataFrame({"h1": [1, 2]})
+    assert_frame_equal(
+        pl.read_csv(path, columns=[0], use_pyarrow=True),
+        expected,
+    )

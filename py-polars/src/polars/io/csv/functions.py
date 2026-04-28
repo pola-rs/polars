@@ -332,9 +332,16 @@ def read_csv(
                 include_columns = columns
 
         if not columns and projection:
-            # Convert column indices from projection to 'f0', 'f1', ... column names
-            # for pyarrow.
-            include_columns = [f"f{column_idx}" for column_idx in projection]
+            # User selected columns by positional index (e.g. `columns=[0]`).
+            if not has_header:
+                # pyarrow auto-generates names 'f0', 'f1', ... when there is no
+                # header, so index N maps to name 'fN'.
+                include_columns = [f"f{column_idx}" for column_idx in projection]
+            else:
+                # With a header, real names come from row 1 and aren't known
+                # until after the read. Leave the filter off and slice the
+                # Table by position later.
+                include_columns = None
 
         with prepare_file_arg(
             source,
@@ -377,6 +384,11 @@ def read_csv(
             tbl = tbl.rename_columns(
                 [f"column_{int(column[1:]) + 1}" for column in tbl.column_names]
             )
+        elif not columns and projection:
+            # User selected columns by positional index (e.g. `columns=[0, 2]`).
+            # pyarrow's include_columns only accepts names, so the read above
+            # fetched every column; pick out the requested positions now.
+            tbl = tbl.select(list(projection))
 
         df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
         if new_columns:
