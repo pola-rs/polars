@@ -113,7 +113,7 @@ impl PyDataFrame {
         let df = RwLockWriteGuard::downgrade(df);
         Python::attach(|py| {
             let pyarrow = py.import("pyarrow")?;
-            let cat_columns = df
+            let cat_columns: Vec<usize> = df
                 .columns()
                 .iter()
                 .enumerate()
@@ -126,10 +126,24 @@ impl PyDataFrame {
                 .map(|(i, _)| i)
                 .collect::<Vec<_>>();
 
-            let enum_and_categorical_dtype = ArrowDataType::Dictionary(
+            let enum_columns: Vec<usize> = df
+                .columns()
+                .iter()
+                .enumerate()
+                .filter(|(_i, s)| matches!(s.dtype(), DataType::Enum(_, _)))
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>();
+
+            let categorical_dtype = ArrowDataType::Dictionary(
                 IntegerType::Int64,
                 Box::new(ArrowDataType::LargeUtf8),
                 false,
+            );
+
+            let enum_dtype = ArrowDataType::Dictionary(
+                IntegerType::Int64,
+                Box::new(ArrowDataType::LargeUtf8),
+                true,
             );
 
             let mut replaced_schema = None;
@@ -140,24 +154,30 @@ impl PyDataFrame {
                     let (schema, mut arrays) = rb.into_schema_and_arrays();
 
                     // Pandas does not allow unsigned dictionary indices so we replace them.
+                    // Also, Enum types should have ordered=true to preserve category order.
                     replaced_schema =
                         (replaced_schema.is_none() && !cat_columns.is_empty()).then(|| {
                             let mut schema = schema.as_ref().clone();
                             for i in &cat_columns {
                                 let (_, field) = schema.get_at_index_mut(*i).unwrap();
-                                field.dtype = enum_and_categorical_dtype.clone();
+                                field.dtype = if enum_columns.contains(i) {
+                                    enum_dtype.clone()
+                                } else {
+                                    categorical_dtype.clone()
+                                };
                             }
                             Arc::new(schema)
                         });
 
                     for i in &cat_columns {
                         let arr = arrays.get_mut(*i).unwrap();
-                        let out = polars_compute::cast::cast(
-                            &**arr,
-                            &enum_and_categorical_dtype,
-                            CastOptionsImpl::default(),
-                        )
-                        .unwrap();
+                        let dtype = if enum_columns.contains(i) {
+                            &enum_dtype
+                        } else {
+                            &categorical_dtype
+                        };
+                        let out = polars_compute::cast::cast(&**arr, dtype, CastOptionsImpl::default())
+                            .unwrap();
                         *arr = out;
                     }
                     let schema = replaced_schema

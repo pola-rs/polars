@@ -91,13 +91,28 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
     assert isinstance(pd_out["a"].dtype, pd.CategoricalDtype)
 
     pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
-    assert pd_pa_out["a"].dtype == pd.ArrowDtype(
-        pa.dictionary(pa.int64(), pa.large_string())
-    )
+    # Enum should have ordered=True, Categorical should have ordered=False
+    if isinstance(dtype, pl.Enum):
+        assert pd_pa_out["a"].dtype == pd.ArrowDtype(
+            pa.dictionary(pa.int64(), pa.large_string(), ordered=True)
+        )
+    else:
+        assert pd_pa_out["a"].dtype == pd.ArrowDtype(
+            pa.dictionary(pa.int64(), pa.large_string())
+        )
 
     assert pl.Series(dtype=pl.Enum(["A"])).to_pandas().dtype.categories.tolist() == [  # type: ignore[union-attr]
         "A"
     ]
+
+
+def test_enum_to_pandas_ordered() -> None:
+    """Test that pl.Enum converts to ordered pd.Categorical."""
+    color_enum = pl.Enum(["red", "blue", "orange", "yellow"])
+    df = pl.DataFrame({"color": ["blue", "orange", "red", "yellow"]}).cast(color_enum)
+    pd_df = df.to_pandas()
+    # Enum should produce ordered categorical
+    assert pd_df["color"].dtype.ordered
 
 
 @given(
