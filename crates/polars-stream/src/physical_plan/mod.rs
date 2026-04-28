@@ -9,7 +9,7 @@ use polars_core::frame::DataFrame;
 ))]
 use polars_core::prelude::DataType;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
-use polars_core::schema::{Schema, SchemaRef};
+use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
@@ -64,26 +64,62 @@ impl PhysNodeKey {
     }
 }
 
-/// A node in the physical plan.
-///
-/// A physical plan is created when the `IR` is translated to a directed
-/// acyclic graph of operations that can run on the streaming engine.
-#[derive(Clone, Debug)]
-pub struct PhysNode {
-    output_schema: Arc<Schema>,
-    kind: PhysNodeKind,
-}
+pub use phys_node::PhysNode;
 
-impl PhysNode {
-    pub fn new(output_schema: Arc<Schema>, kind: PhysNodeKind) -> Self {
-        Self {
-            output_schema,
-            kind,
-        }
+mod phys_node {
+    use std::sync::Arc;
+
+    use polars_core::schema::Schema;
+
+    use crate::PhysNodeKind;
+
+    /// A node in the physical plan.
+    ///
+    /// A physical plan is created when the `IR` is translated to a directed
+    /// acyclic graph of operations that can run on the streaming engine.
+    #[derive(Clone, Debug)]
+    pub struct PhysNode {
+        output_schema: OutputSchema,
+        pub(super) kind: PhysNodeKind,
     }
 
-    pub fn kind(&self) -> &PhysNodeKind {
-        &self.kind
+    #[derive(Clone, Debug)]
+    enum OutputSchema {
+        /// Same output schema across all ports
+        Shared(Arc<Schema>),
+        #[expect(unused)]
+        PerPort(Vec<Arc<Schema>>),
+    }
+
+    impl PhysNode {
+        pub fn new(output_schema: Arc<Schema>, kind: PhysNodeKind) -> Self {
+            Self {
+                output_schema: OutputSchema::Shared(output_schema),
+                kind,
+            }
+        }
+
+        pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {
+            use OutputSchema::*;
+
+            match &self.output_schema {
+                Shared(schema) => schema,
+                PerPort(v) => &v[port_idx],
+            }
+        }
+
+        pub fn output_schema_mut(&mut self, port_idx: usize) -> &mut Arc<Schema> {
+            use OutputSchema::*;
+
+            match &mut self.output_schema {
+                Shared(schema) => schema,
+                PerPort(v) => &mut v[port_idx],
+            }
+        }
+
+        pub fn kind(&self) -> &PhysNodeKind {
+            &self.kind
+        }
     }
 }
 
@@ -733,7 +769,7 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
         .into_iter()
         .filter(|(_stream, refcount)| *refcount > 1)
         .map(|(stream, _refcount)| {
-            let input_schema = phys_sm[stream.node].output_schema.clone();
+            let input_schema = phys_sm[stream.node].output_schema(stream.port).clone();
             let multiplexer_node = phys_sm.insert(PhysNode::new(
                 input_schema,
                 PhysNodeKind::Multiplexer { input: stream },
