@@ -92,6 +92,13 @@ mod phys_node {
             }
         }
 
+        pub fn new_multi_output(output_schemas: UnitVec<Arc<Schema>>, kind: PhysNodeKind) -> Self {
+            Self {
+                output_schemas,
+                kind,
+            }
+        }
+
         pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {
             &self.output_schemas[port_idx]
         }
@@ -757,21 +764,11 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
         .filter(|(_stream, refcount)| *refcount > 1)
         .map(|(stream, refcount)| {
             let input_schema = phys_sm[stream.node].output_schema(stream.port).clone();
-
-            let mut multiplexer_node = PhysNode::new(
-                Arc::clone(&input_schema),
+            let multiplexer_node = phys_sm.insert(PhysNode::new_multi_output(
+                (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
                 PhysNodeKind::Multiplexer { input: stream },
-            );
-
-            let output_schemas = multiplexer_node.output_schemas_mut();
-
-            for _ in 0..refcount - 1 {
-                output_schemas.push(Arc::clone(&input_schema))
-            }
-
-            let multiplexer_node_key = phys_sm.insert(multiplexer_node);
-
-            (stream, PhysStream::first(multiplexer_node_key))
+            ));
+            (stream, PhysStream::first(multiplexer_node))
         })
         .collect();
 
