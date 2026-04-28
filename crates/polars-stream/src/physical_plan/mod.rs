@@ -103,7 +103,10 @@ mod phys_node {
             use OutputSchema::*;
 
             match &self.output_schema {
-                Shared(schema) => schema,
+                Shared(schema) => {
+                    assert_eq!(port_idx, 0);
+                    schema
+                },
                 PerPort(v) => &v[port_idx],
             }
         }
@@ -112,7 +115,10 @@ mod phys_node {
             use OutputSchema::*;
 
             match &mut self.output_schema {
-                Shared(schema) => schema,
+                Shared(schema) => {
+                    assert_eq!(port_idx, 0);
+                    schema
+                },
                 PerPort(v) => &mut v[port_idx],
             }
         }
