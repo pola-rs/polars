@@ -420,7 +420,7 @@ def test_rolling_key_projected_13617() -> None:
     df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
     ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
     plan = ldf.explain(optimizations=pl.QueryOptFlags(projection_pushdown=True))
-    assert r"*/2 COLUMNS" in plan
+    assert r"2/2 COLUMNS" in plan
     out = ldf.collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
 
@@ -776,3 +776,11 @@ def test_proj_pushdown_set_sorted_25247() -> None:
     q = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).set_sorted("a").select("b")
     plan = q.explain()
     assert "set_sorted" not in plan
+
+
+def test_proj_pushdown_row_index_reorder() -> None:
+    foods = pl.scan_csv(b"\na,b\n1,2", row_index_name="index")
+    q = foods.select(pl.col("a"), pl.col("b"), pl.col("index"))
+    assert q.collect(
+        optimizations=pl.QueryOptFlags(projection_pushdown=True)
+    ).columns == ["a", "b", "index"]
