@@ -13,7 +13,6 @@ use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::series::implementations::null::NullChunked;
-use crate::utils::align_chunks_binary;
 
 impl<T> ChunkCompareEq<&ChunkedArray<T>> for ChunkedArray<T>
 where
@@ -795,70 +794,49 @@ where
     let len_a = a.len();
     let len_b = b.len();
     let broadcasts = len_a == 1 || len_b == 1;
-    if (a.len() != b.len() && !broadcasts) || a.struct_fields().len() != b.struct_fields().len() {
-        BooleanChunked::full(PlSmallStr::EMPTY, op_is_ne, a.len())
-    } else {
-        let (a, b) = align_chunks_binary(a, b);
+    assert!(a.struct_fields().len() == b.struct_fields().len());
+    assert!(a.len() == b.len() || broadcasts);
 
-        let mut out = a
-            .fields_as_series()
-            .iter()
-            .zip(b.fields_as_series().iter())
-            .map(|(l, r)| op(l, r))
-            .reduce(&reduce)
-            .unwrap_or_else(|| BooleanChunked::full(PlSmallStr::EMPTY, !op_is_ne, a.len()));
+    let mut out = a
+        .fields_as_series()
+        .iter()
+        .zip(b.fields_as_series().iter())
+        .map(|(l, r)| op(l, r))
+        .reduce(&reduce)
+        .unwrap_or_else(|| BooleanChunked::full(PlSmallStr::EMPTY, !op_is_ne, a.len()));
 
-        if is_missing && (a.has_nulls() || b.has_nulls()) {
-            // Do some allocations so that we can use the Series dispatch, it otherwise
-            // gets complicated dealing with combinations of ==, != and broadcasting.
-            let default =
-                || BooleanChunked::with_chunk(PlSmallStr::EMPTY, BooleanArray::from_slice([true]));
-            let validity_to_ca = |x| unsafe {
-                BooleanChunked::with_chunk(
-                    PlSmallStr::EMPTY,
-                    BooleanArray::from_inner_unchecked(ArrowDataType::Boolean, x, None),
-                )
-            };
+    if is_missing && (a.has_nulls() || b.has_nulls()) {
+        // Do some allocations so that we can use the Series dispatch, it otherwise
+        // gets complicated dealing with combinations of ==, != and broadcasting.
+        let default =
+            || BooleanChunked::with_chunk(PlSmallStr::EMPTY, BooleanArray::from_slice([true]));
+        let validity_to_ca = |x| unsafe {
+            BooleanChunked::with_chunk(
+                PlSmallStr::EMPTY,
+                BooleanArray::from_inner_unchecked(ArrowDataType::Boolean, x, None),
+            )
+        };
 
-            let a_s = a.rechunk_validity().map_or_else(default, validity_to_ca);
-            let b_s = b.rechunk_validity().map_or_else(default, validity_to_ca);
+        let a_s = a.rechunk_validity().map_or_else(default, validity_to_ca);
+        let b_s = b.rechunk_validity().map_or_else(default, validity_to_ca);
 
-            let shared_validity = (&a_s).bitand(&b_s);
-            let valid_nested = if op_is_ne {
-                (shared_validity).bitand(out)
-            } else {
-                (!shared_validity).bitor(out)
-            };
-            out = reduce(op(&a_s.into_series(), &b_s.into_series()), valid_nested);
-        }
-
-        if !is_missing && (a.has_nulls() || b.has_nulls()) {
-            let mut a = a;
-            let mut b = b;
-
-            if broadcasts {
-                if a.len() == 1 {
-                    a = std::borrow::Cow::Owned(a.new_from_index(0, b.len()));
-                }
-                if b.len() == 1 {
-                    b = std::borrow::Cow::Owned(b.new_from_index(0, a.len()));
-                }
-            }
-
-            let mut a = a.into_owned();
-            a.zip_outer_validity(&b);
-            unsafe {
-                let mut new_null_count = 0;
-                for (arr, a) in out.downcast_iter_mut().zip(a.downcast_iter()) {
-                    arr.set_validity(a.validity().cloned());
-                    new_null_count += arr.null_count();
-                }
-                out.set_null_count(new_null_count);
-            }
-        }
-
-        out
+        let shared_validity = (&a_s).bitand(&b_s);
+        let valid_nested = if op_is_ne {
+            (shared_validity).bitand(out)
+        } else {
+            (!shared_validity).bitor(out)
+        };
+        out = reduce(op(&a_s.into_series(), &b_s.into_series()), valid_nested);
     }
+
+    if !is_missing && (a.has_nulls() || b.has_nulls()) {
+        use arrow::compute::utils::combine_validities_and;
+        let av = a.rechunk_validity();
+        let bv = b.rechunk_validity();
+        out.set_validity(combine_validities_and(av.as_ref(), bv.as_ref()));
+    }
+
+    out
 }
 
 #[cfg(feature = "dtype-struct")]
