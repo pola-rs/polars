@@ -116,7 +116,7 @@ impl StackOptimizer {
                         },
                         expr => {
                             children.clear();
-                            expr.inputs_rev(&mut children);
+                            expr.child_nodes_rev(&mut children);
                             for node in children.drain(..) {
                                 exprs.push((node, schema_idx));
                             }

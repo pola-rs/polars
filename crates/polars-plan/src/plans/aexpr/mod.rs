@@ -366,7 +366,7 @@ pub fn deep_clone_ae(ae: Node, arena: &mut Arena<AExpr>) -> Node {
     let slf = arena.get(ae).clone();
 
     let mut children = vec![];
-    slf.children_rev(&mut children);
+    slf.child_nodes_rev(&mut children);
     for child in &mut children {
         *child = deep_clone_ae(*child, arena);
     }

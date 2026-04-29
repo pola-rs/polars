@@ -200,6 +200,10 @@ impl ExprIR {
         &self.node
     }
 
+    pub fn node_mut(&mut self) -> &mut Node {
+        &mut self.node
+    }
+
     /// Create a `ExprIR` structure that implements display
     pub fn display<'a>(&'a self, expr_arena: &'a Arena<AExpr>) -> ExprIRDisplay<'a> {
         ExprIRDisplay {

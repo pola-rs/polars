@@ -66,7 +66,7 @@ impl ConversionOptimizer {
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
 
-        expr.inputs_rev_strict(&mut ExtendVec {
+        expr.input_nodes_rev(&mut ExtendVec {
             out: &mut self.scratch,
             schema_idx: 0,
         });
@@ -196,7 +196,7 @@ impl ConversionOptimizer {
 
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
             // traverse subexpressions and add to the stack
-            expr.inputs_rev_strict(&mut ExtendVec {
+            expr.input_nodes_rev(&mut ExtendVec {
                 out: &mut self.scratch,
                 schema_idx,
             });

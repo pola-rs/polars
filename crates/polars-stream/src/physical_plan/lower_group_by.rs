@@ -105,7 +105,7 @@ fn replace_agg_uniq(
 ) -> Node {
     let aexpr = expr_arena.get(expr).clone();
     let mut inputs = Vec::new();
-    aexpr.inputs_rev(&mut inputs);
+    aexpr.child_nodes_rev(&mut inputs);
     inputs.reverse();
 
     let agg_id = expr_merger.get_uniq_id(expr).unwrap();
@@ -179,7 +179,7 @@ fn replace_elementwise_components(
     } else {
         let aexpr = expr_arena.get(expr).clone();
         let mut inputs = Vec::new();
-        aexpr.inputs_rev(&mut inputs);
+        aexpr.child_nodes_rev(&mut inputs);
         inputs.reverse();
 
         for input in &mut inputs {

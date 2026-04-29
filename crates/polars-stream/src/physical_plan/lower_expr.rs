@@ -193,7 +193,7 @@ pub fn is_input_independent_rec(
                 && is_input_independent_rec(*by, arena, cache)
         },
         AExpr::Agg(agg_expr) => agg_expr
-            .children_iter()
+            .child_nodes_iter()
             .all(|node| is_input_independent_rec(*node, arena, cache)),
         AExpr::Ternary {
             predicate,
@@ -523,7 +523,7 @@ fn lower_reduce_node(
 ) -> PolarsResult<(PhysStream, Node)> {
     let agg_aexpr = ctx.expr_arena.get(agg_node).clone();
     let mut agg_input = Vec::with_capacity(1);
-    agg_aexpr.inputs_rev(&mut agg_input);
+    agg_aexpr.child_nodes_rev(&mut agg_input);
     agg_input.reverse();
 
     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;

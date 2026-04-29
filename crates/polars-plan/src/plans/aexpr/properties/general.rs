@@ -78,7 +78,7 @@ where
     if !property(ae) {
         return false;
     }
-    ae.inputs_rev(stack);
+    ae.child_nodes_rev(stack);
     true
 }
 
@@ -144,10 +144,10 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
                     return;
                 }
             };
-            ae.inputs_rev(stack);
+            ae.child_nodes_rev(stack);
         })(),
         _ => {
-            ae.inputs_rev(stack);
+            ae.child_nodes_rev(stack);
         },
     }
 
@@ -500,7 +500,7 @@ pub(crate) fn predicate_non_null_column_outputs(
         };
 
         if traverse_all_inputs {
-            ae.inputs_rev(stack);
+            ae.child_nodes_rev(stack);
         }
     }
 }

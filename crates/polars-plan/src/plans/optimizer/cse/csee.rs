@@ -866,9 +866,9 @@ impl CommonSubExprOptimizer {
                             continue;
                         }
 
-                        aes[0].inputs_rev(&mut scratch);
+                        aes[0].child_nodes_rev(&mut scratch);
                         let offset = scratch.len();
-                        aes[1].inputs_rev(&mut scratch);
+                        aes[1].child_nodes_rev(&mut scratch);
 
                         // If they have a different number of inputs, we don't follow the nodes.
                         if scratch.len() != offset * 2 {

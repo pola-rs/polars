@@ -371,7 +371,7 @@ fn create_physical_expr_inner(
             )))
         },
         Agg(agg) => {
-            let expr = *agg.children_iter().next().unwrap();
+            let expr = *agg.child_nodes_iter().next().unwrap();
             let input = create_physical_expr_inner(expr, expr_arena, schema, state)?;
             let allow_threading = state.allow_threading;
 

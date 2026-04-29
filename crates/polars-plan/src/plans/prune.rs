@@ -131,7 +131,7 @@ impl<'a> CopyContext<'a> {
         let expr = self.src_expr.get(node);
 
         let mut inputs = vec![];
-        expr.inputs_rev(&mut inputs);
+        expr.child_nodes_rev(&mut inputs);
 
         for input in &mut inputs {
             *input = self.copy_expr(*input);
