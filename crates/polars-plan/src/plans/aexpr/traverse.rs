@@ -4,7 +4,7 @@ use std::{iter, slice};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools as _;
 
-use crate::plans::{AExpr, ExprIR, IR, IRAggExpr};
+use crate::plans::{AExpr, ExprIR, IRAggExpr};
 use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
 use crate::traversal::visitor::NodeVisitor;
 
