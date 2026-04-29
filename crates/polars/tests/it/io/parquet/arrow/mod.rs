@@ -33,9 +33,9 @@ fn new_struct(
 
 pub fn read_column<R: Read + Seek>(mut reader: R, column: &str) -> PolarsResult<Box<dyn Array>> {
     let metadata = p_read::read_metadata(&mut reader)?;
-    let schema = p_read::infer_schema(&metadata)?;
+    let mut schema = p_read::infer_schema(&metadata)?;
 
-    let schema = schema.filter(|_, f| f.name == column);
+    schema.retain(|_, f| f.name == column);
 
     let mut reader = FileReader::new(reader, metadata.row_groups, schema, None);
 

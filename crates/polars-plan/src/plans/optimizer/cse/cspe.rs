@@ -45,12 +45,13 @@ pub fn common_subplan_elimination(
         persist_input_edge_idxs: Some(&mut PersistInputEdgeIdxs::Build(
             &mut persisted_input_edge_idxs,
         )),
+        graph_visit_order_fn: None,
         visitor: &mut IDGeneratorVisitor {
             id_map: &mut id_map,
             expr_arena,
         },
     }
-    .traverse_rec(root, 0)
+    .traverse_rec(root, 0, false)
     .continue_value()
     .unwrap();
 
@@ -63,13 +64,14 @@ pub fn common_subplan_elimination(
         persist_input_edge_idxs: Some(&mut PersistInputEdgeIdxs::Use(
             persisted_input_edge_idxs.as_slice(),
         )),
+        graph_visit_order_fn: None,
         visitor: &mut InsertCachesVisitor {
             id_map: &mut id_map,
             inserted_cache: &mut inserted_cache,
             phantom: PhantomData,
         },
     }
-    .traverse_rec(root, 0)
+    .traverse_rec(root, 0, false)
     .continue_value()
     .unwrap();
 
@@ -130,7 +132,11 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
     type Storage = IRTraversalStorage<'arena>;
     type BreakValue = ();
 
-    fn default_edge(&mut self) -> Self::Edge {
+    fn default_edge(
+        &mut self,
+        _key: Self::Key,
+        _parent_key_and_port: Option<(Self::Key, usize)>,
+    ) -> Self::Edge {
         usize::MAX
     }
 
@@ -212,7 +218,11 @@ impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
     type Storage = IRTraversalStorage<'arena>;
     type BreakValue = ();
 
-    fn default_edge(&mut self) -> Self::Edge {
+    fn default_edge(
+        &mut self,
+        _key: Self::Key,
+        _parent_key_and_port: Option<(Self::Key, usize)>,
+    ) -> Self::Edge {
         unreachable!()
     }
 
