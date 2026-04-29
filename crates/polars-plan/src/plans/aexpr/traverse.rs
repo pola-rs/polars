@@ -7,7 +7,7 @@ use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
 use crate::traversal::visitor::NodeVisitor;
 
 impl AExpr {
-    /// Push the child nodes of this aexpr to the given container, in field declaration order.
+    /// Iterator that retunrs the child nodes of this aexpr in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
     pub fn children_iter(&self) -> AENodesIter<'_> {
@@ -92,11 +92,9 @@ impl AExpr {
     }
 
     /// Iterator that returns nodes in order such that the last item of the iterator is the node
-    /// from which the output name is sourced.
-    ///
-    /// This generally means reverse field declaration order, with the exception of TernaryExpr
-    /// where the truthy/falsy is swapped to ensure the truthy expr comes last.
-    pub fn children_iter_rev_name_last(&self) -> std::iter::Rev<AENodesIter<'_>> {
+    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
+    /// guaranteed to match `AExpr::children_iter_mut_name_last`.
+    pub fn children_iter_name_last(&self) -> std::iter::Rev<AENodesIter<'_>> {
         use AExpr::*;
 
         Iterator::rev(match self {
@@ -109,11 +107,7 @@ impl AExpr {
         })
     }
 
-    pub fn children_rev_name_last(&self, container: &mut impl Extend<Node>) {
-        container.extend(self.children_iter_rev_name_last())
-    }
-
-    /// Push the child nodes of this aexpr to the given container, in field declaration order.
+    /// Iterator that retunrs the child nodes of this aexpr in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
     pub fn children_iter_mut(&mut self) -> AENodesIterMut<'_> {
@@ -197,6 +191,27 @@ impl AExpr {
         }
     }
 
+    /// Iterator that returns nodes in order such that the last item of the iterator is the node
+    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
+    /// guaranteed to match `AExpr::children_iter_mut_name`.
+    pub fn children_iter_mut_name_last(&mut self) -> std::iter::Rev<AENodesIterMut<'_>> {
+        use AExpr::*;
+
+        Iterator::rev(match self {
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => AENodesIterMut::new_triple(predicate, falsy, truthy),
+            _ => self.children_iter_mut(),
+        })
+    }
+
+    /// Iterator that retunrs the child nodes of this aexpr in field declaration order.
+    ///
+    /// This is derived from `children_iter`, but skips list / struct eval exprs.
+    ///
+    /// This function and its users must be updated if the field declaration order changes.
     pub fn inputs_iter(&self) -> AENodesIter<'_> {
         use AExpr::*;
 
@@ -215,6 +230,11 @@ impl AExpr {
         }
     }
 
+    /// Iterator that retunrs the child nodes of this aexpr in field declaration order.
+    ///
+    /// This is derived from `children_iter`, but skips list / struct eval exprs.
+    ///
+    /// This function and its users must be updated if the field declaration order changes.
     pub fn inputs_iter_mut(&mut self) -> AENodesIterMut<'_> {
         use AExpr::*;
 
@@ -233,7 +253,12 @@ impl AExpr {
         }
     }
 
-    pub fn inputs_iter_rev_name_last(&self) -> std::iter::Rev<AENodesIter<'_>> {
+    /// Iterator that returns nodes in order such that the last item of the iterator is the node
+    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
+    /// guaranteed to match `AExpr::inputs_iter_mut_name_last`.
+    ///
+    /// This is derived from `children_iter_name_last`, but skips list / struct eval exprs.
+    pub fn inputs_iter_name_last(&self) -> std::iter::Rev<AENodesIter<'_>> {
         use AExpr::*;
 
         Iterator::rev(match self {
@@ -246,7 +271,12 @@ impl AExpr {
         })
     }
 
-    pub fn inputs_iter_mut_rev_name_last(&mut self) -> std::iter::Rev<AENodesIterMut<'_>> {
+    /// Iterator that returns nodes in order such that the last item of the iterator is the node
+    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
+    /// guaranteed to match `AExpr::inputs_iter_name_last`.
+    ///
+    /// This is derived from `children_iter_name_last`, but skips list / struct eval exprs.
+    pub fn inputs_iter_mut_name_last(&mut self) -> std::iter::Rev<AENodesIterMut<'_>> {
         use AExpr::*;
 
         Iterator::rev(match self {
@@ -259,14 +289,22 @@ impl AExpr {
         })
     }
 
+    /// Replace the inputs of this AExpr. This excludes the list / struct eval exprs.
+    ///
+    /// # Panics
+    /// Panics if the number of provided inputs does not match the number of inputs in this AExpr.
     pub fn replace_inputs(&mut self, inputs: impl IntoIterator<Item = Node>) {
         for (l, r) in self.inputs_iter_mut().zip_eq(inputs) {
             *l = r;
         }
     }
 
-    pub fn replace_children(&mut self, inputs: impl IntoIterator<Item = Node>) {
-        for (l, r) in self.children_iter_mut().zip_eq(inputs) {
+    /// Replace the children of this AExpr.
+    ///
+    /// # Panics
+    /// Panics if the number of provided child nodes does not match the number of child nodes in this AExpr.
+    pub fn replace_children(&mut self, children: impl IntoIterator<Item = Node>) {
+        for (l, r) in self.children_iter_mut().zip_eq(children) {
             *l = r;
         }
     }

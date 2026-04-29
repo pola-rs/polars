@@ -104,20 +104,17 @@ fn replace_agg_uniq(
     uniq_elementwise_exprs: &mut PlIndexMap<u32, ExprIR>,
 ) -> Node {
     let mut aexpr = expr_arena.get(expr).clone();
-    let mut inputs = Vec::new();
-    aexpr.children_rev_name_last(&mut inputs);
-    inputs.reverse();
 
     let agg_id = expr_merger.get_uniq_id(expr).unwrap();
     let name = uniq_agg_exprs
         .entry(agg_id)
         .or_insert_with(|| {
             let mut input_ids = Vec::new();
-            let input_cols = inputs
-                .iter()
+            let input_cols = aexpr
+                .children_iter()
                 .map(|input| {
                     let (input_id, node) = replace_elementwise_components(
-                        *input,
+                        input,
                         expr_merger,
                         expr_cache,
                         expr_arena,

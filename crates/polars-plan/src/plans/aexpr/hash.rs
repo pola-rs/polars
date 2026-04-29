@@ -124,6 +124,6 @@ pub(crate) fn traverse_and_hash_aexpr<H: Hasher>(
     while let Some(node) = scratch.pop() {
         let ae = expr_arena.get(node);
         ae.hash(state);
-        ae.children_rev_name_last(&mut scratch);
+        scratch.extend(ae.children_iter_name_last())
     }
 }
