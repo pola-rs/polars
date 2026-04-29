@@ -994,8 +994,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         } else if matches!(slf, AExpr::Len) {
                             // For backwards-compatibility, we support providing `pl.len()` to mean
                             // the length of the group here.
-
-                            use crate::plans::deep_copy::deep_copy_ae;
                             let element =
                                 deep_copy_ae(replacement, arena, nodes_scratch, nodes_scratch2);
                             return AExprBuilder::new_from_node(element).len(arena).node();
