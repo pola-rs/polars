@@ -571,8 +571,7 @@ impl ProjectionPushDown {
                                     &ctx.acc_projections,
                                     expr_arena,
                                     &file_info.schema,
-                                    scan_type
-                                        .sort_projection(unified_scan_args.row_index.is_some()),
+                                    scan_type.sort_projection(),
                                     unified_scan_args.row_index.as_ref().map(|ri| &ri.name),
                                 )?;
 
