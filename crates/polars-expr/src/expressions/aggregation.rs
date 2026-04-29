@@ -2,10 +2,10 @@ use std::borrow::Cow;
 
 use arrow::legacy::utils::CustomIterTools;
 use polars_compute::rolling::QuantileMethod;
-use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_split_offsets, NoNull};
+use polars_core::{POOL, with_match_physical_numeric_polars_type};
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
@@ -686,6 +686,56 @@ impl AggMinMaxByExpr {
             is_max_by: true,
         }
     }
+
+    /// Try the O(n) rolling fast path using a monotonic deque.
+    /// Returns `None` if the by column's dtype is not numeric (falls back to slow path).
+    fn try_rolling_fast_path(
+        &self,
+        by_col: &Column,
+        slices: &[[IdxSize; 2]],
+    ) -> PolarsResult<Option<IdxCa>> {
+        use polars_compute::rolling::{
+            rolling_argmax_by_no_nulls, rolling_argmax_by_nulls, rolling_argmin_by_no_nulls,
+            rolling_argmin_by_nulls,
+        };
+
+        let by_series = by_col.as_materialized_series().rechunk();
+        let by_phys = by_series.to_physical_repr();
+        let dtype = by_phys.dtype();
+
+        if !dtype.is_primitive_numeric() {
+            return Ok(None);
+        }
+
+        let starts: Vec<IdxSize> = slices.iter().map(|s| s[0]).collect();
+        let ends: Vec<IdxSize> = slices.iter().map(|s| s[0] + s[1]).collect();
+
+        let arr = with_match_physical_numeric_polars_type!(dtype, |$T| {
+            let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
+            let arr = ca.downcast_get(0).unwrap();
+
+            let values = arr.values().as_slice();
+            match arr.validity() {
+                None => {
+                    if self.is_max_by {
+                        rolling_argmax_by_no_nulls(values, &starts, &ends, 1)
+                    } else {
+                        rolling_argmin_by_no_nulls(values, &starts, &ends, 1)
+                    }
+                },
+                Some(validity) => {
+                    if self.is_max_by {
+                        rolling_argmax_by_nulls(values, validity, &starts, &ends, 1)
+                    } else {
+                        rolling_argmin_by_nulls(values, validity, &starts, &ends, 1)
+                    }
+                },
+            }
+        });
+
+        let ca = IdxCa::with_chunk(PlSmallStr::EMPTY, arr);
+        Ok(Some(ca))
+    }
 }
 
 impl PhysicalExpr for AggMinMaxByExpr {
@@ -734,7 +784,25 @@ impl PhysicalExpr for AggMinMaxByExpr {
         let (by_col, by_groups) = ac_by.get_final_aggregation();
         GroupsType::check_lengths(&input_groups, &by_groups)?;
 
-        // Dispatch to arg_min/arg_max and then gather
+        // Fast path: monotonic Slice groups (rolling context) — O(n) via deque.
+        if let GroupsType::Slice {
+            groups: slices,
+            monotonic: true,
+            ..
+        } = by_groups.as_ref().as_ref()
+        {
+            if let Some(gather_idxs) = self.try_rolling_fast_path(&by_col, slices)? {
+                // SAFETY: indices produced by rolling kernel are within bounds.
+                let gathered = unsafe { input_col.take_unchecked(&gather_idxs) };
+                let agg_state = AggregatedScalar(gathered.with_name(keep_name));
+                return Ok(AggregationContext::from_agg_state(
+                    agg_state,
+                    Cow::Borrowed(groups),
+                ));
+            }
+        }
+
+        // Slow path: per-group agg_arg_min/agg_arg_max.
         // SAFETY: Groups are correct.
         let idxs_in_groups = if self.is_max_by {
             unsafe { by_col.agg_arg_max(&by_groups) }
