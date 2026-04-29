@@ -4,7 +4,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools as _;
 use polars_utils::scratch_vec::ScratchVec;
 
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
+use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorageMut;
 use crate::plans::{AExpr, IR, deep_clone_ae};
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
@@ -20,7 +20,7 @@ pub(crate) fn deep_copy_ir_delete_caches(
     ae_nodes_scratch: &mut ScratchVec<Node>,
     ae_nodes_scratch2: &mut ScratchVec<Node>,
 ) -> Node {
-    let mut storage = IRTraversalStorage::new(ir_arena);
+    let mut storage = IRTraversalStorageMut::new(ir_arena);
 
     tree_traversal(
         ir_node,
@@ -29,7 +29,7 @@ pub(crate) fn deep_copy_ir_delete_caches(
         ir_nodes_scratch2.get(),
         &mut FnVisitors::new(
             || ir_node,
-            |_, _: &mut IRTraversalStorage<'_>, _| ControlFlow::Continue(SubtreeVisit::Visit),
+            |_, _: &mut IRTraversalStorageMut<'_>, _| ControlFlow::Continue(SubtreeVisit::Visit),
             |node, ir_arena, edges| {
                 let new_node = if let IR::Cache { .. } = ir_arena.get(node) {
                     assert_eq!(edges.inputs().len(), 1);

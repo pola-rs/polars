@@ -4,6 +4,7 @@ use polars_core::prelude::{PlHashMap, PlHashSet};
 use polars_error::PolarsResult;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
@@ -252,6 +253,11 @@ pub(crate) fn set_cache_states(
         scratch.clear();
     }
 
+    let ir_nodes_scratch: &mut ScratchVec<Node> = &mut ScratchVec::default();
+    let ir_nodes_scratch2: &mut ScratchVec<Node> = &mut ScratchVec::default();
+    let ae_nodes_scratch: &mut ScratchVec<Node> = &mut ScratchVec::default();
+    let ae_nodes_scratch2: &mut ScratchVec<Node> = &mut ScratchVec::default();
+
     // # Second pass.
     // we create a subtree where we project the columns
     // just before the cache. Then we do another projection pushdown
@@ -288,7 +294,15 @@ pub(crate) fn set_cache_states(
                         node = p_node
                     }
 
-                    let copied_node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
+                    let copied_node = deep_copy_ir_delete_caches(
+                        node,
+                        lp_arena,
+                        expr_arena,
+                        ir_nodes_scratch,
+                        ir_nodes_scratch2,
+                        ae_nodes_scratch,
+                        ae_nodes_scratch2,
+                    );
 
                     let lp = lp_arena.take(copied_node);
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
