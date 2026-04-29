@@ -476,11 +476,23 @@ impl<'a> Iterator for AENodesIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         use AENodesIter::*;
         match self {
-            Slice(v) => v.next(),
-            DoubleSlice(v) => v.next(),
-            TripleSlice(v) => v.next(),
-            ExprIRSlice(v) => v.next(),
-            StructEval(v) => v.next(),
+            Slice(it) => it.next(),
+            DoubleSlice(it) => it.next(),
+            TripleSlice(it) => it.next(),
+            ExprIRSlice(it) => it.next(),
+            StructEval(it) => it.next(),
+        }
+        .copied()
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        use AENodesIter::*;
+        match self {
+            Slice(it) => it.nth(n),
+            DoubleSlice(it) => it.nth(n),
+            TripleSlice(it) => it.nth(n),
+            ExprIRSlice(it) => it.nth(n),
+            StructEval(it) => it.nth(n),
         }
         .copied()
     }
@@ -488,11 +500,11 @@ impl<'a> Iterator for AENodesIter<'a> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         use AENodesIter::*;
         match self {
-            Slice(v) => v.size_hint(),
-            DoubleSlice(v) => v.size_hint(),
-            TripleSlice(v) => v.size_hint(),
-            ExprIRSlice(v) => v.size_hint(),
-            StructEval(v) => v.size_hint(),
+            Slice(it) => it.size_hint(),
+            DoubleSlice(it) => it.size_hint(),
+            TripleSlice(it) => it.size_hint(),
+            ExprIRSlice(it) => it.size_hint(),
+            StructEval(it) => it.size_hint(),
         }
     }
 }
@@ -503,11 +515,11 @@ impl<'a> DoubleEndedIterator for AENodesIter<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         use AENodesIter::*;
         match self {
-            Slice(v) => v.next_back(),
-            DoubleSlice(v) => v.next_back(),
-            TripleSlice(v) => v.next_back(),
-            ExprIRSlice(v) => v.next_back(),
-            StructEval(v) => v.next_back(),
+            Slice(it) => it.next_back(),
+            DoubleSlice(it) => it.next_back(),
+            TripleSlice(it) => it.next_back(),
+            ExprIRSlice(it) => it.next_back(),
+            StructEval(it) => it.next_back(),
         }
         .copied()
     }
@@ -570,22 +582,33 @@ impl<'a> Iterator for AENodesIterMut<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         use AENodesIterMut::*;
         match self {
-            Slice(v) => v.next(),
-            DoubleSlice(v) => v.next(),
-            TripleSlice(v) => v.next(),
-            ExprIRSlice(v) => v.next(),
-            StructEval(v) => v.next(),
+            Slice(it) => it.next(),
+            DoubleSlice(it) => it.next(),
+            TripleSlice(it) => it.next(),
+            ExprIRSlice(it) => it.next(),
+            StructEval(it) => it.next(),
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        use AENodesIterMut::*;
+        match self {
+            Slice(it) => it.nth(n),
+            DoubleSlice(it) => it.nth(n),
+            TripleSlice(it) => it.nth(n),
+            ExprIRSlice(it) => it.nth(n),
+            StructEval(it) => it.nth(n),
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         use AENodesIterMut::*;
         match self {
-            Slice(v) => v.size_hint(),
-            DoubleSlice(v) => v.size_hint(),
-            TripleSlice(v) => v.size_hint(),
-            ExprIRSlice(v) => v.size_hint(),
-            StructEval(v) => v.size_hint(),
+            Slice(it) => it.size_hint(),
+            DoubleSlice(it) => it.size_hint(),
+            TripleSlice(it) => it.size_hint(),
+            ExprIRSlice(it) => it.size_hint(),
+            StructEval(it) => it.size_hint(),
         }
     }
 }
@@ -596,11 +619,11 @@ impl<'a> DoubleEndedIterator for AENodesIterMut<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         use AENodesIterMut::*;
         match self {
-            Slice(v) => v.next_back(),
-            DoubleSlice(v) => v.next_back(),
-            TripleSlice(v) => v.next_back(),
-            ExprIRSlice(v) => v.next_back(),
-            StructEval(v) => v.next_back(),
+            Slice(it) => it.next_back(),
+            DoubleSlice(it) => it.next_back(),
+            TripleSlice(it) => it.next_back(),
+            ExprIRSlice(it) => it.next_back(),
+            StructEval(it) => it.next_back(),
         }
     }
 }
