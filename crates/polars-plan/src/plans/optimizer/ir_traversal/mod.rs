@@ -20,13 +20,13 @@ pub struct IRCacheNodeVisit<Key> {
 
 pub fn get_ir_cache_hits<Key>(
     root: Node,
-    mut arena: &Arena<IR>,
+    arena: &Arena<IR>,
     visit_stack: &mut Vec<Node>,
 ) -> PlHashMap<UniqueId, IRCacheNodeVisit<Key>> {
     let mut cache_out_edge_keys_map: PlHashMap<UniqueId, IRCacheNodeVisit<Key>> = PlHashMap::new();
 
     TreeTraversalImpl {
-        storage: &mut IRTraversalStorage::new(&mut arena),
+        storage: &mut IRTraversalStorage::new(arena),
         visit_stack,
         edges: &mut vec![()],
         persist_input_edge_idxs: None,
