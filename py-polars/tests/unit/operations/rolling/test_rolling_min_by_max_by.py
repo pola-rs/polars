@@ -5,7 +5,7 @@ from polars.testing import assert_frame_equal
 
 
 def test_rolling_min_by_basic() -> None:
-    """Basic rolling min_by: select the value column element whose by column is minimal."""
+    """Basic rolling min_by: select the value whose by is minimal."""
     df = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4, 5],
@@ -208,7 +208,7 @@ def test_rolling_min_by_with_null_in_values() -> None:
 
 
 def test_rolling_min_by_duplicate_by_values() -> None:
-    """Duplicate values in by column: should pick first occurrence (same as slow path)."""
+    """Duplicate by values: pick first occurrence (same as slow path)."""
     df = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4, 5],
