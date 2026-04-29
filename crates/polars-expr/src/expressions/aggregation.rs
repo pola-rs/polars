@@ -771,12 +771,22 @@ impl PhysicalExpr for AggMinMaxByExpr {
         let (by_col, by_groups) = ac_by.get_final_aggregation();
         GroupsType::check_lengths(&input_groups, &by_groups)?;
 
-        // Fast path: monotonic Slice groups (rolling context) — O(n) via deque.
-        if let GroupsType::Slice {
-            groups: slices,
-            monotonic: true,
-            ..
-        } = by_groups.as_ref().as_ref()
+        // Fast path: monotonic + overlapping Slice groups (rolling context) — O(n) via deque.
+        // We require both input_groups and by_groups to be the same monotonic overlapping
+        // slices, which only happens in rolling window context where both columns share
+        // the same flat data layout.
+        if let (
+            GroupsType::Slice {
+                groups: slices,
+                overlapping: true,
+                monotonic: true,
+            },
+            GroupsType::Slice {
+                overlapping: true,
+                monotonic: true,
+                ..
+            },
+        ) = (input_groups.as_ref().as_ref(), by_groups.as_ref().as_ref())
         {
             if let Some(gather_idxs) = self.try_rolling_fast_path(&by_col, slices)? {
                 // SAFETY: indices produced by rolling kernel are within bounds.
