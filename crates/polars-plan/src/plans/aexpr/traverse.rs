@@ -197,7 +197,7 @@ impl AExpr {
         }
     }
 
-    pub fn input_nodes_iter(&self) -> AENodesIter<'_> {
+    pub fn inputs_iter(&self) -> AENodesIter<'_> {
         use AExpr::*;
 
         match self {
@@ -215,7 +215,7 @@ impl AExpr {
         }
     }
 
-    pub fn input_nodes_iter_mut(&mut self) -> AENodesIterMut<'_> {
+    pub fn inputs_iter_mut(&mut self) -> AENodesIterMut<'_> {
         use AExpr::*;
 
         match self {
@@ -234,7 +234,7 @@ impl AExpr {
     }
 
     pub fn replace_inputs(&mut self, inputs: &[Node]) {
-        for (l, r) in self.input_nodes_iter_mut().zip_eq(inputs.iter().copied()) {
+        for (l, r) in self.inputs_iter_mut().zip_eq(inputs.iter().copied()) {
             *l = r;
         }
     }

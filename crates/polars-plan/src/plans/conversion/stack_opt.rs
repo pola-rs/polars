@@ -20,17 +20,6 @@ pub struct ConversionOptimizer {
     pub(super) used_arenas: PlHashSet<u32>,
 }
 
-struct ExtendVec<'a> {
-    out: &'a mut Vec<(Node, usize)>,
-    schema_idx: usize,
-}
-impl Extend<Node> for ExtendVec<'_> {
-    fn extend<T: IntoIterator<Item = Node>>(&mut self, iter: T) {
-        self.out
-            .extend(iter.into_iter().map(|n| (n, self.schema_idx)))
-    }
-}
-
 impl ConversionOptimizer {
     pub fn new(simplify: bool, type_coercion: bool, type_check: bool) -> Self {
         let simplify = if simplify {
@@ -64,12 +53,10 @@ impl ConversionOptimizer {
     pub fn push_scratch(&mut self, expr: Node, expr_arena: &Arena<AExpr>) {
         self.scratch.push((expr, 0));
         // traverse all subexpressions and add to the stack
-        let expr = unsafe { expr_arena.get_unchecked(expr) };
+        let expr = expr_arena.get(expr);
 
-        expr.children_rev_name_last(&mut ExtendVec {
-            out: &mut self.scratch,
-            schema_idx: 0,
-        });
+        self.scratch
+            .extend(expr.inputs_iter().map(|node| (node, 0)))
     }
 
     pub fn fill_scratch<I, N>(&mut self, exprs: I, expr_arena: &Arena<AExpr>)
@@ -194,12 +181,11 @@ impl ConversionOptimizer {
                 }
             }
 
-            let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
+            let expr = expr_arena.get(current_expr_node);
+
             // traverse subexpressions and add to the stack
-            expr.children_rev_name_last(&mut ExtendVec {
-                out: &mut self.scratch,
-                schema_idx,
-            });
+            self.scratch
+                .extend(expr.inputs_iter().map(|node| (node, 0)))
         }
 
         Ok(())
