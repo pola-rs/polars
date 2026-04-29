@@ -81,7 +81,7 @@ impl AExpr {
             } => AENodesIter::new_double(expr, evaluation),
             #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => AENodesIter::StructEval(
-                std::iter::once(expr).chain(evaluation.iter().map(&ExprIR::node_ref as _)),
+                std::iter::once(expr).chain(evaluation.iter().map(ExprIR::node_ref as _)),
             ),
             Slice {
                 input,
@@ -181,7 +181,7 @@ impl AExpr {
             } => AENodesIterMut::new_double(expr, evaluation),
             #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => AENodesIterMut::StructEval(
-                std::iter::once(expr).chain(evaluation.iter_mut().map(&ExprIR::node_mut as _)),
+                std::iter::once(expr).chain(evaluation.iter_mut().map(ExprIR::node_mut as _)),
             ),
             Slice {
                 input,
@@ -438,7 +438,7 @@ pub enum AENodesIter<'a> {
     StructEval(
         std::iter::Chain<
             std::iter::Once<&'a Node>,
-            std::iter::Map<std::slice::Iter<'a, ExprIR>, &'a dyn Fn(&'a ExprIR) -> &'a Node>,
+            std::iter::Map<std::slice::Iter<'a, ExprIR>, fn(&'a ExprIR) -> &'a Node>,
         >,
     ),
 }
@@ -541,10 +541,7 @@ pub enum AENodesIterMut<'a> {
     StructEval(
         std::iter::Chain<
             std::iter::Once<&'a mut Node>,
-            std::iter::Map<
-                std::slice::IterMut<'a, ExprIR>,
-                &'a dyn Fn(&'a mut ExprIR) -> &'a mut Node,
-            >,
+            std::iter::Map<std::slice::IterMut<'a, ExprIR>, fn(&'a mut ExprIR) -> &'a mut Node>,
         >,
     ),
 }
