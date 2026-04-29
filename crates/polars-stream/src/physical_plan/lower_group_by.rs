@@ -111,7 +111,7 @@ fn replace_agg_uniq(
         .or_insert_with(|| {
             let mut input_ids = Vec::new();
             let input_cols = aexpr
-                .children_iter()
+                .inputs_iter()
                 .map(|input| {
                     let (input_id, node) = replace_elementwise_components(
                         input,
@@ -176,7 +176,7 @@ fn replace_elementwise_components(
         (Some(id), node)
     } else {
         let mut aexpr = expr_arena.get(expr).clone();
-        let new_inputs = Vec::from_iter(aexpr.children_iter().map(|node| {
+        let new_inputs = Vec::from_iter(aexpr.inputs_iter().map(|node| {
             replace_elementwise_components(
                 node,
                 expr_merger,
