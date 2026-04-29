@@ -47,14 +47,6 @@ pub struct ColumnStatistics {
     statistics: ParquetStatistics,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum ColumnPathSegment {
-    List { is_large: bool },
-    FixedSizeList { width: usize },
-    Dictionary { key: IntegerType, is_sorted: bool },
-    Struct { column_idx: usize },
-}
-
 /// Arrow-deserialized parquet statistics of a leaf-column
 #[derive(Debug, PartialEq)]
 pub struct ArrowColumnStatistics {
@@ -568,7 +560,7 @@ pub fn deserialize<'a>(
         D::List(field) | D::LargeList(field) => Ok(Some(Statistics::List(
             deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
         ))),
-        D::Dictionary(key, dtype, is_sorted) => Ok(Some(Statistics::Dictionary(
+        D::Dictionary(key, dtype, ordered) => Ok(Some(Statistics::Dictionary(
             *key,
             deserialize(
                 &Field::new(PlSmallStr::EMPTY, dtype.as_ref().clone(), true),
@@ -576,7 +568,7 @@ pub fn deserialize<'a>(
                 footer_buf,
             )?
             .map(Box::new),
-            *is_sorted,
+            *ordered,
         ))),
         D::FixedSizeList(field, width) => Ok(Some(Statistics::FixedSizeList(
             deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),

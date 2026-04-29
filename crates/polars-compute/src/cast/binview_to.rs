@@ -24,8 +24,9 @@ pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 /// in the array.
 pub(super) fn binview_to_dictionary<K: DictionaryKey>(
     from: &BinaryViewArray,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<[u8]>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<[u8]>>::new(ordered);
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 
@@ -34,8 +35,9 @@ pub(super) fn binview_to_dictionary<K: DictionaryKey>(
 
 pub(super) fn utf8view_to_dictionary<K: DictionaryKey>(
     from: &Utf8ViewArray,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<str>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<str>>::new(ordered);
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 

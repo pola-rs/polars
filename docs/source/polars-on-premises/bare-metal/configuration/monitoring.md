@@ -30,8 +30,8 @@ order of several tens of MB, depending on the number of queries and their comple
 
 The location of the observatory database can be configured through the `observatory.database_path`
 configuration option. If this points to a directory, a file in that directory will be created.
-Polars on-premises will automatically add the `cluster_id` to this file name to ensure uniqueness
-within the directory.
+Polars On-Prem will automatically add the `cluster_id` to this file name to ensure uniqueness within
+the directory.
 
 ```toml
 [observatory]
@@ -51,7 +51,7 @@ a cluster with 32 worker nodes, with a history of 1 hour, you would need around
 The host metrics exporter supports collecting CPU and memory usage metrics from the process tree,
 and cgroups v1 and v2. Since traversing the process tree, and collecting metrics for each process is
 quite compute expensive, and a cgroup's usage can be instantly queried, we recommend to always run
-Polars on-premises in a cgroup.
+Polars On-Prem in a cgroup.
 
 If you don't use the dashboard's host metrics feature, we recommend disabling the host metrics
 exporter.
@@ -80,7 +80,7 @@ enabled = false
 
 ## Telemetry
 
-Polars on-premises uses OpenTelemetry as its telemetry framework. To receive OTLP metrics and
-traces, configure the `OTLP_ENDPOINT` environment variable to point to your OTLP collector. Logs are
-written to standard output/error in JSON format. The log level can be configured using the
-`PLC_LOG_LEVEL` environment variable.
+Polars On-Prem uses OpenTelemetry as its telemetry framework. To receive OTLP metrics and traces,
+configure the `OTLP_ENDPOINT` environment variable to point to your OTLP collector. Logs are written
+to standard output/error in JSON format. The log level can be configured using the `PLC_LOG_LEVEL`
+environment variable.

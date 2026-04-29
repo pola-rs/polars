@@ -155,7 +155,7 @@ nav:
         - API Reference: https://docs.cloud.pola.rs
     - API:
       - Reference guide: https://docs.cloud.pola.rs/
-  - Polars on-premises:
+  - Polars On-Prem:
     - polars-on-premises/index.md
     - Kubernetes:
       - polars-on-premises/kubernetes/getting-started.md
