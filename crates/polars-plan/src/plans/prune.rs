@@ -5,7 +5,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
-use crate::plans::{AExpr, ExprIR, IR, IRPlan, IRPlanRef};
+use crate::plans::{AExpr, IR, IRPlan, IRPlanRef};
 
 /// Returns a pruned copy of this plan with new arenas (without unreachable nodes).
 ///
