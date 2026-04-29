@@ -85,7 +85,7 @@ pub(crate) fn deep_copy_ae(
                 let mut ae_copy = expr_arena.get(node).clone();
 
                 for (orig_input, copied_input) in ae_copy
-                    .children_iter_mut()
+                    .nodes_iter_mut()
                     .zip_eq(edges.inputs().iter().copied())
                 {
                     *orig_input = copied_input
