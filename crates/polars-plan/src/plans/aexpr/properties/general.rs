@@ -78,7 +78,7 @@ where
     if !property(ae) {
         return false;
     }
-    ae.child_nodes_rev(stack);
+    ae.children_rev_name_last(stack);
     true
 }
 
@@ -144,10 +144,10 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
                     return;
                 }
             };
-            ae.child_nodes_rev(stack);
+            ae.children_rev_name_last(stack);
         })(),
         _ => {
-            ae.child_nodes_rev(stack);
+            ae.children_rev_name_last(stack);
         },
     }
 
@@ -500,7 +500,7 @@ pub(crate) fn predicate_non_null_column_outputs(
         };
 
         if traverse_all_inputs {
-            ae.child_nodes_rev(stack);
+            ae.children_rev_name_last(stack);
         }
     }
 }

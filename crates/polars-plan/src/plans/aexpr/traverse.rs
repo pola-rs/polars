@@ -10,7 +10,7 @@ impl AExpr {
     /// Push the child nodes of this aexpr to the given container, in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
-    pub fn child_nodes_iter(&self) -> AENodesIter<'_> {
+    pub fn children_iter(&self) -> AENodesIter<'_> {
         use std::slice;
 
         use AExpr::*;
@@ -38,7 +38,7 @@ impl AExpr {
                 AENodesIter::DoubleSlice(slice::from_ref(expr).iter().chain(by.iter()))
             },
             Filter { input, by } => AENodesIter::new_double(input, by),
-            Agg(agg) => agg.child_nodes_iter(),
+            Agg(agg) => agg.children_iter(),
             BinaryExpr { left, op: _, right } => AENodesIter::new_double(left, right),
             Ternary {
                 predicate,
@@ -91,10 +91,32 @@ impl AExpr {
         }
     }
 
+    /// Iterator that returns nodes in order such that the last item of the iterator is the node
+    /// from which the output name is sourced.
+    ///
+    /// This generally means reverse field declaration order, with the exception of TernaryExpr
+    /// where the truthy/falsy is swapped to ensure the truthy expr comes last.
+    pub fn children_iter_rev_name_last(&self) -> std::iter::Rev<AENodesIter<'_>> {
+        use AExpr::*;
+
+        Iterator::rev(match self {
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => AENodesIter::new_triple(predicate, falsy, truthy),
+            _ => self.children_iter(),
+        })
+    }
+
+    pub fn children_rev_name_last(&self, container: &mut impl Extend<Node>) {
+        container.extend(self.children_iter_rev_name_last())
+    }
+
     /// Push the child nodes of this aexpr to the given container, in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
-    pub fn child_nodes_iter_mut(&mut self) -> AENodesIterMut<'_> {
+    pub fn children_iter_mut(&mut self) -> AENodesIterMut<'_> {
         use std::slice;
 
         use AExpr::*;
@@ -122,7 +144,7 @@ impl AExpr {
                 AENodesIterMut::DoubleSlice(slice::from_mut(expr).iter_mut().chain(by.iter_mut()))
             },
             Filter { input, by } => AENodesIterMut::new_double(input, by),
-            Agg(agg) => agg.child_nodes_iter_mut(),
+            Agg(agg) => agg.children_iter_mut(),
             BinaryExpr { left, op: _, right } => AENodesIterMut::new_double(left, right),
             Ternary {
                 predicate,
@@ -189,7 +211,7 @@ impl AExpr {
                 evaluation: _,
                 variant: _,
             } => AENodesIter::new_single(expr),
-            ae => ae.child_nodes_iter(),
+            ae => ae.children_iter(),
         }
     }
 
@@ -207,69 +229,25 @@ impl AExpr {
                 evaluation: _,
                 variant: _,
             } => AENodesIterMut::new_single(expr),
-            ae => ae.child_nodes_iter_mut(),
+            ae => ae.children_iter_mut(),
         }
     }
 
-    /// Push the inputs of this node to the given container, in reverse order.
-    /// This ensures the primary node responsible for the name is pushed last.
-    ///
-    /// This is subtly different from `child_nodes_rev` as this only includes the input expressions,
-    /// not expressions used during evaluation.
-    pub fn child_nodes_rev<E>(&self, container: &mut E)
-    where
-        E: Extend<Node>,
-    {
-        use AExpr::*;
-
-        match self {
-            // This pushes predicate before falsy
-            Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => container.extend([*predicate, *falsy, *truthy]),
-            _ => container.extend(self.child_nodes_iter().rev().copied()),
-        }
-    }
-
-    /// Push the child nodes of this aexpr to the given container, in ordering such that the
-    /// expression where the output name originates is pushed last.
-    ///
-    /// Compared to child_nodes_rev, this excludes evaluation expressions for list / struct eval.
-    pub fn input_nodes_rev<E>(&self, container: &mut E)
-    where
-        E: Extend<Node>,
-    {
-        use AExpr::*;
-
-        match self {
-            #[cfg(feature = "dtype-struct")]
-            ae @ StructEval { .. } => container.extend(ae.input_nodes_iter().rev().copied()),
-            ae @ Eval { .. } => container.extend(ae.input_nodes_iter().rev().copied()),
-            expr => expr.child_nodes_rev(container),
-        }
-    }
-
-    pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
+    pub fn replace_inputs(&mut self, inputs: &[Node]) {
         for (l, r) in self.input_nodes_iter_mut().zip_eq(inputs.iter().copied()) {
             *l = r;
         }
-
-        self
     }
 
-    pub fn replace_children(mut self, inputs: &[Node]) -> Self {
-        for (l, r) in self.child_nodes_iter_mut().zip_eq(inputs.iter().copied()) {
+    pub fn replace_children(&mut self, inputs: &[Node]) {
+        for (l, r) in self.children_iter_mut().zip_eq(inputs.iter().copied()) {
             *l = r;
         }
-
-        self
     }
 }
 
 impl IRAggExpr {
-    pub fn child_nodes_iter(&self) -> AENodesIter<'_> {
+    pub fn children_iter(&self) -> AENodesIter<'_> {
         use IRAggExpr::*;
 
         match self {
@@ -313,7 +291,7 @@ impl IRAggExpr {
         }
     }
 
-    pub fn child_nodes_iter_mut(&mut self) -> AENodesIterMut<'_> {
+    pub fn children_iter_mut(&mut self) -> AENodesIterMut<'_> {
         use IRAggExpr::*;
 
         match self {
@@ -428,7 +406,7 @@ impl<'a> AENodesIter<'a> {
 }
 
 impl<'a> Iterator for AENodesIter<'a> {
-    type Item = &'a Node;
+    type Item = Node;
 
     fn next(&mut self) -> Option<Self::Item> {
         use AENodesIter::*;
@@ -439,6 +417,7 @@ impl<'a> Iterator for AENodesIter<'a> {
             ExprIRSlice(v) => v.next(),
             StructEval(v) => v.next(),
         }
+        .copied()
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -465,6 +444,7 @@ impl<'a> DoubleEndedIterator for AENodesIter<'a> {
             ExprIRSlice(v) => v.next_back(),
             StructEval(v) => v.next_back(),
         }
+        .copied()
     }
 }
 
@@ -572,37 +552,27 @@ where
     tree_traversal(root_ae_node, expr_arena, visit_stack, edges, visitor)
 }
 
-struct ExtendWrap<'a, T>(&'a mut dyn FnMut(T));
-
-impl<'a, T> Extend<T> for ExtendWrap<'a, T> {
-    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        for v in iter.into_iter() {
-            (self.0)(v)
-        }
-    }
-}
-
 impl GetNodeInputs<Node> for Arena<AExpr> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        for node in self.get(key).child_nodes_iter() {
-            push_fn(*node)
+        for node in self.get(key).children_iter() {
+            push_fn(node)
         }
     }
 
     fn num_inputs(&self, key: Node) -> usize {
-        self.get(key).child_nodes_iter().len()
+        self.get(key).children_iter().len()
     }
 }
 
 impl GetNodeInputs<Node> for &Arena<AExpr> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        for node in self.get(key).child_nodes_iter() {
-            push_fn(*node)
+        for node in self.get(key).children_iter() {
+            push_fn(node)
         }
     }
 
     fn num_inputs(&self, key: Node) -> usize {
-        self.get(key).child_nodes_iter().len()
+        self.get(key).children_iter().len()
     }
 }
 

@@ -972,7 +972,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         arena: &mut Arena<AExpr>,
                         replacement: Node,
                     ) -> Node {
-                        let slf = arena.get(ae).clone();
+                        let mut slf = arena.get(ae).clone();
                         if matches!(slf, AExpr::Element) {
                             return deep_clone_ae(replacement, arena);
                         } else if matches!(slf, AExpr::Len) {
@@ -983,13 +983,13 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         }
 
                         let mut children = vec![];
-                        slf.child_nodes_rev(&mut children);
+                        children.extend(slf.children_iter());
                         for child in &mut children {
                             *child = deep_clone_element_replace(*child, arena, replacement);
                         }
-                        children.reverse();
 
-                        arena.add(slf.replace_children(&children))
+                        slf.replace_children(&children);
+                        arena.add(slf)
                     }
                     aggs.push(ExprIR::new(
                         deep_clone_element_replace(agg_ae, ctxt.expr_arena, replacement_element),

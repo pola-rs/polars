@@ -328,8 +328,8 @@ impl PartialEq for AExprArena<'_> {
                         return false;
                     }
 
-                    l.to_aexpr().child_nodes_rev(&mut scratch1);
-                    r.to_aexpr().child_nodes_rev(&mut scratch2);
+                    l.to_aexpr().children_rev_name_last(&mut scratch1);
+                    r.to_aexpr().children_rev_name_last(&mut scratch2);
                 },
                 (None, None) => return true,
                 _ => return false,
@@ -347,7 +347,7 @@ impl TreeWalker for AexprNode {
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
 
-        self.to_aexpr(arena).child_nodes_rev(&mut scratch);
+        self.to_aexpr(arena).children_rev_name_last(&mut scratch);
         for node in scratch.as_slice() {
             let aenode = AexprNode::new(*node);
             match op(&aenode, arena)? {
@@ -367,8 +367,8 @@ impl TreeWalker for AexprNode {
     ) -> PolarsResult<Self> {
         let mut scratch = unitvec![];
 
-        let ae = arena.get(self.node).clone();
-        ae.child_nodes_rev(&mut scratch);
+        let mut ae = arena.get(self.node).clone();
+        ae.children_rev_name_last(&mut scratch);
 
         // rewrite the nodes
         for node in scratch.as_mut_slice() {
@@ -377,7 +377,7 @@ impl TreeWalker for AexprNode {
         }
 
         scratch.as_mut_slice().reverse();
-        let ae = ae.replace_inputs(&scratch);
+        ae.replace_inputs(&scratch);
         self.node = arena.add(ae);
         Ok(self)
     }

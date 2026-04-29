@@ -24,8 +24,8 @@ impl AExpr {
         if !self.is_expr_equal_top_level(other) {
             return false;
         }
-        self.child_nodes_rev(l_stack);
-        other.child_nodes_rev(r_stack);
+        self.children_rev_name_last(l_stack);
+        other.children_rev_name_last(r_stack);
 
         // Traverse node in N R L order
         loop {
@@ -41,8 +41,8 @@ impl AExpr {
             if !l_expr.is_expr_equal_top_level(r_expr) {
                 return false;
             }
-            l_expr.child_nodes_rev(l_stack);
-            r_expr.child_nodes_rev(r_stack);
+            l_expr.children_rev_name_last(l_stack);
+            r_expr.children_rev_name_last(r_stack);
         }
 
         true

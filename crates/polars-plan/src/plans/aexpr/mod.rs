@@ -363,14 +363,15 @@ impl AExpr {
 
 #[recursive::recursive]
 pub fn deep_clone_ae(ae: Node, arena: &mut Arena<AExpr>) -> Node {
-    let slf = arena.get(ae).clone();
+    let mut slf = arena.get(ae).clone();
 
     let mut children = vec![];
-    slf.child_nodes_rev(&mut children);
+    children.extend(slf.children_iter_rev_name_last());
     for child in &mut children {
         *child = deep_clone_ae(*child, arena);
     }
     children.reverse();
 
-    arena.add(slf.replace_children(&children))
+    slf.replace_children(&children);
+    arena.add(slf)
 }
