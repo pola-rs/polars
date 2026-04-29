@@ -1147,7 +1147,6 @@ def test_cse_custom_io_source_diff_filters() -> None:
     collection = [lf.pipe(left_pipe), lf.pipe(right_pipe)]
     explanation = pl.explain_all(collection)
     # we prefer predicate pushdown over CSE
-    print(explanation)
     assert "CACHE[id:" not in explanation
     assert 'SELECTION: col("a").is_between([2, 6])' in explanation
     assert 'SELECTION: col("b").is_between([10, 13])' in explanation
