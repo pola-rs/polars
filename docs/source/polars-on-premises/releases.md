@@ -1,6 +1,6 @@
-After obtaining a license for Polars on-premises by
+After obtaining a license for Polars On-Prem by
 [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv) you will receive an access key for
-our private Docker registry as well as a JSON-formatted license for running Polars on-premises.
+our private Docker registry as well as a JSON-formatted license for running Polars On-Prem.
 
 ## Binary
 
@@ -56,8 +56,8 @@ curl -L 'https://get.onprem.pola.rs?version=<TAG>' --data @license.json --output
 
 Helm chart releases are announced and documented on our
 [chart repo](https://github.com/polars-inc/helm-charts/releases) directly. The version of the
-embedded Polars on-premises binary is documented in the respective release summaries, or via a run
-of the following command:
+embedded Polars On-Prem binary is documented in the respective release summaries, or via a run of
+the following command:
 
 ```sh
 helm search repo polars-inc --versions

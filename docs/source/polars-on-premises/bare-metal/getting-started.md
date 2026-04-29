@@ -1,8 +1,8 @@
-First of all, make sure to obtain a license for Polars on-premises by
+First of all, make sure to obtain a license for Polars On-Prem by
 [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv). You will receive a JSON-formatted
-license key with which you can download Polars On-Premises.
+license key with which you can download Polars On-Prem.
 
-## Downloading Polars On-Premises
+## Downloading Polars On-Prem
 
 #### Using `uv`
 
@@ -62,7 +62,7 @@ directory.
 ```toml
 cluster_id = "polars-cluster"
 instance_id = "node-0"
-license = "./license.json" # Path to your Polars on-premises license. This is a JSON file containing your company name, license expiry, and license signature.
+license = "./license.json" # Path to your Polars On-Prem license. This is a JSON file containing your company name, license expiry, and license signature.
 
 # Component that receives the Polars queries from the Python client.
 [scheduler]
