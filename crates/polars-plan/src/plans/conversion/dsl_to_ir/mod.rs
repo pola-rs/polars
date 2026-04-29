@@ -983,7 +983,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         }
 
                         let mut children = vec![];
-                        children.extend(slf.children_iter());
+                        children.extend(slf.nodes_iter());
                         for child in &mut children {
                             *child = deep_clone_element_replace(*child, arena, replacement);
                         }

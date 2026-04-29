@@ -1,8 +1,10 @@
 use std::ops::ControlFlow;
+use std::{iter, slice};
 
+use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools as _;
 
-use super::*;
+use crate::plans::{AExpr, ExprIR, IR, IRAggExpr};
 use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
 use crate::traversal::visitor::NodeVisitor;
 
@@ -10,9 +12,7 @@ impl AExpr {
     /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
-    pub fn children_iter(&self) -> AENodesIter<'_> {
-        use std::slice;
-
+    pub fn nodes_iter(&self) -> AENodesIter<'_> {
         use AExpr::*;
 
         match self {
@@ -38,7 +38,7 @@ impl AExpr {
                 AENodesIter::DoubleSlice(slice::from_ref(expr).iter().chain(by.iter()))
             },
             Filter { input, by } => AENodesIter::new_double(input, by),
-            Agg(agg) => agg.children_iter(),
+            Agg(agg) => agg.nodes_iter(),
             BinaryExpr { left, op: _, right } => AENodesIter::new_double(left, right),
             Ternary {
                 predicate,
@@ -65,14 +65,10 @@ impl AExpr {
                 order_by,
                 mapping: _,
             } => AENodesIter::TripleSlice(
-                std::slice::from_ref(function)
+                slice::from_ref(function)
                     .iter()
                     .chain(partition_by.iter())
-                    .chain(
-                        order_by
-                            .as_ref()
-                            .map_or(&[][..], |x| std::slice::from_ref(&x.0)),
-                    ),
+                    .chain(order_by.as_ref().map_or(&[][..], |x| slice::from_ref(&x.0))),
             ),
             Eval {
                 expr,
@@ -81,7 +77,7 @@ impl AExpr {
             } => AENodesIter::new_double(expr, evaluation),
             #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => AENodesIter::StructEval(
-                std::iter::once(expr).chain(evaluation.iter().map(ExprIR::node_ref as _)),
+                iter::once(expr).chain(evaluation.iter().map(ExprIR::node_ref as _)),
             ),
             Slice {
                 input,
@@ -93,8 +89,8 @@ impl AExpr {
 
     /// Iterator that returns nodes in order such that the last item of the iterator is the node
     /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
-    /// guaranteed to match `AExpr::children_iter_mut_name_last`.
-    pub fn children_iter_name_last(&self) -> std::iter::Rev<AENodesIter<'_>> {
+    /// guaranteed to match `AExpr::nodes_iter_mut_name_last`.
+    pub fn nodes_iter_name_last(&self) -> iter::Rev<AENodesIter<'_>> {
         use AExpr::*;
 
         Iterator::rev(match self {
@@ -103,17 +99,16 @@ impl AExpr {
                 truthy,
                 falsy,
             } => AENodesIter::new_triple(truthy, falsy, predicate),
-            _ => self.children_iter(),
+            _ => self.nodes_iter(),
         })
     }
 
     /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
-    pub fn children_iter_mut(&mut self) -> AENodesIterMut<'_> {
-        use std::slice;
-
+    pub fn nodes_iter_mut(&mut self) -> AENodesIterMut<'_> {
         use AExpr::*;
+        use slice;
 
         match self {
             Element | Column(_) | Literal(_) | Len => AENodesIterMut::new_empty(),
@@ -138,7 +133,7 @@ impl AExpr {
                 AENodesIterMut::DoubleSlice(slice::from_mut(expr).iter_mut().chain(by.iter_mut()))
             },
             Filter { input, by } => AENodesIterMut::new_double(input, by),
-            Agg(agg) => agg.children_iter_mut(),
+            Agg(agg) => agg.nodes_iter_mut(),
             BinaryExpr { left, op: _, right } => AENodesIterMut::new_double(left, right),
             Ternary {
                 predicate,
@@ -165,13 +160,13 @@ impl AExpr {
                 order_by,
                 mapping: _,
             } => AENodesIterMut::TripleSlice(
-                std::slice::from_mut(function)
+                slice::from_mut(function)
                     .iter_mut()
                     .chain(partition_by.iter_mut())
                     .chain(
                         order_by
                             .as_mut()
-                            .map_or(&mut [][..], |x| std::slice::from_mut(&mut x.0)),
+                            .map_or(&mut [][..], |x| slice::from_mut(&mut x.0)),
                     ),
             ),
             Eval {
@@ -181,7 +176,7 @@ impl AExpr {
             } => AENodesIterMut::new_double(expr, evaluation),
             #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => AENodesIterMut::StructEval(
-                std::iter::once(expr).chain(evaluation.iter_mut().map(ExprIR::node_mut as _)),
+                iter::once(expr).chain(evaluation.iter_mut().map(ExprIR::node_mut as _)),
             ),
             Slice {
                 input,
@@ -193,8 +188,8 @@ impl AExpr {
 
     /// Iterator that returns nodes in order such that the last item of the iterator is the node
     /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
-    /// guaranteed to match `AExpr::children_iter_mut_name`.
-    pub fn children_iter_mut_name_last(&mut self) -> std::iter::Rev<AENodesIterMut<'_>> {
+    /// guaranteed to match `AExpr::nodes_iter_mut_name`.
+    pub fn nodes_iter_mut_name_last(&mut self) -> iter::Rev<AENodesIterMut<'_>> {
         use AExpr::*;
 
         Iterator::rev(match self {
@@ -203,13 +198,13 @@ impl AExpr {
                 truthy,
                 falsy,
             } => AENodesIterMut::new_triple(truthy, falsy, predicate),
-            _ => self.children_iter_mut(),
+            _ => self.nodes_iter_mut(),
         })
     }
 
     /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
-    /// This is derived from `children_iter`, but skips list / struct eval exprs.
+    /// This is derived from `nodes_iter`, but skips the eval exprs in list / struct eval.
     ///
     /// This function and its users must be updated if the field declaration order changes.
     pub fn inputs_iter(&self) -> AENodesIter<'_> {
@@ -226,13 +221,13 @@ impl AExpr {
                 evaluation: _,
                 variant: _,
             } => AENodesIter::new_single(expr),
-            ae => ae.children_iter(),
+            ae => ae.nodes_iter(),
         }
     }
 
     /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
-    /// This is derived from `children_iter`, but skips list / struct eval exprs.
+    /// This is derived from `nodes_iter`, but skips the eval exprs in list / struct eval.
     ///
     /// This function and its users must be updated if the field declaration order changes.
     pub fn inputs_iter_mut(&mut self) -> AENodesIterMut<'_> {
@@ -249,7 +244,7 @@ impl AExpr {
                 evaluation: _,
                 variant: _,
             } => AENodesIterMut::new_single(expr),
-            ae => ae.children_iter_mut(),
+            ae => ae.nodes_iter_mut(),
         }
     }
 
@@ -257,8 +252,8 @@ impl AExpr {
     /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
     /// guaranteed to match `AExpr::inputs_iter_mut_name_last`.
     ///
-    /// This is derived from `children_iter_name_last`, but skips list / struct eval exprs.
-    pub fn inputs_iter_name_last(&self) -> std::iter::Rev<AENodesIter<'_>> {
+    /// This is derived from `nodes_iter_name_last`, but skips the eval exprs in list / struct eval.
+    pub fn inputs_iter_name_last(&self) -> iter::Rev<AENodesIter<'_>> {
         use AExpr::*;
 
         Iterator::rev(match self {
@@ -275,8 +270,8 @@ impl AExpr {
     /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
     /// guaranteed to match `AExpr::inputs_iter_name_last`.
     ///
-    /// This is derived from `children_iter_name_last`, but skips list / struct eval exprs.
-    pub fn inputs_iter_mut_name_last(&mut self) -> std::iter::Rev<AENodesIterMut<'_>> {
+    /// This is derived from `nodes_iter_name_last`, but skips the eval exprs in list / struct eval.
+    pub fn inputs_iter_mut_name_last(&mut self) -> iter::Rev<AENodesIterMut<'_>> {
         use AExpr::*;
 
         Iterator::rev(match self {
@@ -304,14 +299,14 @@ impl AExpr {
     /// # Panics
     /// Panics if the number of provided child nodes does not match the number of child nodes in this AExpr.
     pub fn replace_children(&mut self, children: impl IntoIterator<Item = Node>) {
-        for (l, r) in self.children_iter_mut().zip_eq(children) {
+        for (l, r) in self.nodes_iter_mut().zip_eq(children) {
             *l = r;
         }
     }
 }
 
 impl IRAggExpr {
-    pub fn children_iter(&self) -> AENodesIter<'_> {
+    pub fn nodes_iter(&self) -> AENodesIter<'_> {
         use IRAggExpr::*;
 
         match self {
@@ -355,7 +350,7 @@ impl IRAggExpr {
         }
     }
 
-    pub fn children_iter_mut(&mut self) -> AENodesIterMut<'_> {
+    pub fn nodes_iter_mut(&mut self) -> AENodesIterMut<'_> {
         use IRAggExpr::*;
 
         match self {
@@ -426,19 +421,19 @@ impl IRAggExpr {
 
 #[expect(clippy::type_complexity)]
 pub enum AENodesIter<'a> {
-    Slice(std::slice::Iter<'a, Node>),
-    DoubleSlice(std::iter::Chain<std::slice::Iter<'a, Node>, std::slice::Iter<'a, Node>>),
+    Slice(slice::Iter<'a, Node>),
+    DoubleSlice(iter::Chain<slice::Iter<'a, Node>, slice::Iter<'a, Node>>),
     TripleSlice(
-        std::iter::Chain<
-            std::iter::Chain<std::slice::Iter<'a, Node>, std::slice::Iter<'a, Node>>,
-            std::slice::Iter<'a, Node>,
+        iter::Chain<
+            iter::Chain<slice::Iter<'a, Node>, slice::Iter<'a, Node>>,
+            slice::Iter<'a, Node>,
         >,
     ),
-    ExprIRSlice(std::iter::Map<std::slice::Iter<'a, ExprIR>, fn(&'a ExprIR) -> &'a Node>),
+    ExprIRSlice(iter::Map<slice::Iter<'a, ExprIR>, fn(&'a ExprIR) -> &'a Node>),
     StructEval(
-        std::iter::Chain<
-            std::iter::Once<&'a Node>,
-            std::iter::Map<std::slice::Iter<'a, ExprIR>, fn(&'a ExprIR) -> &'a Node>,
+        iter::Chain<
+            iter::Once<&'a Node>,
+            iter::Map<slice::Iter<'a, ExprIR>, fn(&'a ExprIR) -> &'a Node>,
         >,
     ),
 }
@@ -449,17 +444,17 @@ impl<'a> AENodesIter<'a> {
     }
 
     pub fn new_single(node: &'a Node) -> Self {
-        Self::Slice(std::slice::from_ref(node).iter())
+        Self::Slice(slice::from_ref(node).iter())
     }
 
     pub fn new_double(node1: &'a Node, node2: &'a Node) -> Self {
-        use std::slice::from_ref;
+        use slice::from_ref;
 
         Self::DoubleSlice(from_ref(node1).iter().chain(from_ref(node2)))
     }
 
     pub fn new_triple(node1: &'a Node, node2: &'a Node, node3: &'a Node) -> Self {
-        use std::slice::from_ref;
+        use slice::from_ref;
 
         Self::TripleSlice(
             from_ref(node1)
@@ -527,42 +522,40 @@ impl<'a> DoubleEndedIterator for AENodesIter<'a> {
 
 #[expect(clippy::type_complexity)]
 pub enum AENodesIterMut<'a> {
-    Slice(std::slice::IterMut<'a, Node>),
-    DoubleSlice(std::iter::Chain<std::slice::IterMut<'a, Node>, std::slice::IterMut<'a, Node>>),
+    Slice(slice::IterMut<'a, Node>),
+    DoubleSlice(iter::Chain<slice::IterMut<'a, Node>, slice::IterMut<'a, Node>>),
     TripleSlice(
-        std::iter::Chain<
-            std::iter::Chain<std::slice::IterMut<'a, Node>, std::slice::IterMut<'a, Node>>,
-            std::slice::IterMut<'a, Node>,
+        iter::Chain<
+            iter::Chain<slice::IterMut<'a, Node>, slice::IterMut<'a, Node>>,
+            slice::IterMut<'a, Node>,
         >,
     ),
-    ExprIRSlice(
-        std::iter::Map<std::slice::IterMut<'a, ExprIR>, fn(&'a mut ExprIR) -> &'a mut Node>,
-    ),
+    ExprIRSlice(iter::Map<slice::IterMut<'a, ExprIR>, fn(&'a mut ExprIR) -> &'a mut Node>),
     StructEval(
-        std::iter::Chain<
-            std::iter::Once<&'a mut Node>,
-            std::iter::Map<std::slice::IterMut<'a, ExprIR>, fn(&'a mut ExprIR) -> &'a mut Node>,
+        iter::Chain<
+            iter::Once<&'a mut Node>,
+            iter::Map<slice::IterMut<'a, ExprIR>, fn(&'a mut ExprIR) -> &'a mut Node>,
         >,
     ),
 }
 
 impl<'a> AENodesIterMut<'a> {
     pub fn new_empty() -> Self {
-        Self::Slice(Default::default())
+        Self::Slice([].iter_mut())
     }
 
     pub fn new_single(node: &'a mut Node) -> Self {
-        Self::Slice(std::slice::from_mut(node).iter_mut())
+        Self::Slice(slice::from_mut(node).iter_mut())
     }
 
     pub fn new_double(node1: &'a mut Node, node2: &'a mut Node) -> Self {
-        use std::slice::from_mut;
+        use slice::from_mut;
 
         Self::DoubleSlice(from_mut(node1).iter_mut().chain(from_mut(node2)))
     }
 
     pub fn new_triple(node1: &'a mut Node, node2: &'a mut Node, node3: &'a mut Node) -> Self {
-        use std::slice::from_mut;
+        use slice::from_mut;
 
         Self::TripleSlice(
             from_mut(node1)
@@ -640,25 +633,25 @@ where
 
 impl GetNodeInputs<Node> for Arena<AExpr> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        for node in self.get(key).children_iter() {
+        for node in self.get(key).nodes_iter() {
             push_fn(node)
         }
     }
 
     fn num_inputs(&self, key: Node) -> usize {
-        self.get(key).children_iter().len()
+        self.get(key).nodes_iter().len()
     }
 }
 
 impl GetNodeInputs<Node> for &Arena<AExpr> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        for node in self.get(key).children_iter() {
+        for node in self.get(key).nodes_iter() {
             push_fn(node)
         }
     }
 
     fn num_inputs(&self, key: Node) -> usize {
-        self.get(key).children_iter().len()
+        self.get(key).nodes_iter().len()
     }
 }
 

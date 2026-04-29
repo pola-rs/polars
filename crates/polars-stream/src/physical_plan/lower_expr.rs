@@ -193,7 +193,7 @@ pub fn is_input_independent_rec(
                 && is_input_independent_rec(*by, arena, cache)
         },
         AExpr::Agg(agg_expr) => agg_expr
-            .children_iter()
+            .nodes_iter()
             .all(|node| is_input_independent_rec(node, arena, cache)),
         AExpr::Ternary {
             predicate,
