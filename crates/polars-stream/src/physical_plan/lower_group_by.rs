@@ -179,8 +179,7 @@ fn replace_elementwise_components(
         (Some(id), node)
     } else {
         let mut aexpr = expr_arena.get(expr).clone();
-
-        aexpr.replace_inputs(aexpr.children_iter().map(|node| {
+        let new_inputs = Vec::from_iter(aexpr.children_iter().map(|node| {
             replace_elementwise_components(
                 node,
                 expr_merger,
@@ -191,6 +190,8 @@ fn replace_elementwise_components(
             )
             .1
         }));
+
+        aexpr.replace_inputs(new_inputs);
 
         let rec_node = expr_arena.add(aexpr);
         (None, rec_node)
