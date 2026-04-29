@@ -7,6 +7,8 @@ use crate::plans::{AExpr, IR, deep_clone_ae};
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
+/// Copies the `ir_node` and all nodes in the subtree rooted at `ir_node`, including expression nodes,
+/// to new nodes in the arena. The copied IR will have cache nodes removed.
 pub(crate) fn deep_copy_ir_delete_caches(
     ir_node: Node,
     ir_arena: &mut Arena<IR>,
