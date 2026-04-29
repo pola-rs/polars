@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use arrow::legacy::utils::CustomIterTools;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
-use polars_core::frame::group_by::aggregations::rolling_numeric_minmax_by;
+use polars_core::frame::group_by::aggregations::{_use_rolling_kernels, rolling_numeric_minmax_by};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_split_offsets, NoNull};
@@ -736,8 +736,17 @@ impl PhysicalExpr for AggMinMaxByExpr {
         GroupsType::check_lengths(&input_groups, &by_groups)?;
 
         // Fast path: rolling context with numeric by column — O(n) via deque.
-        if let GroupsType::Slice { groups: slices, .. } = by_groups.as_ref().as_ref() {
-            if let Some(gather_idxs) = rolling_numeric_minmax_by(&by_col, slices, self.is_max_by) {
+        if let GroupsType::Slice {
+            groups: slices,
+            overlapping,
+            monotonic,
+        } = by_groups.as_ref().as_ref()
+        {
+            let by_phys = by_col.as_materialized_series().to_physical_repr();
+            if by_phys.dtype().is_primitive_numeric()
+                && _use_rolling_kernels(slices, *overlapping, *monotonic, by_phys.chunks())
+            {
+                let gather_idxs = rolling_numeric_minmax_by(&by_col, slices, self.is_max_by);
                 let gathered = input_col.take(&gather_idxs)?;
                 let agg_state = AggregatedScalar(gathered.with_name(keep_name));
                 return Ok(AggregationContext::from_agg_state(

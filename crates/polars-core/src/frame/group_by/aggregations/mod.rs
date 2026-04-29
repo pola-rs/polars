@@ -69,25 +69,17 @@ pub fn _use_rolling_kernels(
 
 /// Rolling min_by/max_by for numeric `by` columns using O(n) deque kernel.
 ///
-/// Returns `None` if the `by` column is not a primitive numeric type,
-/// in which case the caller should fall back to the per-group slow path.
-pub fn rolling_numeric_minmax_by(
-    by_col: &Column,
-    slices: &GroupsSlice,
-    is_max_by: bool,
-) -> Option<IdxCa> {
+/// # Panics
+/// Panics if the `by` column's physical dtype is not primitive numeric.
+pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_by: bool) -> IdxCa {
     let by_series = by_col.as_materialized_series().rechunk();
     let by_phys = by_series.to_physical_repr();
     let dtype = by_phys.dtype();
 
-    if !dtype.is_primitive_numeric() {
-        return None;
-    }
-
-    let chunks = by_phys.chunks();
-    if !_use_rolling_kernels(slices, true, true, chunks) {
-        return None;
-    }
+    assert!(
+        dtype.is_primitive_numeric(),
+        "rolling_numeric_minmax_by requires a numeric by column, got {dtype}",
+    );
 
     let starts: Vec<IdxSize> = slices.iter().map(|s| s[0]).collect();
     let ends: Vec<IdxSize> = slices.iter().map(|s| s[0] + s[1]).collect();
@@ -105,7 +97,7 @@ pub fn rolling_numeric_minmax_by(
         }
     });
 
-    Some(IdxCa::with_chunk(PlSmallStr::EMPTY, arr))
+    IdxCa::with_chunk(PlSmallStr::EMPTY, arr)
 }
 
 // Use an aggregation window that maintains the state
