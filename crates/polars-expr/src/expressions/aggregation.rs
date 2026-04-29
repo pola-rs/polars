@@ -789,8 +789,7 @@ impl PhysicalExpr for AggMinMaxByExpr {
         ) = (input_groups.as_ref().as_ref(), by_groups.as_ref().as_ref())
         {
             if let Some(gather_idxs) = self.try_rolling_fast_path(&by_col, slices)? {
-                // SAFETY: indices produced by rolling kernel are within bounds.
-                let gathered = unsafe { input_col.take_unchecked(&gather_idxs) };
+                let gathered = input_col.take(&gather_idxs)?;
                 let agg_state = AggregatedScalar(gathered.with_name(keep_name));
                 return Ok(AggregationContext::from_agg_state(
                     agg_state,
