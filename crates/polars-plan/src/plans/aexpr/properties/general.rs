@@ -78,7 +78,12 @@ where
     if !property(ae) {
         return false;
     }
-    stack.extend(ae.children_iter());
+
+    stack.extend(if let AExpr::Eval { .. } = ae {
+        ae.inputs_iter()
+    } else {
+        ae.children_iter()
+    });
     true
 }
 
@@ -146,9 +151,9 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
             };
             stack.extend(ae.children_iter());
         })(),
-        _ => {
-            stack.extend(ae.children_iter());
-        },
+        // Ignore the eval expr of list.eval
+        Eval { .. } => stack.extend(ae.inputs_iter()),
+        _ => stack.extend(ae.children_iter()),
     }
 
     true
@@ -500,7 +505,11 @@ pub(crate) fn predicate_non_null_column_outputs(
         };
 
         if traverse_all_inputs {
-            stack.extend(ae.children_iter());
+            stack.extend(if let AExpr::Eval { .. } = ae {
+                ae.inputs_iter()
+            } else {
+                ae.children_iter()
+            });
         }
     }
 }

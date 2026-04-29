@@ -866,9 +866,9 @@ impl CommonSubExprOptimizer {
                             continue;
                         }
 
-                        scratch.extend(aes[0].inputs_iter_name_last());
+                        scratch.extend(aes[0].children_iter_name_last());
                         let offset = scratch.len();
-                        scratch.extend(aes[1].inputs_iter_name_last());
+                        scratch.extend(aes[1].children_iter_name_last());
 
                         // If they have a different number of inputs, we don't follow the nodes.
                         if scratch.len() != offset * 2 {
