@@ -331,10 +331,12 @@ pub fn lower_ir(
             input_left,
             input_right,
             key,
+            maintain_order,
         } => {
             let input_left = *input_left;
             let input_right = *input_right;
             let key = key.clone();
+            let maintain_order = *maintain_order;
 
             let mut phys_left = lower_ir!(input_left)?;
             let mut phys_right = lower_ir!(input_right)?;
@@ -379,6 +381,7 @@ pub fn lower_ir(
             PhysNodeKind::MergeSorted {
                 input_left: phys_left,
                 input_right: phys_right,
+                maintain_order,
             }
         },
 
@@ -1378,8 +1381,6 @@ pub fn lower_ir(
                                 right_on: right_on_names[0].clone(),
                                 tmp_left_key_col: tmp_left_col_names.pop().unwrap(),
                                 tmp_right_key_col: tmp_right_col_names.pop().unwrap(),
-                                left_by: asof_options().left_by.clone(),
-                                right_by: asof_options().right_by.clone(),
                                 by_descending,
                                 by_nulls_last,
                                 args: args.clone(),

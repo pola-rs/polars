@@ -1265,8 +1265,6 @@ fn to_graph_rec<'a>(
             right_on,
             tmp_left_key_col,
             tmp_right_key_col,
-            left_by,
-            right_by,
             by_descending,
             by_nulls_last,
             args,
@@ -1287,8 +1285,6 @@ fn to_graph_rec<'a>(
                         right_on.clone(),
                         tmp_left_key_col.clone(),
                         tmp_right_key_col.clone(),
-                        left_by.clone(),
-                        right_by.clone(),
                         by_descending.clone(),
                         by_nulls_last.clone(),
                         args,
@@ -1346,11 +1342,12 @@ fn to_graph_rec<'a>(
         MergeSorted {
             input_left,
             input_right,
+            maintain_order,
         } => {
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             ctx.graph.add_node(
-                nodes::merge_sorted::MergeSortedNode::new(),
+                nodes::merge_sorted::MergeSortedNode::new(*maintain_order),
                 [
                     (left_input_key, input_left.port),
                     (right_input_key, input_right.port),

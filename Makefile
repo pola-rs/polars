@@ -160,6 +160,10 @@ fmt: update-cargo-env ## Run autoformatting and linting
 	dprint fmt
 	$(VENV_BIN)/typos
 
+.PHONY: deny
+deny:
+	cargo deny check
+
 .PHONY: fix
 fix: update-cargo-env
 	cargo clippy --workspace --all-targets --all-features --fix

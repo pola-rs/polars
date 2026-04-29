@@ -198,3 +198,12 @@ def test_temporal_dtype_string_values(
         s = pl.Series(name="srs", values=data, dtype=tp)
         assert s.to_list() == expected_values
         assert s.dtype == dtype
+
+
+def test_invalid() -> None:
+    with pytest.raises(TypeError, match="constructor"):
+        # Note: the `type: ignore` is correct here, as `0` is
+        # an invalid type. If you make a PR which removes this
+        # `type: ignore`, you may have inadvertently introduced
+        # an `Any` type in the `Series.__init__` signature.
+        pl.Series(1)  # type: ignore[arg-type]

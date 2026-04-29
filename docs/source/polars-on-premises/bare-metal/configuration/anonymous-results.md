@@ -1,7 +1,7 @@
 # Anonymous results
 
-For remote Polars queries without a specific output sink, Polars on-premises can automatically add
-an output sink. We call this sink an anonymous results sink. Infrastructure-wise, these sinks can be
+For remote Polars queries without a specific output sink, Polars On-Prem can automatically add an
+output sink. We call this sink an anonymous results sink. Infrastructure-wise, these sinks can be
 backed by S3-compatible storage or another shared filesystem accessible from all worker nodes and
 the Python client. The data written to this location is not automatically deleted, so you need to
 configure a retention policy for this data yourself.

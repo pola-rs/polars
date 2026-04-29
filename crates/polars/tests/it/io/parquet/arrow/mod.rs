@@ -529,7 +529,7 @@ pub fn pyarrow_nullable(column: &str) -> Box<dyn Array> {
         "int32_dict" => {
             let keys = PrimitiveArray::<i32>::from([Some(0), Some(1), None, Some(1)]);
             let values = Box::new(PrimitiveArray::<i32>::from_slice([10, 200]));
-            Box::new(DictionaryArray::try_from_keys(keys, values).unwrap())
+            Box::new(DictionaryArray::try_from_keys(keys, values, false).unwrap())
         },
         "timestamp_us" => Box::new(
             PrimitiveArray::<i64>::from(i64_values)

@@ -1191,13 +1191,13 @@ def test_cspe_recursive_24744() -> None:
         lf_j3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
     )
     assert (
-        lf_j3.show_graph(  # type: ignore[union-attr]
+        lf_j3.show_graph(
             engine="streaming", plan_stage="physical", raw_output=True
         ).count("multiplexer")
         == 3
     )
     assert (
-        lf_j3.show_graph(  # type: ignore[union-attr]
+        lf_j3.show_graph(
             engine="in-memory", plan_stage="physical", raw_output=True
         ).count("CACHE")
         == 3

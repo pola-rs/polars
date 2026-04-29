@@ -1,0 +1,76 @@
+# https://embarkstudios.github.io/cargo-deny/checks/cfg.html
+
+[advisories]
+yanked = "deny"
+ignore = [
+  # THESE ISSUES ARE ALLOW-LISTED HERE TO SILENCE THE CI TEMPORARILY
+  # THESE ISSUES NEED TO BE FIXED
+
+  # error[vulnerability]: AWS-LC X.509 Name Constraints Bypass via Wildcard/Unicode CN
+  "RUSTSEC-2026-0044",
+  # error[vulnerability]: Timing Side-Channel in AES-CCM Tag Verification in AWS-LC
+  "RUSTSEC-2026-0045",
+  # error[vulnerability]: PKCS7_verify Certificate Chain Validation Bypass in AWS-LC
+  "RUSTSEC-2026-0046",
+  # error[vulnerability]: PKCS7_verify Signature Validation Bypass in AWS-LC
+  "RUSTSEC-2026-0047",
+  # error[vulnerability]: CRL Distribution Point Scope Check Logic Error in AWS-LC
+  "RUSTSEC-2026-0048",
+
+  # error[unmaintained]: Bincode is unmaintained
+  "RUSTSEC-2025-0141",
+
+  # error[unsound]: Rand is unsound with a custom logger using `rand::rng()`
+  "RUSTSEC-2026-0097",
+
+  # error[vulnerability]: Name constraints for URI names were incorrectly accepted
+  "RUSTSEC-2026-0098",
+  # error[vulnerability]: Name constraints were accepted for certificates asserting a wildcard name
+  "RUSTSEC-2026-0099",
+
+  # error[vulnerability]: CRLs not considered authoritative by Distribution Point due to faulty matching logic
+  "RUSTSEC-2026-0049",
+
+  # error[yanked]: detected yanked crate (try `cargo update -p core2`)
+  { name = "core2", version = "0.4.0" },
+]
+
+[licenses]
+allow = [
+  # Permissive, most common
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MIT",
+  # Unicode data / text processing
+  "Unicode-3.0",
+  # Public domain / no-rights-reserved
+  "CC0-1.0",
+  # Other permissive / widely-used
+  "BSL-1.0",
+  "OpenSSL",
+  "Zlib",
+]
+
+[bans]
+# Multiple versions of the same crate are allowed
+multiple-versions = "allow"
+# Wildcard dependency versions (`*`) are never acceptable, except for local path
+# dependencies (workspace-internal crates that have no registry version)
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# Reject crates from registries we have not explicitly approved
+unknown-registry = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# Reject git dependencies unless they come from an approved repository.
+# required = false suppresses the "unmatched-source" warning in workspaces that
+# don't use a given patch (these patches are only active in compute-plane).
+unknown-git = "deny"
+allow-git = [
+  "https://github.com/kdn36/arrow-rs-object-store",
+  "https://github.com/pola-rs/jemallocator",
+]

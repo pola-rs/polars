@@ -162,3 +162,35 @@ impl<T> Collection<T> for &mut [T] {
         <[T]>::get_mut(self, idx)
     }
 }
+
+pub struct MappedCollection<'src, Src: ?Sized, T: ?Sized, U: ?Sized> {
+    src: &'src mut Src,
+    map: fn(&T) -> &U,
+    map_mut: fn(&mut T) -> &mut U,
+}
+
+impl<'src, Src: ?Sized, T: ?Sized, U: ?Sized> Collection<U> for MappedCollection<'src, Src, T, U>
+where
+    Src: Collection<T>,
+{
+    fn len(&self) -> usize {
+        self.src.len()
+    }
+
+    fn get(&self, idx: usize) -> Option<&U> {
+        self.src.get(idx).map(|t| (self.map)(t))
+    }
+
+    fn get_mut(&mut self, idx: usize) -> Option<&mut U> {
+        self.src.get_mut(idx).map(|t| (self.map_mut)(t))
+    }
+}
+
+impl<'src, Src: ?Sized, T: ?Sized, U: ?Sized> MappedCollection<'src, Src, T, U>
+where
+    Src: Collection<T>,
+{
+    pub fn new(src: &'src mut Src, map: fn(&T) -> &U, map_mut: fn(&mut T) -> &mut U) -> Self {
+        Self { src, map, map_mut }
+    }
+}

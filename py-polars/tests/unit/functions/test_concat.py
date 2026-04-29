@@ -436,7 +436,7 @@ def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
 )
 @pytest.mark.parametrize(
     "n_dfs",
-    [3, 4, 5],  # balanced tree +/- 1
+    [3, 4, 5, 6],  # balanced tree +/- 1
 )
 def test_concat_align_associativity_26788(how: ConcatMethod, n_dfs: int) -> None:
     # create every possible key combination over `n_dfs` dataframes

@@ -132,7 +132,8 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
                 continue;
             }
 
-            let mut statistics = load_parquet_column_statistics(row_groups_slice, projection)?;
+            let mut statistics =
+                load_parquet_column_statistics(row_groups_slice, projection, &metadata.footer_buf)?;
 
             // Note: Order is important here. We re-use the transform for the output column, meaning
             // that it may set the column name.
@@ -172,6 +173,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
 fn load_parquet_column_statistics(
     row_groups: &[RowGroupMetadata],
     projection: &ArrowFieldProjection,
+    footer_buf: &polars_buffer::Buffer<u8>,
 ) -> PolarsResult<StatisticsColumns> {
     let arrow_field = projection.arrow_field();
 
@@ -197,7 +199,7 @@ fn load_parquet_column_statistics(
 
     let idx = idxs[0];
 
-    let Some(statistics) = deserialize_all(arrow_field, row_groups, idx)? else {
+    let Some(statistics) = deserialize_all(arrow_field, row_groups, idx, footer_buf)? else {
         return null_statistics();
     };
 

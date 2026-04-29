@@ -3736,6 +3736,8 @@ class Expr:
         """
         Get unique values of this expression.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Parameters
         ----------
         maintain_order
@@ -5484,9 +5486,13 @@ Consider using {self}.implode() instead"""
         """
         # This cast enables tail with expressions that return unsigned integers,
         # for which negate otherwise raises InvalidOperationError.
-        offset = -(
-            wrap_expr(parse_into_expression(n)).cast(
-                Int64, strict=False, wrap_numerical=True
+        offset = (
+            -n
+            if isinstance(n, int)
+            else -(
+                wrap_expr(parse_into_expression(n)).cast(
+                    Int64, strict=False, wrap_numerical=True
+                )
             )
         )
         return self.slice(offset, n)
