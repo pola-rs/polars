@@ -7,9 +7,9 @@ Polars acts as an OpenLineage **producer** — it emits `RunEvent` and optionall
 a query executes. Job identity (`JobEvent`) must be provided by the caller, typically an
 orchestrator such as Airflow or Dagster.
 
-!!! note "OpenLineage is only supported for Polars on-premises"
+!!! note "OpenLineage is only supported for Polars On-Prem"
 
-    Note that OpenLineage is currently only supported for Polars on-premises and not for Polars Cloud. Obtain a license for Polars on-premises by [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
+    Note that OpenLineage is currently only supported for Polars On-Prem and not for Polars Cloud. Obtain a license for Polars on-premises by [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
 
 ## Setup
 
