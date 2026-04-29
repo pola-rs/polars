@@ -102,7 +102,7 @@ impl AExpr {
                 predicate,
                 truthy,
                 falsy,
-            } => AENodesIter::new_triple(predicate, falsy, truthy),
+            } => AENodesIter::new_triple(truthy, falsy, predicate),
             _ => self.children_iter(),
         })
     }
@@ -202,7 +202,7 @@ impl AExpr {
                 predicate,
                 truthy,
                 falsy,
-            } => AENodesIterMut::new_triple(predicate, falsy, truthy),
+            } => AENodesIterMut::new_triple(truthy, falsy, predicate),
             _ => self.children_iter_mut(),
         })
     }
@@ -266,7 +266,7 @@ impl AExpr {
                 predicate,
                 truthy,
                 falsy,
-            } => AENodesIter::new_triple(predicate, falsy, truthy),
+            } => AENodesIter::new_triple(truthy, falsy, predicate),
             _ => self.inputs_iter(),
         })
     }
@@ -284,7 +284,7 @@ impl AExpr {
                 predicate,
                 truthy,
                 falsy,
-            } => AENodesIterMut::new_triple(predicate, falsy, truthy),
+            } => AENodesIterMut::new_triple(truthy, falsy, predicate),
             _ => self.inputs_iter_mut(),
         })
     }
@@ -445,7 +445,7 @@ pub enum AENodesIter<'a> {
 
 impl<'a> AENodesIter<'a> {
     pub fn new_empty() -> Self {
-        Self::Slice(Default::default())
+        Self::Slice([].iter())
     }
 
     pub fn new_single(node: &'a Node) -> Self {
