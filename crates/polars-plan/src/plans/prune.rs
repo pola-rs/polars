@@ -130,16 +130,8 @@ impl<'a> CopyContext<'a> {
     fn copy_expr(&mut self, node: Node) -> Node {
         let expr = self.src_expr.get(node);
 
-        let mut inputs = vec![];
-        expr.children_rev_name_last(&mut inputs);
-
-        for input in &mut inputs {
-            *input = self.copy_expr(*input);
-        }
-        inputs.reverse();
-
         let mut dst_expr = expr.clone();
-        dst_expr.replace_inputs(&inputs);
+        dst_expr.replace_inputs(expr.children_iter().map(|node| self.copy_expr(node)));
 
         // Fix up eval, the evaluation subtree is not treated as an input,
         // so it needs to be copied manually.

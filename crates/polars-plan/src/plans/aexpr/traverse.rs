@@ -233,14 +233,14 @@ impl AExpr {
         }
     }
 
-    pub fn replace_inputs(&mut self, inputs: &[Node]) {
-        for (l, r) in self.inputs_iter_mut().zip_eq(inputs.iter().copied()) {
+    pub fn replace_inputs(&mut self, inputs: impl IntoIterator<Item = Node>) {
+        for (l, r) in self.inputs_iter_mut().zip_eq(inputs) {
             *l = r;
         }
     }
 
-    pub fn replace_children(&mut self, inputs: &[Node]) {
-        for (l, r) in self.children_iter_mut().zip_eq(inputs.iter().copied()) {
+    pub fn replace_children(&mut self, inputs: impl IntoIterator<Item = Node>) {
+        for (l, r) in self.children_iter_mut().zip_eq(inputs) {
             *l = r;
         }
     }

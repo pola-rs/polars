@@ -185,7 +185,7 @@ impl ConversionOptimizer {
 
             // traverse subexpressions and add to the stack
             self.scratch
-                .extend(expr.inputs_iter().map(|node| (node, 0)))
+                .extend(expr.inputs_iter().map(|node| (node, schema_idx)))
         }
 
         Ok(())

@@ -180,21 +180,19 @@ fn replace_elementwise_components(
     } else {
         let mut aexpr = expr_arena.get(expr).clone();
         let mut inputs = Vec::new();
-        aexpr.children_rev_name_last(&mut inputs);
-        inputs.reverse();
 
-        for input in &mut inputs {
-            *input = replace_elementwise_components(
-                *input,
+        aexpr.replace_inputs(aexpr.children_iter().map(|node| {
+            replace_elementwise_components(
+                node,
                 expr_merger,
                 expr_cache,
                 expr_arena,
                 uniq_input_names,
                 uniq_elementwise_exprs,
             )
-            .1;
-        }
-        aexpr.replace_inputs(&inputs);
+            .1
+        }));
+
         let rec_node = expr_arena.add(aexpr);
         (None, rec_node)
     }

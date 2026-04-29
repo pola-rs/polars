@@ -522,12 +522,11 @@ fn lower_reduce_node(
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<(PhysStream, Node)> {
     let mut agg_aexpr = ctx.expr_arena.get(agg_node).clone();
-    let mut agg_input = Vec::with_capacity(1);
-    agg_aexpr.children_rev_name_last(&mut agg_input);
-    agg_input.reverse();
 
+    let mut agg_input = Vec::from_iter(agg_aexpr.children_iter());
     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;
     agg_aexpr.replace_inputs(&trans_exprs);
+
     let trans_agg_node = ctx.expr_arena.add(agg_aexpr);
 
     let out_name = unique_column_name();
