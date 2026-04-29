@@ -7,10 +7,32 @@ our private Docker registry as well as a JSON-formatted license for running Pola
 To pull the binary, run the following command:
 
 ```sh
-curl -L 'https://get.onprem.pola.rs?version=<TAG>' --data @license.json --output polars-on-premises
+$ curl -L 'https://get.onprem.pola.rs?version=<TAG>' --data @license.json --output polars-on-premises
 ```
 
-### 0.2.4 (latest)
+## Docker Image
+
+To pull the docker image:
+
+```sh
+$ docker login -u polarscustomer -p <DockerHub_PAT_token>
+$ docker pull --platform linux/amd64 polarscloud/polars-on-premise:<TAG>
+```
+
+### 0.3.1 (latest)
+
+- `polars` [1.40.1](https://github.com/pola-rs/polars/releases/tag/py-1.40.1)
+- `polars-cloud` [0.6.1](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.1)
+
+**Highlights**
+
+- Apply pre-slice in scan row count estimation
+- Distributed row index
+- Implement lowering for row-index scans w/o predicates or pre-slices
+- OpenLineage support
+- Track shuffle outputs on the scheduler; This will later enable partial stage recovery.
+
+### 0.2.4
 
 - `polars` [1.39.3](https://github.com/pola-rs/polars/releases/tag/py-1.39.3)
 - `polars-cloud` [0.6.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.0)
