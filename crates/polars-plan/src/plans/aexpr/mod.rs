@@ -370,8 +370,7 @@ pub fn deep_clone_ae(ae: Node, arena: &mut Arena<AExpr>) -> Node {
     for child in &mut children {
         *child = deep_clone_ae(*child, arena);
     }
-    children.reverse();
 
-    slf.replace_children(&children);
+    slf.replace_children(children);
     arena.add(slf)
 }
