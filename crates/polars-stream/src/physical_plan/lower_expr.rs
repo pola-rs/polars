@@ -192,15 +192,9 @@ pub fn is_input_independent_rec(
             is_input_independent_rec(*input, arena, cache)
                 && is_input_independent_rec(*by, arena, cache)
         },
-        AExpr::Agg(agg_expr) => match agg_expr.get_input() {
-            polars_plan::plans::NodeInputs::Leaf => true,
-            polars_plan::plans::NodeInputs::Single(expr) => {
-                is_input_independent_rec(expr, arena, cache)
-            },
-            polars_plan::plans::NodeInputs::Many(exprs) => exprs
-                .iter()
-                .all(|expr| is_input_independent_rec(*expr, arena, cache)),
-        },
+        AExpr::Agg(agg_expr) => agg_expr
+            .children_iter()
+            .all(|node| is_input_independent_rec(*node, arena, cache)),
         AExpr::Ternary {
             predicate,
             truthy,

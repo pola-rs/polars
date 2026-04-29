@@ -8,47 +8,47 @@ impl AExpr {
     /// Push the inputs of this node to the given container, in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
-    pub fn inputs<E>(&self, container: &mut E)
-    where
-        E: Extend<Node>,
-    {
+    pub fn children_iter(&self) -> AENodesIter<'_> {
+        use std::slice;
+
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | Column(_) | Literal(_) | Len => AENodesIter::new_empty(),
             #[cfg(feature = "dtype-struct")]
-            StructField(_) => {},
-            BinaryExpr { left, op: _, right } => {
-                container.extend([*left, *right]);
-            },
-            Cast { expr, .. } => container.extend([*expr]),
-            Sort { expr, .. } => container.extend([*expr]),
-            Gather { expr, idx, .. } => {
-                container.extend([*expr, *idx]);
-            },
+            StructField(_) => AENodesIter::new_empty(),
+
+            Cast {
+                expr,
+                dtype: _,
+                options: _,
+            }
+            | Sort { expr, options: _ }
+            | Explode { expr, options: _ } => AENodesIter::new_single(expr),
+
+            Gather {
+                expr,
+                idx,
+                returns_scalar: _,
+                null_on_oob: _,
+            } => AENodesIter::new_double(expr, idx),
             SortBy { expr, by, .. } => {
-                container.extend([*expr]);
-                container.extend(by.iter().cloned());
+                AENodesIter::DoubleSlice(slice::from_ref(expr).iter().chain(by.iter()))
             },
-            Filter { input, by } => {
-                container.extend([*input, *by]);
-            },
-            Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.extend([node]),
-                NodeInputs::Many(nodes) => container.extend(nodes),
-                NodeInputs::Leaf => {},
-            },
+            Filter { input, by } => AENodesIter::new_double(input, by),
+            Agg(agg) => agg.children_iter(),
+            BinaryExpr { left, op: _, right } => AENodesIter::new_double(left, right),
             Ternary {
+                predicate,
                 truthy,
                 falsy,
-                predicate,
-            } => {
-                container.extend([*predicate, *truthy, *falsy]);
-            },
+            } => AENodesIter::new_triple(predicate, truthy, falsy),
             AnonymousFunction { input, .. }
             | Function { input, .. }
-            | AnonymousAgg { input, .. } => container.extend(input.iter().map(|e| e.node())),
-            Explode { expr: e, .. } => container.extend([*e]),
+            | AnonymousAgg { input, .. } => {
+                AENodesIter::ExprIRSlice(input.iter().map(ExprIR::node_ref))
+            },
+
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
                 function,
@@ -56,38 +56,37 @@ impl AExpr {
                 period: _,
                 offset: _,
                 closed_window: _,
-            } => {
-                container.extend([*function, *index_column]);
-            },
+            } => AENodesIter::new_double(function, index_column),
             Over {
                 function,
                 partition_by,
                 order_by,
                 mapping: _,
-            } => {
-                container.extend([*function]);
-                container.extend(partition_by.iter().cloned());
-                container.extend(order_by.as_ref().map(|(n, _)| *n));
-            },
+            } => AENodesIter::TripleSlice(
+                std::slice::from_ref(function)
+                    .iter()
+                    .chain(partition_by.as_slice())
+                    .chain(
+                        order_by
+                            .as_ref()
+                            .map_or(&[][..], |x| std::slice::from_ref(&x.0)),
+                    ),
+            ),
             Eval {
                 expr,
                 evaluation,
                 variant: _,
-            } => {
-                container.extend([*expr, *evaluation]);
-            },
+            } => AENodesIter::new_double(expr, evaluation),
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
-                container.extend([*expr]);
-                container.extend(evaluation.iter().map(|x| x.node()));
-            },
+            StructEval { expr, evaluation } => AENodesIter::StructEval(
+                std::iter::once(expr)
+                    .chain(evaluation.as_slice().iter().map(&ExprIR::node_ref as _)),
+            ),
             Slice {
                 input,
                 offset,
                 length,
-            } => {
-                container.extend([*input, *offset, *length]);
-            },
+            } => AENodesIter::new_triple(input, offset, length),
         }
     }
 
@@ -121,11 +120,7 @@ impl AExpr {
             Filter { input, by } => {
                 container.extend([*by, *input]);
             },
-            Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.extend([node]),
-                NodeInputs::Many(nodes) => container.extend(nodes.into_iter().rev()),
-                NodeInputs::Leaf => {},
-            },
+            Agg(agg) => container.extend(agg.children_iter().rev().copied()),
             Ternary {
                 truthy,
                 falsy,
@@ -237,11 +232,7 @@ impl AExpr {
             Filter { input, by } => {
                 container.extend([*by, *input]);
             },
-            Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.extend([node]),
-                NodeInputs::Many(nodes) => container.extend(nodes.into_iter().rev()),
-                NodeInputs::Leaf => {},
-            },
+            Agg(agg) => container.extend(agg.children_iter().rev().copied()),
             Ternary {
                 truthy,
                 falsy,
@@ -542,30 +533,50 @@ impl AExpr {
 }
 
 impl IRAggExpr {
-    pub fn get_input(&self) -> NodeInputs {
+    pub fn children_iter(&self) -> AENodesIter<'_> {
         use IRAggExpr::*;
-        use NodeInputs::*;
 
         match self {
-            Min { input, .. } => Single(*input),
-            Max { input, .. } => Single(*input),
-            Median(input) => Single(*input),
-            NUnique(input) => Single(*input),
-            First(input) => Single(*input),
-            FirstNonNull(input) => Single(*input),
-            Last(input) => Single(*input),
-            LastNonNull(input) => Single(*input),
-            Item { input, .. } => Single(*input),
-            Mean(input) => Single(*input),
-            Implode { input, .. } => Single(*input),
-            Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
-            Sum(input) => Single(*input),
-            Count { input, .. } => Single(*input),
-            Std(input, _) => Single(*input),
-            Var(input, _) => Single(*input),
-            AggGroups(input) => Single(*input),
+            Min {
+                input,
+                propagate_nans: _,
+            }
+            | Max {
+                input,
+                propagate_nans: _,
+            }
+            | Median(input)
+            | NUnique(input)
+            | First(input)
+            | FirstNonNull(input)
+            | Last(input)
+            | LastNonNull(input)
+            | Item {
+                input,
+                allow_empty: _,
+            }
+            | Mean(input)
+            | Implode {
+                input,
+                maintain_order: _,
+            }
+            | Sum(input)
+            | Count {
+                input,
+                include_nulls: _,
+            }
+            | Std(input, _)
+            | Var(input, _)
+            | AggGroups(input) => AENodesIter::new_single(input),
+
+            Quantile {
+                expr,
+                quantile,
+                method: _,
+            } => AENodesIter::new_double(expr, quantile),
         }
     }
+
     pub fn set_input(&mut self, input: Node) {
         use IRAggExpr::*;
         let node = match self {
@@ -591,18 +602,88 @@ impl IRAggExpr {
     }
 }
 
-pub enum NodeInputs {
-    Leaf,
-    Single(Node),
-    Many(Vec<Node>),
+pub enum AENodesIter<'a> {
+    Slice(std::slice::Iter<'a, Node>),
+    DoubleSlice(std::iter::Chain<std::slice::Iter<'a, Node>, std::slice::Iter<'a, Node>>),
+    TripleSlice(
+        std::iter::Chain<
+            std::iter::Chain<std::slice::Iter<'a, Node>, std::slice::Iter<'a, Node>>,
+            std::slice::Iter<'a, Node>,
+        >,
+    ),
+    ExprIRSlice(std::iter::Map<std::slice::Iter<'a, ExprIR>, fn(&'a ExprIR) -> &'a Node>),
+    StructEval(
+        std::iter::Chain<
+            std::iter::Once<&'a Node>,
+            std::iter::Map<std::slice::Iter<'a, ExprIR>, &'a dyn Fn(&'a ExprIR) -> &'a Node>,
+        >,
+    ),
 }
 
-impl NodeInputs {
-    pub fn first(&self) -> Node {
+impl<'a> AENodesIter<'a> {
+    pub fn new_empty() -> Self {
+        Self::Slice(Default::default())
+    }
+
+    pub fn new_single(node: &'a Node) -> Self {
+        Self::Slice(std::slice::from_ref(node).iter())
+    }
+
+    pub fn new_double(node1: &'a Node, node2: &'a Node) -> Self {
+        use std::slice::from_ref;
+
+        Self::DoubleSlice(from_ref(node1).iter().chain(from_ref(node2)))
+    }
+
+    pub fn new_triple(node1: &'a Node, node2: &'a Node, node3: &'a Node) -> Self {
+        use std::slice::from_ref;
+
+        Self::TripleSlice(
+            from_ref(node1)
+                .iter()
+                .chain(from_ref(node2))
+                .chain(from_ref(node3)),
+        )
+    }
+}
+
+impl<'a> Iterator for AENodesIter<'a> {
+    type Item = &'a Node;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use AENodesIter::*;
         match self {
-            NodeInputs::Single(node) => *node,
-            NodeInputs::Many(nodes) => nodes[0],
-            NodeInputs::Leaf => panic!(),
+            Slice(v) => v.next(),
+            DoubleSlice(v) => v.next(),
+            TripleSlice(v) => v.next(),
+            ExprIRSlice(v) => v.next(),
+            StructEval(v) => v.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        use AENodesIter::*;
+        match self {
+            Slice(v) => v.size_hint(),
+            DoubleSlice(v) => v.size_hint(),
+            TripleSlice(v) => v.size_hint(),
+            ExprIRSlice(v) => v.size_hint(),
+            StructEval(v) => v.size_hint(),
+        }
+    }
+}
+
+impl<'a> ExactSizeIterator for AENodesIter<'a> {}
+
+impl<'a> DoubleEndedIterator for AENodesIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        use AENodesIter::*;
+        match self {
+            Slice(v) => v.next_back(),
+            DoubleSlice(v) => v.next_back(),
+            TripleSlice(v) => v.next_back(),
+            ExprIRSlice(v) => v.next_back(),
+            StructEval(v) => v.next_back(),
         }
     }
 }
@@ -632,13 +713,25 @@ impl<'a, T> Extend<T> for ExtendWrap<'a, T> {
 
 impl GetNodeInputs<Node> for Arena<AExpr> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        self.get(key).inputs(&mut ExtendWrap(push_fn));
+        for node in self.get(key).children_iter() {
+            push_fn(*node)
+        }
+    }
+
+    fn num_inputs(&self, key: Node) -> usize {
+        self.get(key).children_iter().len()
     }
 }
 
 impl GetNodeInputs<Node> for &Arena<AExpr> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        self.get(key).inputs(&mut ExtendWrap(push_fn));
+        for node in self.get(key).children_iter() {
+            push_fn(*node)
+        }
+    }
+
+    fn num_inputs(&self, key: Node) -> usize {
+        self.get(key).children_iter().len()
     }
 }
 
@@ -648,6 +741,10 @@ impl GetNodeInputs<Node> for Arena<IR> {
             push_fn(v)
         }
     }
+
+    fn num_inputs(&self, key: Node) -> usize {
+        self.get(key).inputs().len()
+    }
 }
 
 impl GetNodeInputs<Node> for &Arena<IR> {
@@ -655,5 +752,9 @@ impl GetNodeInputs<Node> for &Arena<IR> {
         for v in self.get(key).inputs() {
             push_fn(v)
         }
+    }
+
+    fn num_inputs(&self, key: Node) -> usize {
+        self.get(key).inputs().len()
     }
 }
