@@ -424,6 +424,7 @@ impl IRAggExpr {
     }
 }
 
+#[expect(clippy::type_complexity)]
 pub enum AENodesIter<'a> {
     Slice(std::slice::Iter<'a, Node>),
     DoubleSlice(std::iter::Chain<std::slice::Iter<'a, Node>, std::slice::Iter<'a, Node>>),
@@ -512,6 +513,7 @@ impl<'a> DoubleEndedIterator for AENodesIter<'a> {
     }
 }
 
+#[expect(clippy::type_complexity)]
 pub enum AENodesIterMut<'a> {
     Slice(std::slice::IterMut<'a, Node>),
     DoubleSlice(std::iter::Chain<std::slice::IterMut<'a, Node>, std::slice::IterMut<'a, Node>>),
