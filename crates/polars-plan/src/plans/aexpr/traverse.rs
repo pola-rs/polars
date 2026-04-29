@@ -654,27 +654,3 @@ impl GetNodeInputs<Node> for &Arena<AExpr> {
         self.get(key).nodes_iter().len()
     }
 }
-
-impl GetNodeInputs<Node> for Arena<IR> {
-    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        for v in self.get(key).inputs() {
-            push_fn(v)
-        }
-    }
-
-    fn num_inputs(&self, key: Node) -> usize {
-        self.get(key).inputs().len()
-    }
-}
-
-impl GetNodeInputs<Node> for &Arena<IR> {
-    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        for v in self.get(key).inputs() {
-            push_fn(v)
-        }
-    }
-
-    fn num_inputs(&self, key: Node) -> usize {
-        self.get(key).inputs().len()
-    }
-}

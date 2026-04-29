@@ -66,10 +66,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         },
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: ir_arena,
-            skip_subtree: |_| false,
-        },
+        IRTraversalStorage::new(ir_arena),
     )
     .continue_value()
     .unwrap();

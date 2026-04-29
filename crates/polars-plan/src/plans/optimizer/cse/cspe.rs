@@ -24,19 +24,16 @@ pub fn common_subplan_elimination(
     let mut edges = vec![usize::MAX]; // Indices into `id_map`
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
     let mut id_map = PlIndexMap::new();
-    let mut storage = IRTraversalStorage {
-        arena: ir_arena,
-        skip_subtree: |ir| {
-            match ir {
-                // Don't visit all the files in a `scan *` operation.
-                // Put an arbitrary limit to 20 files now.
-                IR::Union {
-                    options, inputs, ..
-                } => options.from_partitioned_ds && inputs.len() > 20,
-                _ => false,
-            }
-        },
-    };
+    let mut storage = IRTraversalStorage::new_with_skip(ir_arena, |ir| {
+        match ir {
+            // Don't visit all the files in a `scan *` operation.
+            // Put an arbitrary limit to 20 files now.
+            IR::Union {
+                options, inputs, ..
+            } => options.from_partitioned_ds && inputs.len() > 20,
+            _ => false,
+        }
+    });
 
     TreeTraversalImpl {
         storage: &mut storage,
