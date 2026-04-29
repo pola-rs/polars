@@ -294,12 +294,12 @@ impl AExpr {
         }
     }
 
-    /// Replace the children of this AExpr.
+    /// Replace the nodes in this AExpr.
     ///
     /// # Panics
-    /// Panics if the number of provided child nodes does not match the number of child nodes in this AExpr.
-    pub fn replace_children(&mut self, children: impl IntoIterator<Item = Node>) {
-        for (l, r) in self.nodes_iter_mut().zip_eq(children) {
+    /// Panics if the number of provided nodes does not match the number of nodes in this AExpr.
+    pub fn replace_nodes(&mut self, nodes: impl IntoIterator<Item = Node>) {
+        for (l, r) in self.nodes_iter_mut().zip_eq(nodes) {
             *l = r;
         }
     }

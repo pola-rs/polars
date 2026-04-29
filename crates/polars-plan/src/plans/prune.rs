@@ -131,7 +131,7 @@ impl<'a> CopyContext<'a> {
         let expr = self.src_expr.get(node);
 
         let mut dst_expr = expr.clone();
-        dst_expr.replace_children(expr.nodes_iter().map(|node| self.copy_expr(node)));
+        dst_expr.replace_nodes(expr.nodes_iter().map(|node| self.copy_expr(node)));
 
         self.dst_expr.add(dst_expr)
     }
