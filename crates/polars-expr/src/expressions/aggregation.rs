@@ -694,10 +694,7 @@ impl AggMinMaxByExpr {
         by_col: &Column,
         slices: &[[IdxSize; 2]],
     ) -> PolarsResult<Option<IdxCa>> {
-        use polars_compute::rolling::{
-            rolling_argmax_by_no_nulls, rolling_argmax_by_nulls, rolling_argmin_by_no_nulls,
-            rolling_argmin_by_nulls,
-        };
+        use polars_compute::rolling::{rolling_argmax_by, rolling_argmin_by};
 
         let by_series = by_col.as_materialized_series().rechunk();
         let by_phys = by_series.to_physical_repr();
@@ -713,23 +710,13 @@ impl AggMinMaxByExpr {
         let arr = with_match_physical_numeric_polars_type!(dtype, |$T| {
             let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
             let arr = ca.downcast_get(0).unwrap();
-
             let values = arr.values().as_slice();
-            match arr.validity() {
-                None => {
-                    if self.is_max_by {
-                        rolling_argmax_by_no_nulls(values, &starts, &ends, 1)
-                    } else {
-                        rolling_argmin_by_no_nulls(values, &starts, &ends, 1)
-                    }
-                },
-                Some(validity) => {
-                    if self.is_max_by {
-                        rolling_argmax_by_nulls(values, validity, &starts, &ends, 1)
-                    } else {
-                        rolling_argmin_by_nulls(values, validity, &starts, &ends, 1)
-                    }
-                },
+            let validity = arr.validity();
+
+            if self.is_max_by {
+                rolling_argmax_by(values, validity, &starts, &ends, 1)
+            } else {
+                rolling_argmin_by(values, validity, &starts, &ends, 1)
             }
         });
 
