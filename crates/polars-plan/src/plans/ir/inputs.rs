@@ -392,7 +392,19 @@ impl<'a> Iterator for InputsMut<'a> {
             Self::DoubleSlice(it) => it.nth(n),
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Empty => (0, Some(0)),
+            Self::Single(it) => it.size_hint(),
+            Self::Double(it) => it.size_hint(),
+            Self::Slice(it) => it.size_hint(),
+            Self::DoubleSlice(it) => it.size_hint(),
+        }
+    }
 }
+
+impl<'a> ExactSizeIterator for InputsMut<'a> {}
 
 pub enum Exprs<'a> {
     Empty,
