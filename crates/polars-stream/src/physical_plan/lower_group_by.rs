@@ -103,7 +103,7 @@ fn replace_agg_uniq(
     uniq_agg_exprs: &mut PlIndexMap<u32, (ExprIR, Vec<u32>)>,
     uniq_elementwise_exprs: &mut PlIndexMap<u32, ExprIR>,
 ) -> Node {
-    let aexpr = expr_arena.get(expr).clone();
+    let mut aexpr = expr_arena.get(expr).clone();
     let mut inputs = Vec::new();
     aexpr.children_rev_name_last(&mut inputs);
     inputs.reverse();
@@ -139,7 +139,8 @@ fn replace_agg_uniq(
                     }
                 })
                 .collect::<Vec<_>>();
-            let trans_agg_node = expr_arena.add(aexpr.replace_inputs(&input_cols));
+            aexpr.replace_inputs(&input_cols);
+            let trans_agg_node = expr_arena.add(aexpr);
 
             // Add to aggregation expressions and replace with a reference to its output.
             let agg_expr = ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()));
@@ -177,7 +178,7 @@ fn replace_elementwise_components(
             .node();
         (Some(id), node)
     } else {
-        let aexpr = expr_arena.get(expr).clone();
+        let mut aexpr = expr_arena.get(expr).clone();
         let mut inputs = Vec::new();
         aexpr.children_rev_name_last(&mut inputs);
         inputs.reverse();
@@ -193,7 +194,8 @@ fn replace_elementwise_components(
             )
             .1;
         }
-        let rec_node = expr_arena.add(aexpr.replace_inputs(&inputs));
+        aexpr.replace_inputs(&inputs);
+        let rec_node = expr_arena.add(aexpr);
         (None, rec_node)
     }
 }
