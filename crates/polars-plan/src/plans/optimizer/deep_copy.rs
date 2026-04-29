@@ -5,7 +5,7 @@ use polars_utils::itertools::Itertools as _;
 use polars_utils::scratch_vec::ScratchVec;
 
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorageMut;
-use crate::plans::{AExpr, IR, deep_clone_ae};
+use crate::plans::{AExpr, IR};
 use crate::traversal::tree_traversal::tree_traversal;
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
