@@ -126,7 +126,16 @@ mod tests {
 
         let result = rolling_argmin_by(&by, None, &starts, &ends, 1);
         let actual: Vec<Option<IdxSize>> = result.iter().map(|v| v.copied()).collect();
-        assert_eq!(actual, vec![Some(0 as IdxSize), Some(1 as IdxSize), Some(1 as IdxSize), Some(3 as IdxSize), Some(3 as IdxSize)]);
+        assert_eq!(
+            actual,
+            vec![
+                Some(0 as IdxSize),
+                Some(1 as IdxSize),
+                Some(1 as IdxSize),
+                Some(3 as IdxSize),
+                Some(3 as IdxSize)
+            ]
+        );
     }
 
     #[test]
@@ -137,7 +146,16 @@ mod tests {
 
         let result = rolling_argmax_by(&by, None, &starts, &ends, 1);
         let actual: Vec<Option<IdxSize>> = result.iter().map(|v| v.copied()).collect();
-        assert_eq!(actual, vec![Some(0 as IdxSize), Some(0 as IdxSize), Some(0 as IdxSize), Some(2 as IdxSize), Some(2 as IdxSize)]);
+        assert_eq!(
+            actual,
+            vec![
+                Some(0 as IdxSize),
+                Some(0 as IdxSize),
+                Some(0 as IdxSize),
+                Some(2 as IdxSize),
+                Some(2 as IdxSize)
+            ]
+        );
     }
 
     #[test]
@@ -148,7 +166,16 @@ mod tests {
 
         let result = rolling_argmin_by(&by, None, &starts, &ends, 3);
         let actual: Vec<Option<IdxSize>> = result.iter().map(|v| v.copied()).collect();
-        assert_eq!(actual, vec![None, None, Some(1 as IdxSize), Some(3 as IdxSize), Some(3 as IdxSize)]);
+        assert_eq!(
+            actual,
+            vec![
+                None,
+                None,
+                Some(1 as IdxSize),
+                Some(3 as IdxSize),
+                Some(3 as IdxSize)
+            ]
+        );
     }
 
     #[test]
@@ -166,7 +193,16 @@ mod tests {
         // Window [0,3): [10, NULL, 7] -> min=7 @ 2
         // Window [1,4): [NULL, 7, 1] -> min=1 @ 3
         // Window [2,5): [7, 1, 5] -> min=1 @ 3
-        assert_eq!(actual, vec![Some(0 as IdxSize), Some(0 as IdxSize), Some(2 as IdxSize), Some(3 as IdxSize), Some(3 as IdxSize)]);
+        assert_eq!(
+            actual,
+            vec![
+                Some(0 as IdxSize),
+                Some(0 as IdxSize),
+                Some(2 as IdxSize),
+                Some(3 as IdxSize),
+                Some(3 as IdxSize)
+            ]
+        );
     }
 
     #[test]
