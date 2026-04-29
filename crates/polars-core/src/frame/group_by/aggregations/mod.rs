@@ -21,7 +21,8 @@ use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, ArgMaxWindow, ArgMinWindow, MeanWindow, QuantileMethod, RollingFnParams,
-    RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter,
+    RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
+    rolling_argmin_by,
 };
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
@@ -64,6 +65,47 @@ pub fn _use_rolling_kernels(
         0 | 1 => false,
         _ => overlapping && monotonic && chunks.len() == 1,
     }
+}
+
+/// Rolling min_by/max_by for numeric `by` columns using O(n) deque kernel.
+///
+/// Returns `None` if the `by` column is not a primitive numeric type,
+/// in which case the caller should fall back to the per-group slow path.
+pub fn rolling_numeric_minmax_by(
+    by_col: &Column,
+    slices: &GroupsSlice,
+    is_max_by: bool,
+) -> Option<IdxCa> {
+    let by_series = by_col.as_materialized_series().rechunk();
+    let by_phys = by_series.to_physical_repr();
+    let dtype = by_phys.dtype();
+
+    if !dtype.is_primitive_numeric() {
+        return None;
+    }
+
+    let chunks = by_phys.chunks();
+    if !_use_rolling_kernels(slices, true, true, chunks) {
+        return None;
+    }
+
+    let starts: Vec<IdxSize> = slices.iter().map(|s| s[0]).collect();
+    let ends: Vec<IdxSize> = slices.iter().map(|s| s[0] + s[1]).collect();
+
+    let arr = with_match_physical_numeric_polars_type!(dtype, |$T| {
+        let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
+        let arr = ca.downcast_get(0).unwrap();
+        let values = arr.values().as_slice();
+        let validity = arr.validity();
+
+        if is_max_by {
+            rolling_argmax_by(values, validity, &starts, &ends, 1)
+        } else {
+            rolling_argmin_by(values, validity, &starts, &ends, 1)
+        }
+    });
+
+    Some(IdxCa::with_chunk(PlSmallStr::EMPTY, arr))
 }
 
 // Use an aggregation window that maintains the state
