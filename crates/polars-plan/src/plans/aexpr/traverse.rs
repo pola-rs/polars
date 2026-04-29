@@ -7,7 +7,7 @@ use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
 use crate::traversal::visitor::NodeVisitor;
 
 impl AExpr {
-    /// Iterator that retunrs the child nodes of this aexpr in field declaration order.
+    /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
     pub fn children_iter(&self) -> AENodesIter<'_> {
@@ -107,7 +107,7 @@ impl AExpr {
         })
     }
 
-    /// Iterator that retunrs the child nodes of this aexpr in field declaration order.
+    /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
     pub fn children_iter_mut(&mut self) -> AENodesIterMut<'_> {
@@ -207,7 +207,7 @@ impl AExpr {
         })
     }
 
-    /// Iterator that retunrs the child nodes of this aexpr in field declaration order.
+    /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This is derived from `children_iter`, but skips list / struct eval exprs.
     ///
@@ -230,7 +230,7 @@ impl AExpr {
         }
     }
 
-    /// Iterator that retunrs the child nodes of this aexpr in field declaration order.
+    /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This is derived from `children_iter`, but skips list / struct eval exprs.
     ///
