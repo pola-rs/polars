@@ -69,6 +69,7 @@ impl<'a> IRTraversalStorage<'a> {
         }
     }
 
+    #[allow(unused)]
     pub fn new_with_skip(arena: &'a Arena<IR>, skip_subtree: fn(&IR) -> bool) -> Self {
         Self {
             arena,

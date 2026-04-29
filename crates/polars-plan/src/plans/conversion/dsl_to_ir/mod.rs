@@ -915,13 +915,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 let mut nodes_scratch2 = ScratchVec::default();
 
                 for i in 0..on_columns.height() {
-                    use std::ops::ControlFlow;
-
-                    use polars_utils::scratch_vec::ScratchVec;
-
-                    use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
-                    use crate::traversal::visitor::SubtreeVisit;
-
                     let mut name = String::new();
                     let combine = match column_naming {
                         PivotColumnNaming::Combine => true,
