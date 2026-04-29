@@ -139,7 +139,7 @@ fn replace_agg_uniq(
                     }
                 })
                 .collect::<Vec<_>>();
-            aexpr.replace_inputs(&input_cols);
+            aexpr.replace_inputs(input_cols);
             let trans_agg_node = expr_arena.add(aexpr);
 
             // Add to aggregation expressions and replace with a reference to its output.
@@ -179,7 +179,6 @@ fn replace_elementwise_components(
         (Some(id), node)
     } else {
         let mut aexpr = expr_arena.get(expr).clone();
-        let mut inputs = Vec::new();
 
         aexpr.replace_inputs(aexpr.children_iter().map(|node| {
             replace_elementwise_components(
