@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Formatter};
 
 use polars_core::prelude::{Field, Schema};
+use polars_utils::itertools::Itertools;
 use polars_utils::unitvec;
 
 use super::*;
@@ -368,7 +369,7 @@ impl TreeWalker for AexprNode {
         let mut scratch = unitvec![];
 
         let mut ae = arena.get(self.node).clone();
-        scratch.extend(ae.inputs_iter());
+        scratch.extend(ae.inputs_iter_rev_name_last());
 
         // rewrite the nodes
         for node in scratch.as_mut_slice() {
@@ -376,7 +377,10 @@ impl TreeWalker for AexprNode {
             *node = op(aenode, arena)?.node;
         }
 
-        ae.replace_inputs(scratch);
+        for (l, r) in ae.inputs_iter_mut_rev_name_last().zip_eq(scratch) {
+            *l = r;
+        }
+
         self.node = arena.add(ae);
         Ok(self)
     }

@@ -233,6 +233,32 @@ impl AExpr {
         }
     }
 
+    pub fn inputs_iter_rev_name_last(&self) -> std::iter::Rev<AENodesIter<'_>> {
+        use AExpr::*;
+
+        Iterator::rev(match self {
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => AENodesIter::new_triple(predicate, falsy, truthy),
+            _ => self.inputs_iter(),
+        })
+    }
+
+    pub fn inputs_iter_mut_rev_name_last(&mut self) -> std::iter::Rev<AENodesIterMut<'_>> {
+        use AExpr::*;
+
+        Iterator::rev(match self {
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => AENodesIterMut::new_triple(predicate, falsy, truthy),
+            _ => self.inputs_iter_mut(),
+        })
+    }
+
     pub fn replace_inputs(&mut self, inputs: impl IntoIterator<Item = Node>) {
         for (l, r) in self.inputs_iter_mut().zip_eq(inputs) {
             *l = r;

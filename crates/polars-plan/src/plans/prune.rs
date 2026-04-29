@@ -131,7 +131,7 @@ impl<'a> CopyContext<'a> {
         let expr = self.src_expr.get(node);
 
         let mut dst_expr = expr.clone();
-        dst_expr.replace_inputs(expr.children_iter().map(|node| self.copy_expr(node)));
+        dst_expr.replace_inputs(expr.inputs_iter().map(|node| self.copy_expr(node)));
 
         // Fix up eval, the evaluation subtree is not treated as an input,
         // so it needs to be copied manually.
