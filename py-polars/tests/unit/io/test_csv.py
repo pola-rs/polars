@@ -3173,3 +3173,25 @@ def test_scan_csv_missing_columns_27268() -> None:
             }
         ),
     )
+
+
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+@pytest.mark.write_disk
+def test_read_csv_non_utf8_encoding_with_cr_eol_char(
+    chunk_override: None, tmp_path: Path
+) -> None:
+    # GH-27408: when reading a non-UTF8 file from a path, `eol_char="\r"` was
+    # silently dropped because `Path.open` opens in text mode with universal
+    # newlines, which rewrites `\r` to `\n` before Polars sees the bytes.
+    tmp_path.mkdir(exist_ok=True)
+    file_path = tmp_path / "cr_eol.csv"
+    file_path.write_bytes(b"a,b,c\r1,2,3\r4,5,6")
+
+    expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+
+    # path-like inputs (str + Path) must agree with the BytesIO reference
+    for src in (str(file_path), file_path):
+        assert_frame_equal(
+            pl.read_csv(src, eol_char="\r", encoding="latin-1"),
+            expected,
+        )

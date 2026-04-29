@@ -238,9 +238,11 @@ def prepare_file_arg(
                     return managed_file(
                         normalize_filepath(file, check_not_directory=check_not_dir)
                     )
-                # decode first
+                # decode first; pass `newline=""` so universal newlines does not
+                # rewrite `\r` / `\r\n` to `\n` (this would silently break a
+                # user-supplied `eol_char`, see GH-27408).
                 with Path(file).open(
-                    encoding=encoding_str, errors=encoding_errors
+                    encoding=encoding_str, errors=encoding_errors, newline=""
                 ) as f:
                     return _check_empty(
                         BytesIO(f.read().encode("utf8")),
@@ -270,7 +272,11 @@ def prepare_file_arg(
     if isinstance(file, str):
         file = normalize_filepath(file, check_not_directory=check_not_dir)
         if not has_utf8_utf8_lossy_encoding:
-            with Path(file).open(encoding=encoding_str, errors=encoding_errors) as f:
+            # `newline=""` keeps `\r` / `\r\n` line endings intact so that a
+            # user-supplied `eol_char` survives the recode (see GH-27408).
+            with Path(file).open(
+                encoding=encoding_str, errors=encoding_errors, newline=""
+            ) as f:
                 return _check_empty(
                     BytesIO(f.read().encode("utf8")),
                     context=f"{file!r}",
