@@ -386,7 +386,7 @@ fn build_fallback_node_with_ctx(
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysNodeKey> {
     // Pre-select only the columns that are needed for this fallback expression.
-    let input_schema = input.output_schema(&ctx.phys_sm);
+    let input_schema = input.output_schema(ctx.phys_sm);
     let mut select_names: PlHashSet<_> = exprs
         .iter()
         .flat_map(|expr| {
@@ -426,7 +426,7 @@ fn build_fallback_node_with_ctx(
             create_physical_expr(
                 expr,
                 ctx.expr_arena,
-                input_stream.output_schema(&ctx.phys_sm),
+                input_stream.output_schema(ctx.phys_sm),
                 &mut conv_state,
             )
         })
@@ -655,7 +655,7 @@ fn lower_exprs_with_ctx(
                 options: _,
             } => {
                 assert!(inner_exprs.len() == 3);
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
                 let out_name = unique_column_name();
                 let first_ir = inner_exprs[0].with_alias(out_name.clone());
                 let out_dtype = first_ir.dtype(input_schema, ctx.expr_arena)?;
@@ -817,7 +817,7 @@ fn lower_exprs_with_ctx(
 
                 assert_eq!(inner_exprs.len(), 1);
 
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
 
                 let key_name = unique_column_name();
                 let tmp_count_name = unique_column_name();
@@ -881,7 +881,7 @@ fn lower_exprs_with_ctx(
 
                 assert_eq!(inner_exprs.len(), 1);
 
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
 
                 let tmp_value_name = unique_column_name();
                 let tmp_count_name = unique_column_name();
@@ -1159,7 +1159,7 @@ fn lower_exprs_with_ctx(
 
                 assert_eq!(inner_exprs.len(), 1);
 
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
 
                 let value_key = unique_column_name();
                 let value_dtype =
@@ -1199,7 +1199,7 @@ fn lower_exprs_with_ctx(
             } => {
                 assert_eq!(inner_exprs.len(), 1);
 
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
                 let value_key = unique_column_name();
                 let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
 
@@ -1231,7 +1231,7 @@ fn lower_exprs_with_ctx(
             } => {
                 assert_eq!(inner_exprs.len(), 1);
 
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
                 let value_key = unique_column_name();
                 // Use the dtype of the full interpolate expression, not the inner expression,
                 // since interpolate may change the dtype (e.g. Int64 -> Float64).
@@ -1272,10 +1272,10 @@ fn lower_exprs_with_ctx(
 
                 let base_expr_ir = &inner_exprs[0];
                 let base_dtype =
-                    base_expr_ir.dtype(input.output_schema(&ctx.phys_sm), ctx.expr_arena)?;
+                    base_expr_ir.dtype(input.output_schema(ctx.phys_sm), ctx.expr_arena)?;
                 let offset_expr_ir = &inner_exprs[1];
                 let offset_dtype =
-                    offset_expr_ir.dtype(input.output_schema(&ctx.phys_sm), ctx.expr_arena)?;
+                    offset_expr_ir.dtype(input.output_schema(ctx.phys_sm), ctx.expr_arena)?;
 
                 let mut base = AExprBuilder::new_from_node(base_expr_ir.node());
                 let cast_dtype = match base_dtype {
@@ -1331,7 +1331,7 @@ fn lower_exprs_with_ctx(
             } => {
                 assert_eq!(inner_exprs.len(), 1);
 
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
 
                 let value_key = unique_column_name();
                 let value_dtype = inner_exprs[0].dtype(input_schema, ctx.expr_arena)?;
@@ -2475,7 +2475,7 @@ fn lower_exprs_with_ctx(
                 let index_column_expr_ir =
                     AExprBuilder::new_from_node(index_column).expr_ir(index_column_name.clone());
 
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
                 let output_dtype = rolling_function
                     .to_dtype(&ToFieldContext::new(ctx.expr_arena, input_schema))?;
                 let output_schema = Schema::from_iter([
@@ -2618,7 +2618,7 @@ fn schema_for_select(
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<Arc<Schema>> {
-    let input_schema = input.output_schema(&ctx.phys_sm);
+    let input_schema = input.output_schema(ctx.phys_sm);
     compute_output_schema(input_schema, exprs, ctx.expr_arena)
 }
 
@@ -2814,7 +2814,7 @@ pub fn build_length_preserving_select_stream(
     let already_length_preserving = exprs
         .iter()
         .any(|expr| is_length_preserving_ctx(expr.node(), &mut ctx));
-    let input_schema = input.output_schema(&ctx.phys_sm);
+    let input_schema = input.output_schema(ctx.phys_sm);
     if exprs.is_empty() || input_schema.is_empty() || already_length_preserving {
         return build_select_stream_with_ctx(input, exprs, &mut ctx);
     }

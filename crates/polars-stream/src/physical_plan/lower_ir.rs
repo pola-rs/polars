@@ -127,7 +127,7 @@ pub fn build_row_idx_stream(
     offset: Option<IdxSize>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
-    let input_schema = input.output_schema(&phys_sm);
+    let input_schema = input.output_schema(phys_sm);
     let mut output_schema = (**input_schema).clone();
     output_schema
         .insert_at_index(0, name.clone(), DataType::IDX_DTYPE)
@@ -341,8 +341,8 @@ pub fn lower_ir(
             let mut phys_left = lower_ir!(input_left)?;
             let mut phys_right = lower_ir!(input_right)?;
 
-            let left_schema = phys_left.output_schema(&phys_sm);
-            let right_schema = phys_right.output_schema(&phys_sm);
+            let left_schema = phys_left.output_schema(phys_sm);
+            let right_schema = phys_right.output_schema(phys_sm);
 
             left_schema.ensure_is_exact_match(right_schema).unwrap();
 
@@ -970,7 +970,7 @@ pub fn lower_ir(
 
             let phys_input = lower_ir!(input)?;
 
-            let input_schema = phys_input.output_schema(&phys_sm);
+            let input_schema = phys_input.output_schema(phys_sm);
             let are_keys_sorted = ctx
                 .sortedness
                 .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
@@ -1359,7 +1359,7 @@ pub fn lower_ir(
 
             // We don't have a dedicated distinct operator (yet), lower to group
             // by with an aggregate for each column.
-            let input_schema = phys_input.output_schema(&phys_sm);
+            let input_schema = phys_input.output_schema(phys_sm);
             if input_schema.is_empty() {
                 // Can't group (or have duplicates) if dataframe has zero-width.
                 return Ok(phys_input);
@@ -1627,7 +1627,7 @@ fn append_sorted_key_column(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
-    let input_schema = phys_input.output_schema(&phys_sm);
+    let input_schema = phys_input.output_schema(phys_sm);
     let use_row_encoding =
         key_exprs.len() > 1 || key_exprs[0].dtype(input_schema, expr_arena)?.is_nested();
     let key_expr_is_trivial =

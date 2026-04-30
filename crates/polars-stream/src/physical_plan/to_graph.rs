@@ -203,7 +203,7 @@ fn to_graph_rec<'a>(
         },
 
         Filter { predicate, input } => {
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
@@ -217,7 +217,7 @@ fn to_graph_rec<'a>(
             input,
             extend_original,
         } => {
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             let phys_selectors = selectors
                 .iter()
                 .map(|selector| create_stream_expr(selector, ctx, input_schema))
@@ -259,7 +259,7 @@ fn to_graph_rec<'a>(
 
         Reduce { input, exprs } => {
             let input_key = to_graph_rec(input.node, ctx)?;
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
 
             let mut reductions = Vec::with_capacity(exprs.len());
             let mut inputs = Vec::with_capacity(reductions.len());
@@ -610,7 +610,7 @@ fn to_graph_rec<'a>(
             let k_key = to_graph_rec(k.node, ctx)?;
 
             let k_schema = k.output_schema(ctx.phys_sm).clone();
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             let key_schema = compute_output_schema(input_schema, by_column, ctx.expr_arena)?;
 
             let key_selectors = by_column
@@ -662,7 +662,7 @@ fn to_graph_rec<'a>(
 
         Rle(input) => {
             let input_key = to_graph_rec(input.node, ctx)?;
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             assert_eq!(input_schema.len(), 1);
             let (name, dtype) = input_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
@@ -673,7 +673,7 @@ fn to_graph_rec<'a>(
 
         RleId(input) => {
             let input_key = to_graph_rec(input.node, ctx)?;
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             assert_eq!(input_schema.len(), 1);
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
@@ -684,7 +684,7 @@ fn to_graph_rec<'a>(
 
         SortedUnique { input, keys } => {
             let input_key = to_graph_rec(input.node, ctx)?;
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             ctx.graph.add_node(
                 nodes::sorted_unique::SortedUnique::new(keys, input_schema),
                 [(input_key, input.port)],
@@ -693,7 +693,7 @@ fn to_graph_rec<'a>(
 
         ForwardFill { input, limit } => {
             let input_key = to_graph_rec(input.node, ctx)?;
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             assert_eq!(input_schema.len(), 1);
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
@@ -704,7 +704,7 @@ fn to_graph_rec<'a>(
 
         BackwardFill { input, limit } => {
             let input_key = to_graph_rec(input.node, ctx)?;
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             assert_eq!(input_schema.len(), 1);
             let (name, dtype) = input_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
@@ -716,7 +716,7 @@ fn to_graph_rec<'a>(
         #[cfg(feature = "interpolate")]
         Interpolate { input, method } => {
             let input_key = to_graph_rec(input.node, ctx)?;
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             assert_eq!(input_schema.len(), 1);
             let (name, input_dtype) = input_schema.get_at_index(0).unwrap();
             let output_schema = node.output_schema(0);
@@ -894,7 +894,7 @@ fn to_graph_rec<'a>(
                 let input_key = to_graph_rec(input.node, ctx)?;
                 key_ports.push((input_key, input.port));
 
-                let input_schema = input.output_schema(&ctx.phys_sm);
+                let input_schema = input.output_schema(ctx.phys_sm);
                 let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
                 key_schema_per_input.push(key_schema);
 
@@ -962,7 +962,7 @@ fn to_graph_rec<'a>(
             aggs,
             slice,
         } => {
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             let input_key = to_graph_rec(input.node, ctx)?;
             let aggs = aggs
                 .iter()
@@ -993,7 +993,7 @@ fn to_graph_rec<'a>(
             slice,
             aggs,
         } => {
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             let input_key = to_graph_rec(input.node, ctx)?;
             let aggs = aggs
                 .iter()
@@ -1024,7 +1024,7 @@ fn to_graph_rec<'a>(
             out_name,
             columns,
         } => {
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::is_first_distinct::IsFirstDistinctNode::new(
@@ -1573,7 +1573,7 @@ fn to_graph_rec<'a>(
             use polars_core::with_match_physical_float_type;
 
             let input_key = to_graph_rec(input.node, ctx)?;
-            let input_schema = input.output_schema(&ctx.phys_sm);
+            let input_schema = input.output_schema(ctx.phys_sm);
             let (_, dtype) = input_schema.get_at_index(0).unwrap();
 
             let state: Box<dyn EwmStateUpdate + Send> = match ewm_variant {

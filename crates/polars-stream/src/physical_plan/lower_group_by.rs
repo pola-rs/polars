@@ -915,7 +915,7 @@ pub fn try_build_streaming_group_by(
     let mut key_per_input = Vec::new();
     let mut aggs_per_input = Vec::new();
     if direct_input_needed || !all_keys_included_in_other_inputs {
-        let this_input_schema = pre_select.output_schema(&phys_sm);
+        let this_input_schema = pre_select.output_schema(phys_sm);
         let exprs = [
             trans_keys.as_slice(),
             aggs_with_elementwise_inputs.as_slice(),
@@ -929,7 +929,7 @@ pub fn try_build_streaming_group_by(
         aggs_per_input.push(aggs_with_elementwise_inputs);
     }
     for (_input_id, (stream, aggs)) in other_agg_input_streams {
-        let this_input_schema = stream.output_schema(&phys_sm);
+        let this_input_schema = stream.output_schema(phys_sm);
         let exprs = [trans_keys.as_slice(), aggs.as_slice()].concat();
         let this_out_schema = compute_output_schema(this_input_schema, &exprs, expr_arena).unwrap();
         group_by_output_schema.merge((*this_out_schema).clone());
@@ -977,8 +977,8 @@ pub fn try_build_streaming_group_by(
 
         // TODO: projection pushdown on left side (original input).
         // All the aggregates should have unique names so, schema should be simple.
-        let preselect_schema = pre_select.output_schema(&phys_sm);
-        let agg_schema = post_select_input.output_schema(&phys_sm);
+        let preselect_schema = pre_select.output_schema(phys_sm);
+        let agg_schema = post_select_input.output_schema(phys_sm);
         let mut join_schema = (**preselect_schema).clone();
         join_schema.merge((**agg_schema).clone());
         let args = JoinArgs {
