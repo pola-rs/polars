@@ -3,6 +3,7 @@ use polars_core::error::PolarsResult;
 use polars_utils::arena::{Arena, Node};
 
 use super::OptimizationRule;
+use crate::dsl::UnionOptions;
 use crate::prelude::IR;
 
 pub struct FlattenUnionRule {}
@@ -26,7 +27,7 @@ impl OptimizationRule for FlattenUnionRule {
         match lp {
             Union { inputs, options }
                 if inputs.iter().any(|node| match lp_arena.get(*node) {
-                    Union { options, .. } => !options.flattened_by_opt,
+                    Union { options, .. } => !options.flattened_by_opt && options.slice.is_none(),
                     _ => false,
                 }) =>
             {
