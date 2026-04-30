@@ -890,7 +890,7 @@ class Series:
 
         elif isinstance(other, timedelta) and self.dtype == Duration:
             time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
-            td = timedelta_to_int(other, time_unit)  # type: ignore[arg-type]
+            td = timedelta_to_int(other, time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(td))
@@ -4029,6 +4029,8 @@ class Series:
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
         Get unique elements in series.
+
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Parameters
         ----------
@@ -8200,9 +8202,11 @@ class Series:
         """
         Count the number of unique values in this Series.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s = pl.Series("a", [1, 2, 2, None])
         >>> s.n_unique()
         3
         """

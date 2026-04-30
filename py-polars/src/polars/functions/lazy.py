@@ -489,6 +489,8 @@ def n_unique(*columns: str) -> Expr:
 
     This function is syntactic sugar for `pl.col(columns).n_unique()`.
 
+    `null` is considered to be a unique value for the purposes of this operation.
+
     Parameters
     ----------
     columns
@@ -498,7 +500,7 @@ def n_unique(*columns: str) -> Expr:
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [1, 8, 1],
+    ...         "a": [1, 1, None],
     ...         "b": [4, 5, 2],
     ...         "c": ["foo", "bar", "foo"],
     ...     }

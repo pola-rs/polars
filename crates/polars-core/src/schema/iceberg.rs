@@ -178,7 +178,7 @@ fn arrow_field_to_iceberg_column_rec(
         },
 
         dtype => {
-            if let ADT::Dictionary(_key_type, value_type, _is_sorted) = dtype
+            if let ADT::Dictionary(_key_type, value_type, _is_ordered) = dtype
                 && !value_type.is_nested()
             {
                 let dtype =

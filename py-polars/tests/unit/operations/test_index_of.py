@@ -63,7 +63,7 @@ def test_float(dtype: pl.DataType) -> None:
     values: list[Any] = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
     if dtype == pl.Float32:
         # Can't pass Python literals to index_of() for Float32
-        values = [(None if v is None else np.float32(v)) for v in values]  # type: ignore[misc]
+        values = [(None if v is None else np.float32(v)) for v in values]
 
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
@@ -81,7 +81,7 @@ def test_float(dtype: pl.DataType) -> None:
         for value in values:
             assert_index_of(s, value, convert_to_literal=True)
             assert_index_of(s, value, convert_to_literal=False)
-        for value in extra_values:  # type: ignore[assignment]
+        for value in extra_values:
             assert_index_of(s, value)
 
     # -np.nan should match np.nan:

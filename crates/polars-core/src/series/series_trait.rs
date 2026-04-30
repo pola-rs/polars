@@ -322,6 +322,7 @@ pub trait SeriesTrait:
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
+    /// Returns the validity of this series as a single bitmap.
     fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks().len() == 1 {
             return self.chunks()[0].validity().cloned();
@@ -341,6 +342,9 @@ pub trait SeriesTrait:
         }
         bm.into_opt_validity()
     }
+
+    /// Sets the validity mask of this Series to the given bitmap.
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series;
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {

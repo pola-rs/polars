@@ -1,6 +1,6 @@
 # Persistence and query history
 
-The observatory database is used to store more than metrics. Restarting a Polars on-premises cluster
+The observatory database is used to store more than metrics. Restarting a Polars On-Prem cluster
 with the same database path will allow the observatory to read back historical query data. Keep in
 mind that the engine (SQLite) does not allow concurrent access, and a database can only be
 associated with a single cluster at a time.

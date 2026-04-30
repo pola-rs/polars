@@ -226,6 +226,10 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), self.len()).into_series()
     }
 
+    fn with_validity(&self, _validity: Option<Bitmap>) -> Series {
+        self.clone().into_series()
+    }
+
     fn drop_nulls(&self) -> Series {
         NullChunked::new(self.name.clone(), 0).into_series()
     }

@@ -3738,7 +3738,10 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
         (pl.Float64, pa.float64()),
         (pl.Decimal(38, 10), pa.decimal128(38, 10)),
         (pl.Categorical, pa.dictionary(pa.uint32(), pa.string())),
-        (pl.Enum(["x", "y", "z"]), pa.dictionary(pa.uint8(), pa.string())),
+        (
+            pl.Enum(["x", "y", "z"]),
+            pa.dictionary(pa.uint8(), pa.string(), ordered=True),
+        ),
         (pl.List(pl.Int32), pa.large_list(pa.int32())),
         (pl.Array(pl.Int32, 3), pa.list_(pa.int32(), 3)),
         (
@@ -4135,6 +4138,18 @@ def test_parquet_duplicate_column_names_27393(tmp_path: Path) -> None:
 
     with pytest.raises(pl.exceptions.DuplicateError):
         pl.scan_parquet(path).collect_schema()
+
+
+@pytest.mark.write_disk
+def test_read_parquet_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
+    path = tmp_path / "test.parquet"
+    pl.DataFrame({"h1": [1, 2], "h2": [2, 3]}).write_parquet(path)
+
+    expected = pl.DataFrame({"h1": [1, 2]})
+    assert_frame_equal(
+        pl.read_parquet(path, columns=[0], use_pyarrow=True),
+        expected,
+    )
 
 
 def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:

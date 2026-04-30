@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         RankMethod,
         TimeUnit,
     )
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -2428,3 +2429,14 @@ def test_rolling_corr_ddof_invariant_27013() -> None:
 
     assert r0 == pytest.approx(1.0)
     assert r2 == pytest.approx(1.0)
+
+
+def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    df = pl.LazyFrame({"index": [1, 4, 2, 3], "values": [1, 2, 3, 4]})
+    q = df.rolling("index", period="2i").agg(pl.col("values"))
+    with pytest.raises(
+        InvalidOperationError,
+        match="argument in operation 'rolling' is not sorted",
+    ):
+        q.collect(engine="streaming")

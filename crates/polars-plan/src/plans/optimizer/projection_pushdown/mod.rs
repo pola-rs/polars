@@ -192,6 +192,7 @@ fn update_scan_schema(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
     sort_projections: bool,
+    row_index_name: Option<&PlSmallStr>,
 ) -> PolarsResult<Schema> {
     let mut new_schema = Schema::with_capacity(acc_projections.len());
     let mut new_cols = Vec::with_capacity(acc_projections.len());
@@ -200,10 +201,19 @@ fn update_scan_schema(
         let item = schema.try_get_full(name)?;
         new_cols.push(item);
     }
-    // make sure that the projections are sorted by the schema.
     if sort_projections {
+        // Make sure that the projections are sorted by the schema.
         new_cols.sort_unstable_by_key(|item| item.0);
     }
+    if let Some(name) = row_index_name
+        && let Some(col_idx) = new_cols.iter().position(|item| item.1 == name)
+        && col_idx > 0
+    {
+        // Even if the schema does not retain its ordering, refuse to put the
+        // row-index column anywhere else but the front
+        new_cols[..=col_idx].rotate_right(1);
+    }
+
     for item in new_cols {
         new_schema.with_column(item.1.clone(), item.2.clone());
     }
@@ -398,6 +408,7 @@ impl ProjectionPushDown {
                         expr_arena,
                         &schema,
                         false,
+                        None,
                     )?);
                     // If the projected schema is identical to the full schema, there is no
                     // need to keep an explicit output_schema — leave it as None (project all).
@@ -451,6 +462,7 @@ impl ProjectionPushDown {
                                 expr_arena,
                                 &options.schema,
                                 true,
+                                None,
                             )?);
                             // If the projected schema equals the full schema, clear the
                             // explicit projection — it is a no-op.
@@ -559,8 +571,8 @@ impl ProjectionPushDown {
                                     &ctx.acc_projections,
                                     expr_arena,
                                     &file_info.schema,
-                                    scan_type
-                                        .sort_projection(unified_scan_args.row_index.is_some()),
+                                    scan_type.sort_projection(),
+                                    unified_scan_args.row_index.as_ref().map(|ri| &ri.name),
                                 )?;
 
                                 if let Some(ref file_path_col) =

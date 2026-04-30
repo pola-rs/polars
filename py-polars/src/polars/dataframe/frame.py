@@ -4009,6 +4009,16 @@ class DataFrame:
         ... )
         >>> path: pathlib.Path = dirpath / "new_file.arrow"
         >>> df.write_ipc(path)
+
+        Write to a ``BytesIO`` object by passing ``file=None``. The returned
+        buffer's position is at the end of the written data, so call ``seek(0)``
+        before reading it back.
+
+        >>> buf = df.write_ipc(file=None)
+        >>> buf.seek(0)
+        0
+        >>> pl.read_ipc(buf).equals(df)
+        True
         """
         return_bytes = file is None
         target: str | Path | IO[bytes]

@@ -3,6 +3,7 @@ use arrow::record_batch::RecordBatch;
 use parking_lot::RwLockWriteGuard;
 use polars::prelude::*;
 use polars_compute::cast::CastOptionsImpl;
+use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};
@@ -113,7 +114,7 @@ impl PyDataFrame {
         let df = RwLockWriteGuard::downgrade(df);
         Python::attach(|py| {
             let pyarrow = py.import("pyarrow")?;
-            let cat_columns = df
+            let dict_columns = df
                 .columns()
                 .iter()
                 .enumerate()
@@ -124,9 +125,19 @@ impl PyDataFrame {
                     )
                 })
                 .map(|(i, _)| i)
-                .collect::<Vec<_>>();
+                .collect_vec();
+            let is_enum_col = df
+                .columns()
+                .iter()
+                .map(|c| matches!(c.dtype(), DataType::Enum(_, _)))
+                .collect_vec();
 
-            let enum_and_categorical_dtype = ArrowDataType::Dictionary(
+            let enum_dtype = ArrowDataType::Dictionary(
+                IntegerType::Int64,
+                Box::new(ArrowDataType::LargeUtf8),
+                true,
+            );
+            let categorical_dtype = ArrowDataType::Dictionary(
                 IntegerType::Int64,
                 Box::new(ArrowDataType::LargeUtf8),
                 false,
@@ -141,20 +152,29 @@ impl PyDataFrame {
 
                     // Pandas does not allow unsigned dictionary indices so we replace them.
                     replaced_schema =
-                        (replaced_schema.is_none() && !cat_columns.is_empty()).then(|| {
+                        (replaced_schema.is_none() && !dict_columns.is_empty()).then(|| {
                             let mut schema = schema.as_ref().clone();
-                            for i in &cat_columns {
+                            for i in &dict_columns {
                                 let (_, field) = schema.get_at_index_mut(*i).unwrap();
-                                field.dtype = enum_and_categorical_dtype.clone();
+                                field.dtype = if is_enum_col[*i] {
+                                    enum_dtype.clone()
+                                } else {
+                                    categorical_dtype.clone()
+                                };
                             }
                             Arc::new(schema)
                         });
 
-                    for i in &cat_columns {
+                    for i in &dict_columns {
                         let arr = arrays.get_mut(*i).unwrap();
+                        let cast_dtype = if is_enum_col[*i] {
+                            &enum_dtype
+                        } else {
+                            &categorical_dtype
+                        };
                         let out = polars_compute::cast::cast(
                             &**arr,
-                            &enum_and_categorical_dtype,
+                            cast_dtype,
                             CastOptionsImpl::default(),
                         )
                         .unwrap();

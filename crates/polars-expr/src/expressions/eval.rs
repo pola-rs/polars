@@ -241,10 +241,7 @@ impl EvalExpr {
                 ca.len(),
             );
 
-            if let Some(validity) = validity {
-                out.set_validity(&validity);
-            }
-
+            out.set_validity(validity);
             return Ok(if as_list {
                 out.to_list().into_column()
             } else {
@@ -312,10 +309,7 @@ impl EvalExpr {
                     ca.len(),
                 );
 
-                if let Some(validity) = validity {
-                    out.set_validity(&validity);
-                }
-
+                out.set_validity(validity);
                 return Ok(if as_list {
                     out.to_list().into_column()
                 } else {
