@@ -56,28 +56,13 @@ impl OptimizationRule for FlattenMergeSortedRule {
             return Ok(None);
         }
 
-        let inputs = &self.collected_inputs;
-        let split = inputs.len().div_ceil(2);
-        let input_left = build_merge_sorted_subtree(
-            &inputs[..split],
+        Ok(Some(build_merge_sorted_subtree(
+            &self.collected_inputs,
             &key,
             maintain_order,
             lp_arena,
             &mut self.optimized_nodes,
-        );
-        let input_right = build_merge_sorted_subtree(
-            &inputs[split..],
-            &key,
-            maintain_order,
-            lp_arena,
-            &mut self.optimized_nodes,
-        );
-        Ok(Some(IR::MergeSorted {
-            input_left,
-            input_right,
-            key,
-            maintain_order,
-        }))
+        )))
     }
 }
 
@@ -114,31 +99,45 @@ fn build_merge_sorted_subtree(
     maintain_order: bool,
     lp_arena: &mut Arena<IR>,
     optimized_nodes: &mut PlHashSet<Node>,
+) -> IR {
+    debug_assert!(inputs.len() >= 2);
+
+    let split = inputs.len().div_ceil(2);
+    let input_left = build_merge_sorted_subtree_node(
+        &inputs[..split],
+        key,
+        maintain_order,
+        lp_arena,
+        optimized_nodes,
+    );
+    let input_right = build_merge_sorted_subtree_node(
+        &inputs[split..],
+        key,
+        maintain_order,
+        lp_arena,
+        optimized_nodes,
+    );
+    IR::MergeSorted {
+        input_left,
+        input_right,
+        key: key.clone(),
+        maintain_order,
+    }
+}
+
+fn build_merge_sorted_subtree_node(
+    inputs: &[Node],
+    key: &PlSmallStr,
+    maintain_order: bool,
+    lp_arena: &mut Arena<IR>,
+    optimized_nodes: &mut PlHashSet<Node>,
 ) -> Node {
     match inputs {
         [node] => *node,
         _ => {
-            let split = inputs.len().div_ceil(2);
-            let input_left = build_merge_sorted_subtree(
-                &inputs[..split],
-                key,
-                maintain_order,
-                lp_arena,
-                optimized_nodes,
-            );
-            let input_right = build_merge_sorted_subtree(
-                &inputs[split..],
-                key,
-                maintain_order,
-                lp_arena,
-                optimized_nodes,
-            );
-            let node = lp_arena.add(IR::MergeSorted {
-                input_left,
-                input_right,
-                key: key.clone(),
-                maintain_order,
-            });
+            let subtree =
+                build_merge_sorted_subtree(inputs, key, maintain_order, lp_arena, optimized_nodes);
+            let node = lp_arena.add(subtree);
             optimized_nodes.insert(node);
             node
         },
