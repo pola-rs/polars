@@ -331,8 +331,10 @@ async fn distribute_work_task(
         }
 
         prune_right_side(&left_df, right_buffer, params, 0)?;
-        check_left_continuity(left_continuity, &left_df, 0, params)?;
-        check_right_continuity(right_continuity, right_buffer, 0, params)?;
+        if params.as_of_options().check_sortedness {
+            check_left_continuity(left_continuity, &left_df, 0, params)?;
+            check_right_continuity(right_continuity, right_buffer, 0, params)?;
+        }
         if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
             .await
