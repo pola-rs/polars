@@ -70,21 +70,23 @@ pub fn _use_rolling_kernels(
 /// Rolling min_by/max_by for numeric `by` columns using O(n) deque kernel.
 ///
 /// # Panics
-/// Panics if the `by` column's physical dtype is not primitive numeric.
+/// Panics if the `by` column's physical dtype is not primitive numeric or if it is an enum.
 pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_by: bool) -> IdxCa {
+    // @NOTE: check the logical dtype first — enums have a numeric physical repr but aren't sortable by those values.
+    let dtype = by_col.dtype();
     let by_series = by_col.as_materialized_series().rechunk();
     let by_phys = by_series.to_physical_repr();
-    let dtype = by_phys.dtype();
+    let phys_dtype = by_phys.dtype();
 
     assert!(
-        dtype.is_primitive_numeric(),
+        phys_dtype.is_primitive_numeric() && !dtype.is_enum(),
         "rolling_numeric_minmax_by requires a numeric by column, got {dtype}",
     );
 
     let starts: Vec<IdxSize> = slices.iter().map(|s| s[0]).collect();
     let ends: Vec<IdxSize> = slices.iter().map(|s| s[0] + s[1]).collect();
 
-    let arr = with_match_physical_numeric_polars_type!(dtype, |$T| {
+    let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
         let arr = ca.downcast_as_array();
         let values = arr.values().as_slice();
