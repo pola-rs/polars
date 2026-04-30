@@ -67,9 +67,9 @@ fn build_group_by_fallback(
         None,
     )?);
 
-    let group_by_node = PhysNode {
+    let group_by_node = PhysNode::new(
         output_schema,
-        kind: PhysNodeKind::InMemoryMap {
+        PhysNodeKind::InMemoryMap {
             input,
             map: Arc::new(move |df| {
                 lmdf.set_materialized_dataframe(df);
@@ -78,7 +78,7 @@ fn build_group_by_fallback(
             }),
             format_str,
         },
-    };
+    );
 
     Ok(PhysStream::first(phys_sm.insert(group_by_node)))
 }
@@ -1098,15 +1098,15 @@ pub fn try_build_sorted_group_by(
         let row_idx_expr =
             AExprBuilder::col(row_idx_name.clone(), expr_arena).expr_ir(row_idx_name.clone());
 
-        input = PhysStream::first(phys_sm.insert(PhysNode {
-            output_schema: input.output_schema(phys_sm).clone(),
-            kind: PhysNodeKind::Sort {
+        input = PhysStream::first(phys_sm.insert(PhysNode::new(
+            input.output_schema(phys_sm).clone(),
+            PhysNodeKind::Sort {
                 input,
                 by_column: vec![key, row_idx_expr],
                 slice: None,
                 sort_options: SortMultipleOptions::default(),
             },
-        }));
+        )));
     }
 
     let mut gb_output_schema = Schema::with_capacity(aggs.len() + 1);
@@ -1124,9 +1124,9 @@ pub fn try_build_sorted_group_by(
         gb_output_schema.insert(field.name, dtype);
     }
     input = PhysStream::first(
-        phys_sm.insert(PhysNode {
-            output_schema: Arc::new(gb_output_schema.clone()),
-            kind: PhysNodeKind::SortedGroupBy {
+        phys_sm.insert(PhysNode::new(
+            Arc::new(gb_output_schema.clone()),
+            PhysNodeKind::SortedGroupBy {
                 input,
                 key: input_column.clone(),
                 aggs: aggs.to_vec(),
@@ -1135,7 +1135,7 @@ pub fn try_build_sorted_group_by(
                     .filter(|(o, _)| *o >= 0)
                     .map(|(o, l)| (o as IdxSize, l as IdxSize)),
             },
-        }),
+        )),
     );
     if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
         input = build_slice_stream(input, *offset, *length, phys_sm);
@@ -1161,15 +1161,15 @@ pub fn try_build_sorted_group_by(
             input = build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx)?;
 
             // Unnest the row encoded columns.
-            input = PhysStream::first(phys_sm.insert(PhysNode {
-                output_schema: output_schema.clone(),
-                kind: PhysNodeKind::Map {
+            input = PhysStream::first(phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::Map {
                     input,
                     map: Arc::new(move |df: DataFrame| df.unnest([input_column.clone()], None))
                         as _,
                     format_str: ctx.prepare_visualization.then(|| "UNNEST".to_string()),
                 },
-            }));
+            )));
 
             let exprs = output_schema
                 .iter_names()

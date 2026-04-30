@@ -226,7 +226,7 @@ fn to_graph_rec<'a>(
             ctx.graph.add_node(
                 nodes::select::SelectNode::new(
                     phys_selectors,
-                    node.output_schema.clone(),
+                    node.output_schema(0).clone(),
                     *extend_original,
                 ),
                 [(input_key, input.port)],
@@ -284,7 +284,7 @@ fn to_graph_rec<'a>(
             }
 
             ctx.graph.add_node(
-                nodes::reduce::ReduceNode::new(inputs, reductions, node.output_schema.clone()),
+                nodes::reduce::ReduceNode::new(inputs, reductions, node.output_schema(0).clone()),
                 [(input_key, input.port)],
             )
         },
@@ -719,7 +719,7 @@ fn to_graph_rec<'a>(
             let input_schema = input.output_schema(&ctx.phys_sm);
             assert_eq!(input_schema.len(), 1);
             let (name, input_dtype) = input_schema.get_at_index(0).unwrap();
-            let output_schema = phys_node_key.output_schema(&ctx.phys_sm);
+            let output_schema = node.output_schema(0);
             let (_, output_dtype) = output_schema.get_at_index(0).unwrap();
             ctx.graph.add_node(
                 nodes::interpolate::InterpolateNode::new(
@@ -746,7 +746,7 @@ fn to_graph_rec<'a>(
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
             ctx.graph.add_node(
-                nodes::ordered_union::OrderedUnionNode::new(node.output_schema.clone()),
+                nodes::ordered_union::OrderedUnionNode::new(node.output_schema(0).clone()),
                 input_keys,
             )
         },
@@ -757,7 +757,7 @@ fn to_graph_rec<'a>(
                 .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
                 .try_collect_vec()?;
             ctx.graph.add_node(
-                nodes::unordered_union::UnorderedUnionNode::new(node.output_schema.clone()),
+                nodes::unordered_union::UnorderedUnionNode::new(node.output_schema(0).clone()),
                 input_keys,
             )
         },
@@ -946,7 +946,7 @@ fn to_graph_rec<'a>(
                     grouper,
                     grouped_reduction_cols,
                     grouped_reductions,
-                    node.output_schema.clone(),
+                    node.output_schema(0).clone(),
                     PlRandomState::default(),
                     ctx.num_pipelines,
                     has_order_sensitive_agg,
@@ -1059,7 +1059,7 @@ fn to_graph_rec<'a>(
             let join_node = lp_arena.add(IR::Join {
                 input_left: left_node,
                 input_right: right_node,
-                schema: node.output_schema.clone(),
+                schema: node.output_schema(0).clone(),
                 left_on: left_on.clone(),
                 right_on: right_on.clone(),
                 options: Arc::new(JoinOptionsIR {
@@ -1211,7 +1211,7 @@ fn to_graph_rec<'a>(
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             let left_input_schema = input_left.output_schema(ctx.phys_sm).clone();
             let right_input_schema = input_right.output_schema(ctx.phys_sm).clone();
-            let output_schema = node.output_schema.clone();
+            let output_schema = node.output_schema(0).clone();
 
             ctx.graph.add_node(
                 MergeJoinNode::new(

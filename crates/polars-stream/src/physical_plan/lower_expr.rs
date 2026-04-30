@@ -748,7 +748,7 @@ fn lower_exprs_with_ctx(
                         )?;
 
                         let mut distinct_out_schema =
-                            (*input_stream.output_schema(ctx.phys_sm)).clone();
+                            input_stream.output_schema(ctx.phys_sm).as_ref().clone();
                         distinct_out_schema.insert(distinct_name.clone(), DataType::Boolean);
                         let is_first_distinct_node = ctx.phys_sm.insert(PhysNode::new(
                             Arc::new(distinct_out_schema),
@@ -2000,7 +2000,7 @@ fn lower_exprs_with_ctx(
                     out_name: distinct_name.clone(),
                     columns: vec![val_name],
                 };
-                let mut output_schema = (*val_stream.output_schema(ctx.phys_sm)).clone();
+                let mut output_schema = val_stream.output_schema(ctx.phys_sm).as_ref().clone();
                 output_schema.insert(distinct_name.clone(), DataType::Boolean);
                 let node = PhysNode::new(Arc::new(output_schema), kind);
                 let is_distinct_node_key = ctx.phys_sm.insert(node);
@@ -2767,10 +2767,7 @@ pub fn build_hstack_stream(
             selectors,
             extend_original: true,
         };
-        let node_key = phys_sm.insert(PhysNode {
-            output_schema,
-            kind,
-        });
+        let node_key = phys_sm.insert(PhysNode::new(output_schema, kind));
 
         Ok(PhysStream::first(node_key))
     } else {
@@ -2838,7 +2835,7 @@ pub fn build_length_preserving_select_stream(
         unreachable!()
     };
     assert!(selectors.pop().unwrap().output_name() == &tmp_name);
-    let out_schema = Arc::make_mut(&mut out_stream.output_schema(phys_sm));
+    let out_schema = Arc::make_mut(out_stream.output_schema_mut(phys_sm));
     out_schema.shift_remove(tmp_name.as_ref()).unwrap();
     Ok(out_stream)
 }

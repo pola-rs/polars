@@ -81,8 +81,8 @@ pub fn build_filter_stream(
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
     let predicate = predicate;
-    let cols_and_predicate = phys_sm[input.node]
-        .output_schema
+    let cols_and_predicate = input
+        .output_schema(phys_sm)
         .iter_names()
         .cloned()
         .map(|name| {
@@ -408,7 +408,7 @@ pub fn lower_ir(
                             &mut buffer,
                             ir_arena.get(node),
                             expr_arena,
-                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
+                            phys_input.output_schema(phys_sm),
                             0,
                         )
                         .unwrap();
@@ -428,7 +428,7 @@ pub fn lower_ir(
                             &mut buffer,
                             ir_arena.get(node),
                             expr_arena,
-                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
+                            phys_input.output_schema(phys_sm),
                             0,
                         )
                         .unwrap();
@@ -524,9 +524,9 @@ pub fn lower_ir(
                     },
                 ));
 
-                stream = PhysStream::first(phys_sm.insert(PhysNode {
-                    output_schema: stream.output_schema(phys_sm).clone(),
-                    kind: PhysNodeKind::TopK {
+                stream = PhysStream::first(phys_sm.insert(PhysNode::new(
+                    stream.output_schema(phys_sm).clone(),
+                    PhysNodeKind::TopK {
                         input: stream,
                         k: PhysStream::first(k_node),
                         by_column: trans_by_column.clone(),
@@ -534,18 +534,18 @@ pub fn lower_ir(
                         nulls_last: sort_options.nulls_last.clone(),
                         dyn_pred: slice.as_ref().and_then(|t| t.2.clone()),
                     },
-                }));
+                )));
             }
 
-            stream = PhysStream::first(phys_sm.insert(PhysNode {
-                output_schema: stream.output_schema(phys_sm).clone(),
-                kind: PhysNodeKind::Sort {
+            stream = PhysStream::first(phys_sm.insert(PhysNode::new(
+                stream.output_schema(phys_sm).clone(),
+                PhysNodeKind::Sort {
                     input: stream,
                     by_column: trans_by_column,
                     slice: slice.as_ref().map(|t| (t.0, t.1)),
                     sort_options,
                 },
-            }));
+            )));
 
             // Remove any temporary columns we may have added.
             stream =
@@ -568,10 +568,7 @@ pub fn lower_ir(
                 PhysNodeKind::UnorderedUnion { inputs }
             };
 
-            let node = phys_sm.insert(PhysNode {
-                output_schema,
-                kind,
-            });
+            let node = phys_sm.insert(PhysNode::new(output_schema, kind));
             let mut stream = PhysStream::first(node);
 
             if let Some((offset, length)) = options.slice {
@@ -956,10 +953,8 @@ pub fn lower_ir(
                             offset: Some(ri.offset),
                         };
 
-                        let node_key = phys_sm.insert(PhysNode {
-                            output_schema: schema_after_row_index_post.clone(),
-                            kind: node,
-                        });
+                        let node_key = phys_sm
+                            .insert(PhysNode::new(schema_after_row_index_post.clone(), node));
 
                         stream = PhysStream::first(node_key);
 
@@ -973,10 +968,8 @@ pub fn lower_ir(
                                 columns,
                             };
 
-                            let node_key = phys_sm.insert(PhysNode {
-                                output_schema: output_schema.clone(),
-                                kind: node,
-                            });
+                            let node_key =
+                                phys_sm.insert(PhysNode::new(output_schema.clone(), node));
 
                             stream = PhysStream::first(node_key);
                         }
@@ -989,10 +982,8 @@ pub fn lower_ir(
                             offset: Some(ri.offset),
                         };
 
-                        let node_key = phys_sm.insert(PhysNode {
-                            output_schema: schema_after_row_index_post,
-                            kind: node,
-                        });
+                        let node_key =
+                            phys_sm.insert(PhysNode::new(schema_after_row_index_post, node));
 
                         stream = PhysStream::first(node_key);
 
@@ -1006,10 +997,8 @@ pub fn lower_ir(
                                 columns,
                             };
 
-                            let node_key = phys_sm.insert(PhysNode {
-                                output_schema: output_schema.clone(),
-                                kind: node,
-                            });
+                            let node_key =
+                                phys_sm.insert(PhysNode::new(output_schema.clone(), node));
 
                             stream = PhysStream::first(node_key);
                         }
@@ -1559,15 +1548,15 @@ pub fn lower_ir(
                         &mut buffer,
                         ir_arena.get(node),
                         expr_arena,
-                        phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
+                        phys_input.output_schema(phys_sm),
                         0,
                     )
                     .unwrap();
                     buffer
                 });
-                let distinct_node = PhysNode {
+                let distinct_node = PhysNode::new(
                     output_schema,
-                    kind: PhysNodeKind::InMemoryMap {
+                    PhysNodeKind::InMemoryMap {
                         input: phys_input,
                         map: Arc::new(move |df| {
                             lmdf.set_materialized_dataframe(df);
@@ -1576,7 +1565,7 @@ pub fn lower_ir(
                         }),
                         format_str,
                     },
-                };
+                );
 
                 return Ok(PhysStream::first(phys_sm.insert(distinct_node)));
             }
@@ -1711,7 +1700,7 @@ fn append_sorted_key_column(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
-    let input_schema = phys_input.output_schema(&phys_sm).clone();
+    let input_schema = phys_input.output_schema(&phys_sm);
     let use_row_encoding =
         key_exprs.len() > 1 || key_exprs[0].dtype(input_schema, expr_arena)?.is_nested();
     let key_expr_is_trivial =
