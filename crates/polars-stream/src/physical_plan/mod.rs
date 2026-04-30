@@ -9,7 +9,7 @@ use polars_core::frame::DataFrame;
 ))]
 use polars_core::prelude::DataType;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
-use polars_core::schema::SchemaRef;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
@@ -44,6 +44,7 @@ use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
+use polars_utils::{UnitVec, unitvec};
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
@@ -64,56 +65,41 @@ impl PhysNodeKey {
     }
 }
 
-pub use phys_node::PhysNode;
+/// A node in the physical plan.
+///
+/// A physical plan is created when the `IR` is translated to a directed
+/// acyclic graph of operations that can run on the streaming engine.
+#[derive(Clone, Debug)]
+pub struct PhysNode {
+    output_schemas: UnitVec<Arc<Schema>>,
+    kind: PhysNodeKind,
+}
 
-mod phys_node {
-    use std::sync::Arc;
-
-    use polars_core::schema::Schema;
-    use polars_utils::{UnitVec, unitvec};
-
-    use crate::PhysNodeKind;
-
-    /// A node in the physical plan.
-    ///
-    /// A physical plan is created when the `IR` is translated to a directed
-    /// acyclic graph of operations that can run on the streaming engine.
-    #[derive(Clone, Debug)]
-    pub struct PhysNode {
-        output_schemas: UnitVec<Arc<Schema>>,
-        pub(super) kind: PhysNodeKind,
+impl PhysNode {
+    pub fn new(output_schema: Arc<Schema>, kind: PhysNodeKind) -> Self {
+        Self {
+            output_schemas: unitvec![output_schema],
+            kind,
+        }
     }
 
-    impl PhysNode {
-        pub fn new(output_schema: Arc<Schema>, kind: PhysNodeKind) -> Self {
-            Self {
-                output_schemas: unitvec![output_schema],
-                kind,
-            }
+    pub fn new_multi_output(output_schemas: UnitVec<Arc<Schema>>, kind: PhysNodeKind) -> Self {
+        Self {
+            output_schemas,
+            kind,
         }
+    }
 
-        pub fn new_multi_output(output_schemas: UnitVec<Arc<Schema>>, kind: PhysNodeKind) -> Self {
-            Self {
-                output_schemas,
-                kind,
-            }
-        }
+    pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {
+        &self.output_schemas[port_idx]
+    }
 
-        pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {
-            &self.output_schemas[port_idx]
-        }
+    pub fn output_schema_mut(&mut self, port_idx: usize) -> &mut Arc<Schema> {
+        &mut self.output_schemas[port_idx]
+    }
 
-        pub fn output_schema_mut(&mut self, port_idx: usize) -> &mut Arc<Schema> {
-            &mut self.output_schemas[port_idx]
-        }
-
-        pub fn output_schemas_mut(&mut self) -> &mut UnitVec<Arc<Schema>> {
-            &mut self.output_schemas
-        }
-
-        pub fn kind(&self) -> &PhysNodeKind {
-            &self.kind
-        }
+    pub fn kind(&self) -> &PhysNodeKind {
+        &self.kind
     }
 }
 
