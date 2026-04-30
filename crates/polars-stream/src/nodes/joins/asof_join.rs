@@ -80,7 +80,7 @@ enum AsOfJoinState {
 }
 
 #[derive(Debug)]
-pub struct AsOfJoinNode {
+pub struct AsOfJoinNode<'a> {
     params: AsOfJoinParams,
     state: AsOfJoinState,
     /// We may need to stash a morsel on the left side whenever we do not
@@ -90,9 +90,13 @@ pub struct AsOfJoinNode {
     /// Buffer of the live range of right AsOf join rows.
     right_buffer: DataFrameSearchBuffer,
     output_seq: MorselSeq,
+    // Slots to store the last value of input chunks. These are used to check
+    // if the inputs are sorted.
+    left_continuity: Option<AnyValue<'a>>,
+    right_continuity: Option<AnyValue<'a>>,
 }
 
-impl AsOfJoinNode {
+impl AsOfJoinNode<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         left_input_schema: SchemaRef,
@@ -147,11 +151,13 @@ impl AsOfJoinNode {
             left_buffer: Default::default(),
             right_buffer: DataFrameSearchBuffer::empty_with_schema(right_input_schema),
             output_seq: Default::default(),
+            left_continuity: Default::default(),
+            right_continuity: Default::default(),
         }
     }
 }
 
-impl ComputeNode for AsOfJoinNode {
+impl ComputeNode for AsOfJoinNode<'_> {
     fn name(&self) -> &str {
         "asof-join"
     }
@@ -241,6 +247,8 @@ impl ComputeNode for AsOfJoinNode {
                 let left_buffer = &mut self.left_buffer;
                 let right_buffer = &mut self.right_buffer;
                 let output_seq = &mut self.output_seq;
+                let left_continuity = &mut self.left_continuity;
+                let right_continuity = &mut self.right_continuity;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     distribute_work_task(
                         recv_left,
@@ -249,6 +257,8 @@ impl ComputeNode for AsOfJoinNode {
                         left_buffer,
                         right_buffer,
                         output_seq,
+                        left_continuity,
+                        right_continuity,
                         params,
                     )
                     .await
@@ -274,6 +284,8 @@ async fn distribute_work_task(
     left_buffer: &mut VecDeque<DataFrame>,
     right_buffer: &mut DataFrameSearchBuffer,
     output_seq: &mut MorselSeq,
+    left_continuity: &mut Option<AnyValue<'_>>,
+    right_continuity: &mut Option<AnyValue<'_>>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
@@ -319,6 +331,8 @@ async fn distribute_work_task(
         }
 
         prune_right_side(&left_df, right_buffer, params, 0)?;
+        check_left_continuity(left_continuity, &left_df, 0, params)?;
+        check_right_continuity(right_continuity, right_buffer, 0, params)?;
         if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
             .await
@@ -327,6 +341,7 @@ async fn distribute_work_task(
             return Ok(());
         }
         *output_seq = output_seq.successor();
+
         prune_right_side(
             &left_df,
             right_buffer,
@@ -334,6 +349,43 @@ async fn distribute_work_task(
             left_df.height().saturating_sub(1),
         )?;
     }
+}
+
+fn check_left_continuity(
+    continuity: &mut Option<AnyValue<'_>>,
+    df: &DataFrame,
+    pos: usize,
+    params: &AsOfJoinParams,
+) -> PolarsResult<()> {
+    if df.height() == 0 {
+        return Ok(());
+    }
+    let on = df.column(&params.left.on)?;
+    let next_value = on.get(pos)?;
+    if let Some(cont) = continuity {
+        polars_ensure!(*cont <= next_value, InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
+    }
+    *continuity = Some(next_value.into_static());
+    Ok(())
+}
+
+fn check_right_continuity(
+    continuity: &mut Option<AnyValue<'_>>,
+    dfsb: &DataFrameSearchBuffer,
+    pos: usize,
+    params: &AsOfJoinParams,
+) -> PolarsResult<()> {
+    if dfsb.height() == 0 {
+        return Ok(());
+    }
+    assert!(pos < dfsb.height());
+    // SAFETY: Just checked the bounds.
+    let next_value = unsafe { dfsb.get_unchecked(params.right.on.as_ref(), pos) };
+    if let Some(cont) = continuity {
+        polars_ensure!(*cont <= next_value, InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
+    }
+    *continuity = Some(next_value.into_static());
+    Ok(())
 }
 
 /// Do we need more values on the right side before we can compute the AsOf join
