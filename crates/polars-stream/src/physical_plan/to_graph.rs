@@ -1379,6 +1379,20 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Gather {
+            target,
+            idxs,
+            null_on_oob,
+        } => {
+            let target_key = to_graph_rec(target.node, ctx)?;
+            let target_schema = target.output_schema(ctx.phys_sm).clone();
+            let idxs_key = to_graph_rec(idxs.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::gather::GatherNode::new(target_schema, *null_on_oob),
+                [(target_key, target.port), (idxs_key, idxs.port)],
+            )
+        },
+
         #[cfg(feature = "python")]
         PythonScan { options } => {
             use polars_buffer::Buffer;
