@@ -48,7 +48,8 @@ impl ComputeNode for GatherNode {
         // If the payload input is done, transition to gathering.
         if recv[0] == PortState::Done {
             if let GatherState::Sink(sink_node) = &mut self.state {
-                let df = sink_node.get_output()?.unwrap();
+                let mut df = sink_node.get_output()?.unwrap();
+                df.rechunk_mut_par();
                 self.state = GatherState::Gather(df);
             }
         }
