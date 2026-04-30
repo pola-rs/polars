@@ -686,6 +686,9 @@ impl PredicatePushDown {
             lp @ MergeSorted { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
+            UnoptimizedDispatch { .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+            },
             Invalid => unreachable!(),
         }
     }

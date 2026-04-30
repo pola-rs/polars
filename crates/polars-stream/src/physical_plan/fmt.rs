@@ -40,7 +40,8 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::Multiplexer { .. } => Self::MemoryIntensive,
+            | K::Multiplexer { .. }
+            | K::ColumnarFunction { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
@@ -357,6 +358,22 @@ fn visualize_plan_rec(
                 f.write_str(format_str).unwrap();
             }
             (label, from_ref(input))
+        },
+        PhysNodeKind::ColumnarFunction {
+            inputs,
+            func: _,
+            output_name,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("columnar-function");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                write!(f, "{output_name} = {format_str}(...)").unwrap();
+            }
+            (label, &inputs[..])
         },
         PhysNodeKind::SortedGroupBy {
             input,

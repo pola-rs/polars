@@ -22,7 +22,7 @@ use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
+    CastColumnsPolicy, ColumnsUdf, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
     PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::expr_ir::ExprIR;
@@ -219,16 +219,21 @@ pub enum PhysNodeKind {
     InMemoryMap {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
-
-        /// A formatted explain of what the in-memory map. This usually calls format on the IR.
+        /// A formatted string of what the in-memory map is. This usually calls format on the IR.
         format_str: Option<String>,
     },
 
     Map {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
+        /// A formatted string of what the map is. This usually calls format on the IR.
+        format_str: Option<String>,
+    },
 
-        /// A formatted explain of what the in-memory map. This usually calls format on the IR.
+    ColumnarFunction {
+        inputs: Vec<PhysStream>,
+        func: Arc<dyn ColumnsUdf>,
+        output_name: PlSmallStr,
         format_str: Option<String>,
     },
 
@@ -698,7 +703,8 @@ fn visit_node_inputs_mut(
             PhysNodeKind::GroupBy { inputs, .. }
             | PhysNodeKind::OrderedUnion { inputs }
             | PhysNodeKind::UnorderedUnion { inputs }
-            | PhysNodeKind::Zip { inputs, .. } => {
+            | PhysNodeKind::Zip { inputs, .. }
+            | PhysNodeKind::ColumnarFunction { inputs, .. } => {
                 for input in inputs {
                     rec!(input.node);
                     visit(input);

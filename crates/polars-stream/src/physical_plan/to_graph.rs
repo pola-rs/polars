@@ -503,6 +503,42 @@ fn to_graph_rec<'a>(
             )
         },
 
+        Map {
+            input,
+            map,
+            format_str: _,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::map::MapNode::new(map.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
+        ColumnarFunction {
+            inputs,
+            func,
+            output_name,
+            format_str: _,
+        } => {
+            let input_schemas = inputs
+                .iter()
+                .map(|i| ctx.phys_sm[i.node].output_schema.clone())
+                .collect_vec();
+            let input_keys = inputs
+                .iter()
+                .map(|i| PolarsResult::Ok((to_graph_rec(i.node, ctx)?, i.port)))
+                .try_collect_vec()?;
+            ctx.graph.add_node(
+                nodes::columnar_function::ColumnarFunctionNode::new(
+                    input_schemas,
+                    func.clone(),
+                    output_name.clone(),
+                ),
+                input_keys,
+            )
+        },
+
         #[cfg(any(
             feature = "dtype-date",
             feature = "dtype-datetime",
@@ -521,18 +557,6 @@ fn to_graph_rec<'a>(
                     options.clone(),
                     *ambiguous_is_raise,
                 ),
-                [(input_key, input.port)],
-            )
-        },
-
-        Map {
-            input,
-            map,
-            format_str: _,
-        } => {
-            let input_key = to_graph_rec(input.node, ctx)?;
-            ctx.graph.add_node(
-                nodes::map::MapNode::new(map.clone()),
                 [(input_key, input.port)],
             )
         },

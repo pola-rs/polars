@@ -10,6 +10,7 @@ use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_ensure};
+use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_ops::frame::JoinType;
@@ -1582,6 +1583,68 @@ pub fn lower_ir(
             return Ok(stream);
         },
         IR::ExtContext { .. } => todo!(),
+        IR::UnoptimizedDispatch { inputs, operation } => {
+            let operation = operation.clone();
+            let inputs = inputs.clone();
+            let trans_inputs = inputs.iter().map(|input| lower_ir!(*input)).try_collect()?;
+
+            match operation {
+                UnoptimizedOperation::ColumnarFunction {
+                    function,
+                    options,
+                    output_name,
+                } => {
+                    if options.is_elementwise() {
+                        // If it is elementwise we can just zip the inputs together.
+                        let mut zip_schema = Schema::default();
+                        for input in inputs {
+                            zip_schema.hstack_mut(
+                                (*IR::schema_with_cache(input, ir_arena, schema_cache)).clone(),
+                            )?;
+                        }
+                        let zip_schema = Arc::new(zip_schema);
+                        let zip_node = phys_sm.insert(PhysNode {
+                            output_schema: zip_schema.clone(),
+                            kind: PhysNodeKind::Zip {
+                                inputs: trans_inputs,
+                                zip_behavior: ZipBehavior::Broadcast,
+                            },
+                        });
+
+                        let expr_input = zip_schema
+                            .iter_names()
+                            .map(|n| ExprIR::from_column_name(n.clone(), expr_arena))
+                            .collect_vec();
+                        let expr = ExprIR::from_node(
+                            expr_arena.add(AExpr::Function {
+                                input: expr_input,
+                                function,
+                                options,
+                            }),
+                            expr_arena,
+                        )
+                        .with_alias(output_name);
+                        return build_select_stream(
+                            PhysStream::first(zip_node),
+                            &[expr],
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        );
+                    } else {
+                        let func = function_expr_to_udf(function.clone()).into_inner();
+                        let format_str = Some(format!("COLUMNAR {function}"));
+                        PhysNodeKind::ColumnarFunction {
+                            inputs: trans_inputs,
+                            func,
+                            output_name,
+                            format_str,
+                        }
+                    }
+                },
+            }
+        },
         IR::Invalid => unreachable!(),
     };
 

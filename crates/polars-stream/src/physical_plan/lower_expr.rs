@@ -9,6 +9,7 @@ use polars_core::prelude::{
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::{PolarsResult, feature_gated};
+use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_ops::frame::{JoinArgs, JoinType};
@@ -2550,10 +2551,59 @@ fn lower_exprs_with_ctx(
                 }
             },
 
-            AExpr::AnonymousFunction { .. }
-            | AExpr::Function { .. }
-            | AExpr::Over { .. }
-            | AExpr::Gather { .. } => {
+            // Generic fallback for column-based functions/UDFs.
+            ref node @ AExpr::AnonymousFunction {
+                input: ref inner_exprs,
+                ..
+            }
+            | ref node @ AExpr::Function {
+                input: ref inner_exprs,
+                ..
+            } => {
+                // Lower inputs separately to different streams (they might have different lengths).
+                // We maintain the original names because the function might be sensitive to input names.
+                let inputs = inner_exprs
+                    .iter()
+                    .map(|expr| {
+                        build_select_stream_with_ctx(input, core::slice::from_ref(expr), ctx)
+                    })
+                    .try_collect_vec()?;
+
+                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let out_name = unique_column_name();
+                let out_schema = compute_output_schema(
+                    input_schema,
+                    &[ExprIR::new(expr, OutputName::Alias(out_name.clone()))],
+                    ctx.expr_arena,
+                )?;
+
+                let (func, format_str);
+                match node {
+                    AExpr::AnonymousFunction {
+                        function, fmt_str, ..
+                    } => {
+                        func = function.clone().materialize()?.into_inner().as_column_udf();
+                        format_str = Some(fmt_str.to_string());
+                    },
+                    AExpr::Function { function, .. } => {
+                        func = function_expr_to_udf(function.clone()).into_inner();
+                        format_str = Some(function.to_string());
+                    },
+                    _ => unreachable!(),
+                };
+
+                let kind = PhysNodeKind::ColumnarFunction {
+                    inputs,
+                    func,
+                    output_name: out_name.clone(),
+                    format_str,
+                };
+                let node_key = ctx.phys_sm.insert(PhysNode::new(out_schema, kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Over { .. } | AExpr::Gather { .. } => {
                 let out_name = unique_column_name();
                 fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));

@@ -5,11 +5,7 @@ use polars_core::utils::materialize_dyn_int;
 use super::*;
 
 impl IRFunctionExpr {
-    pub(crate) fn get_field(
-        &self,
-        _input_schema: &Schema,
-        fields: &[Field],
-    ) -> PolarsResult<Field> {
+    pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
 
         let mapper = FieldsMapper { fields };

@@ -511,8 +511,7 @@ impl SimplifyIRNodeOrder<'_> {
             #[cfg(feature = "python")]
             IR::PythonScan { .. } => {},
 
-            IR::Scan { .. } | IR::DataFrameScan { .. } => {},
-
+            IR::Scan { .. } | IR::DataFrameScan { .. } | IR::UnoptimizedDispatch { .. } => {},
             IR::SinkMultiple { .. } | IR::Invalid => unreachable!(),
         };
 
