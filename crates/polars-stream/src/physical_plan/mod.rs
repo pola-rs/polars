@@ -122,6 +122,17 @@ impl PhysStream {
     pub fn first(node: PhysNodeKey) -> Self {
         Self { node, port: 0 }
     }
+
+    pub fn output_schema<'sm>(&self, sm: &'sm SlotMap<PhysNodeKey, PhysNode>) -> &'sm Arc<Schema> {
+        sm[self.node].output_schema(self.port)
+    }
+
+    pub fn output_schema_mut<'sm>(
+        &self,
+        sm: &'sm mut SlotMap<PhysNodeKey, PhysNode>,
+    ) -> &'sm mut Arc<Schema> {
+        sm[self.node].output_schema_mut(self.port)
+    }
 }
 
 /// Behaviour when handling multiple DataFrames with different heights.
