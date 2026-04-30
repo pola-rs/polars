@@ -33,7 +33,6 @@ pub(crate) fn deep_copy_ir_delete_caches(
             |node, ir_arena, edges| {
                 let new_node = if let IR::Cache { .. } = ir_arena.get(node) {
                     assert_eq!(edges.inputs().len(), 1);
-                    assert_eq!(edges.outputs().len(), 1);
                     edges.inputs()[0]
                 } else {
                     let mut ir_copy = ir_arena.get(node).clone();
@@ -66,7 +65,7 @@ pub(crate) fn deep_copy_ir_delete_caches(
     .unwrap()
 }
 
-/// Copies the `ae_node` and all nodes in the subtree rooted at `ir_node` to new nodes in the arena.
+/// Copies the `ae_node` and all nodes in the subtree rooted at `ae_node` to new nodes in the arena.
 pub(crate) fn deep_copy_ae(
     ae_node: Node,
     expr_arena: &mut Arena<AExpr>,
