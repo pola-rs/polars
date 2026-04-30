@@ -927,10 +927,7 @@ pub fn lower_ir(
                             offset: Some(ri.offset),
                         };
 
-                        let node_key = phys_sm.insert(PhysNode {
-                            output_schema: output_schema.clone(),
-                            kind: node,
-                        });
+                        let node_key = phys_sm.insert(PhysNode::new(output_schema.clone(), node));
 
                         stream = PhysStream::first(node_key);
                     }
