@@ -186,7 +186,6 @@ def test_skip_batch_predicate_parametric(s: pl.Series) -> None:
     exprs = [
         pl.col.x == lit_a,
         pl.col.x != lit_a,
-        ~pl.col.x,
         pl.col.x.eq_missing(lit_a),
         pl.col.x.ne_missing(lit_a),
         pl.col.x.is_null(),

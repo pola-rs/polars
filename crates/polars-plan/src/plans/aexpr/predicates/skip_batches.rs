@@ -461,7 +461,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     IRBooleanFunction::Not => {
                         let col = into_column(input[0].node(), arena)?;
                         let dtype = schema.get(col)?;
-                        if !can_use_min_max_stats(dtype, None, None) {
+                        if !matches!(dtype, DataType::Boolean) {
                             return None;
                         }
 
