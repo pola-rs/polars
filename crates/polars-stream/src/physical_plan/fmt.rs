@@ -42,7 +42,9 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::Multiplexer { .. } => Self::MemoryIntensive,
+            | K::CrossJoin { .. }
+            | K::Multiplexer { .. }
+            | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
