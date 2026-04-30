@@ -234,7 +234,7 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
 
     if first_ca.len() == 1 && !other.is_empty() {
         let max_len = other.iter().map(|s| s.len()).max().unwrap();
-        if max_len > 1 {
+        if max_len != 1 {
             first_ca = first_ca.new_from_index(0, max_len)
         }
     }

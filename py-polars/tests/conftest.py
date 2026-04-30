@@ -132,7 +132,7 @@ def _patched_cloud(
                 source: io.BytesIO | io.StringIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.LazyFrame:
                 source = prepare_scan_sources(source)  # type: ignore[assignment]
-                return prev_scan(source, *args, **kwargs)  # type: ignore[no-any-return]
+                return prev_scan(source, *args, **kwargs)
 
             return _
 
@@ -144,10 +144,10 @@ def _patched_cloud(
                 source: io.BytesIO | str | Path, *args: Any, **kwargs: Any
             ) -> pl.DataFrame:
                 if ext == "parquet" and kwargs.get("use_pyarrow", False):
-                    return prev_read(source, *args, **kwargs)  # type: ignore[no-any-return]
+                    return prev_read(source, *args, **kwargs)
 
                 src = prepare_scan_sources(source)
-                return prev_read(src, *args, **kwargs)  # type: ignore[no-any-return]
+                return prev_read(src, *args, **kwargs)
 
             return _
 

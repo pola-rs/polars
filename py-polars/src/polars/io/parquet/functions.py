@@ -332,10 +332,23 @@ def _read_parquet_with_pyarrow(
             use_pyarrow=True,
             storage_options=storage_options,
         ) as source_prep:
+            resolved_columns: Sequence[str] | None
+            if columns is not None and is_int_sequence(columns):
+                # pyarrow's read_table needs column names; resolve int indices
+                # via the file's schema. For list sources, peek the first file.
+                peek = (
+                    source_prep[0]
+                    if isinstance(source_prep, list)  # type: ignore[redundant-expr]
+                    else source_prep
+                )
+                schema = pyarrow_parquet.read_schema(peek)
+                resolved_columns = [schema.names[i] for i in columns]
+            else:
+                resolved_columns = columns  # type: ignore[assignment]
             pa_table = pyarrow_parquet.read_table(
                 source_prep,
                 memory_map=memory_map,
-                columns=columns,
+                columns=resolved_columns,
                 **pyarrow_options,
             )
         result = from_arrow(pa_table, rechunk=rechunk)

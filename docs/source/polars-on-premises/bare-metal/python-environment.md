@@ -1,8 +1,8 @@
 ## Virtual Environment
 
 The simplest method is using the Python wheel. This ensures that your virtual environment is
-properly set up to run Polars On-Premises. Note that when using Python UDFs, the server must have
-the same Python packages installed as the client.
+properly set up to run Polars On-Prem. Note that when using Python UDFs, the server must have the
+same Python packages installed as the client.
 
 ### Python wheel
 

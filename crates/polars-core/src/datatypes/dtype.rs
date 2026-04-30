@@ -1032,7 +1032,7 @@ impl DataType {
                 Ok(ArrowDataType::Dictionary(
                     arrow_phys,
                     Box::new(values),
-                    false,
+                    matches!(self, Enum(_, _)),
                 ))
             },
             #[cfg(feature = "dtype-struct")]
