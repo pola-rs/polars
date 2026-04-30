@@ -2567,7 +2567,7 @@ fn lower_exprs_with_ctx(
                     })
                     .try_collect_vec()?;
 
-                let input_schema = &ctx.phys_sm[input.node].output_schema;
+                let input_schema = input.output_schema(ctx.phys_sm);
                 let out_name = unique_column_name();
                 let out_schema = compute_output_schema(
                     input_schema,

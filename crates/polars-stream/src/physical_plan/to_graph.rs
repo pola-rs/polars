@@ -523,7 +523,7 @@ fn to_graph_rec<'a>(
         } => {
             let input_schemas = inputs
                 .iter()
-                .map(|i| ctx.phys_sm[i.node].output_schema.clone())
+                .map(|i| i.output_schema(ctx.phys_sm).clone())
                 .collect_vec();
             let input_keys = inputs
                 .iter()

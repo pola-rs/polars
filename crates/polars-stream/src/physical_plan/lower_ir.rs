@@ -1597,13 +1597,13 @@ pub fn lower_ir(
                             )?;
                         }
                         let zip_schema = Arc::new(zip_schema);
-                        let zip_node = phys_sm.insert(PhysNode {
-                            output_schema: zip_schema.clone(),
-                            kind: PhysNodeKind::Zip {
+                        let zip_node = phys_sm.insert(PhysNode::new(
+                            zip_schema.clone(),
+                            PhysNodeKind::Zip {
                                 inputs: trans_inputs,
                                 zip_behavior: ZipBehavior::Broadcast,
                             },
-                        });
+                        ));
 
                         let expr_input = zip_schema
                             .iter_names()
