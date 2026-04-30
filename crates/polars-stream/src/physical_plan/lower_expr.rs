@@ -2745,7 +2745,7 @@ pub fn build_hstack_stream(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<PhysStream> {
-    let input_schema = input.output_schema(&phys_sm);
+    let input_schema = input.output_schema(phys_sm);
     if exprs
         .iter()
         .all(|e| is_elementwise_rec_cached(e.node(), expr_arena, expr_cache))
