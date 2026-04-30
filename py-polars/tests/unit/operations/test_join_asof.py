@@ -21,6 +21,7 @@ from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from polars._typing import AsofJoinStrategy, PolarsIntegerType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_asof_join_singular_right_11966() -> None:
@@ -1407,6 +1408,13 @@ def test_join_asof_not_sorted() -> None:
         df.join_asof(df, on="b", check_sortedness=False)
         df.join_asof(df, on="b", by="a", check_sortedness=False)
         assert len(w) == 0  # no warnings caught
+
+
+def test_join_asof_not_sorted_streaming_27457(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+    df = pl.DataFrame({"b": [1, 2, 3, 1, 2, 3]})
+    with pytest.raises(InvalidOperationError, match="is not sorted"):
+        df.lazy().join_asof(df.lazy(), on="b").collect(engine="streaming")
 
 
 @pytest.mark.parametrize(
