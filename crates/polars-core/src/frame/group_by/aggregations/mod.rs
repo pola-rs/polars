@@ -86,7 +86,7 @@ pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_b
 
     let arr = with_match_physical_numeric_polars_type!(dtype, |$T| {
         let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
-        let arr = ca.downcast_get(0).unwrap();
+        let arr = ca.downcast_as_array();
         let values = arr.values().as_slice();
         let validity = arr.validity();
 
