@@ -52,7 +52,7 @@ pub fn build_slice_stream(
     if offset >= 0 {
         let offset = offset as usize;
         PhysStream::first(phys_sm.insert(PhysNode::new(
-            phys_sm[input.node].output_schema.clone(),
+            input.output_schema(phys_sm).clone(),
             PhysNodeKind::StreamingSlice {
                 input,
                 offset,
@@ -61,7 +61,7 @@ pub fn build_slice_stream(
         )))
     } else {
         PhysStream::first(phys_sm.insert(PhysNode::new(
-            phys_sm[input.node].output_schema.clone(),
+            input.output_schema(phys_sm).clone(),
             PhysNodeKind::NegativeSlice {
                 input,
                 offset,
@@ -102,7 +102,7 @@ pub fn build_filter_stream(
         ctx,
     )?;
 
-    let filter_schema = phys_sm[trans_input.node].output_schema.clone();
+    let filter_schema = trans_input.output_schema(phys_sm).clone();
     let filter = PhysNodeKind::Filter {
         input: trans_input,
         predicate: trans_cols_and_predicate.last().unwrap().clone(),
@@ -127,7 +127,7 @@ pub fn build_row_idx_stream(
     offset: Option<IdxSize>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
-    let input_schema = &phys_sm[input.node].output_schema;
+    let input_schema = input.output_schema(&phys_sm);
     let mut output_schema = (**input_schema).clone();
     output_schema
         .insert_at_index(0, name.clone(), DataType::IDX_DTYPE)
@@ -341,8 +341,8 @@ pub fn lower_ir(
             let mut phys_left = lower_ir!(input_left)?;
             let mut phys_right = lower_ir!(input_right)?;
 
-            let left_schema = &phys_sm[phys_left.node].output_schema;
-            let right_schema = &phys_sm[phys_right.node].output_schema;
+            let left_schema = phys_left.output_schema(&phys_sm);
+            let right_schema = phys_right.output_schema(&phys_sm);
 
             left_schema.ensure_is_exact_match(right_schema).unwrap();
 
@@ -525,7 +525,7 @@ pub fn lower_ir(
                 ));
 
                 stream = PhysStream::first(phys_sm.insert(PhysNode {
-                    output_schema: phys_sm[stream.node].output_schema.clone(),
+                    output_schema: stream.output_schema(phys_sm).clone(),
                     kind: PhysNodeKind::TopK {
                         input: stream,
                         k: PhysStream::first(k_node),
@@ -538,7 +538,7 @@ pub fn lower_ir(
             }
 
             stream = PhysStream::first(phys_sm.insert(PhysNode {
-                output_schema: phys_sm[stream.node].output_schema.clone(),
+                output_schema: stream.output_schema(phys_sm).clone(),
                 kind: PhysNodeKind::Sort {
                     input: stream,
                     by_column: trans_by_column,
@@ -1054,7 +1054,7 @@ pub fn lower_ir(
 
             let phys_input = lower_ir!(input)?;
 
-            let input_schema = &phys_sm[phys_input.node].output_schema;
+            let input_schema = phys_input.output_schema(&phys_sm);
             let are_keys_sorted = ctx
                 .sortedness
                 .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
@@ -1250,12 +1250,12 @@ pub fn lower_ir(
                 // So we add dummy expressions before lowering and remove them afterwards.
 
                 let mut aug_left_on = left_on.clone();
-                for name in phys_sm[phys_left.node].output_schema.iter_names() {
+                for name in phys_left.output_schema(phys_sm).iter_names() {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
                     aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
                 }
                 let mut aug_right_on = right_on.clone();
-                for name in phys_sm[phys_right.node].output_schema.iter_names() {
+                for name in phys_right.output_schema(phys_sm).iter_names() {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
                     aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
                 }
@@ -1443,7 +1443,7 @@ pub fn lower_ir(
 
             // We don't have a dedicated distinct operator (yet), lower to group
             // by with an aggregate for each column.
-            let input_schema = &phys_sm[phys_input.node].output_schema;
+            let input_schema = phys_input.output_schema(&phys_sm);
             if input_schema.is_empty() {
                 // Can't group (or have duplicates) if dataframe has zero-width.
                 return Ok(phys_input);
@@ -1538,7 +1538,7 @@ pub fn lower_ir(
             if options.maintain_order && options.keep_strategy == UniqueKeepStrategy::Last {
                 // Unfortunately the order-preserving groupby always orders by the first occurrence
                 // of the group so we can't lower this and have to fallback.
-                let input_schema = phys_sm[phys_input.node].output_schema.clone();
+                let input_schema = phys_input.output_schema(phys_sm).clone();
                 let lmdf = Arc::new(LateMaterializedDataFrame::default());
                 let mut lp_arena = Arena::default();
                 let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema));
@@ -1711,7 +1711,7 @@ fn append_sorted_key_column(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
-    let input_schema = &phys_sm[phys_input.node].output_schema.clone();
+    let input_schema = phys_input.output_schema(&phys_sm).clone();
     let use_row_encoding =
         key_exprs.len() > 1 || key_exprs[0].dtype(input_schema, expr_arena)?.is_nested();
     let key_expr_is_trivial =
