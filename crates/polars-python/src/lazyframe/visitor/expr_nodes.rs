@@ -1098,7 +1098,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         (PyTemporalFunction::DSTOffset,).into_py_any(py)
                     },
                     IRTemporalFunction::Round => (PyTemporalFunction::Round,).into_py_any(py),
-                    IRTemporalFunction::Replace => (PyTemporalFunction::Replace).into_py_any(py),
+                    IRTemporalFunction::Replace { .. } => {
+                        (PyTemporalFunction::Replace).into_py_any(py)
+                    },
                     #[cfg(feature = "timezones")]
                     IRTemporalFunction::ReplaceTimeZone(time_zone, non_existent) => (
                         PyTemporalFunction::ReplaceTimeZone,
@@ -1112,6 +1114,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRTemporalFunction::DatetimeFunction {
                         time_unit,
                         time_zone,
+                        ..
                     } => (
                         PyTemporalFunction::DatetimeFunction,
                         Wrap(*time_unit),

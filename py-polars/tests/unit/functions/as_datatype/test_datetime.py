@@ -143,3 +143,50 @@ def test_datetime_from_empty_column() -> None:
 
     assert df.select(datetime=pl.datetime("year", 1, 1)).shape == (0, 1)
     assert df.with_columns(datetime=pl.datetime("year", 1, 1)).shape == (0, 2)
+
+
+def test_datetime_plr_strict_required() -> None:
+    # Covers the PyO3-generated error branch in lazy.rs when 'strict' is missing.
+    from polars import _plr as plr
+
+    year = pl.lit(2020)._pyexpr
+    month = pl.lit(1)._pyexpr
+    day = pl.lit(1)._pyexpr
+
+    with pytest.raises(TypeError, match="strict"):
+        plr.datetime(year, month, day)  # type: ignore[call-arg]
+
+
+def test_datetime_strict_invalid_date() -> None:
+    df = pl.DataFrame(
+        {
+            "year": [2024],
+            "month": [1],
+            "day": [1],
+            "hour": [1],
+            "minute": [1],
+            "second": [63],
+        }
+    )
+
+    # strict=True (default) raises
+    with pytest.raises(ComputeError, match="Invalid time components"):
+        df.select(pl.datetime("year", "month", "day", "hour", "minute", "second"))
+
+    # strict=False returns null
+    result = df.select(
+        pl.datetime("year", "month", "day", "hour", "minute", "second", strict=False)
+    )
+    assert result["datetime"][0] is None
+
+
+def test_datetime_strict_invalid_month() -> None:
+    df = pl.DataFrame({"year": [2024], "month": [13], "day": [1]})
+
+    # strict=True (default) raises
+    with pytest.raises(ComputeError, match="Invalid date components"):
+        df.select(pl.datetime("year", "month", "day"))
+
+    # strict=False returns null
+    result = df.select(pl.datetime("year", "month", "day", strict=False))
+    assert result["datetime"][0] is None

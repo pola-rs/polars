@@ -222,6 +222,7 @@ pub trait DatetimeMethods: AsDatetime {
         time_unit: &TimeUnit,
         time_zone: Option<TimeZone>,
         name: PlSmallStr,
+        strict: bool,
     ) -> PolarsResult<DatetimeChunked> {
         let ca: Int64Chunked = year
             .into_iter()
@@ -235,29 +236,36 @@ pub trait DatetimeMethods: AsDatetime {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
                     (y, m, d, h, mnt, s, ns)
                 {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
-                        // We have an invalid date.
-                        || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
-                        // We have a valid date.
-                        |date| {
-                            date.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
-                                .map_or_else(
-                                    // We have invalid time components for the specified date.
-                                    || polars_bail!(ComputeError: "Invalid time components ({h}, {mnt}, {s}, {ns}) supplied"),
-                                    // We have a valid time.
-                                    |ndt| {
-                                        let t = ndt.and_utc();
-                                        Ok(Some(match time_unit {
-                                            TimeUnit::Milliseconds => t.timestamp_millis(),
-                                            TimeUnit::Microseconds => t.timestamp_micros(),
-                                            TimeUnit::Nanoseconds => {
-                                                t.timestamp_nanos_opt().unwrap()
-                                            },
-                                        }))
-                                    },
-                                )
+                    match NaiveDate::from_ymd_opt(y, m as u32, d as u32) {
+                        None => {
+                            if strict {
+                                polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied")
+                            } else {
+                                Ok(None)
+                            }
                         },
-                    )
+                        Some(date) => {
+                            match date.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32) {
+                                None => {
+                                    if strict {
+                                        polars_bail!(ComputeError: "Invalid time components ({h}, {mnt}, {s}, {ns}) supplied")
+                                    } else {
+                                        Ok(None)
+                                    }
+                                },
+                                Some(ndt) => {
+                                    let t = ndt.and_utc();
+                                    Ok(Some(match time_unit {
+                                        TimeUnit::Milliseconds => t.timestamp_millis(),
+                                        TimeUnit::Microseconds => t.timestamp_micros(),
+                                        TimeUnit::Nanoseconds => {
+                                            t.timestamp_nanos_opt().unwrap()
+                                        },
+                                    }))
+                                },
+                            }
+                        },
+                    }
                 } else {
                     Ok(None)
                 }

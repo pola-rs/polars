@@ -109,6 +109,7 @@ impl PyExpr {
         second: Self,
         microsecond: Self,
         ambiguous: Self,
+        strict: bool,
     ) -> Self {
         self.inner
             .clone()
@@ -122,6 +123,7 @@ impl PyExpr {
                 second.inner,
                 microsecond.inner,
                 ambiguous.inner,
+                strict,
             )
             .into()
     }

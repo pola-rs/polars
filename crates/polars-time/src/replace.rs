@@ -15,6 +15,7 @@ pub fn replace_datetime(
     second: &Int8Chunked,
     nanosecond: &Int32Chunked,
     ambiguous: &StringChunked,
+    strict: bool,
 ) -> PolarsResult<DatetimeChunked> {
     let n = [
         ca.len(),
@@ -135,6 +136,7 @@ pub fn replace_datetime(
         &ca.time_unit(),
         ca.time_zone().clone(),
         ca.name().clone(),
+        strict,
     )?;
 
     // Ensure nulls are propagated.
@@ -152,6 +154,7 @@ pub fn replace_date(
     year: &Int32Chunked,
     month: &Int8Chunked,
     day: &Int8Chunked,
+    strict: bool,
 ) -> PolarsResult<DateChunked> {
     let n = ca.len();
 
@@ -182,7 +185,7 @@ pub fn replace_date(
     } else {
         &day.zip_with(&day.is_not_null(), &ca.day())?
     };
-    let mut out = DateChunked::new_from_parts(year, month, day, ca.name().clone())?;
+    let mut out = DateChunked::new_from_parts(year, month, day, ca.name().clone(), strict)?;
 
     // Ensure nulls are propagated.
     if ca.has_nulls() {

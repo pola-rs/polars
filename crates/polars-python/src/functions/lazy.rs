@@ -305,11 +305,12 @@ pub fn cum_reduce(
 }
 
 #[pyfunction]
-#[pyo3(signature = (year, month, day, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=Wrap(None), ambiguous=PyExpr::from(dsl::lit(String::from("raise")))))]
+#[pyo3(signature = (year, month, day, strict, hour=None, minute=None, second=None, microsecond=None, time_unit=Wrap(TimeUnit::Microseconds), time_zone=Wrap(None), ambiguous=PyExpr::from(dsl::lit(String::from("raise")))))]
 pub fn datetime(
     year: PyExpr,
     month: PyExpr,
     day: PyExpr,
+    strict: bool,
     hour: Option<PyExpr>,
     minute: Option<PyExpr>,
     second: Option<PyExpr>,
@@ -336,6 +337,7 @@ pub fn datetime(
         time_unit,
         time_zone,
         ambiguous,
+        strict,
     };
     dsl::datetime(args).into()
 }

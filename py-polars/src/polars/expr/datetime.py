@@ -409,6 +409,7 @@ class ExprDateTimeNameSpace:
         second: int | IntoExpr | None = None,
         microsecond: int | IntoExpr | None = None,
         ambiguous: Ambiguous | Expr = "raise",
+        strict: bool = True,
     ) -> Expr:
         """
         Replace time unit.
@@ -436,6 +437,10 @@ class ExprDateTimeNameSpace:
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
             - `'null'`: set to null
+        strict
+            If `True` (default), raise an error on invalid date/time components.
+            If `False`, set the result to null for invalid components instead of
+            raising an error.
 
         Returns
         -------
@@ -495,6 +500,7 @@ class ExprDateTimeNameSpace:
                 second_pyexpr,
                 microsecond_pyexpr,
                 ambiguous_expr,
+                strict,
             )
         )
 

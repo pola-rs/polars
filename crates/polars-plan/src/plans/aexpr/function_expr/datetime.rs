@@ -72,13 +72,16 @@ pub enum IRTemporalFunction {
     #[cfg(feature = "timezones")]
     DSTOffset,
     Round,
-    Replace,
+    Replace {
+        strict: bool,
+    },
     #[cfg(feature = "timezones")]
     ReplaceTimeZone(Option<TimeZone>, NonExistent),
     Combine(TimeUnit),
     DatetimeFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
+        strict: bool,
     },
 }
 
@@ -139,12 +142,13 @@ impl IRTemporalFunction {
             #[cfg(feature = "timezones")]
             DSTOffset => mapper.with_dtype(DataType::Duration(TimeUnit::Milliseconds)),
             Round => mapper.with_same_dtype(),
-            Replace => mapper.with_same_dtype(),
+            Replace { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, _non_existent) => mapper.map_datetime_dtype_timezone(tz.as_ref()),
             DatetimeFunction {
                 time_unit,
                 time_zone,
+                ..
             } => Ok(Field::new(
                 PlSmallStr::from_static("datetime"),
                 DataType::Datetime(*time_unit, time_zone.clone()),
@@ -207,7 +211,7 @@ impl IRTemporalFunction {
             #[cfg(feature = "offset_by")]
             T::OffsetBy => FunctionOptions::elementwise(),
             T::Round => FunctionOptions::elementwise(),
-            T::Replace => FunctionOptions::elementwise(),
+            T::Replace { .. } => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-duration")]
             T::Duration(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "timezones")]
@@ -279,7 +283,7 @@ impl Display for IRTemporalFunction {
             #[cfg(feature = "timezones")]
             DSTOffset => "dst_offset",
             Round => "round",
-            Replace => "replace",
+            Replace { .. } => "replace",
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(_, _) => "replace_time_zone",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),

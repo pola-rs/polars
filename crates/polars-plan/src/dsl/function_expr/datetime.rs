@@ -73,13 +73,16 @@ pub enum TemporalFunction {
     #[cfg(feature = "timezones")]
     DSTOffset,
     Round,
-    Replace,
+    Replace {
+        strict: bool,
+    },
     #[cfg(feature = "timezones")]
     ReplaceTimeZone(Option<TimeZone>, NonExistent),
     Combine(TimeUnit),
     DatetimeFunction {
         time_unit: TimeUnit,
         time_zone: Option<TimeZone>,
+        strict: bool,
     },
 }
 
@@ -142,7 +145,7 @@ impl Display for TemporalFunction {
             #[cfg(feature = "timezones")]
             DSTOffset => "dst_offset",
             Round => "round",
-            Replace => "replace",
+            Replace { .. } => "replace",
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(_, _) => "replace_time_zone",
             DatetimeFunction { .. } => return write!(f, "dt.datetime"),
