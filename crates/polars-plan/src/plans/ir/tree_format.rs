@@ -222,7 +222,9 @@ impl<'a> TreeFmtNode<'a> {
                     )
                 },
 
-                Union { inputs, .. } => ND(
+                Union {
+                    inputs, options, ..
+                } => ND(
                     wh(
                         h,
                         &(if let Some(slice) = options.slice {
