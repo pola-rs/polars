@@ -267,9 +267,6 @@ impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
             };
 
             curr_state.replacement_ir = Some(replacement_ir);
-
-            // TODO: Remove this to enabled nested CSPE
-            return ControlFlow::Continue(SubtreeVisit::Skip);
         }
 
         ControlFlow::Continue(SubtreeVisit::Visit)
