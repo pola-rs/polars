@@ -3,7 +3,6 @@ use polars_core::error::PolarsResult;
 use polars_utils::arena::{Arena, Node};
 
 use super::OptimizationRule;
-use crate::dsl::UnionOptions;
 use crate::prelude::IR;
 
 pub struct FlattenUnionRule {}
