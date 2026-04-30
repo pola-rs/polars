@@ -1403,9 +1403,6 @@ def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
     )
 
 
-@pytest.mark.xfail(
-    reason="nested CSPE not yet enabled; needs refactor of predicate/projection/slice pushdowns"
-)
 def test_cspe_create_nested_caches() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2]})
 
