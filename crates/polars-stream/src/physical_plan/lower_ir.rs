@@ -52,7 +52,7 @@ pub fn build_slice_stream(
     if offset >= 0 {
         let offset = offset as usize;
         PhysStream::first(phys_sm.insert(PhysNode::new(
-            phys_sm[input.node].output_schema(input.port).clone(),
+            phys_sm[input.node].output_schema.clone(),
             PhysNodeKind::StreamingSlice {
                 input,
                 offset,
@@ -61,7 +61,7 @@ pub fn build_slice_stream(
         )))
     } else {
         PhysStream::first(phys_sm.insert(PhysNode::new(
-            phys_sm[input.node].output_schema(input.port).clone(),
+            phys_sm[input.node].output_schema.clone(),
             PhysNodeKind::NegativeSlice {
                 input,
                 offset,
@@ -82,7 +82,7 @@ pub fn build_filter_stream(
 ) -> PolarsResult<PhysStream> {
     let predicate = predicate;
     let cols_and_predicate = phys_sm[input.node]
-        .output_schema(input.port)
+        .output_schema
         .iter_names()
         .cloned()
         .map(|name| {
@@ -102,9 +102,7 @@ pub fn build_filter_stream(
         ctx,
     )?;
 
-    let filter_schema = phys_sm[trans_input.node]
-        .output_schema(trans_input.port)
-        .clone();
+    let filter_schema = phys_sm[trans_input.node].output_schema.clone();
     let filter = PhysNodeKind::Filter {
         input: trans_input,
         predicate: trans_cols_and_predicate.last().unwrap().clone(),
@@ -129,7 +127,7 @@ pub fn build_row_idx_stream(
     offset: Option<IdxSize>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
 ) -> PhysStream {
-    let input_schema = phys_sm[input.node].output_schema(input.port);
+    let input_schema = &phys_sm[input.node].output_schema;
     let mut output_schema = (**input_schema).clone();
     output_schema
         .insert_at_index(0, name.clone(), DataType::IDX_DTYPE)
@@ -343,8 +341,8 @@ pub fn lower_ir(
             let mut phys_left = lower_ir!(input_left)?;
             let mut phys_right = lower_ir!(input_right)?;
 
-            let left_schema = &phys_sm[phys_left.node].output_schema(phys_left.port);
-            let right_schema = &phys_sm[phys_right.node].output_schema(phys_right.port);
+            let left_schema = &phys_sm[phys_left.node].output_schema;
+            let right_schema = &phys_sm[phys_right.node].output_schema;
 
             left_schema.ensure_is_exact_match(right_schema).unwrap();
 
@@ -410,11 +408,7 @@ pub fn lower_ir(
                             &mut buffer,
                             ir_arena.get(node),
                             expr_arena,
-                            phys_sm
-                                .get(phys_input.node)
-                                .unwrap()
-                                .output_schema(phys_input.port)
-                                .as_ref(),
+                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
                             0,
                         )
                         .unwrap();
@@ -434,11 +428,7 @@ pub fn lower_ir(
                             &mut buffer,
                             ir_arena.get(node),
                             expr_arena,
-                            phys_sm
-                                .get(phys_input.node)
-                                .unwrap()
-                                .output_schema(phys_input.port)
-                                .as_ref(),
+                            phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
                             0,
                         )
                         .unwrap();
@@ -534,9 +524,9 @@ pub fn lower_ir(
                     },
                 ));
 
-                stream = PhysStream::first(phys_sm.insert(PhysNode::new(
-                    phys_sm[stream.node].output_schema(stream.port).clone(),
-                    PhysNodeKind::TopK {
+                stream = PhysStream::first(phys_sm.insert(PhysNode {
+                    output_schema: phys_sm[stream.node].output_schema.clone(),
+                    kind: PhysNodeKind::TopK {
                         input: stream,
                         k: PhysStream::first(k_node),
                         by_column: trans_by_column.clone(),
@@ -544,18 +534,18 @@ pub fn lower_ir(
                         nulls_last: sort_options.nulls_last.clone(),
                         dyn_pred: slice.as_ref().and_then(|t| t.2.clone()),
                     },
-                )));
+                }));
             }
 
-            stream = PhysStream::first(phys_sm.insert(PhysNode::new(
-                phys_sm[stream.node].output_schema(stream.port).clone(),
-                PhysNodeKind::Sort {
+            stream = PhysStream::first(phys_sm.insert(PhysNode {
+                output_schema: phys_sm[stream.node].output_schema.clone(),
+                kind: PhysNodeKind::Sort {
                     input: stream,
                     by_column: trans_by_column,
                     slice: slice.as_ref().map(|t| (t.0, t.1)),
                     sort_options,
                 },
-            )));
+            }));
 
             // Remove any temporary columns we may have added.
             stream =
@@ -578,7 +568,10 @@ pub fn lower_ir(
                 PhysNodeKind::UnorderedUnion { inputs }
             };
 
-            let node = phys_sm.insert(PhysNode::new(output_schema, kind));
+            let node = phys_sm.insert(PhysNode {
+                output_schema,
+                kind,
+            });
             let mut stream = PhysStream::first(node);
 
             if let Some((offset, length)) = options.slice {
@@ -963,8 +956,10 @@ pub fn lower_ir(
                             offset: Some(ri.offset),
                         };
 
-                        let node_key = phys_sm
-                            .insert(PhysNode::new(schema_after_row_index_post.clone(), node));
+                        let node_key = phys_sm.insert(PhysNode {
+                            output_schema: schema_after_row_index_post.clone(),
+                            kind: node,
+                        });
 
                         stream = PhysStream::first(node_key);
 
@@ -978,8 +973,10 @@ pub fn lower_ir(
                                 columns,
                             };
 
-                            let node_key =
-                                phys_sm.insert(PhysNode::new(output_schema.clone(), node));
+                            let node_key = phys_sm.insert(PhysNode {
+                                output_schema: output_schema.clone(),
+                                kind: node,
+                            });
 
                             stream = PhysStream::first(node_key);
                         }
@@ -992,8 +989,10 @@ pub fn lower_ir(
                             offset: Some(ri.offset),
                         };
 
-                        let node_key =
-                            phys_sm.insert(PhysNode::new(schema_after_row_index_post, node));
+                        let node_key = phys_sm.insert(PhysNode {
+                            output_schema: schema_after_row_index_post,
+                            kind: node,
+                        });
 
                         stream = PhysStream::first(node_key);
 
@@ -1007,8 +1006,10 @@ pub fn lower_ir(
                                 columns,
                             };
 
-                            let node_key =
-                                phys_sm.insert(PhysNode::new(output_schema.clone(), node));
+                            let node_key = phys_sm.insert(PhysNode {
+                                output_schema: output_schema.clone(),
+                                kind: node,
+                            });
 
                             stream = PhysStream::first(node_key);
                         }
@@ -1053,7 +1054,7 @@ pub fn lower_ir(
 
             let phys_input = lower_ir!(input)?;
 
-            let input_schema = &phys_sm[phys_input.node].output_schema(phys_input.port);
+            let input_schema = &phys_sm[phys_input.node].output_schema;
             let are_keys_sorted = ctx
                 .sortedness
                 .are_keys_sorted_any(input, &keys, expr_arena, input_schema)
@@ -1249,18 +1250,12 @@ pub fn lower_ir(
                 // So we add dummy expressions before lowering and remove them afterwards.
 
                 let mut aug_left_on = left_on.clone();
-                for name in phys_sm[phys_left.node]
-                    .output_schema(phys_left.port)
-                    .iter_names()
-                {
+                for name in phys_sm[phys_left.node].output_schema.iter_names() {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
                     aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
                 }
                 let mut aug_right_on = right_on.clone();
-                for name in phys_sm[phys_right.node]
-                    .output_schema(phys_right.port)
-                    .iter_names()
-                {
+                for name in phys_sm[phys_right.node].output_schema.iter_names() {
                     let col_expr = expr_arena.add(AExpr::Column(name.clone()));
                     aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
                 }
@@ -1448,7 +1443,7 @@ pub fn lower_ir(
 
             // We don't have a dedicated distinct operator (yet), lower to group
             // by with an aggregate for each column.
-            let input_schema = phys_sm[phys_input.node].output_schema(phys_input.port);
+            let input_schema = &phys_sm[phys_input.node].output_schema;
             if input_schema.is_empty() {
                 // Can't group (or have duplicates) if dataframe has zero-width.
                 return Ok(phys_input);
@@ -1543,9 +1538,7 @@ pub fn lower_ir(
             if options.maintain_order && options.keep_strategy == UniqueKeepStrategy::Last {
                 // Unfortunately the order-preserving groupby always orders by the first occurrence
                 // of the group so we can't lower this and have to fallback.
-                let input_schema = phys_sm[phys_input.node]
-                    .output_schema(phys_input.port)
-                    .clone();
+                let input_schema = phys_sm[phys_input.node].output_schema.clone();
                 let lmdf = Arc::new(LateMaterializedDataFrame::default());
                 let mut lp_arena = Arena::default();
                 let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema));
@@ -1566,19 +1559,15 @@ pub fn lower_ir(
                         &mut buffer,
                         ir_arena.get(node),
                         expr_arena,
-                        phys_sm
-                            .get(phys_input.node)
-                            .unwrap()
-                            .output_schema(phys_input.port)
-                            .as_ref(),
+                        phys_sm.get(phys_input.node).unwrap().output_schema.as_ref(),
                         0,
                     )
                     .unwrap();
                     buffer
                 });
-                let distinct_node = PhysNode::new(
+                let distinct_node = PhysNode {
                     output_schema,
-                    PhysNodeKind::InMemoryMap {
+                    kind: PhysNodeKind::InMemoryMap {
                         input: phys_input,
                         map: Arc::new(move |df| {
                             lmdf.set_materialized_dataframe(df);
@@ -1587,7 +1576,7 @@ pub fn lower_ir(
                         }),
                         format_str,
                     },
-                );
+                };
 
                 return Ok(PhysStream::first(phys_sm.insert(distinct_node)));
             }
@@ -1722,9 +1711,7 @@ fn append_sorted_key_column(
     expr_cache: &mut ExprCache,
     ctx: StreamingLowerIRContext<'_>,
 ) -> PolarsResult<(PhysStream, Vec<ExprIR>, Option<PlSmallStr>)> {
-    let input_schema = &phys_sm[phys_input.node]
-        .output_schema(phys_input.port)
-        .clone();
+    let input_schema = &phys_sm[phys_input.node].output_schema.clone();
     let use_row_encoding =
         key_exprs.len() > 1 || key_exprs[0].dtype(input_schema, expr_arena)?.is_nested();
     let key_expr_is_trivial =

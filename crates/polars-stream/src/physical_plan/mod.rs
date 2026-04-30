@@ -760,7 +760,7 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
         .into_iter()
         .filter(|(_stream, refcount)| *refcount > 1)
         .map(|(stream, refcount)| {
-            let input_schema = Arc::clone(phys_sm[stream.node].output_schema(stream.port));
+            let input_schema = Arc::clone(stream.output_schema(phys_sm));
             let multiplexer_node = phys_sm.insert(PhysNode::new_multi_output(
                 (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
                 PhysNodeKind::Multiplexer { input: stream },
