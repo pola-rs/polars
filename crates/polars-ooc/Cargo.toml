@@ -17,11 +17,8 @@ polars-io = { workspace = true, features = ["ipc"] }
 polars-utils = { workspace = true, features = ["sysinfo"] }
 tokio = { workspace = true, features = ["sync"] }
 
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(all(not(target_family = "unix"), not(target_os = "emscripten")))'.dependencies]
 mimalloc = { version = "0.1", default-features = false, features = ["v3"], optional = true }
-
-[target.'cfg(all(not(target_family = "unix"), not(target_os = "windows"), not(target_os = "emscripten")))'.dependencies]
-mimalloc = { version = "0.1", default-features = false, optional = true }
 
 [target.'cfg(target_os = "emscripten")'.dependencies]
 mimalloc = { version = "0.1", default-features = false, optional = true }
