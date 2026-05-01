@@ -3504,6 +3504,33 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     assert_frame_equal(out, pl.select(x=value).select(pl.first().cast(scan_dtype)))
 
 
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
+def test_is_in_string_pushdown_27416(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Simplified repro of the user's setup.
+    # `is_in(["0","9"])` over 5 row groups whose value ranges tile [0..9].
+    # Only RG1 (contains "0") and RG5 (contains "9") match, 3 RGs must be pruned.
+    df = pl.DataFrame({"sym": [str(i) for i in range(10)], "val": list(range(10))})
+
+    def fixture() -> io.BytesIO:
+        f = io.BytesIO()
+        df.write_parquet(f, row_group_size=2, statistics="full")
+        f.seek(0)
+        return f
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_parquet(fixture()).filter(pl.col("sym").is_in(["0", "9"])).collect()
+
+    assert_frame_equal(
+        out.sort("val"), pl.DataFrame({"sym": ["0", "9"], "val": [0, 9]})
+    )
+
+    assert "Predicate pushdown: reading 2 / 5 row groups" in capfd.readouterr().err
+
+
 def test_roundtrip_int128() -> None:
     f = io.BytesIO()
     s = pl.Series("a", [1, 2, 3], pl.Int128)
