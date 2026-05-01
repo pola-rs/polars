@@ -10,6 +10,7 @@ pub mod dynamic_slice;
 pub mod ewm;
 pub mod filter;
 pub mod forward_fill;
+pub mod gather;
 pub mod gather_every;
 pub mod group_by;
 pub mod in_memory_map;

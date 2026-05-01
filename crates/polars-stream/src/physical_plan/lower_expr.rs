@@ -1630,6 +1630,7 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(bin_expr));
             },
+
             AExpr::Eval {
                 expr: inner,
                 evaluation,
@@ -1813,6 +1814,7 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(stream);
                 transformed_exprs.push(exit_node);
             },
+
             AExpr::Ternary {
                 predicate,
                 truthy,
@@ -1828,6 +1830,7 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(tern_expr));
             },
+
             AExpr::Cast {
                 expr: inner,
                 dtype,
@@ -1841,6 +1844,7 @@ fn lower_exprs_with_ctx(
                     options,
                 }));
             },
+
             AExpr::Sort {
                 expr: inner,
                 options,
@@ -1968,10 +1972,7 @@ fn lower_exprs_with_ctx(
                     build_select_stream_with_ctx(input, &[inner_expr_ir, by_expr_ir], ctx)?;
 
                 // Add a filter node.
-                let predicate = ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Column(by_name.clone())),
-                    OutputName::Alias(by_name),
-                );
+                let predicate = ExprIR::from_column_name(by_name.clone(), ctx.expr_arena);
                 let kind = PhysNodeKind::Filter {
                     input: select_stream,
                     predicate,
@@ -1979,6 +1980,28 @@ fn lower_exprs_with_ctx(
                 let output_schema = select_stream.output_schema(ctx.phys_sm).clone();
                 let filter_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(filter_node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
+            },
+
+            AExpr::Gather {
+                expr: target_expr,
+                idx: idx_expr,
+                returns_scalar: _,
+                null_on_oob,
+            } => {
+                let out_name = unique_column_name();
+                let target_expr_ir = ExprIR::new(target_expr, OutputName::Alias(out_name.clone()));
+                let idx_expr_ir = ExprIR::from_node(idx_expr, ctx.expr_arena);
+                let target_stream = build_select_stream_with_ctx(input, &[target_expr_ir], ctx)?;
+                let idx_stream = build_select_stream_with_ctx(input, &[idx_expr_ir], ctx)?;
+                let kind = PhysNodeKind::Gather {
+                    target: target_stream,
+                    idxs: idx_stream,
+                    null_on_oob,
+                };
+                let output_schema = target_stream.output_schema(ctx.phys_sm).clone();
+                let gather_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                input_streams.insert(PhysStream::first(gather_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
@@ -2601,7 +2624,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
 
-            AExpr::Over { .. } | AExpr::Gather { .. } => {
+            AExpr::Over { .. } => {
                 let out_name = unique_column_name();
                 fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));

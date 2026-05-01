@@ -42,7 +42,9 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::Multiplexer { .. } => Self::MemoryIntensive,
+            | K::CrossJoin { .. }
+            | K::Multiplexer { .. }
+            | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
@@ -828,6 +830,7 @@ fn visualize_plan_rec(
             input_right,
             ..
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::Gather { target, idxs, .. } => ("gather".to_string(), &[*target, *idxs][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
