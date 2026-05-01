@@ -823,6 +823,7 @@ fn create_physical_plan_impl(
             };
             Ok(Box::new(exec))
         },
+        UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
         Invalid => unreachable!(),
     }
 }

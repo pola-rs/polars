@@ -754,6 +754,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             maintain_order: *maintain_order,
         }
         .into_py_any(py),
+        IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a UnoptimizedDispatch node",
+        )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

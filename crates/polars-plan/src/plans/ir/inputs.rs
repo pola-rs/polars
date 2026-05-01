@@ -101,6 +101,7 @@ impl IR {
                 },
             },
 
+            UnoptimizedDispatch { .. } => Exprs::Empty,
             Invalid => unreachable!(),
         }
     }
@@ -173,6 +174,7 @@ impl IR {
                 },
             },
 
+            UnoptimizedDispatch { .. } => ExprsMut::Empty,
             Invalid => unreachable!(),
         }
     }
@@ -185,7 +187,7 @@ impl IR {
         container.extend(self.exprs().cloned())
     }
 
-    pub fn inputs(&'_ self) -> Inputs<'_> {
+    pub fn inputs(&self) -> Inputs<'_> {
         use IR::*;
         match self {
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
@@ -220,11 +222,12 @@ impl IR {
                 input_right,
                 ..
             } => Inputs::double(*input_left, *input_right),
+            UnoptimizedDispatch { inputs, .. } => Inputs::slice(inputs),
             Invalid => unreachable!(),
         }
     }
 
-    pub fn inputs_mut(&'_ mut self) -> InputsMut<'_> {
+    pub fn inputs_mut(&mut self) -> InputsMut<'_> {
         use IR::*;
         match self {
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
@@ -259,6 +262,7 @@ impl IR {
                 input_right,
                 ..
             } => InputsMut::double(input_left, input_right),
+            UnoptimizedDispatch { inputs, .. } => InputsMut::slice(inputs),
             Invalid => unreachable!(),
         }
     }

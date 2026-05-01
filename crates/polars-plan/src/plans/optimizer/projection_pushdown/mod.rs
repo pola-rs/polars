@@ -808,6 +808,9 @@ impl ProjectionPushDown {
                     maintain_order,
                 })
             },
+            UnoptimizedDispatch { .. } => {
+                self.no_pushdown_restart_opt(logical_plan, ctx, lp_arena, expr_arena)
+            },
             Invalid => unreachable!(),
         }
     }
