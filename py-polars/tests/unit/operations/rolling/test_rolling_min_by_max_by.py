@@ -16,12 +16,6 @@ def test_rolling_min_by_basic() -> None:
     result = df.rolling(index_column="idx", period="3i").agg(
         pl.col("values").min_by("by")
     )
-    # Window contents (idx-based, period=3i means 3 rows ending at current):
-    # idx=1: by=[5]         -> min_by=5  -> values=10
-    # idx=2: by=[5,1]       -> min_by=1  -> values=20
-    # idx=3: by=[5,1,4]     -> min_by=1  -> values=20
-    # idx=4: by=[1,4,2]     -> min_by=1  -> values=20
-    # idx=5: by=[4,2,3]     -> min_by=2  -> values=40
     expected = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4, 5],
@@ -43,11 +37,6 @@ def test_rolling_max_by_basic() -> None:
     result = df.rolling(index_column="idx", period="3i").agg(
         pl.col("values").max_by("by")
     )
-    # idx=1: by=[5]         -> max_by=5  -> values=10
-    # idx=2: by=[5,1]       -> max_by=5  -> values=10
-    # idx=3: by=[5,1,4]     -> max_by=5  -> values=10
-    # idx=4: by=[1,4,2]     -> max_by=4  -> values=30
-    # idx=5: by=[4,2,3]     -> max_by=4  -> values=30
     expected = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4, 5],
@@ -69,13 +58,6 @@ def test_rolling_min_by_dynamic_window() -> None:
     result = df.rolling(index_column="idx", period="5i").agg(
         pl.col("values").min_by("by")
     )
-    # idx=1: by=[7]             -> min=7 -> values=10
-    # idx=2: by=[7,3]           -> min=3 -> values=20
-    # idx=3: by=[7,3,6]         -> min=3 -> values=20
-    # idx=4: by=[7,3,6,1]       -> min=1 -> values=40
-    # idx=5: by=[7,3,6,1,5]     -> min=1 -> values=40
-    # idx=6: by=[3,6,1,5,2]     -> min=1 -> values=40
-    # idx=7: by=[6,1,5,2,4]     -> min=1 -> values=40
     expected = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4, 5, 6, 7],
@@ -97,10 +79,6 @@ def test_rolling_min_by_with_null_in_by() -> None:
     result = df.rolling(index_column="idx", period="3i").agg(
         pl.col("values").min_by("by")
     )
-    # idx=1: by=[5]         -> min=5    -> values=10
-    # idx=2: by=[5,null]    -> min=5    -> values=10
-    # idx=3: by=[5,null,3]  -> min=3    -> values=30
-    # idx=4: by=[null,3,1]  -> min=1    -> values=40
     expected = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4],
@@ -124,12 +102,10 @@ def test_rolling_min_by_matches_naive() -> None:
         }
     )
 
-    # Rolling uses the optimized path
     result_rolling = df.rolling(index_column="idx", period="5i").agg(
         pl.col("values").min_by("by")
     )
 
-    # Naive: manual construction
     naive_values = []
     for i in range(n):
         start = max(0, i - 4)
@@ -194,10 +170,6 @@ def test_rolling_min_by_with_null_in_values() -> None:
     result = df.rolling(index_column="idx", period="3i").agg(
         pl.col("values").min_by("by")
     )
-    # idx=1: by=[5]       -> min=5 -> values=10
-    # idx=2: by=[5,1]     -> min=1 -> values=null
-    # idx=3: by=[5,1,3]   -> min=1 -> values=null
-    # idx=4: by=[1,3,2]   -> min=1 -> values=null
     expected = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4],
@@ -219,11 +191,6 @@ def test_rolling_min_by_duplicate_by_values() -> None:
     result = df.rolling(index_column="idx", period="3i").agg(
         pl.col("values").min_by("by")
     )
-    # idx=1: by=[3]       -> min=3 -> values=10
-    # idx=2: by=[3,1]     -> min=1 -> values=20
-    # idx=3: by=[3,1,1]   -> min=1 -> values=20 (first occurrence)
-    # idx=4: by=[1,1,2]   -> min=1 -> values=20 (first occurrence)
-    # idx=5: by=[1,2,1]   -> min=1 -> values=30 (first occurrence in window)
     expected = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4, 5],
@@ -245,10 +212,6 @@ def test_rolling_min_by_float_by_column() -> None:
     result = df.rolling(index_column="idx", period="3i").agg(
         pl.col("values").min_by("by")
     )
-    # idx=1: by=[1.5]          -> min=1.5 -> values=10
-    # idx=2: by=[1.5,0.5]      -> min=0.5 -> values=20
-    # idx=3: by=[1.5,0.5,2.5]  -> min=0.5 -> values=20
-    # idx=4: by=[0.5,2.5,0.1]  -> min=0.1 -> values=40
     expected = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4],
