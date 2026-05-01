@@ -280,7 +280,8 @@ fn test_cache_with_partial_projection() -> PolarsResult<()> {
                         .iter_names()
                         .map(|x| x.as_str())
                         .collect::<Vec<_>>()
-                        == vec!["id", "x", "freq"]
+                        .as_slice()
+                        == &["id", "x", "freq"]
                     {
                         assert!(output_schema.as_ref().is_some_and(|x| x.len() == 2));
                         df_hits += 1;
