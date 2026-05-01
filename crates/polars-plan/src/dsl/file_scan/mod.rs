@@ -161,12 +161,12 @@ impl FileScanIR {
         }
     }
 
-    pub(crate) fn sort_projection(&self, _has_row_index: bool) -> bool {
+    pub(crate) fn sort_projection(&self) -> bool {
         match self {
             #[cfg(feature = "csv")]
             Self::Csv { .. } => true,
             #[cfg(feature = "ipc")]
-            Self::Ipc { .. } => _has_row_index,
+            Self::Ipc { .. } => false,
             #[cfg(feature = "parquet")]
             Self::Parquet { .. } => false,
             #[allow(unreachable_patterns)]

@@ -1,6 +1,6 @@
 # Network addresses
 
-Polars on-premises exposes several network services for communication between nodes. Each of these
+Polars On-Prem exposes several network services for communication between nodes. Each of these
 services can be configured to bind to a specific network address. This can be important when running
 a node on a specific network interface or when preventing port collisions. Most of the addresses are
 configured by default, except:

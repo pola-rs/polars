@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars_parquet_format::SchemaElement;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
@@ -9,8 +11,8 @@ use crate::parquet::schema::Repetition;
 use crate::parquet::schema::io_message::from_message;
 use crate::parquet::schema::types::{FieldInfo, ParquetType};
 
-/// A schema descriptor. This encapsulates the top-level schemas for all the columns,
-/// as well as all descriptors for all the primitive columns.
+/// A schema descriptor. This encapsulates the top-level schema for all the
+/// columns, as well as the descriptors for the primitive columns.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct SchemaDescriptor {
@@ -19,8 +21,11 @@ pub struct SchemaDescriptor {
     fields: Vec<ParquetType>,
 
     // All the descriptors for primitive columns in this schema, constructed from
-    // `schema` in DFS order.
-    leaves: Vec<ColumnDescriptor>,
+    // `schema` in DFS order. Wrapped in `Arc` so all `ColumnChunkMetadata`
+    // built from this schema can share one heap allocation; per-chunk
+    // ownership is `(Arc::clone, index)` instead of a deep `ColumnDescriptor`
+    // clone. See [`super::ColumnChunkMetadata`].
+    leaves: Arc<Vec<ColumnDescriptor>>,
 }
 
 impl SchemaDescriptor {
@@ -35,7 +40,7 @@ impl SchemaDescriptor {
         Self {
             name,
             fields,
-            leaves,
+            leaves: Arc::new(leaves),
         }
     }
 
@@ -47,19 +52,21 @@ impl SchemaDescriptor {
         &self.leaves
     }
 
-    /// The schemas' name.
+    /// Internal handle on the shared `Arc<Vec<ColumnDescriptor>>` so the
+    /// metadata-build path (`RowGroupMetadata::from_compact`) can refcount-bump
+    /// instead of deep-cloning the descriptors per chunk.
+    pub(crate) fn columns_arc(&self) -> &Arc<Vec<ColumnDescriptor>> {
+        &self.leaves
+    }
+
+    /// The schema's name.
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    /// The schemas' fields.
+    /// The schema's fields.
     pub fn fields(&self) -> &[ParquetType] {
         &self.fields
-    }
-
-    /// The schemas' leaves.
-    pub fn leaves(&self) -> &[ColumnDescriptor] {
-        &self.leaves
     }
 
     pub(crate) fn into_thrift(self) -> Vec<SchemaElement> {
@@ -90,7 +97,7 @@ impl SchemaDescriptor {
         Self::try_from_type(schema)
     }
 
-    /// Creates a schema from
+    /// Creates a schema from a Parquet message-format string.
     pub fn try_from_message(message: &str) -> ParquetResult<Self> {
         let schema = from_message(message)?;
         Self::try_from_type(schema)
@@ -141,8 +148,8 @@ fn build_tree<'a>(
                     leaves,
                     path_so_far,
                 );
-                path_so_far.pop();
             }
         },
     }
+    path_so_far.pop();
 }

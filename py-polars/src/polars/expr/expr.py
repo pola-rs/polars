@@ -3736,6 +3736,8 @@ class Expr:
         """
         Get unique values of this expression.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Parameters
         ----------
         maintain_order

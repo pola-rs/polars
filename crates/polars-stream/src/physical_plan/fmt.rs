@@ -31,7 +31,9 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } | K::InMemoryJoin { .. } => Self::InMemoryFallback,
+            K::InMemoryMap { .. } | K::InMemoryJoin { .. } | K::ColumnarFunction { .. } => {
+                Self::InMemoryFallback
+            },
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -357,6 +359,22 @@ fn visualize_plan_rec(
                 f.write_str(format_str).unwrap();
             }
             (label, from_ref(input))
+        },
+        PhysNodeKind::ColumnarFunction {
+            inputs,
+            func: _,
+            output_name,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("columnar-function");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                write!(f, "{output_name} = {format_str}(...)").unwrap();
+            }
+            (label, &inputs[..])
         },
         PhysNodeKind::SortedGroupBy {
             input,

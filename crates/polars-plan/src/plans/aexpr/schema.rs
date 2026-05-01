@@ -389,7 +389,7 @@ impl AExpr {
                     )
                 }
 
-                let out = function.get_field(ctx.schema, &fields)?;
+                let out = function.get_field(&fields)?;
 
                 Ok(out)
             },

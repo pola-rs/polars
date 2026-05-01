@@ -10,7 +10,7 @@ unsafe impl IntoSeries for ExtensionChunked {
 impl SeriesWrap<ExtensionChunked> {
     fn apply_on_storage<F>(&self, apply: F) -> Series
     where
-        F: Fn(&Series) -> Series,
+        F: FnOnce(&Series) -> Series,
     {
         apply(self.0.storage()).into_extension(self.0.extension_type().clone())
     }
@@ -187,6 +187,10 @@ impl SeriesTrait for SeriesWrap<ExtensionChunked> {
 
     fn rechunk(&self) -> Series {
         self.apply_on_storage(|s| s.rechunk())
+    }
+
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.apply_on_storage(move |s| s.with_validity(validity))
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {

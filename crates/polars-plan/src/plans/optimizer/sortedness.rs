@@ -489,6 +489,7 @@ fn is_sorted_rec(
             let input = *input;
             rec!(input)
         },
+        IR::UnoptimizedDispatch { .. } => None,
         IR::Invalid => unreachable!(),
     };
 

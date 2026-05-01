@@ -207,8 +207,11 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             .get_mapping()
             .to_arrow(compat_level.uses_binview_types());
         let values_dtype = Box::new(values.dtype().clone());
-        let dtype =
-            ArrowDataType::Dictionary(<T::Native as DictionaryKey>::KEY_TYPE, values_dtype, false);
+        let dtype = ArrowDataType::Dictionary(
+            <T::Native as DictionaryKey>::KEY_TYPE,
+            values_dtype,
+            self.is_enum(),
+        );
         unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }
     }
 }

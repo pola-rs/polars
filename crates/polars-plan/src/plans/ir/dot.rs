@@ -332,6 +332,12 @@ impl<'a> IRDotDisplay<'a> {
                     )
                 })?;
             },
+            UnoptimizedDispatch { inputs, operation } => {
+                for input in inputs {
+                    recurse!(*input);
+                }
+                write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;
+            },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
 

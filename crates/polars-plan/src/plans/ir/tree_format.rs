@@ -400,6 +400,13 @@ impl<'a> TreeFmtNode<'a> {
                             .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                             .collect(),
                     ),
+                    UnoptimizedDispatch { inputs, operation } => ND(
+                        wh(h, &format!("DISPATCH {operation}")),
+                        inputs
+                            .iter()
+                            .map(|input| self.lp_node(None, *input))
+                            .collect(),
+                    ),
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
             },

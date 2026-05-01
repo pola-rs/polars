@@ -3,6 +3,7 @@ mod format;
 pub mod inputs;
 mod schema;
 pub(crate) mod tree_format;
+mod unoptimized;
 
 use std::borrow::Cow;
 use std::fmt;
@@ -15,6 +16,7 @@ use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
+pub use unoptimized::UnoptimizedOperation;
 
 use self::hive::HivePartitionsDf;
 use crate::prelude::*;
@@ -159,6 +161,10 @@ pub enum IR {
         input_right: Node,
         key: PlSmallStr,
         maintain_order: bool,
+    },
+    UnoptimizedDispatch {
+        inputs: Vec<Node>,
+        operation: UnoptimizedOperation,
     },
     #[default]
     Invalid,
