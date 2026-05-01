@@ -206,9 +206,7 @@ def test_rolling_min_by_enum_by_column() -> None:
         {
             "idx": [1, 2, 3, 4, 5],
             "values": [10, 20, 30, 40, 50],
-            "by": pl.Series(["c", "a", "b", "a", "c"]).cast(
-                pl.Enum(["a", "b", "c"])
-            ),
+            "by": pl.Series(["c", "a", "b", "a", "c"]).cast(pl.Enum(["a", "b", "c"])),
         }
     )
     result = df.rolling(index_column="idx", period="3i").agg(
