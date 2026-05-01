@@ -139,6 +139,14 @@ pub fn optimize(
         rules.push(Box::new(fused::FusedArithmetic {}));
     }
 
+    if opt_flags.predicate_pushdown() {
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+        let ir = ir_arena.take(root);
+        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena, true)?;
+        ir_arena.replace(root, ir);
+    }
+
     #[cfg(feature = "cse")]
     let mut run_set_cache_states = false;
 
@@ -176,21 +184,8 @@ pub fn optimize(
         let mut predicate_pushdown_opt =
             PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
         let ir = ir_arena.take(root);
-        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
+        let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena, false)?;
         ir_arena.replace(root, ir);
-    }
-
-    #[cfg(feature = "cse")]
-    if run_set_cache_states {
-        cse::set_cache_states(
-            root,
-            ir_arena,
-            expr_arena,
-            scratch,
-            verbose,
-            pushdown_maintain_errors,
-            opt_flags.new_streaming(),
-        )?;
     }
 
     // Must run before projection pushdown, as that can insert simple-projections between the sorts

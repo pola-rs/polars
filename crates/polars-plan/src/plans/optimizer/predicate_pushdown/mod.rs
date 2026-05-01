@@ -7,7 +7,11 @@ mod utils;
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
+use polars_utils::arena::Node;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::scratch_vec::ScratchUnitVec;
+use polars_utils::unique_id::UniqueId;
+use polars_utils::unitvec;
 use recursive::recursive;
 use utils::*;
 
@@ -17,48 +21,28 @@ use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::utils::{check_input_node, has_aexpr};
 
-/// The struct is wrapped in a mod to prevent direct member access of `nodes_scratch`
-mod inner {
-    use polars_utils::arena::Node;
-    use polars_utils::idx_vec::UnitVec;
-    use polars_utils::unitvec;
+pub struct PredicatePushDown {
+    nodes_scratch: ScratchUnitVec<Node>,
+    new_streaming: bool,
+    // Controls pushing filters past fallible projections
+    maintain_errors: bool,
+    is_run_before_cspe: bool,
+    visited_caches: PlHashSet<UniqueId>,
+}
 
-    pub struct PredicatePushDown {
-        // How many cache nodes a predicate may be pushed down to.
-        // Normally this is 0. Only needed for CSPE.
-        pub(super) caches_pass_allowance: u32,
-        nodes_scratch: UnitVec<Node>,
-        pub(super) new_streaming: bool,
-        // Controls pushing filters past fallible projections
-        pub(super) maintain_errors: bool,
-    }
-
-    impl PredicatePushDown {
-        pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
-            Self {
-                caches_pass_allowance: 0,
-                nodes_scratch: unitvec![],
-                new_streaming,
-                maintain_errors,
-            }
-        }
-
-        /// Returns shared scratch space after clearing.
-        pub(super) fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
-            self.nodes_scratch.clear();
-            &mut self.nodes_scratch
+impl PredicatePushDown {
+    pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
+        Self {
+            nodes_scratch: ScratchUnitVec::default(),
+            new_streaming,
+            maintain_errors,
+            is_run_before_cspe: false,
+            visited_caches: PlHashSet::default(),
         }
     }
 }
 
-pub use inner::PredicatePushDown;
-
 impl PredicatePushDown {
-    pub(crate) fn block_at_cache(mut self, count: u32) -> Self {
-        self.caches_pass_allowance = count;
-        self
-    }
-
     fn optional_apply_predicate(
         &mut self,
         lp: IR,
@@ -116,7 +100,7 @@ impl PredicatePushDown {
                 &[],
                 &acc_predicates,
                 expr_arena,
-                self.empty_nodes_scratch_mut(),
+                self.nodes_scratch.get(),
                 maintain_errors,
                 lp_arena.get(input),
             )?;
@@ -278,7 +262,7 @@ impl PredicatePushDown {
                     &[(&tmp_key, predicate.clone())],
                     &acc_predicates,
                     expr_arena,
-                    self.empty_nodes_scratch_mut(),
+                    self.nodes_scratch.get(),
                     maintain_errors,
                     lp_arena.get(input),
                 )?
@@ -643,16 +627,25 @@ impl PredicatePushDown {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             // Caches will run predicate push-down in the `cache_states` run.
-            Cache { .. } => {
-                if self.caches_pass_allowance == 0 {
-                    self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
+            Cache { id, .. } => {
+                if self.visited_caches.insert(id) {
+                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
                 } else {
-                    self.caches_pass_allowance = self.caches_pass_allowance.saturating_sub(1);
-                    self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+                    self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
                 }
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
+                // Share PythonScan when possible
+                if self.is_run_before_cspe {
+                    return self.no_pushdown_restart_opt(
+                        PythonScan { options },
+                        acc_predicates,
+                        lp_arena,
+                        expr_arena,
+                    );
+                }
+
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
                 if let Some(predicate) = predicate {
                     match ExprPushdownGroup::Pushable.update_with_expr_rec(
@@ -695,8 +688,11 @@ impl PredicatePushDown {
         logical_plan: IR,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
+        is_run_before_cspe: bool,
     ) -> PolarsResult<IR> {
         let acc_predicates = PlHashMap::new();
+        self.is_run_before_cspe = is_run_before_cspe;
+        self.visited_caches.clear();
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }
