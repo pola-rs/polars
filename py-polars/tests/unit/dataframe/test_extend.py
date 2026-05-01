@@ -124,8 +124,5 @@ def test_extend_nested_mismatch() -> None:
     s = pl.Series([1.0])
     assert s.extend_constant(1, 2).to_list() == [1.0, 1.0, 1.0]
 
-    with pytest.raises(
-            pl.exceptions.InvalidOperationError
-    ):
+    with pytest.raises(pl.exceptions.InvalidOperationError):
         s.extend_constant([True], 2)
-
