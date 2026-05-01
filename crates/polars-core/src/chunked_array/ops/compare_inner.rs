@@ -3,6 +3,10 @@
 
 use std::cmp::Ordering;
 
+use polars_utils::nulls::IsNull;
+use polars_utils::sort::reorder_cmp;
+use polars_utils::total_ord::TotalOrdWrap;
+
 use crate::chunked_array::ChunkedArrayLayout;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
@@ -17,40 +21,25 @@ impl<T: TotalEq> TotalEq for NonNull<T> {
     }
 }
 
-pub trait NullOrderCmp {
-    fn null_order_cmp(&self, other: &Self, nulls_last: bool) -> Ordering;
-}
-
-impl<T: TotalOrd> NullOrderCmp for Option<T> {
-    fn null_order_cmp(&self, other: &Self, nulls_last: bool) -> Ordering {
-        match (self, other) {
-            (None, None) => Ordering::Equal,
-            (None, Some(_)) => {
-                if nulls_last {
-                    Ordering::Greater
-                } else {
-                    Ordering::Less
-                }
-            },
-            (Some(_), None) => {
-                if nulls_last {
-                    Ordering::Less
-                } else {
-                    Ordering::Greater
-                }
-            },
-            (Some(l), Some(r)) => l.tot_cmp(r),
-        }
-    }
-}
-
-impl<T: TotalOrd> NullOrderCmp for NonNull<T> {
-    fn null_order_cmp(&self, other: &Self, _nulls_last: bool) -> Ordering {
+impl<T: TotalOrd> TotalOrd for NonNull<T> {
+    fn tot_cmp(&self, other: &Self) -> Ordering {
         self.0.tot_cmp(&other.0)
     }
 }
 
-trait GetInner {
+impl<T> IsNull for NonNull<T> {
+    const HAS_NULLS: bool = false;
+    type Inner = T;
+
+    fn is_null(&self) -> bool {
+        false
+    }
+    fn unwrap_inner(self) -> Self::Inner {
+        self.0
+    }
+}
+
+pub trait GetInner {
     type Item;
     unsafe fn get_unchecked(&self, idx: usize) -> Self::Item;
 }
@@ -141,6 +130,7 @@ pub trait TotalOrdInner: Send + Sync {
         &self,
         idx_a: usize,
         idx_b: usize,
+        descending: bool,
         nulls_last: bool,
     ) -> Ordering;
 }
@@ -148,18 +138,19 @@ pub trait TotalOrdInner: Send + Sync {
 impl<T> TotalOrdInner for T
 where
     T: GetInner + Send + Sync,
-    T::Item: NullOrderCmp,
+    T::Item: TotalOrd + IsNull,
 {
     #[inline]
     unsafe fn cmp_element_unchecked(
         &self,
         idx_a: usize,
         idx_b: usize,
+        descending: bool,
         nulls_last: bool,
     ) -> Ordering {
         let a = self.get_unchecked(idx_a);
         let b = self.get_unchecked(idx_b);
-        a.null_order_cmp(&b, nulls_last)
+        reorder_cmp(&TotalOrdWrap(a), &TotalOrdWrap(b), descending, nulls_last)
     }
 }
 
@@ -169,6 +160,7 @@ impl TotalOrdInner for &NullChunked {
         &self,
         _idx_a: usize,
         _idx_b: usize,
+        _descending: bool,
         _nulls_last: bool,
     ) -> Ordering {
         Ordering::Equal

@@ -14,7 +14,6 @@ from typing import (
     ClassVar,
     Literal,
     NoReturn,
-    Union,
     overload,
 )
 
@@ -58,8 +57,8 @@ from polars._utils.getitem import get_series_item_by_key
 from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    NO_DEFAULT,
     _is_generator,
-    no_default,
     parse_version,
     qualified_type_name,
     require_same_type,
@@ -130,8 +129,7 @@ if TYPE_CHECKING:
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
-        ArrowArrayExportable,
-        ArrowStreamExportable,
+        ArrayLike,
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -171,18 +169,6 @@ elif BUILDING_SPHINX_DOCS:
     # (ref: https://github.com/davidhalter/jedi/issues/2057)
     current_module = sys.modules[__name__]
     current_module.property = sphinx_accessor
-
-ArrayLike = Union[
-    Sequence[Any],
-    "Series",
-    "pa.Array",
-    "pa.ChunkedArray",
-    "np.ndarray[Any, Any]",
-    "pd.Series[Any]",
-    "pd.DatetimeIndex",
-    "ArrowArrayExportable",
-    "ArrowStreamExportable",
-]
 
 
 @expr_dispatch
@@ -904,7 +890,7 @@ class Series:
 
         elif isinstance(other, timedelta) and self.dtype == Duration:
             time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
-            td = timedelta_to_int(other, time_unit)  # type: ignore[arg-type]
+            td = timedelta_to_int(other, time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(td))
@@ -1514,7 +1500,7 @@ class Series:
 
             - ``int``: a single row index.
             - ``Series`` (Boolean): a boolean mask.
-            - ``Series`` (UInt32/UInt64): an index array.
+            - ``Series`` (Integer): an index array.
             - ``ndarray``: a NumPy boolean mask or integer index array.
             - ``list`` / ``tuple``: an index sequence (cast to UInt32).
         value
@@ -1563,10 +1549,11 @@ class Series:
         if isinstance(key, Series):
             if key.dtype == Boolean:
                 self._s = self.set(key, value)._s
-            elif key.dtype == UInt64:
-                self._s = self.scatter(key.cast(UInt32), value)._s
-            elif key.dtype == UInt32:
+            elif key.dtype.is_integer():
                 self._s = self.scatter(key, value)._s
+            else:
+                msg = f"cannot use Series of dtype {key.dtype!r} for indexing; expected boolean or integer dtype"
+                raise TypeError(msg)
 
         # TODO: implement for these types without casting to series
         elif _check_for_numpy(key) and isinstance(key, np.ndarray):
@@ -1732,9 +1719,9 @@ class Series:
 
             # We're using a regular ufunc, that operates value by value. That
             # means we allowed missing data in the input, so filter it out:
-            validity_mask = self.is_not_null()
+            validity_mask = self.is_not_null() if self.has_nulls() else F.lit(True)
             for arg in inputs:
-                if isinstance(arg, Series):
+                if isinstance(arg, Series) and arg.has_nulls():
                     validity_mask &= arg.is_not_null()
             return (
                 result.to_frame()
@@ -2590,13 +2577,13 @@ class Series:
             Set the intervals to be left-closed instead of right-closed.
         include_breaks
             Include a column with the right endpoint of the bin each observation falls
-            in. This will change the data type of the output from a
-            :class:`Categorical` to a :class:`Struct`.
+            in. This will change the data type of the output from an
+            :class:`Enum` to a :class:`Struct`.
 
         Returns
         -------
         Series
-            Series of data type :class:`Categorical` if `include_breaks` is set to
+            Series of data type :class:`Enum` if `include_breaks` is set to
             `False` (default), otherwise a Series of data type :class:`Struct`.
 
         See Also
@@ -2610,7 +2597,7 @@ class Series:
         >>> s = pl.Series("foo", [-2, -1, 0, 1, 2])
         >>> s.cut([-1, 1], labels=["a", "b", "c"])
         shape: (5,)
-        Series: 'foo' [cat]
+        Series: 'foo' [enum]
         [
             "a"
             "a"
@@ -2627,7 +2614,7 @@ class Series:
         ┌─────┬────────────┬────────────┐
         │ foo ┆ breakpoint ┆ category   │
         │ --- ┆ ---        ┆ ---        │
-        │ i64 ┆ f64        ┆ cat        │
+        │ i64 ┆ f64        ┆ enum       │
         ╞═════╪════════════╪════════════╡
         │ -2  ┆ -1.0       ┆ (-inf, -1] │
         │ -1  ┆ -1.0       ┆ (-inf, -1] │
@@ -4042,6 +4029,8 @@ class Series:
     def unique(self, *, maintain_order: bool = False) -> Series:
         """
         Get unique elements in series.
+
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Parameters
         ----------
@@ -8256,9 +8245,11 @@ class Series:
         """
         Count the number of unique values in this Series.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s = pl.Series("a", [1, 2, 2, None])
         >>> s.n_unique()
         3
         """
@@ -8808,9 +8799,9 @@ class Series:
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """
@@ -8913,9 +8904,9 @@ class Series:
     def replace_strict(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | None = None,
     ) -> Self:
         """

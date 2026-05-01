@@ -412,3 +412,47 @@ def test_streaming_boolean_multiply_dtype_24609() -> None:
     assert (
         lf.collect(engine="streaming").schema == lf.collect(engine="in-memory").schema
     )
+
+
+def test_streaming_str_replace_scalar_pattern_26789(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_MAX_THREADS", "1")
+
+    lf = pl.LazyFrame({"foo": ["123 bla 45 asd", "xyz 678 910t"], "value": ["A", "B"]})
+    q = lf.select([pl.col("foo").str.replace(pl.col("foo").first(), pl.col("value"))])
+    out = q.collect(engine="streaming")
+    assert out.to_dict(as_series=False) == {"foo": ["A", "xyz 678 910t"]}
+
+
+def test_streaming_strptime_infer_datetime(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    df = pl.DataFrame({"s": ["2020-01-01 00:00:00", "2021-06-15 12:30:00"]})
+    result = df.lazy().select(pl.col("s").str.to_datetime()).collect(engine="streaming")
+    expected = df.lazy().select(pl.col("s").str.to_datetime()).collect()
+    assert_frame_equal(result, expected)
+
+
+def test_streaming_strptime_infer_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    df = pl.DataFrame({"s": ["2020-01-01", "2021-06-15", "2022-12-31"]})
+    result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
+    expected = df.lazy().select(pl.col("s").str.to_date()).collect()
+    assert_frame_equal(result, expected)
+
+
+def test_streaming_strptime_infer_all_null() -> None:
+    df = pl.DataFrame({"s": pl.Series([None, None, None], dtype=pl.String)})
+    result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
+    assert result["s"].is_null().all()
+    assert result["s"].dtype == pl.Date
+
+
+def test_streaming_strptime_infer_leading_nulls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "1")
+    df = pl.DataFrame({"s": [None, None, "2020-01-01", "2021-06-15"]})
+    result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
+    expected = df.lazy().select(pl.col("s").str.to_date()).collect()
+    assert_frame_equal(result, expected)

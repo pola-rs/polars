@@ -86,7 +86,6 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
-use crate::plans::optimizer::DynamicPred;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -391,7 +390,7 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
     DynamicPred {
-        pred: DynamicPred,
+        pred: DynamicPredWeakRef,
     },
 }
 
@@ -1180,7 +1179,11 @@ impl IRFunctionExpr {
             #[cfg(feature = "peaks")]
             F::PeakMin | F::PeakMax => FunctionOptions::length_preserving(),
             #[cfg(feature = "cutqcut")]
-            F::Cut { .. } | F::QCut { .. } => FunctionOptions::length_preserving()
+            F::Cut { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
+            },
+            #[cfg(feature = "cutqcut")]
+            F::QCut { .. } => FunctionOptions::length_preserving()
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "rle")]
             F::RLE => FunctionOptions::groupwise(),

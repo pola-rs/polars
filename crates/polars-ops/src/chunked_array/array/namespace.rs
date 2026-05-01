@@ -10,8 +10,6 @@ use super::*;
 use crate::chunked_array::array::count::array_count_matches;
 use crate::chunked_array::array::count::count_boolean_bits;
 use crate::chunked_array::array::sum_mean::sum_with_nulls;
-#[cfg(feature = "array_any_all")]
-use crate::prelude::array::any_all::{array_all, array_any};
 use crate::prelude::array::get::array_get;
 use crate::prelude::array::join::array_join;
 use crate::prelude::array::sum_mean::sum_array_numerical;
@@ -93,18 +91,6 @@ pub trait ArrayNameSpace: AsArray {
             let opt_v = opt_s.map(|s| s.as_ref().n_unique()).transpose()?;
             Ok(opt_v.map(|idx| idx as IdxSize))
         })
-    }
-
-    #[cfg(feature = "array_any_all")]
-    fn array_any(&self) -> PolarsResult<Series> {
-        let ca = self.as_array();
-        array_any(ca)
-    }
-
-    #[cfg(feature = "array_any_all")]
-    fn array_all(&self) -> PolarsResult<Series> {
-        let ca = self.as_array();
-        array_all(ca)
     }
 
     fn array_sort(&self, options: SortOptions) -> PolarsResult<ArrayChunked> {

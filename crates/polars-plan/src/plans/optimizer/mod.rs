@@ -35,7 +35,9 @@ pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
 use polars_core::config::verbose;
-pub use predicate_pushdown::{DynamicPred, PredicateExpr, PredicatePushDown, TrivialPredicateExpr};
+pub use predicate_pushdown::{
+    DynamicPred, DynamicPredWeakRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
+};
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
@@ -209,9 +211,6 @@ pub fn optimize(
         ir_arena.replace(root, ir);
 
         repeat_slice_pd_after_filter_pd = slice_pushdown_opt.slice_node_in_optimized_plan;
-
-        // Expressions use the stack optimizer.
-        rules.push(Box::new(slice_pushdown_opt));
     }
 
     if run_pushdowns {

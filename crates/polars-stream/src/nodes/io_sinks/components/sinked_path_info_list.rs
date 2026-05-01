@@ -23,7 +23,7 @@ pub async fn call_sinked_paths_callback(
                 path_info_list: std::mem::take(&mut path_info_list.lock()),
             };
 
-            sinked_paths_callback.call_(args)
+            sinked_paths_callback.call(args)
         })
         .await
         .unwrap()

@@ -8,12 +8,12 @@ use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
 use polars_expr::reduce::GroupedReduction;
-use polars_ooc::AccessPattern::NoPattern;
-use polars_ooc::mm;
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::reuse_vec::reuse_vec;
 use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, UnitVec};
 use rayon::prelude::*;
@@ -47,7 +47,7 @@ struct LocalGroupBySinkState {
     // for partition p, where start, stop are:
     // let start = morsel_idxs_offsets[i * num_partitions + p];
     // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
-    cold_morsels: Vec<(usize, u64, HashKeys, Token)>,
+    cold_morsels: Vec<(usize, u64, HashKeys, SpillFrame)>,
     morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
     morsel_idxs_offsets_per_p: Vec<usize>,
 
@@ -143,6 +143,7 @@ impl GroupBySinkState {
         receivers: Vec<Receiver<(usize, Morsel)>>,
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+        spill_ctx: &'env MostRecentSpillContext,
     ) {
         for (mut recv, local) in receivers.into_iter().zip(&mut self.locals) {
             let key_selectors_per_input = &self.key_selectors_per_input;
@@ -229,8 +230,8 @@ impl GroupBySinkState {
                             local
                                 .morsel_idxs_offsets_per_p
                                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-                            let token = mm().store(cold_df, NoPattern).await;
-                            local.cold_morsels.push((input_idx, seq, cold_keys, token));
+                            let sf = SpillFrame::new(cold_df, spill_ctx).await;
+                            local.cold_morsels.push((input_idx, seq, cold_keys, sf));
                         }
                     }
 
@@ -352,8 +353,8 @@ impl GroupBySinkState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (input_idx, seq_id, keys, token) = morsel;
-                            let morsel_df = mm().df(token).await;
+                            let (input_idx, seq_id, keys, sf) = morsel;
+                            let morsel_df = sf.get().await;
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -382,11 +383,11 @@ impl GroupBySinkState {
                                         &group_idxs,
                                         *seq_id,
                                     )?;
-                                    in_cols.clear();
+                                    in_cols = reuse_vec(in_cols);
                                 }
                             }
-                            in_cols = in_cols.into_iter().map(|_| unreachable!()).collect();
                         }
+                        in_cols = reuse_vec(in_cols);
 
                         if let Some(l) = Arc::into_inner(l_morsels) {
                             // If we're the last thread to process this set of morsels we're probably
@@ -525,6 +526,7 @@ pub struct GroupByNode {
     num_inputs: usize,
     num_pipelines: usize,
     output_schema: Arc<Schema>,
+    spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl GroupByNode {
@@ -590,6 +592,7 @@ impl GroupByNode {
             num_inputs,
             num_pipelines,
             output_schema,
+            spill_ctx: MostRecentSpillContext::new(),
         }
     }
 }
@@ -698,7 +701,7 @@ impl ComputeNode for GroupByNode {
                         }
                     }
                 }
-                sink.spawn(scope, receivers, state, join_handles)
+                sink.spawn(scope, receivers, state, join_handles, &self.spill_ctx)
             },
             GroupByState::Source(source) => {
                 assert!(recv_ports[0].is_none());

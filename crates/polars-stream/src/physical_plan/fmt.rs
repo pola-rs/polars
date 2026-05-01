@@ -31,7 +31,9 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } | K::InMemoryJoin { .. } => Self::InMemoryFallback,
+            K::InMemoryMap { .. } | K::InMemoryJoin { .. } | K::ColumnarFunction { .. } => {
+                Self::InMemoryFallback
+            },
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -40,7 +42,9 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::Multiplexer { .. } => Self::MemoryIntensive,
+            | K::CrossJoin { .. }
+            | K::Multiplexer { .. }
+            | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
@@ -198,7 +202,7 @@ fn visualize_plan_rec(
             &[][..],
         ),
         #[cfg(feature = "python")]
-        PhysNodeKind::PythonScan { .. } => ("python-scan".to_string(), &[][..]),
+        PhysNodeKind::PythonScan { .. } => ("streaming-python-scan".to_string(), &[][..]),
         PhysNodeKind::SinkMultiple { sinks } => {
             for sink in sinks {
                 visualize_plan_rec(*sink, phys_sm, expr_arena, visited, out);
@@ -358,6 +362,22 @@ fn visualize_plan_rec(
             }
             (label, from_ref(input))
         },
+        PhysNodeKind::ColumnarFunction {
+            inputs,
+            func: _,
+            output_name,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("columnar-function");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                write!(f, "{output_name} = {format_str}(...)").unwrap();
+            }
+            (label, &inputs[..])
+        },
         PhysNodeKind::SortedGroupBy {
             input,
             key,
@@ -453,6 +473,10 @@ fn visualize_plan_rec(
             },
             &[*input][..],
         ),
+        #[cfg(feature = "interpolate")]
+        PhysNodeKind::Interpolate { input, method } => {
+            (format!("interpolate\\nmethod: {method:?}"), &[*input][..])
+        },
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::SortedUnique { input, keys } => {
@@ -804,13 +828,34 @@ fn visualize_plan_rec(
         PhysNodeKind::MergeSorted {
             input_left,
             input_right,
+            ..
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::Gather { target, idxs, .. } => ("gather".to_string(), &[*target, *idxs][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmStd { input, options: _ } => ("ewm-std".to_string(), &[*input][..]),
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        ))]
+        PhysNodeKind::StrptimeInfer {
+            input,
+            dtype,
+            ambiguous_is_raise,
+            ..
+        } => {
+            let mut s = String::new();
+            let mut f = EscapeLabel(&mut s);
+            writeln!(f, "strptime-infer").unwrap();
+            writeln!(f, "dtype: {dtype}").unwrap();
+            let ambiguous = if *ambiguous_is_raise { "raise" } else { "null" };
+            write!(f, "ambiguous: {ambiguous}").unwrap();
+            (s, &[*input][..])
+        },
     };
 
     let node_id = node_key.data().as_ffi();

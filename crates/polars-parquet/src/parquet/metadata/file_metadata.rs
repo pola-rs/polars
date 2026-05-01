@@ -1,15 +1,21 @@
+use polars_buffer::Buffer;
 use polars_parquet_format::ColumnOrder as TColumnOrder;
 
 use super::RowGroupMetadata;
 use super::column_order::ColumnOrder;
+use super::compact::CompactFileMetaData;
 use super::schema_descriptor::SchemaDescriptor;
-use crate::parquet::error::ParquetError;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::get_sort_order;
 pub use crate::parquet::thrift_format::KeyValue;
 
 /// Metadata for a Parquet file.
-// This is almost equal to [`polars_parquet_format::FileMetaData`] but contains the descriptors,
-// which are crucial to deserialize pages.
+//
+// Polars-side representation of a parsed Parquet file footer. Wraps the
+// schema descriptor (with column descriptors needed for page deserialisation),
+// per-row-group structures, and the footer buffer that backs lazily-resolved
+// column-chunk statistics. Built from `CompactFileMetaData` (the hand-written
+// decoder's output) via `Self::from_compact`.
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
     /// version of this file.
@@ -41,15 +47,20 @@ pub struct FileMetadata {
     /// When `None` is returned, there are no column orders available, and each column
     /// should be assumed to have undefined (legacy) column order.
     pub column_orders: Option<Vec<ColumnOrder>>,
+    /// Footer bytes that back this file's column-chunk statistics. Stats
+    /// `min_value` / `max_value` are stored as `(offset, len)` ranges into
+    /// this buffer; pass `&self.footer_buf` to
+    /// [`super::ColumnChunkMetadata::statistics`] to materialise them.
+    pub footer_buf: Buffer<u8>,
 }
 
 impl FileMetadata {
-    /// Returns the [`SchemaDescriptor`] that describes schema of this file.
+    /// Returns the [`SchemaDescriptor`] that describes the schema of this file.
     pub fn schema(&self) -> &SchemaDescriptor {
         &self.schema_descr
     }
 
-    /// returns the metadata
+    /// Returns the file-level key-value metadata, if present.
     pub fn key_value_metadata(&self) -> &Option<Vec<KeyValue>> {
         &self.key_value_metadata
     }
@@ -63,37 +74,50 @@ impl FileMetadata {
             .unwrap_or(ColumnOrder::Undefined)
     }
 
-    /// Deserializes [`crate::parquet::thrift_format::FileMetadata`] into this struct
-    pub fn try_from_thrift(
-        metadata: polars_parquet_format::FileMetaData,
-    ) -> Result<Self, ParquetError> {
-        let schema_descr = SchemaDescriptor::try_from_thrift(&metadata.schema)?;
+    /// Build a `FileMetadata` from a [`CompactFileMetaData`], the output of
+    /// the hand-written Thrift decoder. Parses the schema, attaches each
+    /// row group's chunks to the schema's descriptors, and stores the
+    /// footer buffer at the file level for stats resolution.
+    ///
+    /// Crate-internal: external callers go through
+    /// [`crate::parquet::read::deserialize_metadata`] which combines the
+    /// hand-written decoder with this constructor.
+    pub(crate) fn from_compact(compact: CompactFileMetaData) -> ParquetResult<Self> {
+        let CompactFileMetaData {
+            version,
+            schema,
+            num_rows,
+            row_groups,
+            key_value_metadata,
+            created_by,
+            column_orders,
+            footer_buf,
+        } = compact;
+
+        let schema_descr = SchemaDescriptor::try_from_thrift(&schema)?;
 
         let mut max_row_group_height = 0;
-
-        let row_groups = metadata
-            .row_groups
+        let row_groups = row_groups
             .into_iter()
             .map(|rg| {
-                let md = RowGroupMetadata::try_from_thrift(&schema_descr, rg)?;
+                let md = RowGroupMetadata::from_compact(&schema_descr, rg)?;
                 max_row_group_height = max_row_group_height.max(md.num_rows());
                 Ok(md)
             })
-            .collect::<Result<_, ParquetError>>()?;
+            .collect::<ParquetResult<_>>()?;
 
-        let column_orders = metadata
-            .column_orders
-            .map(|orders| parse_column_orders(&orders, &schema_descr));
+        let column_orders = column_orders.map(|orders| parse_column_orders(&orders, &schema_descr));
 
         Ok(FileMetadata {
-            version: metadata.version,
-            num_rows: metadata.num_rows.try_into()?,
+            version,
+            num_rows: num_rows.try_into()?,
             max_row_group_height,
-            created_by: metadata.created_by,
+            created_by,
             row_groups,
-            key_value_metadata: metadata.key_value_metadata,
+            key_value_metadata,
             schema_descr,
             column_orders,
+            footer_buf,
         })
     }
 }

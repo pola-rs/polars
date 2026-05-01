@@ -6,7 +6,7 @@ use polars_utils::arena::Arena;
 use super::*;
 #[cfg(feature = "python")]
 use crate::plans::PythonOptions;
-use crate::plans::{AExpr, IR};
+use crate::plans::{AExpr, IR, UnoptimizedOperation};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::{ExprIR, PlanCallback};
 
@@ -261,8 +261,24 @@ impl Hash for IRHashWrap<'_> {
                 input_left: _,
                 input_right: _,
                 key,
+                maintain_order,
             } => {
                 key.hash(state);
+                maintain_order.hash(state);
+            },
+            IR::UnoptimizedDispatch {
+                inputs: _,
+                operation,
+            } => match operation {
+                UnoptimizedOperation::ColumnarFunction {
+                    function,
+                    options,
+                    output_name,
+                } => {
+                    function.hash(state);
+                    options.hash(state);
+                    output_name.hash(state);
+                },
             },
             IR::Invalid => unreachable!(),
         }

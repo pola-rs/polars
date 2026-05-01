@@ -1570,3 +1570,38 @@ def test_min_max_by_all_null_by_group_slice(agg: Callable[..., pl.Expr]) -> None
         .collect()
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "input", "expect"),
+    [
+        (pl.Int32, [1, 2, 2], [[1, 2], [2]]),
+        (pl.Boolean, [True, False, False], [[False, True], [False]]),
+        (
+            pl.Date,
+            [date(2020, 1, 1), date(2020, 1, 2), date(2020, 1, 2)],
+            [[date(2020, 1, 1), date(2020, 1, 2)], [date(2020, 1, 2)]],
+        ),
+        (pl.Decimal(), [1, 2, 2], [[1, 2], [2]]),
+        (pl.Categorical, ["A", "B", "B"], [["A", "B"], ["B"]]),
+        (pl.Enum(["A", "B"]), ["A", "B", "B"], [["A", "B"], ["B"]]),
+        (pl.String, ["A", "B", "B"], [["A", "B"], ["B"]]),
+        (pl.Binary, [b"A", b"B", b"B"], [[b"A", b"B"], [b"B"]]),
+    ],
+)
+def test_unordered_implode_reduction_27373(
+    dtype: pl.DataType, input: list[Any], expect: list[Any]
+) -> None:
+    df = pl.DataFrame(
+        {"group": ["a", "a", "b"], "val": input},
+        schema={"group": pl.String, "val": dtype},
+    )
+    expected = pl.DataFrame(
+        {"group": ["a", "b"], "val": expect},
+        schema={"group": pl.String, "val": pl.List(dtype)},
+    )
+    q = df.lazy().group_by("group").agg(pl.col("val").unique())
+    actual = q.collect(engine="streaming").with_columns(
+        pl.col("val").map_elements(sorted, return_dtype=pl.List(dtype))
+    )
+    assert_frame_equal(actual, expected, check_row_order=False)

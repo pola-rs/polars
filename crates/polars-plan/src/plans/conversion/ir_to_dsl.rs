@@ -330,10 +330,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Var(v) => A::Var(v),
                 IA::Mean => A::Mean,
                 IA::Median => A::Median,
-                #[cfg(feature = "array_any_all")]
-                IA::Any => A::Any,
-                #[cfg(feature = "array_any_all")]
-                IA::All => A::All,
                 IA::Sort(v) => A::Sort(v),
                 IA::Reverse => A::Reverse,
                 IA::ArgMin => A::ArgMin,
@@ -450,10 +446,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IL::NUnique => L::NUnique,
                 #[cfg(feature = "list_sets")]
                 IL::SetOperation(set_operation) => L::SetOperation(set_operation),
-                #[cfg(feature = "list_any_all")]
-                IL::Any => L::Any,
-                #[cfg(feature = "list_any_all")]
-                IL::All => L::All,
                 IL::Join(v) => L::Join(v),
                 #[cfg(feature = "dtype-array")]
                 IL::ToArray(v) => L::ToArray(v),

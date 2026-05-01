@@ -4,7 +4,7 @@ mod join;
 mod keys;
 mod utils;
 
-pub use dynamic::{DynamicPred, PredicateExpr, TrivialPredicateExpr};
+pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
 use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
@@ -685,6 +685,9 @@ impl PredicatePushDown {
             #[cfg(feature = "merge_sorted")]
             lp @ MergeSorted { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
+            },
+            UnoptimizedDispatch { .. } => {
+                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             Invalid => unreachable!(),
         }

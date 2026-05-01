@@ -10,9 +10,9 @@ from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
+    NO_DEFAULT,
     find_stacklevel,
     issue_warning,
-    no_default,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
@@ -2646,7 +2646,7 @@ class ExprStringNameSpace:
     def replace_many(
         self,
         patterns: IntoExpr | Mapping[str, str],
-        replace_with: IntoExpr | NoDefault = no_default,
+        replace_with: IntoExpr | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
         leftmost: bool = False,
@@ -2826,7 +2826,7 @@ class ExprStringNameSpace:
         │ abcd     ┆ z        │
         └──────────┴──────────┘
         """  # noqa: W505
-        if replace_with is no_default:
+        if replace_with is NO_DEFAULT:
             if not isinstance(patterns, Mapping):
                 msg = "`replace_with` argument is required if `patterns` argument is not a Mapping type"
                 raise TypeError(msg)

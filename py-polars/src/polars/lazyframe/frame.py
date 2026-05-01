@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import os
 import warnings
 from collections.abc import Collection, Iterable, Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -45,6 +44,7 @@ from polars._utils.parquet import wrap_parquet_metadata_callback
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
+    parse_into_list_of_expressions_require_selectors,
 )
 from polars._utils.parse.expr import parse_list_into_selector
 from polars._utils.serde import serialize_polars_object
@@ -1433,6 +1433,48 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return self._ldf.describe_plan_tree()
         else:
             return self._ldf.describe_plan()
+
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: Literal[True],
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> str: ...
+
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: Literal[False] = ...,
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> None: ...
+
+    @overload
+    def show_graph(
+        self,
+        *,
+        optimized: bool = ...,
+        show: bool = ...,
+        output_path: str | Path | None = ...,
+        raw_output: bool = ...,
+        figsize: tuple[float, float] = ...,
+        engine: EngineType = ...,
+        plan_stage: PlanStage = ...,
+        optimizations: QueryOptFlags = ...,
+    ) -> str | None: ...
 
     @deprecate_streaming_parameter()
     @forward_old_opt_flags()
@@ -3287,16 +3329,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
-        sink_state = IcebergSinkState(
-            target=target,
-            catalog=catalog,
+        sink_state = IcebergSinkState.new(
+            target,
             mode=mode,
+            catalog=catalog,
             storage_options=storage_options,
         )
 
         sink_state.attach_sink(self).collect(engine="streaming")
 
-        return sink_state.commit()
+        return sink_state.commit_result_df.get()  # type: ignore[return-value]
 
     @overload
     def sink_ipc(
@@ -5055,11 +5097,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 10        │
         └───────────┘
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select(pyexprs))
 
     def select_seq(
@@ -5085,11 +5123,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         select
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.select_seq(pyexprs))
 
     def group_by(
@@ -5730,11 +5764,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        by
-            Join on these columns before doing asof join.
         by_left
             Join on these columns before doing asof join.
         by_right
+            Join on these columns before doing asof join.
+        by
             Join on these columns before doing asof join.
         strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
@@ -5793,6 +5827,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             will error. Currently, sortedness cannot be checked if 'by' groups are
             provided.
 
+        Notes
+        -----
+        If 'by' is set, the implementation will compute the asof join over all of the
+        groups concurrently.  This can potentially lead to high memory usage if there
+        are many groups.
+
+        This can be mitigated by sorting (via :meth:`.sort() <polars.LazyFrame.sort>`)
+        both of the input LazyFrames by the 'by' keys (or using :meth:`.set_sorted()
+        <polars.LazyFrame.set_sorted>` if the columns are already sorted)
+        before computing the join operation; and using the streaming engine to collect
+        the results. For example:
+
+        >>> # Compute streaming asof join with 'by' groups
+        >>> result = (
+        ...     left.sort("by", "on").join_asof(  # Sort left manually
+        ...         right.set_sorted("by", "on"),  # Set right as already sorted
+        ...     )
+        ... ).collect(streaming=True)  # doctest: +SKIP
 
         Examples
         --------
@@ -6566,11 +6618,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 4   ┆ 13.0 ┆ true  ┆ 52.0 ┆ false │
         └─────┴──────┴───────┴──────┴───────┘
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns(pyexprs))
 
     def with_columns_seq(
@@ -6605,11 +6653,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         with_columns
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return self._from_pyldf(self._ldf.with_columns_seq(pyexprs))
 
     @deprecated(
@@ -7982,9 +8026,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         parsed_subset: list[PyExpr] | None = None
         if subset is not None:
-            parsed_subset = parse_into_list_of_expressions(
-                subset, __require_selectors=True
-            )
+            parsed_subset = parse_into_list_of_expressions_require_selectors(subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, parsed_subset, keep))
 
     def drop_nans(
@@ -8508,10 +8550,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         function: Callable[[DataFrame], DataFrame],
         *,
-        predicate_pushdown: bool = True,
-        projection_pushdown: bool = True,
-        slice_pushdown: bool = True,
-        no_optimizations: bool = False,
+        predicate_pushdown: bool = False,
+        projection_pushdown: bool = False,
+        slice_pushdown: bool = False,
+        no_optimizations: bool | None = None,
         schema: None | SchemaDict = None,
         validate_output_schema: bool = True,
         streamable: bool = False,
@@ -8532,7 +8574,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown
             Allow slice pushdown optimization to pass this node.
         no_optimizations
-            Turn off all optimizations past this point.
+            .. deprecated:: 1.30.0
+                This parameter is deprecated and will be removed in a future version.
+                The `_pushdown` parameters now default to `False`, so this parameter
+                is no longer needed.
         schema
             Output schema of the function, if set to `None` we assume that the schema
             will remain unchanged by the applied function.
@@ -8590,10 +8635,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ -2      ┆ 199998 │
         └─────────┴────────┘
         """
-        if no_optimizations:
-            predicate_pushdown = False
-            projection_pushdown = False
-            slice_pushdown = False
+        if no_optimizations is not None:
+            issue_deprecation_warning(
+                "the `no_optimizations` parameter for `LazyFrame.map_batches` is deprecated."
+                " The `_pushdown` parameters now default to `False`, so this parameter is no longer needed.",
+                version="1.39.3",
+            )
 
         return self._from_pyldf(
             self._ldf.map_batches(
@@ -8741,7 +8788,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator))
 
-    def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
+    def merge_sorted(
+        self,
+        other: LazyFrame,
+        key: str,
+        *,
+        maintain_order: bool = False,
+    ) -> LazyFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
@@ -8758,6 +8811,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Other DataFrame that must be merged
         key
             Key that is sorted.
+        maintain_order
+            If ``True``, the output is guaranteed to have left-biased ordering
+            for equal keys: rows from the left frame appear before rows from
+            the right frame when their keys are equal.
 
         Examples
         --------
@@ -8808,13 +8865,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        No guarantee is given over the output row order when the key is equal
-        between the both dataframes.
+        Unless ``maintain_order=True``, no guarantee is given over the output
+        row order when the key is equal between the both dataframes.
 
         The key must be sorted in ascending order.
         """
         require_same_type(self, other)
-        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
+        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order))
 
     def set_sorted(
         self,
@@ -9179,7 +9236,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def remote(
         self,
-        context: pc.ComputeContext | None = None,
+        context: pc.ClientContext | None = None,
         *,
         plan_type: pc._typing.PlanTypePreference = "dot",
         n_retries: int = 0,
@@ -9250,7 +9307,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return pc.LazyFrameRemote(
             lf=self,
-            context=context,
+            context=context,  # type: ignore[arg-type]
             plan_type=plan_type,
             n_retries=n_retries,
             engine=engine,

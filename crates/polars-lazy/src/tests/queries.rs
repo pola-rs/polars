@@ -1686,7 +1686,7 @@ fn test_single_group_result() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("a").arg_sort(false, false).over([col("a")])])
+        .select([col("a").arg_sort(false, false).over([col("a")]).unwrap()])
         .collect()?;
 
     let a = out.column("a")?.idx()?;

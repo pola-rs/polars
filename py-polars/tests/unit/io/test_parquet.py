@@ -3738,7 +3738,10 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
         (pl.Float64, pa.float64()),
         (pl.Decimal(38, 10), pa.decimal128(38, 10)),
         (pl.Categorical, pa.dictionary(pa.uint32(), pa.string())),
-        (pl.Enum(["x", "y", "z"]), pa.dictionary(pa.uint8(), pa.string())),
+        (
+            pl.Enum(["x", "y", "z"]),
+            pa.dictionary(pa.uint8(), pa.string(), ordered=True),
+        ),
         (pl.List(pl.Int32), pa.large_list(pa.int32())),
         (pl.Array(pl.Int32, 3), pa.list_(pa.int32(), 3)),
         (
@@ -4105,3 +4108,98 @@ def test_parquet_float_zero_normalization_26733(values: list[float]) -> None:
     )
     expected = pl.DataFrame({"min_sign": [-1.0], "max_sign": [1.0]})
     assert_frame_equal(result, expected)
+
+
+def test_predicate_pushdown_null_column_schema_override_26974() -> None:
+    f = io.BytesIO()
+    pl.LazyFrame({"x": [None]}).sink_parquet(f)
+    f.seek(0)
+
+    lf = pl.scan_parquet(f, schema={"x": pl.Boolean}).filter("x")
+
+    assert_frame_equal(
+        lf.collect(),
+        lf.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+@pytest.mark.write_disk
+def test_parquet_duplicate_column_names_27393(tmp_path: Path) -> None:
+    schema = pa.schema([("ra", pa.int64()), ("ra", pa.int64())])
+    table = pa.Table.from_arrays(
+        [pa.array([1, 2, 3]), pa.array([4, 5, 6])],
+        schema=schema,
+    )
+    path = tmp_path / "duplicated.parquet"
+    pq.write_table(table, path)
+
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.read_parquet(path)
+
+    with pytest.raises(pl.exceptions.DuplicateError):
+        pl.scan_parquet(path).collect_schema()
+
+
+@pytest.mark.write_disk
+def test_read_parquet_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
+    path = tmp_path / "test.parquet"
+    pl.DataFrame({"h1": [1, 2], "h2": [2, 3]}).write_parquet(path)
+
+    expected = pl.DataFrame({"h1": [1, 2]})
+    assert_frame_equal(
+        pl.read_parquet(path, columns=[0], use_pyarrow=True),
+        expected,
+    )
+
+
+def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
+    path = io_files_path / "nested_maps.snappy.parquet"
+
+    expected = pl.DataFrame(
+        {
+            "a": [
+                [
+                    {
+                        "key": "a",
+                        "value": [
+                            {"key": 1, "value": True},
+                            {"key": 2, "value": False},
+                        ],
+                    }
+                ],
+                [{"key": "b", "value": [{"key": 1, "value": True}]}],
+                [{"key": "c", "value": []}],
+                [{"key": "d", "value": []}],
+                [{"key": "e", "value": [{"key": 1, "value": True}]}],
+                [
+                    {
+                        "key": "f",
+                        "value": [
+                            {"key": 3, "value": True},
+                            {"key": 4, "value": False},
+                            {"key": 5, "value": True},
+                        ],
+                    }
+                ],
+            ],
+            "b": [1, 1, 1, 1, 1, 1],
+            "c": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        },
+        schema={
+            "a": pl.List(
+                pl.Struct(
+                    {
+                        "key": pl.String,
+                        "value": pl.List(
+                            pl.Struct({"key": pl.Int32, "value": pl.Boolean})
+                        ),
+                    }
+                )
+            ),
+            "b": pl.Int32,
+            "c": pl.Float64,
+        },
+    )
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)

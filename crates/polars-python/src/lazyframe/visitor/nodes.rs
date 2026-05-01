@@ -281,6 +281,8 @@ pub struct MergeSorted {
     input_right: usize,
     #[pyo3(get)]
     key: String,
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 
 #[pyclass(frozen)]
@@ -744,12 +746,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_left,
             input_right,
             key,
+            maintain_order,
         } => MergeSorted {
             input_left: input_left.0,
             input_right: input_right.0,
             key: key.to_string(),
+            maintain_order: *maintain_order,
         }
         .into_py_any(py),
+        IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a UnoptimizedDispatch node",
+        )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }
