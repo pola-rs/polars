@@ -227,7 +227,7 @@ def test_rolling_min_by_categorical_by_column() -> None:
         {
             "idx": [1, 2, 3, 4, 5],
             "values": [10, 20, 30, 40, 50],
-            "by": pl.Series(["c", "a", "b", "a", "c"]).cast(pl.Categorical),
+            "by": pl.Series(["a", "c", "b", "a", "c"]).cast(pl.Categorical),
         }
     )
     result = df.rolling(index_column="idx", period="3i").agg(
@@ -236,7 +236,7 @@ def test_rolling_min_by_categorical_by_column() -> None:
     expected = pl.DataFrame(
         {
             "idx": [1, 2, 3, 4, 5],
-            "values": [10, 10, 10, 20, 50],
+            "values": [10, 10, 10, 40, 40],
         }
     )
     assert_frame_equal(result, expected)
