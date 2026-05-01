@@ -200,6 +200,50 @@ def test_rolling_min_by_duplicate_by_values() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_rolling_min_by_enum_by_column() -> None:
+    """Enum by column uses fast path correctly."""
+    df = pl.DataFrame(
+        {
+            "idx": [1, 2, 3, 4, 5],
+            "values": [10, 20, 30, 40, 50],
+            "by": pl.Series(["c", "a", "b", "a", "c"]).cast(
+                pl.Enum(["a", "b", "c"])
+            ),
+        }
+    )
+    result = df.rolling(index_column="idx", period="3i").agg(
+        pl.col("values").min_by("by")
+    )
+    expected = pl.DataFrame(
+        {
+            "idx": [1, 2, 3, 4, 5],
+            "values": [10, 20, 20, 20, 40],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_min_by_categorical_by_column() -> None:
+    """Categorical by column falls back to slow path."""
+    df = pl.DataFrame(
+        {
+            "idx": [1, 2, 3, 4, 5],
+            "values": [10, 20, 30, 40, 50],
+            "by": pl.Series(["c", "a", "b", "a", "c"]).cast(pl.Categorical),
+        }
+    )
+    result = df.rolling(index_column="idx", period="3i").agg(
+        pl.col("values").min_by("by")
+    )
+    expected = pl.DataFrame(
+        {
+            "idx": [1, 2, 3, 4, 5],
+            "values": [10, 10, 10, 20, 50],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_rolling_min_by_float_by_column() -> None:
     """Rolling min_by with float by column."""
     df = pl.DataFrame(
