@@ -652,6 +652,16 @@ impl PredicatePushDown {
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
+                // Share PythonScan when possible
+                if self.is_run_before_cspe {
+                    return self.no_pushdown_restart_opt(
+                        PythonScan { options },
+                        acc_predicates,
+                        lp_arena,
+                        expr_arena,
+                    );
+                }
+
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
                 if let Some(predicate) = predicate {
                     match ExprPushdownGroup::Pushable.update_with_expr_rec(
