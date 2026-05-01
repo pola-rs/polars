@@ -98,19 +98,14 @@ pub(super) fn predicate_at_scan(
     predicate: Option<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Option<ExprIR> {
-    if !acc_predicates.is_empty() {
-        let mut new_predicate = combine_predicates(acc_predicates.into_values(), expr_arena);
-        if let Some(pred) = predicate {
-            new_predicate.set_node(combine_by_and(
-                new_predicate.node(),
-                pred.node(),
-                expr_arena,
-            ));
-        }
-        Some(new_predicate)
-    } else {
-        None
+    if acc_predicates.is_empty() && predicate.is_none() {
+        return None;
     }
+
+    let mut new_predicate =
+        combine_predicates(acc_predicates.into_values().chain(predicate), expr_arena);
+
+    Some(new_predicate)
 }
 
 /// Evaluates a condition on the column name inputs of every predicate, where if

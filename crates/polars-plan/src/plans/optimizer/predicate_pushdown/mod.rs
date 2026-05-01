@@ -27,7 +27,7 @@ pub struct PredicatePushDown {
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
     is_run_before_cspe: bool,
-    visited_caches: PlHashSet<UniqueId>,
+    optimized_cache_inputs: PlHashMap<UniqueId, Node>,
 }
 
 impl PredicatePushDown {
@@ -37,7 +37,7 @@ impl PredicatePushDown {
             new_streaming,
             maintain_errors,
             is_run_before_cspe: false,
-            visited_caches: PlHashSet::default(),
+            optimized_cache_inputs: PlHashMap::default(),
         }
     }
 }
@@ -627,25 +627,31 @@ impl PredicatePushDown {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             // Caches will run predicate push-down in the `cache_states` run.
-            Cache { id, .. } => {
-                if self.visited_caches.insert(id) {
-                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
-                } else {
-                    self.no_pushdown(lp, acc_predicates, lp_arena, expr_arena)
+            Cache { id, input } => {
+                if !self.optimized_cache_inputs.contains_key(&id) {
+                    let optimized_input_ir = self.no_pushdown_restart_opt(
+                        lp_arena.take(input),
+                        Default::default(),
+                        lp_arena,
+                        expr_arena,
+                    )?;
+
+                    lp_arena.replace(input, optimized_input_ir);
+                    self.optimized_cache_inputs.insert(id, input);
                 }
+
+                self.no_pushdown(
+                    Cache {
+                        id,
+                        input: *self.optimized_cache_inputs.get(&id).unwrap(),
+                    },
+                    acc_predicates,
+                    lp_arena,
+                    expr_arena,
+                )
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
-                // Share PythonScan when possible
-                if self.is_run_before_cspe {
-                    return self.no_pushdown_restart_opt(
-                        PythonScan { options },
-                        acc_predicates,
-                        lp_arena,
-                        expr_arena,
-                    );
-                }
-
                 let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
                 if let Some(predicate) = predicate {
                     match ExprPushdownGroup::Pushable.update_with_expr_rec(
@@ -692,7 +698,7 @@ impl PredicatePushDown {
     ) -> PolarsResult<IR> {
         let acc_predicates = PlHashMap::new();
         self.is_run_before_cspe = is_run_before_cspe;
-        self.visited_caches.clear();
+        self.optimized_cache_inputs.clear();
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }
