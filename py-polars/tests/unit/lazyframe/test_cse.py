@@ -759,7 +759,7 @@ def test_cse_predicate_self_join(
 
     y_xf_c = y_xf.select("a", "b")
     print(y_xf_c.explain())
-    return
+    1 / 0
     assert y_xf_c.collect().to_dict(as_series=False) == {"a": [1], "b": [2]}
     captured = capfd.readouterr().err
     assert "CACHE HIT" in captured
