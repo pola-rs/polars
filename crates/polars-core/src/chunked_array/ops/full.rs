@@ -103,6 +103,63 @@ impl ChunkFullNull for BinaryOffsetChunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: PlSmallStr, value: &Series, length: usize) -> ListChunked {
+        // Fast path: single-element primitive numeric series — build values buffer + offsets directly.
+        if value.len() == 1 && value.dtype().is_primitive_numeric() || value.dtype().is_bool() {
+            use arrow::datatypes::PhysicalType;
+            use arrow::offset::{Offsets, OffsetsBuffer};
+            use arrow::with_match_primitive_type;
+
+            let chunk = value.rechunk();
+            let arr = chunk.chunks()[0].as_ref();
+            let arrow_dtype = arr.dtype().clone();
+
+            let values_arr = match arrow_dtype.to_physical_type() {
+                PhysicalType::Primitive(primitive) => {
+                    with_match_primitive_type!(primitive, |$T| {
+                        if arr.null_count() > 0 {
+                            PrimitiveArray::<$T>::new_null(arrow_dtype.clone(), length).boxed()
+                        } else {
+                            let prim_arr =
+                                arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();
+                            let val = prim_arr.value(0);
+                            PrimitiveArray::<$T>::from_vec(vec![val; length]).boxed()
+                        }
+                    })
+                },
+                PhysicalType::Boolean => {
+                    if arr.null_count() > 0 {
+                        BooleanArray::new_null(arrow_dtype.clone(), length).boxed()
+                    } else {
+                        let prim_arr = arr.as_any().downcast_ref::<BooleanArray>().unwrap();
+                        let val = prim_arr.value(0);
+                        BooleanArray::full(length, val, arrow_dtype.clone()).boxed()
+                    }
+                },
+                _ => unreachable!(),
+            };
+
+            let offsets: OffsetsBuffer<i64> =
+                Offsets::try_from_lengths(std::iter::repeat_n(1usize, length))
+                    .unwrap()
+                    .into();
+
+            let list_dtype = ArrowDataType::LargeList(Box::new(ArrowField::new(
+                LIST_VALUES_NAME,
+                arrow_dtype,
+                true,
+            )));
+            let list_arr = LargeListArray::new(list_dtype, offsets, values_arr, None);
+
+            // SAFETY: physical type matches the logical.
+            return unsafe {
+                ChunkedArray::from_chunks_and_dtype(
+                    name,
+                    vec![Box::new(list_arr)],
+                    DataType::List(Box::new(value.dtype().clone())),
+                )
+            };
+        }
+
         let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
         for _ in 0..length {
             builder.append_series(value).unwrap();
