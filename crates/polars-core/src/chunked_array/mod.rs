@@ -598,15 +598,27 @@ where
         unsafe { arr.get_unchecked(arr.len() - 1) }
     }
 
-    pub fn set_validity(&mut self, validity: &Bitmap) {
-        assert_eq!(self.len(), validity.len());
+    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
+        assert!(
+            !self.dtype().is_struct(),
+            "set_outer_validity should be used for struct types"
+        );
+        if let Some(v) = &validity {
+            assert_eq!(self.len(), v.len());
+        }
         let mut i = 0;
         for chunk in unsafe { self.chunks_mut() } {
-            *chunk = chunk.with_validity(Some(validity.clone().sliced(i, chunk.len())));
+            *chunk =
+                chunk.with_validity(validity.as_ref().map(|v| v.clone().sliced(i, chunk.len())));
             i += chunk.len();
         }
-        self.null_count = validity.unset_bits();
+        self.null_count = validity.map(|v| v.unset_bits()).unwrap_or(0);
         self.set_fast_explode_list(false);
+    }
+
+    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+        self.set_validity(validity);
+        self
     }
 }
 
@@ -642,13 +654,10 @@ where
         }));
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
-
-        if let Some(combined) =
-            combine_validities_and(Some(validity), ca.rechunk_validity().as_ref())
-        {
-            ca.set_validity(&combined);
-        }
-
+        ca.set_validity(combine_validities_and(
+            Some(validity),
+            ca.rechunk_validity().as_ref(),
+        ));
         ca
     }
 }

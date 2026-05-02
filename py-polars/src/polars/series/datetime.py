@@ -1917,6 +1917,10 @@ class DateTimeNameSpace:
         Series
             Series of data type :class:`Date` or :class:`Datetime`.
 
+        See Also
+        --------
+        Series.dt.round : Map to the nearest bucket.
+
         Examples
         --------
         >>> from datetime import timedelta, datetime
@@ -2029,6 +2033,10 @@ class DateTimeNameSpace:
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
+
+        See Also
+        --------
+        Series.dt.truncate : Map to start of the bucket.
 
         Examples
         --------

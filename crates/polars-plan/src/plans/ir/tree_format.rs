@@ -190,102 +190,99 @@ impl<'a> TreeFmtNode<'a> {
             ),
             #[cfg(not(feature = "regex"))]
             C::Expression(expr) => ND(wh(h, &expr.display(self.lp.expr_arena).to_string()), vec![]),
-            C::LogicalPlan(lp_top) => {
-                match self.lp.with_root(lp_top).root() {
-                    #[cfg(feature = "python")]
-                    PythonScan { .. } => ND(wh(h, &lp.describe()), vec![]),
-                    Scan { .. } => ND(wh(h, &lp.describe()), vec![]),
-                    DataFrameScan {
-                        schema,
-                        output_schema,
-                        ..
-                    } => {
-                        let (n_columns, projected) = if let Some(schema) = output_schema {
-                            (
-                                format!("{}", schema.len()),
-                                format!(
-                                    ": {};",
-                                    format_list_truncated!(schema.iter_names(), 4, '"')
-                                ),
-                            )
-                        } else {
-                            ("*".to_string(), "".to_string())
-                        };
-                        ND(
-                            wh(
-                                h,
-                                &format!(
-                                    "DF {}\nPROJECT{} {}/{} COLUMNS",
-                                    format_list_truncated!(schema.iter_names(), 4, '"'),
-                                    projected,
-                                    n_columns,
-                                    schema.len()
-                                ),
-                            ),
-                            vec![],
+            C::LogicalPlan(lp_top) => match self.lp.with_root(lp_top).root() {
+                #[cfg(feature = "python")]
+                PythonScan { .. } => ND(wh(h, &lp.describe()), vec![]),
+                Scan { .. } => ND(wh(h, &lp.describe()), vec![]),
+                DataFrameScan {
+                    schema,
+                    output_schema,
+                    ..
+                } => {
+                    let (n_columns, projected) = if let Some(schema) = output_schema {
+                        (
+                            format!("{}", schema.len()),
+                            format!(": {};", format_list_truncated!(schema.iter_names(), 4, '"')),
                         )
-                    },
-
-                    Union { inputs, .. } => ND(
+                    } else {
+                        ("*".to_string(), "".to_string())
+                    };
+                    ND(
                         wh(
                             h,
-                            // THis is commented out, but must be restored when we convert to IR's.
-                            // &(if let Some(slice) = options.slice {
-                            //     format!("SLICED UNION: {slice:?}")
-                            // } else {
-                            //     "UNION".to_string()
-                            // }),
-                            "UNION",
+                            &format!(
+                                "DF {}\nPROJECT{} {}/{} COLUMNS",
+                                format_list_truncated!(schema.iter_names(), 4, '"'),
+                                projected,
+                                n_columns,
+                                schema.len()
+                            ),
                         ),
-                        inputs
-                            .iter()
-                            .enumerate()
-                            .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
-                            .collect(),
+                        vec![],
+                    )
+                },
+
+                Union {
+                    inputs, options, ..
+                } => ND(
+                    wh(
+                        h,
+                        &(if let Some(slice) = options.slice {
+                            format!("SLICED UNION: {slice:?}")
+                        } else {
+                            "UNION".to_string()
+                        }),
                     ),
-                    HConcat { inputs, .. } => ND(
-                        wh(h, "HCONCAT"),
-                        inputs
-                            .iter()
-                            .enumerate()
-                            .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
-                            .collect(),
-                    ),
-                    Cache { input, id } => ND(
-                        wh(h, &format!("CACHE[id: {id}]")),
-                        vec![self.lp_node(None, *input)],
-                    ),
-                    Filter { input, predicate } => ND(
-                        wh(h, "FILTER"),
-                        vec![
-                            self.expr_node(Some("predicate:".to_string()), predicate),
-                            self.lp_node(Some("FROM:".to_string()), *input),
-                        ],
-                    ),
-                    Select { expr, input, .. } => ND(
-                        wh(h, "SELECT"),
-                        expr.iter()
-                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
-                            .chain([self.lp_node(Some("FROM:".to_string()), *input)])
-                            .collect(),
-                    ),
-                    Sort {
-                        input, by_column, ..
-                    } => ND(
-                        wh(h, "SORT BY"),
-                        by_column
-                            .iter()
-                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
-                            .chain([self.lp_node(None, *input)])
-                            .collect(),
-                    ),
-                    GroupBy {
-                        input,
-                        keys,
-                        aggs,
-                        maintain_order,
-                        ..
-                    } => ND(
+                    inputs
+                        .iter()
+                        .enumerate()
+                        .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
+                        .collect(),
+                ),
+                HConcat { inputs, .. } => ND(
+                    wh(h, "HCONCAT"),
+                    inputs
+                        .iter()
+                        .enumerate()
+                        .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
+                        .collect(),
+                ),
+                Cache { input, id } => ND(
+                    wh(h, &format!("CACHE[id: {id}]")),
+                    vec![self.lp_node(None, *input)],
+                ),
+                Filter { input, predicate } => ND(
+                    wh(h, "FILTER"),
+                    vec![
+                        self.expr_node(Some("predicate:".to_string()), predicate),
+                        self.lp_node(Some("FROM:".to_string()), *input),
+                    ],
+                ),
+                Select { expr, input, .. } => ND(
+                    wh(h, "SELECT"),
+                    expr.iter()
+                        .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                        .chain([self.lp_node(Some("FROM:".to_string()), *input)])
+                        .collect(),
+                ),
+                Sort {
+                    input, by_column, ..
+                } => ND(
+                    wh(h, "SORT BY"),
+                    by_column
+                        .iter()
+                        .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                        .chain([self.lp_node(None, *input)])
+                        .collect(),
+                ),
+                GroupBy {
+                    input,
+                    keys,
+                    aggs,
+                    maintain_order,
+                    ..
+                } => {
+                    ND(
                         wh(
                             h,
                             &format!("AGGREGATE[maintain_order: {}]", *maintain_order),
@@ -297,111 +294,118 @@ impl<'a> TreeFmtNode<'a> {
                             }))
                             .chain([self.lp_node(Some("FROM:".to_string()), *input)])
                             .collect(),
-                    ),
-                    Join {
-                        input_left,
-                        input_right,
-                        left_on,
-                        right_on,
-                        options,
-                        ..
-                    } => ND(
-                        wh(h, &format!("{} JOIN", options.args.how)),
-                        left_on
-                            .iter()
-                            .map(|expr| self.expr_node(Some("left on:".to_string()), expr))
-                            .chain([self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)])
-                            .chain(
-                                right_on.iter().map(|expr| {
-                                    self.expr_node(Some("right on:".to_string()), expr)
-                                }),
-                            )
-                            .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
-                            .collect(),
-                    ),
-                    HStack { input, exprs, .. } => ND(
-                        wh(h, "WITH_COLUMNS"),
-                        exprs
-                            .iter()
-                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
-                            .chain([self.lp_node(None, *input)])
-                            .collect(),
-                    ),
-                    Distinct { input, options } => ND(
-                        wh(
-                            h,
-                            &format!(
-                                "UNIQUE[maintain_order: {:?}, keep_strategy: {:?}] BY {:?}",
-                                options.maintain_order, options.keep_strategy, options.subset
-                            ),
-                        ),
-                        vec![self.lp_node(None, *input)],
-                    ),
-                    Slice { input, offset, len } => ND(
-                        wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
-                        vec![self.lp_node(None, *input)],
-                    ),
-                    MapFunction { input, function } => ND(
-                        wh(h, &format!("{function}")),
-                        vec![self.lp_node(None, *input)],
-                    ),
-                    ExtContext { input, .. } => {
-                        ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
-                    },
-                    Sink { input, payload } => ND(
-                        wh(
-                            h,
-                            match payload {
-                                SinkTypeIR::Memory => "SINK (memory)",
-                                SinkTypeIR::Callback(..) => "SINK (callback)",
-                                SinkTypeIR::File { .. } => "SINK (file)",
-                                SinkTypeIR::Partitioned { .. } => "SINK (partition)",
-                            },
-                        ),
-                        vec![self.lp_node(None, *input)],
-                    ),
-                    SinkMultiple { inputs } => ND(
-                        wh(h, "SINK_MULTIPLE"),
-                        inputs
-                            .iter()
-                            .enumerate()
-                            .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
-                            .collect(),
-                    ),
-                    SimpleProjection { input, columns } => {
-                        let num_columns = columns.as_ref().len();
-                        let total_columns = lp.lp_arena.get(*input).schema(lp.lp_arena).len();
-
-                        let columns = ColumnsDisplay(columns.as_ref());
-                        ND(
-                            wh(
-                                h,
-                                &format!("simple π {num_columns}/{total_columns} [{columns}]"),
-                            ),
-                            vec![self.lp_node(None, *input)],
+                    )
+                },
+                Join {
+                    input_left,
+                    input_right,
+                    left_on,
+                    right_on,
+                    options,
+                    ..
+                } => ND(
+                    wh(h, &format!("{} JOIN", options.args.how)),
+                    left_on
+                        .iter()
+                        .map(|expr| self.expr_node(Some("left on:".to_string()), expr))
+                        .chain([self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)])
+                        .chain(
+                            right_on
+                                .iter()
+                                .map(|expr| self.expr_node(Some("right on:".to_string()), expr)),
                         )
-                    },
-                    #[cfg(feature = "merge_sorted")]
-                    MergeSorted {
-                        input_left,
-                        input_right,
-                        key,
-                        maintain_order,
-                    } => ND(
+                        .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
+                        .collect(),
+                ),
+                HStack { input, exprs, .. } => ND(
+                    wh(h, "WITH_COLUMNS"),
+                    exprs
+                        .iter()
+                        .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
+                        .chain([self.lp_node(None, *input)])
+                        .collect(),
+                ),
+                Distinct { input, options } => ND(
+                    wh(
+                        h,
+                        &format!(
+                            "UNIQUE[maintain_order: {:?}, keep_strategy: {:?}] BY {:?}",
+                            options.maintain_order, options.keep_strategy, options.subset
+                        ),
+                    ),
+                    vec![self.lp_node(None, *input)],
+                ),
+                Slice { input, offset, len } => ND(
+                    wh(h, &format!("SLICE[offset: {offset}, len: {len}]")),
+                    vec![self.lp_node(None, *input)],
+                ),
+                MapFunction { input, function } => ND(
+                    wh(h, &format!("{function}")),
+                    vec![self.lp_node(None, *input)],
+                ),
+                ExtContext { input, .. } => {
+                    ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
+                },
+                Sink { input, payload } => ND(
+                    wh(
+                        h,
+                        match payload {
+                            SinkTypeIR::Memory => "SINK (memory)",
+                            SinkTypeIR::Callback(..) => "SINK (callback)",
+                            SinkTypeIR::File { .. } => "SINK (file)",
+                            SinkTypeIR::Partitioned { .. } => "SINK (partition)",
+                        },
+                    ),
+                    vec![self.lp_node(None, *input)],
+                ),
+                SinkMultiple { inputs } => ND(
+                    wh(h, "SINK_MULTIPLE"),
+                    inputs
+                        .iter()
+                        .enumerate()
+                        .map(|(i, lp_root)| self.lp_node(Some(format!("PLAN {i}:")), *lp_root))
+                        .collect(),
+                ),
+                SimpleProjection { input, columns } => {
+                    let num_columns = columns.as_ref().len();
+                    let total_columns = lp.lp_arena.get(*input).schema(lp.lp_arena).len();
+
+                    let columns = ColumnsDisplay(columns.as_ref());
+                    ND(
                         wh(
                             h,
-                            &format!(
-                                "MERGE SORTED[maintain_order: {:?}] ON '{key}'",
-                                maintain_order
-                            ),
+                            &format!("simple π {num_columns}/{total_columns} [{columns}]"),
                         ),
-                        [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
-                            .into_iter()
-                            .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
-                            .collect(),
+                        vec![self.lp_node(None, *input)],
+                    )
+                },
+                #[cfg(feature = "merge_sorted")]
+                MergeSorted {
+                    input_left,
+                    input_right,
+                    key,
+                    maintain_order,
+                } => ND(
+                    wh(
+                        h,
+                        &format!(
+                            "MERGE SORTED[maintain_order: {:?}] ON '{key}'",
+                            maintain_order
+                        ),
                     ),
-                    Invalid => ND(wh(h, "INVALID"), vec![]),
-                }
+                    [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
+                        .into_iter()
+                        .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
+                        .collect(),
+                ),
+                UnoptimizedDispatch { inputs, operation } => ND(
+                    wh(h, &format!("DISPATCH {operation}")),
+                    inputs
+                        .iter()
+                        .map(|input| self.lp_node(None, *input))
+                        .collect(),
+                ),
+                Invalid => ND(wh(h, "INVALID"), vec![]),
             },
         }
     }

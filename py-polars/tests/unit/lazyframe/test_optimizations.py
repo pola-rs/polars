@@ -909,3 +909,12 @@ def test_slice_pushdown_expr_height_rules() -> None:
     assert ".slice(" not in plan
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}))
+
+
+def test_forbid_flatten_sliced_union_27455() -> None:
+    df = pl.DataFrame({"a": [0, 0, 0, 0, 0]})
+    q1 = pl.concat([(df + 1).lazy(), (df + 10).lazy()])
+    q2 = pl.concat([(df + 100).lazy(), (df + 1000).lazy()])
+    q = pl.concat([q1.head(1), q2.head(1)])
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 100]}))

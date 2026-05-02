@@ -215,27 +215,14 @@ pub fn aexpr_to_column_predicates(
                             } => {
                                 into_column(input[0].node(), expr_arena)?;
 
-                                let values = constant_evaluate(
+                                let values = super::try_extract_is_in_haystack(
                                     input[1].node(),
                                     expr_arena,
                                     schema,
-                                    0,
-                                )??;
-                                let values = values.to_any_value()?;
-
-                                let values = match values {
-                                    AnyValue::List(v) => v,
-                                    #[cfg(feature = "dtype-array")]
-                                    AnyValue::Array(v, _) => v,
-                                    _ => return None,
-                                };
-
-                                if values.dtype() != &dtype {
-                                    return None;
-                                }
-                                if !nulls_equal && values.has_nulls() {
-                                    return None;
-                                }
+                                    &dtype,
+                                    *nulls_equal,
+                                    usize::MAX,
+                                )?;
 
                                 let values = values.iter()
                                     .map(|av| {

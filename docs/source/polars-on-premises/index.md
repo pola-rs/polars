@@ -7,6 +7,8 @@ distributing a single query across multiple nodes for large-scale workloads.
 Interested in running Polars On-Prem?
 [Sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
 
+After that you can install by getting the latest version [here](/polars-on-premises/releases).
+
 After installing Polars On-Prem either on bare-metal or on Kubernetes, you can connect to your
 cluster using the Polars Cloud Python client.
 

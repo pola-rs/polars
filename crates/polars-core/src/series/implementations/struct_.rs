@@ -195,6 +195,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.rechunk().into_owned().into_series()
     }
 
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0.clone().with_outer_validity(validity).into_series()
+    }
+
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {
         self.0.new_from_index(_index, _length).into_series()
     }

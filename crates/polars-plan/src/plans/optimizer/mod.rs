@@ -11,6 +11,8 @@ mod collect_members;
 mod count_star;
 #[cfg(feature = "cse")]
 mod cse;
+#[cfg(feature = "merge_sorted")]
+mod flatten_merge_sorted;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
@@ -46,6 +48,8 @@ pub use sortedness::{
 };
 pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 
+#[cfg(feature = "merge_sorted")]
+use self::flatten_merge_sorted::FlattenMergeSortedRule;
 use self::flatten_union::FlattenUnionRule;
 pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
@@ -244,6 +248,8 @@ pub fn optimize(
     }
 
     if !opt_flags.eager() {
+        #[cfg(feature = "merge_sorted")]
+        rules.push(Box::new(FlattenMergeSortedRule::new()));
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
