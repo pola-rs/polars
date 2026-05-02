@@ -84,6 +84,36 @@ impl EvalExpr {
         let flattened_len = flattened.len();
         let validity = ca.rechunk_validity();
 
+        // Batch when the total number of inner elements exceeds IdxSize::MAX to avoid
+        // truncating offset/length casts below. Each batch covers a contiguous row-range
+        // whose accumulated inner element count stays within IdxSize::MAX.
+        if flattened_len > IdxSize::MAX as usize {
+            let offsets = ca.offsets()?;
+            let mut batch_results: Vec<Column> = Vec::new();
+            let mut batch_row_start = 0usize;
+            let mut batch_inner_start: i64 = 0;
+
+            for i in 0..ca.len() {
+                let inner_end = unsafe { offsets.start_end_unchecked(i).1 } as i64;
+                // Flush the current batch before including row `i` if it would overflow.
+                if inner_end - batch_inner_start > IdxSize::MAX as i64 && i > batch_row_start {
+                    let batch = ca.slice(batch_row_start as i64, i - batch_row_start);
+                    batch_results.push(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+                    batch_row_start = i;
+                    batch_inner_start = unsafe { offsets.start_end_unchecked(i).0 } as i64;
+                }
+            }
+            // Flush the final batch.
+            let batch = ca.slice(batch_row_start as i64, ca.len() - batch_row_start);
+            batch_results.push(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+
+            let mut out = batch_results.remove(0);
+            for other in batch_results {
+                out.append_owned(other)?;
+            }
+            return Ok(out);
+        }
+
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
             let mut state = state.clone();
