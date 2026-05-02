@@ -1527,6 +1527,19 @@ def test_0_width_df_roundtrip() -> None:
         pl.LazyFrame(height=1).sink_csv(io.BytesIO())
 
 
+def test_to_arrow_no_deadlock_multithreaded() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    df = pl.DataFrame({"a": [1] * 100000})
+
+    def to_arrow() -> None:
+        df.to_arrow()
+
+    with ThreadPoolExecutor(10) as e:
+        fs = [e.submit(to_arrow) for _ in range(100)]
+        [f.result(timeout=10) for f in fs]
+
+
 def test_from_pandas_timestamp_17382() -> None:
     my_date_pd = pd.to_datetime("2021-01-01 11:00:00.0000000 +11:00")
     result = pl.DataFrame([my_date_pd]).item()

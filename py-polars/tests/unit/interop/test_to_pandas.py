@@ -219,7 +219,7 @@ def test_filter_with_pandas_timedelta_26620() -> None:
     assert_frame_equal(actual, expected)
 
 
-def test_no_deadlock_multithreaded_27396() -> None:
+def test_to_pandas_no_deadlock_multithreaded_27396() -> None:
     from concurrent.futures import ThreadPoolExecutor
 
     df = pl.DataFrame({"a": [1] * 100000})

@@ -1,6 +1,5 @@
 use arrow::datatypes::IntegerType;
 use arrow::record_batch::RecordBatch;
-use parking_lot::RwLockWriteGuard;
 use polars::prelude::*;
 use polars_compute::cast::CastOptionsImpl;
 use polars_utils::itertools::Itertools;
@@ -83,10 +82,9 @@ impl PyDataFrame {
         py: Python<'_>,
         compat_level: PyCompatLevel,
     ) -> PyResult<Vec<Py<PyAny>>> {
-        let mut df = self.df.write();
-        let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
-        py.enter_polars_ok(|| dfr.align_chunks_par())?;
-        let df = RwLockWriteGuard::downgrade(df);
+        let mut df = self.df.read().clone();
+        py.enter_polars_ok(|| df.align_chunks_par())?;
+        *self.df.write() = df.clone();
 
         let pyarrow = py.import("pyarrow")?;
 
