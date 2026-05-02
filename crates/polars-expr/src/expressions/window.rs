@@ -844,23 +844,22 @@ impl PhysicalExpr for WindowExpr {
                                         unsafe { validity.get_bit_unchecked(in_group_idx_a) };
                                     let is_valid_b =
                                         unsafe { validity.get_bit_unchecked(in_group_idx_b) };
+
+                                    if !is_valid_a | !is_valid_b {
+                                        if !is_valid_a & !is_valid_b {
+                                            return Ordering::Equal;
+                                        }
+                                        return match (options.nulls_last, !is_valid_a) {
+                                            (false, true) | (true, false) => Ordering::Less,
+                                            _ => Ordering::Greater,
+                                        };
+                                    }
+
                                     let order_a = unsafe { arr.get_unchecked(in_group_idx_a) };
                                     let order_b = unsafe { arr.get_unchecked(in_group_idx_b) };
 
-                                    if !is_valid_a & !is_valid_b {
-                                        return Ordering::Equal;
-                                    }
-
                                     let mut cmp = order_a.cmp(&order_b);
-                                    if !is_valid_a {
-                                        cmp = Ordering::Less;
-                                    }
-                                    if !is_valid_b {
-                                        cmp = Ordering::Greater;
-                                    }
-                                    if options.descending
-                                        | ((!is_valid_a | !is_valid_b) & options.nulls_last)
-                                    {
+                                    if options.descending {
                                         cmp = cmp.reverse();
                                     }
                                     cmp
