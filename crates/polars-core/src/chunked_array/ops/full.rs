@@ -103,7 +103,7 @@ impl ChunkFullNull for BinaryOffsetChunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: PlSmallStr, value: &Series, length: usize) -> ListChunked {
-        if value.len() == 1 && length > 0 {
+        if value.len() == 1 && !value.dtype().is_nested() {
             let out = value
                 .new_from_index(0, length)
                 .reshape_list(&[
