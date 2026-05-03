@@ -287,12 +287,12 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
-    Ok(StructArray::new(
+    StructArray::try_new(
         dtype.clone(),
         rows.len(),
         values,
         validity.into_opt_validity(),
-    ))
+    )
 }
 
 fn fill_array_from<B, T, A>(
