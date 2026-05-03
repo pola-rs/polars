@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
-use polars_core::error::{PolarsResult, feature_gated};
+use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
@@ -109,9 +109,8 @@ impl EvalExpr {
                     // All remaining rows fit in one batch.
                     break;
                 }
-                // Flush [batch_row_start, batch_row_start + flush_len). Use at least 1 so we
-                // never produce an empty batch when a single row exceeds IdxSize::MAX on its own.
-                let flush_len = rel.max(1);
+                let flush_len = rel;
+                polars_ensure!(flush_len > 0, ComputeError: "list elements larger than IdxSize::MAX are not supported");
                 let batch = ca.slice(batch_row_start as i64, flush_len);
                 batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
                 batch_row_start += flush_len;
@@ -121,8 +120,8 @@ impl EvalExpr {
             let batch = ca.slice(batch_row_start as i64, ca.len() - batch_row_start);
             batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
 
-            let mut out = batch_results.pop_front();
-            for other in batch_results {
+            let mut out = batch_results.pop_front().unwrap();
+            for other in batch_results.into_iter() {
                 out.append_owned(other)?;
             }
             return Ok(out);
