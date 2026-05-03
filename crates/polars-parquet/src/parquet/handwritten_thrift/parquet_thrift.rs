@@ -65,6 +65,7 @@ pub(crate) enum ThriftProtocolError {
     InvalidElementType(u8),
     FieldDeltaOverflow { field_delta: u8, last_field_id: i16 },
     InvalidBoolean(u8),
+    IntegerOverflow,
     Utf8Error,
     SkipDepth(FieldType),
     SkipUnsupportedType(FieldType),
@@ -89,6 +90,9 @@ impl From<ThriftProtocolError> for ParquetError {
             ThriftProtocolError::InvalidBoolean(value) => {
                 general_err!("cannot convert {} into bool", value)
             },
+            ThriftProtocolError::IntegerOverflow => {
+                general_err!("integer overflow decoding thrift value")
+            },
             ThriftProtocolError::Utf8Error => general_err!("invalid utf8"),
             ThriftProtocolError::SkipDepth(field_type) => {
                 general_err!("cannot parse past {:?}", field_type)
@@ -110,6 +114,13 @@ impl From<Utf8Error> for ThriftProtocolError {
 impl From<Error> for ThriftProtocolError {
     fn from(e: Error) -> Self {
         Self::IO(e)
+    }
+}
+
+impl From<std::num::TryFromIntError> for ThriftProtocolError {
+    fn from(_: std::num::TryFromIntError) -> Self {
+        // ignore error payload to reduce the size of ThriftProtocolError
+        Self::IntegerOverflow
     }
 }
 
@@ -296,6 +307,23 @@ pub(crate) trait ThriftCompactInputProtocol<'a> {
     /// Skip the next `n` bytes of input.
     fn skip_bytes(&mut self, n: usize) -> ThriftProtocolResult<()>;
 
+    /// Upper bound on the number of bytes still available to read from this
+    /// input. Implementations backed by an in-memory slice can return the
+    /// exact remaining length; implementations wrapping a streaming reader
+    /// that doesn't know its bound should fall back to `usize::MAX`, which
+    /// is what the default impl returns.
+    ///
+    /// Used by [`read_thrift_vec`] (and the local `read_list` helper in
+    /// `file_metadata_thrift`) to cap up-front list allocations: a Thrift
+    /// list element occupies at least one byte on the wire, so the list
+    /// size declared in the header is always at most `bytes_remaining()`.
+    /// Without this cap an attacker-controlled list-size varint of
+    /// ~`i32::MAX` drives a multi-GiB up-front allocation through
+    /// `Vec::with_capacity`.
+    fn bytes_remaining(&self) -> usize {
+        usize::MAX
+    }
+
     /// Read a ULEB128 encoded unsigned varint from the input.
     ///
     /// Fast path for the 1-byte case (~80-90% of Parquet metadata varints).
@@ -343,7 +371,13 @@ pub(crate) trait ThriftCompactInputProtocol<'a> {
             // high bits set high if count and type encoded separately
             possible_element_count as i32
         } else {
-            self.read_vlq()? as _
+            // The list size on the wire is an unsigned varint, but the
+            // Parquet Thrift schema (and Java's `int`) represent it as
+            // `i32`. A varint that decodes above `i32::MAX` is malformed
+            // input — reject it here at the protocol layer rather than
+            // letting the cast wrap into a negative size that downstream
+            // allocation code has to re-validate.
+            i32::try_from(self.read_vlq()?)?
         };
 
         Ok(ListIdentifier {
@@ -592,6 +626,11 @@ impl<'a> ThriftSliceInputProtocol<'a> {
 
 impl<'b, 'a: 'b> ThriftCompactInputProtocol<'b> for ThriftSliceInputProtocol<'a> {
     #[inline]
+    fn bytes_remaining(&self) -> usize {
+        self.buf.len()
+    }
+
+    #[inline]
     fn read_byte(&mut self) -> ThriftProtocolResult<u8> {
         let ret = *self.buf.first().ok_or(ThriftProtocolError::Eof)?;
         self.buf = &self.buf[1..];
@@ -745,8 +784,25 @@ where
     R: ThriftCompactInputProtocol<'a>,
     T: ReadThrift<'a, R>,
 {
+    // `read_list_begin` already rejects sizes above `i32::MAX`, but on a
+    // 64-bit target that is still ~2 GiB of `T`s. Cap the up-front
+    // capacity by the bytes still in the input: each Thrift list element
+    // occupies at least one byte on the wire, so a declared size larger
+    // than what the reader has left is invariably invalid input. The
+    // subsequent `try_reserve_exact` then serves as belt-and-suspenders.
     let list_ident = prot.read_list_begin()?;
-    let mut res = Vec::with_capacity(list_ident.size as usize);
+    let declared = list_ident.size as usize;
+    let bound = declared.min(prot.bytes_remaining());
+    let mut res: Vec<T> = Vec::new();
+    if res.try_reserve_exact(bound).is_err() {
+        return Err(general_err!(
+            "cannot allocate Thrift list of {} elements",
+            declared
+        ));
+    }
+    // Iterate up to the declared length: `T::read_thrift` will surface a
+    // protocol-level EOF the moment the input is exhausted, which is the
+    // correct user-visible error for a header that overstates its list size.
     for _ in 0..list_ident.size {
         let val = T::read_thrift(prot)?;
         res.push(val);
