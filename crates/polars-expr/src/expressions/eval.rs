@@ -89,19 +89,32 @@ impl EvalExpr {
         // whose accumulated inner element count stays within IdxSize::MAX.
         if flattened_len > IdxSize::MAX as usize {
             let offsets = ca.offsets()?;
+            // offsets_slice[i] / offsets_slice[i+1] are the start/end of row i.
+            let offsets_slice = offsets.as_slice();
             let mut batch_results: Vec<Column> = Vec::new();
             let mut batch_row_start = 0usize;
             let mut batch_inner_start: i64 = 0;
 
-            for i in 0..ca.len() {
-                let inner_end = unsafe { offsets.start_end_unchecked(i).1 } as i64;
-                // Flush the current batch before including row `i` if it would overflow.
-                if inner_end - batch_inner_start > IdxSize::MAX as i64 && i > batch_row_start {
-                    let batch = ca.slice(batch_row_start as i64, i - batch_row_start);
-                    batch_results.push(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
-                    batch_row_start = i;
-                    batch_inner_start = unsafe { offsets.start_end_unchecked(i).0 } as i64;
+            loop {
+                if batch_row_start >= ca.len() {
+                    break;
                 }
+                let threshold = batch_inner_start + IdxSize::MAX as i64;
+                // Binary search for the first row whose end offset exceeds the threshold.
+                // offsets_slice[batch_row_start+1..] holds end offsets for rows
+                // batch_row_start, batch_row_start+1, …; partition_point returns how many fit.
+                let rel = offsets_slice[batch_row_start + 1..].partition_point(|&v| v <= threshold);
+                if batch_row_start + rel >= ca.len() {
+                    // All remaining rows fit in one batch.
+                    break;
+                }
+                // Flush [batch_row_start, batch_row_start + flush_len). Use at least 1 so we
+                // never produce an empty batch when a single row exceeds IdxSize::MAX on its own.
+                let flush_len = rel.max(1);
+                let batch = ca.slice(batch_row_start as i64, flush_len);
+                batch_results.push(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+                batch_row_start += flush_len;
+                batch_inner_start = offsets_slice[batch_row_start] as i64;
             }
             // Flush the final batch.
             let batch = ca.slice(batch_row_start as i64, ca.len() - batch_row_start);
