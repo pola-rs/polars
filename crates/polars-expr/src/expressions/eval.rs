@@ -9,8 +9,8 @@ use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    ChunkCast, ChunkExplode, ChunkNestingUtils, Column, Field, GroupPositions, GroupsType, IdxCa,
-    IntoColumn, ListBuilderTrait, ListChunked,
+    _set_check_length, ChunkCast, ChunkExplode, ChunkNestingUtils, Column, Field, GroupPositions,
+    GroupsType, IdxCa, IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -66,21 +66,21 @@ impl EvalExpr {
         state: &ExecutionState,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = DataFrame::empty_with_height(ca.len());
-        let ca = ca
-            .trim_lists_to_normalized_offsets()
-            .map_or(Cow::Borrowed(ca), Cow::Owned);
-
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
 
-        let has_masked_out_values = LazyCell::new(|| ca.has_masked_out_values());
-        let may_fail_on_masked_out_elements = self.evaluation_is_fallible && *has_masked_out_values;
-
+        // SAFETY:
+        // We may temporarily create lengths that exceed IDXSIZE.
+        // If that happens we slice and process in batches.
+        unsafe { _set_check_length(false) };
         let flattened = ca.get_inner().into_column();
+        unsafe { _set_check_length(true) };
         let flattened_len = flattened.len();
         let validity = ca.rechunk_validity();
 
@@ -114,7 +114,7 @@ impl EvalExpr {
                 let batch = ca.slice(batch_row_start as i64, flush_len);
                 batch_results.push(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
                 batch_row_start += flush_len;
-                batch_inner_start = offsets_slice[batch_row_start] as i64;
+                batch_inner_start = offsets_slice[batch_row_start];
             }
             // Flush the final batch.
             let batch = ca.slice(batch_row_start as i64, ca.len() - batch_row_start);
@@ -126,6 +126,11 @@ impl EvalExpr {
             }
             return Ok(out);
         }
+
+        let df = DataFrame::empty_with_height(ca.len());
+
+        let has_masked_out_values = LazyCell::new(|| ca.has_masked_out_values());
+        let may_fail_on_masked_out_elements = self.evaluation_is_fallible && *has_masked_out_values;
 
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
