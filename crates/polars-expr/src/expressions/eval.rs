@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::cell::LazyCell;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
@@ -76,7 +77,7 @@ impl EvalExpr {
             .map_or(Cow::Borrowed(ca), Cow::Owned);
 
         // SAFETY:
-        // We may temporarily create lengths that exceed IDXSIZE.
+        // We may temporarily create lengths that exceed IDXSIZE
         // If that happens we slice and process in batches.
         unsafe { _set_check_length(false) };
         let flattened = ca.get_inner().into_column();
@@ -91,7 +92,7 @@ impl EvalExpr {
             let offsets = ca.offsets()?;
             // offsets_slice[i] / offsets_slice[i+1] are the start/end of row i.
             let offsets_slice = offsets.as_slice();
-            let mut batch_results: Vec<Column> = Vec::new();
+            let mut batch_results: VecDeque<Column> = VecDeque::new();
             let mut batch_row_start = 0usize;
             let mut batch_inner_start: i64 = 0;
 
@@ -112,15 +113,15 @@ impl EvalExpr {
                 // never produce an empty batch when a single row exceeds IdxSize::MAX on its own.
                 let flush_len = rel.max(1);
                 let batch = ca.slice(batch_row_start as i64, flush_len);
-                batch_results.push(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+                batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
                 batch_row_start += flush_len;
                 batch_inner_start = offsets_slice[batch_row_start];
             }
             // Flush the final batch.
             let batch = ca.slice(batch_row_start as i64, ca.len() - batch_row_start);
-            batch_results.push(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+            batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
 
-            let mut out = batch_results.remove(0);
+            let mut out = batch_results.pop_front();
             for other in batch_results {
                 out.append_owned(other)?;
             }
