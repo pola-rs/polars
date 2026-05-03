@@ -193,24 +193,16 @@ impl ComputeNode for ZipNode {
         }
 
         match self.zip_behavior {
-            ZipBehavior::Broadcast => {
+            ZipBehavior::Broadcast | ZipBehavior::Strict => {
+                // Fire only when a non-broadcast stream is fully exhausted *and*
+                // drained while another non-broadcast stream still has buffered
+                // data.  Checking raw `total_len` values at intermediate states
+                // produces false positives because inputs may buffer data at
+                // different rates even when their final row counts are equal.
                 polars_ensure!(
                     !(at_least_one_non_broadcast_done && at_least_one_non_broadcast_nonempty),
                     ShapeMismatch: "zip node received non-equal length inputs"
                 );
-            },
-            ZipBehavior::Strict => {
-                if let Some(first_len) = self.input_heads.first().map(|h| h.total_len) {
-                    let all_len_equal = self
-                        .input_heads
-                        .iter()
-                        .filter(|h| h.is_broadcast == Some(false))
-                        .all(|h| h.total_len == first_len);
-                    polars_ensure!(
-                        all_len_equal,
-                        ShapeMismatch: "zip node received non-equal length inputs"
-                    );
-                }
             },
             ZipBehavior::NullExtend => {},
         }
