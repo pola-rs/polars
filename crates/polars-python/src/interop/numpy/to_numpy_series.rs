@@ -3,9 +3,9 @@ use num_traits::{Float, NumCast};
 use numpy::npyffi::flags;
 use numpy::{Element, PyArray1};
 use polars::prelude::*;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::{IntoPyObjectExt, intern};
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
@@ -14,6 +14,7 @@ use super::utils::{
 };
 use crate::conversion::ObjectValue;
 use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
+use crate::interned;
 use crate::series::PySeries;
 
 #[pymethods]
@@ -57,7 +58,7 @@ pub(super) fn series_to_numpy(
                     "copy not allowed: cannot create a writable array without copying data",
                 ));
             }
-            arr = arr.call_method0(py, intern!(py, "copy"))?;
+            arr = arr.call_method0(py, interned::COPY.get(py))?;
         }
         return Ok(arr);
     }

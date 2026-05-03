@@ -47,7 +47,7 @@ fn build_group_by_fallback(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     format_str: Option<String>,
 ) -> PolarsResult<PhysStream> {
-    let input_schema = phys_sm[input.node].output_schema.clone();
+    let input_schema = input.output_schema(phys_sm).clone();
     let lmdf = Arc::new(LateMaterializedDataFrame::default());
     let mut lp_arena = Arena::default();
     let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema));
@@ -67,9 +67,9 @@ fn build_group_by_fallback(
         None,
     )?);
 
-    let group_by_node = PhysNode {
+    let group_by_node = PhysNode::new(
         output_schema,
-        kind: PhysNodeKind::InMemoryMap {
+        PhysNodeKind::InMemoryMap {
             input,
             map: Arc::new(move |df| {
                 lmdf.set_materialized_dataframe(df);
@@ -78,7 +78,7 @@ fn build_group_by_fallback(
             }),
             format_str,
         },
-    };
+    );
 
     Ok(PhysStream::first(phys_sm.insert(group_by_node)))
 }
@@ -839,7 +839,7 @@ pub fn try_build_streaming_group_by(
         .all(|e| is_input_independent(e.node(), expr_arena, expr_cache))
     {
         direct_input_needed = true;
-        let dummy_col_name = phys_sm[input.node].output_schema.get_at_index(0).unwrap().0;
+        let dummy_col_name = input.output_schema(phys_sm).get_at_index(0).unwrap().0;
         let dummy_col = expr_arena.add(AExpr::Column(dummy_col_name.clone()));
         pre_select_exprs.push(ExprIR::new(
             dummy_col,
@@ -915,7 +915,7 @@ pub fn try_build_streaming_group_by(
     let mut key_per_input = Vec::new();
     let mut aggs_per_input = Vec::new();
     if direct_input_needed || !all_keys_included_in_other_inputs {
-        let this_input_schema = &phys_sm[pre_select.node].output_schema;
+        let this_input_schema = pre_select.output_schema(phys_sm);
         let exprs = [
             trans_keys.as_slice(),
             aggs_with_elementwise_inputs.as_slice(),
@@ -929,7 +929,7 @@ pub fn try_build_streaming_group_by(
         aggs_per_input.push(aggs_with_elementwise_inputs);
     }
     for (_input_id, (stream, aggs)) in other_agg_input_streams {
-        let this_input_schema = &phys_sm[stream.node].output_schema;
+        let this_input_schema = stream.output_schema(phys_sm);
         let exprs = [trans_keys.as_slice(), aggs.as_slice()].concat();
         let this_out_schema = compute_output_schema(this_input_schema, &exprs, expr_arena).unwrap();
         group_by_output_schema.merge((*this_out_schema).clone());
@@ -977,8 +977,8 @@ pub fn try_build_streaming_group_by(
 
         // TODO: projection pushdown on left side (original input).
         // All the aggregates should have unique names so, schema should be simple.
-        let preselect_schema = &phys_sm[pre_select.node].output_schema;
-        let agg_schema = &phys_sm[post_select_input.node].output_schema;
+        let preselect_schema = pre_select.output_schema(phys_sm);
+        let agg_schema = post_select_input.output_schema(phys_sm);
         let mut join_schema = (**preselect_schema).clone();
         join_schema.merge((**agg_schema).clone());
         let args = JoinArgs {
@@ -1032,7 +1032,7 @@ pub fn try_build_sorted_group_by(
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<Option<PhysStream>> {
-    let input_schema = phys_sm[input.node].output_schema.as_ref();
+    let input_schema = input.output_schema(phys_sm).as_ref();
 
     if keys.is_empty()
         || apply.is_some()
@@ -1090,7 +1090,7 @@ pub fn try_build_sorted_group_by(
 
     let key = AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
 
-    let schema = phys_sm[input.node].output_schema.clone();
+    let schema = input.output_schema(phys_sm).clone();
     if !are_keys_sorted {
         let row_idx_name = unique_column_name();
         input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
@@ -1098,15 +1098,15 @@ pub fn try_build_sorted_group_by(
         let row_idx_expr =
             AExprBuilder::col(row_idx_name.clone(), expr_arena).expr_ir(row_idx_name.clone());
 
-        input = PhysStream::first(phys_sm.insert(PhysNode {
-            output_schema: phys_sm[input.node].output_schema.clone(),
-            kind: PhysNodeKind::Sort {
+        input = PhysStream::first(phys_sm.insert(PhysNode::new(
+            input.output_schema(phys_sm).clone(),
+            PhysNodeKind::Sort {
                 input,
                 by_column: vec![key, row_idx_expr],
                 slice: None,
                 sort_options: SortMultipleOptions::default(),
             },
-        }));
+        )));
     }
 
     let mut gb_output_schema = Schema::with_capacity(aggs.len() + 1);
@@ -1124,9 +1124,9 @@ pub fn try_build_sorted_group_by(
         gb_output_schema.insert(field.name, dtype);
     }
     input = PhysStream::first(
-        phys_sm.insert(PhysNode {
-            output_schema: Arc::new(gb_output_schema.clone()),
-            kind: PhysNodeKind::SortedGroupBy {
+        phys_sm.insert(PhysNode::new(
+            Arc::new(gb_output_schema.clone()),
+            PhysNodeKind::SortedGroupBy {
                 input,
                 key: input_column.clone(),
                 aggs: aggs.to_vec(),
@@ -1135,7 +1135,7 @@ pub fn try_build_sorted_group_by(
                     .filter(|(o, _)| *o >= 0)
                     .map(|(o, l)| (o as IdxSize, l as IdxSize)),
             },
-        }),
+        )),
     );
     if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
         input = build_slice_stream(input, *offset, *length, phys_sm);
@@ -1161,15 +1161,15 @@ pub fn try_build_sorted_group_by(
             input = build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx)?;
 
             // Unnest the row encoded columns.
-            input = PhysStream::first(phys_sm.insert(PhysNode {
-                output_schema: output_schema.clone(),
-                kind: PhysNodeKind::Map {
+            input = PhysStream::first(phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::Map {
                     input,
                     map: Arc::new(move |df: DataFrame| df.unnest([input_column.clone()], None))
                         as _,
                     format_str: ctx.prepare_visualization.then(|| "UNNEST".to_string()),
                 },
-            }));
+            )));
 
             let exprs = output_schema
                 .iter_names()

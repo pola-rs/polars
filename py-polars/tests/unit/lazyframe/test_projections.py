@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -776,3 +777,23 @@ def test_proj_pushdown_set_sorted_25247() -> None:
     q = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).set_sorted("a").select("b")
     plan = q.explain()
     assert "set_sorted" not in plan
+
+
+@pytest.mark.write_disk
+def test_proj_pushdown_row_index_reorder(tmp_path: Path) -> None:
+    csv = b"\na,b\n1,2"
+    data = pl.scan_csv(csv)
+    data.sink_parquet(tmp_path / "data.parquet")
+    data.sink_ipc(tmp_path / "data.ipc")
+
+    for q in [
+        pl.scan_csv(csv, row_index_name="index"),
+        pl.scan_parquet(tmp_path / "data.parquet", row_index_name="index"),
+        pl.scan_ipc(tmp_path / "data.ipc", row_index_name="index"),
+    ]:
+        q = q.select(pl.col("a"), pl.col("b"), pl.col("index"))
+        actual = q.collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
+        expected = pl.DataFrame(
+            {"a": [1], "b": [2], "index": [0]}, schema_overrides={"index": pl.UInt32}
+        )
+        assert_frame_equal(actual, expected)
