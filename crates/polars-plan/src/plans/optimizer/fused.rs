@@ -27,21 +27,19 @@ fn check_eligible(
     expr_arena: &Arena<AExpr>,
     schema: &Schema,
 ) -> PolarsResult<bool> {
-    let mut num_scalar = 0;
+    // Exclude scalars for now as these will not benefit from fused operations downstream #9857
+    // This optimization would also interfere with the `col -> lit` type-coercion rules
+    // And it might also interfere with constant folding which is a more suitable optimizations here
     for node in nodes {
         let field = expr_arena
             .get(*node)
             .to_field(&ToFieldContext::new(expr_arena, schema))?;
-        if !field.dtype.is_primitive_numeric() {
+        if !field.dtype.is_primitive_numeric() || is_scalar_ae(*node, expr_arena) {
             return Ok(false);
         }
-        num_scalar += is_scalar_ae(*node, expr_arena) as usize;
     }
 
-    // Exclude the all-scalar case as these will not benefit from fused operations downstream #9857
-    // This optimization would also interfere with the `col -> lit` type-coercion rules
-    // And it might also interfere with constant folding which is a more suitable optimizations here
-    Ok(num_scalar < nodes.len())
+    Ok(true)
 }
 
 impl OptimizationRule for FusedArithmetic {
