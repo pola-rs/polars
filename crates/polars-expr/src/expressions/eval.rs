@@ -271,8 +271,20 @@ impl EvalExpr {
         let validity = ca.rechunk_validity();
         let width = ca.width();
 
-        if flattened_len > IdxSize::MAX as usize && width > 0 {
-            let rows_per_batch = IdxSize::MAX as usize / width;
+        let limit = if cfg!(debug_assertions) {
+            std::env::var("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT")
+                .map(|v| v.parse::<usize>().unwrap())
+                .unwrap_or(IdxSize::MAX as usize)
+        } else {
+            IdxSize::MAX as usize
+        };
+
+        if flattened_len > limit && width > 0 {
+            if state.verbose() {
+                eprintln!("IdxSize limit hit; chunking branch hit");
+            }
+
+            let rows_per_batch = limit / width;
             polars_ensure!(rows_per_batch > 0, ComputeError: "array elements larger than IdxSize::MAX are not supported");
             let mut batch_results: VecDeque<Column> = VecDeque::new();
             let mut batch_row_start = 0usize;
