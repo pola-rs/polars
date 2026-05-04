@@ -322,8 +322,12 @@ fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -
         type Storage = &'a Arena<AExpr>;
         type BreakValue = ();
 
-        fn default_edge(&mut self) -> Self::Edge {
-            self.height_resolver.default_edge()
+        fn default_edge(
+            &mut self,
+            key: Self::Key,
+            parent_key_and_port: Option<(Self::Key, usize)>,
+        ) -> Self::Edge {
+            self.height_resolver.default_edge(key, parent_key_and_port)
         }
 
         fn pre_visit(
