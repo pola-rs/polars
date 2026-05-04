@@ -256,6 +256,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             .attach_simple_projection(Arc::new(schema), storage);
                     }
 
+                    reuse_names_alloc(edges);
+
                     return;
                 };
 
@@ -782,12 +784,34 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 pushdown_with_added_names!(len_before_added_names)
             },
 
-            IR::Gather { .. } => {
-                let [gather_from, out] = edges.get_input_output_mut(0, 0);
-                mem::swap(
-                    gather_from.projection_state_mut(),
-                    out.projection_state_mut(),
-                );
+            IR::Gather {
+                null_on_oob, idxs, ..
+            } => {
+                assert_eq!(num_input_edges, 2);
+
+                if out_edge.projection() == Projection::Len && *null_on_oob {
+                    let idxs_node = *idxs;
+                    let [idxs_edge, out_edge] = edges.get_input_output_mut(1, 0);
+
+                    let parent_key_and_port = out_edge.parent_key_and_port();
+
+                    *storage
+                        .get_mut(parent_key_and_port.node)
+                        .inputs_mut()
+                        .nth(parent_key_and_port.idx)
+                        .unwrap() = idxs_node;
+
+                    mem::swap(idxs_edge, out_edge);
+                    out_edge.parent_key_and_port_mut().set_deleted(true);
+                    return;
+                }
+
+                let (..) = projected_names_subset_or_return!();
+
+                *edges.inputs()[0].projection_state_mut() = ProjectionState {
+                    projection: Projection::Names,
+                    names: out_edge.take_names(),
+                };
             },
 
             IR::Join {
