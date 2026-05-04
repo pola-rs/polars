@@ -1,7 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
 
-use polars_core::prelude::PlHashSet;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

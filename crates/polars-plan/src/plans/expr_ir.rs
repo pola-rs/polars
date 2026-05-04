@@ -328,7 +328,3 @@ impl From<&ExprIR> for Node {
         value.node()
     }
 }
-
-pub(crate) fn name_to_expr_ir(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    ExprIR::from_column_name(name, expr_arena)
-}
