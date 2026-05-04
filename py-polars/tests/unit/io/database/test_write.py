@@ -423,7 +423,9 @@ def test_write_database_adbc_no_commit_warns_on_autocommit(tmp_path: Path) -> No
     df = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
     tmp_path.mkdir(exist_ok=True)
 
-    conn = sqlite_dbapi.connect(str(tmp_path / "test_autocommit_warn.db"), autocommit=True)
+    conn = sqlite_dbapi.connect(
+        str(tmp_path / "test_autocommit_warn.db"), autocommit=True
+    )
     with pytest.warns(UserWarning, match="commit=False has no effect"):
         df.write_database("test_autocommit_warn", connection=conn, commit=False)
 
