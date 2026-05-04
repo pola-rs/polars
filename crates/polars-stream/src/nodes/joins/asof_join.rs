@@ -79,8 +79,14 @@ enum AsOfJoinState {
     Done,
 }
 
+#[derive(Debug, Default)]
+struct Row {
+    by: Vec<AnyValue<'static>>,
+    on: AnyValue<'static>,
+}
+
 #[derive(Debug)]
-pub struct AsOfJoinNode<'a> {
+pub struct AsOfJoinNode {
     params: AsOfJoinParams,
     state: AsOfJoinState,
     /// We may need to stash a morsel on the left side whenever we do not
@@ -92,11 +98,11 @@ pub struct AsOfJoinNode<'a> {
     output_seq: MorselSeq,
     // Slots to store the last value of input chunks. These are used to check
     // if the inputs are sorted.
-    left_continuity: Option<AnyValue<'a>>,
-    right_continuity: Option<AnyValue<'a>>,
+    left_continuity: Option<Row>,
+    right_continuity: Option<Row>,
 }
 
-impl AsOfJoinNode<'_> {
+impl AsOfJoinNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         left_input_schema: SchemaRef,
@@ -157,7 +163,7 @@ impl AsOfJoinNode<'_> {
     }
 }
 
-impl ComputeNode for AsOfJoinNode<'_> {
+impl ComputeNode for AsOfJoinNode {
     fn name(&self) -> &str {
         "asof-join"
     }
@@ -284,8 +290,8 @@ async fn distribute_work_task(
     left_buffer: &mut VecDeque<DataFrame>,
     right_buffer: &mut DataFrameSearchBuffer,
     output_seq: &mut MorselSeq,
-    left_continuity: &mut Option<AnyValue<'_>>,
-    right_continuity: &mut Option<AnyValue<'_>>,
+    left_continuity: &mut Option<Row>,
+    right_continuity: &mut Option<Row>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
@@ -354,7 +360,7 @@ async fn distribute_work_task(
 }
 
 fn check_left_continuity(
-    continuity: &mut Option<AnyValue<'_>>,
+    prev_row: &mut Option<Row>,
     df: &DataFrame,
     pos: usize,
     params: &AsOfJoinParams,
@@ -362,17 +368,17 @@ fn check_left_continuity(
     if df.height() == 0 {
         return Ok(());
     }
-    let on = df.column(&params.left.on)?;
-    let next_value = on.get(pos)?;
-    if let Some(cont) = continuity {
-        polars_ensure!(*cont <= next_value, InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
-    }
-    *continuity = Some(next_value.into_static());
-    Ok(())
+    let by_values = params
+        .left_by()
+        .iter()
+        .map(|col_name| df.column(col_name)?.get(pos))
+        .collect::<PolarsResult<Vec<AnyValue<'_>>>>()?;
+    let on_value = df.column(&params.left.on)?.get(pos)?;
+    check_continuity(prev_row, by_values, on_value, params)
 }
 
 fn check_right_continuity(
-    continuity: &mut Option<AnyValue<'_>>,
+    prev_row: &mut Option<Row>,
     dfsb: &DataFrameSearchBuffer,
     pos: usize,
     params: &AsOfJoinParams,
@@ -382,11 +388,41 @@ fn check_right_continuity(
     }
     assert!(pos < dfsb.height());
     // SAFETY: Just checked the bounds.
-    let next_value = unsafe { dfsb.get_unchecked(params.right.on.as_ref(), pos) };
-    if let Some(cont) = continuity {
-        polars_ensure!(*cont <= next_value, InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
+    let by_values = params
+        .right_by()
+        .iter()
+        .map(|col_name| unsafe { dfsb.get_unchecked(col_name.as_ref(), pos) })
+        .collect::<Vec<AnyValue<'_>>>();
+    let on_value = unsafe { dfsb.get_unchecked(params.right.on.as_ref(), pos) };
+    check_continuity(prev_row, by_values, on_value, params)
+}
+
+fn check_continuity(
+    prev_row: &mut Option<Row>,
+    by: Vec<AnyValue<'_>>,
+    on: AnyValue<'_>,
+    params: &AsOfJoinParams,
+) -> PolarsResult<()> {
+    'check: {
+        if let Some(prev) = prev_row {
+            let iter =
+                Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter()).enumerate();
+            for (i, (descending, nulls_last)) in iter {
+                match reorder_cmp(&prev.by[i], &by[i], *descending, *nulls_last) {
+                    Ordering::Less => break 'check,
+                    Ordering::Greater => {
+                        polars_bail!(InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
+                    },
+                    Ordering::Equal => {},
+                }
+            }
+            polars_ensure!(prev.on <= on, InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
+        }
     }
-    *continuity = Some(next_value.into_static());
+    let mut pr = prev_row.take().unwrap_or_default();
+    pr.by.clear();
+    pr.by.extend(by.into_iter().map(AnyValue::into_static));
+    pr.on = on.into_static();
     Ok(())
 }
 
