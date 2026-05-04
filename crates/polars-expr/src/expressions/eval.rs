@@ -269,6 +269,28 @@ impl EvalExpr {
         unsafe { _set_check_length(true) };
         let flattened_len = flattened.len();
         let validity = ca.rechunk_validity();
+        let width = ca.width();
+
+        if flattened_len > IdxSize::MAX as usize && width > 0 {
+            let rows_per_batch = IdxSize::MAX as usize / width;
+            polars_ensure!(rows_per_batch > 0, ComputeError: "array elements larger than IdxSize::MAX are not supported");
+            let mut batch_results: VecDeque<Column> = VecDeque::new();
+            let mut batch_row_start = 0usize;
+
+            while batch_row_start < ca.len() {
+                let batch_len = (ca.len() - batch_row_start).min(rows_per_batch);
+                let batch = ca.slice(batch_row_start as i64, batch_len);
+                batch_results
+                    .push_back(self.evaluate_on_array_chunked(&batch, state, as_list, is_agg)?);
+                batch_row_start += batch_len;
+            }
+
+            let mut out = batch_results.pop_front().unwrap();
+            for other in batch_results {
+                out.append_owned(other)?;
+            }
+            return Ok(out);
+        }
 
         let may_fail_on_masked_out_elements = self.evaluation_is_fallible && ca.has_nulls();
 
