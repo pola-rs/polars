@@ -1715,6 +1715,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     names,
                 }
             },
+
             IR::Cache { input, .. } => {
                 let input = *input;
 
@@ -1762,6 +1763,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             .attach_simple_projection(Arc::new(schema), storage);
                     }
                 }
+            },
+
+            IR::UnoptimizedDispatch { .. } => {
+                post_project_and_return!()
             },
 
             IR::Invalid => unreachable!(),
