@@ -1417,9 +1417,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         engine = _select_engine(engine)
 
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
-
         if optimized:
             optimizations = optimizations.__copy__()
             optimizations._pyoptflags.streaming = engine == "streaming"
@@ -1609,9 +1606,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... ).show_graph()  # doctest: +SKIP
         """
         engine = _select_engine(engine)
-
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
 
         optimizations = optimizations.__copy__()
         optimizations._pyoptflags.streaming = engine == "streaming"
@@ -2297,7 +2291,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
         """
-        Materialize this LazyFrame into a DataFrame.
+        Materialize this `LazyFrame` into a `DataFrame`.
 
         By default, all query optimizations are enabled. Individual optimizations may
         be disabled by setting the corresponding parameter to `False`.
@@ -2485,9 +2479,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if new_streaming:
             engine = "streaming"
-
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
 
         callback = _gpu_engine_callback(
             engine,
@@ -3329,16 +3320,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         from polars.io.iceberg._sink import IcebergSinkState
 
-        sink_state = IcebergSinkState(
-            target=target,
-            catalog=catalog,
+        sink_state = IcebergSinkState.new(
+            target,
             mode=mode,
+            catalog=catalog,
             storage_options=storage_options,
         )
 
         sink_state.attach_sink(self).collect(engine="streaming")
 
-        return sink_state.commit()
+        return sink_state.commit_result_df.get()  # type: ignore[return-value]
 
     @overload
     def sink_ipc(
@@ -5764,11 +5755,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         on
             Join column of both DataFrames. If set, `left_on` and `right_on` should be
             None.
-        by
-            Join on these columns before doing asof join.
         by_left
             Join on these columns before doing asof join.
         by_right
+            Join on these columns before doing asof join.
+        by
             Join on these columns before doing asof join.
         strategy : {'backward', 'forward', 'nearest'}
             Join strategy.
@@ -5827,6 +5818,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             will error. Currently, sortedness cannot be checked if 'by' groups are
             provided.
 
+        Notes
+        -----
+        If 'by' is set, the implementation will compute the asof join over all of the
+        groups concurrently.  This can potentially lead to high memory usage if there
+        are many groups.
+
+        This can be mitigated by sorting (via :meth:`.sort() <polars.LazyFrame.sort>`)
+        both of the input LazyFrames by the 'by' keys (or using :meth:`.set_sorted()
+        <polars.LazyFrame.set_sorted>` if the columns are already sorted)
+        before computing the join operation; and using the streaming engine to collect
+        the results. For example:
+
+        >>> # Compute streaming asof join with 'by' groups
+        >>> result = (
+        ...     left.sort("by", "on").join_asof(  # Sort left manually
+        ...         right.set_sorted("by", "on"),  # Set right as already sorted
+        ...     )
+        ... ).collect(streaming=True)  # doctest: +SKIP
 
         Examples
         --------
@@ -6133,10 +6142,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
                  - Returns rows from the left table that have a match in the right
-                   table.
+                   table. Does not return columns from the right table.
                * - **anti**
                  - Returns rows from the left table that have no match in the right
-                   table.
+                   table. Does not return columns from the right table.
 
         left_on
             Join column of the left DataFrame.
@@ -8770,7 +8779,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._from_pyldf(self._ldf.unnest(subset._pyselector, separator))
 
-    def merge_sorted(self, other: LazyFrame, key: str) -> LazyFrame:
+    def merge_sorted(
+        self,
+        other: LazyFrame,
+        key: str,
+        *,
+        maintain_order: bool = False,
+    ) -> LazyFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
@@ -8787,6 +8802,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Other DataFrame that must be merged
         key
             Key that is sorted.
+        maintain_order
+            If ``True``, the output is guaranteed to have left-biased ordering
+            for equal keys: rows from the left frame appear before rows from
+            the right frame when their keys are equal.
 
         Examples
         --------
@@ -8837,13 +8856,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Notes
         -----
-        No guarantee is given over the output row order when the key is equal
-        between the both dataframes.
+        Unless ``maintain_order=True``, no guarantee is given over the output
+        row order when the key is equal between the both dataframes.
 
         The key must be sorted in ascending order.
         """
         require_same_type(self, other)
-        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
+        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order))
 
     def set_sorted(
         self,

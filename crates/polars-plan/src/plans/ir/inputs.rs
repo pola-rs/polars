@@ -101,6 +101,7 @@ impl IR {
                 },
             },
 
+            UnoptimizedDispatch { .. } => Exprs::Empty,
             Invalid => unreachable!(),
         }
     }
@@ -173,6 +174,7 @@ impl IR {
                 },
             },
 
+            UnoptimizedDispatch { .. } => ExprsMut::Empty,
             Invalid => unreachable!(),
         }
     }
@@ -185,7 +187,7 @@ impl IR {
         container.extend(self.exprs().cloned())
     }
 
-    pub fn inputs(&'_ self) -> Inputs<'_> {
+    pub fn inputs(&self) -> Inputs<'_> {
         use IR::*;
         match self {
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
@@ -209,7 +211,12 @@ impl IR {
             Sink { input, .. } => Inputs::single(*input),
             ExtContext {
                 input, contexts, ..
-            } => Inputs::Boxed(Box::new(iter::once(*input).chain(contexts.iter().copied()))),
+            } => Inputs::DoubleSlice(
+                std::slice::from_ref(input)
+                    .iter()
+                    .chain(contexts.iter())
+                    .copied(),
+            ),
             Scan { .. } => Inputs::Empty,
             DataFrameScan { .. } => Inputs::Empty,
             #[cfg(feature = "python")]
@@ -220,11 +227,12 @@ impl IR {
                 input_right,
                 ..
             } => Inputs::double(*input_left, *input_right),
+            UnoptimizedDispatch { inputs, .. } => Inputs::slice(inputs),
             Invalid => unreachable!(),
         }
     }
 
-    pub fn inputs_mut(&'_ mut self) -> InputsMut<'_> {
+    pub fn inputs_mut(&mut self) -> InputsMut<'_> {
         use IR::*;
         match self {
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
@@ -248,7 +256,10 @@ impl IR {
             Sink { input, .. } => InputsMut::single(input),
             ExtContext {
                 input, contexts, ..
-            } => InputsMut::Boxed(Box::new(iter::once(input).chain(contexts.iter_mut()))),
+            } => InputsMut::DoubleSlice(std::iter::chain(
+                std::slice::from_mut(input).iter_mut(),
+                contexts.iter_mut(),
+            )),
             Scan { .. } => InputsMut::Empty,
             DataFrameScan { .. } => InputsMut::Empty,
             #[cfg(feature = "python")]
@@ -259,6 +270,7 @@ impl IR {
                 input_right,
                 ..
             } => InputsMut::double(input_left, input_right),
+            UnoptimizedDispatch { inputs, .. } => InputsMut::slice(inputs),
             Invalid => unreachable!(),
         }
     }
@@ -287,7 +299,7 @@ pub enum Inputs<'a> {
     Single(iter::Once<Node>),
     Double(std::array::IntoIter<Node, 2>),
     Slice(iter::Copied<std::slice::Iter<'a, Node>>),
-    Boxed(Box<dyn Iterator<Item = Node> + 'a>),
+    DoubleSlice(iter::Copied<iter::Chain<std::slice::Iter<'a, Node>, std::slice::Iter<'a, Node>>>),
 }
 
 impl<'a> Inputs<'a> {
@@ -313,7 +325,17 @@ impl<'a> Iterator for Inputs<'a> {
             Self::Single(it) => it.next(),
             Self::Double(it) => it.next(),
             Self::Slice(it) => it.next(),
-            Self::Boxed(it) => it.next(),
+            Self::DoubleSlice(it) => it.next(),
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(it) => it.nth(n),
+            Self::Double(it) => it.nth(n),
+            Self::Slice(it) => it.nth(n),
+            Self::DoubleSlice(it) => it.nth(n),
         }
     }
 }
@@ -323,7 +345,7 @@ pub enum InputsMut<'a> {
     Single(iter::Once<&'a mut Node>),
     Double(std::array::IntoIter<&'a mut Node, 2>),
     Slice(std::slice::IterMut<'a, Node>),
-    Boxed(Box<dyn Iterator<Item = &'a mut Node> + 'a>),
+    DoubleSlice(iter::Chain<std::slice::IterMut<'a, Node>, std::slice::IterMut<'a, Node>>),
 }
 
 impl<'a> InputsMut<'a> {
@@ -349,7 +371,17 @@ impl<'a> Iterator for InputsMut<'a> {
             Self::Single(it) => it.next(),
             Self::Double(it) => it.next(),
             Self::Slice(it) => it.next(),
-            Self::Boxed(it) => it.next(),
+            Self::DoubleSlice(it) => it.next(),
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(it) => it.nth(n),
+            Self::Double(it) => it.nth(n),
+            Self::Slice(it) => it.nth(n),
+            Self::DoubleSlice(it) => it.nth(n),
         }
     }
 }

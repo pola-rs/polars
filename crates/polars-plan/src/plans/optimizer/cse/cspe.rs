@@ -1,10 +1,82 @@
 use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
+use std::ops::ControlFlow;
 
-use hashbrown::hash_map::RawEntryMut;
+use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
+use polars_utils::arena::{Arena, Node};
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
-use super::*;
-use crate::prelude::visitor::IRNode;
+use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
+use crate::plans::visitor::hash::IRHashWrap;
+use crate::plans::{AExpr, IR};
+use crate::traversal::edge_provider::NodeEdgesProvider;
+use crate::traversal::tree_traversal::{PersistInputEdgeIdxs, TreeTraversalImpl};
+use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
+
+/// Inserts `IR::Cache` on common subplans.
+pub fn common_subplan_elimination(
+    root: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    let mut visit_stack = ScratchVec::default();
+    let mut edges = vec![usize::MAX]; // Indices into `id_map`
+    let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
+    let mut id_map = PlIndexMap::new();
+    let mut storage = IRTraversalStorage {
+        arena: ir_arena,
+        skip_subtree: |ir| {
+            match ir {
+                // Don't visit all the files in a `scan *` operation.
+                // Put an arbitrary limit to 20 files now.
+                IR::Union {
+                    options, inputs, ..
+                } => options.from_partitioned_ds && inputs.len() > 20,
+                _ => false,
+            }
+        },
+    };
+
+    TreeTraversalImpl {
+        storage: &mut storage,
+        visit_stack: visit_stack.get(),
+        edges: &mut edges,
+        persist_input_edge_idxs: Some(&mut PersistInputEdgeIdxs::Build(
+            &mut persisted_input_edge_idxs,
+        )),
+        graph_visit_order_fn: None,
+        visitor: &mut IDGeneratorVisitor {
+            id_map: &mut id_map,
+            expr_arena,
+        },
+    }
+    .traverse_rec(root, 0, false)
+    .continue_value()
+    .unwrap();
+
+    let mut inserted_cache = false;
+
+    TreeTraversalImpl {
+        storage: &mut storage,
+        visit_stack: visit_stack.get(),
+        edges: &mut edges,
+        persist_input_edge_idxs: Some(&mut PersistInputEdgeIdxs::Use(
+            persisted_input_edge_idxs.as_slice(),
+        )),
+        graph_visit_order_fn: None,
+        visitor: &mut InsertCachesVisitor {
+            id_map: &mut id_map,
+            inserted_cache: &mut inserted_cache,
+            phantom: PhantomData,
+        },
+    }
+    .traverse_rec(root, 0, false)
+    .continue_value()
+    .unwrap();
+
+    inserted_cache
+}
 
 struct Blake3Hasher {
     hasher: blake3::Hasher,
@@ -24,7 +96,6 @@ impl Blake3Hasher {
 
 impl Hasher for Blake3Hasher {
     fn finish(&self) -> u64 {
-        // Not used - we'll call finalize() instead
         0
     }
 
@@ -33,385 +104,193 @@ impl Hasher for Blake3Hasher {
     }
 }
 
-mod identifier_impl {
-    use super::*;
-    #[derive(Clone)]
-    pub(super) struct Identifier {
-        inner: Option<[u8; 32]>,
-    }
-
-    impl Identifier {
-        pub fn hash(&self) -> u64 {
-            self.inner
-                .map(|inner| u64::from_le_bytes(inner[0..8].try_into().unwrap()))
-                .unwrap_or(0)
-        }
-
-        pub fn is_equal(&self, other: &Self) -> bool {
-            self.inner.map(blake3::Hash::from_bytes) == other.inner.map(blake3::Hash::from_bytes)
-        }
-
-        pub fn new() -> Self {
-            Self { inner: None }
-        }
-
-        pub fn is_valid(&self) -> bool {
-            self.inner.is_some()
-        }
-
-        pub fn combine(&mut self, other: &Identifier) {
-            let inner = match (self.inner, other.inner) {
-                (Some(l), Some(r)) => {
-                    let mut h = blake3::Hasher::new();
-                    h.update(&l);
-                    h.update(&r);
-                    *h.finalize().as_bytes()
-                },
-                (None, Some(r)) => r,
-                (Some(l), None) => l,
-                _ => return,
-            };
-            self.inner = Some(inner);
-        }
-
-        pub fn add_alp_node(
-            &self,
-            alp: &IRNode,
-            lp_arena: &Arena<IR>,
-            expr_arena: &Arena<AExpr>,
-        ) -> Self {
-            let mut h = Blake3Hasher::new();
-            alp.hashable_and_cmp(lp_arena, expr_arena)
-                .hash_as_equality()
-                .hash(&mut h);
-            let hashed = h.finalize();
-
-            let inner = Some(self.inner.map_or(hashed, |l| {
-                let mut h = blake3::Hasher::new();
-                h.update(&l);
-                h.update(&hashed);
-                *h.finalize().as_bytes()
-            }));
-            Self { inner }
-        }
-    }
-}
-use identifier_impl::*;
-
-struct IdentifierMap<V> {
-    inner: PlHashMap<Identifier, V>,
+#[derive(Debug)]
+struct IDState {
+    hits: usize,
+    replacement_ir: Option<IR>,
+    output_state_entry_idx: usize,
 }
 
-impl<V> IdentifierMap<V> {
-    fn new() -> Self {
-        Self {
-            inner: Default::default(),
-        }
-    }
-
-    fn get(&self, id: &Identifier) -> Option<&V> {
-        self.inner
-            .raw_entry()
-            .from_hash(id.hash(), |k| k.is_equal(id))
-            .map(|(_k, v)| v)
-    }
-
-    fn entry<F: FnOnce() -> V>(&mut self, id: Identifier, v: F) -> &mut V {
-        let h = id.hash();
-        match self.inner.raw_entry_mut().from_hash(h, |k| k.is_equal(&id)) {
-            RawEntryMut::Occupied(entry) => entry.into_mut(),
-            RawEntryMut::Vacant(entry) => {
-                let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
-                v
-            },
-        }
-    }
-}
-
-impl<V> Default for IdentifierMap<V> {
+impl Default for IDState {
     fn default() -> Self {
-        Self::new()
-    }
-}
-/// Identifier maps to Expr Node and count.
-type SubPlanCount = IdentifierMap<(Node, u32)>;
-/// (post_visit_idx, identifier);
-type IdentifierArray = Vec<(usize, Identifier)>;
-
-/// See Expr based CSE for explanations.
-enum VisitRecord {
-    /// Entered a new plan node
-    Entered(usize),
-    SubPlanId(Identifier),
-}
-
-struct LpIdentifierVisitor<'a> {
-    sp_count: &'a mut SubPlanCount,
-    identifier_array: &'a mut IdentifierArray,
-    // Index in pre-visit traversal order.
-    pre_visit_idx: usize,
-    post_visit_idx: usize,
-    visit_stack: Vec<VisitRecord>,
-    has_subplan: bool,
-}
-
-impl LpIdentifierVisitor<'_> {
-    fn new<'a>(
-        sp_count: &'a mut SubPlanCount,
-        identifier_array: &'a mut IdentifierArray,
-    ) -> LpIdentifierVisitor<'a> {
-        LpIdentifierVisitor {
-            sp_count,
-            identifier_array,
-            pre_visit_idx: 0,
-            post_visit_idx: 0,
-            visit_stack: vec![],
-            has_subplan: false,
+        Self {
+            hits: 1,
+            replacement_ir: None,
+            output_state_entry_idx: usize::MAX,
         }
     }
-
-    fn pop_until_entered(&mut self) -> (usize, Identifier) {
-        let mut id = Identifier::new();
-
-        while let Some(item) = self.visit_stack.pop() {
-            match item {
-                VisitRecord::Entered(idx) => return (idx, id),
-                VisitRecord::SubPlanId(s) => {
-                    id.combine(&s);
-                },
-            }
-        }
-        unreachable!()
-    }
 }
 
-fn skip_children(lp: &IR) -> bool {
-    match lp {
-        // Don't visit all the files in a `scan *` operation.
-        // Put an arbitrary limit to 20 files now.
-        IR::Union {
-            options, inputs, ..
-        } => options.from_partitioned_ds && inputs.len() > 20,
-        _ => false,
-    }
+struct IDGeneratorVisitor<'map, 'arena> {
+    id_map: &'map mut PlIndexMap<[u8; 32], IDState>,
+    expr_arena: &'arena Arena<AExpr>,
 }
 
-impl Visitor for LpIdentifierVisitor<'_> {
-    type Node = IRNode;
-    type Arena = IRNodeArena;
+impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
+    type Key = Node;
+    type Edge = usize;
+    type Storage = IRTraversalStorage<'arena>;
+    type BreakValue = ();
+
+    fn default_edge(
+        &mut self,
+        _key: Self::Key,
+        _parent_key_and_port: Option<(Self::Key, usize)>,
+    ) -> Self::Edge {
+        usize::MAX
+    }
 
     fn pre_visit(
         &mut self,
-        node: &Self::Node,
-        arena: &Self::Arena,
-    ) -> PolarsResult<VisitRecursion> {
-        self.visit_stack
-            .push(VisitRecord::Entered(self.pre_visit_idx));
-        self.pre_visit_idx += 1;
-
-        self.identifier_array.push((0, Identifier::new()));
-
-        if skip_children(node.to_alp(&arena.0)) {
-            Ok(VisitRecursion::Skip)
-        } else {
-            Ok(VisitRecursion::Continue)
-        }
+        _key: Self::Key,
+        _storage: &mut Self::Storage,
+        _edges: &mut dyn NodeEdgesProvider<Self::Edge>,
+    ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
+        ControlFlow::Continue(SubtreeVisit::Visit)
     }
 
     fn post_visit(
         &mut self,
-        node: &Self::Node,
-        arena: &Self::Arena,
-    ) -> PolarsResult<VisitRecursion> {
-        self.post_visit_idx += 1;
+        key: Self::Key,
+        storage: &mut Self::Storage,
+        edges: &mut dyn NodeEdgesProvider<Self::Edge>,
+    ) -> ControlFlow<Self::BreakValue> {
+        let ir = storage.get(key);
 
-        let (pre_visit_idx, sub_plan_id) = self.pop_until_entered();
+        let mut hasher = Blake3Hasher::new();
 
-        // Create the Id of this node.
-        let id = sub_plan_id.add_alp_node(node, &arena.0, &arena.1);
+        hasher.write_usize(if storage.skip_subtree(ir) {
+            // Subtree nodes were not pushed for traversal due to e.g. too many
+            // union input nodes. We hash the memory address of this &IR instead.
+            ir as *const IR as usize
+        } else {
+            0
+        });
 
-        // Store the created id.
-        self.identifier_array[pre_visit_idx] = (self.post_visit_idx, id.clone());
+        IRHashWrap::new(key, storage, self.expr_arena, true).hash(&mut hasher);
 
-        // We popped until entered, push this Id on the stack so the trail
-        // is available for the parent plan.
-        self.visit_stack.push(VisitRecord::SubPlanId(id.clone()));
-
-        let (_, sp_count) = self.sp_count.entry(id, || (node.node(), 0));
-        *sp_count += 1;
-        self.has_subplan |= *sp_count > 1;
-        Ok(VisitRecursion::Continue)
-    }
-}
-
-pub(super) type CacheId2Caches = PlHashMap<UniqueId, (u32, Vec<Node>)>;
-
-struct CommonSubPlanRewriter<'a> {
-    sp_count: &'a SubPlanCount,
-    identifier_array: &'a IdentifierArray,
-
-    max_post_visit_idx: usize,
-    /// index in traversal order in which `identifier_array`
-    /// was written. This is the index in `identifier_array`.
-    visited_idx: usize,
-    /// Indicates if this expression is rewritten.
-    rewritten: bool,
-    cache_id: IdentifierMap<UniqueId>,
-    // Maps cache_id : (cache_count and cache_nodes)
-    cache_id_to_caches: CacheId2Caches,
-}
-
-impl<'a> CommonSubPlanRewriter<'a> {
-    fn new(sp_count: &'a SubPlanCount, identifier_array: &'a IdentifierArray) -> Self {
-        Self {
-            sp_count,
-            identifier_array,
-            max_post_visit_idx: 0,
-            visited_idx: 0,
-            rewritten: false,
-            cache_id: Default::default(),
-            cache_id_to_caches: Default::default(),
+        for entry_idx in edges.inputs().iter().copied() {
+            let input_hash: &[u8; 32] = self.id_map.get_index(entry_idx).unwrap().0;
+            hasher.write(input_hash);
         }
+
+        let id: [u8; 32] = hasher.finalize();
+
+        use indexmap::map::Entry;
+
+        let entry_idx = match self.id_map.entry(id) {
+            Entry::Occupied(mut e) => {
+                e.get_mut().hits += 1;
+                e.index()
+            },
+            Entry::Vacant(e) => {
+                let idx = e.index();
+
+                e.insert(IDState::default());
+
+                idx
+            },
+        };
+
+        edges.outputs()[0] = entry_idx;
+
+        for i in edges.inputs().iter().copied() {
+            self.id_map
+                .get_index_mut(i)
+                .unwrap()
+                .1
+                .output_state_entry_idx = entry_idx
+        }
+
+        ControlFlow::Continue(())
     }
 }
 
-impl RewritingVisitor for CommonSubPlanRewriter<'_> {
-    type Node = IRNode;
-    type Arena = IRNodeArena;
+struct InsertCachesVisitor<'a, 'arena> {
+    id_map: &'a mut PlIndexMap<[u8; 32], IDState>,
+    inserted_cache: &'a mut bool,
+    phantom: PhantomData<&'arena ()>,
+}
+
+impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
+    type Key = Node;
+    type Edge = usize;
+    type Storage = IRTraversalStorage<'arena>;
+    type BreakValue = ();
+
+    fn default_edge(
+        &mut self,
+        _key: Self::Key,
+        _parent_key_and_port: Option<(Self::Key, usize)>,
+    ) -> Self::Edge {
+        unreachable!()
+    }
 
     fn pre_visit(
         &mut self,
-        lp_node: &Self::Node,
-        arena: &mut Self::Arena,
-    ) -> PolarsResult<RewriteRecursion> {
-        if self.visited_idx >= self.identifier_array.len()
-            || self.max_post_visit_idx > self.identifier_array[self.visited_idx].0
-        {
-            return Ok(RewriteRecursion::Stop);
+        key: Self::Key,
+        storage: &mut Self::Storage,
+        edges: &mut dyn NodeEdgesProvider<Self::Edge>,
+    ) -> ControlFlow<Self::BreakValue, SubtreeVisit> {
+        let entry_idx_curr_node = edges.outputs()[0];
+        let entry_idx_output_node = self
+            .id_map
+            .get_index(entry_idx_curr_node)
+            .unwrap()
+            .1
+            .output_state_entry_idx;
+
+        if entry_idx_output_node == usize::MAX {
+            // We are at the root node
+            assert_eq!(entry_idx_curr_node, self.id_map.len() - 1);
+            return ControlFlow::Continue(SubtreeVisit::Visit);
         }
 
-        let id = &self.identifier_array[self.visited_idx].1;
+        let [(_, output_state), (_, curr_state)] = self
+            .id_map
+            .get_disjoint_indices_mut([entry_idx_output_node, entry_idx_curr_node])
+            .unwrap();
 
-        // Id placeholder not overwritten, so we can skip this sub-expression.
-        if !id.is_valid() {
-            self.visited_idx += 1;
-            return Ok(RewriteRecursion::NoMutateAndContinue);
+        if curr_state.replacement_ir.is_some() {
+            return ControlFlow::Continue(SubtreeVisit::Skip);
         }
 
-        let Some((_, count)) = self.sp_count.get(id) else {
-            self.visited_idx += 1;
-            return Ok(RewriteRecursion::NoMutateAndContinue);
-        };
+        if curr_state.hits > output_state.hits {
+            let replacement_ir = match storage.get(key) {
+                ir @ IR::Cache { .. } => ir.clone(),
+                _ => {
+                    let ir = storage.take(key);
+                    let new_key = storage.add(ir);
 
-        if *count > 1 {
-            // Rewrite this sub-plan, don't visit its children
-            Ok(RewriteRecursion::MutateAndStop)
-        }
-        // Never mutate if count <= 1. The post-visit will search for the node, and not be able to find it
-        else {
-            // Don't traverse the children.
-            if skip_children(lp_node.to_alp(&arena.0)) {
-                return Ok(RewriteRecursion::Stop);
-            }
-            // This is a unique plan
-            // visit its children to see if they are cse
-            self.visited_idx += 1;
-            Ok(RewriteRecursion::NoMutateAndContinue)
-        }
-    }
-
-    fn mutate(
-        &mut self,
-        mut node: Self::Node,
-        arena: &mut Self::Arena,
-    ) -> PolarsResult<Self::Node> {
-        let (post_visit_count, id) = &self.identifier_array[self.visited_idx];
-        self.visited_idx += 1;
-
-        if *post_visit_count < self.max_post_visit_idx {
-            return Ok(node);
-        }
-        self.max_post_visit_idx = *post_visit_count;
-        while self.visited_idx < self.identifier_array.len()
-            && *post_visit_count > self.identifier_array[self.visited_idx].0
-        {
-            self.visited_idx += 1;
-        }
-
-        let cache_id = *self.cache_id.entry(id.clone(), UniqueId::new);
-        let cache_count = self.sp_count.get(id).unwrap().1;
-
-        let cache_node = IR::Cache {
-            input: node.node(),
-            id: cache_id,
-        };
-        node.assign(cache_node, &mut arena.0);
-        let (_count, nodes) = self
-            .cache_id_to_caches
-            .entry(cache_id)
-            .or_insert_with(|| (cache_count, vec![]));
-        nodes.push(node.node());
-        self.rewritten = true;
-        Ok(node)
-    }
-}
-
-fn insert_caches(
-    root: Node,
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-) -> (Node, bool, CacheId2Caches) {
-    let mut sp_count = Default::default();
-    let mut id_array = Default::default();
-
-    with_ir_arena(lp_arena, expr_arena, |arena| {
-        let lp_node = IRNode::new_mutate(root);
-        let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
-
-        lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
-
-        if visitor.has_subplan {
-            let lp_node = IRNode::new_mutate(root);
-            let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
-            lp_node.rewrite(&mut rewriter, arena).unwrap();
-
-            (root, rewriter.rewritten, rewriter.cache_id_to_caches)
-        } else {
-            (root, false, Default::default())
-        }
-    })
-}
-
-/// Prune unused caches.
-/// In the query below the query will be insert cache 0 with a count of 2 on `lf.select`
-/// and cache 1 with a count of 3 on `lf`. But because cache 0 is higher in the chain cache 1
-/// will never be used. So we prune caches that don't fit their count.
-///
-/// `conctat([lf.select(), lf.select(), lf])`
-fn prune_unused_caches(lp_arena: &mut Arena<IR>, cid2c: &CacheId2Caches) {
-    for (count, nodes) in cid2c.values() {
-        if *count == nodes.len() as u32 {
-            continue;
-        }
-
-        for node in nodes {
-            let IR::Cache { input, .. } = lp_arena.get(*node) else {
-                unreachable!()
+                    IR::Cache {
+                        input: new_key,
+                        id: UniqueId::new(),
+                    }
+                },
             };
-            lp_arena.swap(*input, *node)
+
+            curr_state.replacement_ir = Some(replacement_ir);
+
+            // TODO: Remove this to enabled nested CSPE
+            return ControlFlow::Continue(SubtreeVisit::Skip);
         }
-    }
-}
 
-pub(super) fn elim_cmn_subplans(
-    root: Node,
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-) -> (Node, bool, CacheId2Caches) {
-    let (lp, changed, cid2c) = insert_caches(root, lp_arena, expr_arena);
-    if changed {
-        prune_unused_caches(lp_arena, &cid2c);
+        ControlFlow::Continue(SubtreeVisit::Visit)
     }
 
-    (lp, changed, cid2c)
+    fn post_visit(
+        &mut self,
+        key: Self::Key,
+        storage: &mut Self::Storage,
+        edges: &mut dyn NodeEdgesProvider<Self::Edge>,
+    ) -> ControlFlow<Self::BreakValue> {
+        let state = self.id_map.get_index(edges.outputs()[0]).unwrap().1;
+
+        if let Some(replacement_ir) = state.replacement_ir.clone() {
+            *storage.get_mut(key) = replacement_ir;
+            *self.inserted_cache = true;
+        }
+
+        ControlFlow::Continue(())
+    }
 }

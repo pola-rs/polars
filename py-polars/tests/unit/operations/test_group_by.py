@@ -23,7 +23,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from polars._typing import PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
@@ -2048,7 +2048,7 @@ def test_group_by_unique_parametric(
     ],
 )
 def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
-    combinations = [
+    combinations: Sequence[list[bool | None]] = [
         [True, None],
         [None, None],
         [False, None],
@@ -2222,7 +2222,7 @@ def test_group_by_explode_none_dtype_25045() -> None:
 def test_group_by_forward_backward_fill(
     expr: Callable[[pl.Expr], pl.Expr], is_scalar: bool
 ) -> None:
-    combinations = [
+    combinations: Sequence[list[int | None]] = [
         [1, None, 2, None, None],
         [None, 1, 2, 3, 4],
         [None, None, None, None, None],

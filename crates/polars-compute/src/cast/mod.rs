@@ -423,8 +423,8 @@ pub fn cast(
         (Dictionary(index_type, ..), _) => match_integer_type!(index_type, |$T| {
             dictionary_cast_dyn::<$T>(array, to_type, options)
         }),
-        (_, Dictionary(index_type, value_type, _)) => match_integer_type!(index_type, |$T| {
-            cast_to_dictionary::<$T>(array, value_type, options)
+        (_, Dictionary(index_type, value_type, ordered)) => match_integer_type!(index_type, |$T| {
+            cast_to_dictionary::<$T>(array, value_type, *ordered, options)
         }),
         // not supported by polars
         // (List(_), FixedSizeList(inner, size)) => cast_list_to_fixed_size_list::<i32>(
@@ -1072,32 +1072,33 @@ pub fn cast(
 fn cast_to_dictionary<K: DictionaryKey>(
     array: &dyn Array,
     dict_value_type: &ArrowDataType,
+    ordered: bool,
     options: CastOptionsImpl,
 ) -> PolarsResult<Box<dyn Array>> {
     let array = cast(array, dict_value_type, options)?;
     let array = array.as_ref();
     match dict_value_type.to_storage() {
-        ArrowDataType::Int8 => primitive_to_dictionary_dyn::<i8, K>(array),
-        ArrowDataType::Int16 => primitive_to_dictionary_dyn::<i16, K>(array),
-        ArrowDataType::Int32 => primitive_to_dictionary_dyn::<i32, K>(array),
-        ArrowDataType::Int64 => primitive_to_dictionary_dyn::<i64, K>(array),
-        ArrowDataType::UInt8 => primitive_to_dictionary_dyn::<u8, K>(array),
-        ArrowDataType::UInt16 => primitive_to_dictionary_dyn::<u16, K>(array),
-        ArrowDataType::UInt32 => primitive_to_dictionary_dyn::<u32, K>(array),
-        ArrowDataType::UInt64 => primitive_to_dictionary_dyn::<u64, K>(array),
+        ArrowDataType::Int8 => primitive_to_dictionary_dyn::<i8, K>(array, ordered),
+        ArrowDataType::Int16 => primitive_to_dictionary_dyn::<i16, K>(array, ordered),
+        ArrowDataType::Int32 => primitive_to_dictionary_dyn::<i32, K>(array, ordered),
+        ArrowDataType::Int64 => primitive_to_dictionary_dyn::<i64, K>(array, ordered),
+        ArrowDataType::UInt8 => primitive_to_dictionary_dyn::<u8, K>(array, ordered),
+        ArrowDataType::UInt16 => primitive_to_dictionary_dyn::<u16, K>(array, ordered),
+        ArrowDataType::UInt32 => primitive_to_dictionary_dyn::<u32, K>(array, ordered),
+        ArrowDataType::UInt64 => primitive_to_dictionary_dyn::<u64, K>(array, ordered),
         ArrowDataType::BinaryView => {
-            binview_to_dictionary::<K>(array.as_any().downcast_ref().unwrap())
+            binview_to_dictionary::<K>(array.as_any().downcast_ref().unwrap(), ordered)
                 .map(|arr| arr.boxed())
         },
         ArrowDataType::Utf8View => {
-            utf8view_to_dictionary::<K>(array.as_any().downcast_ref().unwrap())
+            utf8view_to_dictionary::<K>(array.as_any().downcast_ref().unwrap(), ordered)
                 .map(|arr| arr.boxed())
         },
-        ArrowDataType::LargeUtf8 => utf8_to_dictionary_dyn::<i64, K>(array),
-        ArrowDataType::LargeBinary => binary_to_dictionary_dyn::<i64, K>(array),
-        ArrowDataType::Time64(_) => primitive_to_dictionary_dyn::<i64, K>(array),
-        ArrowDataType::Timestamp(_, _) => primitive_to_dictionary_dyn::<i64, K>(array),
-        ArrowDataType::Date32 => primitive_to_dictionary_dyn::<i32, K>(array),
+        ArrowDataType::LargeUtf8 => utf8_to_dictionary_dyn::<i64, K>(array, ordered),
+        ArrowDataType::LargeBinary => binary_to_dictionary_dyn::<i64, K>(array, ordered),
+        ArrowDataType::Time64(_) => primitive_to_dictionary_dyn::<i64, K>(array, ordered),
+        ArrowDataType::Timestamp(_, _) => primitive_to_dictionary_dyn::<i64, K>(array, ordered),
+        ArrowDataType::Date32 => primitive_to_dictionary_dyn::<i32, K>(array, ordered),
         _ => polars_bail!(ComputeError:
             "unsupported output type for dictionary packing: {dict_value_type:?}"
         ),

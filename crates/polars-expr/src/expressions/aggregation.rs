@@ -425,11 +425,23 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Implode { maintain_order: _ } => {
-                    AggregatedScalar(match ac.agg_state() {
+                    let col = match ac.agg_state() {
                         AggState::LiteralScalar(_) => unreachable!(), // handled above
                         AggState::AggregatedScalar(c) => c.as_list().into_column(),
-                        AggState::NotAggregated(_) | AggState::AggregatedList(_) => ac.aggregated(),
-                    })
+                        AggState::AggregatedList(c) => c.clone(),
+                        AggState::NotAggregated(_) => ac.aggregated(),
+                    };
+                    // TODO: Introduce `UpdateGroups::WithUnitLen` as a new lazy `groups()` method
+                    // and move the groups constructor there. Then, set `UpdateGroups::WithUnitLen` to
+                    // all AggregationExprs.
+                    let groups = Cow::Owned({
+                        let groups = (0..col.len() as IdxSize).map(|i| [i, 1]).collect();
+                        GroupsType::new_slice(groups, false, true).into_sliceable()
+                    });
+                    return Ok(AggregationContext::from_agg_state(
+                        AggregatedScalar(col),
+                        groups,
+                    ));
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();

@@ -346,6 +346,15 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
             .into_series()
     }
 
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0
+            .physical()
+            .clone()
+            .with_validity(validity)
+            .into_decimal_unchecked(self.0.precision(), self.0.scale())
+            .into_series()
+    }
+
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
             .physical()

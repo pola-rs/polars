@@ -103,6 +103,17 @@ impl ChunkFullNull for BinaryOffsetChunked {
 
 impl ChunkFull<&Series> for ListChunked {
     fn full(name: PlSmallStr, value: &Series, length: usize) -> ListChunked {
+        if value.len() == 1 && !value.dtype().is_nested() {
+            let out = value
+                .new_from_index(0, length)
+                .reshape_list(&[
+                    ReshapeDimension::Infer,
+                    ReshapeDimension::Specified(Dimension::new(1)),
+                ])
+                .unwrap();
+            return out.list().unwrap().clone();
+        }
+
         let mut builder = get_list_builder(value.dtype(), value.len() * length, length, name);
         for _ in 0..length {
             builder.append_series(value).unwrap();

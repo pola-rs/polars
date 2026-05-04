@@ -489,6 +489,8 @@ def n_unique(*columns: str) -> Expr:
 
     This function is syntactic sugar for `pl.col(columns).n_unique()`.
 
+    `null` is considered to be a unique value for the purposes of this operation.
+
     Parameters
     ----------
     columns
@@ -498,7 +500,7 @@ def n_unique(*columns: str) -> Expr:
     --------
     >>> df = pl.DataFrame(
     ...     {
-    ...         "a": [1, 8, 1],
+    ...         "a": [1, 1, None],
     ...         "b": [4, 5, 2],
     ...         "c": ["foo", "bar", "foo"],
     ...     }
@@ -2273,9 +2275,6 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    if engine == "streaming":
-        issue_unstable_warning("streaming mode is considered unstable.")
-
     result: (
         _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
     ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()

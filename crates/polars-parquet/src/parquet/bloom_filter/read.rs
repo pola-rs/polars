@@ -18,9 +18,7 @@ pub fn read<R: Read + Seek>(
     mut reader: &mut R,
     bitset: &mut Vec<u8>,
 ) -> ParquetResult<()> {
-    let offset = column_metadata.metadata().bloom_filter_offset;
-
-    let offset = if let Some(offset) = offset {
+    let offset = if let Some(offset) = column_metadata.bloom_filter_offset() {
         offset as u64
     } else {
         bitset.clear();

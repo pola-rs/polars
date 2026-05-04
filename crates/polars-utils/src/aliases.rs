@@ -10,6 +10,52 @@ pub type PlHashSet<V> = hashbrown::HashSet<V, PlRandomState>;
 pub type PlIndexMap<K, V> = indexmap::IndexMap<K, V, PlRandomState>;
 pub type PlIndexSet<K> = indexmap::IndexSet<K, PlRandomState>;
 
+/// HashMap container with a getter that clears the HashMap.
+#[derive(Default)]
+pub struct ScratchHashMap<K, V>(PlHashMap<K, V>);
+
+impl<K, V> ScratchHashMap<K, V> {
+    /// Clear the HashMap and return a mutable reference to it.
+    pub fn get(&mut self) -> &mut PlHashMap<K, V> {
+        self.0.clear();
+        &mut self.0
+    }
+}
+
+/// HashSet container with a getter that clears the HashSet.
+#[derive(Default)]
+pub struct ScratchHashSet<K>(PlHashSet<K>);
+
+impl<K> ScratchHashSet<K> {
+    /// Clear the HashSet and return a mutable reference to it.
+    pub fn get(&mut self) -> &mut PlHashSet<K> {
+        self.0.clear();
+        &mut self.0
+    }
+}
+
+#[derive(Default)]
+pub struct ScratchIndexSet<K>(PlIndexSet<K>);
+
+impl<K> ScratchIndexSet<K> {
+    /// Clear the IndexSet and return a mutable reference to it.
+    pub fn get(&mut self) -> &mut PlIndexSet<K> {
+        self.0.clear();
+        &mut self.0
+    }
+}
+
+#[derive(Default)]
+pub struct ScratchIndexMap<K, V>(PlIndexMap<K, V>);
+
+impl<K, V> ScratchIndexMap<K, V> {
+    /// Clear the IndexMap and return a mutable reference to it.
+    pub fn get(&mut self) -> &mut PlIndexMap<K, V> {
+        self.0.clear();
+        &mut self.0
+    }
+}
+
 pub trait SeedableFromU64SeedExt {
     fn seed_from_u64(seed: u64) -> Self;
 }

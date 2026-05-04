@@ -547,7 +547,7 @@ pub trait AsofJoinBy: IntoDf {
         let right_asof = right_key.to_physical_repr();
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
-        check_asof_columns(
+        _check_asof_columns(
             &left_asof,
             &right_asof,
             tolerance.is_some(),

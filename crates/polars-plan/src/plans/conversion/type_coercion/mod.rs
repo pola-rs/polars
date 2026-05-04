@@ -1068,6 +1068,9 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let (_, type_end) =
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
 
+                polars_ensure!(type_start.is_numeric() || type_start.is_null(), InvalidOperation: "`start` must be numeric for `int_range`, got {}", type_start);
+                polars_ensure!(type_end.is_numeric() || type_end.is_null(), InvalidOperation: "`end` must be numeric for `int_range`, got {}", type_end);
+
                 if [&type_start, &type_end]
                     .into_iter()
                     .all(|arg_dtype| arg_dtype == dtype)
@@ -1107,6 +1110,10 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                     unpack!(get_aexpr_and_type(expr_arena, input[1].node(), schema));
                 let (_, type_step) =
                     unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
+
+                polars_ensure!(type_start.is_numeric() || type_start.is_null(), InvalidOperation: "`start` must be numeric for `int_ranges`, got {}", type_start);
+                polars_ensure!(type_end.is_numeric() || type_end.is_null(), InvalidOperation: "`end` must be numeric for `int_ranges`, got {}", type_end);
+                polars_ensure!(type_step.is_numeric() || type_step.is_null(), InvalidOperation: "`step` must be numeric for `int_ranges`, got {}", type_step);
 
                 if [&type_start, &type_end, &type_step]
                     .into_iter()

@@ -8,6 +8,7 @@ use parking_lot::Mutex;
 #[cfg(feature = "pivot")]
 use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
+use polars::prelude::iceberg_sink_state::IcebergSinkState;
 use polars::time::*;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
@@ -883,6 +884,18 @@ impl PyLazyFrame {
         .map_err(Into::into)
     }
 
+    pub fn sink_iceberg(&self, py: Python<'_>, sink_state_obj: Py<PyAny>) -> PyResult<PyLazyFrame> {
+        let sink_state: IcebergSinkState = sink_state_obj.extract(py)?;
+        let mut ldf = { self.ldf.read().clone() };
+
+        ldf.logical_plan = DslPlan::Sink {
+            input: Arc::new(ldf.logical_plan),
+            payload: SinkType::Iceberg(sink_state),
+        };
+
+        Ok(ldf.into())
+    }
+
     fn filter(&self, predicate: PyExpr) -> Self {
         self.ldf.read().clone().filter(predicate.inner).into()
     }
@@ -1503,12 +1516,12 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    fn merge_sorted(&self, other: Self, key: &str) -> PyResult<Self> {
+    fn merge_sorted(&self, other: Self, key: &str, maintain_order: bool) -> PyResult<Self> {
         let out = self
             .ldf
             .read()
             .clone()
-            .merge_sorted(other.ldf.into_inner(), key)
+            .merge_sorted(other.ldf.into_inner(), key, maintain_order)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

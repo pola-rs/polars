@@ -270,24 +270,15 @@ def test_count_projection_pd(
 ) -> None:
     df = pl.DataFrame({"a": range(3), "b": range(3)})
 
-    q = (
+    assert_fast_count(
         pl.scan_csv(df.write_csv().encode())
         .with_row_index()
         .select(pl.all())
-        .select(pl.len())
+        .select(pl.len()),
+        3,
+        capfd=capfd,
+        plmonkeypatch=plmonkeypatch,
     )
-
-    # Manual assert, this is not converted to FAST COUNT but we will have
-    # 0-width projections.
-
-    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
-    capfd.readouterr()
-    result = q.collect()
-    capture = capfd.readouterr().err
-    project_logs = set(re.findall(r"project: \d+", capture))
-
-    assert project_logs == {"project: 0"}
-    assert result.item() == 3
 
 
 def test_csv_scan_skip_lines_len_22889(

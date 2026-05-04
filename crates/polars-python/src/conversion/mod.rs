@@ -53,7 +53,7 @@ use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
 use crate::series::{PySeries, import_schema_pycapsule};
 use crate::utils::to_py_err;
-use crate::{PyDataFrame, PyLazyFrame};
+use crate::{PyDataFrame, PyLazyFrame, interned};
 
 /// # Safety
 /// Should only be implemented for transparent types
@@ -360,11 +360,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Field> {
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let name = ob
-            .getattr(intern!(py, "name"))?
+            .getattr(interned::NAME.get(py))?
             .str()?
             .extract::<PyBackedStr>()?;
         let dtype = ob
-            .getattr(intern!(py, "dtype"))?
+            .getattr(interned::DTYPE.get(py))?
             .extract::<Wrap<DataType>>()?;
         Ok(Wrap(Field::new((&*name).into(), dtype.0)))
     }
@@ -381,7 +381,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
             "DataTypeClass" => {
                 // just the class, not an object
                 let name = ob
-                    .getattr(intern!(py, "__name__"))?
+                    .getattr(interned::DUNDER_NAME.get(py))?
                     .str()?
                     .extract::<PyBackedStr>()?;
                 match &*name {

@@ -48,9 +48,9 @@ fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
             }
             D::Struct(fields)
         },
-        D::Dictionary(it, dtype, sorted) => {
+        D::Dictionary(it, dtype, ordered) => {
             let dtype = convert_dtype(*dtype);
-            D::Dictionary(it, Box::new(dtype), sorted)
+            D::Dictionary(it, Box::new(dtype), ordered)
         },
         D::Extension(ext) => {
             let dtype = convert_dtype(ext.inner);

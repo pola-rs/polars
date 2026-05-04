@@ -1191,13 +1191,13 @@ def test_cspe_recursive_24744() -> None:
         lf_j3.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
     )
     assert (
-        lf_j3.show_graph(  # type: ignore[union-attr]
+        lf_j3.show_graph(
             engine="streaming", plan_stage="physical", raw_output=True
         ).count("multiplexer")
         == 3
     )
     assert (
-        lf_j3.show_graph(  # type: ignore[union-attr]
+        lf_j3.show_graph(
             engine="in-memory", plan_stage="physical", raw_output=True
         ).count("CACHE")
         == 3
@@ -1401,3 +1401,37 @@ def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
             }
         ),
     )
+
+
+@pytest.mark.xfail(
+    reason="nested CSPE not yet enabled; needs refactor of predicate/projection/slice pushdowns"
+)
+def test_cspe_create_nested_caches() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2]})
+
+    lf1 = lf.select(pl.col("a") + 1)
+
+    lf2 = pl.concat([lf1, lf1])
+
+    lf3 = pl.concat([lf2, lf2, pl.LazyFrame({"a": [0, 1, 2]})])
+
+    q = lf3
+
+    plan = q.explain()
+
+    df = pl.DataFrame({"line": [x.strip() for x in plan.splitlines() if "CACHE" in x]})
+
+    assert df.join(
+        df.unique(maintain_order=True).with_columns(
+            cache_seq_id=pl.int_range(1, 1 + pl.len()).reverse()
+        ),
+        on="line",
+        maintain_order="left",
+    )["cache_seq_id"].to_list() == [
+        2,  # concat(lf2, lf2)
+        1,  # select(a + 1)
+        1,  # select(a + 1)
+        2,  # concat(lf2, lf2)
+        1,  # select(a + 1)
+        1,  # select(a + 1)
+    ]

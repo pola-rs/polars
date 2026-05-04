@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 mod engine;
 mod parse;
 mod spill_format;
+pub mod spill_path;
 mod spill_policy;
 
 pub use engine::Engine;
@@ -52,6 +53,12 @@ const DEFAULT_OOC_SPILL_POLICY: SpillPolicy = SpillPolicy::NoSpill;
 const OOC_SPILL_FORMAT: &str = "POLARS_OOC_SPILL_FORMAT";
 const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
 
+const OOC_MEMORY_BUDGET_FRACTION: &str = "POLARS_OOC_MEMORY_BUDGET_FRACTION";
+const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
+
+const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
+const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 100 * 1024; // 100 KB
+
 const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
 const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 
@@ -93,6 +100,8 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_DRIFT_THRESHOLD,
     OOC_SPILL_POLICY,
     OOC_SPILL_FORMAT,
+    OOC_MEMORY_BUDGET_FRACTION,
+    OOC_SPILL_MIN_BYTES,
     JOIN_SAMPLE_LIMIT,
 ];
 
@@ -111,6 +120,8 @@ pub struct Config {
     import_interval_as_struct: AtomicBool,
     ooc_spill_policy: AtomicU8,
     ooc_spill_format: AtomicU8,
+    ooc_memory_budget_fraction: AtomicU64,
+    ooc_spill_min_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
 }
 
@@ -133,6 +144,10 @@ impl Config {
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_policy: AtomicU8::new(DEFAULT_OOC_SPILL_POLICY as u8),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
+            ooc_memory_budget_fraction: AtomicU64::new(
+                DEFAULT_OOC_MEMORY_BUDGET_FRACTION.to_bits(),
+            ),
+            ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
         };
         cfg.reload_env_vars();
@@ -221,12 +236,22 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_SPILL_FORMAT) as u8,
                 Ordering::Relaxed,
             ),
+            OOC_MEMORY_BUDGET_FRACTION => self.ooc_memory_budget_fraction.store(
+                val.and_then(|x| parse::parse_f64(var, x))
+                    .unwrap_or(DEFAULT_OOC_MEMORY_BUDGET_FRACTION)
+                    .to_bits(),
+                Ordering::Relaxed,
+            ),
+            OOC_SPILL_MIN_BYTES => self.ooc_spill_min_bytes.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_SPILL_MIN_BYTES),
+                Ordering::Relaxed,
+            ),
             JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
                 Ordering::Relaxed,
             ),
-
             _ => {
                 if var.starts_with("POLARS_") {
                     if self.warn_unknown_config.load(Ordering::Relaxed) {
@@ -288,6 +313,22 @@ impl Config {
 
     pub fn ooc_spill_format(&self) -> SpillFormat {
         SpillFormat::from_discriminant(self.ooc_spill_format.load(Ordering::Relaxed))
+    }
+
+    pub fn ooc_memory_budget_fraction(&self) -> f64 {
+        f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed))
+    }
+
+    pub fn ooc_spill_min_bytes(&self) -> u64 {
+        self.ooc_spill_min_bytes.load(Ordering::Relaxed)
+    }
+
+    pub fn ooc_spill_dir(&self) -> std::path::PathBuf {
+        if let Ok(dir) = std::env::var("POLARS_OOC_SPILL_DIR") {
+            std::path::PathBuf::from(dir)
+        } else {
+            spill_path::default_ooc_spill_dir()
+        }
     }
 
     pub fn join_sample_limit(&self) -> u64 {

@@ -3,10 +3,12 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Field, InitHashMaps, PlIndexMap, PlIndexSet, SortMultipleOptions};
+use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_error::{PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
+use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, IR, IRAggExpr, IRFunctionExpr, NaiveExprMerger, write_group_by};
 use polars_plan::prelude::{GroupbyOptions, *};
@@ -26,6 +28,12 @@ use crate::physical_plan::lower_ir::{
 };
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
+#[derive(Copy, Clone, Debug)]
+pub enum GroupByLowerKind {
+    Groups,
+    Over,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_group_by_fallback(
     input: PhysStream,
@@ -39,7 +47,7 @@ fn build_group_by_fallback(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     format_str: Option<String>,
 ) -> PolarsResult<PhysStream> {
-    let input_schema = phys_sm[input.node].output_schema.clone();
+    let input_schema = input.output_schema(phys_sm).clone();
     let lmdf = Arc::new(LateMaterializedDataFrame::default());
     let mut lp_arena = Arena::default();
     let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema));
@@ -59,9 +67,9 @@ fn build_group_by_fallback(
         None,
     )?);
 
-    let group_by_node = PhysNode {
+    let group_by_node = PhysNode::new(
         output_schema,
-        kind: PhysNodeKind::InMemoryMap {
+        PhysNodeKind::InMemoryMap {
             input,
             map: Arc::new(move |df| {
                 lmdf.set_materialized_dataframe(df);
@@ -70,7 +78,7 @@ fn build_group_by_fallback(
             }),
             format_str,
         },
-    };
+    );
 
     Ok(PhysStream::first(phys_sm.insert(group_by_node)))
 }
@@ -198,6 +206,7 @@ fn replace_elementwise_components(
 #[allow(clippy::too_many_arguments)]
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
+    gbl_kind: GroupByLowerKind,
     expr_merger: &mut NaiveExprMerger,
     expr_cache: &mut ExprCache,
     expr_arena: &mut Arena<AExpr>,
@@ -211,6 +220,7 @@ fn try_lower_elementwise_scalar_agg_expr(
         ($input:expr) => {
             try_lower_elementwise_scalar_agg_expr(
                 $input,
+                gbl_kind,
                 expr_merger,
                 expr_cache,
                 expr_arena,
@@ -238,7 +248,7 @@ fn try_lower_elementwise_scalar_agg_expr(
     }
 
     if is_input_independent(expr, expr_arena, expr_cache) {
-        if expr_arena.get(expr).is_scalar(expr_arena) {
+        if is_scalar_ae(expr, expr_arena) {
             return Some(expr);
         } else {
             let agg = IRAggExpr::Implode {
@@ -259,8 +269,21 @@ fn try_lower_elementwise_scalar_agg_expr(
         },
 
         AExpr::Column(_) => {
-            // Implicit implode not yet supported.
-            None
+            match gbl_kind {
+                GroupByLowerKind::Over => {
+                    let id = expr_merger.add_and_get_uniq_id(expr, expr_arena);
+                    let name = uniq_input_names
+                        .entry(id)
+                        .or_insert_with(unique_column_name)
+                        .clone();
+                    let node = uniq_elementwise_exprs
+                        .entry(id)
+                        .or_insert_with(|| ExprIR::from_column_name(name, expr_arena))
+                        .node();
+                    Some(node)
+                },
+                GroupByLowerKind::Groups => None, // Implicit implode not yet supported.
+            }
         },
 
         AExpr::Literal(lit) => {
@@ -417,6 +440,41 @@ fn try_lower_elementwise_scalar_agg_expr(
             Some(expr_arena.add(new_node))
         },
 
+        #[cfg(feature = "log")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::Entropy { base, normalize },
+            ..
+        } => {
+            // x.entropy() ->
+            //   normalize=false: -sum(x * log(x, base))
+            //   normalize=true:  -sum(x/sum(x) * log(x/sum(x), base))
+            //                  = log(sum(x), base) - sum(x * log(x, base)) / sum(x)
+            let (base, normalize) = (*base, *normalize);
+            let x = AExprBuilder::new_from_node(inner_exprs[0].node());
+            let base = AExprBuilder::lit_scalar(Scalar::from(base), expr_arena);
+            let log_x = AExprBuilder::function(
+                vec![x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                IRFunctionExpr::Log,
+                expr_arena,
+            );
+            let x_log_x = x.multiply(log_x, expr_arena);
+            let mut entropy = x_log_x.sum(expr_arena).negate(expr_arena);
+            if normalize {
+                // sum(x) is deduplicated by CSE
+                let sum_x = x.sum(expr_arena);
+                let log_sum_x = AExprBuilder::function(
+                    vec![sum_x.expr_ir_unnamed(), base.expr_ir_unnamed()],
+                    IRFunctionExpr::Log,
+                    expr_arena,
+                );
+                entropy = log_sum_x.plus(entropy.true_divide(sum_x, expr_arena), expr_arena)
+            }
+            let lowered = entropy.node();
+            expr_merger.add_expr(lowered, expr_arena);
+            lower_rec!(lowered)
+        },
+
         AExpr::Function { .. } | AExpr::AnonymousFunction { .. } => None,
 
         AExpr::Cast {
@@ -544,6 +602,7 @@ fn try_lower_agg_input_expr(
                 maintain_order,
                 options,
                 None,
+                GroupByLowerKind::Groups,
                 expr_arena,
                 phys_sm,
                 expr_cache,
@@ -599,18 +658,68 @@ fn try_lower_agg_input_expr(
             let trans_output = expr_arena.add(AExpr::Column(output_name));
             Ok(Some((stream, trans_output, false)))
         },
+        AExpr::Function {
+            input: inputs_ref,
+            function: function @ (IRFunctionExpr::DropNulls | IRFunctionExpr::DropNans),
+            options: _,
+        } => {
+            let input = &inputs_ref[0];
+            if !is_elementwise_rec_cached(input.node(), expr_arena, expr_cache) {
+                return Ok(None);
+            }
+
+            let output_name = unique_column_name();
+            let predicate_name = unique_column_name();
+            let mut select_exprs = keys.to_vec();
+            select_exprs.push(ExprIR::new(
+                input.node(),
+                OutputName::Alias(output_name.clone()),
+            ));
+            let predicate = AExprBuilder::function(
+                vec![inputs_ref[0].clone()],
+                if matches!(function, IRFunctionExpr::DropNulls) {
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull)
+                } else {
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNan)
+                },
+                expr_arena,
+            )
+            .expr_ir(predicate_name.clone());
+            select_exprs.push(predicate);
+
+            let mut stream = build_select_stream(
+                input_stream,
+                &select_exprs,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
+            stream = build_filter_stream(
+                stream,
+                ExprIR::from_column_name(predicate_name, expr_arena),
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+            )?;
+
+            let trans_output = expr_arena.add(AExpr::Column(output_name));
+            Ok(Some((stream, trans_output, false)))
+        },
         _ => Ok(None),
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn try_build_streaming_group_by(
+pub fn try_build_streaming_group_by(
     mut input: PhysStream,
     keys: &[ExprIR],
     aggs: &[ExprIR],
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
+    gbl_kind: GroupByLowerKind,
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
@@ -697,6 +806,7 @@ fn try_build_streaming_group_by(
     for agg in aggs {
         let Some(trans_node) = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
+            gbl_kind,
             &mut expr_merger,
             expr_cache,
             expr_arena,
@@ -729,7 +839,7 @@ fn try_build_streaming_group_by(
         .all(|e| is_input_independent(e.node(), expr_arena, expr_cache))
     {
         direct_input_needed = true;
-        let dummy_col_name = phys_sm[input.node].output_schema.get_at_index(0).unwrap().0;
+        let dummy_col_name = input.output_schema(phys_sm).get_at_index(0).unwrap().0;
         let dummy_col = expr_arena.add(AExpr::Column(dummy_col_name.clone()));
         pre_select_exprs.push(ExprIR::new(
             dummy_col,
@@ -805,7 +915,7 @@ fn try_build_streaming_group_by(
     let mut key_per_input = Vec::new();
     let mut aggs_per_input = Vec::new();
     if direct_input_needed || !all_keys_included_in_other_inputs {
-        let this_input_schema = &phys_sm[pre_select.node].output_schema;
+        let this_input_schema = pre_select.output_schema(phys_sm);
         let exprs = [
             trans_keys.as_slice(),
             aggs_with_elementwise_inputs.as_slice(),
@@ -819,7 +929,7 @@ fn try_build_streaming_group_by(
         aggs_per_input.push(aggs_with_elementwise_inputs);
     }
     for (_input_id, (stream, aggs)) in other_agg_input_streams {
-        let this_input_schema = &phys_sm[stream.node].output_schema;
+        let this_input_schema = stream.output_schema(phys_sm);
         let exprs = [trans_keys.as_slice(), aggs.as_slice()].concat();
         let this_out_schema = compute_output_schema(this_input_schema, &exprs, expr_arena).unwrap();
         group_by_output_schema.merge((*this_out_schema).clone());
@@ -839,7 +949,7 @@ fn try_build_streaming_group_by(
     ));
 
     // Sort the input based on the first row index if maintaining order.
-    let post_select_input = if maintain_order {
+    let mut post_select_input = if maintain_order {
         let sort_node = phys_sm.insert(PhysNode::new(
             group_by_output_schema,
             PhysNodeKind::Sort {
@@ -854,6 +964,41 @@ fn try_build_streaming_group_by(
     } else {
         PhysStream::first(agg_node)
     };
+
+    if let GroupByLowerKind::Over = gbl_kind {
+        // If there were any non-elementwise functions left over we can't simply
+        // apply them in the post-select while ignoring groups, so we have to abort.
+        if trans_output_exprs
+            .iter()
+            .any(|e| !is_elementwise_rec_cached(e.node(), expr_arena, expr_cache))
+        {
+            return Ok(None);
+        }
+
+        // TODO: projection pushdown on left side (original input).
+        // All the aggregates should have unique names so, schema should be simple.
+        let preselect_schema = pre_select.output_schema(phys_sm);
+        let agg_schema = post_select_input.output_schema(phys_sm);
+        let mut join_schema = (**preselect_schema).clone();
+        join_schema.merge((**agg_schema).clone());
+        let args = JoinArgs {
+            how: JoinType::Left,
+            maintain_order: MaintainOrderJoin::Left,
+            nulls_equal: true,
+            ..JoinArgs::default()
+        };
+        let join_key = phys_sm.insert(PhysNode::new(
+            Arc::new(join_schema),
+            PhysNodeKind::EquiJoin {
+                input_left: pre_select,
+                input_right: post_select_input,
+                left_on: trans_keys.clone(),
+                right_on: trans_keys,
+                args,
+            },
+        ));
+        post_select_input = PhysStream::first(join_key);
+    }
 
     let post_select = build_select_stream(
         post_select_input,
@@ -887,7 +1032,7 @@ pub fn try_build_sorted_group_by(
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<Option<PhysStream>> {
-    let input_schema = phys_sm[input.node].output_schema.as_ref();
+    let input_schema = input.output_schema(phys_sm).as_ref();
 
     if keys.is_empty()
         || apply.is_some()
@@ -945,7 +1090,7 @@ pub fn try_build_sorted_group_by(
 
     let key = AExprBuilder::col(input_column.clone(), expr_arena).expr_ir(input_column.clone());
 
-    let schema = phys_sm[input.node].output_schema.clone();
+    let schema = input.output_schema(phys_sm).clone();
     if !are_keys_sorted {
         let row_idx_name = unique_column_name();
         input = build_row_idx_stream(input, row_idx_name.clone(), None, phys_sm);
@@ -953,15 +1098,15 @@ pub fn try_build_sorted_group_by(
         let row_idx_expr =
             AExprBuilder::col(row_idx_name.clone(), expr_arena).expr_ir(row_idx_name.clone());
 
-        input = PhysStream::first(phys_sm.insert(PhysNode {
-            output_schema: phys_sm[input.node].output_schema.clone(),
-            kind: PhysNodeKind::Sort {
+        input = PhysStream::first(phys_sm.insert(PhysNode::new(
+            input.output_schema(phys_sm).clone(),
+            PhysNodeKind::Sort {
                 input,
                 by_column: vec![key, row_idx_expr],
                 slice: None,
                 sort_options: SortMultipleOptions::default(),
             },
-        }));
+        )));
     }
 
     let mut gb_output_schema = Schema::with_capacity(aggs.len() + 1);
@@ -979,9 +1124,9 @@ pub fn try_build_sorted_group_by(
         gb_output_schema.insert(field.name, dtype);
     }
     input = PhysStream::first(
-        phys_sm.insert(PhysNode {
-            output_schema: Arc::new(gb_output_schema.clone()),
-            kind: PhysNodeKind::SortedGroupBy {
+        phys_sm.insert(PhysNode::new(
+            Arc::new(gb_output_schema.clone()),
+            PhysNodeKind::SortedGroupBy {
                 input,
                 key: input_column.clone(),
                 aggs: aggs.to_vec(),
@@ -990,7 +1135,7 @@ pub fn try_build_sorted_group_by(
                     .filter(|(o, _)| *o >= 0)
                     .map(|(o, l)| (o as IdxSize, l as IdxSize)),
             },
-        }),
+        )),
     );
     if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
         input = build_slice_stream(input, *offset, *length, phys_sm);
@@ -1016,15 +1161,15 @@ pub fn try_build_sorted_group_by(
             input = build_hstack_stream(input, &[expr], expr_arena, phys_sm, expr_cache, ctx)?;
 
             // Unnest the row encoded columns.
-            input = PhysStream::first(phys_sm.insert(PhysNode {
-                output_schema: output_schema.clone(),
-                kind: PhysNodeKind::Map {
+            input = PhysStream::first(phys_sm.insert(PhysNode::new(
+                output_schema.clone(),
+                PhysNodeKind::Map {
                     input,
                     map: Arc::new(move |df: DataFrame| df.unnest([input_column.clone()], None))
                         as _,
                     format_str: ctx.prepare_visualization.then(|| "UNNEST".to_string()),
                 },
-            }));
+            )));
 
             let exprs = output_schema
                 .iter_names()
@@ -1140,6 +1285,7 @@ pub fn build_group_by_stream(
         maintain_order,
         options.clone(),
         apply.clone(),
+        GroupByLowerKind::Groups,
         expr_arena,
         phys_sm,
         expr_cache,

@@ -3,17 +3,25 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
+use crate::plans::optimizer::slice_pushdown_expr;
 use crate::prelude::*;
 
 mod inner {
+    use polars_core::prelude::ScratchHashSet;
     use polars_utils::arena::Node;
     use polars_utils::idx_vec::UnitVec;
+    use polars_utils::scratch_vec::ScratchVec;
     use polars_utils::unitvec;
+
+    use crate::plans::optimizer::slice_pushdown_expr;
 
     pub struct SlicePushDown {
         scratch: UnitVec<Node>,
         pub(super) maintain_errors: bool,
         pub(crate) slice_node_in_optimized_plan: bool,
+        pub(crate) ae_nodes_scratch: ScratchVec<Node>,
+        pub(crate) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
+        pub(crate) ae_slice_pd_direct_col_slice_nodes: ScratchHashSet<Node>,
     }
 
     impl SlicePushDown {
@@ -26,6 +34,9 @@ mod inner {
                 // the new-streaming engine still may not error due to early-stopping.
                 maintain_errors: false,
                 slice_node_in_optimized_plan: false,
+                ae_nodes_scratch: ScratchVec::default(),
+                ae_slice_pd_state_scratch: ScratchVec::default(),
+                ae_slice_pd_direct_col_slice_nodes: ScratchHashSet::default(),
             }
         }
 
@@ -39,10 +50,10 @@ mod inner {
 
 pub(super) use inner::SlicePushDown;
 
-#[derive(Copy, Clone, Debug)]
-struct State {
-    offset: i64,
-    len: IdxSize,
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub(crate) struct State {
+    pub(crate) offset: i64,
+    pub(crate) len: IdxSize,
 }
 
 impl State {
@@ -55,7 +66,7 @@ impl State {
 }
 
 /// Returns a combined slice if the 2 slices can be combined.
-fn combine_outer_inner_slice(outer_slice: State, inner_slice: State) -> Option<State> {
+pub(crate) fn combine_outer_inner_slice(outer_slice: State, inner_slice: State) -> Option<State> {
     // Both are positive, can combine into a single slice.
     if outer_slice.offset >= 0 && inner_slice.offset >= 0 {
         return Some(State {
@@ -244,6 +255,92 @@ impl SlicePushDown {
                 expr_arena,
             );
         }
+
+        let maintain_errors = self.maintain_errors;
+
+        let ir = lp_arena.get_mut(ir_node);
+
+        let mut common_expr_col_slice = None;
+        let mut col_hit_count: Option<usize> = Some(0);
+        let mut ae_slice_pd_direct_col_slice_nodes =
+            std::mem::take(self.ae_slice_pd_direct_col_slice_nodes.get());
+
+        for eir in ir.exprs() {
+            self.aexpr_slice_pushdown_rec(
+                eir.node(),
+                expr_arena,
+                &mut common_expr_col_slice,
+                &mut col_hit_count,
+                &mut ae_slice_pd_direct_col_slice_nodes,
+                maintain_errors,
+            );
+        }
+
+        if col_hit_count != Some(0) {
+            common_expr_col_slice = None;
+        }
+
+        'add_common_ir_slice: {
+            let IR::Select { input, .. } = ir else {
+                break 'add_common_ir_slice;
+            };
+
+            let Some((limit, 0)) = common_expr_col_slice.zip(col_hit_count) else {
+                break 'add_common_ir_slice;
+            };
+
+            let (ir_slice, offset_correction) = limit.to_slice_with_correction();
+
+            let input = *input;
+            let new_input_node = lp_arena.add(IR::Slice {
+                input,
+                offset: ir_slice.offset,
+                len: ir_slice.len,
+            });
+
+            let IR::Select { input, .. } = lp_arena.get_mut(ir_node) else {
+                unreachable!()
+            };
+
+            *input = new_input_node;
+
+            for node in ae_slice_pd_direct_col_slice_nodes.drain() {
+                use slice_pushdown_expr::Slice;
+                let AExpr::Slice {
+                    input: input_node,
+                    offset: offset_node,
+                    length,
+                } = expr_arena.get(node)
+                else {
+                    unreachable!()
+                };
+
+                let input_node = *input_node;
+                let offset_node = *offset_node;
+
+                let Slice::Extracted(ae_slice) =
+                    Slice::from_nodes(offset_node, *length, expr_arena)
+                else {
+                    unreachable!()
+                };
+
+                if ae_slice.len == ir_slice.len {
+                    assert_eq!(ae_slice.offset, ir_slice.offset);
+                    expr_arena.replace(node, expr_arena.get(input_node).clone());
+                } else if offset_correction != 0 {
+                    let new_offset = ae_slice.offset.checked_sub(offset_correction).unwrap();
+                    expr_arena.replace(
+                        offset_node,
+                        AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+                            DataType::Int64,
+                            AnyValue::Int64(new_offset),
+                        ))),
+                    );
+                }
+            }
+        }
+
+        *self.ae_slice_pd_direct_col_slice_nodes.get() = ae_slice_pd_direct_col_slice_nodes;
 
         match (lp_arena.take(ir_node), state) {
             #[cfg(feature = "python")]

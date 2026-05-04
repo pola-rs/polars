@@ -345,3 +345,86 @@ def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
             df_chained_from_right = df.merge_sorted(df_chained_from_right, key="n")
 
         assert_frame_equal(df_chained_from_right, df_full)
+
+
+@given(
+    lhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+    rhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+)
+def test_merge_sorted_maintain_order_parametric(lhs: pl.Series, rhs: pl.Series) -> None:
+    left = (
+        pl.DataFrame([lhs.sort()])
+        .with_row_index("left_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("right_idx"),
+            pl.lit(0, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+    right = (
+        pl.DataFrame([rhs.sort()])
+        .with_row_index("right_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("left_idx"),
+            pl.lit(1, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+
+    actual = (
+        left.lazy().merge_sorted(right.lazy(), key="key", maintain_order=True).collect()
+    )
+    expected = pl.concat([left, right]).sort(["key", "df"], maintain_order=True)
+
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_maintain_order(n_frames: int) -> None:
+    dfs = [
+        pl.DataFrame(
+            {
+                "key": [0, 0, 1, 1],
+                "src": [i, i, i, i],
+                "pos": [0, 1, 0, 1],
+            }
+        )
+        for i in range(n_frames)
+    ]
+
+    chained = dfs[0].lazy()
+    for df in dfs[1:]:
+        chained = chained.merge_sorted(df.lazy(), key="key", maintain_order=True)
+
+    expected = pl.concat(dfs).sort(["key", "src", "pos"], maintain_order=True)
+
+    assert_frame_equal(chained.collect(), expected)
+
+
+@pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_with_sort_collect(n_frames: int) -> None:
+    dfs = [
+        pl.DataFrame(
+            {
+                "foo": [f"lazy-bear-{i}", f"eager-bear-{i}"],
+                "n": [10 + i, 110 + i],
+            }
+        )
+        for i in range(n_frames)
+    ]
+    lfs = [df.lazy() for df in dfs]
+
+    chained = lfs[0]
+    for lf in lfs[1:]:
+        chained = chained.merge_sorted(lf, key="n")
+
+    expected = pl.DataFrame(
+        {
+            "foo": [f"lazy-bear-{i}" for i in range(n_frames)]
+            + [f"eager-bear-{i}" for i in range(n_frames)],
+            "n": [10 + i for i in range(n_frames)] + [110 + i for i in range(n_frames)],
+        }
+    )
+    result = chained.sort("n", "foo").collect()
+
+    assert_frame_equal(result, expected)

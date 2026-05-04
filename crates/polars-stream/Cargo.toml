@@ -134,6 +134,7 @@ replace = ["polars-ops/replace", "polars-plan/replace"]
 range = ["polars-plan/range"]
 top_k = ["polars-plan/top_k"]
 cum_agg = ["polars-plan/cum_agg", "polars-ops/cum_agg"]
+log = ["polars-plan/log", "polars-ops/log"]
 is_first_distinct = ["polars-core/is_first_distinct", "polars-expr/is_first_distinct", "polars-plan/is_first_distinct"]
 
 # We need to specify default features here to match workspace defaults.

@@ -214,7 +214,7 @@ class LazyGroupBy:
 
         The idiomatic way to apply custom functions over multiple columns is using:
 
-        `pl.struct([my_columns]).apply(lambda struct_series: ..)`
+        `pl.struct([my_columns]).map_elements(lambda struct_series: ..)`
 
         Parameters
         ----------

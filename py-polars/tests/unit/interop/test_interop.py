@@ -4,6 +4,7 @@ import io
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -96,7 +97,7 @@ def test_arrow_array_logical() -> None:
     pa_data1 = (
         pa.array(["a", "b", "c", "d"])
         .dictionary_encode()
-        .cast(pa.dictionary(pa.uint8(), pa.large_string()))
+        .cast(pa.dictionary(pa.uint8(), pa.large_string(), ordered=True))
     )
     pa_array_logical1 = pa.FixedSizeListArray.from_arrays(pa_data1, 2)
 
@@ -1524,3 +1525,24 @@ def test_0_width_df_roundtrip() -> None:
         match=r"cannot sink 0-width DataFrame with non-zero height \(1\) to CSV",
     ):
         pl.LazyFrame(height=1).sink_csv(io.BytesIO())
+
+
+def test_to_arrow_no_deadlock_multithreaded() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    df = pl.DataFrame({"a": [1] * 100000})
+
+    def to_arrow() -> None:
+        df.to_arrow()
+
+    with ThreadPoolExecutor(10) as e:
+        fs = [e.submit(to_arrow) for _ in range(100)]
+        [f.result(timeout=10) for f in fs]
+
+
+def test_from_pandas_timestamp_17382() -> None:
+    my_date_pd = pd.to_datetime("2021-01-01 11:00:00.0000000 +11:00")
+    result = pl.DataFrame([my_date_pd]).item()
+    assert isinstance(result, datetime)
+    assert result.tzinfo == ZoneInfo("UTC")
+    assert result == datetime(2021, 1, 1, 0, 0, 0, tzinfo=ZoneInfo("UTC"))

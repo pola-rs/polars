@@ -10,11 +10,12 @@ description = "Out-of-core processing support for Polars"
 
 [dependencies]
 boxcar = { workspace = true }
-parking_lot = { workspace = true }
+libc = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
+polars-io = { workspace = true, features = ["ipc"] }
 polars-utils = { workspace = true, features = ["sysinfo"] }
-slotmap = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 
 [target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
 mimalloc = { version = "0.1", default-features = false, optional = true }
