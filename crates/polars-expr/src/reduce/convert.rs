@@ -77,7 +77,6 @@ pub fn into_reduction(
                 input,
                 maintain_order: false,
             } => (new_unordered_implode_reduction(get_dt(*input)?), *input),
-            IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
             IRAggExpr::Implode { .. } => todo!(),

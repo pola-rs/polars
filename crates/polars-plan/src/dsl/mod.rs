@@ -208,12 +208,7 @@ impl Expr {
 
     /// Compute the quantile per group.
     pub fn quantile(self, quantile: Expr, method: QuantileMethod) -> Self {
-        AggExpr::Quantile {
-            expr: Arc::new(self),
-            quantile: Arc::new(quantile),
-            method,
-        }
-        .into()
+        self.map_binary(FunctionExpr::Quantile { method }, quantile)
     }
 
     /// Get the group indexes of the group by operation.

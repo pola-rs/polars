@@ -499,17 +499,6 @@ impl Display for ExprIRDisplay<'_> {
                     } => write!(f, "{}.len()", self.with_root(input)),
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
-                    Quantile {
-                        expr,
-                        quantile,
-                        method,
-                    } => write!(
-                        f,
-                        "{}.quantile({}, interpolation='{}')",
-                        self.with_root(expr),
-                        self.with_root(quantile),
-                        <&'static str>::from(method),
-                    ),
                 }
             },
             Cast {
