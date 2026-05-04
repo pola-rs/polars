@@ -96,10 +96,9 @@ pub struct AsOfJoinNode {
     /// Buffer of the live range of right AsOf join rows.
     right_buffer: DataFrameSearchBuffer,
     output_seq: MorselSeq,
-    // Slots to store the last value of input chunks. These are used to check
-    // if the inputs are sorted.
+    // Slot to store the last row of the previous left morsel. Used to check
+    // that the left side is sorted across morsel boundaries.
     left_continuity: Option<Row>,
-    right_continuity: Option<Row>,
 }
 
 impl AsOfJoinNode {
@@ -158,7 +157,6 @@ impl AsOfJoinNode {
             right_buffer: DataFrameSearchBuffer::empty_with_schema(right_input_schema),
             output_seq: Default::default(),
             left_continuity: Default::default(),
-            right_continuity: Default::default(),
         }
     }
 }
@@ -254,7 +252,6 @@ impl ComputeNode for AsOfJoinNode {
                 let right_buffer = &mut self.right_buffer;
                 let output_seq = &mut self.output_seq;
                 let left_continuity = &mut self.left_continuity;
-                let right_continuity = &mut self.right_continuity;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     distribute_work_task(
                         recv_left,
@@ -264,7 +261,6 @@ impl ComputeNode for AsOfJoinNode {
                         right_buffer,
                         output_seq,
                         left_continuity,
-                        right_continuity,
                         params,
                     )
                     .await
@@ -291,7 +287,6 @@ async fn distribute_work_task(
     right_buffer: &mut DataFrameSearchBuffer,
     output_seq: &mut MorselSeq,
     left_continuity: &mut Option<Row>,
-    right_continuity: &mut Option<Row>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
@@ -323,7 +318,11 @@ async fn distribute_work_task(
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
             {
+                let old_height = right_buffer.height();
                 right_buffer.push_df(morsel_right.into_df());
+                if params.as_of_options().check_sortedness {
+                    check_right_continuity(right_buffer, old_height, params)?;
+                }
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
@@ -336,12 +335,11 @@ async fn distribute_work_task(
             }
         }
 
-        prune_right_side(&left_df, right_buffer, params, 0)?;
+        if !params.as_of_options().check_sortedness {
+            prune_right_side(&left_df, right_buffer, params, 0)?;
+        }
         if params.as_of_options().check_sortedness {
-            // We deliberately check the continuity even when 'by' is set,
-            // even though the in-memory engine can't do that.
-            check_left_continuity(left_continuity, &left_df, 0, params)?;
-            check_right_continuity(right_continuity, right_buffer, 0, params)?;
+            check_left_continuity(left_continuity, &left_df, params)?;
         }
         if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
@@ -361,70 +359,85 @@ async fn distribute_work_task(
     }
 }
 
+/// Check that the first row of the DataFrame is in order wrt the value in prev_row.
 fn check_left_continuity(
     prev_row: &mut Option<Row>,
     df: &DataFrame,
-    pos: usize,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    if df.height() == 0 {
+    let n = df.height();
+    if n == 0 {
         return Ok(());
     }
+
+    if let Some(prev) = prev_row.as_ref() {
+        let next_by = params
+            .left_by()
+            .iter()
+            .map(|col_name| df.column(col_name)?.get(0))
+            .collect::<PolarsResult<Vec<AnyValue<'_>>>>()?;
+        let next_on = df.column(&params.left.on)?.get(0)?;
+        check_continuity(&prev.by, &prev.on, &next_by, &next_on, params)?;
+    }
+
+    // Store the last row of this DataFrame for the next check.
     let by_values = params
         .left_by()
         .iter()
-        .map(|col_name| df.column(col_name)?.get(pos))
-        .collect::<PolarsResult<Vec<AnyValue<'_>>>>()?;
-    let on_value = df.column(&params.left.on)?.get(pos)?;
-    check_continuity(prev_row, by_values, on_value, params)
+        .map(|col_name| df.column(col_name)?.get(n - 1).map(|v| v.into_static()))
+        .collect::<PolarsResult<Vec<AnyValue<'static>>>>()?;
+    let on_value = df.column(&params.left.on)?.get(n - 1)?.into_static();
+    *prev_row = Some(Row {
+        by: by_values,
+        on: on_value,
+    });
+    Ok(())
 }
 
+/// Check that the row at `pos` in `right_buffer` does not violate sort order
+/// relative to the row at `pos - 1`.
 fn check_right_continuity(
-    prev_row: &mut Option<Row>,
-    dfsb: &DataFrameSearchBuffer,
+    right_buffer: &DataFrameSearchBuffer,
     pos: usize,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    if dfsb.height() == 0 {
+    if pos == 0 || pos >= right_buffer.height() {
         return Ok(());
     }
-    assert!(pos < dfsb.height());
-    // SAFETY: Just checked the bounds.
-    let by_values = params
+    // SAFETY: We just checked that pow and pos-1 are in bounds.
+    let prev_by = params
         .right_by()
         .iter()
-        .map(|col_name| unsafe { dfsb.get_unchecked(col_name.as_ref(), pos) })
+        .map(|col_name| unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos - 1) })
         .collect::<Vec<AnyValue<'_>>>();
-    let on_value = unsafe { dfsb.get_unchecked(params.right.on.as_ref(), pos) };
-    check_continuity(prev_row, by_values, on_value, params)
+    let prev_on = unsafe { right_buffer.get_unchecked(params.right.on.as_ref(), pos - 1) };
+    let next_by = params
+        .right_by()
+        .iter()
+        .map(|col_name| unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos) })
+        .collect::<Vec<AnyValue<'_>>>();
+    let next_on = unsafe { right_buffer.get_unchecked(params.right.on.as_ref(), pos) };
+    check_continuity(&prev_by, &prev_on, &next_by, &next_on, params)
 }
 
 fn check_continuity(
-    prev_row: &mut Option<Row>,
-    by: Vec<AnyValue<'_>>,
-    on: AnyValue<'_>,
+    prev_by: &[AnyValue<'_>],
+    prev_on: &AnyValue<'_>,
+    next_by: &[AnyValue<'_>],
+    next_on: &AnyValue<'_>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    'check: {
-        if let Some(prev) = prev_row {
-            let iter =
-                Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter()).enumerate();
-            for (i, (descending, nulls_last)) in iter {
-                match reorder_cmp(&prev.by[i], &by[i], *descending, *nulls_last) {
-                    Ordering::Less => break 'check,
-                    Ordering::Greater => {
-                        polars_bail!(InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
-                    },
-                    Ordering::Equal => {},
-                }
-            }
-            polars_ensure!(prev.on <= on, InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
+    let iter = Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter()).enumerate();
+    for (i, (descending, nulls_last)) in iter {
+        match reorder_cmp(&prev_by[i], &next_by[i], *descending, *nulls_last) {
+            Ordering::Less => return Ok(()),
+            Ordering::Greater => {
+                polars_bail!(InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
+            },
+            Ordering::Equal => {},
         }
     }
-    let mut pr = prev_row.take().unwrap_or_default();
-    pr.by.clear();
-    pr.by.extend(by.into_iter().map(AnyValue::into_static));
-    pr.on = on.into_static();
+    polars_ensure!(prev_on <= next_on, InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
     Ok(())
 }
 
@@ -530,6 +543,9 @@ fn prune_right_side(
         right_range_start = right_range_start.saturating_sub(1).max(start);
     }
 
+    if params.as_of_options().check_sortedness {
+        check_right_continuity(right, right_range_start, params)?;
+    }
     right.split_at(right_range_start);
     Ok(())
 }
