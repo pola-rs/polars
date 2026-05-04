@@ -782,11 +782,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 pushdown_with_added_names!(len_before_added_names)
             },
 
-            IR::Gather {
-                target,
-                idxs,
-                null_on_oob,
-            } => {
+            IR::Gather { .. } => {
                 let [in_, out] = edges.get_input_output_mut(0, 0);
                 mem::swap(in_.projection_state_mut(), out.projection_state_mut());
             },
