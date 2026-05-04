@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use polars_utils::arena::Arena;
+use polars_utils::arena::{Arena, Node};
 
 use super::*;
 #[cfg(feature = "python")]
@@ -17,7 +17,7 @@ impl IRNode {
         expr_arena: &'a Arena<AExpr>,
     ) -> IRHashWrap<'a> {
         IRHashWrap {
-            node: *self,
+            node: self.node(),
             lp_arena,
             expr_arena,
             hash_as_equality: false,
@@ -26,16 +26,25 @@ impl IRNode {
 }
 
 pub(crate) struct IRHashWrap<'a> {
-    node: IRNode,
+    node: Node,
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
     hash_as_equality: bool,
 }
 
-impl IRHashWrap<'_> {
-    pub fn hash_as_equality(mut self) -> Self {
-        self.hash_as_equality = true;
-        self
+impl<'a> IRHashWrap<'a> {
+    pub(crate) fn new(
+        node: Node,
+        lp_arena: &'a Arena<IR>,
+        expr_arena: &'a Arena<AExpr>,
+        hash_as_equality: bool,
+    ) -> Self {
+        Self {
+            node,
+            lp_arena,
+            expr_arena,
+            hash_as_equality,
+        }
     }
 }
 
@@ -71,7 +80,7 @@ fn hash_python_predicate<H: Hasher>(
 impl Hash for IRHashWrap<'_> {
     // This hashes the variant, not the whole plan
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let alp = self.node.to_alp(self.lp_arena);
+        let alp = self.lp_arena.get(self.node);
         std::mem::discriminant(alp).hash(state);
         match alp {
             #[cfg(feature = "python")]

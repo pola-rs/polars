@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use polars_utils::unique_id::UniqueId;
 
 use super::*;
+use crate::plans::deep_copy::deep_copy_ir_delete_caches;
 
 fn get_upper_projections(
     parent: Node,
@@ -257,7 +258,7 @@ pub(super) fn set_cache_states(
     if !cache_schema_and_children.is_empty() {
         let mut proj_pd = ProjectionPushDown::new();
         let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming);
-        for (_cache_id, v) in cache_schema_and_children {
+        for (cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
             // want to loose predicate pushdown in favor of scan sharing.
@@ -265,28 +266,29 @@ pub(super) fn set_cache_states(
                 if verbose {
                     eprintln!("cache nodes will be removed because predicates don't match")
                 }
-                for ((&child, cache), parents) in
-                    v.children.iter().zip(v.cache_nodes).zip(v.parents)
-                {
-                    // Remove the cache and assign the child the cache location.
-                    lp_arena.swap(child, cache);
-
+                for ((_, cache), parents) in v.children.iter().zip(v.cache_nodes).zip(v.parents) {
                     // Restart predicate and projection pushdown from most top parent.
                     // This to ensure we continue the optimization where it was blocked initially.
                     // We pick up the blocked filter and projection.
                     let mut node = cache;
                     for p_node in parents.into_iter().flatten() {
-                        if matches!(
-                            lp_arena.get(p_node),
-                            IR::Filter { .. } | IR::SimpleProjection { .. }
-                        ) {
-                            node = p_node
-                        } else {
-                            break;
-                        }
+                        match lp_arena.get(p_node) {
+                            IR::Filter { .. } | IR::SimpleProjection { .. } => true,
+                            IR::Cache { id, .. } => {
+                                if cfg!(debug_assertions) {
+                                    panic!()
+                                }
+
+                                *id == cache_id
+                            },
+                            _ => break,
+                        };
+
+                        node = p_node
                     }
 
-                    let lp = lp_arena.take(node);
+                    let copied_node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
+                    let lp = lp_arena.take(copied_node);
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
                     lp_arena.replace(node, lp);

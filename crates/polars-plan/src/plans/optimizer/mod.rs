@@ -22,6 +22,8 @@ mod expand_datasets;
 #[cfg(feature = "python")]
 pub use expand_datasets::ExpandedPythonScan;
 mod collapse_sort;
+pub mod deep_copy;
+mod ir_traversal;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;

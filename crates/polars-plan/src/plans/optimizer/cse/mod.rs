@@ -1,11 +1,10 @@
 mod cache_states;
 mod csee;
-mod cspe;
+pub mod cspe;
 
 use cache_states::set_cache_states;
 pub(super) use csee::CommonSubExprOptimizer;
 pub use csee::NaiveExprMerger;
-use cspe::elim_cmn_subplans;
 
 use super::*;
 
@@ -36,7 +35,7 @@ impl CommonSubPlanOptimizer {
         verbose: bool,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
-        let (root, inserted_cache, _) = cse::elim_cmn_subplans(root, ir_arena, expr_arena);
+        let inserted_cache = cspe::common_subplan_elimination(root, ir_arena, expr_arena);
 
         run_projection_predicate_pushdown(
             root,
@@ -57,6 +56,56 @@ impl CommonSubPlanOptimizer {
                 pushdown_maintain_errors,
                 opt_flags.new_streaming(),
             )?;
+
+            use std::ops::ControlFlow;
+
+            use crate::traversal::tree_traversal::tree_traversal;
+            use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
+
+            let mut cache_hits = PlHashMap::new();
+
+            tree_traversal(
+                root,
+                ir_arena,
+                &mut vec![],
+                &mut vec![],
+                &mut FnVisitors::new(
+                    || root,
+                    |key, _: &mut Arena<IR>, edges| {
+                        edges.inputs().for_each_mut(|e| {
+                            *e = key;
+                        });
+
+                        ControlFlow::Continue(SubtreeVisit::Visit)
+                    },
+                    |node, ir_arena, edges| {
+                        if let IR::Cache { input, id } = ir_arena.get(node) {
+                            use hashbrown::hash_map::Entry;
+
+                            match cache_hits.entry(*id) {
+                                Entry::Vacant(e) => {
+                                    e.insert(Some((*input, edges.outputs()[0])));
+                                },
+                                Entry::Occupied(mut e) => {
+                                    e.get_mut().take();
+                                },
+                            }
+                        }
+
+                        ControlFlow::<()>::Continue(())
+                    },
+                ),
+            )
+            .continue_value()
+            .unwrap();
+
+            for (cache_input_node, cache_consumer_node) in cache_hits.into_values().flatten() {
+                *ir_arena
+                    .get_mut(cache_consumer_node)
+                    .inputs_mut()
+                    .next()
+                    .unwrap() = cache_input_node;
+            }
         }
 
         Ok(root)

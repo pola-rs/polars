@@ -361,6 +361,10 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 // }
                                 // Branch 1 mirrors the generic min==max fallback for const-col rgs.
                                 // `min(A) > X` / `max(A) < X` elide an `is_defined(stat) &&` guard.
+                                // Helper drops haystack nulls; the `(!lv.has_nulls() || null_count(A)
+                                // == 0)` gate is applied only when needed: per-case under
+                                // nulls_equal=true in the unrolled path (when a null was dropped),
+                                // and conditionally in the fallback path.
                                 const LIST_ITEM_LIMIT: usize = 100;
 
                                 let col = col.clone();
@@ -369,7 +373,6 @@ fn aexpr_to_skip_batch_predicate_rec(
                                     arena,
                                     schema,
                                     dtype,
-                                    nulls_equal,
                                     LIST_ITEM_LIMIT,
                                 );
 
@@ -388,23 +391,22 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let max_is_defined = is_stat_defined(col_max, dtype, arena);
 
                                 // all_nulls disjunct skips row groups whose column is entirely
-                                // null in this group. Sound for both paths — the outer null_case
-                                // wrapper below suppresses skip when haystack and column both have
-                                // nulls under nulls_equal=true.
+                                // null in this group. Sound for both paths; the per-case
+                                // null_count(A) == 0 guards suppress skip when haystack and column
+                                // both have nulls under nulls_equal=true.
                                 let col_nc = col!(null_count: col);
                                 let len = col!(len);
+                                let idx_zero = lv!(idx: 0);
                                 let all_nulls = col_nc.eq(len, arena);
+                                let col_has_no_nulls = col_nc.eq(idx_zero, arena);
 
-                                let inner = if let Some(values) = values {
-                                    // Per-element AND. Empty list folds to `true` (AND identity) —
-                                    // `is_in([])` is unconditionally false. Null elements (only
-                                    // possible under nulls_equal=true) are skipped so they don't
-                                    // poison the AND with nulls; the outer null_case gate handles
-                                    // the column-has-nulls × haystack-has-null interaction.
-                                    values.iter().fold(lv!(true), |acc, av| {
-                                        if av.is_null() {
-                                            return acc;
-                                        }
+                                let min_max_not_in = if let Some((values, had_nulls)) = values {
+                                    // Per-element AND. Empty list folds to `true` (AND identity);
+                                    // `is_in([])` is unconditionally false. The helper has dropped
+                                    // any haystack nulls; the per-case `null_count(A) == 0` guard
+                                    // below handles the column-has-nulls × haystack-has-null
+                                    // interaction under nulls_equal=true.
+                                    let inner = values.iter().fold(lv!(true), |acc, av| {
                                         let scalar = Scalar::new(dtype.clone(), av.into_static());
                                         let bi = AExprBuilder::lit_scalar(scalar, arena);
                                         let below =
@@ -412,7 +414,13 @@ fn aexpr_to_skip_batch_predicate_rec(
                                         let above =
                                             max_is_defined.and(col_max.lt(bi, arena), arena);
                                         acc.and(below.or(above, arena), arena)
-                                    })
+                                    });
+                                    let expr = all_nulls.or(inner, arena);
+                                    if had_nulls && nulls_equal {
+                                        expr.and(col_has_no_nulls, arena)
+                                    } else {
+                                        expr
+                                    }
                                 } else {
                                     let lv_min = lv_node_exploded.min(arena);
                                     let lv_max = lv_node_exploded.max(arena);
@@ -420,30 +428,31 @@ fn aexpr_to_skip_batch_predicate_rec(
                                         min_is_defined.and(col_min.gt(lv_max, arena), arena);
                                     let above =
                                         max_is_defined.and(col_max.lt(lv_min, arena), arena);
-                                    below.or(above, arena)
+                                    let inner = below.or(above, arena);
+                                    let expr = all_nulls.or(inner, arena);
+
+                                    if nulls_equal {
+                                        let lv_has_not_nulls = lv_node_exploded.has_no_nulls(arena);
+                                        let null_case =
+                                            lv_has_not_nulls.or(col_has_no_nulls, arena);
+                                        null_case.and(expr, arena)
+                                    } else {
+                                        expr
+                                    }
                                 };
-                                let expr = all_nulls.or(inner, arena);
-
-                                let col_has_no_nulls = col_nc.has_no_nulls(arena);
-
-                                let lv_has_not_nulls = lv_node_exploded.has_no_nulls(arena);
-                                let null_case = lv_has_not_nulls.or(col_has_no_nulls, arena);
-
-                                let min_max_is_in = null_case.and(expr, arena);
 
                                 let min_is_max = col_min.eq(col_max, arena); // Eq so that (None == None) == None
-                                let idx_zero = lv!(idx: 0);
-                                let has_no_nulls = col_nc.eq(idx_zero, arena);
 
                                 // The above case does always cover the fallback path. Since there
                                 // is code that relies on the `min==max` always filtering normally,
                                 // we add it here.
                                 let exact_not_in =
                                     col_min.is_in(lv_node, nulls_equal, arena).not(arena);
-                                let exact_not_in =
-                                    min_is_max.and(has_no_nulls, arena).and(exact_not_in, arena);
+                                let exact_not_in = min_is_max
+                                    .and(col_has_no_nulls, arena)
+                                    .and(exact_not_in, arena);
 
-                                Some(exact_not_in.or(min_max_is_in, arena).node())
+                                Some(exact_not_in.or(min_max_not_in, arena).node())
                             },
                             _ => None,
                         }

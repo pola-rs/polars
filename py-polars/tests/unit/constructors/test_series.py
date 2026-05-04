@@ -104,6 +104,13 @@ def test_array_large_u64() -> None:
     assert s.to_list() == values
 
 
+def test_array_creation_idx_size() -> None:
+    s = pl.Series([None])
+    width = 2**31
+    s = s.new_from_index(0, width)
+    assert pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width)).shape == (4,)
+
+
 def test_series_init_ambiguous_datetime() -> None:
     value = datetime(2001, 10, 28, 2)
     dtype = pl.Datetime(time_zone="Europe/Belgrade")

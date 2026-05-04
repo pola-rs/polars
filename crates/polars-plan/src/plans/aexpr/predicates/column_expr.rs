@@ -215,19 +215,24 @@ pub fn aexpr_to_column_predicates(
                             } => {
                                 into_column(input[0].node(), expr_arena)?;
 
-                                let values = super::try_extract_is_in_haystack(
+                                let (values, had_nulls) = super::try_extract_is_in_haystack(
                                     input[1].node(),
                                     expr_arena,
                                     schema,
                                     &dtype,
-                                    *nulls_equal,
                                     usize::MAX,
                                 )?;
 
-                                let values = values.iter()
-                                    .map(|av| {
-                                        Scalar::new(dtype.clone(), av.into_static())
-                                    })
+                                // EqualOneOf describes the full set membership: include
+                                // Scalar::Null under nulls_equal=true so the specialization is
+                                // sound regardless of how the runtime chooses to invoke it.
+                                let values = values
+                                    .iter()
+                                    .map(|av| Scalar::new(dtype.clone(), av.into_static()))
+                                    .chain(
+                                        (*nulls_equal && had_nulls)
+                                            .then(|| Scalar::new(dtype.clone(), AnyValue::Null)),
+                                    )
                                     .collect();
 
                                 Some(SpecializedColumnPredicate::EqualOneOf(values))

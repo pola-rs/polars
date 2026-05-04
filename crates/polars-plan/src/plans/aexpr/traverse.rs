@@ -620,20 +620,40 @@ where
     tree_traversal(root_ae_node, expr_arena, visit_stack, edges, visitor)
 }
 
+struct ExtendWrap<'a, T>(&'a mut dyn FnMut(T));
+
+impl<'a, T> Extend<T> for ExtendWrap<'a, T> {
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        for v in iter.into_iter() {
+            (self.0)(v)
+        }
+    }
+}
+
 impl GetNodeInputs<Node> for Arena<AExpr> {
-    fn push_inputs_for_key<C>(&self, key: Node, container: &mut C)
-    where
-        C: Extend<Node>,
-    {
-        self.get(key).inputs(container);
+    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
+        self.get(key).inputs(&mut ExtendWrap(push_fn));
     }
 }
 
 impl GetNodeInputs<Node> for &Arena<AExpr> {
-    fn push_inputs_for_key<C>(&self, key: Node, container: &mut C)
-    where
-        C: Extend<Node>,
-    {
-        self.get(key).inputs(container);
+    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
+        self.get(key).inputs(&mut ExtendWrap(push_fn));
+    }
+}
+
+impl GetNodeInputs<Node> for Arena<IR> {
+    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
+        for v in self.get(key).inputs() {
+            push_fn(v)
+        }
+    }
+}
+
+impl GetNodeInputs<Node> for &Arena<IR> {
+    fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
+        for v in self.get(key).inputs() {
+            push_fn(v)
+        }
     }
 }
