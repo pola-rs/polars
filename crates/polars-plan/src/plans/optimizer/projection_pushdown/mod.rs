@@ -789,6 +789,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
             } => {
                 assert_eq!(num_input_edges, 2);
 
+                // `lf.gather(idxs, null_on_oob=True).select(len())` -> `idxs.select(len())`
                 if out_edge.projection() == Projection::Len && *null_on_oob {
                     let idxs_node = *idxs;
                     let [idxs_edge, out_edge] = edges.get_input_output_mut(1, 0);
