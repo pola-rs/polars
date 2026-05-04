@@ -210,17 +210,18 @@ pub fn aexpr_to_column_predicates(
                             #[cfg(feature = "is_in")]
                             AExpr::Function {
                                 input,
-                                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+                                function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal: _ }),
                                 options: _,
                             } => {
                                 into_column(input[0].node(), expr_arena)?;
 
-                                let values = super::try_extract_is_in_haystack(
+                                // `SpecializedColumnPredicate` is only invoked on non-null rows
+                                // (asserted in `polars-io`), so `had_nulls` needs no compensation.
+                                let (values, _had_nulls) = super::try_extract_is_in_haystack(
                                     input[1].node(),
                                     expr_arena,
                                     schema,
                                     &dtype,
-                                    *nulls_equal,
                                     usize::MAX,
                                 )?;
 

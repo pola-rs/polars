@@ -3531,6 +3531,39 @@ def test_is_in_string_pushdown_27416(
     assert "Predicate pushdown: reading 2 / 5 row groups" in capfd.readouterr().err
 
 
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
+def test_is_in_string_pushdown_null_haystack(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Under `nulls_equal=True`, a null in the haystack matches column-null
+    # rows so the all-null row group must not be skipped; row groups that
+    # contain neither "1" nor "9" nor nulls are still pruned.
+    df = pl.DataFrame(
+        {
+            "sym": ["0", "1", "2", "3", None, None, "6", "7", "8", "9"],
+            "val": list(range(10)),
+        }
+    )
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2, statistics="full")
+    f.seek(0)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = (
+        pl.scan_parquet(f)
+        .filter(pl.col("sym").is_in([None, "1", "9"], nulls_equal=True))
+        .collect()
+    )
+
+    assert_frame_equal(
+        out.sort("val"),
+        pl.DataFrame({"sym": ["1", None, None, "9"], "val": [1, 4, 5, 9]}),
+    )
+    assert "Predicate pushdown: reading 3 / 5 row groups" in capfd.readouterr().err
+
+
 def test_roundtrip_int128() -> None:
     f = io.BytesIO()
     s = pl.Series("a", [1, 2, 3], pl.Int128)
