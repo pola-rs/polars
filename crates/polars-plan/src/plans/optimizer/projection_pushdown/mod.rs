@@ -479,6 +479,7 @@ impl ProjectionPushDown {
             },
             Scan {
                 sources,
+                original_sources,
                 mut file_info,
                 hive_parts,
                 scan_type,
@@ -629,6 +630,7 @@ impl ProjectionPushDown {
 
                         Ok(Scan {
                             sources,
+                            original_sources,
                             file_info,
                             hive_parts,
                             output_schema,

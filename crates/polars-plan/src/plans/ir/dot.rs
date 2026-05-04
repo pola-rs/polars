@@ -222,6 +222,7 @@ impl<'a> IRDotDisplay<'a> {
             },
             Scan {
                 sources,
+                original_sources: _,
                 file_info,
                 hive_parts: _,
                 predicate,

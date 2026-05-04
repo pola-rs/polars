@@ -56,6 +56,8 @@ pub enum IR {
     },
     Scan {
         sources: ScanSources,
+        /// Holds the original sources, i.e., prior to any expansion.
+        original_sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<HivePartitionsDf>,
         predicate: Option<ExprIR>,

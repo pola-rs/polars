@@ -358,6 +358,7 @@ impl SlicePushDown {
             (
                 Scan {
                     sources,
+                    original_sources,
                     file_info,
                     hive_parts,
                     output_schema,
@@ -403,6 +404,7 @@ impl SlicePushDown {
 
                         let lp = Scan {
                             sources,
+                            original_sources,
                             file_info,
                             hive_parts,
                             output_schema,
@@ -417,6 +419,7 @@ impl SlicePushDown {
                     } else {
                         let lp = Scan {
                             sources,
+                            original_sources,
                             file_info,
                             hive_parts,
                             output_schema,
@@ -434,6 +437,7 @@ impl SlicePushDown {
 
                 let lp = Scan {
                     sources,
+                    original_sources,
                     file_info,
                     hive_parts,
                     output_schema,

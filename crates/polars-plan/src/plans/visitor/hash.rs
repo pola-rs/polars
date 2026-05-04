@@ -140,6 +140,7 @@ impl Hash for IRHashWrap<'_> {
             },
             IR::Scan {
                 sources,
+                original_sources: _,
                 file_info: _,
                 hive_parts: _,
                 predicate,

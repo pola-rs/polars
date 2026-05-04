@@ -32,6 +32,7 @@ pub(super) fn expand_datasets(
 
         let IR::Scan {
             sources,
+            original_sources: _,
             scan_type,
             unified_scan_args,
 

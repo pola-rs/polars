@@ -410,6 +410,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         )),
         IR::Scan {
             sources,
+            original_sources: _,
             file_info: _,
             hive_parts: _,
             predicate,

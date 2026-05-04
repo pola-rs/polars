@@ -264,6 +264,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
 
         polars_plan::dsl::DATASET_PROVIDER_VTABLE.get_or_init(|| PythonDatasetProviderVTable {
             name: dataset_provider_funcs::name,
+            uri: dataset_provider_funcs::uri,
             schema: dataset_provider_funcs::schema,
             to_dataset_scan: dataset_provider_funcs::to_dataset_scan,
         });

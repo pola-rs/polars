@@ -27,6 +27,7 @@ impl LateMaterializedDataFrame {
         });
         IR::Scan {
             sources: ScanSources::Paths(Default::default()),
+            original_sources: ScanSources::Paths(Default::default()),
             file_info: FileInfo::new(schema, None, (None, usize::MAX)),
             hive_parts: None,
             predicate: None,

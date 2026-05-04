@@ -758,6 +758,7 @@ pub fn write_ir_non_recursive(
         },
         IR::Scan {
             sources,
+            original_sources: _,
             file_info,
             predicate,
             predicate_file_skip_applied: _,
