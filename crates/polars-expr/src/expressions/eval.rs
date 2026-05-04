@@ -88,7 +88,8 @@ impl EvalExpr {
         // Batch when the total number of inner elements exceeds IdxSize::MAX to avoid
         // truncating offset/length casts below. Each batch covers a contiguous row-range
         // whose accumulated inner element count stays within IdxSize::MAX.
-        if flattened_len > IdxSize::MAX as usize {
+        const LIMIT: usize = (IdxSize::MAX - 1) as usize;
+        if flattened_len > LIMIT {
             let offsets = ca.offsets()?;
             // offsets_slice[i] / offsets_slice[i+1] are the start/end of row i.
             let offsets_slice = offsets.as_slice();
@@ -100,7 +101,7 @@ impl EvalExpr {
                 if batch_row_start >= ca.len() {
                     break;
                 }
-                let threshold = batch_inner_start + IdxSize::MAX as i64;
+                let threshold = batch_inner_start + LIMIT as i64;
                 // Binary search for the first row whose end offset exceeds the threshold.
                 // offsets_slice[batch_row_start+1..] holds end offsets for rows
                 // batch_row_start, batch_row_start+1, …; partition_point returns how many fit.
@@ -274,9 +275,9 @@ impl EvalExpr {
         let limit = if cfg!(debug_assertions) {
             std::env::var("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT")
                 .map(|v| v.parse::<usize>().unwrap())
-                .unwrap_or(IdxSize::MAX as usize)
+                .unwrap_or(IdxSize::MAX as usize - 1)
         } else {
-            IdxSize::MAX as usize
+            (IdxSize::MAX - 1) as usize
         };
 
         if flattened_len > limit && width > 0 {
