@@ -367,3 +367,64 @@ def test_write_database_adbc_temporary_table() -> None:
 
     if hasattr(conn, "close"):
         conn.close()
+
+
+@pytest.mark.write_disk
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
+def test_write_database_adbc_commit(tmp_path: Path) -> None:
+    """Confirm that commit=True (default) persists data via ADBC."""
+    df = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
+    tmp_path.mkdir(exist_ok=True)
+    test_db_uri = f"sqlite:///{tmp_path}/test_adbc_commit.db"
+
+    conn = _open_adbc_connection(test_db_uri)
+    df.write_database("test_commit", connection=conn, commit=True)
+    conn.close()
+
+    result = pl.read_database(
+        "SELECT * FROM test_commit", connection=create_engine(test_db_uri)
+    )
+    assert_frame_equal(result, df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
+def test_write_database_adbc_no_commit(tmp_path: Path) -> None:
+    """Confirm that commit=False leaves the transaction open for manual control."""
+    initial = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
+    extra = pl.DataFrame({"key": ["c", "d"], "value": [3, 4]})
+    tmp_path.mkdir(exist_ok=True)
+    test_db_uri = f"sqlite:///{tmp_path}/test_adbc_no_commit.db"
+
+    # Write initial rows and commit so the table exists with known contents
+    conn = _open_adbc_connection(test_db_uri)
+    initial.write_database("test_no_commit", connection=conn, commit=True)
+
+    # Append extra rows without committing, then roll back
+    extra.write_database(
+        "test_no_commit", connection=conn, if_table_exists="append", commit=False
+    )
+    conn.rollback()
+    conn.close()
+
+    # Only the initially committed rows should be present
+    result = pl.read_database(
+        "SELECT * FROM test_no_commit", connection=create_engine(test_db_uri)
+    )
+    assert_frame_equal(result, initial)
+
+
+@pytest.mark.write_disk
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
+def test_write_database_adbc_no_commit_warns_on_autocommit(tmp_path: Path) -> None:
+    """Confirm that commit=False warns when the connection has autocommit enabled."""
+    import adbc_driver_sqlite.dbapi as sqlite_dbapi
+
+    df = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
+    tmp_path.mkdir(exist_ok=True)
+
+    conn = sqlite_dbapi.connect(str(tmp_path / "test_autocommit_warn.db"), autocommit=True)
+    with pytest.warns(UserWarning, match="commit=False has no effect"):
+        df.write_database("test_autocommit_warn", connection=conn, commit=False)
+
+    conn.close()

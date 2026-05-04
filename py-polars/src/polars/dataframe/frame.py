@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import warnings
 from collections import defaultdict
 from collections.abc import (
     Generator,
@@ -4383,6 +4384,7 @@ class DataFrame:
         if_table_exists: DbWriteMode = "fail",
         engine: DbWriteEngine | None = None,
         engine_options: dict[str, Any] | None = None,
+        commit: bool = True,
     ) -> int:
         """
         Write the data in a Polars DataFrame to a database.
@@ -4422,6 +4424,15 @@ class DataFrame:
             * Setting `engine` to "adbc" inserts using the ADBC cursor's `adbc_ingest`
               method. Note that when passing an instantiated connection object, PyArrow
               is required for SQLite and Snowflake drivers.
+        commit
+            If ``True`` (default), commit the transaction after writing. Only
+            applicable when ``engine="adbc"``; ignored for other engines. Set to
+            ``False`` to manage the transaction yourself, allowing you to commit or
+            roll back after the call returns.
+
+            Note: when ``connection`` is a URI string, Polars opens and closes the
+            connection internally; setting ``commit=False`` in that case means the
+            data will not be persisted.
 
         Examples
         --------
@@ -4523,6 +4534,15 @@ class DataFrame:
                     f"\n\nChoose one of {{'fail', 'replace', 'append'}}"
                 )
                 raise ValueError(msg)
+
+            if not commit and not getattr(conn, "_commit_supported", True):
+                warnings.warn(
+                    "commit=False has no effect because the ADBC connection has "
+                    "autocommit enabled (or the driver does not support transactions). "
+                    "Data will be committed automatically.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
             with (
                 conn if can_close_conn else contextlib.nullcontext(),
@@ -4643,7 +4663,8 @@ class DataFrame:
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()
+                if commit:
+                    conn.commit()
             return n_rows
 
         elif engine == "sqlalchemy":
