@@ -1,16 +1,17 @@
 use std::borrow::Cow;
 use std::cell::LazyCell;
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::builder::AnonymousOwnedListBuilder;
-use polars_core::error::{PolarsResult, feature_gated};
+use polars_core::error::{PolarsResult, feature_gated, polars_ensure};
 use polars_core::frame::DataFrame;
 #[cfg(feature = "dtype-array")]
 use polars_core::prelude::ArrayChunked;
 use polars_core::prelude::{
-    ChunkCast, ChunkExplode, ChunkNestingUtils, Column, Field, GroupPositions, GroupsType, IdxCa,
-    IntoColumn, ListBuilderTrait, ListChunked,
+    _set_check_length, ChunkCast, ChunkExplode, ChunkNestingUtils, Column, Field, GroupPositions,
+    GroupsType, IdxCa, IntoColumn, ListBuilderTrait, ListChunked,
 };
 use polars_core::schema::Schema;
 use polars_core::series::Series;
@@ -66,23 +67,70 @@ impl EvalExpr {
         state: &ExecutionState,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = DataFrame::empty_with_height(ca.len());
-        let ca = ca
-            .trim_lists_to_normalized_offsets()
-            .map_or(Cow::Borrowed(ca), Cow::Owned);
-
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
+
+        // SAFETY:
+        // We may temporarily create lengths that exceed IDXSIZE
+        // If that happens we slice and process in batches.
+        unsafe { _set_check_length(false) };
+        let flattened = ca.get_inner().into_column();
+        unsafe { _set_check_length(true) };
+        let flattened_len = flattened.len();
+        let validity = ca.rechunk_validity();
+
+        // Batch when the total number of inner elements exceeds IdxSize::MAX to avoid
+        // truncating offset/length casts below. Each batch covers a contiguous row-range
+        // whose accumulated inner element count stays within IdxSize::MAX.
+        if flattened_len > IdxSize::MAX as usize {
+            let offsets = ca.offsets()?;
+            // offsets_slice[i] / offsets_slice[i+1] are the start/end of row i.
+            let offsets_slice = offsets.as_slice();
+            let mut batch_results: VecDeque<Column> = VecDeque::new();
+            let mut batch_row_start = 0usize;
+            let mut batch_inner_start: i64 = 0;
+
+            loop {
+                if batch_row_start >= ca.len() {
+                    break;
+                }
+                let threshold = batch_inner_start + IdxSize::MAX as i64;
+                // Binary search for the first row whose end offset exceeds the threshold.
+                // offsets_slice[batch_row_start+1..] holds end offsets for rows
+                // batch_row_start, batch_row_start+1, …; partition_point returns how many fit.
+                let rel = offsets_slice[batch_row_start + 1..].partition_point(|&v| v <= threshold);
+                if batch_row_start + rel >= ca.len() {
+                    // All remaining rows fit in one batch.
+                    break;
+                }
+                let flush_len = rel;
+                polars_ensure!(flush_len > 0, ComputeError: "list elements larger than IdxSize::MAX are not supported");
+                let batch = ca.slice(batch_row_start as i64, flush_len);
+                batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+                batch_row_start += flush_len;
+                batch_inner_start = offsets_slice[batch_row_start];
+            }
+            // Flush the final batch.
+            let batch = ca.slice(batch_row_start as i64, ca.len() - batch_row_start);
+            batch_results.push_back(self.evaluate_on_list_chunked(&batch, state, is_agg)?);
+
+            let mut out = batch_results.pop_front().unwrap();
+            for other in batch_results.into_iter() {
+                out.append_owned(other)?;
+            }
+            return Ok(out);
+        }
+
+        let df = DataFrame::empty_with_height(ca.len());
 
         let has_masked_out_values = LazyCell::new(|| ca.has_masked_out_values());
         let may_fail_on_masked_out_elements = self.evaluation_is_fallible && *has_masked_out_values;
-
-        let flattened = ca.get_inner().into_column();
-        let flattened_len = flattened.len();
-        let validity = ca.rechunk_validity();
 
         // Fast path: fully elementwise expression without masked out values.
         if self.evaluation_is_elementwise && !may_fail_on_masked_out_elements {
