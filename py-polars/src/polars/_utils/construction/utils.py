@@ -70,12 +70,6 @@ def is_sqlalchemy_row(value: Any) -> bool:
     )
 
 
-def _first_non_none_in_series(s: pl.Series) -> Any:
-    if s.dtype == pl.Null or s.null_count() == len(s):
-        return None
-    return next(v for v in s if v is not None)
-
-
 def get_first_non_none(values: Sequence[Any | None] | pl.Series) -> Any:
     """
     Return the first value from a sequence that isn't None.
@@ -83,16 +77,10 @@ def get_first_non_none(values: Sequence[Any | None] | pl.Series) -> Any:
     If sequence doesn't contain non-None values, return None.
     """
     if isinstance(values, pl.Series):
-        return _first_non_none_in_series(values)
+        if values.dtype == pl.Null or values.null_count() == len(values):
+            return None
 
-    for v in values:
-        if isinstance(v, pl.Series):
-            result = _first_non_none_in_series(v)
-            if result is not None:
-                return result
-        elif v is not None:
-            return v
-    return None
+    return next((v for v in values if v is not None), None)
 
 
 def nt_unpack(obj: Any) -> Any:
