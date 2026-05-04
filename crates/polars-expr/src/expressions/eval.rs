@@ -250,18 +250,23 @@ impl EvalExpr {
         as_list: bool,
         is_agg: bool,
     ) -> PolarsResult<Column> {
-        let df = DataFrame::empty_with_height(ca.len());
-        let ca = ca
-            .trim_lists_to_normalized_offsets()
-            .map_or(Cow::Borrowed(ca), Cow::Owned);
-
         // Fast path: Empty or only nulls.
         if ca.null_count() == ca.len() {
             let name = self.output_field.name.clone();
             return Ok(Column::full_null(name, ca.len(), self.output_field.dtype()));
         }
 
+        let df = DataFrame::empty_with_height(ca.len());
+        let ca = ca
+            .trim_lists_to_normalized_offsets()
+            .map_or(Cow::Borrowed(ca), Cow::Owned);
+
+        // SAFETY:
+        // We may temporarily create lengths that exceed IDXSIZE
+        // If that happens we slice and process in batches.
+        unsafe { _set_check_length(false) };
         let flattened = ca.get_inner().into_column();
+        unsafe { _set_check_length(true) };
         let flattened_len = flattened.len();
         let validity = ca.rechunk_validity();
 
