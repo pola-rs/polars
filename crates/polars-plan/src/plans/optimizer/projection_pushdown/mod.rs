@@ -783,8 +783,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
             },
 
             IR::Gather { .. } => {
-                let [in_, out] = edges.get_input_output_mut(0, 0);
-                mem::swap(in_.projection_state_mut(), out.projection_state_mut());
+                let [gather_from, out] = edges.get_input_output_mut(0, 0);
+                mem::swap(
+                    gather_from.projection_state_mut(),
+                    out.projection_state_mut(),
+                );
             },
 
             IR::Join {
