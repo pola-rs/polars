@@ -1426,7 +1426,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         .sort_by_key(|name, _| scan_schema.index_of(name));
                 }
 
-                if let Some(RowIndex { name, offset }) = &unified_scan_args.row_index
+                if let Some(RowIndex { name, offset: _ }) = &unified_scan_args.row_index
                     && let Some(idx) = scan_projected_schema.index_of(name)
                     && idx != 0
                 {
