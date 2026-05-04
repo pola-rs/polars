@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Final, get_type_hints
 
+import polars as pl
 from polars._dependencies import _check_for_pydantic, pydantic
 
 if TYPE_CHECKING:
@@ -69,14 +70,29 @@ def is_sqlalchemy_row(value: Any) -> bool:
     )
 
 
-def get_first_non_none(values: Sequence[Any | None]) -> Any:
+def _first_non_none_in_series(s: pl.Series) -> Any:
+    if s.dtype == pl.Null or s.null_count() == len(s):
+        return None
+    return next(v for v in s if v is not None)
+
+
+def get_first_non_none(values: Sequence[Any | None] | pl.Series) -> Any:
     """
     Return the first value from a sequence that isn't None.
 
     If sequence doesn't contain non-None values, return None.
     """
-    if values is not None:
-        return next((v for v in values if v is not None), None)
+    if isinstance(values, pl.Series):
+        return _first_non_none_in_series(values)
+
+    for v in values:
+        if isinstance(v, pl.Series):
+            result = _first_non_none_in_series(v)
+            if result is not None:
+                return result
+        elif v is not None:
+            return v
+    return None
 
 
 def nt_unpack(obj: Any) -> Any:
