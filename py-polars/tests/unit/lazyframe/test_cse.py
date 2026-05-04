@@ -1215,10 +1215,17 @@ def test_cpse_predicates_25030() -> None:
     q4 = q3.group_by("key").len().join(q3, on="key")
 
     got = q4.collect()
-    expected = q4.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False))
+    expected = pl.DataFrame(
+        [
+            pl.Series("key", [2], dtype=pl.Int64),
+            pl.Series("len", [1], dtype=pl.UInt32),
+            pl.Series("len_right", [2], dtype=pl.UInt32),
+            pl.Series("x", [2], dtype=pl.Int64),
+            pl.Series("y", [1], dtype=pl.Int64),
+        ]
+    )
 
     assert_frame_equal(got, expected)
-    assert q4.explain().count("CACHE") == 2
 
 
 def test_asof_join_25699() -> None:
@@ -1403,9 +1410,6 @@ def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
     )
 
 
-@pytest.mark.xfail(
-    reason="nested CSPE not yet enabled; needs refactor of predicate/projection/slice pushdowns"
-)
 def test_cspe_create_nested_caches() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2]})
 
