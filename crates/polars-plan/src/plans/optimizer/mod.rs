@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 use polars_error::feature_gated;
 
-use crate::plans::optimizer::projection_pushdown2::projection_pushdown;
+use crate::plans::optimizer::projection_pushdown::projection_pushdown;
 use crate::prelude::*;
 
 mod delay_rechunk;
@@ -9,8 +9,6 @@ mod delay_rechunk;
 mod cluster_with_columns;
 mod collapse_and_project;
 mod collect_members;
-#[allow(unused)]
-mod count_star;
 #[cfg(feature = "cse")]
 mod cse;
 #[cfg(feature = "merge_sorted")]
@@ -27,9 +25,7 @@ mod collapse_sort;
 pub mod deep_copy;
 mod ir_traversal;
 mod predicate_pushdown;
-#[allow(unused)]
 mod projection_pushdown;
-mod projection_pushdown2;
 mod simplify_expr;
 pub mod simplify_ordering;
 mod slice_pushdown_expr;
@@ -46,7 +42,6 @@ use polars_core::config::verbose;
 pub use predicate_pushdown::{
     DynamicPred, DynamicPredWeakRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
 };
-pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
 use slice_pushdown_lp::SlicePushDown;
 pub use sortedness::{

@@ -6,7 +6,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::plans::IR;
-use crate::plans::optimizer::projection_pushdown2::{iters_eq, min_dtype_size_col};
+use crate::plans::optimizer::projection_pushdown::{iters_eq, min_dtype_size_col};
 
 #[derive(Debug, Clone)]
 pub struct Edge(ProjectionState, ParentKeyAndPort);

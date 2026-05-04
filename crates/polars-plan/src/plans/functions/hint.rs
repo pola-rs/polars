@@ -1,7 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
 
-use polars_core::prelude::PlHashSet;
 use polars_utils::pl_str::PlSmallStr;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -28,13 +27,6 @@ pub enum HintIR {
 }
 
 impl HintIR {
-    pub(crate) fn project(&self, projected_names: &PlHashSet<PlSmallStr>) -> Option<HintIR> {
-        let mut out = self.clone();
-
-        out.retain_names(|name| projected_names.contains(name))
-            .then_some(out)
-    }
-
     /// Removes hints based on column name and filter function. Returns false if no hints were retained.
     pub fn retain_names<F>(&mut self, mut f: F) -> bool
     where

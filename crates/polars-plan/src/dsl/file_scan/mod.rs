@@ -161,19 +161,6 @@ impl FileScanIR {
         }
     }
 
-    pub(crate) fn sort_projection(&self) -> bool {
-        match self {
-            #[cfg(feature = "csv")]
-            Self::Csv { .. } => true,
-            #[cfg(feature = "ipc")]
-            Self::Ipc { .. } => false,
-            #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => false,
-            #[allow(unreachable_patterns)]
-            _ => false,
-        }
-    }
-
     pub fn streamable(&self) -> bool {
         match self {
             #[cfg(feature = "csv")]
