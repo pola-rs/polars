@@ -668,6 +668,25 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             .map_err(|e| e.context(failed_here!(join)))
             .map(|t| t.0);
         },
+        DslPlan::Gather {
+            target,
+            idxs,
+            null_on_oob,
+        } => {
+            let target =
+                to_alp_impl(owned(target), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
+            let idxs =
+                to_alp_impl(owned(idxs), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
+            let idxs_schema = ctxt.lp_arena.get(idxs).schema(ctxt.lp_arena);
+            polars_ensure!(idxs_schema.len() == 1, InvalidOperation: "'gather' indices DataFrame should have a single column");
+            let idx_dtype = &idxs_schema.get_at_index(0).unwrap().1;
+            polars_ensure!(idx_dtype.is_integer(), InvalidOperation: "'gather' indices must have integer dtype");
+            IR::Gather {
+                target,
+                idxs,
+                null_on_oob,
+            }
+        },
         DslPlan::HStack {
             input,
             exprs,

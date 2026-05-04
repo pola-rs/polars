@@ -273,6 +273,17 @@ pub struct Join {
 }
 
 #[pyclass(frozen)]
+/// Join operation
+pub struct Gather {
+    #[pyo3(get)]
+    target: usize,
+    #[pyo3(get)]
+    idxs: usize,
+    #[pyo3(get)]
+    null_on_oob: bool,
+}
+
+#[pyclass(frozen)]
 /// Merge sorted operation
 pub struct MergeSorted {
     #[pyo3(get)]
@@ -581,6 +592,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 )
                     .into_py_any(py)?
             },
+        }
+        .into_py_any(py),
+        IR::Gather {
+            target,
+            idxs,
+            null_on_oob,
+        } => Gather {
+            target: target.0,
+            idxs: idxs.0,
+            null_on_oob: *null_on_oob,
         }
         .into_py_any(py),
         IR::HStack {

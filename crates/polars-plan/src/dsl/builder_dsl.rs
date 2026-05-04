@@ -410,6 +410,16 @@ impl DslBuilder {
         }
         .into()
     }
+
+    pub fn gather(self, idxs: DslPlan, null_on_oob: bool) -> Self {
+        DslPlan::Gather {
+            target: Arc::new(self.0),
+            idxs: Arc::new(idxs),
+            null_on_oob,
+        }
+        .into()
+    }
+
     pub fn map_private(self, function: DslFunction) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),

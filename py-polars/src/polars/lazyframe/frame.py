@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import warnings
-from collections.abc import Collection, Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
@@ -24,9 +24,11 @@ import polars.selectors as cs
 from polars import functions as F
 from polars._dependencies import (
     _PYARROW_AVAILABLE,
+    _check_for_numpy,
     import_optional,
     subprocess,
 )
+from polars._dependencies import numpy as np
 from polars._dependencies import polars_cloud as pc
 from polars._dependencies import pyarrow as pa
 from polars._typing import (
@@ -109,7 +111,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from builtins import slice as slice_
-    from collections.abc import Awaitable, Callable, Iterator, Sequence
+    from collections.abc import Awaitable, Callable, Iterator
     from io import IOBase
     from typing import IO, Concatenate, Literal, ParamSpec
 
@@ -128,7 +130,6 @@ if TYPE_CHECKING:
         import polars._plr as plr
 
     from polars import DataFrame, DataType, Expr
-    from polars._dependencies import numpy as np
     from polars._typing import (
         Alignment,
         ArrowSchemaExportable,
@@ -6481,6 +6482,87 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 suffix,
             )
         )
+
+    @unstable()
+    def gather(
+        self,
+        indices: int
+        | Sequence[int]
+        | IntoExpr
+        | pl.Series
+        | np.ndarray[Any, Any]
+        | pl.LazyFrame,
+        *,
+        null_on_oob: bool = False,
+    ) -> LazyFrame:
+        """
+        Selects rows from this LazyFrame at the given indices.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        indices
+            The indices of the rows to select.
+
+            Due to the lack of a ``LazySeries`` it's permitted to pass a single-width
+            ``LazyFrame`` as indices as well.
+
+        null_on_oob
+            If true when an index is out-of-bounds a null row will be generated
+            instead of raising an error.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame({"x": [2, 1, 0], "s": ["foo", "bar", "baz"]})
+        >>> lf.gather([2, 0, 0]).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 0   ┆ baz │
+        │ 2   ┆ foo │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+
+        >>> lf.gather([0, 10, 1], null_on_oob=True).collect()
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ x    ┆ s    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 2    ┆ foo  │
+        │ null ┆ null │
+        │ 1    ┆ bar  │
+        └──────┴──────┘
+
+        >>> idxs = pl.LazyFrame({"i": [1, 10, 0], "b": [True, False, True]})
+        >>> lf.gather(idxs.filter(pl.col.b).select(pl.col.i)).collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ bar │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+        """
+        if not isinstance(indices, pl.LazyFrame):
+            if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
+                _check_for_numpy(indices) and isinstance(indices, np.ndarray)
+            ):
+                indices_expr = F.lit(pl.Series("", indices, dtype=Int64))
+            else:
+                indices_expr = wrap_expr(parse_into_expression(indices))
+            indices = self.select(indices_expr)
+
+        return self._from_pyldf(self._ldf.gather(indices._ldf, null_on_oob))
 
     def with_columns(
         self,

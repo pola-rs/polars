@@ -30,6 +30,7 @@ impl IR {
             Cache { .. } => "cache",
             GroupBy { .. } => "aggregate",
             Join { .. } => "join",
+            Gather { .. } => "gather",
             HStack { .. } => "hstack",
             Distinct { .. } => "distinct",
             MapFunction { .. } => "map_function",
@@ -77,6 +78,7 @@ impl IR {
             HConcat { schema, .. } => schema,
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
+            Gather { target, .. } => return arena.get(*target).schema(arena),
             Scan {
                 output_schema,
                 file_info,
@@ -154,7 +156,8 @@ impl IR {
                 input,
                 payload: SinkTypeIR::Memory,
             }
-            | Slice { input, .. } => IR::schema_with_cache(*input, arena, cache),
+            | Slice { input, .. }
+            | Gather { target: input, .. } => IR::schema_with_cache(*input, arena, cache),
             Sink { .. } | SinkMultiple { .. } => Arc::new(Schema::default()),
             Scan {
                 output_schema,

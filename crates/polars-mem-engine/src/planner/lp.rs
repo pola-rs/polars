@@ -745,6 +745,19 @@ fn create_physical_plan_impl(
                 join_type_options,
             )))
         },
+        Gather {
+            target,
+            idxs,
+            null_on_oob,
+        } => {
+            let target = recurse!(target, state)?;
+            let idxs = recurse!(idxs, state)?;
+            Ok(Box::new(executors::GatherExec::new(
+                target,
+                idxs,
+                null_on_oob,
+            )))
+        },
         HStack {
             input,
             exprs,

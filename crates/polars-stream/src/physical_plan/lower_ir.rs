@@ -1353,6 +1353,23 @@ pub fn lower_ir(
             }
         },
 
+        IR::Gather {
+            target,
+            idxs,
+            null_on_oob,
+        } => {
+            let target = *target;
+            let idxs = *idxs;
+            let null_on_oob = *null_on_oob;
+            let phys_target = lower_ir!(target)?;
+            let phys_idxs = lower_ir!(idxs)?;
+            PhysNodeKind::Gather {
+                target: phys_target,
+                idxs: phys_idxs,
+                null_on_oob,
+            }
+        },
+
         IR::Distinct { input, options } => {
             let input = *input;
             let options = options.clone();

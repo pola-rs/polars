@@ -950,6 +950,13 @@ pub fn write_ir_non_recursive(
 
             Ok(())
         },
+        IR::Gather {
+            target: _,
+            idxs: _,
+            null_on_oob,
+        } => {
+            write!(f, "{:indent$}GATHER[null_on_oob: {null_on_oob}]", "")
+        },
         IR::HStack {
             input: _,
             exprs,

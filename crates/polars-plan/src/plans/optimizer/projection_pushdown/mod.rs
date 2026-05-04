@@ -720,6 +720,22 @@ impl ProjectionPushDown {
                 expr_arena,
             ),
             join_ir @ Join { .. } => process_join(join_ir, ctx, self, lp_arena, expr_arena),
+            Gather {
+                target,
+                idxs,
+                null_on_oob,
+            } => {
+                self.pushdown_and_assign(target, ctx.clone(), lp_arena, expr_arena)?;
+                let idxs_alp = lp_arena.take(idxs);
+                let opt_idxs_lp =
+                    self.no_pushdown_restart_opt(idxs_alp, ctx, lp_arena, expr_arena)?;
+                lp_arena.replace(idxs, opt_idxs_lp);
+                Ok(Gather {
+                    target,
+                    idxs,
+                    null_on_oob,
+                })
+            },
             HStack {
                 input,
                 exprs,

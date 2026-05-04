@@ -317,6 +317,17 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                         .collect(),
                 ),
+                Gather {
+                    target,
+                    idxs,
+                    null_on_oob,
+                } => ND(
+                    wh(h, &format!("GATHER[null_on_oob: {null_on_oob}]")),
+                    vec![
+                        self.lp_node(Some("TARGET:".to_string()), *target),
+                        self.lp_node(Some("IDXS:".to_string()), *idxs),
+                    ],
+                ),
                 HStack { input, exprs, .. } => ND(
                     wh(h, "WITH_COLUMNS"),
                     exprs

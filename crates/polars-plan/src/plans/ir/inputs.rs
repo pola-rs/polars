@@ -36,16 +36,18 @@ impl IR {
     pub fn exprs(&'_ self) -> Exprs<'_> {
         use IR::*;
         match self {
-            Slice { .. } => Exprs::Empty,
-            Cache { .. } => Exprs::Empty,
-            Distinct { .. } => Exprs::Empty,
-            Union { .. } => Exprs::Empty,
-            MapFunction { .. } => Exprs::Empty,
-            DataFrameScan { .. } => Exprs::Empty,
-            HConcat { .. } => Exprs::Empty,
-            ExtContext { .. } => Exprs::Empty,
-            SimpleProjection { .. } => Exprs::Empty,
-            SinkMultiple { .. } => Exprs::Empty,
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | DataFrameScan { .. }
+            | HConcat { .. }
+            | ExtContext { .. }
+            | SimpleProjection { .. }
+            | SinkMultiple { .. }
+            | Gather { .. } => Exprs::Empty,
+
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Exprs::Empty,
 
@@ -109,16 +111,17 @@ impl IR {
     pub fn exprs_mut(&'_ mut self) -> ExprsMut<'_> {
         use IR::*;
         match self {
-            Slice { .. } => ExprsMut::Empty,
-            Cache { .. } => ExprsMut::Empty,
-            Distinct { .. } => ExprsMut::Empty,
-            Union { .. } => ExprsMut::Empty,
-            MapFunction { .. } => ExprsMut::Empty,
-            DataFrameScan { .. } => ExprsMut::Empty,
-            HConcat { .. } => ExprsMut::Empty,
-            ExtContext { .. } => ExprsMut::Empty,
-            SimpleProjection { .. } => ExprsMut::Empty,
-            SinkMultiple { .. } => ExprsMut::Empty,
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | DataFrameScan { .. }
+            | HConcat { .. }
+            | ExtContext { .. }
+            | SimpleProjection { .. }
+            | SinkMultiple { .. }
+            | Gather { .. } => ExprsMut::Empty,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => ExprsMut::Empty,
 
@@ -205,6 +208,7 @@ impl IR {
                 input_right,
                 ..
             } => Inputs::double(*input_left, *input_right),
+            Gather { target, idxs, .. } => Inputs::double(*target, *idxs),
             HStack { input, .. } => Inputs::single(*input),
             Distinct { input, .. } => Inputs::single(*input),
             MapFunction { input, .. } => Inputs::single(*input),
@@ -250,6 +254,7 @@ impl IR {
                 input_right,
                 ..
             } => InputsMut::double(input_left, input_right),
+            Gather { target, idxs, .. } => InputsMut::double(target, idxs),
             HStack { input, .. } => InputsMut::single(input),
             Distinct { input, .. } => InputsMut::single(input),
             MapFunction { input, .. } => InputsMut::single(input),

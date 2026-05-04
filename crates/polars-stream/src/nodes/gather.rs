@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_ops::series::convert_and_bound_index;
+use polars_ops::frame::gather::GatherDf;
 
 use super::compute_node_prelude::*;
 use super::in_memory_sink::InMemorySinkNode;
@@ -103,37 +103,7 @@ impl ComputeNode for GatherNode {
                         while let Ok(morsel) = recv.recv().await {
                             let morsel = morsel.try_map(|idx_df| {
                                 assert!(idx_df.width() == 1);
-                                if idx_df.height() == 0 {
-                                    return Ok(target.clear());
-                                }
-
-                                match &idx_df.columns()[0] {
-                                    Column::Series(idx_s) => {
-                                        let idx_ca = convert_and_bound_index(
-                                            idx_s,
-                                            target.height(),
-                                            null_on_oob,
-                                        )?;
-                                        target.take(&idx_ca)
-                                    },
-                                    Column::Scalar(idx_c) => {
-                                        let idx_s = idx_c.as_single_value_series();
-                                        let idx_ca = convert_and_bound_index(
-                                            &idx_s,
-                                            target.height(),
-                                            null_on_oob,
-                                        )?;
-                                        match idx_ca.get(0) {
-                                            Some(idx) => {
-                                                Ok(target.new_from_index(idx as usize, idx_c.len()))
-                                            },
-                                            None => Ok(DataFrame::full_null(
-                                                target.schema(),
-                                                idx_c.len(),
-                                            )),
-                                        }
-                                    },
-                                }
+                                target.gather_with_column(&idx_df.columns()[0], null_on_oob)
                             })?;
 
                             if send.send(morsel).await.is_err() {
