@@ -2233,6 +2233,111 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
+    @unstable()
+    def execute(
+        self,
+        *,
+        optimizations: QueryOptFlags = ...,
+        engine: EngineType = "auto",
+        **_kwargs: Any,
+    ) -> Any:
+        """
+        Execute the query into a `QueryResult`.
+
+        This method of materializing a `LazyFrame` makes no guarantees as to where
+        the result is materialized. This can be on the GPU for the GPU-engine,
+        on the cluster or remote storage for the distributed engine and the streaming
+        engine could spill the result if it needed to.
+
+        The `QueryResult` can always be consumed as a new `LazyFrame` by calling `.lazy`
+
+
+        Parameters
+        ----------
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query
+            is run using the polars in-memory engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars in-memory
+            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
+            control over the GPU engine, for example which device to use
+            on a system with multiple devices, is possible by providing a
+            :class:`~.GPUEngine` object with configuration options.
+
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+
+            .. note::
+               The GPU engine does not support streaming, if streaming is enabled, 
+               then GPU execution is switched off.
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Returns
+        -------
+        DataFrame
+
+        See Also
+        --------
+        explain : Print the query plan that is evaluated with collect.
+        profile : Collect the LazyFrame and time each node in the computation graph.
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.Config.set_streaming_chunk_size : Set the size of streaming batches.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... )
+        >>> lf.group_by("a").agg(pl.all().sum()).collect()  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        Collect in streaming mode
+
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(
+        ...     engine="streaming"
+        ... )  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        Collect in GPU mode
+
+        """
+        engine = _select_engine(engine)
+        pass
+
     @overload
     def collect(
         self,
