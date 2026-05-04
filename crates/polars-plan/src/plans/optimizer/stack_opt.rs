@@ -26,7 +26,6 @@ impl StackOptimizer {
         let mut plans = vec![];
         let mut exprs = vec![];
         let mut scratch = vec![];
-        let mut children = vec![];
         let mut schema_stack: Vec<Arc<Schema>> = vec![];
 
         // Run loop until reaching fixed point.
@@ -114,12 +113,8 @@ impl StackOptimizer {
                                 exprs.push((node, eval_schema_idx));
                             }
                         },
-                        expr => {
-                            children.clear();
-                            expr.inputs_rev(&mut children);
-                            for node in children.drain(..) {
-                                exprs.push((node, schema_idx));
-                            }
+                        ae => {
+                            exprs.extend(ae.inputs_iter_name_last().map(|node| (node, schema_idx)))
                         },
                     }
                 }

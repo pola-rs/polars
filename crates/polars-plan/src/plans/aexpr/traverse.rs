@@ -1,390 +1,56 @@
 use std::ops::ControlFlow;
+use std::{iter, slice};
 
-use super::*;
+use polars_utils::arena::{Arena, Node};
+use polars_utils::itertools::Itertools as _;
+
+use crate::plans::{AExpr, ExprIR, IR, IRAggExpr};
 use crate::traversal::tree_traversal::{GetNodeInputs, tree_traversal};
 use crate::traversal::visitor::NodeVisitor;
 
 impl AExpr {
-    /// Push the inputs of this node to the given container, in field declaration order.
+    /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
-    pub fn inputs<E>(&self, container: &mut E)
-    where
-        E: Extend<Node>,
-    {
+    pub fn nodes_iter(&self) -> AENodesIter<'_> {
         use AExpr::*;
 
         match self {
-            Element | Column(_) | Literal(_) | Len => {},
+            Element | Column(_) | Literal(_) | Len => AENodesIter::new_empty(),
             #[cfg(feature = "dtype-struct")]
-            StructField(_) => {},
-            BinaryExpr { left, op: _, right } => {
-                container.extend([*left, *right]);
-            },
-            Cast { expr, .. } => container.extend([*expr]),
-            Sort { expr, .. } => container.extend([*expr]),
-            Gather { expr, idx, .. } => {
-                container.extend([*expr, *idx]);
-            },
-            SortBy { expr, by, .. } => {
-                container.extend([*expr]);
-                container.extend(by.iter().cloned());
-            },
-            Filter { input, by } => {
-                container.extend([*input, *by]);
-            },
-            Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.extend([node]),
-                NodeInputs::Many(nodes) => container.extend(nodes),
-                NodeInputs::Leaf => {},
-            },
-            Ternary {
-                truthy,
-                falsy,
-                predicate,
-            } => {
-                container.extend([*predicate, *truthy, *falsy]);
-            },
-            AnonymousFunction { input, .. }
-            | Function { input, .. }
-            | AnonymousAgg { input, .. } => container.extend(input.iter().map(|e| e.node())),
-            Explode { expr: e, .. } => container.extend([*e]),
-            #[cfg(feature = "dynamic_group_by")]
-            Rolling {
-                function,
-                index_column,
-                period: _,
-                offset: _,
-                closed_window: _,
-            } => {
-                container.extend([*function, *index_column]);
-            },
-            Over {
-                function,
-                partition_by,
-                order_by,
-                mapping: _,
-            } => {
-                container.extend([*function]);
-                container.extend(partition_by.iter().cloned());
-                container.extend(order_by.as_ref().map(|(n, _)| *n));
-            },
-            Eval {
+            StructField(_) => AENodesIter::new_empty(),
+
+            Cast {
                 expr,
-                evaluation,
-                variant: _,
-            } => {
-                container.extend([*expr, *evaluation]);
-            },
-            #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
-                container.extend([*expr]);
-                container.extend(evaluation.iter().map(|x| x.node()));
-            },
-            Slice {
-                input,
-                offset,
-                length,
-            } => {
-                container.extend([*input, *offset, *length]);
-            },
-        }
-    }
+                dtype: _,
+                options: _,
+            }
+            | Sort { expr, options: _ }
+            | Explode { expr, options: _ } => AENodesIter::new_single(expr),
 
-    /// Push the inputs of this node to the given container, in reverse order.
-    /// This ensures the primary node responsible for the name is pushed last.
-    ///
-    /// This is subtly different from `children_rev` as this only includes the input expressions,
-    /// not expressions used during evaluation.
-    pub fn inputs_rev<E>(&self, container: &mut E)
-    where
-        E: Extend<Node>,
-    {
-        use AExpr::*;
-
-        match self {
-            Element | Column(_) | Literal(_) | Len => {},
-            #[cfg(feature = "dtype-struct")]
-            StructField(_) => {},
-            BinaryExpr { left, op: _, right } => {
-                container.extend([*right, *left]);
-            },
-            Cast { expr, .. } => container.extend([*expr]),
-            Sort { expr, .. } => container.extend([*expr]),
-            Gather { expr, idx, .. } => {
-                container.extend([*idx, *expr]);
-            },
-            SortBy { expr, by, .. } => {
-                container.extend(by.iter().cloned().rev());
-                container.extend([*expr]);
-            },
-            Filter { input, by } => {
-                container.extend([*by, *input]);
-            },
-            Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.extend([node]),
-                NodeInputs::Many(nodes) => container.extend(nodes.into_iter().rev()),
-                NodeInputs::Leaf => {},
-            },
-            Ternary {
-                truthy,
-                falsy,
-                predicate,
-            } => {
-                container.extend([*predicate, *falsy, *truthy]);
-            },
-            AnonymousFunction { input, .. }
-            | Function { input, .. }
-            | AnonymousAgg { input, .. } => container.extend(input.iter().rev().map(|e| e.node())),
-            Explode { expr: e, .. } => container.extend([*e]),
-            #[cfg(feature = "dynamic_group_by")]
-            Rolling {
-                function,
-                index_column,
-                period: _,
-                offset: _,
-                closed_window: _,
-            } => {
-                container.extend([*index_column, *function]);
-            },
-            Over {
-                function,
-                partition_by,
-                order_by,
-                mapping: _,
-            } => {
-                if let Some((n, _)) = order_by {
-                    container.extend([*n]);
-                }
-                container.extend(partition_by.iter().rev().cloned());
-                container.extend([*function]);
-            },
-            Eval {
+            Gather {
                 expr,
-                evaluation,
-                variant: _,
-            } => {
-                // We don't use the evaluation here because it does not contain inputs.
-                _ = evaluation;
-                container.extend([*expr]);
-            },
-            #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
-                // Evaluation is included. In case this is not allowed, use `inputs_rev_strict()`.
-                container.extend(evaluation.iter().rev().map(ExprIR::node));
-                container.extend([*expr]);
-            },
-            Slice {
-                input,
-                offset,
-                length,
-            } => {
-                container.extend([*length, *offset, *input]);
-            },
-        }
-    }
-
-    /// Push the inputs of this node to the given container, in reverse order.
-    /// This ensures the primary node responsible for the name is pushed last.
-    ///
-    /// Unlike `inputs_rev`, this excludes Eval expressions. These use an extended schema,
-    /// determined by their input, which implies a different traversal order.
-    ///
-    /// This is subtly different from `children_rev` as this only includes the input expressions,
-    /// not expressions used during evaluation.
-    pub fn inputs_rev_strict<E>(&self, container: &mut E)
-    where
-        E: Extend<Node>,
-    {
-        use AExpr::*;
-
-        match self {
-            #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
-                // Evaluation is explicitly excluded. It is up to the caller to handle
-                // any tree traversal if required.
-                _ = evaluation;
-                container.extend([*expr]);
-            },
-            expr => expr.inputs_rev(container),
-        }
-    }
-
-    /// Push the children of this node to the given container, in reverse order.
-    /// This ensures the primary node responsible for the name is pushed last.
-    ///
-    /// This is subtly different from `input_rev` as this only all expressions included in the
-    /// expression not only the input expressions,
-    pub fn children_rev<E: Extend<Node>>(&self, container: &mut E) {
-        use AExpr::*;
-
-        match self {
-            Element | Column(_) | Literal(_) | Len => {},
-            #[cfg(feature = "dtype-struct")]
-            StructField(_) => {},
-            BinaryExpr { left, op: _, right } => {
-                container.extend([*right, *left]);
-            },
-            Cast { expr, .. } => container.extend([*expr]),
-            Sort { expr, .. } => container.extend([*expr]),
-            Gather { expr, idx, .. } => {
-                container.extend([*idx, *expr]);
-            },
+                idx,
+                returns_scalar: _,
+                null_on_oob: _,
+            } => AENodesIter::new_double(expr, idx),
             SortBy { expr, by, .. } => {
-                container.extend(by.iter().cloned().rev());
-                container.extend([*expr]);
+                AENodesIter::DoubleSlice(slice::from_ref(expr).iter().chain(by.iter()))
             },
-            Filter { input, by } => {
-                container.extend([*by, *input]);
-            },
-            Agg(agg_e) => match agg_e.get_input() {
-                NodeInputs::Single(node) => container.extend([node]),
-                NodeInputs::Many(nodes) => container.extend(nodes.into_iter().rev()),
-                NodeInputs::Leaf => {},
-            },
+            Filter { input, by } => AENodesIter::new_double(input, by),
+            Agg(agg) => agg.nodes_iter(),
+            BinaryExpr { left, op: _, right } => AENodesIter::new_double(left, right),
             Ternary {
+                predicate,
                 truthy,
                 falsy,
-                predicate,
-            } => {
-                container.extend([*predicate, *falsy, *truthy]);
-            },
-            AnonymousFunction { input, .. }
-            | Function { input, .. }
-            | AnonymousAgg { input, .. } => container.extend(input.iter().rev().map(|e| e.node())),
-            Explode { expr: e, .. } => container.extend([*e]),
-            #[cfg(feature = "dynamic_group_by")]
-            Rolling {
-                function,
-                index_column,
-                period: _,
-                offset: _,
-                closed_window: _,
-            } => {
-                container.extend([*index_column, *function]);
-            },
-            Over {
-                function,
-                partition_by,
-                order_by,
-                mapping: _,
-            } => {
-                if let Some((n, _)) = order_by {
-                    container.extend([*n]);
-                }
-                container.extend(partition_by.iter().rev().cloned());
-                container.extend([*function]);
-            },
-            Eval {
-                expr,
-                evaluation,
-                variant: _,
-            } => container.extend([*evaluation, *expr]),
-            #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
-                container.extend(evaluation.iter().rev().map(ExprIR::node));
-                container.extend([*expr]);
-            },
-            Slice {
-                input,
-                offset,
-                length,
-            } => {
-                container.extend([*length, *offset, *input]);
-            },
-        }
-    }
-
-    pub fn replace_inputs(mut self, inputs: &[Node]) -> Self {
-        use AExpr::*;
-        let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
-            #[cfg(feature = "dtype-struct")]
-            StructField(_) => return self,
-            Cast { expr, .. } => expr,
-            Explode { expr, .. } => expr,
-            BinaryExpr { left, right, .. } => {
-                *left = inputs[0];
-                *right = inputs[1];
-                return self;
-            },
-            Gather { expr, idx, .. } => {
-                *expr = inputs[0];
-                *idx = inputs[1];
-                return self;
-            },
-            Sort { expr, .. } => expr,
-            SortBy { expr, by, .. } => {
-                *expr = inputs[0];
-                by.clear();
-                by.extend_from_slice(&inputs[1..]);
-                return self;
-            },
-            Filter { input, by, .. } => {
-                *input = inputs[0];
-                *by = inputs[1];
-                return self;
-            },
-            Agg(a) => {
-                match a {
-                    IRAggExpr::Quantile {
-                        expr,
-                        quantile,
-                        method: _,
-                    } => {
-                        *expr = inputs[0];
-                        *quantile = inputs[1];
-                    },
-                    _ => {
-                        a.set_input(inputs[0]);
-                    },
-                }
-                return self;
-            },
-            Ternary {
-                truthy,
-                falsy,
-                predicate,
-            } => {
-                *truthy = inputs[0];
-                *falsy = inputs[1];
-                *predicate = inputs[2];
-                return self;
-            },
+            } => AENodesIter::new_triple(predicate, truthy, falsy),
             AnonymousFunction { input, .. }
             | Function { input, .. }
             | AnonymousAgg { input, .. } => {
-                assert_eq!(input.len(), inputs.len());
-                for (e, node) in input.iter_mut().zip(inputs.iter()) {
-                    e.set_node(*node);
-                }
-                return self;
+                AENodesIter::ExprIRSlice(input.iter().map(ExprIR::node_ref))
             },
-            Eval {
-                expr,
-                evaluation,
-                variant: _,
-            } => {
-                *expr = inputs[0];
-                _ = evaluation; // Intentional.
-                return self;
-            },
-            #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
-                *expr = inputs[0];
-                _ = evaluation; // Intentional.
-                return self;
-            },
-            Slice {
-                input,
-                offset,
-                length,
-            } => {
-                *input = inputs[0];
-                *offset = inputs[1];
-                *length = inputs[2];
-                return self;
-            },
+
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
                 function,
@@ -392,122 +58,94 @@ impl AExpr {
                 period: _,
                 offset: _,
                 closed_window: _,
-            } => {
-                *function = inputs[0];
-                *index_column = inputs[1];
-                return self;
-            },
+            } => AENodesIter::new_double(function, index_column),
             Over {
                 function,
                 partition_by,
                 order_by,
-                ..
-            } => {
-                let offset = order_by.is_some() as usize;
-                *function = inputs[0];
-                partition_by.clear();
-                partition_by.extend_from_slice(&inputs[1..inputs.len() - offset]);
-                if let Some((_, options)) = order_by {
-                    *order_by = Some((*inputs.last().unwrap(), *options));
-                }
-                return self;
-            },
-        };
-        *input = inputs[0];
-        self
+                mapping: _,
+            } => AENodesIter::TripleSlice(
+                slice::from_ref(function)
+                    .iter()
+                    .chain(partition_by.iter())
+                    .chain(order_by.as_ref().map_or(&[][..], |x| slice::from_ref(&x.0))),
+            ),
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => AENodesIter::new_double(expr, evaluation),
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => AENodesIter::StructEval(
+                iter::once(expr).chain(evaluation.iter().map(ExprIR::node_ref as _)),
+            ),
+            Slice {
+                input,
+                offset,
+                length,
+            } => AENodesIter::new_triple(input, offset, length),
+        }
     }
 
-    pub fn replace_children(mut self, inputs: &[Node]) -> Self {
+    /// Iterator that returns nodes in order such that the last item of the iterator is the node
+    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
+    /// guaranteed to match `AExpr::nodes_iter_mut_name_last`.
+    pub fn nodes_iter_name_last(&self) -> iter::Rev<AENodesIter<'_>> {
         use AExpr::*;
-        let input = match &mut self {
-            Element | Column(_) | Literal(_) | Len => return self,
-            #[cfg(feature = "dtype-struct")]
-            StructField(_) => return self,
-            Cast { expr, .. } => expr,
-            Explode { expr, .. } => expr,
-            BinaryExpr { left, right, .. } => {
-                *left = inputs[0];
-                *right = inputs[1];
-                return self;
-            },
-            Gather { expr, idx, .. } => {
-                *expr = inputs[0];
-                *idx = inputs[1];
-                return self;
-            },
-            Sort { expr, .. } => expr,
-            SortBy { expr, by, .. } => {
-                *expr = inputs[0];
-                by.clear();
-                by.extend_from_slice(&inputs[1..]);
-                return self;
-            },
-            Filter { input, by, .. } => {
-                *input = inputs[0];
-                *by = inputs[1];
-                return self;
-            },
-            Agg(a) => {
-                if let IRAggExpr::Quantile {
-                    expr,
-                    quantile,
-                    method: _,
-                } = a
-                {
-                    *expr = inputs[0];
-                    *quantile = inputs[1];
-                } else {
-                    a.set_input(inputs[0]);
-                }
-                return self;
-            },
+
+        Iterator::rev(match self {
             Ternary {
+                predicate,
                 truthy,
                 falsy,
-                predicate,
-            } => {
-                *truthy = inputs[0];
-                *falsy = inputs[1];
-                *predicate = inputs[2];
-                return self;
-            },
-            AnonymousAgg { input, .. }
-            | AnonymousFunction { input, .. }
-            | Function { input, .. } => {
-                assert_eq!(input.len(), inputs.len());
-                for (e, node) in input.iter_mut().zip(inputs.iter()) {
-                    e.set_node(*node);
-                }
-                return self;
-            },
-            Eval {
-                expr,
-                evaluation,
-                variant: _,
-            } => {
-                *expr = inputs[0];
-                *evaluation = inputs[1];
-                return self;
-            },
+            } => AENodesIter::new_triple(truthy, falsy, predicate),
+            _ => self.nodes_iter(),
+        })
+    }
+
+    /// Iterator that returns the child nodes of this aexpr in field declaration order.
+    ///
+    /// This function and its users must be updated if the field declaration order changes.
+    pub fn nodes_iter_mut(&mut self) -> AENodesIterMut<'_> {
+        use AExpr::*;
+        use slice;
+
+        match self {
+            Element | Column(_) | Literal(_) | Len => AENodesIterMut::new_empty(),
             #[cfg(feature = "dtype-struct")]
-            StructEval { expr, evaluation } => {
-                assert_eq!(inputs.len(), evaluation.len() + 1);
-                *expr = inputs[0];
-                for (e, node) in evaluation.iter_mut().zip(inputs[1..].iter()) {
-                    e.set_node(*node);
-                }
-                return self;
+            StructField(_) => AENodesIterMut::new_empty(),
+
+            Cast {
+                expr,
+                dtype: _,
+                options: _,
+            }
+            | Sort { expr, options: _ }
+            | Explode { expr, options: _ } => AENodesIterMut::new_single(expr),
+
+            Gather {
+                expr,
+                idx,
+                returns_scalar: _,
+                null_on_oob: _,
+            } => AENodesIterMut::new_double(expr, idx),
+            SortBy { expr, by, .. } => {
+                AENodesIterMut::DoubleSlice(slice::from_mut(expr).iter_mut().chain(by.iter_mut()))
             },
-            Slice {
-                input,
-                offset,
-                length,
-            } => {
-                *input = inputs[0];
-                *offset = inputs[1];
-                *length = inputs[2];
-                return self;
+            Filter { input, by } => AENodesIterMut::new_double(input, by),
+            Agg(agg) => agg.nodes_iter_mut(),
+            BinaryExpr { left, op: _, right } => AENodesIterMut::new_double(left, right),
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => AENodesIterMut::new_triple(predicate, truthy, falsy),
+            AnonymousFunction { input, .. }
+            | Function { input, .. }
+            | AnonymousAgg { input, .. } => {
+                AENodesIterMut::ExprIRSlice(input.iter_mut().map(ExprIR::node_mut))
             },
+
             #[cfg(feature = "dynamic_group_by")]
             Rolling {
                 function,
@@ -515,57 +153,247 @@ impl AExpr {
                 period: _,
                 offset: _,
                 closed_window: _,
-            } => {
-                *function = inputs[0];
-                *index_column = inputs[1];
-                return self;
-            },
+            } => AENodesIterMut::new_double(function, index_column),
             Over {
                 function,
                 partition_by,
                 order_by,
-                ..
-            } => {
-                let offset = order_by.is_some() as usize;
-                *function = inputs[0];
-                partition_by.clear();
-                partition_by.extend_from_slice(&inputs[1..inputs.len() - offset]);
-                if let Some((_, options)) = order_by {
-                    *order_by = Some((*inputs.last().unwrap(), *options));
-                }
-                return self;
-            },
-        };
-        *input = inputs[0];
-        self
+                mapping: _,
+            } => AENodesIterMut::TripleSlice(
+                slice::from_mut(function)
+                    .iter_mut()
+                    .chain(partition_by.iter_mut())
+                    .chain(
+                        order_by
+                            .as_mut()
+                            .map_or(&mut [][..], |x| slice::from_mut(&mut x.0)),
+                    ),
+            ),
+            Eval {
+                expr,
+                evaluation,
+                variant: _,
+            } => AENodesIterMut::new_double(expr, evaluation),
+            #[cfg(feature = "dtype-struct")]
+            StructEval { expr, evaluation } => AENodesIterMut::StructEval(
+                iter::once(expr).chain(evaluation.iter_mut().map(ExprIR::node_mut as _)),
+            ),
+            Slice {
+                input,
+                offset,
+                length,
+            } => AENodesIterMut::new_triple(input, offset, length),
+        }
+    }
+
+    /// Iterator that returns nodes in order such that the last item of the iterator is the node
+    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
+    /// guaranteed to match `AExpr::nodes_iter_mut_name`.
+    pub fn nodes_iter_mut_name_last(&mut self) -> iter::Rev<AENodesIterMut<'_>> {
+        use AExpr::*;
+
+        Iterator::rev(match self {
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => AENodesIterMut::new_triple(truthy, falsy, predicate),
+            _ => self.nodes_iter_mut(),
+        })
+    }
+
+    /// Iterator that returns the child nodes of this aexpr in field declaration order.
+    ///
+    /// This is derived from `nodes_iter`, but skips the eval exprs in list / struct eval.
+    ///
+    /// This function and its users must be updated if the field declaration order changes.
+    pub fn inputs_iter(&self) -> AENodesIter<'_> {
+        use AExpr::*;
+
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            StructEval {
+                expr,
+                evaluation: _,
+            } => AENodesIter::new_single(expr),
+            Eval {
+                expr,
+                evaluation: _,
+                variant: _,
+            } => AENodesIter::new_single(expr),
+            ae => ae.nodes_iter(),
+        }
+    }
+
+    /// Iterator that returns the child nodes of this aexpr in field declaration order.
+    ///
+    /// This is derived from `nodes_iter`, but skips the eval exprs in list / struct eval.
+    ///
+    /// This function and its users must be updated if the field declaration order changes.
+    pub fn inputs_iter_mut(&mut self) -> AENodesIterMut<'_> {
+        use AExpr::*;
+
+        match self {
+            #[cfg(feature = "dtype-struct")]
+            StructEval {
+                expr,
+                evaluation: _,
+            } => AENodesIterMut::new_single(expr),
+            Eval {
+                expr,
+                evaluation: _,
+                variant: _,
+            } => AENodesIterMut::new_single(expr),
+            ae => ae.nodes_iter_mut(),
+        }
+    }
+
+    /// Iterator that returns nodes in order such that the last item of the iterator is the node
+    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
+    /// guaranteed to match `AExpr::inputs_iter_mut_name_last`.
+    ///
+    /// This is derived from `nodes_iter_name_last`, but skips the eval exprs in list / struct eval.
+    pub fn inputs_iter_name_last(&self) -> iter::Rev<AENodesIter<'_>> {
+        use AExpr::*;
+
+        Iterator::rev(match self {
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => AENodesIter::new_triple(truthy, falsy, predicate),
+            _ => self.inputs_iter(),
+        })
+    }
+
+    /// Iterator that returns nodes in order such that the last item of the iterator is the node
+    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
+    /// guaranteed to match `AExpr::inputs_iter_name_last`.
+    ///
+    /// This is derived from `nodes_iter_name_last`, but skips the eval exprs in list / struct eval.
+    pub fn inputs_iter_mut_name_last(&mut self) -> iter::Rev<AENodesIterMut<'_>> {
+        use AExpr::*;
+
+        Iterator::rev(match self {
+            Ternary {
+                predicate,
+                truthy,
+                falsy,
+            } => AENodesIterMut::new_triple(truthy, falsy, predicate),
+            _ => self.inputs_iter_mut(),
+        })
+    }
+
+    /// Replace the inputs of this AExpr. This excludes the list / struct eval exprs.
+    ///
+    /// # Panics
+    /// Panics if the number of provided inputs does not match the number of inputs in this AExpr.
+    pub fn replace_inputs(&mut self, inputs: impl IntoIterator<Item = Node>) {
+        for (l, r) in self.inputs_iter_mut().zip_eq(inputs) {
+            *l = r;
+        }
+    }
+
+    /// Replace the nodes in this AExpr.
+    ///
+    /// # Panics
+    /// Panics if the number of provided nodes does not match the number of nodes in this AExpr.
+    pub fn replace_nodes(&mut self, nodes: impl IntoIterator<Item = Node>) {
+        for (l, r) in self.nodes_iter_mut().zip_eq(nodes) {
+            *l = r;
+        }
     }
 }
 
 impl IRAggExpr {
-    pub fn get_input(&self) -> NodeInputs {
+    pub fn nodes_iter(&self) -> AENodesIter<'_> {
         use IRAggExpr::*;
-        use NodeInputs::*;
 
         match self {
-            Min { input, .. } => Single(*input),
-            Max { input, .. } => Single(*input),
-            Median(input) => Single(*input),
-            NUnique(input) => Single(*input),
-            First(input) => Single(*input),
-            FirstNonNull(input) => Single(*input),
-            Last(input) => Single(*input),
-            LastNonNull(input) => Single(*input),
-            Item { input, .. } => Single(*input),
-            Mean(input) => Single(*input),
-            Implode { input, .. } => Single(*input),
-            Quantile { expr, quantile, .. } => Many(vec![*expr, *quantile]),
-            Sum(input) => Single(*input),
-            Count { input, .. } => Single(*input),
-            Std(input, _) => Single(*input),
-            Var(input, _) => Single(*input),
-            AggGroups(input) => Single(*input),
+            Min {
+                input,
+                propagate_nans: _,
+            }
+            | Max {
+                input,
+                propagate_nans: _,
+            }
+            | Median(input)
+            | NUnique(input)
+            | First(input)
+            | FirstNonNull(input)
+            | Last(input)
+            | LastNonNull(input)
+            | Item {
+                input,
+                allow_empty: _,
+            }
+            | Mean(input)
+            | Implode {
+                input,
+                maintain_order: _,
+            }
+            | Sum(input)
+            | Count {
+                input,
+                include_nulls: _,
+            }
+            | Std(input, _)
+            | Var(input, _)
+            | AggGroups(input) => AENodesIter::new_single(input),
+
+            Quantile {
+                expr,
+                quantile,
+                method: _,
+            } => AENodesIter::new_double(expr, quantile),
         }
     }
+
+    pub fn nodes_iter_mut(&mut self) -> AENodesIterMut<'_> {
+        use IRAggExpr::*;
+
+        match self {
+            Min {
+                input,
+                propagate_nans: _,
+            }
+            | Max {
+                input,
+                propagate_nans: _,
+            }
+            | Median(input)
+            | NUnique(input)
+            | First(input)
+            | FirstNonNull(input)
+            | Last(input)
+            | LastNonNull(input)
+            | Item {
+                input,
+                allow_empty: _,
+            }
+            | Mean(input)
+            | Implode {
+                input,
+                maintain_order: _,
+            }
+            | Sum(input)
+            | Count {
+                input,
+                include_nulls: _,
+            }
+            | Std(input, _)
+            | Var(input, _)
+            | AggGroups(input) => AENodesIterMut::new_single(input),
+
+            Quantile {
+                expr,
+                quantile,
+                method: _,
+            } => AENodesIterMut::new_double(expr, quantile),
+        }
+    }
+
     pub fn set_input(&mut self, input: Node) {
         use IRAggExpr::*;
         let node = match self {
@@ -591,18 +419,201 @@ impl IRAggExpr {
     }
 }
 
-pub enum NodeInputs {
-    Leaf,
-    Single(Node),
-    Many(Vec<Node>),
+#[expect(clippy::type_complexity)]
+pub enum AENodesIter<'a> {
+    Slice(slice::Iter<'a, Node>),
+    DoubleSlice(iter::Chain<slice::Iter<'a, Node>, slice::Iter<'a, Node>>),
+    TripleSlice(
+        iter::Chain<
+            iter::Chain<slice::Iter<'a, Node>, slice::Iter<'a, Node>>,
+            slice::Iter<'a, Node>,
+        >,
+    ),
+    ExprIRSlice(iter::Map<slice::Iter<'a, ExprIR>, fn(&'a ExprIR) -> &'a Node>),
+    StructEval(
+        iter::Chain<
+            iter::Once<&'a Node>,
+            iter::Map<slice::Iter<'a, ExprIR>, fn(&'a ExprIR) -> &'a Node>,
+        >,
+    ),
 }
 
-impl NodeInputs {
-    pub fn first(&self) -> Node {
+impl<'a> AENodesIter<'a> {
+    pub fn new_empty() -> Self {
+        Self::Slice([].iter())
+    }
+
+    pub fn new_single(node: &'a Node) -> Self {
+        Self::Slice(slice::from_ref(node).iter())
+    }
+
+    pub fn new_double(node1: &'a Node, node2: &'a Node) -> Self {
+        use slice::from_ref;
+
+        Self::DoubleSlice(from_ref(node1).iter().chain(from_ref(node2)))
+    }
+
+    pub fn new_triple(node1: &'a Node, node2: &'a Node, node3: &'a Node) -> Self {
+        use slice::from_ref;
+
+        Self::TripleSlice(
+            from_ref(node1)
+                .iter()
+                .chain(from_ref(node2))
+                .chain(from_ref(node3)),
+        )
+    }
+}
+
+impl<'a> Iterator for AENodesIter<'a> {
+    type Item = Node;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use AENodesIter::*;
         match self {
-            NodeInputs::Single(node) => *node,
-            NodeInputs::Many(nodes) => nodes[0],
-            NodeInputs::Leaf => panic!(),
+            Slice(it) => it.next(),
+            DoubleSlice(it) => it.next(),
+            TripleSlice(it) => it.next(),
+            ExprIRSlice(it) => it.next(),
+            StructEval(it) => it.next(),
+        }
+        .copied()
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        use AENodesIter::*;
+        match self {
+            Slice(it) => it.nth(n),
+            DoubleSlice(it) => it.nth(n),
+            TripleSlice(it) => it.nth(n),
+            ExprIRSlice(it) => it.nth(n),
+            StructEval(it) => it.nth(n),
+        }
+        .copied()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        use AENodesIter::*;
+        match self {
+            Slice(it) => it.size_hint(),
+            DoubleSlice(it) => it.size_hint(),
+            TripleSlice(it) => it.size_hint(),
+            ExprIRSlice(it) => it.size_hint(),
+            StructEval(it) => it.size_hint(),
+        }
+    }
+}
+
+impl<'a> ExactSizeIterator for AENodesIter<'a> {}
+
+impl<'a> DoubleEndedIterator for AENodesIter<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        use AENodesIter::*;
+        match self {
+            Slice(it) => it.next_back(),
+            DoubleSlice(it) => it.next_back(),
+            TripleSlice(it) => it.next_back(),
+            ExprIRSlice(it) => it.next_back(),
+            StructEval(it) => it.next_back(),
+        }
+        .copied()
+    }
+}
+
+#[expect(clippy::type_complexity)]
+pub enum AENodesIterMut<'a> {
+    Slice(slice::IterMut<'a, Node>),
+    DoubleSlice(iter::Chain<slice::IterMut<'a, Node>, slice::IterMut<'a, Node>>),
+    TripleSlice(
+        iter::Chain<
+            iter::Chain<slice::IterMut<'a, Node>, slice::IterMut<'a, Node>>,
+            slice::IterMut<'a, Node>,
+        >,
+    ),
+    ExprIRSlice(iter::Map<slice::IterMut<'a, ExprIR>, fn(&'a mut ExprIR) -> &'a mut Node>),
+    StructEval(
+        iter::Chain<
+            iter::Once<&'a mut Node>,
+            iter::Map<slice::IterMut<'a, ExprIR>, fn(&'a mut ExprIR) -> &'a mut Node>,
+        >,
+    ),
+}
+
+impl<'a> AENodesIterMut<'a> {
+    pub fn new_empty() -> Self {
+        Self::Slice([].iter_mut())
+    }
+
+    pub fn new_single(node: &'a mut Node) -> Self {
+        Self::Slice(slice::from_mut(node).iter_mut())
+    }
+
+    pub fn new_double(node1: &'a mut Node, node2: &'a mut Node) -> Self {
+        use slice::from_mut;
+
+        Self::DoubleSlice(from_mut(node1).iter_mut().chain(from_mut(node2)))
+    }
+
+    pub fn new_triple(node1: &'a mut Node, node2: &'a mut Node, node3: &'a mut Node) -> Self {
+        use slice::from_mut;
+
+        Self::TripleSlice(
+            from_mut(node1)
+                .iter_mut()
+                .chain(from_mut(node2))
+                .chain(from_mut(node3)),
+        )
+    }
+}
+
+impl<'a> Iterator for AENodesIterMut<'a> {
+    type Item = &'a mut Node;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        use AENodesIterMut::*;
+        match self {
+            Slice(it) => it.next(),
+            DoubleSlice(it) => it.next(),
+            TripleSlice(it) => it.next(),
+            ExprIRSlice(it) => it.next(),
+            StructEval(it) => it.next(),
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        use AENodesIterMut::*;
+        match self {
+            Slice(it) => it.nth(n),
+            DoubleSlice(it) => it.nth(n),
+            TripleSlice(it) => it.nth(n),
+            ExprIRSlice(it) => it.nth(n),
+            StructEval(it) => it.nth(n),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        use AENodesIterMut::*;
+        match self {
+            Slice(it) => it.size_hint(),
+            DoubleSlice(it) => it.size_hint(),
+            TripleSlice(it) => it.size_hint(),
+            ExprIRSlice(it) => it.size_hint(),
+            StructEval(it) => it.size_hint(),
+        }
+    }
+}
+
+impl<'a> ExactSizeIterator for AENodesIterMut<'a> {}
+
+impl<'a> DoubleEndedIterator for AENodesIterMut<'a> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        use AENodesIterMut::*;
+        match self {
+            Slice(it) => it.next_back(),
+            DoubleSlice(it) => it.next_back(),
+            TripleSlice(it) => it.next_back(),
+            ExprIRSlice(it) => it.next_back(),
+            StructEval(it) => it.next_back(),
         }
     }
 }
@@ -620,25 +631,27 @@ where
     tree_traversal(root_ae_node, expr_arena, visit_stack, edges, visitor)
 }
 
-struct ExtendWrap<'a, T>(&'a mut dyn FnMut(T));
-
-impl<'a, T> Extend<T> for ExtendWrap<'a, T> {
-    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
-        for v in iter.into_iter() {
-            (self.0)(v)
-        }
-    }
-}
-
 impl GetNodeInputs<Node> for Arena<AExpr> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        self.get(key).inputs(&mut ExtendWrap(push_fn));
+        for node in self.get(key).nodes_iter() {
+            push_fn(node)
+        }
+    }
+
+    fn num_inputs(&self, key: Node) -> usize {
+        self.get(key).nodes_iter().len()
     }
 }
 
 impl GetNodeInputs<Node> for &Arena<AExpr> {
     fn get_node_inputs(&self, key: Node, push_fn: &mut dyn FnMut(Node)) {
-        self.get(key).inputs(&mut ExtendWrap(push_fn));
+        for node in self.get(key).nodes_iter() {
+            push_fn(node)
+        }
+    }
+
+    fn num_inputs(&self, key: Node) -> usize {
+        self.get(key).nodes_iter().len()
     }
 }
 
@@ -648,6 +661,10 @@ impl GetNodeInputs<Node> for Arena<IR> {
             push_fn(v)
         }
     }
+
+    fn num_inputs(&self, key: Node) -> usize {
+        self.get(key).inputs().len()
+    }
 }
 
 impl GetNodeInputs<Node> for &Arena<IR> {
@@ -655,5 +672,9 @@ impl GetNodeInputs<Node> for &Arena<IR> {
         for v in self.get(key).inputs() {
             push_fn(v)
         }
+    }
+
+    fn num_inputs(&self, key: Node) -> usize {
+        self.get(key).inputs().len()
     }
 }

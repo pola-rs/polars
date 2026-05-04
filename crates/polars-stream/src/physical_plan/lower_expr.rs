@@ -193,15 +193,9 @@ pub fn is_input_independent_rec(
             is_input_independent_rec(*input, arena, cache)
                 && is_input_independent_rec(*by, arena, cache)
         },
-        AExpr::Agg(agg_expr) => match agg_expr.get_input() {
-            polars_plan::plans::NodeInputs::Leaf => true,
-            polars_plan::plans::NodeInputs::Single(expr) => {
-                is_input_independent_rec(expr, arena, cache)
-            },
-            polars_plan::plans::NodeInputs::Many(exprs) => exprs
-                .iter()
-                .all(|expr| is_input_independent_rec(*expr, arena, cache)),
-        },
+        AExpr::Agg(agg_expr) => agg_expr
+            .nodes_iter()
+            .all(|node| is_input_independent_rec(node, arena, cache)),
         AExpr::Ternary {
             predicate,
             truthy,
@@ -528,13 +522,13 @@ fn lower_reduce_node(
     agg_node: Node,
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<(PhysStream, Node)> {
-    let agg_aexpr = ctx.expr_arena.get(agg_node).clone();
-    let mut agg_input = Vec::with_capacity(1);
-    agg_aexpr.inputs_rev(&mut agg_input);
-    agg_input.reverse();
+    let mut agg_aexpr = ctx.expr_arena.get(agg_node).clone();
 
+    let agg_input = Vec::from_iter(agg_aexpr.inputs_iter());
     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &agg_input, ctx)?;
-    let trans_agg_node = ctx.expr_arena.add(agg_aexpr.replace_inputs(&trans_exprs));
+    agg_aexpr.replace_inputs(trans_exprs);
+
+    let trans_agg_node = ctx.expr_arena.add(agg_aexpr);
 
     let out_name = unique_column_name();
     let expr_ir = ExprIR::new(trans_agg_node, OutputName::Alias(out_name.clone()));

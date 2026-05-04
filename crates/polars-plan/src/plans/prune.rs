@@ -5,7 +5,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
-use crate::plans::{AExpr, ExprIR, IR, IRPlan, IRPlanRef};
+use crate::plans::{AExpr, IR, IRPlan, IRPlanRef};
 
 /// Returns a pruned copy of this plan with new arenas (without unreachable nodes).
 ///
@@ -130,30 +130,8 @@ impl<'a> CopyContext<'a> {
     fn copy_expr(&mut self, node: Node) -> Node {
         let expr = self.src_expr.get(node);
 
-        let mut inputs = vec![];
-        expr.inputs_rev(&mut inputs);
-
-        for input in &mut inputs {
-            *input = self.copy_expr(*input);
-        }
-        inputs.reverse();
-
-        let mut dst_expr = expr.clone().replace_inputs(&inputs);
-
-        // Fix up eval, the evaluation subtree is not treated as an input,
-        // so it needs to be copied manually.
-        if let AExpr::Eval { evaluation, .. } = &mut dst_expr {
-            *evaluation = self.copy_expr(*evaluation);
-        }
-        #[cfg(feature = "dtype-struct")]
-        if let AExpr::StructEval { evaluation, .. } = &mut dst_expr {
-            for e in evaluation.iter_mut() {
-                *e = ExprIR::new(
-                    self.copy_expr(e.node()),
-                    crate::plans::OutputName::Alias(e.output_name().clone()),
-                );
-            }
-        }
+        let mut dst_expr = expr.clone();
+        dst_expr.replace_nodes(expr.nodes_iter().map(|node| self.copy_expr(node)));
 
         self.dst_expr.add(dst_expr)
     }

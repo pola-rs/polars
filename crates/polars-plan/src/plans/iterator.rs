@@ -197,7 +197,7 @@ impl<'a> Iterator for AExprIter<'a> {
             let arena = self.arena.unwrap();
             let current_expr = arena.get(node);
             // Expressions such as StructEval may reference columns that are not input.
-            current_expr.children_rev(&mut self.stack);
+            self.stack.extend(current_expr.nodes_iter_name_last());
 
             self.arena = Some(arena);
             (node, current_expr)

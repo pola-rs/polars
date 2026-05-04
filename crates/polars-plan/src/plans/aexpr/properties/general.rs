@@ -78,7 +78,12 @@ where
     if !property(ae) {
         return false;
     }
-    ae.inputs_rev(stack);
+
+    stack.extend(if let AExpr::Eval { .. } = ae {
+        ae.inputs_iter()
+    } else {
+        ae.nodes_iter()
+    });
     true
 }
 
@@ -144,11 +149,11 @@ pub fn is_prop<P: Fn(&AExpr) -> bool>(
                     return;
                 }
             };
-            ae.inputs_rev(stack);
+            stack.extend(ae.nodes_iter());
         })(),
-        _ => {
-            ae.inputs_rev(stack);
-        },
+        // Ignore the eval expr of list.eval
+        Eval { .. } => stack.extend(ae.inputs_iter()),
+        _ => stack.extend(ae.nodes_iter()),
     }
 
     true
@@ -500,7 +505,11 @@ pub(crate) fn predicate_non_null_column_outputs(
         };
 
         if traverse_all_inputs {
-            ae.inputs_rev(stack);
+            stack.extend(if let AExpr::Eval { .. } = ae {
+                ae.inputs_iter()
+            } else {
+                ae.nodes_iter()
+            });
         }
     }
 }

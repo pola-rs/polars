@@ -103,21 +103,18 @@ fn replace_agg_uniq(
     uniq_agg_exprs: &mut PlIndexMap<u32, (ExprIR, Vec<u32>)>,
     uniq_elementwise_exprs: &mut PlIndexMap<u32, ExprIR>,
 ) -> Node {
-    let aexpr = expr_arena.get(expr).clone();
-    let mut inputs = Vec::new();
-    aexpr.inputs_rev(&mut inputs);
-    inputs.reverse();
+    let mut aexpr = expr_arena.get(expr).clone();
 
     let agg_id = expr_merger.get_uniq_id(expr).unwrap();
     let name = uniq_agg_exprs
         .entry(agg_id)
         .or_insert_with(|| {
             let mut input_ids = Vec::new();
-            let input_cols = inputs
-                .iter()
+            let input_cols = aexpr
+                .inputs_iter()
                 .map(|input| {
                     let (input_id, node) = replace_elementwise_components(
-                        *input,
+                        input,
                         expr_merger,
                         expr_cache,
                         expr_arena,
@@ -139,7 +136,8 @@ fn replace_agg_uniq(
                     }
                 })
                 .collect::<Vec<_>>();
-            let trans_agg_node = expr_arena.add(aexpr.replace_inputs(&input_cols));
+            aexpr.replace_inputs(input_cols);
+            let trans_agg_node = expr_arena.add(aexpr);
 
             // Add to aggregation expressions and replace with a reference to its output.
             let agg_expr = ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()));
@@ -177,23 +175,22 @@ fn replace_elementwise_components(
             .node();
         (Some(id), node)
     } else {
-        let aexpr = expr_arena.get(expr).clone();
-        let mut inputs = Vec::new();
-        aexpr.inputs_rev(&mut inputs);
-        inputs.reverse();
-
-        for input in &mut inputs {
-            *input = replace_elementwise_components(
-                *input,
+        let mut aexpr = expr_arena.get(expr).clone();
+        let new_inputs = Vec::from_iter(aexpr.inputs_iter().map(|node| {
+            replace_elementwise_components(
+                node,
                 expr_merger,
                 expr_cache,
                 expr_arena,
                 uniq_input_names,
                 uniq_elementwise_exprs,
             )
-            .1;
-        }
-        let rec_node = expr_arena.add(aexpr.replace_inputs(&inputs));
+            .1
+        }));
+
+        aexpr.replace_inputs(new_inputs);
+
+        let rec_node = expr_arena.add(aexpr);
         (None, rec_node)
     }
 }
