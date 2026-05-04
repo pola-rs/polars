@@ -1314,6 +1314,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         scan_type,
                         predicate,
                         predicate_file_skip_applied,
+                        unified_scan_args,
                         ..
                     },
                     parent_ir,
@@ -1416,8 +1417,24 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     }
                 }
 
-                Arc::make_mut(&mut scan_projected_schema)
-                    .sort_by_key(|name, _| scan_schema.index_of(name));
+                if match scan_type.as_ref() {
+                    #[cfg(feature = "csv")]
+                    FileScanIR::Csv { .. } => true,
+                    _ => false,
+                } {
+                    Arc::make_mut(&mut scan_projected_schema)
+                        .sort_by_key(|name, _| scan_schema.index_of(name));
+                }
+
+                if let Some(RowIndex { name, offset }) = &unified_scan_args.row_index
+                    && let Some(idx) = scan_projected_schema.index_of(name)
+                    && idx != 0
+                {
+                    let schema = Arc::make_mut(&mut scan_projected_schema);
+                    let (entry_name, dtype) = schema.shift_remove_index(idx).unwrap();
+                    debug_assert_eq!(entry_name, name);
+                    schema.insert_at_index(0, entry_name, dtype).unwrap();
+                }
 
                 if !iters_eq(
                     scan_projected_schema.iter_names(),
