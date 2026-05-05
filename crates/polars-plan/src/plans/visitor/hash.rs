@@ -288,6 +288,18 @@ impl Hash for IRHashWrap<'_> {
                     options.hash(state);
                     output_name.hash(state);
                 },
+
+                UnoptimizedOperation::AnonymousColumnsUdf {
+                    function,
+                    options,
+                    output_name,
+                    fmt_str: _,
+                    ctx_schema: _,
+                } => {
+                    function.hash(state);
+                    options.hash(state);
+                    output_name.hash(state);
+                },
             },
             IR::Invalid => unreachable!(),
         }

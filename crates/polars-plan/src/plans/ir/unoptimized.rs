@@ -22,6 +22,14 @@ pub enum UnoptimizedOperation {
         options: FunctionOptions,
         output_name: PlSmallStr,
     },
+
+    AnonymousColumnsUdf {
+        function: OpaqueColumnUdf,
+        options: FunctionOptions,
+        output_name: PlSmallStr,
+        fmt_str: Box<PlSmallStr>,
+        ctx_schema: Arc<Schema>,
+    },
 }
 
 impl UnoptimizedOperation {
@@ -38,6 +46,21 @@ impl UnoptimizedOperation {
                     output_field.with_name(output_name.clone())
                 ]))
             },
+
+            UnoptimizedOperation::AnonymousColumnsUdf {
+                function,
+                ctx_schema,
+                ..
+            } => {
+                let input_fields = inputs.iter().flat_map(|i| i.iter_fields()).collect_vec();
+                let output_field = function
+                    .clone()
+                    .materialize()
+                    .unwrap()
+                    .get_field(ctx_schema, &input_fields)
+                    .unwrap();
+                Arc::new(Schema::from_iter([output_field]))
+            },
         }
     }
 }
@@ -50,6 +73,12 @@ impl fmt::Display for UnoptimizedOperation {
                 output_name,
                 ..
             } => write!(f, "{output_name} = {}(...)", function),
+
+            Self::AnonymousColumnsUdf {
+                fmt_str,
+                output_name,
+                ..
+            } => write!(f, "{output_name} = {}(...)", fmt_str),
         }
     }
 }
