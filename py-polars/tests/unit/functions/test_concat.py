@@ -472,3 +472,14 @@ def test_concat_horizontal_zero_width_height_mismatch_26876() -> None:
 
     with pytest.raises(ShapeError):
         q.collect()
+
+
+def test_concat_horizontal_lazy_strict_raises_shape_error_27415() -> None:
+    q = pl.concat(
+        [pl.LazyFrame({"x": [0, 1]}), pl.LazyFrame({"y": [0, 1, 2]})],
+        how="horizontal",
+        strict=True,
+    ).select("x")
+
+    with pytest.raises(ShapeError, match="different heights in 'strict' mode"):
+        q.collect()

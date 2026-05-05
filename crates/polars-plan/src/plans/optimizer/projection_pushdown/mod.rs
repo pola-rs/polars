@@ -1210,7 +1210,6 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let mut inputs = mem::take(inputs);
                 let projected_names = out_edge.take_names().unwrap();
-                let strict = options.strict;
                 let hconcat_projected_names = self.names_set_scratch.get();
 
                 assert_eq!(num_input_edges, inputs.len());
@@ -1243,10 +1242,6 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         );
 
                         if hconcat_projected_names.len() == base_new_names_len {
-                            if strict && !self.maintain_errors {
-                                break 'set_keep;
-                            }
-
                             hconcat_projected_names.insert(
                                 min_dtype_size_col(input_schema_arc.iter()).unwrap().clone(),
                             );
