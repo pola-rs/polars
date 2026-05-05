@@ -17,6 +17,7 @@ enum IsSortedState {
         first_non_null: Option<AnyValue<'static>>,
         seen_null: bool,
         seen_value_after_null: bool,
+        committed_descending: Option<bool>,
     },
     Source(Option<DataFrame>),
     Done,
@@ -44,6 +45,7 @@ impl IsSortedNode {
                 first_non_null: None,
                 seen_null: false,
                 seen_value_after_null: false,
+                committed_descending: None,
             },
             descending_hint: descending,
             nulls_last_hint: nulls_last,
@@ -60,6 +62,7 @@ impl IsSortedNode {
         first_non_null: &'env mut Option<AnyValue<'static>>,
         seen_null: &'env mut bool,
         seen_value_after_null: &'env mut bool,
+        committed_descending: &'env mut Option<bool>,
         descending_hint: Option<bool>,
         nulls_last_hint: Option<bool>,
         scope: &'s TaskScope<'s, 'env>,
@@ -82,7 +85,8 @@ impl IsSortedNode {
                 let series = df[0].as_materialized_series();
 
                 if opts.is_none() {
-                    if let Some(o) = resolve_sort_options(series, descending_hint, nulls_last_hint)?
+                    if let Some(o) =
+                        resolve_sort_options(series, descending_hint, nulls_last_hint)?
                     {
                         *opts = Some(o);
                     }
@@ -91,10 +95,12 @@ impl IsSortedNode {
                 if opts.is_none()
                     && !scan_unresolved(
                         series,
+                        last_value,
                         *last_was_null,
                         first_non_null,
                         seen_null,
                         seen_value_after_null,
+                        committed_descending,
                         descending_hint,
                         nulls_last_hint,
                         opts,
@@ -172,30 +178,15 @@ fn boundary_ok(
     }
 }
 
-fn infer_nulls_last(
-    nulls_last_hint: Option<bool>,
-    seen_null: bool,
-    seen_value_after_null: bool,
-) -> bool {
-    if let Some(n) = nulls_last_hint {
-        return n;
-    }
-    if seen_value_after_null {
-        return true;
-    }
-    if seen_null {
-        return false;
-    }
-    false
-}
-
 #[allow(clippy::too_many_arguments)]
 fn scan_unresolved(
     series: &Series,
+    last_value: &Option<AnyValue<'static>>,
     prev_last_was_null: bool,
     first_non_null: &mut Option<AnyValue<'static>>,
     seen_null: &mut bool,
     seen_value_after_null: &mut bool,
+    committed_descending: &mut Option<bool>,
     descending_hint: Option<bool>,
     nulls_last_hint: Option<bool>,
     opts: &mut Option<SortOptions>,
@@ -209,6 +200,12 @@ fn scan_unresolved(
     if prev_last_was_null && !first.is_null() {
         *seen_value_after_null = true;
     }
+
+    let mut prev_non_null: Option<AnyValue<'static>> = if prev_last_was_null {
+        None
+    } else {
+        last_value.clone()
+    };
 
     for i in 0..len {
         let v = series.get(i).unwrap();
@@ -225,35 +222,47 @@ fn scan_unresolved(
             *seen_value_after_null = true;
         }
 
-        let Some(fnn) = first_non_null.as_ref() else {
-            *first_non_null = Some(v.into_static());
-            continue;
-        };
-
-        if &v == fnn {
-            continue;
+        if first_non_null.is_none() {
+            *first_non_null = Some(v.clone().into_static());
         }
 
-        let direction_descending = &v < fnn;
+        if let Some(prev) = prev_non_null.as_ref() {
+            if &v != prev {
+                let step_descending = &v < prev;
 
-        let descending = match descending_hint {
-            Some(d) => {
-                if d != direction_descending {
-                    return Ok(false);
+                match *committed_descending {
+                    None => {
+                        if let Some(d) = descending_hint {
+                            if d != step_descending {
+                                return Ok(false);
+                            }
+                        }
+                        *committed_descending = Some(step_descending);
+                    },
+                    Some(d) => {
+                        if d != step_descending {
+                            return Ok(false);
+                        }
+                    },
                 }
-                d
-            },
-            None => direction_descending,
-        };
+            }
+        }
 
-        let nulls_last = infer_nulls_last(nulls_last_hint, *seen_null, *seen_value_after_null);
+        prev_non_null = Some(v.into_static());
+    }
 
-        *opts = Some(SortOptions {
-            descending,
-            nulls_last,
-            ..Default::default()
-        });
-        break;
+    if let Some(d) = *committed_descending {
+        if *seen_null || nulls_last_hint.is_some() {
+            let nulls_last = match nulls_last_hint {
+                Some(n) => n,
+                None => *seen_value_after_null,
+            };
+            *opts = Some(SortOptions {
+                descending: d,
+                nulls_last,
+                ..Default::default()
+            });
+        }
     }
 
     Ok(true)
@@ -329,6 +338,7 @@ impl ComputeNode for IsSortedNode {
                 first_non_null,
                 seen_null,
                 seen_value_after_null,
+                committed_descending,
             } => {
                 assert!(send_ports[0].is_none());
                 let recv = recv_ports[0].take().unwrap();
@@ -340,6 +350,7 @@ impl ComputeNode for IsSortedNode {
                     first_non_null,
                     seen_null,
                     seen_value_after_null,
+                    committed_descending,
                     self.descending_hint,
                     self.nulls_last_hint,
                     scope,
