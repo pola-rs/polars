@@ -529,10 +529,13 @@ impl SlicePushDown {
                     };
                 }
 
-                // first restart optimization in both inputs and get the updated LP
+                // Also pushdown slice for some joins. Only accept offset 0 or -1 as the slice gets
+                // double applied after pushdown.
                 let lp_left = self.pushdown(
                     input_left,
-                    matches!(&options.args.how, JoinType::Left | JoinType::Full).then_some(state),
+                    (matches!(&options.args.how, JoinType::Left | JoinType::Full)
+                        && (-1i64..=0).contains(&state.offset))
+                    .then_some(state),
                     lp_arena,
                     expr_arena,
                 )?;
@@ -540,7 +543,9 @@ impl SlicePushDown {
 
                 let lp_right = self.pushdown(
                     input_right,
-                    matches!(&options.args.how, JoinType::Right | JoinType::Full).then_some(state),
+                    (matches!(&options.args.how, JoinType::Right | JoinType::Full)
+                        && (-1i64..=0).contains(&state.offset))
+                    .then_some(state),
                     lp_arena,
                     expr_arena,
                 )?;
