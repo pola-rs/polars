@@ -419,7 +419,7 @@ fn check_right_continuity(
         unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos) }.into_static()
     }));
     let next_on = unsafe { right_buffer.get_unchecked(params.right.on.as_ref(), pos) };
-    check_continuity(&prev_by, &prev_on, &next_by, &next_on, params)
+    check_continuity(prev_by, &prev_on, next_by, &next_on, params)
 }
 
 fn check_continuity(
