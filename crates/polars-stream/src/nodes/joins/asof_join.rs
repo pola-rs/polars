@@ -439,17 +439,18 @@ fn check_continuity(
     next_on: &AnyValue<'_>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
+    let err = || polars_err!(InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
     let iter = Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter()).enumerate();
     for (i, (descending, nulls_last)) in iter {
         match reorder_cmp(&prev_by[i], &next_by[i], *descending, *nulls_last) {
             Ordering::Less => return Ok(()),
-            Ordering::Greater => {
-                polars_bail!(InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
-            },
+            Ordering::Greater => return Err(err()),
             Ordering::Equal => {},
         }
     }
-    polars_ensure!(prev_on <= next_on, InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
+    if !prev_on.is_null() && !next_on.is_null() && prev_on > next_on {
+        return Err(err());
+    }
     Ok(())
 }
 
