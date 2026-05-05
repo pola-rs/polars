@@ -529,7 +529,8 @@ impl SlicePushDown {
                     };
                 }
 
-                let input_slice = if state.offset < 0 {
+                // For left/right/full joins we can push a limit.
+                let input_limit_slice = if state.offset < 0 {
                     IdxSize::try_from(-state.offset).ok().map(|len| State {
                         offset: state.offset,
                         len,
@@ -544,11 +545,9 @@ impl SlicePushDown {
                         })
                 };
 
-                // Also pushdown slice for some joins. Only accept offset 0 or -1 as the slice gets
-                // double applied after pushdown.
                 let lp_left = self.pushdown(
                     input_left,
-                    input_slice
+                    input_limit_slice
                         .filter(|_| matches!(&options.args.how, JoinType::Left | JoinType::Full)),
                     lp_arena,
                     expr_arena,
@@ -557,7 +556,7 @@ impl SlicePushDown {
 
                 let lp_right = self.pushdown(
                     input_right,
-                    input_slice
+                    input_limit_slice
                         .filter(|_| matches!(&options.args.how, JoinType::Right | JoinType::Full)),
                     lp_arena,
                     expr_arena,
