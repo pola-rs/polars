@@ -413,7 +413,7 @@ impl DslBuilder {
 
     pub fn gather(self, idxs: DslPlan, null_on_oob: bool) -> Self {
         DslPlan::Gather {
-            target: Arc::new(self.0),
+            input: Arc::new(self.0),
             idxs: Arc::new(idxs),
             null_on_oob,
         }

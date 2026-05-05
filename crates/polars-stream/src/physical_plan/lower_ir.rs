@@ -1354,17 +1354,17 @@ pub fn lower_ir(
         },
 
         IR::Gather {
-            target,
+            input,
             idxs,
             null_on_oob,
         } => {
-            let target = *target;
+            let input = *input;
             let idxs = *idxs;
             let null_on_oob = *null_on_oob;
-            let phys_target = lower_ir!(target)?;
+            let phys_input = lower_ir!(input)?;
             let phys_idxs = lower_ir!(idxs)?;
             PhysNodeKind::Gather {
-                target: phys_target,
+                input: phys_input,
                 idxs: phys_idxs,
                 null_on_oob,
             }

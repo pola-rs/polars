@@ -117,7 +117,7 @@ pub enum IR {
         options: Arc<JoinOptionsIR>,
     },
     Gather {
-        target: Node,
+        input: Node,
         idxs: Node,
         null_on_oob: bool,
     },

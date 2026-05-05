@@ -87,7 +87,7 @@ pub enum DslPlan {
     },
     /// Gathers from this table with the given indices.
     Gather {
-        target: Arc<DslPlan>,
+        input: Arc<DslPlan>,
         idxs: Arc<DslPlan>,
         null_on_oob: bool,
     },
@@ -203,7 +203,7 @@ impl Clone for DslPlan {
             Self::Select { expr, input, options } => Self::Select { expr: expr.clone(), input: input.clone(), options: options.clone() },
             Self::GroupBy { input, keys, predicates, aggs, apply, maintain_order, options } => Self::GroupBy { input: input.clone(), keys: keys.clone(), predicates: predicates.clone(), aggs: aggs.clone(), apply: apply.clone(), maintain_order: maintain_order.clone(), options: options.clone() },
             Self::Join { input_left, input_right, left_on, right_on, predicates, options } => Self::Join { input_left: input_left.clone(), input_right: input_right.clone(), left_on: left_on.clone(), right_on: right_on.clone(), options: options.clone(), predicates: predicates.clone() },
-            Self::Gather { target, idxs, null_on_oob } => Self::Gather { target: target.clone(), idxs: idxs.clone(), null_on_oob: *null_on_oob },
+            Self::Gather { input, idxs, null_on_oob } => Self::Gather { input: input.clone(), idxs: idxs.clone(), null_on_oob: *null_on_oob },
             Self::HStack { input, exprs, options } => Self::HStack { input: input.clone(), exprs: exprs.clone(),  options: options.clone() },
             Self::MatchToSchema { input, match_schema, per_column, extra_columns } => Self::MatchToSchema { input: input.clone(), match_schema: match_schema.clone(), per_column: per_column.clone(), extra_columns: *extra_columns },
             Self::PipeWithSchema { input, callback } => Self::PipeWithSchema { input: input.clone(), callback: callback.clone() },

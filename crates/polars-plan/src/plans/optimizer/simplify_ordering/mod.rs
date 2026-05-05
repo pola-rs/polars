@@ -395,7 +395,7 @@ impl SimplifyIRNodeOrder<'_> {
 
             IR::Gather { .. } => {
                 // Target is always order-sensitive.
-                let ([_target_edge, idxs_edge], [out_edge]) = unpack_edges!(3);
+                let ([_input_edge, idxs_edge], [out_edge]) = unpack_edges!(3);
                 if out_edge.is_unordered() {
                     *idxs_edge = Edge::Unordered;
                 }

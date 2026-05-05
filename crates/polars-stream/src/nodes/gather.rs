@@ -91,19 +91,19 @@ impl ComputeNode for GatherNode {
                 assert!(recv_ports[1].is_none());
                 sink_node.spawn(scope, &mut recv_ports[0..1], &mut [], state, join_handles)
             },
-            GatherState::Gather(target) => {
+            GatherState::Gather(input) => {
                 assert!(recv_ports[0].is_none());
                 let receivers = recv_ports[1].take().unwrap().parallel();
                 let senders = send_ports[0].take().unwrap().parallel();
 
                 for (mut recv, mut send) in receivers.into_iter().zip(senders) {
                     let null_on_oob = self.null_on_oob;
-                    let target = &*target;
+                    let input = &*input;
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
                             let morsel = morsel.try_map(|idx_df| {
                                 assert!(idx_df.width() == 1);
-                                target.gather_with_column(&idx_df.columns()[0], null_on_oob)
+                                input.gather_with_column(&idx_df.columns()[0], null_on_oob)
                             })?;
 
                             if send.send(morsel).await.is_err() {

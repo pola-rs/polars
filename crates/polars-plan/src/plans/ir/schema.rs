@@ -78,7 +78,7 @@ impl IR {
             HConcat { schema, .. } => schema,
             Cache { input, .. } => return arena.get(*input).schema(arena),
             Sort { input, .. } => return arena.get(*input).schema(arena),
-            Gather { target, .. } => return arena.get(*target).schema(arena),
+            Gather { input, .. } => return arena.get(*input).schema(arena),
             Scan {
                 output_schema,
                 file_info,
@@ -157,7 +157,7 @@ impl IR {
                 payload: SinkTypeIR::Memory,
             }
             | Slice { input, .. }
-            | Gather { target: input, .. } => IR::schema_with_cache(*input, arena, cache),
+            | Gather { input, .. } => IR::schema_with_cache(*input, arena, cache),
             Sink { .. } | SinkMultiple { .. } => Arc::new(Schema::default()),
             Scan {
                 output_schema,

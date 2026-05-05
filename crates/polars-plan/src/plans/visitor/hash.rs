@@ -227,7 +227,7 @@ impl Hash for IRHashWrap<'_> {
                 options.hash(state);
             },
             IR::Gather {
-                target: _,
+                input: _,
                 idxs: _,
                 null_on_oob,
             } => {

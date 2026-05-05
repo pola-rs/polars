@@ -277,11 +277,11 @@ impl<'a> IRDotDisplay<'a> {
                 })?;
             },
             Gather {
-                target,
+                input,
                 idxs,
                 null_on_oob,
             } => {
-                recurse!(*target);
+                recurse!(*input);
                 recurse!(*idxs);
                 write_label(f, id, |f| write!(f, "GATHER[null_on_oob: {null_on_oob}]"))?;
             },

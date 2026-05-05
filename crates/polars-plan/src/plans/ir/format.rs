@@ -951,7 +951,7 @@ pub fn write_ir_non_recursive(
             Ok(())
         },
         IR::Gather {
-            target: _,
+            input: _,
             idxs: _,
             null_on_oob,
         } => {

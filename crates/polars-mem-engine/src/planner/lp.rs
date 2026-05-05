@@ -746,14 +746,14 @@ fn create_physical_plan_impl(
             )))
         },
         Gather {
-            target,
+            input,
             idxs,
             null_on_oob,
         } => {
-            let target = recurse!(target, state)?;
+            let input = recurse!(input, state)?;
             let idxs = recurse!(idxs, state)?;
             Ok(Box::new(executors::GatherExec::new(
-                target,
+                input,
                 idxs,
                 null_on_oob,
             )))

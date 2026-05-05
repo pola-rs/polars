@@ -77,7 +77,7 @@ pub(crate) enum SerializableDslPlanNode {
         options: Arc<JoinOptions>,
     },
     Gather {
-        target: DslPlanKey,
+        input: DslPlanKey,
         idxs: DslPlanKey,
         null_on_oob: bool,
     },
@@ -258,11 +258,11 @@ fn convert_dsl_plan_to_serializable_plan(
             options: options.clone(),
         },
         DP::Gather {
-            target,
+            input,
             idxs,
             null_on_oob,
         } => SP::Gather {
-            target: dsl_plan_key(target, arenas),
+            input: dsl_plan_key(input, arenas),
             idxs: dsl_plan_key(idxs, arenas),
             null_on_oob: *null_on_oob,
         },
@@ -515,11 +515,11 @@ fn try_convert_serializable_plan_to_dsl_plan(
             options: options.clone(),
         }),
         SP::Gather {
-            target,
+            input,
             idxs,
             null_on_oob,
         } => Ok(DP::Gather {
-            target: get_dsl_plan(*target, ser_dsl_plan, arenas)?,
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             idxs: get_dsl_plan(*idxs, ser_dsl_plan, arenas)?,
             null_on_oob: *null_on_oob,
         }),

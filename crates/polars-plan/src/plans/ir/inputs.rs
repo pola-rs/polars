@@ -208,7 +208,7 @@ impl IR {
                 input_right,
                 ..
             } => Inputs::double(*input_left, *input_right),
-            Gather { target, idxs, .. } => Inputs::double(*target, *idxs),
+            Gather { input, idxs, .. } => Inputs::double(*input, *idxs),
             HStack { input, .. } => Inputs::single(*input),
             Distinct { input, .. } => Inputs::single(*input),
             MapFunction { input, .. } => Inputs::single(*input),
@@ -254,7 +254,7 @@ impl IR {
                 input_right,
                 ..
             } => InputsMut::double(input_left, input_right),
-            Gather { target, idxs, .. } => InputsMut::double(target, idxs),
+            Gather { input, idxs, .. } => InputsMut::double(input, idxs),
             HStack { input, .. } => InputsMut::single(input),
             Distinct { input, .. } => InputsMut::single(input),
             MapFunction { input, .. } => InputsMut::single(input),

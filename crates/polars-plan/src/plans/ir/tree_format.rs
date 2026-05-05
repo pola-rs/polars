@@ -318,13 +318,13 @@ impl<'a> TreeFmtNode<'a> {
                         .collect(),
                 ),
                 Gather {
-                    target,
+                    input,
                     idxs,
                     null_on_oob,
                 } => ND(
                     wh(h, &format!("GATHER[null_on_oob: {null_on_oob}]")),
                     vec![
-                        self.lp_node(Some("TARGET:".to_string()), *target),
+                        self.lp_node(Some("INPUT:".to_string()), *input),
                         self.lp_node(Some("IDXS:".to_string()), *idxs),
                     ],
                 ),

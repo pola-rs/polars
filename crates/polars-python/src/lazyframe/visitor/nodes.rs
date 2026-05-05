@@ -276,7 +276,7 @@ pub struct Join {
 /// Join operation
 pub struct Gather {
     #[pyo3(get)]
-    target: usize,
+    input: usize,
     #[pyo3(get)]
     idxs: usize,
     #[pyo3(get)]
@@ -595,11 +595,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         }
         .into_py_any(py),
         IR::Gather {
-            target,
+            input,
             idxs,
             null_on_oob,
         } => Gather {
-            target: target.0,
+            input: input.0,
             idxs: idxs.0,
             null_on_oob: *null_on_oob,
         }
