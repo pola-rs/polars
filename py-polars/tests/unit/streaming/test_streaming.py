@@ -463,7 +463,8 @@ def test_streaming_hconcat_strict_27372() -> None:
     lf = pl.concat(
         [
             data.select(
-                x=pl.col.ct ^ pl.lit(pl.Series("LUT", [[0]], pl.List(pl.UInt8))).list.get(0)
+                x=pl.col.ct
+                ^ pl.lit(pl.Series("LUT", [[0]], pl.List(pl.UInt8))).list.get(0)
             ),
             data,
         ],
