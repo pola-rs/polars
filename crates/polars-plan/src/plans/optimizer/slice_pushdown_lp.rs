@@ -547,10 +547,20 @@ impl SlicePushDown {
                 }
 
                 // first restart optimization in both inputs and get the updated LP
-                let lp_left = self.pushdown(input_left, None, lp_arena, expr_arena)?;
+                let lp_left = self.pushdown(
+                    input_left,
+                    matches!(&options.args.how, JoinType::Left | JoinType::Full).then_some(state),
+                    lp_arena,
+                    expr_arena,
+                )?;
                 let input_left = lp_arena.add(lp_left);
 
-                let lp_right = self.pushdown(input_right, None, lp_arena, expr_arena)?;
+                let lp_right = self.pushdown(
+                    input_right,
+                    matches!(&options.args.how, JoinType::Right | JoinType::Full).then_some(state),
+                    lp_arena,
+                    expr_arena,
+                )?;
                 let input_right = lp_arena.add(lp_right);
 
                 // then assign the slice state to the join operation
