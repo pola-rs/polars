@@ -85,8 +85,7 @@ impl IsSortedNode {
                 let series = df[0].as_materialized_series();
 
                 if opts.is_none() {
-                    if let Some(o) =
-                        resolve_sort_options(series, descending_hint, nulls_last_hint)?
+                    if let Some(o) = resolve_sort_options(series, descending_hint, nulls_last_hint)?
                     {
                         *opts = Some(o);
                     }
@@ -255,7 +254,7 @@ fn scan_unresolved(
         if *seen_null || nulls_last_hint.is_some() {
             let nulls_last = match nulls_last_hint {
                 Some(n) => n,
-                None => *seen_value_after_null,
+                None => !*seen_value_after_null,
             };
             *opts = Some(SortOptions {
                 descending: d,
