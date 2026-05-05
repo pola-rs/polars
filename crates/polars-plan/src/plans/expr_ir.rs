@@ -328,21 +328,3 @@ impl From<&ExprIR> for Node {
         value.node()
     }
 }
-
-pub(crate) fn name_to_expr_ir(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    ExprIR::from_column_name(name, expr_arena)
-}
-
-pub(crate) fn names_to_expr_irs<I, S>(names: I, expr_arena: &mut Arena<AExpr>) -> Vec<ExprIR>
-where
-    I: IntoIterator<Item = S>,
-    S: Into<PlSmallStr>,
-{
-    names
-        .into_iter()
-        .map(|name| {
-            let name = name.into();
-            name_to_expr_ir(name, expr_arena)
-        })
-        .collect()
-}

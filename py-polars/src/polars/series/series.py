@@ -4051,7 +4051,10 @@ class Series:
         """
 
     def gather(
-        self, indices: int | list_[int] | Expr | Series | np.ndarray[Any, Any]
+        self,
+        indices: int | list_[int] | Expr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
     ) -> Series:
         """
         Take values by index.
@@ -4060,6 +4063,11 @@ class Series:
         ----------
         indices
             Index location used for selection.
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            - True  -> set the result to null
+            - False -> raise an error
 
         Examples
         --------
@@ -4070,6 +4078,16 @@ class Series:
         [
             2
             4
+        ]
+
+        Use `null_on_oob=True` to return null for out-of-bounds indices.
+
+        >>> s.gather([1, 10], null_on_oob=True)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            2
+            null
         ]
         """
 

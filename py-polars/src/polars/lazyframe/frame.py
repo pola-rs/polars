@@ -6142,10 +6142,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
                  - Returns rows from the left table that have a match in the right
-                   table.
+                   table. Does not return columns from the right table.
                * - **anti**
                  - Returns rows from the left table that have no match in the right
-                   table.
+                   table. Does not return columns from the right table.
 
         left_on
             Join column of the left DataFrame.

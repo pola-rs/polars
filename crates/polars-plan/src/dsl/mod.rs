@@ -359,12 +359,12 @@ impl Expr {
     }
 
     /// Take the values by idx.
-    pub fn gather<E: Into<Expr>>(self, idx: E) -> Self {
+    pub fn gather<E: Into<Expr>>(self, idx: E, null_on_oob: bool) -> Self {
         Expr::Gather {
             expr: Arc::new(self),
             idx: Arc::new(idx.into()),
             returns_scalar: false,
-            null_on_oob: false,
+            null_on_oob,
         }
     }
 

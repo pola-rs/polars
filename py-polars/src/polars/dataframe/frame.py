@@ -1437,9 +1437,7 @@ class DataFrame:
         return get_df_item_by_key(self, key)
 
     def __setitem__(
-        self,
-        key: str | Sequence[int] | Sequence[str] | tuple[Any, str | int],
-        value: Any,
+        self, key: str | Sequence[str] | tuple[Any, str | int], value: Any
     ) -> None:  # pragma: no cover
         """
         Modify DataFrame elements in place, using assignment syntax.
@@ -8249,10 +8247,10 @@ class DataFrame:
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
                  - Returns rows from the left table that have a match in the right
-                   table.
+                   table. Does not return columns from the right table.
                * - **anti**
                  - Returns rows from the left table that have no match in the right
-                   table.
+                   table. Does not return columns from the right table.
 
         left_on
             Name(s) of the left join column(s).
