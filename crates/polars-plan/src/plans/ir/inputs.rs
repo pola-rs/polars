@@ -13,10 +13,14 @@ impl IR {
     where
         E: IntoIterator<Item = ExprIR>,
     {
+        self.replace_exprs(exprs);
+        self
+    }
+
+    pub fn replace_exprs(&mut self, exprs: impl IntoIterator<Item = ExprIR>) {
         for (expr, new_expr) in self.exprs_mut().zip_eq(exprs) {
             *expr = new_expr;
         }
-        self
     }
 
     /// Returns a node with updated inputs.
@@ -27,10 +31,14 @@ impl IR {
     where
         I: IntoIterator<Item = Node>,
     {
+        self.replace_inputs(inputs);
+        self
+    }
+
+    pub fn replace_inputs(&mut self, inputs: impl IntoIterator<Item = Node>) {
         for (input, new_input) in self.inputs_mut().zip_eq(inputs) {
             *input = new_input;
         }
-        self
     }
 
     pub fn exprs(&'_ self) -> Exprs<'_> {
