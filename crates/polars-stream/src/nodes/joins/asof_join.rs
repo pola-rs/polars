@@ -336,12 +336,10 @@ async fn distribute_work_task(
             }
         }
 
-        if !params.as_of_options().check_sortedness {
-            prune_right_side(&left_df, right_buffer, 0, params, &mut scratch_vecs)?;
-        }
         if params.as_of_options().check_sortedness {
             check_left_continuity(left_continuity, &left_df, params)?;
         }
+        prune_right_side(&left_df, right_buffer, 0, params, &mut scratch_vecs)?;
         if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
             .await
@@ -412,7 +410,7 @@ fn check_right_continuity(
         return Ok(());
     }
 
-    // SAFETY: We just checked that pow and pos-1 are in bounds.
+    // SAFETY: We just checked that pos and pos-1 are in bounds.
     prev_by.extend(params.right_by().iter().map(|col_name| {
         unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos - 1) }.into_static()
     }));
