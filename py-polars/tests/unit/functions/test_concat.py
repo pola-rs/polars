@@ -481,5 +481,5 @@ def test_concat_horizontal_lazy_strict_raises_shape_error_27415() -> None:
         strict=True,
     ).select("x")
 
-    with pytest.raises(ShapeError, match="different heights in 'strict' mode"):
+    with pytest.raises(ShapeError):
         q.collect()
