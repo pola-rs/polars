@@ -365,8 +365,7 @@ fn check_left_continuity(
     df: &DataFrame,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    let n = df.height();
-    if n == 0 {
+    if df.height() == 0 {
         return Ok(());
     }
 
@@ -374,8 +373,8 @@ fn check_left_continuity(
         let next_by = params
             .left_by()
             .iter()
-            .map(|col_name| df.column(col_name)?.get(0))
-            .collect::<PolarsResult<Vec<AnyValue<'_>>>>()?;
+            .map(|col_name| df.column(col_name).unwrap().get(0).unwrap())
+            .collect_vec();
         let next_on = df.column(&params.left.on)?.get(0)?;
         check_continuity(&prev.by, &prev.on, &next_by, &next_on, params)?;
     }
@@ -384,9 +383,20 @@ fn check_left_continuity(
     let by_values = params
         .left_by()
         .iter()
-        .map(|col_name| df.column(col_name)?.get(n - 1).map(|v| v.into_static()))
-        .collect::<PolarsResult<Vec<AnyValue<'static>>>>()?;
-    let on_value = df.column(&params.left.on)?.get(n - 1)?.into_static();
+        .map(|col_name| {
+            df.column(col_name)
+                .unwrap()
+                .get(df.height() - 1)
+                .unwrap()
+                .into_static()
+        })
+        .collect_vec();
+    let on_value = df
+        .column(&params.left.on)
+        .unwrap()
+        .get(df.height() - 1)
+        .unwrap()
+        .into_static();
     *prev_row = Some(Row {
         by: by_values,
         on: on_value,
