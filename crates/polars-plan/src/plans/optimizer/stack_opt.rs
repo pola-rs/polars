@@ -113,9 +113,7 @@ impl StackOptimizer {
                                 exprs.push((node, eval_schema_idx));
                             }
                         },
-                        ae => {
-                            exprs.extend(ae.inputs_iter_name_last().map(|node| (node, schema_idx)))
-                        },
+                        ae => exprs.extend(ae.inputs_iter().map(|node| (node, schema_idx))),
                     }
                 }
             }

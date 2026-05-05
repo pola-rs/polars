@@ -87,22 +87,6 @@ impl AExpr {
         }
     }
 
-    /// Iterator that returns nodes in order such that the last item of the iterator is the node
-    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
-    /// guaranteed to match `AExpr::nodes_iter_mut_name_last`.
-    pub fn nodes_iter_name_last(&self) -> iter::Rev<AENodesIter<'_>> {
-        use AExpr::*;
-
-        Iterator::rev(match self {
-            Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => AENodesIter::new_triple(truthy, falsy, predicate),
-            _ => self.nodes_iter(),
-        })
-    }
-
     /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This function and its users must be updated if the field declaration order changes.
@@ -186,22 +170,6 @@ impl AExpr {
         }
     }
 
-    /// Iterator that returns nodes in order such that the last item of the iterator is the node
-    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
-    /// guaranteed to match `AExpr::nodes_iter_mut_name`.
-    pub fn nodes_iter_mut_name_last(&mut self) -> iter::Rev<AENodesIterMut<'_>> {
-        use AExpr::*;
-
-        Iterator::rev(match self {
-            Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => AENodesIterMut::new_triple(truthy, falsy, predicate),
-            _ => self.nodes_iter_mut(),
-        })
-    }
-
     /// Iterator that returns the child nodes of this aexpr in field declaration order.
     ///
     /// This is derived from `nodes_iter`, but skips the eval exprs in list / struct eval.
@@ -246,42 +214,6 @@ impl AExpr {
             } => AENodesIterMut::new_single(expr),
             ae => ae.nodes_iter_mut(),
         }
-    }
-
-    /// Iterator that returns nodes in order such that the last item of the iterator is the node
-    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
-    /// guaranteed to match `AExpr::inputs_iter_mut_name_last`.
-    ///
-    /// This is derived from `nodes_iter_name_last`, but skips the eval exprs in list / struct eval.
-    pub fn inputs_iter_name_last(&self) -> iter::Rev<AENodesIter<'_>> {
-        use AExpr::*;
-
-        Iterator::rev(match self {
-            Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => AENodesIter::new_triple(truthy, falsy, predicate),
-            _ => self.inputs_iter(),
-        })
-    }
-
-    /// Iterator that returns nodes in order such that the last item of the iterator is the node
-    /// from which the output name is sourced. The ordering of non-name nodes is unspecified but
-    /// guaranteed to match `AExpr::inputs_iter_name_last`.
-    ///
-    /// This is derived from `nodes_iter_name_last`, but skips the eval exprs in list / struct eval.
-    pub fn inputs_iter_mut_name_last(&mut self) -> iter::Rev<AENodesIterMut<'_>> {
-        use AExpr::*;
-
-        Iterator::rev(match self {
-            Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => AENodesIterMut::new_triple(truthy, falsy, predicate),
-            _ => self.inputs_iter_mut(),
-        })
     }
 
     /// Replace the inputs of this AExpr. This excludes the list / struct eval exprs.
