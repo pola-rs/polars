@@ -95,7 +95,6 @@ pub trait SeriesMethods: SeriesSealed {
 fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     let null_count = s.null_count();
 
-    // fast paths
     if (options.descending
         && (options.nulls_last || null_count == 0)
         && matches!(s.is_sorted_flag(), IsSorted::Descending))
@@ -106,7 +105,6 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
         return Ok(true);
     }
 
-    // for struct types we row-encode and recurse
     #[cfg(feature = "dtype-struct")]
     if matches!(s.dtype(), DataType::Struct(_)) {
         let encoded = _get_rows_encoded_ca(
@@ -184,11 +182,7 @@ pub fn resolve_sort_options(
         }));
     };
 
-    let nulls_last = match (nulls_last, nulls_actually_last) {
-        (Some(n), _) => n,
-        (None, Some(actual)) => actual,
-        (None, None) => descending.unwrap_or(false),
-    };
+    let nulls_last = nulls_last.or(nulls_actually_last).unwrap_or(false);
 
     let descending = match descending {
         Some(d) => d,
@@ -221,14 +215,15 @@ fn infer_descending(s: &Series, nulls_last: bool) -> PolarsResult<Option<bool>> 
     let lt = a.lt(&b)?;
     let gt = a.gt(&b)?;
 
-    for (lt_v, gt_v) in lt.iter().zip(gt.iter()) {
-        match (lt_v, gt_v) {
-            (Some(true), _) => return Ok(Some(false)),
-            (_, Some(true)) => return Ok(Some(true)),
-            _ => {},
-        }
-    }
-    Ok(None)
+    let lt_first = lt.iter().position(|v| v == Some(true));
+    let gt_first = gt.iter().position(|v| v == Some(true));
+
+    Ok(match (lt_first, gt_first) {
+        (None, None) => None,
+        (Some(_), None) => Some(false),
+        (None, Some(_)) => Some(true),
+        (Some(l), Some(g)) => Some(g < l),
+    })
 }
 
 fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(

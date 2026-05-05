@@ -14,7 +14,6 @@ enum IsSortedState {
         opts: Option<SortOptions>,
         last_value: Option<AnyValue<'static>>,
         last_was_null: bool,
-        first_non_null: Option<AnyValue<'static>>,
         seen_null: bool,
         seen_value_after_null: bool,
         committed_descending: Option<bool>,
@@ -42,7 +41,6 @@ impl IsSortedNode {
                 opts: None,
                 last_value: None,
                 last_was_null: false,
-                first_non_null: None,
                 seen_null: false,
                 seen_value_after_null: false,
                 committed_descending: None,
@@ -59,7 +57,6 @@ impl IsSortedNode {
         opts: &'env mut Option<SortOptions>,
         last_value: &'env mut Option<AnyValue<'static>>,
         last_was_null: &'env mut bool,
-        first_non_null: &'env mut Option<AnyValue<'static>>,
         seen_null: &'env mut bool,
         seen_value_after_null: &'env mut bool,
         committed_descending: &'env mut Option<bool>,
@@ -96,7 +93,6 @@ impl IsSortedNode {
                         series,
                         last_value,
                         *last_was_null,
-                        first_non_null,
                         seen_null,
                         seen_value_after_null,
                         committed_descending,
@@ -182,7 +178,6 @@ fn scan_unresolved(
     series: &Series,
     last_value: &Option<AnyValue<'static>>,
     prev_last_was_null: bool,
-    first_non_null: &mut Option<AnyValue<'static>>,
     seen_null: &mut bool,
     seen_value_after_null: &mut bool,
     committed_descending: &mut Option<bool>,
@@ -195,16 +190,11 @@ fn scan_unresolved(
         return Ok(true);
     }
 
-    let first = series.get(0).unwrap();
-    if prev_last_was_null && !first.is_null() {
-        *seen_value_after_null = true;
+    if prev_last_was_null {
+        *seen_null = true;
     }
 
-    let mut prev_non_null: Option<AnyValue<'static>> = if prev_last_was_null {
-        None
-    } else {
-        last_value.clone()
-    };
+    let mut prev_non_null = last_value.clone().filter(|_| !prev_last_was_null);
 
     for i in 0..len {
         let v = series.get(i).unwrap();
@@ -219,10 +209,6 @@ fn scan_unresolved(
 
         if *seen_null {
             *seen_value_after_null = true;
-        }
-
-        if first_non_null.is_none() {
-            *first_non_null = Some(v.clone().into_static());
         }
 
         if let Some(prev) = prev_non_null.as_ref() {
@@ -334,7 +320,6 @@ impl ComputeNode for IsSortedNode {
                 opts,
                 last_value,
                 last_was_null,
-                first_non_null,
                 seen_null,
                 seen_value_after_null,
                 committed_descending,
@@ -346,7 +331,6 @@ impl ComputeNode for IsSortedNode {
                     opts,
                     last_value,
                     last_was_null,
-                    first_non_null,
                     seen_null,
                     seen_value_after_null,
                     committed_descending,
