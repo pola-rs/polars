@@ -7,7 +7,7 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
+use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorageMut;
 use crate::plans::visitor::hash::IRHashWrap;
 use crate::plans::{AExpr, IR};
 use crate::traversal::edge_provider::NodeEdgesProvider;
@@ -24,19 +24,16 @@ pub fn common_subplan_elimination(
     let mut edges = vec![usize::MAX]; // Indices into `id_map`
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
     let mut id_map = PlIndexMap::new();
-    let mut storage = IRTraversalStorage {
-        arena: ir_arena,
-        skip_subtree: |ir| {
-            match ir {
-                // Don't visit all the files in a `scan *` operation.
-                // Put an arbitrary limit to 20 files now.
-                IR::Union {
-                    options, inputs, ..
-                } => options.from_partitioned_ds && inputs.len() > 20,
-                _ => false,
-            }
-        },
-    };
+    let mut storage = IRTraversalStorageMut::new_with_skip(ir_arena, |ir| {
+        match ir {
+            // Don't visit all the files in a `scan *` operation.
+            // Put an arbitrary limit to 20 files now.
+            IR::Union {
+                options, inputs, ..
+            } => options.from_partitioned_ds && inputs.len() > 20,
+            _ => false,
+        }
+    });
 
     TreeTraversalImpl {
         storage: &mut storage,
@@ -129,7 +126,7 @@ struct IDGeneratorVisitor<'map, 'arena> {
 impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
     type Key = Node;
     type Edge = usize;
-    type Storage = IRTraversalStorage<'arena>;
+    type Storage = IRTraversalStorageMut<'arena>;
     type BreakValue = ();
 
     fn default_edge(
@@ -215,7 +212,7 @@ struct InsertCachesVisitor<'a, 'arena> {
 impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
     type Key = Node;
     type Edge = usize;
-    type Storage = IRTraversalStorage<'arena>;
+    type Storage = IRTraversalStorageMut<'arena>;
     type BreakValue = ();
 
     fn default_edge(

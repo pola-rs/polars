@@ -17,7 +17,7 @@ use polars_utils::scratch_vec::ScratchVec;
 
 use crate::dsl::{FileScanIR, JoinTypeOptionsIR, PredicateFileSkip};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
+use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorageMut;
 use crate::plans::optimizer::projection_pushdown2::edge::{
     GetParentKeyAndPort as _, GetProjectionState, ParentKeyAndPort, Projection, ProjectionState,
 };
@@ -66,10 +66,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         },
         &mut vec![],
         &mut vec![],
-        IRTraversalStorage {
-            arena: ir_arena,
-            skip_subtree: |_| false,
-        },
+        IRTraversalStorageMut::new(ir_arena),
     )
     .continue_value()
     .unwrap();
@@ -99,7 +96,7 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
     type Edge = Edge;
     type BreakValue = ();
     type Key = Node;
-    type Storage = IRTraversalStorage<'arena>;
+    type Storage = IRTraversalStorageMut<'arena>;
 
     fn default_edge(
         &mut self,

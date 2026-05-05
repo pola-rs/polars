@@ -8,7 +8,7 @@ use polars_utils::unique_id::UniqueId;
 use polars_utils::{UnitVec, unitvec};
 
 use crate::plans::IR;
-use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
+use crate::plans::optimizer::ir_traversal::storage::{IRTraversalStorage, IRTraversalStorageMut};
 use crate::traversal::tree_traversal::{GraphVisitOrder, TreeTraversalImpl};
 use crate::traversal::visitor::{FnVisitors, NodeVisitor, SubtreeVisit};
 
@@ -20,20 +20,20 @@ pub struct IRCacheNodeVisit<Key> {
 
 pub fn get_ir_cache_hits<Key>(
     root: Node,
-    mut arena: &Arena<IR>,
+    arena: &Arena<IR>,
     visit_stack: &mut Vec<Node>,
 ) -> PlHashMap<UniqueId, IRCacheNodeVisit<Key>> {
     let mut cache_out_edge_keys_map: PlHashMap<UniqueId, IRCacheNodeVisit<Key>> = PlHashMap::new();
 
     TreeTraversalImpl {
-        storage: &mut arena,
+        storage: &mut IRTraversalStorage::new(arena),
         visit_stack,
         edges: &mut vec![()],
         persist_input_edge_idxs: None,
         graph_visit_order_fn: None,
         visitor: &mut FnVisitors::new(
             || (),
-            |key, storage: &mut &Arena<IR>, _| {
+            |key, storage: &mut IRTraversalStorage<'_>, _| {
                 ControlFlow::Continue(if let IR::Cache { id, .. } = storage.get(key) {
                     use hashbrown::hash_map::Entry;
 
@@ -68,13 +68,13 @@ pub fn ir_graph_traversal<'storage, Edge, BreakValue>(
     root: Node,
     visitor: &mut dyn NodeVisitor<
         Key = Node,
-        Storage = IRTraversalStorage<'storage>,
+        Storage = IRTraversalStorageMut<'storage>,
         Edge = Edge,
         BreakValue = BreakValue,
     >,
     visit_stack: &mut Vec<Node>,
     edges: &mut Vec<Edge>,
-    mut storage: IRTraversalStorage<'storage>,
+    mut storage: IRTraversalStorageMut<'storage>,
 ) -> ControlFlow<BreakValue, Edge> {
     let mut cache_out_edge_keys_map = get_ir_cache_hits::<usize>(root, &storage, visit_stack);
 

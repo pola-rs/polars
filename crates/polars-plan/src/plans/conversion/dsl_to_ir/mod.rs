@@ -879,6 +879,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let mut out = Vec::with_capacity(1);
             let mut aggs = Vec::<ExprIR>::with_capacity(values.len() * on_columns.height());
             for value in values.iter() {
+                use polars_utils::scratch_vec::ScratchVec;
+
                 out.clear();
                 let value_dtype = input_schema.try_get(value)?;
                 expr_schema.insert(get_pl_element_name(), value_dtype.clone());
@@ -908,6 +910,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     aexpr_to_leaf_names_iter(agg_ae, ctxt.expr_arena).count() == 0,
                     InvalidOperation: "explicit column references are not allowed in the `aggregate_function` of `pivot`"
                 );
+
+                let mut nodes_scratch = ScratchVec::default();
+                let mut nodes_scratch2 = ScratchVec::default();
 
                 for i in 0..on_columns.height() {
                     let mut name = String::new();
@@ -971,28 +976,43 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         ae: Node,
                         arena: &mut Arena<AExpr>,
                         replacement: Node,
+                        nodes_scratch: &mut ScratchVec<Node>,
+                        nodes_scratch2: &mut ScratchVec<Node>,
                     ) -> Node {
+                        use crate::plans::deep_copy::deep_copy_ae;
+
                         let mut slf = arena.get(ae).clone();
                         if matches!(slf, AExpr::Element) {
-                            return deep_clone_ae(replacement, arena);
+                            return deep_copy_ae(replacement, arena, nodes_scratch, nodes_scratch2);
                         } else if matches!(slf, AExpr::Len) {
                             // For backwards-compatibility, we support providing `pl.len()` to mean
                             // the length of the group here.
-                            let element = deep_clone_ae(replacement, arena);
+                            let element =
+                                deep_copy_ae(replacement, arena, nodes_scratch, nodes_scratch2);
                             return AExprBuilder::new_from_node(element).len(arena).node();
                         }
 
-                        let mut children = vec![];
-                        children.extend(slf.nodes_iter());
-                        for child in &mut children {
-                            *child = deep_clone_element_replace(*child, arena, replacement);
-                        }
-
-                        slf.replace_nodes(children);
+                        let new_child_nodes = Vec::from_iter(slf.nodes_iter().map(|node| {
+                            deep_clone_element_replace(
+                                node,
+                                arena,
+                                replacement,
+                                nodes_scratch,
+                                nodes_scratch2,
+                            )
+                        }));
+                        slf.replace_nodes(new_child_nodes);
                         arena.add(slf)
                     }
+
                     aggs.push(ExprIR::new(
-                        deep_clone_element_replace(agg_ae, ctxt.expr_arena, replacement_element),
+                        deep_clone_element_replace(
+                            agg_ae,
+                            ctxt.expr_arena,
+                            replacement_element,
+                            &mut nodes_scratch,
+                            &mut nodes_scratch2,
+                        ),
                         OutputName::Alias(name.into()),
                     ));
                 }
