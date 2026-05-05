@@ -1203,9 +1203,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 pushdown_with_added_names!(len_before_added_names)
             },
 
-            IR::HConcat {
-                inputs, options, ..
-            } => {
+            IR::HConcat { inputs, .. } => {
                 let (..) = projected_names_subset_or_return!();
 
                 let mut inputs = mem::take(inputs);
