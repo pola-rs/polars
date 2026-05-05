@@ -291,6 +291,7 @@ async fn distribute_work_task(
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
     let right_done = recv_right.is_none();
+    let mut scratch_vecs = Default::default();
 
     loop {
         if source_token.stop_requested() {
@@ -321,7 +322,7 @@ async fn distribute_work_task(
                 let old_height = right_buffer.height();
                 right_buffer.push_df(morsel_right.into_df());
                 if params.as_of_options().check_sortedness {
-                    check_right_continuity(right_buffer, old_height, params)?;
+                    check_right_continuity(right_buffer, old_height, params, &mut scratch_vecs)?;
                 }
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
@@ -336,7 +337,7 @@ async fn distribute_work_task(
         }
 
         if !params.as_of_options().check_sortedness {
-            prune_right_side(&left_df, right_buffer, params, 0)?;
+            prune_right_side(&left_df, right_buffer, 0, params, &mut scratch_vecs)?;
         }
         if params.as_of_options().check_sortedness {
             check_left_continuity(left_continuity, &left_df, params)?;
@@ -353,8 +354,9 @@ async fn distribute_work_task(
         prune_right_side(
             &left_df,
             right_buffer,
-            params,
             left_df.height().saturating_sub(1),
+            params,
+            &mut scratch_vecs,
         )?;
     }
 }
@@ -400,22 +402,24 @@ fn check_right_continuity(
     right_buffer: &DataFrameSearchBuffer,
     pos: usize,
     params: &AsOfJoinParams,
+    scratch_vecs: &mut [ScratchVec<AnyValue<'_>>; 2],
 ) -> PolarsResult<()> {
+    let [scratch1, scratch2] = scratch_vecs.each_mut();
+    let prev_by = scratch1.get();
+    let next_by = scratch2.get();
+
     if pos == 0 || pos >= right_buffer.height() {
         return Ok(());
     }
+
     // SAFETY: We just checked that pow and pos-1 are in bounds.
-    let prev_by = params
-        .right_by()
-        .iter()
-        .map(|col_name| unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos - 1) })
-        .collect::<Vec<AnyValue<'_>>>();
+    prev_by.extend(params.right_by().iter().map(|col_name| {
+        unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos - 1) }.into_static()
+    }));
     let prev_on = unsafe { right_buffer.get_unchecked(params.right.on.as_ref(), pos - 1) };
-    let next_by = params
-        .right_by()
-        .iter()
-        .map(|col_name| unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos) })
-        .collect::<Vec<AnyValue<'_>>>();
+    next_by.extend(params.right_by().iter().map(|col_name| {
+        unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos) }.into_static()
+    }));
     let next_on = unsafe { right_buffer.get_unchecked(params.right.on.as_ref(), pos) };
     check_continuity(&prev_by, &prev_on, &next_by, &next_on, params)
 }
@@ -513,8 +517,9 @@ fn need_more_right_side(
 fn prune_right_side(
     left: &DataFrame,
     right: &mut DataFrameSearchBuffer,
-    params: &AsOfJoinParams,
     left_row_idx: usize,
+    params: &AsOfJoinParams,
+    scratch_vecs: &mut [ScratchVec<AnyValue<'_>>; 2],
 ) -> PolarsResult<()> {
     if left.height() == 0 || right.height() == 0 {
         return Ok(());
@@ -544,7 +549,7 @@ fn prune_right_side(
     }
 
     if params.as_of_options().check_sortedness {
-        check_right_continuity(right, right_range_start, params)?;
+        check_right_continuity(right, right_range_start, params, scratch_vecs)?;
     }
     right.split_at(right_range_start);
     Ok(())
