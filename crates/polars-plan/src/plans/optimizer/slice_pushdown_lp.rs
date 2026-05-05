@@ -10,10 +10,10 @@ use crate::prelude::*;
 pub(super) struct SlicePushDown {
     nodes_scratch: ScratchUnitVec<Node>,
     maintain_errors: bool,
-    pub(crate) slice_node_in_optimized_plan: bool,
-    ae_nodes_scratch: ScratchVec<Node>,
-    ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
-    ae_slice_pd_direct_col_slice_nodes: ScratchHashSet<Node>,
+    pub(super) slice_node_in_optimized_plan: bool,
+    pub(super) ae_nodes_scratch: ScratchVec<Node>,
+    pub(super) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
+    pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchHashSet<Node>,
 }
 
 impl SlicePushDown {
