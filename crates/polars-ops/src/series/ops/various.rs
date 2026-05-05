@@ -168,7 +168,11 @@ pub fn resolve_sort_options(
 
     let nulls_actually_last: Option<bool> = if null_count == 0 {
         None
-    } else if s.slice((s_len - null_count) as i64, null_count).null_count() == null_count {
+    } else if s
+        .slice((s_len - null_count) as i64, null_count)
+        .null_count()
+        == null_count
+    {
         Some(true)
     } else if s.slice(0, null_count).null_count() == null_count {
         Some(false)

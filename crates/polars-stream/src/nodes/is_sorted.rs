@@ -14,6 +14,9 @@ enum IsSortedState {
         opts: Option<SortOptions>,
         last_value: Option<AnyValue<'static>>,
         last_was_null: bool,
+        first_non_null: Option<AnyValue<'static>>,
+        seen_null: bool,
+        seen_value_after_null: bool,
     },
     Source(Option<DataFrame>),
     Done,
@@ -38,6 +41,9 @@ impl IsSortedNode {
                 opts: None,
                 last_value: None,
                 last_was_null: false,
+                first_non_null: None,
+                seen_null: false,
+                seen_value_after_null: false,
             },
             descending_hint: descending,
             nulls_last_hint: nulls_last,
@@ -51,6 +57,9 @@ impl IsSortedNode {
         opts: &'env mut Option<SortOptions>,
         last_value: &'env mut Option<AnyValue<'static>>,
         last_was_null: &'env mut bool,
+        first_non_null: &'env mut Option<AnyValue<'static>>,
+        seen_null: &'env mut bool,
+        seen_value_after_null: &'env mut bool,
         descending_hint: Option<bool>,
         nulls_last_hint: Option<bool>,
         scope: &'s TaskScope<'s, 'env>,
@@ -72,29 +81,40 @@ impl IsSortedNode {
                 assert_eq!(df.width(), 1);
                 let series = df[0].as_materialized_series();
 
-                let resolved = match opts {
-                    Some(o) => *o,
-                    None => match resolve_sort_options(series, descending_hint, nulls_last_hint)? {
-                        Some(o) => {
-                            *opts = Some(o);
-                            o
-                        },
-                        None => {
-                            update_last(series, last_value, last_was_null);
-                            continue;
-                        },
-                    },
-                };
+                if opts.is_none() {
+                    if let Some(o) = resolve_sort_options(series, descending_hint, nulls_last_hint)?
+                    {
+                        *opts = Some(o);
+                    }
+                }
 
-                if !series.is_sorted(resolved)? {
+                if opts.is_none()
+                    && !scan_unresolved(
+                        series,
+                        *last_was_null,
+                        first_non_null,
+                        seen_null,
+                        seen_value_after_null,
+                        descending_hint,
+                        nulls_last_hint,
+                        opts,
+                    )?
+                {
                     *is_sorted = false;
                     return Ok(());
                 }
 
-                let first = series.get(0).unwrap();
-                if !boundary_ok(last_value.as_ref(), *last_was_null, &first, resolved) {
-                    *is_sorted = false;
-                    return Ok(());
+                if let Some(resolved) = *opts {
+                    if !series.is_sorted(resolved)? {
+                        *is_sorted = false;
+                        return Ok(());
+                    }
+
+                    let first = series.get(0).unwrap();
+                    if !boundary_ok(last_value.as_ref(), *last_was_null, &first, resolved) {
+                        *is_sorted = false;
+                        return Ok(());
+                    }
                 }
 
                 update_last(series, last_value, last_was_null);
@@ -137,9 +157,8 @@ fn boundary_ok(
     let Some(prev) = prev else {
         return true;
     };
-    let first_is_null = first.is_null();
 
-    match (prev_was_null, first_is_null) {
+    match (prev_was_null, first.is_null()) {
         (true, true) => true,
         (true, false) => !opts.nulls_last,
         (false, true) => opts.nulls_last,
@@ -151,6 +170,93 @@ fn boundary_ok(
             }
         },
     }
+}
+
+fn infer_nulls_last(
+    nulls_last_hint: Option<bool>,
+    seen_null: bool,
+    seen_value_after_null: bool,
+) -> bool {
+    if let Some(n) = nulls_last_hint {
+        return n;
+    }
+    if seen_value_after_null {
+        return true;
+    }
+    if seen_null {
+        return false;
+    }
+    false
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scan_unresolved(
+    series: &Series,
+    prev_last_was_null: bool,
+    first_non_null: &mut Option<AnyValue<'static>>,
+    seen_null: &mut bool,
+    seen_value_after_null: &mut bool,
+    descending_hint: Option<bool>,
+    nulls_last_hint: Option<bool>,
+    opts: &mut Option<SortOptions>,
+) -> PolarsResult<bool> {
+    let len = series.len();
+    if len == 0 {
+        return Ok(true);
+    }
+
+    let first = series.get(0).unwrap();
+    if prev_last_was_null && !first.is_null() {
+        *seen_value_after_null = true;
+    }
+
+    for i in 0..len {
+        let v = series.get(i).unwrap();
+
+        if v.is_null() {
+            if *seen_value_after_null {
+                return Ok(false);
+            }
+            *seen_null = true;
+            continue;
+        }
+
+        if *seen_null {
+            *seen_value_after_null = true;
+        }
+
+        let Some(fnn) = first_non_null.as_ref() else {
+            *first_non_null = Some(v.into_static());
+            continue;
+        };
+
+        if &v == fnn {
+            continue;
+        }
+
+        let direction_descending = &v < fnn;
+
+        let descending = match descending_hint {
+            Some(d) => {
+                if d != direction_descending {
+                    return Ok(false);
+                }
+                d
+            },
+            None => direction_descending,
+        };
+
+        let nulls_last = infer_nulls_last(nulls_last_hint, *seen_null, *seen_value_after_null);
+
+        *opts = Some(SortOptions {
+            descending,
+            nulls_last,
+            ..Default::default()
+        });
+        break;
+    }
+
+    Ok(true)
 }
 
 impl ComputeNode for IsSortedNode {
@@ -220,6 +326,9 @@ impl ComputeNode for IsSortedNode {
                 opts,
                 last_value,
                 last_was_null,
+                first_non_null,
+                seen_null,
+                seen_value_after_null,
             } => {
                 assert!(send_ports[0].is_none());
                 let recv = recv_ports[0].take().unwrap();
@@ -228,6 +337,9 @@ impl ComputeNode for IsSortedNode {
                     opts,
                     last_value,
                     last_was_null,
+                    first_non_null,
+                    seen_null,
+                    seen_value_after_null,
                     self.descending_hint,
                     self.nulls_last_hint,
                     scope,
