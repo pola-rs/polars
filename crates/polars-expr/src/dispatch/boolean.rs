@@ -2,7 +2,7 @@ use std::ops::{BitAnd, BitOr};
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
-use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom, SortOptions};
+use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
 use polars_core::runtime::RAYON;
 use polars_ops::prelude::SeriesMethods;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
@@ -178,56 +178,8 @@ fn is_sorted(
     nulls_last: Option<bool>,
 ) -> PolarsResult<Column> {
     let series = s.as_materialized_series();
-
-    let null_count = series.null_count();
-    if null_count == series.len() {
-        return Ok(Column::new(s.name().clone(), [true]));
-    }
-
-    match (descending, nulls_last) {
-        (Some(d), Some(n)) => {
-            let result = series.is_sorted(SortOptions {
-                descending: d,
-                nulls_last: n,
-                ..Default::default()
-            })?;
-            return Ok(Column::new(s.name().clone(), [result]));
-        },
-        (Some(d), None) => {
-            if null_count == 0 {
-                let result = series.is_sorted(SortOptions {
-                    descending: d,
-                    ..Default::default()
-                })?;
-                return Ok(Column::new(s.name().clone(), [result]));
-            }
-
-            let nulls_at_start = series.slice(0, null_count).null_count() == null_count;
-            let nulls_at_end = series
-                .slice((series.len() - null_count) as i64, null_count)
-                .null_count()
-                == null_count;
-
-            let result = if nulls_at_start {
-                series.is_sorted(SortOptions {
-                    descending: d,
-                    nulls_last: false,
-                    ..Default::default()
-                })?
-            } else if nulls_at_end {
-                series.is_sorted(SortOptions {
-                    descending: d,
-                    nulls_last: true,
-                    ..Default::default()
-                })?
-            } else {
-                false
-            };
-
-            return Ok(Column::new(s.name().clone(), [result]));
-        },
-        _ => unimplemented!(),
-    }
+    let result = series.is_sorted_any(descending, nulls_last)?;
+    Ok(Column::new(s.name().clone(), [result]))
 }
 
 fn not(s: &Column) -> PolarsResult<Column> {

@@ -1,7 +1,8 @@
 use polars_core::datatypes::AnyValue;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, PlSmallStr, SortOptions};
+use polars_core::prelude::{Column, PlSmallStr, Series, SortOptions};
 use polars_ops::prelude::SeriesMethods;
+use polars_ops::series::resolve_sort_options;
 
 use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;
@@ -10,7 +11,9 @@ use crate::nodes::ComputeNode;
 enum IsSortedState {
     Sink {
         is_sorted: bool,
+        opts: Option<SortOptions>,
         last_value: Option<AnyValue<'static>>,
+        last_was_null: bool,
     },
     Source(Option<DataFrame>),
     Done,
@@ -18,8 +21,8 @@ enum IsSortedState {
 
 pub struct IsSortedNode {
     state: IsSortedState,
-    descending: Option<bool>,
-    nulls_last: Option<bool>,
+    descending_hint: Option<bool>,
+    nulls_last_hint: Option<bool>,
     output_name: PlSmallStr,
 }
 
@@ -32,10 +35,12 @@ impl IsSortedNode {
         Self {
             state: IsSortedState::Sink {
                 is_sorted: true,
+                opts: None,
                 last_value: None,
+                last_was_null: false,
             },
-            descending,
-            nulls_last,
+            descending_hint: descending,
+            nulls_last_hint: nulls_last,
             output_name,
         }
     }
@@ -43,9 +48,11 @@ impl IsSortedNode {
     #[allow(clippy::too_many_arguments)]
     fn spawn_sink<'env, 's>(
         is_sorted: &'env mut bool,
+        opts: &'env mut Option<SortOptions>,
         last_value: &'env mut Option<AnyValue<'static>>,
-        descending: Option<bool>,
-        nulls_last: Option<bool>,
+        last_was_null: &'env mut bool,
+        descending_hint: Option<bool>,
+        nulls_last_hint: Option<bool>,
         scope: &'s TaskScope<'s, 'env>,
         recv: RecvPort<'_>,
         _state: &'s StreamingExecutionState,
@@ -63,64 +70,34 @@ impl IsSortedNode {
                     continue;
                 }
                 assert_eq!(df.width(), 1);
-                let column = &df[0];
+                let series = df[0].as_materialized_series();
 
-                let series = column.as_materialized_series();
-
-                let desc_values = match descending {
-                    Some(d) => vec![d],
-                    None => vec![false, true],
+                let resolved = match opts {
+                    Some(o) => *o,
+                    None => match resolve_sort_options(series, descending_hint, nulls_last_hint)? {
+                        Some(o) => {
+                            *opts = Some(o);
+                            o
+                        },
+                        None => {
+                            update_last(series, last_value, last_was_null);
+                            continue;
+                        },
+                    },
                 };
-                let nulls_last_values = match nulls_last {
-                    Some(n) => vec![n],
-                    None => vec![false, true],
-                };
 
-                let mut any_sorted = false;
-                for d in desc_values {
-                    for &n in &nulls_last_values {
-                        let options = SortOptions {
-                            descending: d,
-                            nulls_last: n,
-                            ..Default::default()
-                        };
-
-                        let internally_sorted = series.is_sorted(options)?;
-
-                        let boundary_ok = if let Some(ref prev) = *last_value {
-                            let first = series.get(0).unwrap();
-                            match (prev.is_null(), first.is_null()) {
-                                (true, true) => true,
-                                (true, false) => !n,
-                                (false, true) => n,
-                                (false, false) => {
-                                    if d {
-                                        prev >= &first
-                                    } else {
-                                        prev <= &first
-                                    }
-                                },
-                            }
-                        } else {
-                            true
-                        };
-
-                        if internally_sorted && boundary_ok {
-                            any_sorted = true;
-                            break;
-                        }
-                    }
-                    if any_sorted {
-                        break;
-                    }
-                }
-
-                if !any_sorted {
+                if !series.is_sorted(resolved)? {
                     *is_sorted = false;
+                    return Ok(());
                 }
 
-                let last = series.get(series.len() - 1).unwrap().into_static();
-                *last_value = Some(last);
+                let first = series.get(0).unwrap();
+                if !boundary_ok(last_value.as_ref(), *last_was_null, &first, resolved) {
+                    *is_sorted = false;
+                    return Ok(());
+                }
+
+                update_last(series, last_value, last_was_null);
             }
             Ok(())
         }))
@@ -138,6 +115,41 @@ impl IsSortedNode {
             let _ = send.send(morsel).await;
             Ok(())
         }));
+    }
+}
+
+fn update_last(
+    series: &Series,
+    last_value: &mut Option<AnyValue<'static>>,
+    last_was_null: &mut bool,
+) {
+    let last = series.get(series.len() - 1).unwrap();
+    *last_was_null = last.is_null();
+    *last_value = Some(last.into_static());
+}
+
+fn boundary_ok(
+    prev: Option<&AnyValue<'static>>,
+    prev_was_null: bool,
+    first: &AnyValue<'_>,
+    opts: SortOptions,
+) -> bool {
+    let Some(prev) = prev else {
+        return true;
+    };
+    let first_is_null = first.is_null();
+
+    match (prev_was_null, first_is_null) {
+        (true, true) => true,
+        (true, false) => !opts.nulls_last,
+        (false, true) => opts.nulls_last,
+        (false, false) => {
+            if opts.descending {
+                prev >= first
+            } else {
+                prev <= first
+            }
+        },
     }
 }
 
@@ -205,15 +217,19 @@ impl ComputeNode for IsSortedNode {
         match &mut self.state {
             IsSortedState::Sink {
                 is_sorted,
+                opts,
                 last_value,
+                last_was_null,
             } => {
                 assert!(send_ports[0].is_none());
                 let recv = recv_ports[0].take().unwrap();
                 Self::spawn_sink(
                     is_sorted,
+                    opts,
                     last_value,
-                    self.descending,
-                    self.nulls_last,
+                    last_was_null,
+                    self.descending_hint,
+                    self.nulls_last_hint,
                     scope,
                     recv,
                     state,
