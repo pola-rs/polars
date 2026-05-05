@@ -369,11 +369,12 @@ fn check_left_continuity(
         return Ok(());
     }
 
+    let get_cell = |col, idx| df.column(col).unwrap().get(idx).unwrap();
     if let Some(prev) = prev_row.as_ref() {
         let next_by = params
             .left_by()
             .iter()
-            .map(|col_name| df.column(col_name).unwrap().get(0).unwrap())
+            .map(|col_name| get_cell(col_name, 0))
             .collect_vec();
         let next_on = df.column(&params.left.on)?.get(0)?;
         check_continuity(&prev.by, &prev.on, &next_by, &next_on, params)?;
@@ -383,20 +384,9 @@ fn check_left_continuity(
     let by_values = params
         .left_by()
         .iter()
-        .map(|col_name| {
-            df.column(col_name)
-                .unwrap()
-                .get(df.height() - 1)
-                .unwrap()
-                .into_static()
-        })
+        .map(|col_name| get_cell(col_name, df.height() - 1).into_static())
         .collect_vec();
-    let on_value = df
-        .column(&params.left.on)
-        .unwrap()
-        .get(df.height() - 1)
-        .unwrap()
-        .into_static();
+    let on_value = get_cell(&params.left.on, df.height() - 1).into_static();
     *prev_row = Some(Row {
         by: by_values,
         on: on_value,
