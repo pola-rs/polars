@@ -529,13 +529,27 @@ impl SlicePushDown {
                     };
                 }
 
+                let input_slice = if state.offset < 0 {
+                    IdxSize::try_from(-state.offset).ok().map(|len| State {
+                        offset: state.offset,
+                        len,
+                    })
+                } else {
+                    IdxSize::try_from(state.offset)
+                        .ok()
+                        .and_then(|offset| offset.checked_add(state.len))
+                        .map(|limit| State {
+                            offset: 0,
+                            len: limit,
+                        })
+                };
+
                 // Also pushdown slice for some joins. Only accept offset 0 or -1 as the slice gets
                 // double applied after pushdown.
                 let lp_left = self.pushdown(
                     input_left,
-                    (matches!(&options.args.how, JoinType::Left | JoinType::Full)
-                        && (-1i64..=0).contains(&state.offset))
-                    .then_some(state),
+                    input_slice
+                        .filter(|_| matches!(&options.args.how, JoinType::Left | JoinType::Full)),
                     lp_arena,
                     expr_arena,
                 )?;
@@ -543,9 +557,8 @@ impl SlicePushDown {
 
                 let lp_right = self.pushdown(
                     input_right,
-                    (matches!(&options.args.how, JoinType::Right | JoinType::Full)
-                        && (-1i64..=0).contains(&state.offset))
-                    .then_some(state),
+                    input_slice
+                        .filter(|_| matches!(&options.args.how, JoinType::Right | JoinType::Full)),
                     lp_arena,
                     expr_arena,
                 )?;
