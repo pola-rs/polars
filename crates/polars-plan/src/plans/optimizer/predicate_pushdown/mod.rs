@@ -21,11 +21,11 @@ use crate::utils::{check_input_node, has_aexpr};
 pub struct PredicatePushDown {
     // How many cache nodes a predicate may be pushed down to.
     // Normally this is 0. Only needed for CSPE.
-    pub(super) caches_pass_allowance: u32,
+    caches_pass_allowance: u32,
     nodes_scratch: ScratchUnitVec<Node>,
-    pub(super) new_streaming: bool,
+    new_streaming: bool,
     // Controls pushing filters past fallible projections
-    pub(super) maintain_errors: bool,
+    maintain_errors: bool,
 }
 
 impl PredicatePushDown {
