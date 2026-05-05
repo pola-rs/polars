@@ -16,7 +16,7 @@ impl<T> ScratchVec<T> {
     }
 }
 
-/// UnitVec container with a getter that clears the vec.
+/// UnitVec container with a getter that clears the unitvec.
 #[derive(Default)]
 pub struct ScratchUnitVec<T>(UnitVec<T>);
 
@@ -25,7 +25,7 @@ impl<T> ScratchUnitVec<T> {
         Self(UnitVec::with_capacity(capacity))
     }
 
-    /// Clear the UnitVec and return a mutable reference to it.
+    /// Clear the unitvec and return a mutable reference to it.
     pub fn get(&mut self) -> &mut UnitVec<T> {
         self.0.clear();
         &mut self.0
