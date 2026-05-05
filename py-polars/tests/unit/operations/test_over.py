@@ -183,6 +183,15 @@ def test_nulls_last_over_24989() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_over_order_by_descending_nulls_agg_context() -> None:
+    df = pl.DataFrame({"g": ["a", "a", "a"], "v": [1, 2, 3], "d": [1, None, 2]})
+    expr = pl.col("v").cum_sum().over("g", order_by="d", descending=True)
+
+    result = df.group_by("g", maintain_order=True).agg(expr.alias("v"))
+
+    assert result["v"][0].to_list() == [6, 2, 5]
+
+
 def test_over_duplicate_partition_by_26921() -> None:
     df = pl.DataFrame({"x": [1, 2, 3]})
     with pytest.raises(pl.exceptions.DuplicateError):
