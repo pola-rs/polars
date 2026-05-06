@@ -438,7 +438,7 @@ fn check_continuity(
             Ordering::Equal => {},
         }
     }
-    if !prev_on.is_null() && !next_on.is_null() && prev_on > next_on {
+    if prev_on > next_on {
         return Err(err());
     }
     Ok(())
