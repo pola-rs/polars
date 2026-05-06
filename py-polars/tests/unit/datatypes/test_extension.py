@@ -167,3 +167,13 @@ def test_extension_native_to_extension_cast_27193() -> None:
         "inner", [[1, 2], [3, 4]], pl.Array(PythonTestExtension(storage=pl.Int8), 2)
     )
     assert_series_equal(casted, expected)
+
+
+def test_extension_to_extension_conversion() -> None:
+    AExtension = pl.Extension(name="a.ext", storage=pl.Int64)
+    BExtension = pl.Extension(name="b.ext", storage=pl.Int64)
+
+    # Convert from Extension A to Extension B
+    s = pl.Series("x", [1, 2, 3], dtype=AExtension)
+    result = s.to_frame().select(pl.col("x").ext.to(BExtension))
+    assert result["x"].dtype == BExtension

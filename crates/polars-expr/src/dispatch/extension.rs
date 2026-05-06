@@ -19,8 +19,10 @@ fn ext_to(s: &Column, dtype: DataType) -> PolarsResult<Column> {
     };
 
     Ok(s.apply_unary_elementwise(|s| {
-        assert!(*s.dtype() == **storage);
-        s.clone().into_extension(typ.clone())
+        // Use to_storage() to handle input that is already an Extension type
+        let storage_series = s.to_storage();
+        assert!(*storage_series.dtype() == **storage);
+        storage_series.clone().into_extension(typ.clone())
     }))
 }
 
