@@ -1230,7 +1230,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     let mut new_inputs = mem::take(inputs);
 
                     for (i, input_ir_node) in new_inputs.iter_mut().enumerate() {
-                        let name = format_pl_smallstr!("{:016x}", i);
+                        let name = format_pl_smallstr!("__POLARS_{:010x}", i);
 
                         let exprs = vec![ExprIR::new(
                             self.expr_arena.add(AExpr::Len),
