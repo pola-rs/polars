@@ -248,11 +248,6 @@ impl AExpr {
                         field.coerce(IDX_DTYPE.implode());
                         Ok(field)
                     },
-                    Quantile { expr, .. } => {
-                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
-                    },
                 }
             },
             Cast { expr, dtype, .. } => {
@@ -451,8 +446,7 @@ impl AExpr {
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))
             | Agg(Count { input: expr, .. })
-            | Agg(AggGroups(expr))
-            | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
+            | Agg(AggGroups(expr)) => expr_arena.get(*expr).to_name(expr_arena),
             AnonymousFunction { input, fmt_str, .. } | AnonymousAgg { input, fmt_str, .. } => {
                 if input.is_empty() {
                     fmt_str.as_ref().clone()

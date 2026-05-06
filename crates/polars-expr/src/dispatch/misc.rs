@@ -161,6 +161,42 @@ pub fn rechunk(s: &Column) -> PolarsResult<Column> {
     Ok(s.rechunk())
 }
 
+pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let quantile = s[1].as_materialized_series();
+    polars_ensure!(quantile.len() <= 1, ComputeError:
+        "polars does not support varying quantiles yet, \
+        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
+    );
+
+    match quantile.dtype() {
+        DataType::List(_) => {
+            let list = quantile.list()?;
+            let inner_s = list.get_as_series(0).unwrap();
+            if inner_s.has_nulls() {
+                polars_bail!(ComputeError: "quantile expression contains null values");
+            }
+
+            let v: Vec<f64> = inner_s
+                .cast(&DataType::Float64)?
+                .f64()?
+                .into_no_null_iter()
+                .collect();
+
+            input
+                .quantiles_reduce(&v, method)
+                .map(|sc| sc.into_column(input.name().clone()))
+        },
+        _ => {
+            let q: f64 = quantile.get(0).unwrap().try_extract()?;
+            input
+                .quantile_reduce(q, method)
+                .map(|sc| sc.into_column(input.name().clone()))
+        },
+    }
+}
+
 #[cfg(feature = "mode")]
 pub(super) fn mode(s: &Column, maintain_order: bool) -> PolarsResult<Column> {
     polars_ops::prelude::mode::mode(s.as_materialized_series(), maintain_order).map(Column::from)
