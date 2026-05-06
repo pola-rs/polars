@@ -1674,6 +1674,28 @@ pub fn lower_ir(
                         }
                     }
                 },
+
+                UnoptimizedOperation::AnonymousColumnsUdf {
+                    function,
+                    options: _,
+                    output_name,
+                    fmt_str,
+                    ctx_schema: _,
+                } => {
+                    let func = function
+                        .clone()
+                        .materialize()
+                        .unwrap()
+                        .into_inner()
+                        .as_column_udf();
+                    let format_str = Some(format!("ANONYMOUS {fmt_str}"));
+                    PhysNodeKind::ColumnarFunction {
+                        inputs: trans_inputs,
+                        func,
+                        output_name,
+                        format_str,
+                    }
+                },
             }
         },
         IR::Invalid => unreachable!(),
