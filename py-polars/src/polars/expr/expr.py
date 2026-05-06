@@ -3928,8 +3928,9 @@ class Expr:
         *more_exprs
             Additional columns to group by, specified as positional arguments.
         order_by
-            Order the window functions/aggregations with the partitioned groups by the
-            result of the expression passed to `order_by`.
+            Order rows within each partition group before evaluating the expression.
+            Useful for order-sensitive operations such as
+            :func:`cum_sum` or :func:`diff`.
         descending
             In case 'order_by' is given, indicate whether to order in
             ascending or descending order.
