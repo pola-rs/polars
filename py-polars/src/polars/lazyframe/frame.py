@@ -102,6 +102,7 @@ from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
+from polars.lazyframe.query_result import SingleNodeQueryResult
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
@@ -166,6 +167,7 @@ if TYPE_CHECKING:
     )
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
+    from polars.lazyframe.query_result import QueryResult
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -2237,10 +2239,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def execute(
         self,
         *,
-        optimizations: QueryOptFlags = ...,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         engine: EngineType = "auto",
         **_kwargs: Any,
-    ) -> Any:
+    ) -> QueryResult:
         """
         Execute the query into a `QueryResult`.
 
@@ -2275,7 +2277,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                falls back (and why).
 
             .. note::
-               The GPU engine does not support streaming, if streaming is enabled, 
+               The GPU engine does not support streaming, if streaming is enabled,
                then GPU execution is switched off.
         optimizations
             The optimization passes done during query optimization.
@@ -2335,8 +2337,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Collect in GPU mode
 
         """
-        engine = _select_engine(engine)
-        pass
+        df = self.collect(optimizations=optimizations, engine=engine)
+        return SingleNodeQueryResult(df)
 
     @overload
     def collect(
