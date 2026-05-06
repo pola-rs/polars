@@ -1121,11 +1121,14 @@ impl DataType {
             },
 
             #[cfg(feature = "dtype-extension")]
-            (l @ DataType::Extension(l_ext_instance, _), r @ DataType::Extension(r_ext_instance, _)) => {
-                if l_ext_instance != r_ext_instance {
-                    polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
+            (
+                l @ DataType::Extension(l_ext_type_instance, l_inner_dtype),
+                r @ DataType::Extension(r_ext_type_instance, r_inner_dtype),
+            ) => {
+                if l_ext_type_instance == r_ext_type_instance && l_inner_dtype == r_inner_dtype {
+                    Ok(false)
                 } else {
-                    Ok(true)
+                    polars_bail!(SchemaMismatch: "type {:?} is incompatible with expected type {:?}", l, r)
                 }
             },
 
