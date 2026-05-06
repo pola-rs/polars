@@ -62,6 +62,12 @@ const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 100 * 1024; // 100 KB
 const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
 const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 
+/// Allows pruning of strict hconcat inputs in projection pushdown. This can reduce data loading
+/// but may discard shape errors.
+const PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: &str =
+    "POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS";
+const DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: bool = false;
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -103,6 +109,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_SPILL_MIN_BYTES,
     JOIN_SAMPLE_LIMIT,
+    PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
 ];
 
 pub struct Config {
@@ -123,6 +130,7 @@ pub struct Config {
     ooc_memory_budget_fraction: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
     join_sample_limit: AtomicU64,
+    projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
 }
 
 impl Config {
@@ -149,6 +157,9 @@ impl Config {
             ),
             ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
+            projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
+                DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
+            ),
         };
         cfg.reload_env_vars();
         cfg
@@ -252,6 +263,13 @@ impl Config {
                     .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
                 Ordering::Relaxed,
             ),
+            PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS => {
+                self.projection_pushdown_prune_strict_hconcat_inputs.store(
+                    val.and_then(|x| parse::parse_bool(var, x))
+                        .unwrap_or(DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS),
+                    Ordering::Relaxed,
+                )
+            },
             _ => {
                 if var.starts_with("POLARS_") {
                     if self.warn_unknown_config.load(Ordering::Relaxed) {
@@ -333,6 +351,11 @@ impl Config {
 
     pub fn join_sample_limit(&self) -> u64 {
         self.join_sample_limit.load(Ordering::Relaxed)
+    }
+
+    pub fn projection_pushdown_prune_strict_hconcat_inputs(&self) -> bool {
+        self.projection_pushdown_prune_strict_hconcat_inputs
+            .load(Ordering::Relaxed)
     }
 }
 

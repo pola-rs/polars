@@ -7,6 +7,7 @@ import polars as pl
 from polars._typing import ConcatMethod
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal
+from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.may_fail_cloud  # reason: @serialize-stack-overflow
@@ -474,12 +475,20 @@ def test_concat_horizontal_zero_width_height_mismatch_26876() -> None:
         q.collect()
 
 
-def test_concat_horizontal_lazy_strict_raises_shape_error_27415() -> None:
+def test_concat_horizontal_lazy_strict_raises_shape_error_27415(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
     q = pl.concat(
         [pl.LazyFrame({"x": [0, 1]}), pl.LazyFrame({"y": [0, 1, 2]})],
         how="horizontal",
         strict=True,
-    ).select("x")
+    ).select("y")
 
     with pytest.raises(ShapeError):
         q.collect()
+
+    plmonkeypatch.setenv("POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS", "1")
+    plan = q.explain()
+
+    assert "HCONCAT" not in plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"y": [0, 1, 2]}))
