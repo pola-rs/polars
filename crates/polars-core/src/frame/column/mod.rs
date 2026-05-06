@@ -1039,6 +1039,8 @@ impl Column {
         }
 
         if self.null_count() == self.len() {
+            // If all key values are null, then they are all equal,
+            // so we can just return the original dataframe.
             return IdxCa::from_iter_values(self.name().clone(), 0..self.len() as IdxSize);
         }
 
