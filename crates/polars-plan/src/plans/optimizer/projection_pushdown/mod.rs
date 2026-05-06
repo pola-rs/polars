@@ -1221,13 +1221,14 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 // concat_horizontal([lf.select(len().alias(i)) for i, lf in enumerate(_)]).select(max_horizontal('*'))
                 if out_edge.projection() == Projection::Len
                     && !strict
-                    && extract_select_len_expr(parent_ir, self.expr_arena).is_some()
+                    && let Some(select_len_ae_node) =
+                        extract_select_len_expr(parent_ir, self.expr_arena).map(|eir| eir.node())
                 {
                     let mut max_horizontal_inputs = Vec::with_capacity(inputs.len());
                     let mut new_output_schema = Schema::with_capacity(inputs.len());
                     let mut new_inputs = mem::take(inputs);
 
-                    for (i, node) in new_inputs.iter_mut().enumerate() {
+                    for (i, input_ir_node) in new_inputs.iter_mut().enumerate() {
                         let name = format_pl_smallstr!("{:016x}", i);
 
                         let exprs = vec![ExprIR::new(
@@ -1238,23 +1239,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             .push(ExprIR::from_column_name(name.clone(), self.expr_arena));
                         new_output_schema.insert(name.clone(), DataType::IDX_DTYPE);
 
-                        let in_edge = &mut edges.inputs()[i];
-                        *in_edge.projection_mut() = Projection::Len;
-                        // The parent key is unchanged since we mutate the node in-place, but port
-                        // idx is changed to 0.
-                        in_edge.parent_key_and_port_mut().idx = 0;
-
-                        // Ensure newly added `select(len())` can be seen by input node.
-                        debug_assert!(
-                            extract_select_len_expr(
-                                storage.get_mut(in_edge.parent_key_and_port().node),
-                                self.expr_arena
-                            )
-                            .is_some()
-                        );
-
-                        *node = storage.add(IR::Select {
-                            input: *node,
+                        let select_ir_node = storage.add(IR::Select {
+                            input: *input_ir_node,
                             expr: exprs,
                             schema: Arc::new(Schema::from_iter([(name, DataType::IDX_DTYPE)])),
                             options: ProjectionOptions {
@@ -1263,31 +1249,37 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 should_broadcast: false,
                             },
                         });
+
+                        *input_ir_node = select_ir_node;
+
+                        let in_edge = &mut edges.inputs()[i];
+                        *in_edge.projection_mut() = Projection::Len;
+                        *in_edge.parent_key_and_port_mut() = ParentKeyAndPort {
+                            node: select_ir_node,
+                            idx: 0,
+                        };
+
+                        debug_assert!(
+                            extract_select_len_expr(
+                                storage.get_mut(in_edge.parent_key_and_port().node),
+                                self.expr_arena
+                            )
+                            .is_some()
+                        );
                     }
 
-                    let [
-                        IR::HConcat {
-                            inputs,
-                            options,
-                            schema,
-                        },
-                        parent_ir,
-                    ] = storage
-                        .get_disjoint_mut([key, edges.outputs()[0].parent_key_and_port().node])
-                    else {
+                    let IR::HConcat { inputs, schema, .. } = storage.get_mut(key) else {
                         unreachable!()
                     };
 
-                    mem::replace(inputs, new_inputs);
+                    *inputs = new_inputs;
                     *schema = Arc::new(new_output_schema);
 
                     let function = IRFunctionExpr::MaxHorizontal;
                     let options = function.function_options();
 
                     self.expr_arena.replace(
-                        extract_select_len_expr(parent_ir, self.expr_arena)
-                            .unwrap()
-                            .node(),
+                        select_len_ae_node,
                         AExpr::Function {
                             input: max_horizontal_inputs,
                             function,
