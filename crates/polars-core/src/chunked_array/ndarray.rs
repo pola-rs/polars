@@ -106,8 +106,7 @@ impl DataFrame {
         let columns = self.columns();
         let num_cols = columns.len();
 
-        let mut membuf: Vec<N::Native> =
-            Vec::with_capacity(shape.0.checked_mul(shape.1).unwrap());
+        let mut membuf: Vec<N::Native> = Vec::with_capacity(shape.0.checked_mul(shape.1).unwrap());
         // SAFETY: parallel work units below write to disjoint regions of `membuf`.
         let ptr = unsafe { SyncPtr::new(membuf.as_mut_ptr()) };
 
