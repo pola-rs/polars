@@ -6138,7 +6138,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - Returns all rows from the right table, and the matched rows from
                    the left table.
                * - **full**
-                 - Returns all rows when there is a match in either left or right.
+                 - Returns all rows from both tables, joining matching rows and
+                   filling non-matches with null values.
                * - **cross**
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
