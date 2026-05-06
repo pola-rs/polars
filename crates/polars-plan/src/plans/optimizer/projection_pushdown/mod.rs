@@ -139,7 +139,7 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
         let parent_key_and_port = out_edge.parent_key_and_port();
 
         // This node was unlinked. We skip post-visit but remove the deletion mark,
-        // as otherwise the parent node will not be visited.
+        // as otherwise the parent node will not be called for post_visit.
         if parent_key_and_port.is_deleted() {
             out_edge.parent_key_and_port_mut().set_deleted(false);
             return ControlFlow::Continue(());
