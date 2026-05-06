@@ -1218,7 +1218,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let strict = options.strict;
 
-                // concat_horizontal([lf.select(len().alias(i)) for i, lf in enumerate(_)]).select(max_horizontal('*'))
+                // concat_horizontal([lf, ..]).select(len())
+                // -> concat_horizontal([lf.select(len().alias(i)) for i, lf in enumerate(_)]).select(max_horizontal('*'))
                 if out_edge.projection() == Projection::Len
                     && !strict
                     && let Some(select_len_ae_node) =
