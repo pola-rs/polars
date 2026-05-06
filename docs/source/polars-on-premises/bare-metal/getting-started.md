@@ -22,8 +22,7 @@ The `polars-on-premises` command will then be available within your virtual envi
 #### Downloading the server binary only
 
 You may also download the binary directly using the curl command below. Note that this still
-requires your system to have a Python interpreter available, and Polars to be installed. There are
-also some
+requires your system to have a Python interpreter available, and Polars to be installed.
 
 ```shell
 $ export LICENSE_KEY=$(cat license.json)
