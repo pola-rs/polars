@@ -911,6 +911,94 @@ def test_slice_pushdown_expr_height_rules() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}))
 
 
+def test_slice_pushdown_joins_27199() -> None:
+    lhs = pl.LazyFrame({"a": [0, 0]})
+    rhs = pl.LazyFrame({"a": [0, 0]})
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    # Left join, push to left
+    q = lhs.join(rhs, on="a", how="left").head(1)
+    plan = q.explain()
+
+    assert plan.index("SLICE") > plan.index("LEFT PLAN")
+    assert q.collect().height == 1
+
+    # Right join, push to right
+    q = rhs.join(lhs, on="a", how="right").head(1)
+    plan = q.explain()
+
+    assert plan.index("SLICE") > plan.index("RIGHT PLAN")
+    assert q.collect().height == 1
+
+    # Full join, push to both
+    q = lhs.join(rhs, on="a", how="full").head(1)
+    plan = q.explain()
+
+    i = plan.index("RIGHT PLAN ON")
+    assert plan[:i].index("SLICE") > plan[:i].index("LEFT PLAN")
+    assert plan[i:].index("SLICE") > plan[i:].index("RIGHT PLAN")
+
+    assert q.collect().height == 1
+
+
+def test_slice_pushdown_joins_nonzero_offset_27199() -> None:
+    lhs = pl.LazyFrame({"a": [0, 1]}).with_row_index()
+    rhs = pl.LazyFrame({"a": [0, 0, 1, 1]}).with_row_index()
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left").slice(1, 2)
+    plan = q.explain()
+
+    assert "SLICE: Positive { offset: 0, len: 3 }" in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index", [0, 1], dtype=pl.Int64),
+                pl.Series("a", [0, 1], dtype=pl.Int64),
+                pl.Series("index_right", [1, 2], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left").slice(-3, 2)
+    plan = q.explain()
+
+    assert "SLICE: Negative { offset_from_end: 3, len: 3 }" in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index", [0, 1], dtype=pl.Int64),
+                pl.Series("a", [0, 1], dtype=pl.Int64),
+                pl.Series("index_right", [1, 2], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_slice_pushdown_from_expr_to_join_26553() -> None:
+    lhs = pl.LazyFrame({"a": [0, 0]})
+    rhs = pl.LazyFrame({"a": [0, 0]})
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    # Left join, push to left
+    q = lhs.join(rhs, on="a", how="left").select(pl.last("*"))
+
+    plan = q.explain()
+    assert plan.index("SLICE") > plan.index("LEFT PLAN")
+
+    assert q.collect().height == 1
+
+
 def test_forbid_flatten_sliced_union_27455() -> None:
     df = pl.DataFrame({"a": [0, 0, 0, 0, 0]})
     q1 = pl.concat([(df + 1).lazy(), (df + 10).lazy()])
