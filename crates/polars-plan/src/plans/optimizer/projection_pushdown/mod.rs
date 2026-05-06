@@ -754,23 +754,24 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         break 'len_to_predicate_sum;
                     }
 
-                    let Some(expr) = extract_select_len_expr(
+                    let Some(select_len_ae_node) = extract_select_len_expr(
                         storage.get_mut(out_edge.parent_key_and_port().node),
                         self.expr_arena,
-                    ) else {
+                    )
+                    .map(|eir| eir.node()) else {
                         break 'len_to_predicate_sum;
                     };
 
-                    let sum_expr = self
-                        .expr_arena
-                        .add(AExpr::Agg(IRAggExpr::Sum(predicate_node)));
-
-                    expr.set_node(sum_expr);
+                    self.expr_arena.replace(
+                        select_len_ae_node,
+                        AExpr::Agg(IRAggExpr::Sum(predicate_node)),
+                    );
 
                     *out_edge.projection_mut() = Projection::Names;
                     let names = out_edge.names_mut();
                     names.clear();
-                    names.extend(aexpr_to_leaf_names_iter(sum_expr, self.expr_arena).cloned());
+                    names
+                        .extend(aexpr_to_leaf_names_iter(predicate_node, self.expr_arena).cloned());
 
                     unlink_current_node_and_return!(input)
                 }
