@@ -1300,3 +1300,19 @@ def test_sort_already_sorted_no_rechunk_25733() -> None:
 
     result = df.sort("a")
     assert result.n_chunks() == 2  # No rechunk happened
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sort_maintain_order_all_nulls_27514(
+    descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame(
+        {"a": [None, None, None, None]}, schema={"a": pl.Int32}
+    ).with_row_index()
+    result = (
+        df.lazy()
+        .sort("a", descending=descending, nulls_last=nulls_last, maintain_order=True)
+        .collect()
+    )
+    assert_frame_equal(result, df)
