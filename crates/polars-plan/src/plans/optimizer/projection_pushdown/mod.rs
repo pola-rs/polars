@@ -682,9 +682,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let output_schema_arc = output_schema;
 
-                if exprs.len() != orig_exprs_len
-                    || input_names_projection.len() != input_schema.len()
-                {
+                let has_dropped_input_column = input_names_projection.len() != input_schema.len();
+
+                if exprs.len() != orig_exprs_len || has_dropped_input_column {
                     let output_schema = Arc::make_mut(output_schema_arc);
                     let mut orig_schema = mem::take(output_schema);
 
@@ -712,9 +712,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         .map(Arc::new)
                     })
                     .or_else(|| {
-                        (out_edge.projection() == Projection::All
-                            && input_names_projection.len() != input_schema.len())
-                        .then_some(original_schema)
+                        (has_dropped_input_column && out_edge.projection() == Projection::All)
+                            .then_some(original_schema)
                     })
                 {
                     out_edge
@@ -722,7 +721,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         .attach_simple_projection(schema, storage);
                 }
 
-                if input_names_projection.len() != input_schema.len() {
+                if has_dropped_input_column {
                     mem::swap(out_edge.names_mut(), input_names_projection);
                     let names = out_edge.take_names();
                     *edges.inputs()[0].projection_state_mut() = ProjectionState {
