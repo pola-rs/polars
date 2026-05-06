@@ -711,10 +711,10 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         )
                         .map(Arc::new)
                     })
-                    .or_else(|| {
+                    .or(
                         (has_dropped_input_column && out_edge.projection() == Projection::All)
-                            .then_some(original_schema)
-                    })
+                            .then_some(original_schema),
+                    )
                 {
                     out_edge
                         .parent_key_and_port_mut()
