@@ -1325,20 +1325,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 Arc::make_mut(schema).retain(|name, _| hconcat_projected_names.contains(name));
 
-                if hconcat_projected_names.len() != projected_names.len() {
+                if let Some(projected_schema) =
+                    compute_simple_projection_schema(projected_names.as_slice(), schema, false)
+                {
                     edges.outputs()[0]
                         .parent_key_and_port_mut()
-                        .attach_simple_projection(
-                            Arc::new(
-                                compute_simple_projection_schema(
-                                    projected_names.as_slice(),
-                                    schema,
-                                    false,
-                                )
-                                .unwrap(),
-                            ),
-                            storage,
-                        );
+                        .attach_simple_projection(Arc::new(projected_schema), storage);
                 }
             },
 

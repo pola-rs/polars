@@ -478,17 +478,36 @@ def test_concat_horizontal_zero_width_height_mismatch_26876() -> None:
 def test_concat_horizontal_lazy_strict_raises_shape_error_27415(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    q = pl.concat(
-        [pl.LazyFrame({"x": [0, 1]}), pl.LazyFrame({"y": [0, 1, 2]})],
+    hconcat = pl.concat(
+        [
+            pl.LazyFrame({"x": [0, 1]}),
+            pl.LazyFrame({"y": [0, 1, 2]}),
+            pl.LazyFrame({"z": [0, -1, -2]}),
+        ],
         how="horizontal",
         strict=True,
-    ).select("y")
+    )
+
+    q = hconcat.select("y")
 
     with pytest.raises(ShapeError):
         q.collect()
 
     plmonkeypatch.setenv("POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS", "1")
+    q = hconcat.select("y")
     plan = q.explain()
 
     assert "HCONCAT" not in plan
     assert_frame_equal(q.collect(), pl.DataFrame({"y": [0, 1, 2]}))
+
+    q = hconcat.select("z", "y")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "z": [0, -1, -2],
+                "y": [0, 1, 2],
+            }
+        ),
+    )
