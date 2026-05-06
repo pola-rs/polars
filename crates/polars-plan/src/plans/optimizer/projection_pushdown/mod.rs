@@ -1283,11 +1283,13 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     if !keep {
                         in_port.set_deleted(true);
                         deleted += 1;
-                    } else if deleted != 0 {
-                        in_port.idx = idx - deleted;
-                    }
+                    } else {
+                        last_kept_input = idx;
 
-                    last_kept_input = idx;
+                        if deleted != 0 {
+                            in_port.idx = idx - deleted;
+                        }
+                    }
 
                     keep
                 });
