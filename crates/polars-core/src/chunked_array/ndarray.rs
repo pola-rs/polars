@@ -1,4 +1,5 @@
 use ndarray::prelude::*;
+use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -105,8 +106,10 @@ impl DataFrame {
         let columns = self.columns();
         let num_cols = columns.len();
 
-        let mut membuf: Vec<N::Native> = Vec::with_capacity(shape.0 * shape.1);
-        let ptr = membuf.as_ptr() as usize;
+        let mut membuf: Vec<N::Native> =
+            Vec::with_capacity(shape.0.checked_mul(shape.1).unwrap());
+        // SAFETY: parallel work units below write to disjoint regions of `membuf`.
+        let ptr = unsafe { SyncPtr::new(membuf.as_mut_ptr()) };
 
         // Cast a column to N's dtype, replace float nulls with NaN, error on remaining
         // nulls. Shared by both writer paths.
@@ -144,14 +147,8 @@ impl DataFrame {
                                 // accordingly. We only operate on n contiguous elements, offset by
                                 // n * the column index.
                                 unsafe {
-                                    let offset_ptr = (ptr as *mut N::Native)
-                                        .add(col_idx * height + chunk_offset);
-                                    // SAFETY:
-                                    // this is uninitialized memory, so we must never read from this
-                                    // data; copy_from_slice does not read.
-                                    let buf =
-                                        std::slice::from_raw_parts_mut(offset_ptr, vals.len());
-                                    buf.copy_from_slice(vals)
+                                    let dst = ptr.get().add(col_idx * height + chunk_offset);
+                                    std::ptr::copy_nonoverlapping(vals.as_ptr(), dst, vals.len());
                                 }
                                 chunk_offset += vals.len();
                             }
@@ -230,14 +227,15 @@ impl DataFrame {
                     let row_end = (row_start + row_block).min(height);
                     let block_rows = row_end - row_start;
 
-                    let mut cursors = [Cursor::default(); COL_BLOCK];
-
                     for col_start in (0..num_cols).step_by(COL_BLOCK) {
                         let block_cols = (num_cols - col_start).min(COL_BLOCK);
 
                         // Position each cursor at row_start. The length-accumulator
                         // walk skips zero-length chunks naturally.
-                        for ci_offset in 0..block_cols {
+                        let mut cursors: [Cursor; COL_BLOCK] = std::array::from_fn(|ci_offset| {
+                            if ci_offset >= block_cols {
+                                return Cursor::default();
+                            }
                             let chunks = &column_chunks[col_start + ci_offset];
                             let mut acc = 0usize;
                             let mut idx = 0;
@@ -248,12 +246,12 @@ impl DataFrame {
                                 }
                                 acc += c.len();
                             }
-                            cursors[ci_offset] = Cursor {
+                            Cursor {
                                 idx,
                                 off: acc,
                                 end: acc + chunks[idx].len(),
-                            };
-                        }
+                            }
+                        });
 
                         for sr in (0..block_rows).step_by(SUB) {
                             let tile_rows = (block_rows - sr).min(SUB);
@@ -336,7 +334,7 @@ impl DataFrame {
                                     unsafe {
                                         std::ptr::copy_nonoverlapping(
                                             src.as_ptr(),
-                                            (ptr as *mut N::Native).add(dst_off),
+                                            ptr.get().add(dst_off),
                                             tile_cols,
                                         );
                                     }
