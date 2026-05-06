@@ -621,11 +621,8 @@ impl PredicatePushDown {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)
             },
             // NOT Pushed down passed these nodes
-            // predicates influence slice sizes
-            lp @ Slice { .. } => {
-                self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
-            },
-            lp @ HConcat { .. } => {
+            // predicates influence slice sizes / indices
+            lp @ (Slice { .. } | Gather { .. } | HConcat { .. }) => {
                 self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
             },
             // Caches will run predicate push-down in the `cache_states` run.

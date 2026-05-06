@@ -1006,3 +1006,18 @@ def test_forbid_flatten_sliced_union_27455() -> None:
     q = pl.concat([q1.head(1), q2.head(1)])
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 100]}))
+
+
+def test_lazyframe_gather_select_len() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4], "b": True})
+
+    q = lf.gather([1, None, 99], null_on_oob=True).select(pl.len())
+    plan = q.explain()
+
+    assert "GATHER" not in plan
+    assert q.collect().item() == 3
+
+    q = lf.gather([1, None, 99], null_on_oob=False).select(pl.len())
+
+    with pytest.raises(pl.exceptions.OutOfBoundsError):
+        q.collect()

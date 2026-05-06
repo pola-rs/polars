@@ -8552,6 +8552,64 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
+    @unstable()
+    def gather(
+        self,
+        indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
+    ) -> DataFrame:
+        """
+        Selects rows from this DataFrame at the given indices.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        indices
+            The indices of the rows to select.
+
+        null_on_oob
+            If true when an index is out-of-bounds a null row will be generated
+            instead of raising an error.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [2, 1, 0], "s": ["foo", "bar", "baz"]})
+        >>> df.gather([2, 0, 0])
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 0   ┆ baz │
+        │ 2   ┆ foo │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+
+        >>> df.gather([0, 10, 1], null_on_oob=True)
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ x    ┆ s    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 2    ┆ foo  │
+        │ null ┆ null │
+        │ 1    ┆ bar  │
+        └──────┴──────┘
+        """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        return (
+            self.lazy()
+            .gather(indices, null_on_oob=null_on_oob)
+            .collect(optimizations=QueryOptFlags._eager())
+        )
+
     def map_rows(
         self,
         function: Callable[[tuple[Any, ...]], Any],
