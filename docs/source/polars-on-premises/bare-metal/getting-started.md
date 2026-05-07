@@ -30,7 +30,7 @@ $ curl -L 'https://get.onprem.pola.rs?version=0.1.0' --data $LICENSE_KEY --outpu
 ```
 
 See the [Python Environments page](/polars-on-premises/bare-metal/python-environment) for more
-information about setting up Polars On-Premises in your environment.
+information about setting up Polars On-Prem in your environment.
 
 ## Reading the license
 

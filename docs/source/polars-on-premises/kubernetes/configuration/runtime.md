@@ -1,10 +1,10 @@
 # Runtime
 
-Polars On-Prem consists of a single scheduler and multiple workers. Both components are
-contained in a single binary. While the scheduler can run without any system-level dependencies, the
-worker node needs the following:
+Polars On-Prem consists of a single scheduler and multiple workers. Both components are contained in
+a single binary. While the scheduler can run without any system-level dependencies, the worker node
+needs the following:
 
-- Python runtime (e.g. any version)
+- Python runtime (any version or a matching client version for running UDFs)
 - Polars (i.e. pip wheel)
 - Additional python requirements (e.g. numpy, pyarrow)
 
@@ -36,10 +36,10 @@ runtime:
     polarsExtras: "async,cloudpickle,database,deltalake,fsspec,iceberg,numpy,pandas,pyarrow,pydantic,timezone"
 ```
 
-Behind the scenes, this mechanism copies the Polars On-Prem binary, wheel, uv, and a setup
-script from an init-container to the pod's main container. On startup of the main container, the
-setup script uses uv to install the polars wheel with the additional specified packages before
-starting the worker.
+Behind the scenes, this mechanism copies the Polars On-Prem binary, wheel, uv, and a setup script
+from an init-container to the pod's main container. On startup of the main container, the setup
+script uses uv to install the polars wheel with the additional specified packages before starting
+the worker.
 
 If you prefer self-building a Docker image, you can instead configure the chart to use your image:
 

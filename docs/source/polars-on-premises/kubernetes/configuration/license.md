@@ -26,7 +26,7 @@ The cluster verifies the license key periodically, and will shutdown once the li
 
 ## EULA license
 
-Polars on-premises is licensed under the End User License Agreement (EULA) which can be found in the
-Polars on-premises binary. The EULA must be accepted by setting the `POLARS_EULA_ACCEPTED`
-environment variable to `1`. If the environment variable is not set, the executable will print the
-EULA and exit.
+Polars On-Prem is licensed under the End User License Agreement (EULA) which can be found in the
+Polars On-Prem binary. The EULA must be accepted by setting the `POLARS_EULA_ACCEPTED` environment
+variable to `1`. If the environment variable is not set, the executable will print the EULA and
+exit.

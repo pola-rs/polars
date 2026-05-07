@@ -2,8 +2,8 @@
 
 # Resource allocation and node selectors
 
-Most of the time, it is a good idea to run Polars On-Prem on dedicated nodes, with only one
-worker pod per node.
+Most of the time, it is a good idea to run Polars On-Prem on dedicated nodes, with only one worker
+pod per node.
 
 First, figure out the available resources on your nodes. This is usually lower than the actual node
 resources, as Kubernetes reserves some resources for system daemons. For example, if you have a
@@ -27,9 +27,9 @@ worker:
 ```
 
 If your cluster has other workloads running on it, we still recommend running Polars On-Prem on
-dedicated nodes, and using node selectors and taints/tolerations to ensure that only Polars
-On-Prem pods are scheduled on those nodes. For example, you can add a node selector, toleration,
-and affinity rules like this:
+dedicated nodes, and using node selectors and taints/tolerations to ensure that only Polars On-Prem
+pods are scheduled on those nodes. For example, you can add a node selector, toleration, and
+affinity rules like this:
 
 ```yaml
 worker:
