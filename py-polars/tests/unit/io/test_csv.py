@@ -563,6 +563,37 @@ def test_read_csv_encoding_lossy(chunk_override: None, tmp_path: Path) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+@pytest.mark.write_disk
+def test_read_csv_eol_char_with_non_utf8_encoding(
+    chunk_override: None, tmp_path: Path
+) -> None:
+    """Regression test for #27408.
+
+    When `read_csv` is given a file path *and* a non-utf8 encoding, the file
+    is opened in Python text mode for transcoding to utf-8 before being handed
+    to the rust reader. Without `newline=""`, Python's universal-newlines
+    mode rewrites every `\r` to `\n`, so passing `eol_char="\r"` produced
+    a single-line frame with bogus column names. Reading the same payload
+    from `BytesIO` worked because no text-mode translation happened.
+    """
+    tmp_path.mkdir(exist_ok=True)
+
+    bts = b"a,b,c\r1,2,3\r4,5,6"
+    file_path = tmp_path / "cr_eol.csv"
+    file_path.write_bytes(bts)
+
+    expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+
+    # Path / str inputs go through the file-opening branch in
+    # `prepare_file_arg`; BytesIO does not.
+    for file in (file_path, str(file_path), io.BytesIO(bts)):
+        out = pl.read_csv(file, eol_char="\r", encoding="latin-1")  # type: ignore[arg-type]
+        assert out.shape == (2, 3)
+        assert out.columns == ["a", "b", "c"]
+        assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_column_rename_and_schema_overrides(chunk_override: None) -> None:
     csv = textwrap.dedent(
         """\
