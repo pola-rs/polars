@@ -38,6 +38,14 @@ impl ColumnChunkMetadata {
         &self.column_chunk.meta_data
     }
 
+    /// The full `CompactColumnChunk` wrapper. Used by the prune pass
+    /// (`FileMetadata::pruned`) to rebuild a smaller `FileMetadata` for
+    /// serialisation.
+    #[inline]
+    pub(crate) fn compact_column_chunk(&self) -> &CompactColumnChunk {
+        &self.column_chunk
+    }
+
     /// The [`ColumnDescriptor`] for this column. This descriptor contains
     /// the physical and logical type of the pages.
     pub fn descriptor(&self) -> &ColumnDescriptor {

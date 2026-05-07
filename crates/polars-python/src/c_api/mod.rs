@@ -278,6 +278,11 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
+    #[cfg(all(feature = "parquet", feature = "json"))]
+    m.add_wrapped(wrap_pyfunction!(
+        functions::_bench_parquet_metadata_bincode_size
+    ))
+    .unwrap();
     #[cfg(feature = "clipboard")]
     m.add_wrapped(wrap_pyfunction!(functions::read_clipboard_string))
         .unwrap();

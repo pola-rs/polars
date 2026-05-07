@@ -88,6 +88,46 @@ pub fn read_parquet_metadata(
     Ok(dict.unbind())
 }
 
+/// Decode a parquet footer, optionally apply `FileMetadata::pruned`, then
+/// bincode-encode and return the byte length of the wire form.
+///
+/// Exposed for out-of-tree measurement of the IR-plan-borne metadata wire
+/// form (the `bincode(FileMetadata)` blob shipped to workers in distributed
+/// execution); no caller in py-polars itself.
+///
+/// `projection = None` ⇒ encode the full `FileMetadata`. `projection =
+/// Some(cols)` ⇒ apply `pruned(cols, predicate)`. Local files only.
+#[cfg(all(feature = "parquet", feature = "json"))]
+#[pyfunction]
+pub fn _bench_parquet_metadata_bincode_size(
+    path: &str,
+    projection: Option<Vec<String>>,
+    predicate: Vec<String>,
+) -> PyResult<usize> {
+    use polars_parquet::read::read_metadata;
+    use polars_utils::pl_serialize;
+    use polars_utils::pl_str::PlSmallStr;
+
+    let file = std::fs::File::open(path).map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+    let metadata = read_metadata(&mut BufReader::new(file)).map_err(PyPolarsErr::from)?;
+
+    // Match the IR-plan serializer's framing format.
+    let bytes = match projection {
+        None => {
+            pl_serialize::serialize_to_bytes::<_, false>(&metadata).map_err(PyPolarsErr::from)?
+        },
+        Some(keep) => {
+            let keep_pl: Vec<PlSmallStr> = keep.into_iter().map(PlSmallStr::from).collect();
+            let pred_pl: Vec<PlSmallStr> = predicate.into_iter().map(PlSmallStr::from).collect();
+            let pruned = metadata
+                .pruned(&keep_pl, &pred_pl)
+                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+            pl_serialize::serialize_to_bytes::<_, false>(&pruned).map_err(PyPolarsErr::from)?
+        },
+    };
+    Ok(bytes.len())
+}
+
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn fields_to_pydict(schema: &ArrowSchema, dict: &Bound<'_, PyDict>) -> PyResult<()> {
     for field in schema.iter_values() {
