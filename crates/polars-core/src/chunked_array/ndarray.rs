@@ -1,4 +1,5 @@
 use ndarray::prelude::*;
+use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -102,66 +103,252 @@ impl DataFrame {
     {
         let shape = self.shape();
         let height = self.height();
-        let mut membuf = Vec::with_capacity(shape.0 * shape.1);
-        let ptr = membuf.as_ptr() as usize;
-
         let columns = self.columns();
-        POOL.install(|| {
-            columns.par_iter().enumerate().try_for_each(|(col_idx, s)| {
-                let s = s.as_materialized_series().cast(&N::get_static_dtype())?;
-                let s = match s.dtype() {
-                    DataType::Float32 => {
-                        let ca = s.f32().unwrap();
-                        ca.none_to_nan().into_series()
-                    },
-                    DataType::Float64 => {
-                        let ca = s.f64().unwrap();
-                        ca.none_to_nan().into_series()
-                    },
-                    _ => s,
-                };
-                polars_ensure!(
-                    s.null_count() == 0,
-                    ComputeError: "creation of ndarray with null values is not supported"
-                );
-                let ca = s.unpack::<N>()?;
+        let num_cols = columns.len();
 
-                let mut chunk_offset = 0;
-                for arr in ca.downcast_iter() {
-                    let vals = arr.values();
+        let mut membuf: Vec<N::Native> = Vec::with_capacity(shape.0.checked_mul(shape.1).unwrap());
+        // SAFETY: parallel work units below write to disjoint regions of `membuf`.
+        let ptr = unsafe { SyncPtr::new(membuf.as_mut_ptr()) };
 
-                    // Depending on the desired order, we add items to the buffer.
-                    // SAFETY:
-                    // We get parallel access to the vector by offsetting index access accordingly.
-                    // For C-order, we only operate on every num-col-th element, starting from the
-                    // column index. For Fortran-order we only operate on n contiguous elements,
-                    // offset by n * the column index.
-                    match ordering {
-                        IndexOrder::C => unsafe {
-                            let num_cols = columns.len();
-                            let mut offset =
-                                (ptr as *mut N::Native).add(col_idx + chunk_offset * num_cols);
-                            for v in vals.iter() {
-                                *offset = *v;
-                                offset = offset.add(num_cols);
+        // Cast a column to N's dtype, replace float nulls with NaN, error on remaining
+        // nulls. Shared by both writer paths.
+        let cast_to_target = |s: &Column| -> PolarsResult<Series> {
+            let s = s.as_materialized_series().cast(&N::get_static_dtype())?;
+            let s = match s.dtype() {
+                DataType::Float32 => s.f32().unwrap().none_to_nan().into_series(),
+                DataType::Float64 => s.f64().unwrap().none_to_nan().into_series(),
+                _ => s,
+            };
+            polars_ensure!(
+                s.null_count() == 0,
+                ComputeError: "creation of ndarray with null values is not supported"
+            );
+            Ok(s)
+        };
+
+        match (ordering, num_cols) {
+            // F-order, or C-order with 0/1 columns (same memory layout). Per-column
+            // parallel writer; each column owns a disjoint contiguous stripe of the
+            // output buffer.
+            (IndexOrder::Fortran, _) | (IndexOrder::C, 0 | 1) => {
+                POOL.install(|| {
+                    columns.par_iter().enumerate().try_for_each(
+                        |(col_idx, s)| -> PolarsResult<()> {
+                            let s = cast_to_target(s)?;
+                            let ca = s.unpack::<N>()?;
+
+                            let mut chunk_offset = 0;
+                            for arr in ca.downcast_iter() {
+                                let vals = arr.values();
+
+                                // SAFETY:
+                                // We get parallel access to the vector by offsetting index access
+                                // accordingly. We only operate on n contiguous elements, offset by
+                                // n * the column index.
+                                unsafe {
+                                    let dst = ptr.get().add(col_idx * height + chunk_offset);
+                                    std::ptr::copy_nonoverlapping(vals.as_ptr(), dst, vals.len());
+                                }
+                                chunk_offset += vals.len();
                             }
+
+                            Ok(())
                         },
-                        IndexOrder::Fortran => unsafe {
-                            let offset_ptr =
-                                (ptr as *mut N::Native).add(col_idx * height + chunk_offset);
-                            // SAFETY:
-                            // this is uninitialized memory, so we must never read from this data
-                            // copy_from_slice does not read
-                            let buf = std::slice::from_raw_parts_mut(offset_ptr, vals.len());
-                            buf.copy_from_slice(vals)
-                        },
-                    }
-                    chunk_offset += vals.len();
+                    )
+                })?;
+            },
+            // C-order with > 1 column. Cache-blocked transpose writer: row-block
+            // parallel work units own disjoint output rows; each column's row-block
+            // is gathered into a register-blocked sub-tile then bulk-written
+            // contiguously. Avoids the per-column strided write that would touch
+            // one cache line per element and false-share between threads.
+            (IndexOrder::C, _) => {
+                // Sequential below ~1M cells (~4 MB f32) skips rayon dispatch overhead.
+                const PARALLEL_THRESHOLD: usize = 1_000_000;
+                let parallel = num_cols.saturating_mul(height) >= PARALLEL_THRESHOLD;
+
+                // The cast result must outlive Phase 2; the per-chunk slices below
+                // borrow into it. No-op when source dtype already matches and the
+                // column has no nulls. When a cast is needed it costs an extra
+                // memory pass over the source; fusing it into the sub-tile gather
+                // would halve the cast-required traffic but needs per-source-dtype
+                // specialisation of the gather.
+                let cast_columns: Vec<Series> = if parallel {
+                    POOL.install(|| {
+                        columns
+                            .par_iter()
+                            .map(cast_to_target)
+                            .collect::<PolarsResult<_>>()
+                    })?
+                } else {
+                    columns
+                        .iter()
+                        .map(cast_to_target)
+                        .collect::<PolarsResult<_>>()?
+                };
+
+                const COL_BLOCK: usize = 64;
+                const TARGET_BLOCK_CELLS: usize = 32_768;
+                const MIN_ROW_BLOCK: usize = 64;
+                // row_block scales inversely with num_cols so each work unit carries
+                // about TARGET_BLOCK_CELLS cells, clamped at MIN_ROW_BLOCK for narrow
+                // frames.
+                let row_block = (TARGET_BLOCK_CELLS / num_cols.max(1)).max(MIN_ROW_BLOCK);
+                let num_blocks = height.div_ceil(row_block);
+
+                let column_chunks: Vec<Vec<&[N::Native]>> = cast_columns
+                    .iter()
+                    .map(|s| {
+                        s.unpack::<N>()
+                            .unwrap()
+                            .downcast_iter()
+                            .map(|arr| arr.values().as_slice())
+                            .collect()
+                    })
+                    .collect();
+
+                // Cursor into one column's chunk list. Advanced only at chunk boundaries.
+                #[derive(Clone, Copy, Default)]
+                struct Cursor {
+                    idx: usize, // chunk index
+                    off: usize, // first row of the chunk in the column's row space
+                    end: usize, // first row past the chunk
                 }
 
-                Ok(())
-            })
-        })?;
+                // Sub-tile dimension for the register-blocked transpose. SUB=32 keeps
+                // the SUB*SUB stack scratch under L1 (4 KB read + 4 KB write working
+                // set per sub-tile) and makes each row write 128 B for f32, which
+                // lowers to ~8 SIMD stores via copy_nonoverlapping.
+                const SUB: usize = 32;
+
+                let writer = |block: usize| {
+                    let row_start = block * row_block;
+                    let row_end = (row_start + row_block).min(height);
+                    let block_rows = row_end - row_start;
+
+                    for col_start in (0..num_cols).step_by(COL_BLOCK) {
+                        let block_cols = (num_cols - col_start).min(COL_BLOCK);
+
+                        // Position each cursor at row_start. The length-accumulator
+                        // walk skips zero-length chunks naturally.
+                        let mut cursors: [Cursor; COL_BLOCK] = std::array::from_fn(|ci_offset| {
+                            if ci_offset >= block_cols {
+                                return Cursor::default();
+                            }
+                            let chunks = &column_chunks[col_start + ci_offset];
+                            let mut acc = 0usize;
+                            let mut idx = 0;
+                            for (i, c) in chunks.iter().enumerate() {
+                                if acc + c.len() > row_start {
+                                    idx = i;
+                                    break;
+                                }
+                                acc += c.len();
+                            }
+                            Cursor {
+                                idx,
+                                off: acc,
+                                end: acc + chunks[idx].len(),
+                            }
+                        });
+
+                        for sr in (0..block_rows).step_by(SUB) {
+                            let tile_rows = (block_rows - sr).min(SUB);
+                            let abs_row_start = row_start + sr;
+
+                            for sc in (0..block_cols).step_by(SUB) {
+                                let tile_cols = (block_cols - sc).min(SUB);
+
+                                // Resolve each column's slice and starting offset
+                                // for this sub-tile. all_simple stays true when
+                                // every column's current chunk fully covers
+                                // tile_rows; the inner gather is then a tight loop
+                                // with no per-cell cursor work. It falls to false
+                                // when a chunk boundary lands inside this sub-tile.
+                                let mut col_slices: [&[N::Native]; SUB] = [&[]; SUB];
+                                let mut col_offs = [0usize; SUB];
+                                let mut all_simple = true;
+                                for ci in 0..tile_cols {
+                                    let chunks = &column_chunks[col_start + sc + ci];
+                                    let cur = &mut cursors[sc + ci];
+                                    // `while` (not `if`) skips zero-length chunks.
+                                    while abs_row_start >= cur.end {
+                                        cur.idx += 1;
+                                        cur.off = cur.end;
+                                        cur.end = cur.off + chunks[cur.idx].len();
+                                    }
+                                    if abs_row_start + tile_rows <= cur.end {
+                                        col_slices[ci] = chunks[cur.idx];
+                                        col_offs[ci] = abs_row_start - cur.off;
+                                    } else {
+                                        all_simple = false;
+                                        break;
+                                    }
+                                }
+
+                                let mut buf = [N::Native::default(); SUB * SUB];
+
+                                if all_simple {
+                                    for ri in 0..tile_rows {
+                                        let buf_row = ri * SUB;
+                                        for ci in 0..tile_cols {
+                                            // SAFETY: col_offs[ci] + ri < col_slices[ci].len()
+                                            // by the resolution check above.
+                                            unsafe {
+                                                buf[buf_row + ci] = *col_slices[ci]
+                                                    .get_unchecked(col_offs[ci] + ri);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    for ri in 0..tile_rows {
+                                        let abs_row = abs_row_start + ri;
+                                        let buf_row = ri * SUB;
+                                        for ci in 0..tile_cols {
+                                            let chunks = &column_chunks[col_start + sc + ci];
+                                            let cur = &mut cursors[sc + ci];
+                                            while abs_row >= cur.end {
+                                                cur.idx += 1;
+                                                cur.off = cur.end;
+                                                cur.end = cur.off + chunks[cur.idx].len();
+                                            }
+                                            // SAFETY: cursor advanced only while
+                                            // row < total length so cur.idx is in
+                                            // bounds; offset < chunks[cur.idx].len()
+                                            // by the chunk-end invariant.
+                                            unsafe {
+                                                buf[buf_row + ci] = *chunks[cur.idx]
+                                                    .get_unchecked(abs_row - cur.off);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                for ri in 0..tile_rows {
+                                    let abs_row = abs_row_start + ri;
+                                    let dst_off = abs_row * num_cols + col_start + sc;
+                                    let src = &buf[ri * SUB..ri * SUB + tile_cols];
+                                    // SAFETY: dst_off + tile_cols <= height * num_cols;
+                                    // disjoint blocks own disjoint output rows.
+                                    unsafe {
+                                        std::ptr::copy_nonoverlapping(
+                                            src.as_ptr(),
+                                            ptr.get().add(dst_off),
+                                            tile_cols,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+                if parallel {
+                    POOL.install(|| (0..num_blocks).into_par_iter().for_each(writer));
+                } else {
+                    (0..num_blocks).for_each(writer);
+                }
+            },
+        }
 
         // SAFETY:
         // we have written all data, so we can now safely set length

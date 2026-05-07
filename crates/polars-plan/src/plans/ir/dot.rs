@@ -276,6 +276,15 @@ impl<'a> IRDotDisplay<'a> {
                     Ok(())
                 })?;
             },
+            Gather {
+                input,
+                idxs,
+                null_on_oob,
+            } => {
+                recurse!(*input);
+                recurse!(*idxs);
+                write_label(f, id, |f| write!(f, "GATHER[null_on_oob: {null_on_oob}]"))?;
+            },
             MapFunction {
                 input, function, ..
             } => {

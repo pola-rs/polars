@@ -16,7 +16,6 @@ pub use function_expr::*;
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
-use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
@@ -62,11 +61,6 @@ pub enum IRAggExpr {
         input: Node,
         maintain_order: bool,
     },
-    Quantile {
-        expr: Node,
-        quantile: Node,
-        method: QuantileMethod,
-    },
     Sum(Node),
     Count {
         input: Node,
@@ -89,9 +83,6 @@ impl Hash for IRAggExpr {
                 input: _,
                 propagate_nans,
             } => propagate_nans.hash(state),
-            Self::Quantile {
-                method: interpol, ..
-            } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             Self::Count {
                 input: _,
@@ -122,7 +113,6 @@ impl IRAggExpr {
                     propagate_nans: r, ..
                 },
             ) => l == r,
-            (Quantile { method: l, .. }, Quantile { method: r, .. }) => l == r,
             (Std(_, l), Std(_, r)) => l == r,
             (Var(_, l), Var(_, r)) => l == r,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
@@ -171,8 +161,6 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-            // Multi-input aggregations.
-            Quantile { .. } => unreachable!(),
         }
     }
 }

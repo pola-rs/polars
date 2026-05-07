@@ -834,6 +834,23 @@ def test_projection_pushdown_select_len() -> None:
     assert q.collect().item() == 1
 
 
+def test_projection_pushdown_nonstrict_hconcat_select_len() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame({"a": [0, 1, 2]}),
+            pl.LazyFrame({"b": [0, 1, 2, 3, 4]}),
+        ],
+        how="horizontal",
+    ).select(pl.len())
+    plan = q.explain()
+
+    assert plan.index("len()") > plan.index("HCONCAT")
+    assert_frame_equal(
+        q.collect(),
+        pl.Series("len", [5], dtype=pl.get_index_type()).to_frame(),
+    )
+
+
 def test_projection_pushdown_non_projected_sort_column() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
     q = lf.sort("a", descending=True).unique("b", maintain_order=True).drop("a")

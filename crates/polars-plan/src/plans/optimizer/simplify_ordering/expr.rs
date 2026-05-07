@@ -690,16 +690,6 @@ impl ExprOrderSimplifier<'_> {
                         self.rec(node, RS::ALLOW_DEORDER);
                         O::empty()
                     },
-                    IRAggExpr::Quantile { expr, quantile, .. } => {
-                        let expr = *expr;
-                        let quantile = *quantile;
-
-                        self.rec(expr, RS::ALLOW_DEORDER);
-                        let sublist_observable = self.rec(quantile, RS::NO_DEORDER);
-                        self.internal_observe(sublist_observable);
-
-                        O::empty()
-                    },
 
                     IRAggExpr::Implode {
                         input,
