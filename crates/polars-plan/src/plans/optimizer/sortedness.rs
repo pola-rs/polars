@@ -459,6 +459,57 @@ fn is_sorted_rec(
 
         IR::GroupBy { .. } => None,
         IR::Join { .. } => None,
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => {
+            let input = *input;
+            let idxs = *idxs;
+            let null_on_oob = *null_on_oob;
+            let input_sorted = rec!(input)?;
+            let idxs_sorted = rec!(idxs)?;
+            if idxs_sorted.0.len() != 1 {
+                return None;
+            }
+            let idxs_sorted = &idxs_sorted.0[0];
+
+            // The null locations must be known and match exactly, or we might
+            // get a mixture of nulls at start and end.
+            for s in input_sorted.0.iter() {
+                if s.nulls_last.is_none() || s.nulls_last != idxs_sorted.nulls_last {
+                    return None;
+                }
+            }
+
+            // Furthermore, if out-of-bounds can create nulls those must match the null location,
+            // that is, the larger indices must be on the side where the nulls are.
+            if null_on_oob {
+                if idxs_sorted.nulls_last.is_none()
+                    || idxs_sorted.nulls_last != idxs_sorted.descending.map(|b| !b)
+                {
+                    return None;
+                }
+            }
+
+            let mut out_sorted = input_sorted.0.iter().cloned().collect_vec();
+            match idxs_sorted.descending {
+                Some(false) => {},
+                Some(true) => {
+                    for s in &mut out_sorted {
+                        s.descending = s.descending.map(|b| !b);
+                        s.nulls_last = s.nulls_last.map(|b| !b);
+                    }
+                },
+                None => {
+                    for s in &mut out_sorted {
+                        s.descending = None;
+                        s.nulls_last = None;
+                    }
+                },
+            }
+            Some(input_sorted)
+        },
         IR::MapFunction { input, function } => match function {
             FunctionIR::Hint(hint) => match hint {
                 HintIR::Sorted(v) => Some(IRSorted(v.clone())),

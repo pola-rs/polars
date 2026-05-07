@@ -806,6 +806,7 @@ pub(super) fn convert_functions(
         },
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
+        F::Quantile { method } => I::Quantile { method },
         #[cfg(feature = "mode")]
         F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]

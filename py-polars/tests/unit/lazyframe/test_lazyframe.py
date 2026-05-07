@@ -1838,3 +1838,9 @@ def test_sum_decimal_widens_precision_27269() -> None:
         schema={"x": pl.Decimal(15, 2)},
     )
     assert lf.select(pl.sum("x")).collect_schema()["x"] == pl.Decimal(38, 2)
+
+
+def test_execute() -> None:
+    assert pl.LazyFrame({"a": [1, 2, 3, 4]}).select(pl.col.a).execute().lazy().select(
+        sum=pl.col.a.sum(), count=pl.len()
+    ).collect().to_dict(as_series=False) == {"sum": [10], "count": [4]}

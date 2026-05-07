@@ -1988,22 +1988,22 @@ fn lower_exprs_with_ctx(
             },
 
             AExpr::Gather {
-                expr: target_expr,
+                expr: input_expr,
                 idx: idx_expr,
                 returns_scalar: _,
                 null_on_oob,
             } => {
                 let out_name = unique_column_name();
-                let target_expr_ir = ExprIR::new(target_expr, OutputName::Alias(out_name.clone()));
+                let input_expr_ir = ExprIR::new(input_expr, OutputName::Alias(out_name.clone()));
                 let idx_expr_ir = ExprIR::from_node(idx_expr, ctx.expr_arena);
-                let target_stream = build_select_stream_with_ctx(input, &[target_expr_ir], ctx)?;
+                let input_stream = build_select_stream_with_ctx(input, &[input_expr_ir], ctx)?;
                 let idx_stream = build_select_stream_with_ctx(input, &[idx_expr_ir], ctx)?;
                 let kind = PhysNodeKind::Gather {
-                    target: target_stream,
+                    input: input_stream,
                     idxs: idx_stream,
                     null_on_oob,
                 };
-                let output_schema = target_stream.output_schema(ctx.phys_sm).clone();
+                let output_schema = input_stream.output_schema(ctx.phys_sm).clone();
                 let gather_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(gather_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
@@ -2109,10 +2109,7 @@ fn lower_exprs_with_ctx(
                     input_streams.insert(PhysStream::first(reduce_node_key));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
                 },
-                IRAggExpr::Median(_)
-                | IRAggExpr::Implode { .. }
-                | IRAggExpr::Quantile { .. }
-                | IRAggExpr::AggGroups(_) => {
+                IRAggExpr::Median(_) | IRAggExpr::Implode { .. } | IRAggExpr::AggGroups(_) => {
                     let out_name = unique_column_name();
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));

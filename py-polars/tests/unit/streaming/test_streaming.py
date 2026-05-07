@@ -456,3 +456,22 @@ def test_streaming_strptime_infer_leading_nulls(
     result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
     expected = df.lazy().select(pl.col("s").str.to_date()).collect()
     assert_frame_equal(result, expected)
+
+
+def test_streaming_hconcat_strict_27372() -> None:
+    data = pl.LazyFrame({"ct": [1, 2, 3]}, schema={"ct": pl.UInt8})
+    lf = pl.concat(
+        [
+            data.select(
+                x=pl.col.ct
+                ^ pl.lit(pl.Series("LUT", [[0]], pl.List(pl.UInt8))).list.get(0)
+            ),
+            data,
+        ],
+        how="horizontal",
+        strict=True,
+    )
+
+    result = lf.collect(engine="streaming")
+    expected = lf.collect(engine="in-memory")
+    assert_frame_equal(result, expected)

@@ -5,6 +5,7 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
+use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use polars_core::POOL;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
@@ -423,6 +424,55 @@ pub fn drop_nulls<'a>(
         .cloned()
         .unwrap_or(Bitmap::new_with_value(true, 1));
     drop_items(ac, &predicate)
+}
+
+pub fn quantile<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    method: QuantileMethod,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert!(inputs.len() == 2);
+
+    // AggregatedScalar has no defined group structure. We fix it up here, so that we can
+    // reliably call `agg_quantile` functions with the groups.
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    ac.set_groups_for_undefined_agg_states();
+
+    // Don't change names by aggregations as is done in polars-core.
+    let keep_name = ac.get_values().name().clone();
+
+    let quantile_column = inputs[1].evaluate(df, state)?;
+    polars_ensure!(
+        quantile_column.len() <= 1,
+        ComputeError:
+            "polars only supports computing a single quantile in a groupby aggregation context"
+    );
+    polars_ensure!(
+        quantile_column.dtype().is_numeric(),
+        SchemaMismatch:
+            "expected expression of dtype 'numeric' for quantile, got '{}'",
+        quantile_column.dtype()
+    );
+    let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
+
+    if let AggState::LiteralScalar(c) = &mut ac.state {
+        *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
+        return Ok(ac);
+    }
+
+    // SAFETY: groups are in bounds.
+    let mut agg = unsafe {
+        ac.flat_naive()
+            .into_owned()
+            .agg_quantile(ac.groups(), quantile, method)
+    };
+    agg.rename(keep_name);
+    Ok(AggregationContext::from_agg_state(
+        AggState::AggregatedScalar(agg),
+        Cow::Borrowed(groups),
+    ))
 }
 
 #[cfg(feature = "moment")]
