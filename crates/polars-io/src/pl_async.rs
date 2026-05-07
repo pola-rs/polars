@@ -318,7 +318,7 @@ impl RuntimeManager {
         F: Future,
     {
         debug_assert!(
-            IS_POLARS_ASYNC_EXECUTOR_THREAD.get(),
+            !IS_POLARS_ASYNC_EXECUTOR_THREAD.get(),
             "block_in_place_on may not be called from within a polars async executor"
         );
         tokio::task::block_in_place(|| self.rt.block_on(future))
@@ -332,7 +332,7 @@ impl RuntimeManager {
         F: Future,
     {
         debug_assert!(
-            IS_POLARS_ASYNC_EXECUTOR_THREAD.get(),
+            !IS_POLARS_ASYNC_EXECUTOR_THREAD.get(),
             "block_on may not be called from within a polars async executor"
         );
         self.rt.block_on(future)
