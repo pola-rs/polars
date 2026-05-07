@@ -272,6 +272,7 @@ impl Executor {
     fn runner(&self, thread: usize) {
         TLS_THREAD_ID.set(thread);
         ALLOW_RAYON_THREADS.set(false);
+        polars_io::pl_async::_mark_as_polars_async_executor_thread();
 
         let mut rng = SmallRng::from_rng(&mut rand::rng());
         let mut worker = self.park_group.new_worker();

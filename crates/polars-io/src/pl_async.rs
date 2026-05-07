@@ -1,14 +1,24 @@
+use std::cell::Cell;
 use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use polars_buffer::Buffer;
 use polars_core::POOL;
 use polars_core::config::{self, verbose};
+use polars_error::polars_warn;
 use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
+
+thread_local! {
+    static IS_POLARS_ASYNC_EXECUTOR_THREAD: Cell<bool> = const { Cell::new(false) };
+}
+
+pub fn _mark_as_polars_async_executor_thread() {
+    IS_POLARS_ASYNC_EXECUTOR_THREAD.set(true);
+}
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
@@ -272,9 +282,21 @@ impl RuntimeManager {
             eprintln!("blocking thread count: {max_blocking}");
         }
 
+        let max_total_threads = n_threads + max_blocking;
+        let warned = RelaxedCell::new_bool(false);
+        let tokio_thread_count_start = Arc::new(RelaxedCell::new_i64(0));
+        let tokio_thread_count_stop = tokio_thread_count_start.clone();
+
         let rt = Builder::new_multi_thread()
             .worker_threads(n_threads)
             .max_blocking_threads(max_blocking)
+            .on_thread_start(move || {
+                if tokio_thread_count_start.fetch_add(1) + 1 >= (max_total_threads as i64) && !warned.load() {
+                    warned.store(true);
+                    polars_warn!("POLARS_MAX_BLOCKING_THREAD_COUNT reached ({max_blocking}), this may indicate a deadlock");
+                }
+            })
+            .on_thread_stop(move || { tokio_thread_count_stop.fetch_sub(1); })
             .enable_io()
             .enable_time()
             .build()
@@ -283,24 +305,36 @@ impl RuntimeManager {
         Self { rt }
     }
 
-    /// Forcibly blocks this thread to evaluate the given future. This can be
-    /// dangerous and lead to deadlocks if called re-entrantly on an async
-    /// worker thread as the entire thread pool can end up blocking, leading to
-    /// a deadlock. If you want to prevent this use block_on, which will panic
-    /// if called from an async thread.
+    /// Blocks this thread to evaluate the given future.
+    ///
+    /// This is more expensive than block_on when called from an async runtime
+    /// worker thread because other async tasks scheduled to run on this thread
+    /// have to be moved to a new thread.
+    ///
+    /// If more than POLARS_MAX_BLOCKING_THREAD_COUNT calls to this occur
+    /// simultaneously a deadlock may occur.
     pub fn block_in_place_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
     {
+        debug_assert!(
+            IS_POLARS_ASYNC_EXECUTOR_THREAD.get(),
+            "block_in_place_on may not be called from within a polars async executor"
+        );
         tokio::task::block_in_place(|| self.rt.block_on(future))
     }
 
-    /// Blocks this thread to evaluate the given future. Panics if the current
-    /// thread is an async runtime worker thread.
+    /// Blocks this thread to evaluate the given future.
+    ///
+    /// Panics if the current thread is an async runtime worker thread.
     pub fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
     {
+        debug_assert!(
+            IS_POLARS_ASYNC_EXECUTOR_THREAD.get(),
+            "block_on may not be called from within a polars async executor"
+        );
         self.rt.block_on(future)
     }
 
