@@ -303,10 +303,14 @@ class AutoInit(CredentialProviderBuilderImpl):
 
     def get_cache_key_impl(self) -> bytes:
         import hashlib
-        import pickle
+        import json
 
-        hash = hashlib.sha256(pickle.dumps(self))
-        return hash.digest()[:16]
+        data = json.dumps(
+            {"cls": self.cls.__qualname__, "kw": self.kw},
+            sort_keys=True,
+            default=str,
+        ).encode()
+        return hashlib.sha256(data).digest()[:16]
 
     @property
     def provider_repr(self) -> str:
