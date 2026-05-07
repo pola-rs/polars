@@ -1786,7 +1786,7 @@ def test_join_asof_by_nulls_27165_2() -> None:
 
 def test_join_asof_maintain_order_left_27526() -> None:
     N_IDS = 20
-    N_TS = 10_000
+    N_TS = 100_000
     data = io.BytesIO()
     metadata = io.BytesIO()
 
