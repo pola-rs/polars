@@ -878,7 +878,18 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
         (pl.DataFrame.write_ipc, pl.scan_ipc),
     ],
 )
-@pytest.mark.parametrize("slice", [None, (0, 5)])
+@pytest.mark.parametrize(
+    "slice",
+    [
+        None,
+        (0, 5),
+        (-5, 5),
+        (5, 10),  # overrun past the end
+        (-15, 10),  # overrun before the start
+        (-5, 10),  # overrun past the end
+        (-15, 20),  # overrun before the start and past the end
+    ],
+)
 @pytest.mark.parametrize("predicate", [None, pl.col("a") % 2 == 1])
 def test_projection_pushdown_fastcount_27534(
     sink: Callable[[pl.DataFrame, io.BytesIO], None],
