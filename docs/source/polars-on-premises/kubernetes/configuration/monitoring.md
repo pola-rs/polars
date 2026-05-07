@@ -50,7 +50,7 @@ The host metrics exporter supports collecting CPU and memory usage metrics from 
 
 ## Telemetry
 
-Polars on-premises uses OpenTelemetry as its telemetry framework. To receive OTLP metrics and
+Polars On-Prem uses OpenTelemetry as its telemetry framework. To receive OTLP metrics and
 traces, configure `telemetry.otlpEndpoint` to point to your OTLP collector. Logs are written to
 stdout in JSON format. For the compute plane, the log level can be configured using the `logLevel`
 value.

@@ -1,6 +1,6 @@
 # License
 
-Polars on-premises requires a license key to run. If you haven't contacted Polars yet,
+Polars On-Prem requires a license key to run. If you haven't contacted Polars yet,
 [sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv). A license key looks like
 this:
 

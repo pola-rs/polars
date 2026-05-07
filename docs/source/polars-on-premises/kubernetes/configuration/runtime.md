@@ -1,6 +1,6 @@
 # Runtime
 
-Polars on-premises consists of a single scheduler and multiple workers. Both components are
+Polars On-Prem consists of a single scheduler and multiple workers. Both components are
 contained in a single binary. While the scheduler can run without any system-level dependencies, the
 worker node needs the following:
 
@@ -36,7 +36,7 @@ runtime:
     polarsExtras: "async,cloudpickle,database,deltalake,fsspec,iceberg,numpy,pandas,pyarrow,pydantic,timezone"
 ```
 
-Behind the scenes, this mechanism copies the Polars on-premises binary, wheel, uv, and a setup
+Behind the scenes, this mechanism copies the Polars On-Prem binary, wheel, uv, and a setup
 script from an init-container to the pod's main container. On startup of the main container, the
 setup script uses uv to install the polars wheel with the additional specified packages before
 starting the worker.

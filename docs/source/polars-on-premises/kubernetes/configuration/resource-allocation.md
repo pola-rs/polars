@@ -2,7 +2,7 @@
 
 # Resource allocation and node selectors
 
-Most of the time, it is a good idea to run Polars on-premises on dedicated nodes, with only one
+Most of the time, it is a good idea to run Polars On-Prem on dedicated nodes, with only one
 worker pod per node.
 
 First, figure out the available resources on your nodes. This is usually lower than the actual node
@@ -26,9 +26,9 @@ worker:
           memory: 14.31GiB
 ```
 
-If your cluster has other workloads running on it, we still recommend running Polars on-premises on
+If your cluster has other workloads running on it, we still recommend running Polars On-Prem on
 dedicated nodes, and using node selectors and taints/tolerations to ensure that only Polars
-on-premises pods are scheduled on those nodes. For example, you can add a node selector, toleration,
+On-Prem pods are scheduled on those nodes. For example, you can add a node selector, toleration,
 and affinity rules like this:
 
 ```yaml

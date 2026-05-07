@@ -1,6 +1,6 @@
-# Exposing Polars on-premise
+# Exposing Polars On-Prem
 
-To use Polars on-premises from the Python client, the scheduler endpoint must be reachable from the
+To use Polars On-Prem from the Python client, the scheduler endpoint must be reachable from the
 client. By default, the chart creates a `ClusterIP` service for the scheduler, which is only
 reachable from within the cluster and through port-forwards:
 
