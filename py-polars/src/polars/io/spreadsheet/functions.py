@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from polars._typing import ExcelSpreadsheetEngine, FileSource, SchemaDict
 
 
-def _sources(source: FileSource) -> tuple[Any, bool]:
+def _sources(source: FileSource | memoryview[int]) -> tuple[Any, bool]:
     """Unpack any glob patterns, standardise file paths."""
     read_multiple_workbooks = True
     sources: list[Any] = []
@@ -111,7 +111,7 @@ def _unpack_read_results(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -132,7 +132,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -153,7 +153,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int,
     sheet_name: str,
@@ -176,7 +176,7 @@ def read_excel(
 # Literal[0] overlaps with the return value for other integers
 @overload
 def read_excel(  # type: ignore[overload-overlap]
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -197,7 +197,7 @@ def read_excel(  # type: ignore[overload-overlap]
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -218,7 +218,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: list[str] | tuple[str, ...],
@@ -240,7 +240,7 @@ def read_excel(
 @deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
 @deprecate_renamed_parameter("read_csv_options", "read_options", version="0.20.7")
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str, ...] | None = None,
