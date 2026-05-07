@@ -893,7 +893,7 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
 @pytest.mark.parametrize("predicate", [None, pl.col("a") % 2 == 1])
 def test_projection_pushdown_fastcount_27534(
     sink: Callable[[pl.DataFrame, io.BytesIO], None],
-    scan: Callable[[io.BytesIO], pl.LazyFrame],
+    scan: Callable[[bytes], pl.LazyFrame],
     slice: tuple[int, int] | None,
     predicate: pl.Expr | None,
 ) -> None:
