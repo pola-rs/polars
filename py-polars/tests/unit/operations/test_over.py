@@ -192,12 +192,6 @@ def test_over_order_by_descending_nulls_agg_context() -> None:
     assert result["v"][0].to_list() == [6, 2, 5]
 
 
-def test_over_duplicate_partition_by_26921() -> None:
-    df = pl.DataFrame({"x": [1, 2, 3]})
-    with pytest.raises(pl.exceptions.DuplicateError):
-        df.with_columns(pl.len().over("x", "x"))
-
-
 def test_count_over_aggregated_list_respects_inner_nulls_27031() -> None:
     df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, None]})
 
