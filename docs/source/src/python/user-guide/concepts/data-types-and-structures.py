@@ -48,9 +48,7 @@ print(df.tail(3))
 # --8<-- [end:tail]
 
 # --8<-- [start:sample]
-import random
-
-random.seed(42)  # For reproducibility.
+pl.set_random_seed(42)  # For reproducibility.
 
 print(df.sample(2))
 # --8<-- [end:sample]
