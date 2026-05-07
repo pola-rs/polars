@@ -4027,7 +4027,7 @@ def test_full_join_rewrite_to_right_with_cast() -> None:
     assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
 
 
-def test_full_join_coalesce_empty_suffix_succeds_27368() -> None:
+def test_full_join_coalesce_empty_suffix_succeeds_27368() -> None:
     df1 = pl.DataFrame({"a": [0, 1], "b": [10, 11]})
     df2 = pl.DataFrame({"a": [1, 2], "c": [11, 12]})
 
