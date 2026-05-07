@@ -6043,20 +6043,29 @@ Consider using {self}.implode() instead"""
         │ g   ┆ h   ┆ i   ┆ ghi │
         └─────┴─────┴─────┴─────┘
 
-        Null values are propagated.
+        Null values are propagated. This differs from `sum_horizontal`, which ignores
+        null values by default when summing across columns.
 
-        >>> df = pl.DataFrame({"x": [1, None, 3]})
-        >>> df.with_columns(pl.col("x").add(1).alias("x_plus_1"))
-        shape: (3, 2)
-        ┌──────┬──────────┐
-        │ x    ┆ x_plus_1 │
-        │ ---  ┆ ---      │
-        │ i64  ┆ i64      │
-        ╞══════╪══════════╡
-        │ 1    ┆ 2        │
-        │ null ┆ null     │
-        │ 3    ┆ 4        │
-        └──────┴──────────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1, 8, None],
+        ...         "b": [4, None, None],
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.sum_horizontal("a", "b").alias("sum_horizontal"),
+        ...     pl.col("a").add(pl.col("b")).alias("add"),
+        ... )
+        shape: (3, 4)
+        ┌──────┬──────┬────────────────┬──────┐
+        │ a    ┆ b    ┆ sum_horizontal ┆ add  │
+        │ ---  ┆ ---  ┆ ---            ┆ ---  │
+        │ i64  ┆ i64  ┆ i64            ┆ i64  │
+        ╞══════╪══════╪════════════════╪══════╡
+        │ 1    ┆ 4    ┆ 5              ┆ 5    │
+        │ 8    ┆ null ┆ 8              ┆ null │
+        │ null ┆ null ┆ 0              ┆ null │
+        └──────┴──────┴────────────────┴──────┘
         """
         return self.__add__(other)
 
