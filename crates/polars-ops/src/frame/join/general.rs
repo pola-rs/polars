@@ -44,8 +44,7 @@ pub fn _finish_join(
     }))?;
 
     drop(left_names);
-    // Safety: IR resolving should guarantee this passes
-    unsafe { df_left.hstack_mut_unchecked(df_right.columns()) };
+    df_left.hstack_mut(df_right.columns())?;
     Ok(df_left)
 }
 
@@ -56,44 +55,30 @@ pub fn _coalesce_full_join(
     suffix: Option<PlSmallStr>,
     df_left: &DataFrame,
 ) -> DataFrame {
+    // No need to allocate the schema because we already
+    // know for certain that the column name for left is `name`
+    // and for right is `name + suffix`
     let schema_left = if keys_left == keys_right {
         Arc::new(Schema::default())
     } else {
         df_left.schema().clone()
     };
 
+    let schema = df.schema().clone();
     let mut to_remove = Vec::with_capacity(keys_right.len());
-    let suffix = get_suffix(suffix);
 
-    let mut index_pairs: Vec<(usize, usize)> = Vec::with_capacity(keys_left.len());
+    let columns = unsafe { df.columns_mut() };
+    let suffix = get_suffix(suffix);
     for (l, r) in keys_left.iter().zip(keys_right.iter()) {
-        let pos_l = df
-            .columns()
-            .iter()
-            .enumerate()
-            .find(|(_, col)| col.name() == l.as_str())
-            .unwrap()
-            .0;
+        let pos_l = schema.get_full(l.as_str()).unwrap().0;
 
         let r = if l == r || schema_left.contains(r.as_str()) {
             _join_suffix_name(r.as_str(), suffix.as_str())
         } else {
             r.clone()
         };
-        let pos_r = df
-            .columns()
-            .iter()
-            .enumerate()
-            .skip(pos_l + 1)
-            .find(|(_, col)| col.name() == r.as_str())
-            .unwrap()
-            .0;
+        let pos_r = schema.get_full(&r).unwrap().0;
 
-        index_pairs.push((pos_l, pos_r));
-    }
-
-    let columns = unsafe { df.columns_mut() };
-    for (pos_l, pos_r) in index_pairs {
         let l = columns[pos_l].clone();
         let r = columns[pos_r].clone();
 
