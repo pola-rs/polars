@@ -1,5 +1,6 @@
+import io
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 import numpy as np
 import pytest
@@ -866,3 +867,35 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
         q.collect(),
         pl.DataFrame({"b": 1}, schema={"b": pl.get_index_type()}),
     )
+
+
+@pytest.mark.parametrize(
+    ("sink", "scan"),
+    [
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+    ],
+)
+@pytest.mark.parametrize("slice", [None, (0, 5)])
+@pytest.mark.parametrize("predicate", [None, pl.col("a") % 2 == 1])
+def test_projection_pushdown_fastcount_27534(
+    sink: Callable[[pl.DataFrame, io.BytesIO], None],
+    scan: Callable[[io.BytesIO], pl.LazyFrame],
+    slice: tuple[int, int] | None,
+    predicate: pl.Expr | None,
+) -> None:
+    df = pl.DataFrame({"a": range(10)})
+    buf = io.BytesIO()
+    sink(df, buf)
+    buf.seek(0)
+    lf = scan(buf)
+    if slice is not None:
+        df = df.slice(*slice)
+        lf = lf.slice(*slice)
+    if predicate is not None:
+        df = df.filter(predicate)
+        lf = lf.filter(predicate)
+
+    assert_frame_equal(lf.select(pl.len()).collect(), df.select(pl.len()))
+    assert_frame_equal(lf.collect(), df)
