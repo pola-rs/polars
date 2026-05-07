@@ -266,7 +266,7 @@ impl<'a> AggregationContext<'a> {
         self.state.rename(name);
     }
 
-    fn from_agg_state(
+    pub(crate) fn from_agg_state(
         agg_state: AggState,
         groups: Cow<'a, GroupPositions>,
     ) -> AggregationContext<'a> {
@@ -651,7 +651,7 @@ impl<'a> AggregationContext<'a> {
 
     /// Fixes groups for `AggregatedScalar` and `LiteralScalar` so that they point to valid
     /// data elements in the `AggState` values.
-    fn set_groups_for_undefined_agg_states(&mut self) {
+    pub(crate) fn set_groups_for_undefined_agg_states(&mut self) {
         match &self.state {
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
             AggState::AggregatedScalar(c) => {

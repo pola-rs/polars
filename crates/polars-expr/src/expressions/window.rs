@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
@@ -844,23 +843,20 @@ impl PhysicalExpr for WindowExpr {
                                         unsafe { validity.get_bit_unchecked(in_group_idx_a) };
                                     let is_valid_b =
                                         unsafe { validity.get_bit_unchecked(in_group_idx_b) };
+
+                                    if !(is_valid_a & is_valid_b) {
+                                        let mut cmp = is_valid_a.cmp(&is_valid_b);
+                                        if options.nulls_last {
+                                            cmp = cmp.reverse();
+                                        }
+                                        return cmp;
+                                    }
+
                                     let order_a = unsafe { arr.get_unchecked(in_group_idx_a) };
                                     let order_b = unsafe { arr.get_unchecked(in_group_idx_b) };
 
-                                    if !is_valid_a & !is_valid_b {
-                                        return Ordering::Equal;
-                                    }
-
                                     let mut cmp = order_a.cmp(&order_b);
-                                    if !is_valid_a {
-                                        cmp = Ordering::Less;
-                                    }
-                                    if !is_valid_b {
-                                        cmp = Ordering::Greater;
-                                    }
-                                    if options.descending
-                                        | ((!is_valid_a | !is_valid_b) & options.nulls_last)
-                                    {
+                                    if options.descending {
                                         cmp = cmp.reverse();
                                     }
                                     cmp

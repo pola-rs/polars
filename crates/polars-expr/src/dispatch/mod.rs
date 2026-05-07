@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_compute::rolling::QuantileMethod;
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, GroupPositions};
@@ -282,6 +283,7 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         F::Clip { has_min, has_max } => {
             map_as_slice!(misc::clip, has_min, has_max)
         },
+        F::Quantile { method } => map_as_slice!(misc::quantile, method),
         #[cfg(feature = "mode")]
         F::Mode { maintain_order } => map!(misc::mode, maintain_order),
         #[cfg(feature = "moment")]
@@ -589,6 +591,9 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         F::DropNans => wrap_groups!(groups_dispatch::drop_nans),
         F::DropNulls => wrap_groups!(groups_dispatch::drop_nulls),
 
+        F::Quantile { method } => {
+            wrap_groups!(groups_dispatch::quantile, (*method, v: QuantileMethod))
+        },
         #[cfg(feature = "moment")]
         F::Skew(bias) => wrap_groups!(groups_dispatch::skew, (*bias, v: bool)),
         #[cfg(feature = "moment")]

@@ -226,6 +226,13 @@ impl Hash for IRHashWrap<'_> {
                 hash_exprs(right_on, self.expr_arena, state);
                 options.hash(state);
             },
+            IR::Gather {
+                input: _,
+                idxs: _,
+                null_on_oob,
+            } => {
+                null_on_oob.hash(state);
+            },
             IR::HStack {
                 input: _,
                 exprs,
@@ -283,6 +290,18 @@ impl Hash for IRHashWrap<'_> {
                     function,
                     options,
                     output_name,
+                } => {
+                    function.hash(state);
+                    options.hash(state);
+                    output_name.hash(state);
+                },
+
+                UnoptimizedOperation::AnonymousColumnsUdf {
+                    function,
+                    options,
+                    output_name,
+                    fmt_str: _,
+                    ctx_schema: _,
                 } => {
                     function.hash(state);
                     options.hash(state);

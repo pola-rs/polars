@@ -27,6 +27,10 @@ impl DslPlan {
                 scratch.push(input_left);
                 scratch.push(input_right);
             },
+            Gather { input, idxs, .. } => {
+                scratch.push(input);
+                scratch.push(idxs);
+            },
             ExtContext { input, contexts } => {
                 scratch.push(input);
                 scratch.extend(contexts);

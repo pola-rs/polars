@@ -8,7 +8,7 @@ use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
-use polars_core::{SchemaExtPl, config};
+use polars_core::{ALLOW_RAYON_THREADS, SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
@@ -435,7 +435,27 @@ pub fn lower_ir(
                         .unwrap();
                         buffer
                     });
-                    let map = Arc::new(move |df| function.evaluate(df));
+
+                    let non_reentrant = match &function {
+                        FunctionIR::Opaque { .. } => false,
+                        #[cfg(feature = "python")]
+                        FunctionIR::OpaquePython { .. } => false,
+                        _ => true,
+                    };
+
+                    let map = Arc::new(move |df| {
+                        let _guard = RestoreGuard(ALLOW_RAYON_THREADS.replace(non_reentrant));
+
+                        struct RestoreGuard(bool);
+
+                        impl Drop for RestoreGuard {
+                            fn drop(&mut self) {
+                                ALLOW_RAYON_THREADS.set(self.0)
+                            }
+                        }
+
+                        function.evaluate(df)
+                    });
                     PhysNodeKind::InMemoryMap {
                         input: phys_input,
                         map,
@@ -1353,6 +1373,23 @@ pub fn lower_ir(
             }
         },
 
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => {
+            let input = *input;
+            let idxs = *idxs;
+            let null_on_oob = *null_on_oob;
+            let phys_input = lower_ir!(input)?;
+            let phys_idxs = lower_ir!(idxs)?;
+            PhysNodeKind::Gather {
+                input: phys_input,
+                idxs: phys_idxs,
+                null_on_oob,
+            }
+        },
+
         IR::Distinct { input, options } => {
             let input = *input;
             let options = options.clone();
@@ -1635,6 +1672,28 @@ pub fn lower_ir(
                             output_name,
                             format_str,
                         }
+                    }
+                },
+
+                UnoptimizedOperation::AnonymousColumnsUdf {
+                    function,
+                    options: _,
+                    output_name,
+                    fmt_str,
+                    ctx_schema: _,
+                } => {
+                    let func = function
+                        .clone()
+                        .materialize()
+                        .unwrap()
+                        .into_inner()
+                        .as_column_udf();
+                    let format_str = Some(format!("ANONYMOUS {fmt_str}"));
+                    PhysNodeKind::ColumnarFunction {
+                        inputs: trans_inputs,
+                        func,
+                        output_name,
+                        format_str,
                     }
                 },
             }
