@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import io
 import itertools
 import math
 import random
@@ -1781,3 +1782,39 @@ def test_join_asof_by_nulls_27165_2() -> None:
         .drop("group_right")
     )
     assert_frame_equal(actual, expected)
+
+
+def test_join_asof_maintain_order_left_27526() -> None:
+    N_IDS = 20
+    N_TS = 10_000
+    data = io.BytesIO()
+    metadata = io.BytesIO()
+
+    pl.DataFrame(
+        {
+            "id": [i for i in range(N_IDS) for _ in range(N_TS)],
+            "ts": [j for _ in range(N_IDS) for j in range(N_TS)],
+        }
+    ).sort("id", "ts").write_parquet(data)
+    pl.DataFrame(
+        {
+            "id": range(N_IDS),
+            "name": [f"name_{i}" for i in range(N_IDS)],
+        }
+    ).write_parquet(metadata)
+
+    joined = pl.scan_parquet(data.getvalue()).join(
+        pl.scan_parquet(metadata.getvalue()),
+        on="id",
+        how="left",
+        maintain_order="left_right",
+    )
+    q = joined.set_sorted("id", "ts").join_asof(
+        pl.scan_parquet(data.getvalue()).set_sorted("id", "ts"),
+        on="ts",
+        by="id",
+        check_sortedness=False,
+    )
+    assert q.collect(engine="streaming")["id"].is_sorted(), (
+        "expected asof_join to maintain left ordering"
+    )
