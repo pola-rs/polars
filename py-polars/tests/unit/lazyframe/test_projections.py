@@ -900,8 +900,7 @@ def test_projection_pushdown_fastcount_27534(
     df = pl.DataFrame({"a": range(10)})
     buf = io.BytesIO()
     sink(df, buf)
-    buf.seek(0)
-    lf = scan(buf)
+    lf = scan(buf.getvalue())
     if slice is not None:
         df = df.slice(*slice)
         lf = lf.slice(*slice)
