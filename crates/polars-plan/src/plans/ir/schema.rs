@@ -115,12 +115,16 @@ impl IR {
             ExtContext { schema, .. } => schema,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
-            UnoptimizedDispatch { inputs, operation } => {
+            UnoptimizedDispatch {
+                inputs,
+                arg_map,
+                operation,
+            } => {
                 let input_schemas = inputs
                     .iter()
                     .map(|input| arena.get(*input).schema(arena).into_owned())
                     .collect_vec();
-                return Cow::Owned(operation.schema(&input_schemas));
+                return Cow::Owned(operation.schema(&input_schemas, arg_map));
             },
             Invalid => unreachable!(),
         };
@@ -183,12 +187,16 @@ impl IR {
             },
             #[cfg(feature = "merge_sorted")]
             MergeSorted { input_left, .. } => IR::schema_with_cache(*input_left, arena, cache),
-            UnoptimizedDispatch { inputs, operation } => {
+            UnoptimizedDispatch {
+                inputs,
+                arg_map,
+                operation,
+            } => {
                 let input_schemas = inputs
                     .iter()
                     .map(|input| IR::schema_with_cache(*input, arena, cache))
                     .collect_vec();
-                operation.schema(&input_schemas)
+                operation.schema(&input_schemas, arg_map)
             },
             Invalid => unreachable!(),
         };

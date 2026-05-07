@@ -284,27 +284,32 @@ impl Hash for IRHashWrap<'_> {
             },
             IR::UnoptimizedDispatch {
                 inputs: _,
+                arg_map: _,
                 operation,
             } => match operation {
                 UnoptimizedOperation::ColumnarFunction {
                     function,
                     options,
+                    arg_names,
                     output_name,
                 } => {
                     function.hash(state);
                     options.hash(state);
+                    arg_names.hash(state);
                     output_name.hash(state);
                 },
 
                 UnoptimizedOperation::AnonymousColumnsUdf {
                     function,
                     options,
+                    arg_names,
                     output_name,
                     fmt_str: _,
                     ctx_schema: _,
                 } => {
                     function.hash(state);
                     options.hash(state);
+                    arg_names.hash(state);
                     output_name.hash(state);
                 },
             },
