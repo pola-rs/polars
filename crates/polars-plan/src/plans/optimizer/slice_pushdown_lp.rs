@@ -895,15 +895,32 @@ impl SlicePushDown {
                     schema,
                     options,
                 },
-                _,
+                opt_state,
             ) => {
-                // Slice can always be pushed down for horizontal concatenation
+                // In non-strict mode, HConcat pads shorter inputs with nulls.
+                // Keep the original slice above HConcat so padding happens before slicing.
+                let (subplan_slice, above_slice) = if options.strict {
+                    (opt_state, None)
+                } else {
+                    (
+                        opt_state
+                            .filter(|s| s.offset >= 0)
+                            .and_then(|s| s.len.checked_add(s.offset.try_into().unwrap()))
+                            .map(|len| State { offset: 0, len }),
+                        opt_state,
+                    )
+                };
+
+                for input in &inputs {
+                    let input_lp = self.pushdown(*input, subplan_slice, lp_arena, expr_arena)?;
+                    lp_arena.replace(*input, input_lp);
+                }
                 let lp = HConcat {
                     inputs,
                     schema,
                     options,
                 };
-                self.pushdown_and_continue(lp, state, lp_arena, expr_arena)
+                self.no_pushdown_finish_opt(lp, above_slice, lp_arena)
             },
             (lp @ Sink { .. }, _) | (lp @ SinkMultiple { .. }, _) => {
                 // Slice can always be pushed down for sinks

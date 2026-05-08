@@ -511,3 +511,35 @@ def test_concat_horizontal_lazy_strict_raises_shape_error_27415(
             }
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("heights", "offset", "length"),
+    [
+        ([5, 3], -2, 2),
+        ([5, 3], -2, 5),
+        ([5, 3, 2], -2, 5),
+        ([5, 3], 2, 5),
+        ([5, 5], -2, 5),
+    ],
+)
+def test_concat_horizontal_lazy_slice_matches_eager(
+    heights: list[int], offset: int, length: int
+) -> None:
+    lfs = [pl.LazyFrame({f"c{i}": list(range(h))}) for i, h in enumerate(heights)]
+    eager = pl.concat([lf.collect() for lf in lfs], how="horizontal").slice(
+        offset, length
+    )
+    lazy = pl.concat(lfs, how="horizontal").slice(offset, length).collect()
+
+    assert_frame_equal(eager, lazy)
+
+
+def test_concat_horizontal_lazy_negative_slice_not_pushed_down() -> None:
+    a = pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
+    b = pl.LazyFrame({"y": [10, 20, 30]})
+
+    plan = pl.concat([a, b], how="horizontal").tail(2).explain()
+
+    assert "SLICE" in plan
+    assert plan.index("SLICE") < plan.index("HCONCAT")

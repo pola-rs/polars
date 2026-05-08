@@ -148,7 +148,7 @@ def test_hconcat_slice_pushdown() -> None:
         pl.LazyFrame({f"column_{i}": list(range(i, i + 10))}) for i in range(num_dfs)
     ]
 
-    out = pl.concat(lfs, how="horizontal").slice(2, 3)
+    out = pl.concat(lfs, how="horizontal", strict=True).slice(2, 3)
     plan = out.explain()
 
     assert not plan.startswith("SLICE")
