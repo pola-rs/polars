@@ -1449,6 +1449,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 #[cfg(feature = "csv")]
                 if out_edge.projection() == Projection::Len
                     && let FileScanIR::Csv { .. } = scan_type.as_ref()
+                    && unified_scan_args.pre_slice.is_none()
                     && (predicate.is_none()
                         || matches!(
                             predicate_file_skip_applied,
