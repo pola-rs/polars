@@ -1,11 +1,15 @@
 use std::fmt::Write;
 
 use polars_core::datatypes::AnyValue;
-use polars_core::prelude::{DataType, TimeUnit, TimeZone};
+use polars_core::prelude::{DataType, ExplodeOptions, TimeUnit, TimeZone};
 use polars_core::series::Series;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
+use pyo3::types::PyDate;
+use pyo3::types::PyList;
+#[cfg(feature = "dtype-datetime")]
+use pyo3::types::{PyDateTime, PyTzInfo};
 
 use crate::prelude::*;
 
@@ -83,6 +87,58 @@ fn series_to_pyarrow_list(s: &polars_core::prelude::Series) -> Option<String> {
     list_repr.pop();
     list_repr.push(']');
     Some(list_repr)
+}
+
+#[cfg(feature = "is_in")]
+pub(crate) enum IsInHaystack {
+    Empty, // fast path for when haystack is empty; returns False
+    Series(Series),
+}
+
+#[cfg(feature = "is_in")]
+pub(crate) fn needle_isin_haystack(lv: &LiteralValue, nulls_equal: bool) -> Option<IsInHaystack> {
+    if !lv.get_datatype().is_list() {
+        return None;
+    }
+
+    let mut haystack_series = if let LiteralValue::Series(s) = lv
+        && s.dtype().is_list()
+        && s.len() == 1
+    {
+        if s.null_count() == 0 {
+            s.explode(ExplodeOptions {
+                empty_as_null: false,
+                keep_nulls: false,
+            })
+            .ok()?
+        } else {
+            Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
+        }
+    } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
+        s
+    } else if lv.is_null() {
+        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
+    } else {
+        return None;
+    };
+
+    let converted_len = haystack_series.len()
+        - if nulls_equal {
+            0
+        } else {
+            haystack_series.null_count()
+        };
+
+    if converted_len > LIST_ITEM_LIMIT {
+        return None;
+    }
+    if converted_len == 0 {
+        return Some(IsInHaystack::Empty);
+    }
+    if !nulls_equal {
+        haystack_series = haystack_series.drop_nulls();
+    }
+    Some(IsInHaystack::Series(haystack_series))
 }
 
 // convert to a pyarrow expression that can be evaluated with pythons eval
@@ -181,55 +237,12 @@ pub fn predicate_to_pa(
             let col = predicate_to_pa(input.first()?.node(), expr_arena, args)?;
             let rhs_node = input.get(1)?.node();
 
-            // Explode from length-1 list RHS.
-            let values = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
-                && lv.get_datatype().is_list()
-            {
-                use polars_core::prelude::ExplodeOptions;
-
-                let mut haystack_series = if let LiteralValue::Series(s) = lv
-                    && s.dtype().is_list()
-                    && s.len() == 1
-                {
-                    if s.null_count() == 0 {
-                        s.explode(ExplodeOptions {
-                            empty_as_null: false,
-                            keep_nulls: false,
-                        })
-                        .ok()?
-                    } else {
-                        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
-                    }
-                } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
-                    s
-                } else if lv.is_null() {
-                    Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
-                } else {
-                    return None;
-                };
-
-                let converted_len = haystack_series.len()
-                    - if *nulls_equal {
-                        0
-                    } else {
-                        haystack_series.null_count()
-                    };
-
-                if converted_len > LIST_ITEM_LIMIT {
-                    return None;
-                }
-
-                if converted_len == 0 {
-                    return Some("pa.compute.scalar(False)".to_string());
-                }
-
-                if !*nulls_equal {
-                    haystack_series = haystack_series.drop_nulls();
-                }
-
-                series_to_pyarrow_list(&haystack_series)?
-            } else {
+            let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
                 return None;
+            };
+            let values = match needle_isin_haystack(lv, *nulls_equal)? {
+                IsInHaystack::Empty => return Some("pa.compute.scalar(False)".to_string()),
+                IsInHaystack::Series(s) => series_to_pyarrow_list(&s)?,
             };
 
             Some(format!("({col}).isin({values})"))
@@ -310,52 +323,42 @@ fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, P
         },
         #[cfg(feature = "dtype-date")]
         AnyValue::Date(days) => {
-            let dt_mod = py.import("datetime").ok()?;
-            let epoch = dt_mod
-                .getattr("date")
-                .ok()?
-                // Unix epoch start
-                .call1((1970i32, 1i32, 1i32))
-                .ok()?;
-            let delta = dt_mod
-                .getattr("timedelta")
-                .ok()?
-                .call1((days as i64,))
-                .ok()?;
-            epoch.call_method1("__add__", (delta,)).ok()
+            use chrono::Datelike;
+            let date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1)?
+                .checked_add_signed(chrono::Duration::days(days as i64))?;
+            PyDate::new(py, date.year(), date.month() as u8, date.day() as u8)
+                .ok()
+                .map(|b| b.into_any())
         },
         #[cfg(feature = "dtype-datetime")]
         AnyValue::Datetime(value, time_unit, time_zone) => {
-            let dt_mod = py.import("datetime").ok()?;
-            let epoch = dt_mod
-                .getattr("datetime")
-                .ok()?
-                // Unix epoch start
-                .call1((1970i32, 1i32, 1i32))
-                .ok()?;
+            use chrono::{Datelike, Timelike};
             let micros: i64 = match time_unit {
                 TimeUnit::Nanoseconds => value / 1000,
                 TimeUnit::Microseconds => value,
                 TimeUnit::Milliseconds => value * 1000,
             };
-            let kwargs = PyDict::new(py);
-            kwargs.set_item("microseconds", micros).ok()?;
-            let delta = dt_mod
-                .getattr("timedelta")
-                .ok()?
-                .call((), Some(&kwargs))
-                .ok()?;
-            let naive = epoch.call_method1("__add__", (delta,)).ok()?;
-            if let Some(tz) = time_zone {
-                // Datetimes have to get standardized to timezone aware
+            let dt = chrono::DateTime::<chrono::Utc>::from_timestamp_micros(micros)?.naive_utc();
+            let tzinfo: Option<Bound<'py, PyTzInfo>> = if let Some(tz) = time_zone {
                 let zi = py.import("zoneinfo").ok()?;
-                let tz_obj = zi.getattr("ZoneInfo").ok()?.call1((tz.to_string(),)).ok()?;
-                let kw = PyDict::new(py);
-                kw.set_item("tzinfo", tz_obj).ok()?;
-                naive.call_method("replace", (), Some(&kw)).ok()
+                let obj = zi.getattr("ZoneInfo").ok()?.call1((tz.to_string(),)).ok()?;
+                Some(obj.cast_into().ok()?)
             } else {
-                Some(naive)
-            }
+                None
+            };
+            PyDateTime::new(
+                py,
+                dt.year(),
+                dt.month() as u8,
+                dt.day() as u8,
+                dt.hour() as u8,
+                dt.minute() as u8,
+                dt.second() as u8,
+                dt.nanosecond() / 1000,
+                tzinfo.as_ref(),
+            )
+            .ok()
+            .map(|b| b.into_any())
         },
         // TODO: Worth supporting?
         AnyValue::Binary(_) | AnyValue::List(_) => None,
@@ -418,55 +421,12 @@ pub fn aexpr_to_pyarrow<'py>(
             let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena)?;
             let rhs_node = input.get(1)?.node();
 
-            let values_list = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
-                && lv.get_datatype().is_list()
-            {
-                use polars_core::prelude::ExplodeOptions;
-
-                let mut haystack_series = if let LiteralValue::Series(s) = lv
-                    && s.dtype().is_list()
-                    && s.len() == 1
-                {
-                    if s.null_count() == 0 {
-                        s.explode(ExplodeOptions {
-                            empty_as_null: false,
-                            keep_nulls: false,
-                        })
-                        .ok()?
-                    } else {
-                        Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
-                    }
-                } else if let Some(AnyValue::List(s)) = lv.to_any_value() {
-                    s
-                } else if lv.is_null() {
-                    Series::full_null(PlSmallStr::EMPTY, 0, &DataType::Null)
-                } else {
-                    return None;
-                };
-
-                let converted_len = haystack_series.len()
-                    - if *nulls_equal {
-                        0
-                    } else {
-                        haystack_series.null_count()
-                    };
-
-                if converted_len > LIST_ITEM_LIMIT {
-                    return None;
-                }
-
-                // Fast path for empty lists
-                if converted_len == 0 {
-                    return pc.call_method1("scalar", (false,)).ok();
-                }
-
-                if !*nulls_equal {
-                    haystack_series = haystack_series.drop_nulls();
-                }
-
-                series_to_py_list(py, &haystack_series)?
-            } else {
+            let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
                 return None;
+            };
+            let values_list = match needle_isin_haystack(lv, *nulls_equal)? {
+                IsInHaystack::Empty => return pc.call_method1("scalar", (false,)).ok(),
+                IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
             };
 
             col.call_method1("isin", (values_list,)).ok()
