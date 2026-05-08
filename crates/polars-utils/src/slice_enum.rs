@@ -164,7 +164,7 @@ impl From<Slice> for Range<usize> {
                 offset
                     ..offset
                         .checked_add(len)
-                        .or(cfg!(feature = "bigidx").then_some(usize::MAX))
+                        .or((len == usize::MAX).then_some(usize::MAX))
                         .unwrap()
             },
             Slice::Negative { .. } => panic!("cannot convert negative slice into range"),
