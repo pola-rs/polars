@@ -236,7 +236,7 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    # Verify: partial predicate was pushed to pyarrow
+    # partial predicate was pushed to pyarrow
     binop_pred = 'converted pyarrow predicate: Comparison { left: Column("a"), op: Gt, right: Literal(Int(1)) }'
     assert binop_pred in capture
 
