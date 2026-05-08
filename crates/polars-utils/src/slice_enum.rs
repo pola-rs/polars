@@ -160,7 +160,13 @@ impl From<Slice> for (i128, i128) {
 impl From<Slice> for Range<usize> {
     fn from(value: Slice) -> Self {
         match value {
-            Slice::Positive { offset, len } => offset..offset.checked_add(len).unwrap(),
+            Slice::Positive { offset, len } => {
+                offset
+                    ..offset
+                        .checked_add(len)
+                        .or(cfg!(feature = "bigidx").then_some(usize::MAX))
+                        .unwrap()
+            },
             Slice::Negative { .. } => panic!("cannot convert negative slice into range"),
         }
     }
