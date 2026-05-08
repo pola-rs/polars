@@ -3,8 +3,6 @@ use std::sync::Arc;
 use polars_utils::live_timer::{LiveTimer, LiveTimerSession};
 use polars_utils::relaxed_cell::RelaxedCell;
 
-pub const HEAD_RESPONSE_SIZE_ESTIMATE: u64 = 0;
-
 #[derive(Debug, Default, Clone)]
 pub struct IOMetrics {
     pub io_timer: LiveTimer,
