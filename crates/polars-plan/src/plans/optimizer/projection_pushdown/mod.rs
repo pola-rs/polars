@@ -23,8 +23,8 @@ use crate::plans::optimizer::projection_pushdown::edge::{
 };
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
-    AExpr, ArenaExprIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder, OutputName,
-    det_join_schema,
+    AExpr, ArenaExprIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr,
+    OutputName, det_join_schema,
 };
 use crate::prelude::{DistinctOptionsIR, ProjectionOptions};
 use crate::traversal::edge_provider::NodeEdgesProvider;
@@ -136,55 +136,60 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
         edges: &mut dyn crate::traversal::edge_provider::NodeEdgesProvider<Self::Edge>,
     ) -> std::ops::ControlFlow<Self::BreakValue> {
         let out_edge = &mut edges.outputs()[0];
+        let parent_key_and_port = out_edge.parent_key_and_port();
 
         // This node was unlinked. We skip post-visit but remove the deletion mark,
-        // as otherwise the parent node will not be visited.
-        if out_edge.parent_key_and_port().is_deleted() {
+        // as otherwise the parent node will not be called for post_visit.
+        if parent_key_and_port.is_deleted() {
             out_edge.parent_key_and_port_mut().set_deleted(false);
             return ControlFlow::Continue(());
         }
 
-        let parent_key_and_port = out_edge.parent_key_and_port();
+        match storage.get(key) {
+            IR::HConcat { inputs, .. } => {
+                debug_assert_eq!(inputs.len(), edges.inputs().len());
+            },
 
-        'patch_ext_context: {
-            let IR::ExtContext { schema, .. } = storage.get(key) else {
-                break 'patch_ext_context;
-            };
-
-            let schema = match storage.get(parent_key_and_port.node) {
-                // Replace simple-projection added from pre-visit
-                IR::SimpleProjection { columns, .. } => columns.clone(),
-                // Wrap in `Select {}` if it is the root node, otherwise it only returns cols from first input.
-                _ if parent_key_and_port.node == self.default_edge.parent_key_and_port().node => {
-                    schema.clone()
-                },
-                _ => break 'patch_ext_context,
-            };
-
-            let mut exprs = Vec::with_capacity(schema.len());
-            let schema = schema.clone();
-            exprs.extend(
-                schema
-                    .iter_names_cloned()
-                    .map(|name| ExprIR::from_column_name(name, self.expr_arena)),
-            );
-
-            let ext_ctx_ir = storage.take(key);
-            let new_key = storage.add(ext_ctx_ir);
-
-            storage.replace(
-                key,
-                IR::Select {
-                    input: new_key,
-                    expr: exprs,
-                    schema,
-                    options: ProjectionOptions {
-                        run_parallel: false,
-                        duplicate_check: false,
-                        should_broadcast: true,
+            IR::ExtContext { schema, .. } => {
+                let schema = match storage.get(parent_key_and_port.node) {
+                    // Replace simple-projection added from pre-visit
+                    IR::SimpleProjection { columns, .. } => columns.clone(),
+                    // Wrap in `Select {}` if it is the root node, otherwise it only returns cols from first input.
+                    _ if parent_key_and_port.node
+                        == self.default_edge.parent_key_and_port().node =>
+                    {
+                        schema.clone()
                     },
-                },
-            );
+                    _ => return ControlFlow::Continue(()),
+                };
+
+                let mut exprs = Vec::with_capacity(schema.len());
+                let schema = schema.clone();
+                exprs.extend(
+                    schema
+                        .iter_names_cloned()
+                        .map(|name| ExprIR::from_column_name(name, self.expr_arena)),
+                );
+
+                let ext_ctx_ir = storage.take(key);
+                let new_key = storage.add(ext_ctx_ir);
+
+                storage.replace(
+                    key,
+                    IR::Select {
+                        input: new_key,
+                        expr: exprs,
+                        schema,
+                        options: ProjectionOptions {
+                            run_parallel: false,
+                            duplicate_check: false,
+                            should_broadcast: true,
+                        },
+                    },
+                );
+            },
+
+            _ => {},
         }
 
         ControlFlow::Continue(())
@@ -255,6 +260,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             .parent_key_and_port_mut()
                             .attach_simple_projection(Arc::new(schema), storage);
                     }
+
+                    reuse_names_alloc(edges);
 
                     return;
                 };
@@ -524,6 +531,8 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     }
                 {
                     let name = exprs[0].output_name().clone();
+                    // Force alias, this way downstream doesn't need to handle name when mutating
+                    // the AExpr node.
                     exprs[0].set_alias(name);
                     *edges.inputs()[0].projection_mut() = Projection::Len;
                     reuse_names_alloc(edges);
@@ -677,9 +686,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let output_schema_arc = output_schema;
 
-                if exprs.len() != orig_exprs_len
-                    || input_names_projection.len() != input_schema.len()
-                {
+                let has_dropped_input_column = input_names_projection.len() != input_schema.len();
+
+                if exprs.len() != orig_exprs_len || has_dropped_input_column {
                     let output_schema = Arc::make_mut(output_schema_arc);
                     let mut orig_schema = mem::take(output_schema);
 
@@ -706,18 +715,17 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         )
                         .map(Arc::new)
                     })
-                    .or_else(|| {
-                        (out_edge.projection() == Projection::All
-                            && input_names_projection.len() != input_schema.len())
-                        .then_some(original_schema)
-                    })
+                    .or(
+                        (has_dropped_input_column && out_edge.projection() == Projection::All)
+                            .then_some(original_schema),
+                    )
                 {
                     out_edge
                         .parent_key_and_port_mut()
                         .attach_simple_projection(schema, storage);
                 }
 
-                if input_names_projection.len() != input_schema.len() {
+                if has_dropped_input_column {
                     mem::swap(out_edge.names_mut(), input_names_projection);
                     let names = out_edge.take_names();
                     *edges.inputs()[0].projection_state_mut() = ProjectionState {
@@ -752,23 +760,24 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         break 'len_to_predicate_sum;
                     }
 
-                    let Some(expr) = extract_select_len_expr(
+                    let Some(select_len_ae_node) = extract_select_len_expr(
                         storage.get_mut(out_edge.parent_key_and_port().node),
                         self.expr_arena,
-                    ) else {
+                    )
+                    .map(|eir| eir.node()) else {
                         break 'len_to_predicate_sum;
                     };
 
-                    let sum_expr = self
-                        .expr_arena
-                        .add(AExpr::Agg(IRAggExpr::Sum(predicate_node)));
-
-                    expr.set_node(sum_expr);
+                    self.expr_arena.replace(
+                        select_len_ae_node,
+                        AExpr::Agg(IRAggExpr::Sum(predicate_node)),
+                    );
 
                     *out_edge.projection_mut() = Projection::Names;
                     let names = out_edge.names_mut();
                     names.clear();
-                    names.extend(aexpr_to_leaf_names_iter(sum_expr, self.expr_arena).cloned());
+                    names
+                        .extend(aexpr_to_leaf_names_iter(predicate_node, self.expr_arena).cloned());
 
                     unlink_current_node_and_return!(input)
                 }
@@ -780,6 +789,37 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     .extend(aexpr_to_leaf_names_iter(predicate_node, self.expr_arena).cloned());
 
                 pushdown_with_added_names!(len_before_added_names)
+            },
+
+            IR::Gather {
+                null_on_oob, idxs, ..
+            } => {
+                assert_eq!(num_input_edges, 2);
+
+                // `lf.gather(idxs, null_on_oob=True).select(len())` -> `idxs.select(len())`
+                if out_edge.projection() == Projection::Len && *null_on_oob {
+                    let idxs_node = *idxs;
+                    let [idxs_edge, out_edge] = edges.get_input_output_mut(1, 0);
+
+                    let parent_key_and_port = out_edge.parent_key_and_port();
+
+                    *storage
+                        .get_mut(parent_key_and_port.node)
+                        .inputs_mut()
+                        .nth(parent_key_and_port.idx)
+                        .unwrap() = idxs_node;
+
+                    mem::swap(idxs_edge, out_edge);
+                    out_edge.parent_key_and_port_mut().set_deleted(true);
+                    return;
+                }
+
+                let (..) = projected_names_subset_or_return!();
+
+                *edges.inputs()[0].projection_state_mut() = ProjectionState {
+                    projection: Projection::Names,
+                    names: out_edge.take_names(),
+                };
             },
 
             IR::Join {
@@ -1203,9 +1243,93 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 pushdown_with_added_names!(len_before_added_names)
             },
 
-            IR::HConcat {
-                inputs, options, ..
-            } => {
+            IR::HConcat { .. } => {
+                let [
+                    IR::HConcat {
+                        inputs, options, ..
+                    },
+                    parent_ir,
+                ] = storage.get_disjoint_mut([key, out_edge.parent_key_and_port().node])
+                else {
+                    unreachable!()
+                };
+
+                let strict = options.strict;
+
+                // concat_horizontal([lf, ..]).select(len())
+                // -> concat_horizontal([lf.select(len().alias(i)) for i, lf in enumerate(..)]).select(max_horizontal('*'))
+                if out_edge.projection() == Projection::Len
+                    && !strict
+                    && let Some(select_len_ae_node) =
+                        extract_select_len_expr(parent_ir, self.expr_arena).map(|eir| eir.node())
+                {
+                    let mut max_horizontal_inputs = Vec::with_capacity(inputs.len());
+                    let mut new_output_schema = Schema::with_capacity(inputs.len());
+                    let mut new_inputs = mem::take(inputs);
+
+                    for (i, input_ir_node) in new_inputs.iter_mut().enumerate() {
+                        let name = format_pl_smallstr!("__POLARS_{:010x}", i);
+
+                        let exprs = vec![ExprIR::new(
+                            self.expr_arena.add(AExpr::Len),
+                            OutputName::Alias(name.clone()),
+                        )];
+                        max_horizontal_inputs
+                            .push(ExprIR::from_column_name(name.clone(), self.expr_arena));
+                        new_output_schema.insert(name.clone(), DataType::IDX_DTYPE);
+
+                        let select_ir_node = storage.add(IR::Select {
+                            input: *input_ir_node,
+                            expr: exprs,
+                            schema: Arc::new(Schema::from_iter([(name, DataType::IDX_DTYPE)])),
+                            options: ProjectionOptions {
+                                run_parallel: false,
+                                duplicate_check: false,
+                                should_broadcast: false,
+                            },
+                        });
+
+                        *input_ir_node = select_ir_node;
+
+                        let in_edge = &mut edges.inputs()[i];
+                        *in_edge.projection_mut() = Projection::Len;
+                        *in_edge.parent_key_and_port_mut() = ParentKeyAndPort {
+                            node: select_ir_node,
+                            idx: 0,
+                        };
+
+                        debug_assert!(
+                            extract_select_len_expr(
+                                storage.get_mut(in_edge.parent_key_and_port().node),
+                                self.expr_arena
+                            )
+                            .is_some()
+                        );
+                    }
+
+                    let IR::HConcat { inputs, schema, .. } = storage.get_mut(key) else {
+                        unreachable!()
+                    };
+
+                    *inputs = new_inputs;
+                    *schema = Arc::new(new_output_schema);
+
+                    let function = IRFunctionExpr::MaxHorizontal;
+                    let options = function.function_options();
+
+                    self.expr_arena.replace(
+                        select_len_ae_node,
+                        AExpr::Function {
+                            input: max_horizontal_inputs,
+                            function,
+                            options,
+                        },
+                    );
+
+                    reuse_names_alloc(edges);
+                    return;
+                }
+
                 let (..) = projected_names_subset_or_return!();
 
                 let mut inputs = mem::take(inputs);
@@ -1217,6 +1341,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let mut idx: usize = 0;
                 let mut deleted: usize = 0;
+                let mut last_kept_input: usize = usize::MAX;
 
                 inputs.retain(|input_node| {
                     idx += 1;
@@ -1243,7 +1368,11 @@ impl ProjectionPushdownVisitor<'_, '_> {
                         );
 
                         if hconcat_projected_names.len() == base_new_names_len {
-                            if strict && !self.maintain_errors {
+                            if strict
+                                && polars_config::config()
+                                    .projection_pushdown_prune_strict_hconcat_inputs()
+                                && !self.maintain_errors
+                            {
                                 break 'set_keep;
                             }
 
@@ -1274,14 +1403,42 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     if !keep {
                         in_port.set_deleted(true);
                         deleted += 1;
-                    } else if deleted != 0 {
-                        in_port.idx = idx - deleted;
+                    } else {
+                        last_kept_input = idx;
+
+                        if deleted != 0 {
+                            in_port.idx = idx - deleted;
+                        }
                     }
 
                     keep
                 });
 
                 let new_inputs = inputs;
+
+                if new_inputs.len() == 1 {
+                    let input_node = new_inputs.into_iter().next().unwrap();
+                    let [in_edge, out_edge] = edges.get_input_output_mut(last_kept_input, 0);
+                    let parent_key_and_port = out_edge.parent_key_and_port();
+
+                    *storage
+                        .get_mut(parent_key_and_port.node)
+                        .inputs_mut()
+                        .nth(parent_key_and_port.idx)
+                        .unwrap() = input_node;
+
+                    // Only update parent node info; projection is already set from above.
+                    mem::swap(
+                        in_edge.parent_key_and_port_mut(),
+                        out_edge.parent_key_and_port_mut(),
+                    );
+
+                    edges.outputs()[0]
+                        .parent_key_and_port_mut()
+                        .set_deleted(true);
+                    return;
+                }
+
                 let IR::HConcat { inputs, schema, .. } = storage.get_mut(key) else {
                     unreachable!()
                 };
@@ -1289,20 +1446,12 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 Arc::make_mut(schema).retain(|name, _| hconcat_projected_names.contains(name));
 
-                if hconcat_projected_names.len() != projected_names.len() {
+                if let Some(projected_schema) =
+                    compute_simple_projection_schema(projected_names.as_slice(), schema, false)
+                {
                     edges.outputs()[0]
                         .parent_key_and_port_mut()
-                        .attach_simple_projection(
-                            Arc::new(
-                                compute_simple_projection_schema(
-                                    projected_names.as_slice(),
-                                    schema,
-                                    false,
-                                )
-                                .unwrap(),
-                            ),
-                            storage,
-                        );
+                        .attach_simple_projection(Arc::new(projected_schema), storage);
                 }
             },
 
@@ -1329,6 +1478,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 #[cfg(feature = "csv")]
                 if out_edge.projection() == Projection::Len
                     && let FileScanIR::Csv { .. } = scan_type.as_ref()
+                    && unified_scan_args.pre_slice.is_none()
                     && (predicate.is_none()
                         || matches!(
                             predicate_file_skip_applied,

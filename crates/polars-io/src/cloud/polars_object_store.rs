@@ -12,7 +12,6 @@ use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
-use crate::metrics::HEAD_RESPONSE_SIZE_ESTIMATE;
 use crate::pl_async::{
     self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, get_download_chunk_size,
     tune_with_concurrency_budget, with_concurrency_budget,
@@ -436,10 +435,7 @@ impl PolarsObjectStore {
         with_concurrency_budget(1, || {
             self.exec_with_rebuild_retry_on_err(|s| {
                 async move {
-                    let head_result = self
-                        .io_metrics()
-                        .record_io_read(HEAD_RESPONSE_SIZE_ESTIMATE, s.head(path))
-                        .await;
+                    let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;
 
                     if head_result.is_err() {
                         // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
@@ -447,7 +443,7 @@ impl PolarsObjectStore {
                         let get_range_0_1_result = self
                             .io_metrics()
                             .record_io_read(
-                                HEAD_RESPONSE_SIZE_ESTIMATE + 1,
+                                0,
                                 s.get_opts(
                                     path,
                                     object_store::GetOptions {

@@ -11,6 +11,7 @@ use arrow::array::ArrayRef;
 use polars_core::POOL;
 use polars_core::utils::_set_partition_size;
 use polars_utils::index::ChunkId;
+use polars_utils::unique_column_name;
 pub(super) use single_keys::*;
 pub use single_keys_dispatch::SeriesJoin;
 #[cfg(feature = "asof_join")]
@@ -198,17 +199,20 @@ pub trait JoinDispatch: IntoDf {
         };
 
         let coalesce = args.coalesce.coalesce(&JoinType::Full);
-        let out = _finish_join(df_left, df_right, args.suffix.clone());
         if coalesce {
+            let tmp_right_name = unique_column_name();
+            let mut df_right = df_right;
+            df_right.rename(s_right.name().as_str(), tmp_right_name.clone())?;
+            let out = _finish_join(df_left, df_right, args.suffix.clone())?;
             Ok(_coalesce_full_join(
-                out?,
+                out,
                 &[s_left.name().clone()],
-                &[s_right.name().clone()],
+                &[tmp_right_name],
                 args.suffix,
                 df_self,
             ))
         } else {
-            out
+            _finish_join(df_left, df_right, args.suffix.clone())
         }
     }
 }

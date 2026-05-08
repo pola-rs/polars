@@ -516,7 +516,7 @@ pub enum PhysNodeKind {
     },
 
     Gather {
-        target: PhysStream,
+        input: PhysStream,
         idxs: PhysStream,
         null_on_oob: bool,
     },
@@ -689,10 +689,10 @@ fn visit_node_inputs_mut(
                 visit(input_right);
             },
 
-            PhysNodeKind::Gather { target, idxs, .. } => {
-                rec!(target.node);
+            PhysNodeKind::Gather { input, idxs, .. } => {
+                rec!(input.node);
                 rec!(idxs.node);
-                visit(target);
+                visit(input);
                 visit(idxs);
             },
 

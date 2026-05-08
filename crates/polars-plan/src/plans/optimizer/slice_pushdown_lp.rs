@@ -1,54 +1,37 @@
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::scratch_vec::{ScratchUnitVec, ScratchVec};
 use polars_utils::slice_enum::Slice;
 use recursive::recursive;
 
 use crate::plans::optimizer::slice_pushdown_expr;
 use crate::prelude::*;
 
-mod inner {
-    use polars_core::prelude::ScratchHashSet;
-    use polars_utils::arena::Node;
-    use polars_utils::idx_vec::UnitVec;
-    use polars_utils::scratch_vec::ScratchVec;
-    use polars_utils::unitvec;
+pub(super) struct SlicePushDown {
+    nodes_scratch: ScratchUnitVec<Node>,
+    maintain_errors: bool,
+    pub(super) slice_node_in_optimized_plan: bool,
+    pub(super) ae_nodes_scratch: ScratchVec<Node>,
+    pub(super) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
+    pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchHashSet<Node>,
+}
 
-    use crate::plans::optimizer::slice_pushdown_expr;
-
-    pub struct SlicePushDown {
-        scratch: UnitVec<Node>,
-        pub(super) maintain_errors: bool,
-        pub(crate) slice_node_in_optimized_plan: bool,
-        pub(crate) ae_nodes_scratch: ScratchVec<Node>,
-        pub(crate) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
-        pub(crate) ae_slice_pd_direct_col_slice_nodes: ScratchHashSet<Node>,
-    }
-
-    impl SlicePushDown {
-        pub fn new() -> Self {
-            Self {
-                scratch: unitvec![],
-                // We don't maintain errors on slice to make the behavior predictable across engines.
-                //
-                // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
-                // the new-streaming engine still may not error due to early-stopping.
-                maintain_errors: false,
-                slice_node_in_optimized_plan: false,
-                ae_nodes_scratch: ScratchVec::default(),
-                ae_slice_pd_state_scratch: ScratchVec::default(),
-                ae_slice_pd_direct_col_slice_nodes: ScratchHashSet::default(),
-            }
-        }
-
-        /// Returns shared scratch space after clearing.
-        pub fn empty_nodes_scratch_mut(&mut self) -> &mut UnitVec<Node> {
-            self.scratch.clear();
-            &mut self.scratch
+impl SlicePushDown {
+    pub(super) fn new() -> Self {
+        Self {
+            nodes_scratch: ScratchUnitVec::default(),
+            // We don't maintain errors on slice to make the behavior predictable across engines.
+            //
+            // Even if we enable maintain_errors (thereby preventing the slice from being pushed),
+            // the new-streaming engine still may not error due to early-stopping.
+            maintain_errors: false,
+            slice_node_in_optimized_plan: false,
+            ae_nodes_scratch: ScratchVec::default(),
+            ae_slice_pd_state_scratch: ScratchVec::default(),
+            ae_slice_pd_direct_col_slice_nodes: ScratchHashSet::default(),
         }
     }
 }
-
-pub(super) use inner::SlicePushDown;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) struct State {
@@ -546,18 +529,43 @@ impl SlicePushDown {
                     };
                 }
 
-                // first restart optimization in both inputs and get the updated LP
-                let lp_left = self.pushdown(input_left, None, lp_arena, expr_arena)?;
+                // For left/right/full joins we can push a limit.
+                let input_limit_slice = if state.offset < 0 {
+                    IdxSize::try_from(-state.offset).ok().map(|len| State {
+                        offset: state.offset,
+                        len,
+                    })
+                } else {
+                    IdxSize::try_from(state.offset)
+                        .ok()
+                        .and_then(|offset| offset.checked_add(state.len))
+                        .map(|limit| State {
+                            offset: 0,
+                            len: limit,
+                        })
+                };
+
+                let lp_left = self.pushdown(
+                    input_left,
+                    input_limit_slice
+                        .filter(|_| matches!(&options.args.how, JoinType::Left | JoinType::Full)),
+                    lp_arena,
+                    expr_arena,
+                )?;
                 let input_left = lp_arena.add(lp_left);
 
-                let lp_right = self.pushdown(input_right, None, lp_arena, expr_arena)?;
+                let lp_right = self.pushdown(
+                    input_right,
+                    input_limit_slice
+                        .filter(|_| matches!(&options.args.how, JoinType::Right | JoinType::Full)),
+                    lp_arena,
+                    expr_arena,
+                )?;
                 let input_right = lp_arena.add(lp_right);
 
                 // then assign the slice state to the join operation
 
-                let mut_options = Arc::make_mut(&mut options);
-
-                mut_options.args.slice = Some((state.offset, state.len as usize));
+                Arc::make_mut(&mut options).args.slice = Some((state.offset, state.len as usize));
 
                 Ok(Join {
                     input_left,
@@ -813,7 +821,7 @@ impl SlicePushDown {
                 if can_pushdown_slice_past_projections(
                     &expr,
                     expr_arena,
-                    self.empty_nodes_scratch_mut(),
+                    self.nodes_scratch.get(),
                     maintain_errors,
                 )
                 .1
@@ -851,7 +859,7 @@ impl SlicePushDown {
                     can_pushdown_slice_past_projections(
                         &exprs,
                         expr_arena,
-                        self.empty_nodes_scratch_mut(),
+                        self.nodes_scratch.get(),
                         maintain_errors,
                     );
 
