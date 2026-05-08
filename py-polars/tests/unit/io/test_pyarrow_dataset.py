@@ -237,7 +237,7 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
     capture = capfd.readouterr().err
 
     # partial predicate was pushed to pyarrow
-    binop_pred = 'converted pyarrow predicate: Comparison { left: Column("a"), op: Gt, right: Literal(Int(1)) }'
+    binop_pred = "converted pyarrow predicate: <pyarrow.compute.Expression (a > 1)>"
     assert binop_pred in capture
 
     resid_pred = (
@@ -314,8 +314,11 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    isin_pred = 'converted pyarrow predicate: IsIn { expr: Column("id"), values: [Int(1), Int(3)] }'
-    assert isin_pred in capture
+    assert (
+        "converted pyarrow predicate: <pyarrow.compute.Expression is_in(id" in capture
+    )
+    assert "1," in capture
+    assert "3" in capture
 
     resid_pred = "residual predicate: None"
     assert "residual predicate: None" in capture
@@ -331,7 +334,8 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert 'IsIn { expr: Column("id"), values: [Int(1), Null, Int(3)] }' in capture
+    assert "<pyarrow.compute.Expression is_in(id" in capture
+    assert "null," in capture
     assert "residual predicate: None" in capture
 
     assert_frame_equal(result, expected)
@@ -345,7 +349,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
     result = q.collect()
     capture = capfd.readouterr().err
 
-    assert "converted pyarrow predicate: Literal(Bool(false))" in capture
+    assert "converted pyarrow predicate: <pyarrow.compute.Expression false>" in capture
     assert "residual predicate: None" in capture
 
     assert_frame_equal(q.collect(), expected)
@@ -361,7 +365,7 @@ def test_pyarrow_dataset_is_in_predicate_pushdown_nulls_equality(
 
     plmonkeypatch.setenv("POLARS_VERBOSE_SENSITIVE", "0")
 
-    assert "converted pyarrow predicate: Literal(Bool(false))" in capture
+    assert "converted pyarrow predicate: <pyarrow.compute.Expression false>" in capture
     assert "residual predicate: None" in capture
 
     assert_frame_equal(q.collect(), expected)
@@ -414,7 +418,7 @@ def test_pyarrow_dataset_predicate_verbose_log(
     assert (
         "[SENSITIVE]: python_scan_predicate: "
         'predicate node: [(col("a")) < (3)], '
-        'converted pyarrow predicate: Comparison { left: Column("a"), op: Lt, right: Literal(Int(3)) }, '
+        "converted pyarrow predicate: <pyarrow.compute.Expression (a < 3)>, "
         "residual predicate: None"
     ) in capture
 

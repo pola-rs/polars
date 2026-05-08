@@ -274,7 +274,14 @@ pub fn python_scan_predicate(
 
             verbose_print_sensitive(|| {
                 let predicate_pa_verbose_msg = match &options.predicate {
-                    PythonPredicate::PyArrow(p) => format!("{:?}", p),
+                    PythonPredicate::PyArrow(p) => Python::attach(|py| {
+                        p.pyarrow_predicate
+                            .bind(py)
+                            .repr()
+                            .ok()
+                            .and_then(|s| s.extract::<String>().ok())
+                            .unwrap_or_else(|| "<repr failed>".to_string())
+                    }),
                     _ => "<conversion failed>".to_string(),
                 };
 
