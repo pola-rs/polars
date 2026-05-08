@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
-use polars_io::arrow_predicate::ArrowPredicate;
 use polars_utils::python_function::PythonFunction;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
+use super::arrow_predicate::ArrowPredicate;
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::plans::{ExprIR, PlSmallStr};
 

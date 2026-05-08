@@ -3,8 +3,9 @@ use std::fmt::Write;
 use polars_core::datatypes::AnyValue;
 use polars_core::prelude::{DataType, TimeUnit, TimeZone};
 use polars_core::series::Series;
-use polars_io::arrow_predicate::{ArrowPredicate, ComparisonOp, LiteralValue as ArrowLiteralValue};
 use polars_utils::pl_str::PlSmallStr;
+use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
 
 use crate::prelude::*;
 
@@ -281,35 +282,82 @@ pub fn predicate_to_pa(
     }
 }
 
-fn comparison_op(op: &Operator) -> Option<ComparisonOp> {
+fn binary_op_method(op: &Operator) -> Option<&'static str> {
     Some(match op {
-        Operator::Eq => ComparisonOp::Eq,
-        Operator::NotEq => ComparisonOp::NotEq,
-        Operator::Lt => ComparisonOp::Lt,
-        Operator::LtEq => ComparisonOp::Lte,
-        Operator::Gt => ComparisonOp::Gt,
-        Operator::GtEq => ComparisonOp::Gte,
+        Operator::Eq => "__eq__",
+        Operator::NotEq => "__ne__",
+        Operator::Lt => "__lt__",
+        Operator::LtEq => "__le__",
+        Operator::Gt => "__gt__",
+        Operator::GtEq => "__ge__",
+        Operator::And | Operator::LogicalAnd => "__and__",
+        Operator::Or | Operator::LogicalOr => "__or__",
+        Operator::Xor => "__xor__",
         _ => return None,
     })
 }
 
-fn anyvalue_to_arrow_literal(av: AnyValue<'_>) -> Option<ArrowLiteralValue> {
+fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, PyAny>> {
+    use pyo3::IntoPyObjectExt;
+
     let dtype = av.dtype();
     match av.as_borrowed() {
-        AnyValue::Null => Some(ArrowLiteralValue::Null),
-        AnyValue::Boolean(v) => Some(ArrowLiteralValue::Bool(v)),
+        AnyValue::Null => Some(py.None().into_bound(py)),
+        AnyValue::Boolean(v) => v.into_bound_py_any(py).ok(),
         AnyValue::String(s) => {
             let s = sanitize(s)?;
-            Some(ArrowLiteralValue::String(s.to_string()))
+            s.into_pyobject(py).ok().map(|b| b.into_any())
         },
         #[cfg(feature = "dtype-date")]
-        AnyValue::Date(v) => Some(ArrowLiteralValue::Date(v)),
+        AnyValue::Date(days) => {
+            let dt_mod = py.import("datetime").ok()?;
+            let epoch = dt_mod
+                .getattr("date")
+                .ok()?
+                // Unix epoch start
+                .call1((1970i32, 1i32, 1i32))
+                .ok()?;
+            let delta = dt_mod
+                .getattr("timedelta")
+                .ok()?
+                .call1((days as i64,))
+                .ok()?;
+            epoch.call_method1("__add__", (delta,)).ok()
+        },
         #[cfg(feature = "dtype-datetime")]
-        AnyValue::Datetime(v, tu, tz) => Some(ArrowLiteralValue::Datetime {
-            value: v,
-            time_unit: tu,
-            time_zone: tz.cloned(),
-        }),
+        AnyValue::Datetime(value, time_unit, time_zone) => {
+            let dt_mod = py.import("datetime").ok()?;
+            let epoch = dt_mod
+                .getattr("datetime")
+                .ok()?
+                // Unix epoch start
+                .call1((1970i32, 1i32, 1i32))
+                .ok()?;
+            let micros: i64 = match time_unit {
+                TimeUnit::Nanoseconds => value / 1000,
+                TimeUnit::Microseconds => value,
+                TimeUnit::Milliseconds => value * 1000,
+            };
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("microseconds", micros).ok()?;
+            let delta = dt_mod
+                .getattr("timedelta")
+                .ok()?
+                .call((), Some(&kwargs))
+                .ok()?;
+            let naive = epoch.call_method1("__add__", (delta,)).ok()?;
+            if let Some(tz) = time_zone {
+                // Datetimes have to get standardized to timezone aware
+                let zi = py.import("zoneinfo").ok()?;
+                let tz_obj = zi.getattr("ZoneInfo").ok()?.call1((tz.to_string(),)).ok()?;
+                let kw = PyDict::new(py);
+                kw.set_item("tzinfo", tz_obj).ok()?;
+                naive.call_method("replace", (), Some(&kw)).ok()
+            } else {
+                Some(naive)
+            }
+        },
+        // TODO: Worth supporting?
         AnyValue::Binary(_) | AnyValue::List(_) => None,
         #[cfg(feature = "dtype-array")]
         AnyValue::Array(_, _) => None,
@@ -317,9 +365,12 @@ fn anyvalue_to_arrow_literal(av: AnyValue<'_>) -> Option<ArrowLiteralValue> {
         AnyValue::Struct(_, _, _) => None,
         av => {
             if dtype.is_float() {
-                av.extract::<f64>().map(ArrowLiteralValue::Float)
+                // TODO: Opportunity to downcast
+                let v = av.extract::<f64>()?;
+                v.into_bound_py_any(py).ok()
             } else if dtype.is_integer() {
-                av.extract::<i64>().map(ArrowLiteralValue::Int)
+                let v = av.extract::<i64>()?;
+                v.into_bound_py_any(py).ok()
             } else {
                 None
             }
@@ -327,53 +378,36 @@ fn anyvalue_to_arrow_literal(av: AnyValue<'_>) -> Option<ArrowLiteralValue> {
     }
 }
 
-fn series_to_arrow_literal_list(s: &Series) -> Option<Vec<ArrowLiteralValue>> {
-    let mut out = Vec::with_capacity(s.len());
+fn series_to_py_list<'py>(py: Python<'py>, s: &Series) -> Option<Bound<'py, PyList>> {
+    let mut items: Vec<Bound<'py, PyAny>> = Vec::with_capacity(s.len());
     for av in s.iter() {
-        out.push(anyvalue_to_arrow_literal(av)?);
+        items.push(anyvalue_to_py(py, av)?);
     }
-    Some(out)
+    PyList::new(py, &items).ok()
 }
 
-pub fn predicate_to_arrow_pred(
+pub fn aexpr_to_pyarrow<'py>(
+    py: Python<'py>,
+    pc: &Bound<'py, PyAny>,
     predicate: Node,
     expr_arena: &Arena<AExpr>,
-) -> Option<ArrowPredicate> {
+) -> Option<Bound<'py, PyAny>> {
     match expr_arena.get(predicate) {
         AExpr::BinaryExpr { left, right, op } => {
-            if !op.is_comparison_or_bitwise() {
-                return None;
-            }
-            let left = predicate_to_arrow_pred(*left, expr_arena)?;
-            let right = predicate_to_arrow_pred(*right, expr_arena)?;
-            if let Some(cmp) = comparison_op(op) {
-                Some(ArrowPredicate::Comparison {
-                    left: Box::new(left),
-                    op: cmp,
-                    right: Box::new(right),
-                })
-            } else {
-                match op {
-                    Operator::And | Operator::LogicalAnd => {
-                        Some(ArrowPredicate::And(Box::new(left), Box::new(right)))
-                    },
-                    Operator::Or | Operator::LogicalOr => {
-                        Some(ArrowPredicate::Or(Box::new(left), Box::new(right)))
-                    },
-                    Operator::Xor => Some(ArrowPredicate::Xor(Box::new(left), Box::new(right))),
-                    _ => None,
-                }
-            }
+            let method = binary_op_method(op)?;
+            let l = aexpr_to_pyarrow(py, pc, *left, expr_arena)?;
+            let r = aexpr_to_pyarrow(py, pc, *right, expr_arena)?;
+            l.call_method1(method, (r,)).ok()
         },
         AExpr::Column(name) => {
             let name = sanitize(name)?;
-            Some(ArrowPredicate::Column(name.to_string()))
+            pc.call_method1("field", (name,)).ok()
         },
         AExpr::Literal(LiteralValue::Series(_)) => None,
         AExpr::Literal(lv) => {
             let av = lv.to_any_value()?;
-            let lit = anyvalue_to_arrow_literal(av)?;
-            Some(ArrowPredicate::Literal(lit))
+            let val = anyvalue_to_py(py, av)?;
+            pc.call_method1("scalar", (val,)).ok()
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
@@ -381,10 +415,10 @@ pub fn predicate_to_arrow_pred(
             input,
             ..
         } => {
-            let col = predicate_to_arrow_pred(input.first()?.node(), expr_arena)?;
+            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena)?;
             let rhs_node = input.get(1)?.node();
 
-            let values = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
+            let values_list = if let AExpr::Literal(lv) = expr_arena.get(rhs_node)
                 && lv.get_datatype().is_list()
             {
                 use polars_core::prelude::ExplodeOptions;
@@ -421,24 +455,21 @@ pub fn predicate_to_arrow_pred(
                     return None;
                 }
 
+                // Fast path for empty lists
+                if converted_len == 0 {
+                    return pc.call_method1("scalar", (false,)).ok();
+                }
+
                 if !*nulls_equal {
                     haystack_series = haystack_series.drop_nulls();
                 }
 
-                series_to_arrow_literal_list(&haystack_series)?
+                series_to_py_list(py, &haystack_series)?
             } else {
                 return None;
             };
 
-            // We can simplify this to a false mask if the list is empty.
-            if values.is_empty() {
-                Some(ArrowPredicate::Literal(ArrowLiteralValue::Bool(false)))
-            } else {
-                Some(ArrowPredicate::IsIn {
-                    expr: Box::new(col),
-                    values,
-                })
-            }
+            col.call_method1("isin", (values_list,)).ok()
         },
         #[cfg(feature = "is_between")]
         AExpr::Function {
@@ -449,50 +480,42 @@ pub fn predicate_to_arrow_pred(
             if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
                 return None;
             }
-            let col = predicate_to_arrow_pred(input.first()?.node(), expr_arena)?;
-            let left_cmp_op = match closed {
-                ClosedInterval::None | ClosedInterval::Right => ComparisonOp::Gt,
-                ClosedInterval::Both | ClosedInterval::Left => ComparisonOp::Gte,
+            let col = aexpr_to_pyarrow(py, pc, input.first()?.node(), expr_arena)?;
+            let left_method = match closed {
+                ClosedInterval::None | ClosedInterval::Right => "__gt__",
+                ClosedInterval::Both | ClosedInterval::Left => "__ge__",
             };
-            let right_cmp_op = match closed {
-                ClosedInterval::None | ClosedInterval::Left => ComparisonOp::Lt,
-                ClosedInterval::Both | ClosedInterval::Right => ComparisonOp::Lte,
+            let right_method = match closed {
+                ClosedInterval::None | ClosedInterval::Left => "__lt__",
+                ClosedInterval::Both | ClosedInterval::Right => "__le__",
             };
 
-            let lower = predicate_to_arrow_pred(input.get(1)?.node(), expr_arena)?;
-            let upper = predicate_to_arrow_pred(input.get(2)?.node(), expr_arena)?;
+            let lower = aexpr_to_pyarrow(py, pc, input.get(1)?.node(), expr_arena)?;
+            let upper = aexpr_to_pyarrow(py, pc, input.get(2)?.node(), expr_arena)?;
 
-            let lower_cmp = ArrowPredicate::Comparison {
-                left: Box::new(col.clone()),
-                op: left_cmp_op,
-                right: Box::new(lower),
-            };
-            let upper_cmp = ArrowPredicate::Comparison {
-                left: Box::new(col),
-                op: right_cmp_op,
-                right: Box::new(upper),
-            };
-            Some(ArrowPredicate::And(
-                Box::new(lower_cmp),
-                Box::new(upper_cmp),
-            ))
+            let lower_cmp = col.call_method1(left_method, (lower,)).ok()?;
+            let upper_cmp = col.call_method1(right_method, (upper,)).ok()?;
+            lower_cmp.call_method1("__and__", (upper_cmp,)).ok()
         },
         AExpr::Function {
             function, input, ..
         } => {
             let input = input.first().unwrap().node();
-            let input = predicate_to_arrow_pred(input, expr_arena)?;
+            let input = aexpr_to_pyarrow(py, pc, input, expr_arena)?;
 
             match function {
                 IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
-                    Some(ArrowPredicate::Not(Box::new(input)))
+                    // ~ operator
+                    input.call_method0("__invert__").ok()
                 },
                 IRFunctionExpr::Boolean(IRBooleanFunction::IsNull) => {
-                    Some(ArrowPredicate::IsNull(Box::new(input)))
+                    input.call_method0("is_null").ok()
                 },
-                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => Some(ArrowPredicate::Not(
-                    Box::new(ArrowPredicate::IsNull(Box::new(input))),
-                )),
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => input
+                    .call_method0("is_null")
+                    .ok()?
+                    .call_method0("__invert__")
+                    .ok(),
                 _ => None,
             }
         },

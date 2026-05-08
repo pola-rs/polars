@@ -7,7 +7,6 @@
 #![allow(ambiguous_glob_reexports)]
 extern crate core;
 
-pub mod arrow_predicate;
 #[cfg(feature = "avro")]
 pub mod avro;
 #[cfg(feature = "catalog")]
