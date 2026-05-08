@@ -5,7 +5,7 @@ use polars_core::prelude::{
     ChunkExpandAtIndex, Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions,
 };
 use polars_core::utils::CustomIterTools;
-use polars_ops::prelude::ListNameSpaceImpl;
+use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
 use polars_plan::plans::IRListFunction;
 use polars_utils::pl_str::PlSmallStr;
@@ -143,11 +143,22 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
     let length_s = &args[2];
 
     let target_len = offset_s.len().max(length_s.len());
-    let list_ca = if list_ca.len() == 1 && target_len > 1 {
-        list_ca.new_from_index(0, target_len)
-    } else {
-        list_ca.clone()
-    };
+    if list_ca.len() == 1 && target_len > 1 {
+        let single_list = list_ca.get_as_series(0);
+        let length_ca = length_s.cast(&DataType::Int64)?;
+        let length_ca = length_ca.i64().unwrap();
+        let offset_ca = offset_s.cast(&DataType::Int64)?;
+        let offset_ca = offset_ca.i64().unwrap();
+        let out = slice_broadcast_list(
+            single_list,
+            offset_ca,
+            length_ca,
+            target_len,
+            s.name().clone(),
+            list_ca.inner_dtype(),
+        );
+        return Ok(out.into_column());
+    }
 
     let mut out: ListChunked = match (offset_s.len(), length_s.len()) {
         (1, 1) => {
