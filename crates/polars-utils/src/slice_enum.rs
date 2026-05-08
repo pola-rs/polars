@@ -164,6 +164,7 @@ impl From<Slice> for Range<usize> {
                 offset
                     ..offset
                         .checked_add(len)
+                        // Infer if no len was specified
                         .or((len == usize::MAX).then_some(usize::MAX))
                         .unwrap()
             },
