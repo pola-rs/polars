@@ -19,6 +19,8 @@ mod fused;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
+#[cfg(feature = "asof_join")]
+mod fuse_asof_many;
 #[cfg(feature = "python")]
 pub use expand_datasets::ExpandedPythonScan;
 mod collapse_sort;
@@ -38,6 +40,8 @@ use collapse_and_project::SimpleProjectionAndCollapse;
 pub use cse::NaiveExprMerger;
 use delay_rechunk::DelayRechunk;
 pub use expand_datasets::ExpandedDataset;
+#[cfg(feature = "asof_join")]
+use fuse_asof_many::FuseAsofMany;
 use polars_core::config::verbose;
 pub use predicate_pushdown::{
     DynamicPred, DynamicPredWeakRef, PredicateExpr, PredicatePushDown, TrivialPredicateExpr,
@@ -227,6 +231,8 @@ pub fn optimize(
         #[cfg(feature = "merge_sorted")]
         rules.push(Box::new(FlattenMergeSortedRule::new()));
         rules.push(Box::new(FlattenUnionRule {}));
+        #[cfg(feature = "asof_join")]
+        rules.push(Box::new(FuseAsofMany {}));
     }
 
     root = opt.optimize_loop(&mut rules, expr_arena, ir_arena, root)?;

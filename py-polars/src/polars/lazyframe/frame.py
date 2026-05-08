@@ -6200,6 +6200,111 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
         )
 
+    @unstable()
+    def join_asof_many(
+        self,
+        other: LazyFrame,
+        *,
+        pairs: Sequence[pl.AsofJoinPair],
+        by_left: str | Sequence[str] | None = None,
+        by_right: str | Sequence[str] | None = None,
+        by: str | Sequence[str] | None = None,
+        strategy: AsofJoinStrategy = "backward",
+        suffix: str = "_right",
+        allow_exact_matches: bool = True,
+        allow_parallel: bool = True,
+        force_parallel: bool = False,
+        coalesce: bool = True,
+        tolerance: str | int | float | timedelta | None = None,
+        check_sortedness: bool = True,
+    ) -> LazyFrame:
+        """
+        Perform multiple asof joins against the same right-hand frame.
+
+        This is similar to ``join_asof``, except that multiple asof joins are
+        performed in pair order against the same ``other`` frame.
+
+        Parameters
+        ----------
+        other
+            Lazy DataFrame to join with.
+        pairs
+            Sequence of ``AsofJoinPair`` specifications.
+        by_left
+            Join on these columns before doing asof join.
+        by_right
+            Join on these columns before doing asof join.
+        by
+            Join on these columns before doing asof join.
+        strategy : {'backward', 'forward', 'nearest'}
+            Join strategy.
+        suffix
+            Default suffix to append to columns with a duplicate name.
+        allow_exact_matches
+            Whether exact matches are valid join predicates.
+        allow_parallel
+            Allow the physical plan to optionally evaluate the computation of both
+            DataFrames up to the join in parallel.
+        force_parallel
+            Force the physical plan to evaluate the computation of both DataFrames up to
+            the join in parallel.
+        coalesce
+            Whether to coalesce join columns.
+        tolerance
+            Numeric or temporal tolerance, following ``join_asof`` semantics.
+        check_sortedness
+            Check the sortedness of the asof keys.
+
+        Notes
+        -----
+        This functionality is experimental. It may be changed at any point without it
+        being considered a breaking change.
+        """
+        require_same_type(self, other)
+
+        if by is not None:
+            by_left_ = [by] if isinstance(by, str) else by
+            by_right_ = by_left_
+        elif (by_left is not None) or (by_right is not None):
+            by_left_ = [by_left] if isinstance(by_left, str) else by_left  # type: ignore[assignment]
+            by_right_ = [by_right] if isinstance(by_right, str) else by_right  # type: ignore[assignment]
+        else:
+            by_left_ = None
+            by_right_ = None
+
+        tolerance_str: str | None = None
+        tolerance_num: float | int | None = None
+        if isinstance(tolerance, str):
+            tolerance_str = tolerance
+        elif isinstance(tolerance, timedelta):
+            tolerance_str = parse_as_duration_string(tolerance)
+        else:
+            tolerance_num = tolerance
+
+        parsed_pairs = []
+        for pair in pairs:
+            left_on = pair.left_on if isinstance(pair.left_on, pl.Expr) else F.col(pair.left_on)
+            right_on = pair.right_on if isinstance(pair.right_on, pl.Expr) else F.col(pair.right_on)
+            parsed_pairs.append((left_on._pyexpr, right_on._pyexpr, pair.suffix))
+
+        return self._from_pyldf(
+            self._ldf.join_asof_many(
+                other._ldf,
+                parsed_pairs,
+                by_left_,
+                by_right_,
+                allow_parallel,
+                force_parallel,
+                suffix,
+                strategy,
+                tolerance_num,
+                tolerance_str,
+                coalesce,
+                allow_exact_matches,
+                check_sortedness,
+            )
+        )
+
     @deprecate_renamed_parameter("join_nulls", "nulls_equal", version="1.24")
     def join(
         self,

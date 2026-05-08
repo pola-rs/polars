@@ -340,7 +340,7 @@ impl SimplifyIRNodeOrder<'_> {
                 assert!(!eos.internally_observed_orders().contains(O::COLUMN));
 
                 #[cfg(feature = "asof_join")]
-                if let JoinType::AsOf(_) = &options.args.how {
+                if matches!(&options.args.how, JoinType::AsOf(_) | JoinType::AsOfMany(_)) {
                     if in_edge_lhs.is_unordered()
                         || (out_edge.is_unordered() && in_edge_rhs.is_unordered())
                     {

@@ -116,6 +116,41 @@ pub(crate) fn det_join_schema(
     expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
     match &options.args.how {
+        #[cfg(feature = "asof_join")]
+        JoinType::AsOfMany(asof_many_options) => {
+            let mut current_left = schema_left.clone();
+            for ((left_expr, right_expr), pair) in left_on
+                .iter()
+                .zip(right_on.iter())
+                .zip(asof_many_options.pairs.iter())
+            {
+                let pair_options = JoinOptionsIR {
+                    allow_parallel: options.allow_parallel,
+                    force_parallel: options.force_parallel,
+                    args: JoinArgs {
+                        how: JoinType::AsOf(Box::new(asof_many_options.options.clone())),
+                        validation: options.args.validation,
+                        suffix: pair.suffix.clone().or_else(|| options.args.suffix.clone()),
+                        slice: options.args.slice,
+                        nulls_equal: options.args.nulls_equal,
+                        coalesce: options.args.coalesce,
+                        maintain_order: options.args.maintain_order,
+                        build_side: options.args.build_side.clone(),
+                    },
+                    options: options.options.clone(),
+                };
+                current_left = det_join_schema(
+                    &current_left,
+                    schema_right,
+                    std::slice::from_ref(left_expr),
+                    std::slice::from_ref(right_expr),
+                    &pair_options,
+                    expr_arena,
+                )?;
+            }
+
+            Ok(current_left)
+        },
         // semi and anti joins are just filtering operations
         // the schema will never change.
         #[cfg(feature = "semi_anti_join")]
@@ -192,10 +227,18 @@ pub(crate) fn det_join_schema(
 
             let mut right_by: PlHashSet<&PlSmallStr> = PlHashSet::default();
             #[cfg(feature = "asof_join")]
-            if let JoinType::AsOf(asof_options) = &options.args.how {
-                if let Some(v) = &asof_options.right_by {
-                    right_by.extend(v.iter());
-                }
+            match &options.args.how {
+                JoinType::AsOf(asof_options) => {
+                    if let Some(v) = &asof_options.right_by {
+                        right_by.extend(v.iter());
+                    }
+                },
+                JoinType::AsOfMany(asof_options) => {
+                    if let Some(v) = &asof_options.options.right_by {
+                        right_by.extend(v.iter());
+                    }
+                },
+                _ => {},
             }
 
             for (name, dtype) in schema_right.iter() {
@@ -215,7 +258,7 @@ pub(crate) fn det_join_schema(
                         // so the columns that are joined on, may have different
                         // values so if the right has a different name, it is added to the schema
                         #[cfg(feature = "asof_join")]
-                        if matches!(how, JoinType::AsOf(_)) {
+                        if matches!(how, JoinType::AsOf(_) | JoinType::AsOfMany(_)) {
                             let field_left = left_on[idx].field(schema_left, expr_arena)?;
                             need_to_include_column = field_left.name != name;
                         }

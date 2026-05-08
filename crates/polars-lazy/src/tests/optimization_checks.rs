@@ -649,3 +649,48 @@ fn test_cluster_with_columns_chain() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "asof_join")]
+fn test_fuse_join_asof_many_chain_rust() -> PolarsResult<()> {
+    let left = df!(
+        "ts_a" => [1i64, 3, 5],
+        "ts_b" => [2i64, 4, 6],
+        "ts_c" => [3i64, 5, 7],
+    )?
+    .lazy();
+    let right = df!(
+        "rhs_ts" => [1i64, 2, 4, 7],
+        "v" => [10i64, 20, 40, 70],
+    )?
+    .lazy();
+
+    let q = left
+        .join_builder()
+        .with(right.clone())
+        .left_on([col("ts_a")])
+        .right_on([col("rhs_ts")])
+        .how(JoinType::AsOf(Box::default()))
+        .suffix("_a")
+        .finish()
+        .join_builder()
+        .with(right.clone())
+        .left_on([col("ts_b")])
+        .right_on([col("rhs_ts")])
+        .how(JoinType::AsOf(Box::default()))
+        .suffix("_b")
+        .finish()
+        .join_builder()
+        .with(right)
+        .left_on([col("ts_c")])
+        .right_on([col("rhs_ts")])
+        .how(JoinType::AsOf(Box::default()))
+        .suffix("_c")
+        .finish();
+
+    let plan = q.describe_optimized_plan()?;
+    assert_eq!(num_occurrences(&plan, "ASOF MANY JOIN:"), 1);
+    assert_eq!(num_occurrences(&plan, "ASOF JOIN:"), 0);
+
+    Ok(())
+}

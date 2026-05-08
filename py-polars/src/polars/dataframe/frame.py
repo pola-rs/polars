@@ -8199,6 +8199,55 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
+    @unstable()
+    def join_asof_many(
+        self,
+        other: DataFrame,
+        *,
+        pairs: Sequence[pl.AsofJoinPair],
+        by_left: str | Sequence[str] | None = None,
+        by_right: str | Sequence[str] | None = None,
+        by: str | Sequence[str] | None = None,
+        strategy: AsofJoinStrategy = "backward",
+        suffix: str = "_right",
+        allow_exact_matches: bool = True,
+        allow_parallel: bool = True,
+        force_parallel: bool = False,
+        coalesce: bool = True,
+        tolerance: str | int | float | timedelta | None = None,
+        check_sortedness: bool = True,
+    ) -> DataFrame:
+        """
+        Perform multiple asof joins against the same right-hand frame.
+
+        This is similar to :meth:`join_asof`, except that multiple asof matches are
+        computed against the same ``other`` frame in pair order.
+
+        This functionality is experimental. It may be changed at any point without it
+        being considered a breaking change.
+        """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        return (
+            self.lazy()
+            .join_asof_many(
+                other.lazy(),
+                pairs=pairs,
+                by_left=by_left,
+                by_right=by_right,
+                by=by,
+                strategy=strategy,
+                suffix=suffix,
+                allow_exact_matches=allow_exact_matches,
+                allow_parallel=allow_parallel,
+                force_parallel=force_parallel,
+                coalesce=coalesce,
+                tolerance=tolerance,
+                check_sortedness=check_sortedness,
+            )
+            .collect(optimizations=QueryOptFlags._eager())
+        )
+
     @deprecate_renamed_parameter("join_nulls", "nulls_equal", version="1.24")
     def join(
         self,

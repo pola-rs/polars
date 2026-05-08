@@ -279,6 +279,48 @@ def test_collapse_joins() -> None:
     )
 
 
+def test_fuse_join_asof_many() -> None:
+    left = pl.LazyFrame({"ts_a": [1, 3, 5], "ts_b": [2, 4, 6]})
+    right = pl.LazyFrame({"ts": [1, 2, 4, 7], "v": [10, 20, 40, 70]})
+
+    q = (
+        left.join_asof(right, left_on="ts_a", right_on="ts", suffix="_a")
+        .join_asof(right, left_on="ts_b", right_on="ts", suffix="_right_b")
+    )
+
+    plan = q.explain()
+    assert "ASOF MANY JOIN" in plan
+
+
+def test_fuse_join_asof_many_chain() -> None:
+    left = pl.LazyFrame({"ts_a": [1, 3, 5], "ts_b": [2, 4, 6], "ts_c": [3, 5, 7]})
+    right = pl.LazyFrame({"rhs_ts": [1, 2, 4, 7], "v": [10, 20, 40, 70]})
+
+    q = (
+        left.join_asof(right, left_on="ts_a", right_on="rhs_ts", suffix="_a")
+        .join_asof(right, left_on="ts_b", right_on="rhs_ts", suffix="_b")
+        .join_asof(right, left_on="ts_c", right_on="rhs_ts", suffix="_c")
+    )
+
+    plan = q.explain()
+    assert plan.count("ASOF MANY JOIN:") == 1
+
+
+def test_do_not_fuse_join_asof_many_when_second_join_depends_on_first() -> None:
+    left = pl.LazyFrame({"ts_a": [1, 3, 5]})
+    right = pl.LazyFrame({"ts": [1, 2, 4, 7], "v": [10, 20, 40, 70]})
+
+    q = left.join_asof(right, left_on="ts_a", right_on="ts", suffix="_a").join_asof(
+        right,
+        left_on="v",
+        right_on="ts",
+        suffix="_b",
+    )
+
+    plan = q.explain()
+    assert "ASOF MANY JOIN" not in plan
+
+
 @pytest.mark.slow
 def test_collapse_joins_combinations() -> None:
     # This just tests all possible combinations for expressions on a cross join.

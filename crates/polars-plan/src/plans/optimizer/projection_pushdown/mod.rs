@@ -847,6 +847,23 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
+                #[cfg(feature = "asof_join")]
+                if matches!(&options.args.how, JoinType::AsOfMany(_)) {
+                    *edges.inputs()[0].projection_state_mut() = ProjectionState {
+                        projection: Projection::Names,
+                        names: Some(Box::new(
+                            input_schema_left.iter_names_cloned().collect(),
+                        )),
+                    };
+                    *edges.inputs()[1].projection_state_mut() = ProjectionState {
+                        projection: Projection::Names,
+                        names: Some(Box::new(
+                            input_schema_right.iter_names_cloned().collect(),
+                        )),
+                    };
+                    return;
+                }
+
                 let opt_projected_names = out_edge.compute_projected_names(output_schema_arc);
 
                 let is_projected_in_output = |name: &str| {
@@ -947,18 +964,34 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
 
                 #[cfg(feature = "asof_join")]
-                if let JoinType::AsOf(asof_options) = &options.args.how {
-                    if let Some(left_by) = asof_options.left_by.as_deref() {
-                        for name in left_by {
-                            project_left.insert(name.clone());
+                match &options.args.how {
+                    JoinType::AsOf(asof_options) => {
+                        if let Some(left_by) = asof_options.left_by.as_deref() {
+                            for name in left_by {
+                                project_left.insert(name.clone());
+                            }
                         }
-                    }
 
-                    if let Some(right_by) = asof_options.right_by.as_deref() {
-                        for name in right_by {
-                            project_right.insert(name.clone());
+                        if let Some(right_by) = asof_options.right_by.as_deref() {
+                            for name in right_by {
+                                project_right.insert(name.clone());
+                            }
                         }
-                    }
+                    },
+                    JoinType::AsOfMany(asof_many_options) => {
+                        if let Some(left_by) = asof_many_options.options.left_by.as_deref() {
+                            for name in left_by {
+                                project_left.insert(name.clone());
+                            }
+                        }
+
+                        if let Some(right_by) = asof_many_options.options.right_by.as_deref() {
+                            for name in right_by {
+                                project_right.insert(name.clone());
+                            }
+                        }
+                    },
+                    _ => {},
                 }
 
                 // Turn on coalesce if non-coalesced keys are not included in projection. Reduces materialization.

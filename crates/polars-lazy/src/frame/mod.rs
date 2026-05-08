@@ -31,6 +31,8 @@ use polars_io::RowIndex;
 use polars_mem_engine::scan_predicate::functions::apply_scan_predicate_to_scan_ir;
 use polars_mem_engine::{Executor, create_multiple_physical_plans, create_physical_plan};
 use polars_ops::frame::{JoinBuildSide, JoinCoalesce, MaintainOrderJoin};
+#[cfg(feature = "asof_join")]
+use polars_ops::prelude::{AsOfManyOptions, AsOfOptions, AsofJoinPair, JoinType};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
@@ -1884,6 +1886,43 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().map_private(function).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    #[cfg(feature = "asof_join")]
+    pub fn join_asof_many(
+        self,
+        other: LazyFrame,
+        pairs: Vec<AsofJoinPair>,
+        options: AsOfOptions,
+        allow_parallel: bool,
+        force_parallel: bool,
+        suffix: Option<PlSmallStr>,
+        coalesce: JoinCoalesce,
+    ) -> LazyFrame {
+        let left_on = pairs
+            .iter()
+            .map(|pair| col(pair.left_on_name.clone()))
+            .collect::<Vec<_>>();
+        let right_on = pairs
+            .iter()
+            .map(|pair| col(pair.right_on_name.clone()))
+            .collect::<Vec<_>>();
+
+        let mut builder = self
+            .join_builder()
+            .with(other)
+            .left_on(left_on)
+            .right_on(right_on)
+            .allow_parallel(allow_parallel)
+            .force_parallel(force_parallel)
+            .coalesce(coalesce)
+            .how(JoinType::AsOfMany(Box::new(AsOfManyOptions { options, pairs })));
+
+        if let Some(suffix) = suffix {
+            builder = builder.suffix(suffix);
+        }
+
+        builder.finish()
     }
 
     /// Add a new column at index 0 that counts the rows.

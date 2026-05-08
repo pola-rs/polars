@@ -1,4 +1,6 @@
 use super::*;
+#[cfg(feature = "asof_join")]
+use super::asof::AsOfManyOptions;
 
 pub(super) type JoinIds = Vec<IdxSize>;
 pub type LeftJoinIds = (ChunkJoinIds, ChunkJoinOptIds);
@@ -68,6 +70,8 @@ pub enum JoinType {
     // Box is okay because this is inside a `Arc<JoinOptionsIR>`
     #[cfg(feature = "asof_join")]
     AsOf(Box<AsOfOptions>),
+    #[cfg(feature = "asof_join")]
+    AsOfMany(Box<AsOfManyOptions>),
     #[cfg(feature = "semi_anti_join")]
     Semi,
     #[cfg(feature = "semi_anti_join")]
@@ -106,7 +110,7 @@ impl JoinCoalesce {
                 matches!(self, CoalesceColumns)
             },
             #[cfg(feature = "asof_join")]
-            AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
+            AsOf(_) | AsOfMany(_) => matches!(self, JoinSpecific | CoalesceColumns),
             #[cfg(feature = "iejoin")]
             IEJoin | Range => false,
             Cross => false,
@@ -244,6 +248,8 @@ impl Display for JoinType {
             Full => "FULL",
             #[cfg(feature = "asof_join")]
             AsOf(_) => "ASOF",
+            #[cfg(feature = "asof_join")]
+            AsOfMany(_) => "ASOF MANY",
             #[cfg(feature = "iejoin")]
             IEJoin => "IEJOIN",
             #[cfg(feature = "iejoin")]

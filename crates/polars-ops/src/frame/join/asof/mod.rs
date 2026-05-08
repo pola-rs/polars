@@ -218,6 +218,23 @@ pub struct AsOfOptions {
     pub check_sortedness: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct AsofJoinPair {
+    pub left_on_name: PlSmallStr,
+    pub right_on_name: PlSmallStr,
+    pub suffix: Option<PlSmallStr>,
+}
+
+#[derive(Clone, Debug, PartialEq, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+pub struct AsOfManyOptions {
+    pub options: AsOfOptions,
+    pub pairs: Vec<AsofJoinPair>,
+}
+
 pub fn _check_asof_columns(
     a: &Series,
     b: &Series,

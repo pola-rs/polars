@@ -558,7 +558,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 (
                     match how {
                         #[cfg(feature = "asof_join")]
-                        JoinType::AsOf(_) => {
+                        JoinType::AsOf(_) | JoinType::AsOfMany(_) => {
                             return Err(PyNotImplementedError::new_err("asof join"));
                         },
                         #[cfg(feature = "iejoin")]

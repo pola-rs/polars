@@ -77,6 +77,10 @@ pub(super) fn process_join(
             JoinType::AsOf(asof_options) => {
                 asof_options.left_by.as_deref().unwrap_or_default().len()
             },
+            #[cfg(feature = "asof_join")]
+            JoinType::AsOfMany(asof_options) => {
+                asof_options.options.left_by.as_deref().unwrap_or_default().len()
+            },
             _ => left_on.len(),
         };
 
@@ -84,6 +88,16 @@ pub(super) fn process_join(
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(asof_options) => Some(
                 asof_options
+                    .left_by
+                    .as_deref()
+                    .unwrap_or_default()
+                    .get(i)
+                    .unwrap(),
+            ),
+            #[cfg(feature = "asof_join")]
+            JoinType::AsOfMany(asof_options) => Some(
+                asof_options
+                    .options
                     .left_by
                     .as_deref()
                     .unwrap_or_default()
@@ -119,6 +133,10 @@ pub(super) fn process_join(
             JoinType::AsOf(asof_options) => {
                 asof_options.right_by.as_deref().unwrap_or_default().len()
             },
+            #[cfg(feature = "asof_join")]
+            JoinType::AsOfMany(asof_options) => {
+                asof_options.options.right_by.as_deref().unwrap_or_default().len()
+            },
             _ => right_on.len(),
         };
 
@@ -126,6 +144,16 @@ pub(super) fn process_join(
             #[cfg(feature = "asof_join")]
             JoinType::AsOf(asof_options) => Some(
                 asof_options
+                    .right_by
+                    .as_deref()
+                    .unwrap_or_default()
+                    .get(i)
+                    .unwrap(),
+            ),
+            #[cfg(feature = "asof_join")]
+            JoinType::AsOfMany(asof_options) => Some(
+                asof_options
+                    .options
                     .right_by
                     .as_deref()
                     .unwrap_or_default()
@@ -158,7 +186,7 @@ pub(super) fn process_join(
     if cfg!(debug_assertions) && options.args.should_coalesce() {
         match &options.args.how {
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(_) => {},
+            JoinType::AsOf(_) | JoinType::AsOfMany(_) => {},
 
             _ => {
                 assert!(get_lhs_column_keys_iter().len() > 0);
@@ -199,7 +227,7 @@ pub(super) fn process_join(
             Left | Inner | Full => true,
 
             #[cfg(feature = "asof_join")]
-            AsOf(_) => true,
+            AsOf(_) | AsOfMany(_) => true,
             #[cfg(feature = "semi_anti_join")]
             Semi | Anti => true,
 
@@ -307,7 +335,7 @@ pub(super) fn process_join(
             // Behaves similarly to left-join on "by" columns (takes a single match instead of
             // all matches according to asof strategy).
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(_) => {
+            JoinType::AsOf(_) | JoinType::AsOfMany(_) => {
                 push_right &= push_left;
                 !push_left
             },

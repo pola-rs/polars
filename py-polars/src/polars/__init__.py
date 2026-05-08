@@ -251,6 +251,7 @@ from polars.io.cloud import (
     CredentialProviderFunctionReturn,
     CredentialProviderGCP,
 )
+from polars.join import AsofJoinPair
 from polars.lazyframe import GPUEngine, LazyFrame, QueryOptFlags
 from polars.meta import (
     build_info,
@@ -401,6 +402,7 @@ __all__ = [
     # polars.functions.aggregation
     "all",
     "all_horizontal",
+    "AsofJoinPair",
     "any",
     "any_horizontal",
     "cum_sum",

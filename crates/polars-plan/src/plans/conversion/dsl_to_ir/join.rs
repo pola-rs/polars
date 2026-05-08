@@ -94,6 +94,22 @@ pub fn resolve_join(
                     polars_bail!(InvalidOperation: "expected both 'by_left' and 'by_right' to be set in 'asof_join'")
                 },
             }
+        } else if let JoinType::AsOfMany(options) = &options.args.how {
+            polars_ensure!(
+                !options.pairs.is_empty(),
+                InvalidOperation: "expected at least one pair in 'join_asof_many'"
+            );
+            match (&options.options.left_by, &options.options.right_by) {
+                (None, None) => {},
+                (Some(l), Some(r)) => {
+                    polars_ensure!(l.len() == r.len(), InvalidOperation: "expected equal number of columns in 'by_left' and 'by_right' in 'join_asof_many'");
+                    validate_columns_in_input(l, &schema_left, "join_asof_many")?;
+                    validate_columns_in_input(r, &schema_right, "join_asof_many")?;
+                },
+                _ => {
+                    polars_bail!(InvalidOperation: "expected both 'by_left' and 'by_right' to be set in 'join_asof_many'")
+                },
+            }
         }
 
         polars_ensure!(
@@ -358,6 +374,44 @@ pub fn resolve_join(
                 Time => {
                     let tolerance = duration.duration_ns();
                     options.tolerance = Some(Scalar::from(tolerance))
+                },
+                _ => {
+                    panic!(
+                        "can only use timedelta string language with Date/Datetime/Duration/Time dtypes"
+                    )
+                },
+            }
+        }
+    } else if let JoinType::AsOfMany(options) = &mut options.args.how {
+        use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
+
+        if let Some(tol) = &options.options.tolerance_str {
+            let duration = polars_time::Duration::try_parse(tol)?;
+            polars_ensure!(
+                duration.months() == 0,
+                ComputeError: "cannot use month offset in timedelta of an asof join; consider using 4 weeks"
+            );
+            use DataType::*;
+            match ctxt
+                .expr_arena
+                .get(left_on[0].node())
+                .to_dtype(&ToFieldContext::new(ctxt.expr_arena, &schema_left))?
+            {
+                Datetime(tu, _) | Duration(tu) => {
+                    let tolerance = match tu {
+                        TimeUnit::Nanoseconds => duration.duration_ns(),
+                        TimeUnit::Microseconds => duration.duration_us(),
+                        TimeUnit::Milliseconds => duration.duration_ms(),
+                    };
+                    options.options.tolerance = Some(Scalar::from(tolerance))
+                },
+                Date => {
+                    let days = (duration.duration_ms() / MILLISECONDS_IN_DAY) as i32;
+                    options.options.tolerance = Some(Scalar::from(days))
+                },
+                Time => {
+                    let tolerance = duration.duration_ns();
+                    options.options.tolerance = Some(Scalar::from(tolerance))
                 },
                 _ => {
                     panic!(

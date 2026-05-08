@@ -19,7 +19,8 @@ pub use args::*;
 use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
 pub use asof::{
-    _check_asof_columns, _join_asof_dispatch, AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy,
+    _check_asof_columns, _join_asof_dispatch, AsOfManyOptions, AsOfOptions, AsofJoin,
+    AsofJoinBy, AsofJoinPair, AsofStrategy,
 };
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
@@ -251,6 +252,58 @@ pub trait DataFrameJoinOps: IntoDf {
             );
         }
 
+        #[cfg(feature = "asof_join")]
+        if let JoinType::AsOfMany(ref options) = args.how {
+            let mut out = left_df.clone();
+
+            for ((s_left, s_right), pair) in selected_left
+                .iter()
+                .zip(&selected_right)
+                .zip(options.pairs.iter())
+            {
+                let mut pair_args = args.clone();
+                pair_args.how = JoinType::AsOf(Box::new(options.options.clone()));
+                pair_args.suffix = pair.suffix.clone().or_else(|| pair_args.suffix.clone());
+
+                out = match (
+                    options.options.left_by.clone(),
+                    options.options.right_by.clone(),
+                ) {
+                    (Some(left_by), Some(right_by)) => out._join_asof_by(
+                        other,
+                        s_left,
+                        s_right,
+                        left_by,
+                        right_by,
+                        options.options.strategy,
+                        options.options.tolerance.clone().map(|v| v.into_value()),
+                        pair_args.suffix.clone(),
+                        pair_args.slice,
+                        pair_args.should_coalesce(),
+                        options.options.allow_eq,
+                        options.options.check_sortedness,
+                    )?,
+                    (None, None) => out._join_asof(
+                        other,
+                        s_left,
+                        s_right,
+                        options.options.strategy,
+                        options.options.tolerance.clone().map(|v| v.into_value()),
+                        pair_args.suffix.clone(),
+                        pair_args.slice,
+                        pair_args.should_coalesce(),
+                        options.options.allow_eq,
+                        options.options.check_sortedness,
+                    )?,
+                    _ => {
+                        panic!("expected by arguments on both sides")
+                    },
+                };
+            }
+
+            return Ok(out);
+        }
+
         // Single keys.
         if selected_left.len() == 1 {
             let s_left = &selected_left[0];
@@ -327,6 +380,8 @@ pub trait DataFrameJoinOps: IntoDf {
                         panic!("expected by arguments on both sides")
                     },
                 },
+                #[cfg(feature = "asof_join")]
+                JoinType::AsOfMany(_) => unreachable!(),
                 #[cfg(feature = "iejoin")]
                 JoinType::IEJoin | JoinType::Range => {
                     unreachable!()
@@ -370,7 +425,7 @@ pub trait DataFrameJoinOps: IntoDf {
         // Multiple keys.
         match args.how {
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf(_) => polars_bail!(
+            JoinType::AsOf(_) | JoinType::AsOfMany(_) => polars_bail!(
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
             #[cfg(feature = "iejoin")]
