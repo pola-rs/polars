@@ -44,8 +44,7 @@ pub fn _finish_join(
     }))?;
 
     drop(left_names);
-    // Safety: IR resolving should guarantee this passes
-    unsafe { df_left.hstack_mut_unchecked(df_right.columns()) };
+    df_left.hstack_mut(df_right.columns())?;
     Ok(df_left)
 }
 
