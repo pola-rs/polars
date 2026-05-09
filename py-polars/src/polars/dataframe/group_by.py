@@ -63,7 +63,10 @@ class GroupByIter:
 
 
 class RollingGroupByIter:
-    """Iterator returned by :meth:`RollingGroupBy.__iter__`. See :class:`GroupByIter`."""
+    """Iterator returned by :meth:`RollingGroupBy.__iter__`.
+
+    See :class:`GroupByIter`.
+    """
 
     def __init__(
         self,
@@ -89,7 +92,10 @@ class RollingGroupByIter:
 
 
 class DynamicGroupByIter:
-    """Iterator returned by :meth:`DynamicGroupBy.__iter__`. See :class:`GroupByIter`."""
+    """Iterator returned by :meth:`DynamicGroupBy.__iter__`.
+
+    See :class:`GroupByIter`.
+    """
 
     def __init__(
         self,
