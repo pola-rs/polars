@@ -567,7 +567,7 @@ def test_read_csv_encoding_lossy(chunk_override: None, tmp_path: Path) -> None:
 def test_read_csv_eol_char_with_non_utf8_encoding(
     chunk_override: None, tmp_path: Path
 ) -> None:
-    """Regression test for #27408.
+    r"""Regression test for #27408.
 
     When `read_csv` is given a file path *and* a non-utf8 encoding, the file
     is opened in Python text mode for transcoding to utf-8 before being handed
