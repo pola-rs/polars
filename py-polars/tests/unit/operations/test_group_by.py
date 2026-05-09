@@ -585,7 +585,11 @@ def test_group_by_next_raises_type_error() -> None:
         next(gb)  # type: ignore[call-overload]
 
     # iter() then next() must still work correctly
-    it = iter(pl.DataFrame({"a": [1, 1, 2], "b": [10, 20, 30]}).group_by("a", maintain_order=True))
+    it = iter(
+        pl.DataFrame({"a": [1, 1, 2], "b": [10, 20, 30]}).group_by(
+            "a", maintain_order=True
+        )
+    )
     name, group = next(it)
     assert name == (1,)
     assert group.shape == (2, 2)
