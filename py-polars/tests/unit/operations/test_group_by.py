@@ -577,6 +577,20 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
+def test_group_by_next_raises_type_error() -> None:
+    # Calling next() directly on a GroupBy (not an iterator) should raise TypeError,
+    # not AttributeError. Regression test for https://github.com/pola-rs/polars/issues/12868
+    gb = pl.DataFrame({"a": [1, 2, 3]}).group_by("a")
+    with pytest.raises(TypeError):
+        next(gb)  # type: ignore[call-overload]
+
+    # iter() then next() must still work correctly
+    it = iter(pl.DataFrame({"a": [1, 1, 2], "b": [10, 20, 30]}).group_by("a", maintain_order=True))
+    name, group = next(it)
+    assert name == (1,)
+    assert group.shape == (2, 2)
+
+
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
