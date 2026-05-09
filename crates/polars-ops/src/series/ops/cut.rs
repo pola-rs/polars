@@ -186,11 +186,22 @@ pub fn qcut(
 
     if s.null_count() == s.len() {
         // If we only have nulls we don't have any breakpoints.
-        return Ok(Series::full_null(
-            s.name().clone(),
-            s.len(),
-            &DataType::from_categories(Categories::global()),
-        ));
+        let cat_dtype = DataType::from_categories(Categories::global());
+        if include_breaks {
+            let brk = Series::full_null(
+                PlSmallStr::from_static("breakpoint"),
+                s.len(),
+                &DataType::Float64,
+            );
+            let cat = Series::full_null(PlSmallStr::from_static("category"), s.len(), &cat_dtype);
+            return Ok(StructChunked::from_series(
+                s.name().clone(),
+                s.len(),
+                [&brk, &cat].into_iter(),
+            )?
+            .into_series());
+        }
+        return Ok(Series::full_null(s.name().clone(), s.len(), &cat_dtype));
     }
 
     let s = s.cast(&DataType::Float64)?;
