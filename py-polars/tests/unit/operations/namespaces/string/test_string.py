@@ -900,6 +900,22 @@ def test_str_json_path_match_wrong_length() -> None:
         df.select(pl.col("num").str.json_path_match(pl.Series(["a", "b"])))
 
 
+def test_str_json_path_match_invalid_json() -> None:
+    # Strings that do not parse as JSON should yield a null result
+    # (not raise). See gh-27333.
+    df = pl.DataFrame({"json_val": ["{{{", '{"a":"1"}', "not json", None]})
+    out = df.select(matched=pl.col("json_val").str.json_path_match("$.a"))
+    expected = pl.DataFrame({"matched": [None, "1", None, None]})
+    assert_frame_equal(out, expected)
+
+
+def test_str_json_path_match_invalid_query() -> None:
+    # An invalid JSONPath query expression *does* raise.
+    df = pl.DataFrame({"json_val": ['{"a":"1"}']})
+    with pytest.raises(ComputeError):
+        df.select(pl.col("json_val").str.json_path_match("not a valid jsonpath"))
+
+
 def test_extract_regex() -> None:
     s = pl.Series(
         [

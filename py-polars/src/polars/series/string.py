@@ -785,24 +785,26 @@ class StringNameSpace:
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
-        Extract the first match of JSON string with provided JSONPath expression.
+        Extract the first match of a JSON string with the provided JSONPath expression.
 
-        Throw errors if encounter invalid JSON strings.
-        All return values will be cast to String regardless of the original value.
+        All return values are cast to String, regardless of the original
+        value. Strings that do not parse as JSON yield a null result; an
+        invalid JSONPath query expression raises a ComputeError.
 
-        Documentation on JSONPath standard can be found
+        Documentation on the JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string.
+            A valid JSONPath query string.
 
         Returns
         -------
         Series
-            Series of data type :class:`String`. Contains null values if the original
-            value is null or the json_path returns nothing.
+            Series of data type :class:`String`. Contains null values if the
+            original value is null, the input does not parse as JSON, or the
+            JSONPath query returns no match.
 
         Examples
         --------

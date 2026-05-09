@@ -1317,8 +1317,10 @@ class ExprStringNameSpace:
         """
         Extract the first match from a JSON string using the provided JSONPath.
 
-        Throws errors if invalid JSON strings are encountered. All return values
-        are cast to :class:`String`, regardless of the original value.
+        All return values are cast to :class:`String`, regardless of the
+        original value. Strings that do not parse as JSON yield a null
+        result; an invalid JSONPath query expression raises a
+        :class:`ComputeError`.
 
         Documentation on the JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
@@ -1331,8 +1333,9 @@ class ExprStringNameSpace:
         Returns
         -------
         Expr
-            Expression of data type :class:`String`. Contains null values if original
-            value is null or the json_path returns nothing.
+            Expression of data type :class:`String`. Contains null values if
+            the original value is null, the input does not parse as JSON, or
+            the JSONPath query returns no match.
 
         Examples
         --------
