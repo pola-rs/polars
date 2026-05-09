@@ -419,17 +419,18 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             fill_array_from::<_, _, PrimitiveArray<i128>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::Timestamp(tu, tz) => {
+            let tz_offset = tz
+                .as_ref()
+                .map(|tz| temporal_conversions::parse_offset(tz.as_str()))
+                .transpose()?;
             let mut err_idx = rows.len();
             let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
                 BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
-                BorrowedValue::String(v) => match (tu, tz) {
-                    (_, None) => {
+                BorrowedValue::String(v) => match &tz_offset {
+                    None => {
                         polars_compute::cast::temporal::utf8_to_naive_timestamp_scalar(v, "%+", tu)
                     },
-                    (_, Some(tz)) => {
-                        let tz = temporal_conversions::parse_offset(tz.as_str()).unwrap();
-                        temporal_conversions::utf8_to_timestamp_scalar(v, "%+", &tz, tu)
-                    },
+                    Some(tz) => temporal_conversions::utf8_to_timestamp_scalar(v, "%+", tz, tu),
                 },
                 BorrowedValue::Static(StaticNode::Null) => None,
                 _ => {
@@ -437,7 +438,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
                     None
                 },
             });
-            let out = Box::new(Int64Array::from_iter(iter).to(dtype));
+            let out = Box::new(Int64Array::from_trusted_len_iter(iter).to(dtype));
             check_err_idx(rows, err_idx, "timestamp")?;
             Ok(out)
         },
