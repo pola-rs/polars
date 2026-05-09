@@ -10,10 +10,10 @@ from polars._utils.parse.expr import _parse_inputs_as_iterable
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import Callable, Iterable
+    from collections.abc import Callable, Iterable, Iterator
     from datetime import timedelta
 
-    from polars import DataFrame
+    from polars import DataFrame, Series
     from polars._typing import (
         ClosedInterval,
         IntoExpr,
@@ -24,15 +24,94 @@ if TYPE_CHECKING:
     )
     from polars.lazyframe.group_by import LazyGroupBy
 
-    if sys.version_info >= (3, 11):
-        from typing import Self
-    else:
-        from typing_extensions import Self
-
     if sys.version_info >= (3, 13):
         from warnings import deprecated
     else:
         from typing_extensions import deprecated  # noqa: TC004
+
+
+class GroupByIter:
+    """
+    Iterator returned by :meth:`GroupBy.__iter__`.
+
+    Holds all iteration state so that :class:`GroupBy` itself is iterable but not
+    an iterator. This means ``next(df.group_by(...))`` correctly raises
+    :exc:`TypeError` instead of :exc:`AttributeError`.
+    """
+
+    def __init__(
+        self,
+        df: DataFrame,
+        group_names: Iterator[tuple[Any, ...]],
+        group_indices: Series,
+    ) -> None:
+        self._df = df
+        self._group_names = group_names
+        self._group_indices = group_indices
+        self._current_index = 0
+
+    def __iter__(self) -> GroupByIter:
+        return self
+
+    def __next__(self) -> tuple[tuple[Any, ...], DataFrame]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+        group_name = next(self._group_names)
+        group_data = self._df[self._group_indices[self._current_index], :]
+        self._current_index += 1
+        return group_name, group_data
+
+
+class RollingGroupByIter:
+    """Iterator returned by :meth:`RollingGroupBy.__iter__`. See :class:`GroupByIter`."""
+
+    def __init__(
+        self,
+        df: DataFrame,
+        group_names: Iterator[tuple[Any, ...]],
+        group_indices: Series,
+    ) -> None:
+        self._df = df
+        self._group_names = group_names
+        self._group_indices = group_indices
+        self._current_index = 0
+
+    def __iter__(self) -> RollingGroupByIter:
+        return self
+
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+        group_name = next(self._group_names)
+        group_data = self._df[self._group_indices[self._current_index], :]
+        self._current_index += 1
+        return group_name, group_data
+
+
+class DynamicGroupByIter:
+    """Iterator returned by :meth:`DynamicGroupBy.__iter__`. See :class:`GroupByIter`."""
+
+    def __init__(
+        self,
+        df: DataFrame,
+        group_names: Iterator[tuple[Any, ...]],
+        group_indices: Series,
+    ) -> None:
+        self._df = df
+        self._group_names = group_names
+        self._group_indices = group_indices
+        self._current_index = 0
+
+    def __iter__(self) -> DynamicGroupByIter:
+        return self
+
+    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
+        if self._current_index >= len(self._group_indices):
+            raise StopIteration
+        group_name = next(self._group_names)
+        group_data = self._df[self._group_indices[self._current_index], :]
+        self._current_index += 1
+        return group_name, group_data
 
 
 class GroupBy:
@@ -81,7 +160,7 @@ class GroupBy:
             return group_by.having(self.predicates)
         return group_by
 
-    def __iter__(self) -> Self:
+    def __iter__(self) -> GroupByIter:
         """
         Allows iteration over the groups of the group by operation.
 
@@ -131,21 +210,9 @@ class GroupBy:
             optimizations=QueryOptFlags.none()
         )
 
-        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
-        self._group_indices = groups_df.select(temp_col).to_series()
-        self._current_index = 0
-
-        return self
-
-    def __next__(self) -> tuple[tuple[Any, ...], DataFrame]:
-        if self._current_index >= len(self._group_indices):
-            raise StopIteration
-
-        group_name = next(self._group_names)
-        group_data = self.df[self._group_indices[self._current_index], :]
-        self._current_index += 1
-
-        return group_name, group_data
+        group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
+        group_indices = groups_df.select(temp_col).to_series()
+        return GroupByIter(self.df, group_names, group_indices)
 
     def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> GroupBy:
         """
@@ -888,7 +955,7 @@ class RollingGroupBy:
         self.group_by = group_by
         self.predicates = predicates
 
-    def __iter__(self) -> Self:
+    def __iter__(self) -> RollingGroupByIter:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         temp_col = "__POLARS_GB_GROUP_INDICES"
@@ -912,21 +979,9 @@ class RollingGroupBy:
             optimizations=QueryOptFlags.none()
         )
 
-        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
-        self._group_indices = groups_df.select(temp_col).to_series()
-        self._current_index = 0
-
-        return self
-
-    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
-        if self._current_index >= len(self._group_indices):
-            raise StopIteration
-
-        group_name = next(self._group_names)
-        group_data = self.df[self._group_indices[self._current_index], :]
-        self._current_index += 1
-
-        return group_name, group_data
+        group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
+        group_indices = groups_df.select(temp_col).to_series()
+        return RollingGroupByIter(self.df, group_names, group_indices)
 
     def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> RollingGroupBy:
         """
@@ -1076,7 +1131,7 @@ class DynamicGroupBy:
         self.start_by = start_by
         self.predicates = predicates
 
-    def __iter__(self) -> Self:
+    def __iter__(self) -> DynamicGroupByIter:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         temp_col = "__POLARS_GB_GROUP_INDICES"
@@ -1102,21 +1157,9 @@ class DynamicGroupBy:
             optimizations=QueryOptFlags.none()
         )
 
-        self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
-        self._group_indices = groups_df.select(temp_col).to_series()
-        self._current_index = 0
-
-        return self
-
-    def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
-        if self._current_index >= len(self._group_indices):
-            raise StopIteration
-
-        group_name = next(self._group_names)
-        group_data = self.df[self._group_indices[self._current_index], :]
-        self._current_index += 1
-
-        return group_name, group_data
+        group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
+        group_indices = groups_df.select(temp_col).to_series()
+        return DynamicGroupByIter(self.df, group_names, group_indices)
 
     def having(self, *predicates: IntoExpr | Iterable[IntoExpr]) -> DynamicGroupBy:
         """
