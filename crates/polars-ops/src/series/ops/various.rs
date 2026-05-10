@@ -254,7 +254,7 @@ fn is_sorted_categorical_lexical_adjacent(s: &Series, options: SortOptions) -> P
             ComputeError: "internal error: categorical physical array unexpectedly contains nulls"
         );
 
-        // `ca.null_count() == 0` implies each `phys` row decodes via `iter_str` to `Some(..)` (see 
+        // `ca.null_count() == 0` implies each `phys` row decodes via `iter_str` to `Some(..)` (see
         // [`CategoricalChunked::iter_str`]).
         Ok(is_sorted_adjacent_total_ord(
             ca.iter_str().map(|opt| {
