@@ -1,9 +1,8 @@
 # Shuffle data
 
-When running distributed queries, data needs to be transferred in between the nodes. Polars
-on-premises requires a configuration for this storage location. You should decide and benchmark
-which location is the best for your infrastructure, as it has a large impact on query execution
-times.
+When running distributed queries, data needs to be transferred in between the nodes. Polars On-Prem
+requires a configuration for this storage location. You should decide and benchmark which location
+is the best for your infrastructure, as it has a large impact on query execution times.
 
 ## Worker local storage
 
@@ -28,7 +27,7 @@ shuffle_location.local.path = "/mnt/storage/polars/shuffle"
 ## Worker shared storage
 
 If your infrastructure has some shared storage file system, such as NFS (or CephFs, etc.), Polars
-on-premises can use that for its shuffle data too. This reduces shuffle complexity, as Polars can
+On-Prem can use that for its shuffle data too. This reduces shuffle complexity, as Polars can
 directly write to the remote shared disk, and any worker can directly read from it. This setup can
 lead to improved performance when the network storage provider is fast enough. In addition, it
 provides automatic shuffle data persistence in case of worker node failure.

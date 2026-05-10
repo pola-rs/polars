@@ -267,18 +267,6 @@ pub(crate) fn check_input_node(
     aexpr_to_leaf_names_iter(node, expr_arena).all(|name| input_schema.contains(name.as_ref()))
 }
 
-pub(crate) fn check_input_column_node(
-    node: ColumnNode,
-    input_schema: &Schema,
-    expr_arena: &Arena<AExpr>,
-) -> bool {
-    match expr_arena.get(node.0) {
-        AExpr::Column(name) => input_schema.contains(name.as_ref()),
-        // Invariant of `ColumnNode`
-        _ => unreachable!(),
-    }
-}
-
 pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
     expr: I,
     schema: &Schema,

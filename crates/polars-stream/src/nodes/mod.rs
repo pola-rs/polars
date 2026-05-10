@@ -1,5 +1,6 @@
 pub mod backward_fill;
 pub mod callback_sink;
+pub mod columnar_function;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
 #[cfg(feature = "dynamic_group_by")]
@@ -9,12 +10,15 @@ pub mod dynamic_slice;
 pub mod ewm;
 pub mod filter;
 pub mod forward_fill;
+pub mod gather;
 pub mod gather_every;
 pub mod group_by;
 pub mod in_memory_map;
 pub mod in_memory_sink;
 pub mod in_memory_source;
 pub mod input_independent_select;
+#[cfg(feature = "interpolate")]
+pub mod interpolate;
 pub mod io_sinks;
 pub mod io_sources;
 #[cfg(feature = "is_first_distinct")]
@@ -39,6 +43,12 @@ pub mod simple_projection;
 pub mod sorted_group_by;
 pub mod sorted_unique;
 pub mod streaming_slice;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+pub mod strptime_infer;
 pub mod top_k;
 pub mod unordered_union;
 pub mod with_row_index;
@@ -49,7 +59,6 @@ mod compute_node_prelude {
     pub use polars_core::frame::DataFrame;
     pub use polars_error::PolarsResult;
     pub use polars_expr::state::ExecutionState;
-    pub use polars_ooc::Token;
 
     pub use super::ComputeNode;
     pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};

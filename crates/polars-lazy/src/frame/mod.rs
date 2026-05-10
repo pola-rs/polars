@@ -1416,6 +1416,18 @@ impl LazyFrame {
         JoinBuilder::new(self)
     }
 
+    /// Gathers rows from this DataFrame based on the indices in idxs.
+    ///
+    /// idxs must only have a single column of indices.
+    pub fn gather(self, idxs: LazyFrame, null_on_oob: bool) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .gather(idxs.logical_plan, null_on_oob)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Add or replace a column, given as an expression, to a DataFrame.
     ///
     /// # Example
@@ -1942,7 +1954,12 @@ impl LazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    pub fn merge_sorted<S>(self, other: LazyFrame, key: S) -> PolarsResult<LazyFrame>
+    pub fn merge_sorted<S>(
+        self,
+        other: LazyFrame,
+        key: S,
+        maintain_order: bool,
+    ) -> PolarsResult<LazyFrame>
     where
         S: Into<PlSmallStr>,
     {
@@ -1952,6 +1969,7 @@ impl LazyFrame {
             input_left: Arc::new(self.logical_plan),
             input_right: Arc::new(other.logical_plan),
             key,
+            maintain_order,
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }

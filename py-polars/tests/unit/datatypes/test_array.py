@@ -1,6 +1,6 @@
 import datetime
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -8,6 +8,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def test_cast_list_array() -> None:
@@ -409,7 +412,7 @@ def test_zero_width_array(fn: str) -> None:
     series_f = getattr(pl.Series, fn)
     expr_f = getattr(pl.Expr, fn)
 
-    values = [
+    values: Sequence[Sequence[list[list[Any] | None]]] = [
         [
             [[]],
             [None],

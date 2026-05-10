@@ -32,7 +32,7 @@ impl ApplyRowIndexOrLimit {
 
         if verbose {
             eprintln!(
-                "[NDJSON ApplyRowIndexOrLimit]: init: \
+                "[NDJson ApplyRowIndexOrLimit]: init: \
                 limit: {:?}, \
                 row_index: {:?}",
                 &limit, &row_index
@@ -86,7 +86,7 @@ impl ApplyRowIndexOrLimit {
         drop(morsel_receiver);
 
         if verbose {
-            eprintln!("[NDJSON ApplyRowIndexOrLimit]: returning");
+            eprintln!("[NDJson ApplyRowIndexOrLimit]: returning");
         }
 
         Ok(())

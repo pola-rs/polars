@@ -15,7 +15,7 @@ use polars_plan::dsl::ReshapeDimension;
 use polars_plan::plans::FusedOperator;
 #[cfg(feature = "cov")]
 use polars_plan::plans::IRCorrelationMethod;
-use polars_plan::plans::{AExprSorted, DynamicPred, RowEncodingVariant};
+use polars_plan::plans::{AExprSorted, DynamicPredWeakRef, RowEncodingVariant};
 use polars_row::RowEncodingOptions;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -159,6 +159,42 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
 
 pub fn rechunk(s: &Column) -> PolarsResult<Column> {
     Ok(s.rechunk())
+}
+
+pub fn quantile(s: &[Column], method: QuantileMethod) -> PolarsResult<Column> {
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let quantile = s[1].as_materialized_series();
+    polars_ensure!(quantile.len() <= 1, ComputeError:
+        "polars does not support varying quantiles yet, \
+        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
+    );
+
+    match quantile.dtype() {
+        DataType::List(_) => {
+            let list = quantile.list()?;
+            let inner_s = list.get_as_series(0).unwrap();
+            if inner_s.has_nulls() {
+                polars_bail!(ComputeError: "quantile expression contains null values");
+            }
+
+            let v: Vec<f64> = inner_s
+                .cast(&DataType::Float64)?
+                .f64()?
+                .into_no_null_iter()
+                .collect();
+
+            input
+                .quantiles_reduce(&v, method)
+                .map(|sc| sc.into_column(input.name().clone()))
+        },
+        _ => {
+            let q: f64 = quantile.get(0).unwrap().try_extract()?;
+            input
+                .quantile_reduce(q, method)
+                .map(|sc| sc.into_column(input.name().clone()))
+        },
+    }
 }
 
 #[cfg(feature = "mode")]
@@ -1042,6 +1078,6 @@ pub fn repeat(args: &[Column]) -> PolarsResult<Column> {
     Ok(c.new_from_index(0, n))
 }
 
-pub fn dynamic_pred(columns: &[Column], pred: &DynamicPred) -> PolarsResult<Column> {
+pub fn dynamic_pred(columns: &[Column], pred: &DynamicPredWeakRef) -> PolarsResult<Column> {
     pred.evaluate(columns)
 }

@@ -155,20 +155,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Quantile {
-                expr,
-                quantile,
-                method,
-            } => {
-                let expr = node_to_expr(expr, expr_arena);
-                let quantile = node_to_expr(quantile, expr_arena);
-                AggExpr::Quantile {
-                    expr: Arc::new(expr),
-                    quantile: Arc::new(quantile),
-                    method,
-                }
-                .into()
-            },
             IRAggExpr::Sum(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Sum(Arc::new(exp)).into()
@@ -330,10 +316,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Var(v) => A::Var(v),
                 IA::Mean => A::Mean,
                 IA::Median => A::Median,
-                #[cfg(feature = "array_any_all")]
-                IA::Any => A::Any,
-                #[cfg(feature = "array_any_all")]
-                IA::All => A::All,
                 IA::Sort(v) => A::Sort(v),
                 IA::Reverse => A::Reverse,
                 IA::ArgMin => A::ArgMin,
@@ -450,10 +432,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IL::NUnique => L::NUnique,
                 #[cfg(feature = "list_sets")]
                 IL::SetOperation(set_operation) => L::SetOperation(set_operation),
-                #[cfg(feature = "list_any_all")]
-                IL::Any => L::Any,
-                #[cfg(feature = "list_any_all")]
-                IL::All => L::All,
                 IL::Join(v) => L::Join(v),
                 #[cfg(feature = "dtype-array")]
                 IL::ToArray(v) => L::ToArray(v),
@@ -929,6 +907,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,
         IF::DropNulls => F::DropNulls,
+        IF::Quantile { method } => F::Quantile { method },
         #[cfg(feature = "mode")]
         IF::Mode { maintain_order } => F::Mode { maintain_order },
         #[cfg(feature = "moment")]

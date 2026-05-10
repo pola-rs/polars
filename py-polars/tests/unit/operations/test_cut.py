@@ -22,7 +22,7 @@ def test_cut() -> None:
             "(-1, 1]",
             "(1, inf]",
         ],
-        dtype=pl.Categorical,
+        dtype=pl.Enum(["(-inf, -1]", "(-1, 1]", "(1, inf]"]),
     )
     assert_series_equal(result, expected, categorical_as_str=True)
 
@@ -34,7 +34,7 @@ def test_cut_lazy_schema() -> None:
 
     expected = pl.LazyFrame(
         {"a": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"]},
-        schema={"a": pl.Categorical},
+        schema={"a": pl.Enum(["(-inf, -1]", "(-1, 1]", "(1, inf]"])},
     )
     assert_frame_equal(result, expected, categorical_as_str=True)
 
@@ -49,7 +49,7 @@ def test_cut_include_breaks() -> None:
             "breakpoint": [-1.5, 0.25, 0.25, 1.0, inf],
             "category": ["a", "b", "b", "c", "d"],
         },
-        schema_overrides={"category": pl.Categorical},
+        schema_overrides={"category": pl.Enum(["a", "b", "c", "d"])},
     ).to_struct("a")
     assert_series_equal(out, expected, categorical_as_str=True)
 
@@ -67,7 +67,7 @@ def test_cut_include_breaks_lazy_schema() -> None:
             "breakpoint": [-1.0, -1.0, 1.0, 1.0, inf],
             "category": ["(-inf, -1]", "(-inf, -1]", "(-1, 1]", "(-1, 1]", "(1, inf]"],
         },
-        schema_overrides={"category": pl.Categorical},
+        schema_overrides={"category": pl.Enum(["(-inf, -1]", "(-1, 1]", "(1, inf]"])},
     )
     assert_frame_equal(result, expected, categorical_as_str=True)
 
@@ -77,7 +77,9 @@ def test_cut_null_values() -> None:
 
     result = s.cut([1.5, 5.0], labels=["a", "b", "c"])
 
-    expected = pl.Series(["a", None, "a", "b", None, "c", "b"], dtype=pl.Categorical)
+    expected = pl.Series(
+        ["a", None, "a", "b", None, "c", "b"], dtype=pl.Enum(["a", "b", "c"])
+    )
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
@@ -87,8 +89,18 @@ def test_cut_bin_name_in_agg_context() -> None:
         qcut=pl.col("a").qcut([1], include_breaks=True).over(1),
         qcut_uniform=pl.col("a").qcut(1, include_breaks=True).over(1),
     )
-    schema = pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical()})
-    assert df.schema == {"cut": schema, "qcut": schema, "qcut_uniform": schema}
+    cut_schema = pl.Struct(
+        {
+            "breakpoint": pl.Float64,
+            "category": pl.Enum(["(-inf, 1]", "(1, 2]", "(2, inf]"]),
+        }
+    )
+    qcut_schema = pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical()})
+    assert df.schema == {
+        "cut": cut_schema,
+        "qcut": qcut_schema,
+        "qcut_uniform": qcut_schema,
+    }
 
 
 @pytest.mark.parametrize(

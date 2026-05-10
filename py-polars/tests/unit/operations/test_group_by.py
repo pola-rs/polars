@@ -23,7 +23,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from polars._typing import PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
@@ -2048,7 +2048,7 @@ def test_group_by_unique_parametric(
     ],
 )
 def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
-    combinations = [
+    combinations: Sequence[list[bool | None]] = [
         [True, None],
         [None, None],
         [False, None],
@@ -2222,7 +2222,7 @@ def test_group_by_explode_none_dtype_25045() -> None:
 def test_group_by_forward_backward_fill(
     expr: Callable[[pl.Expr], pl.Expr], is_scalar: bool
 ) -> None:
-    combinations = [
+    combinations: Sequence[list[int | None]] = [
         [1, None, 2, None, None],
         [None, 1, 2, 3, 4],
         [None, None, None, None, None],
@@ -3017,3 +3017,66 @@ def test_group_by_arg_max_boolean_26978() -> None:
             }
         ),
     )
+
+
+def test_structify_keyword_27147() -> None:
+    df = pl.DataFrame({"b": [1, 1, 2]})
+    result = df.group_by("b").agg(__structify=pl.len()).sort("b")
+    expected = pl.DataFrame(
+        {"b": [1, 2], "__structify": [2, 1]},
+        schema_overrides={"__structify": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_arg_max_arg_min_binary_27171() -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"key": ["a", "a", "b"], "val": [b"x", b"y", b"z"]})
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").arg_max())
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"key": ["a", "b"], "val": pl.Series([1, 0], dtype=idx_dtype)}),
+    )
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").arg_min())
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"key": ["a", "b"], "val": pl.Series([0, 0], dtype=idx_dtype)}),
+    )
+
+
+def test_group_by_arg_max_string_single_element_27171() -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"key": ["a", "a", "b"], "val": ["x", "y", "z"]})
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").arg_max())
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"key": ["a", "b"], "val": pl.Series([1, 0], dtype=idx_dtype)}),
+    )
+
+
+def test_group_by_arg_min_string_nullable_single_element_27171() -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"key": ["a", "a", "b", "c"], "val": ["x", None, "z", "w"]})
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").arg_min())
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "key": ["a", "b", "c"],
+                "val": pl.Series([0, 0, 0], dtype=idx_dtype),
+            }
+        ),
+    )
+
+
+def test_group_by_max_by_min_by_string_single_element_27171() -> None:
+    df = pl.DataFrame(
+        {"key": ["a", "a", "b"], "val": [10, 20, 30], "by": ["x", "y", "z"]}
+    )
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").max_by("by"))
+    assert result.filter(pl.col("key") == "a")["val"][0] == 20
+    assert result.filter(pl.col("key") == "b")["val"][0] == 30
+
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").min_by("by"))
+    assert result.filter(pl.col("key") == "a")["val"][0] == 10
+    assert result.filter(pl.col("key") == "b")["val"][0] == 30

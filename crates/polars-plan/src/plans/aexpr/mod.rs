@@ -16,7 +16,6 @@ pub use function_expr::*;
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
-use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
@@ -24,6 +23,7 @@ use polars_utils::arena::{Arena, Node};
 pub use scalar::{is_length_preserving_ae, is_scalar_ae};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
+pub mod projection_height;
 mod properties;
 pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
@@ -61,11 +61,6 @@ pub enum IRAggExpr {
         input: Node,
         maintain_order: bool,
     },
-    Quantile {
-        expr: Node,
-        quantile: Node,
-        method: QuantileMethod,
-    },
     Sum(Node),
     Count {
         input: Node,
@@ -88,9 +83,6 @@ impl Hash for IRAggExpr {
                 input: _,
                 propagate_nans,
             } => propagate_nans.hash(state),
-            Self::Quantile {
-                method: interpol, ..
-            } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             Self::Count {
                 input: _,
@@ -121,7 +113,6 @@ impl IRAggExpr {
                     propagate_nans: r, ..
                 },
             ) => l == r,
-            (Quantile { method: l, .. }, Quantile { method: r, .. }) => l == r,
             (Std(_, l), Std(_, r)) => l == r,
             (Var(_, l), Var(_, r)) => l == r,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
@@ -170,8 +161,6 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-            // Multi-input aggregations.
-            Quantile { .. } => unreachable!(),
         }
     }
 }
@@ -295,137 +284,6 @@ impl AExpr {
     #[cfg(feature = "cse")]
     pub(crate) fn col(name: PlSmallStr) -> Self {
         AExpr::Column(name)
-    }
-
-    #[recursive::recursive]
-    pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
-        match self {
-            AExpr::Element => false,
-            AExpr::Literal(lv) => lv.is_scalar(),
-            AExpr::Function { options, input, .. }
-            | AExpr::AnonymousFunction { options, input, .. } => {
-                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
-                    true
-                } else if options.is_elementwise()
-                    || options.flags.contains(FunctionFlags::LENGTH_PRESERVING)
-                {
-                    input.iter().all(|e| e.is_scalar(arena))
-                } else {
-                    false
-                }
-            },
-            AExpr::BinaryExpr { left, right, .. } => {
-                is_scalar_ae(*left, arena) && is_scalar_ae(*right, arena)
-            },
-            AExpr::Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => {
-                is_scalar_ae(*predicate, arena)
-                    && is_scalar_ae(*truthy, arena)
-                    && is_scalar_ae(*falsy, arena)
-            },
-            AExpr::Agg(_) | AExpr::AnonymousAgg { .. } | AExpr::Len => true,
-            AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Eval { expr, variant, .. } => {
-                variant.is_length_preserving() && is_scalar_ae(*expr, arena)
-            },
-            #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Gather { returns_scalar, .. } => *returns_scalar,
-            AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
-
-            // Over and Rolling implicitly zip with the context and thus are never scalars
-            AExpr::Over { .. } => false,
-            #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { .. } => false,
-
-            AExpr::Explode { .. }
-            | AExpr::Column(_)
-            | AExpr::Filter { .. }
-            | AExpr::Slice { .. } => false,
-            #[cfg(feature = "dtype-struct")]
-            AExpr::StructField(_) => false,
-        }
-    }
-
-    #[recursive::recursive]
-    pub fn is_length_preserving(&self, arena: &Arena<AExpr>) -> bool {
-        fn broadcasting_input_length_preserving(
-            n: impl IntoIterator<Item = Node>,
-            arena: &Arena<AExpr>,
-        ) -> bool {
-            let mut num_items = 0;
-            let mut num_length_preserving = 0;
-            let mut num_scalar_or_length_preserving = 0;
-
-            for n in n {
-                num_items += 1;
-
-                if is_length_preserving_ae(n, arena) {
-                    num_length_preserving += 1;
-                    num_scalar_or_length_preserving += 1;
-                } else if is_scalar_ae(n, arena) {
-                    num_scalar_or_length_preserving += 1;
-                }
-            }
-
-            num_length_preserving > 0 && num_scalar_or_length_preserving == num_items
-        }
-
-        match self {
-            AExpr::Element => true,
-            AExpr::Column(_) => true,
-            #[cfg(feature = "dtype-struct")]
-            AExpr::StructField(_) => true,
-
-            // Over and Rolling implicitly zip with the context and thus should always be length
-            // preserving
-            AExpr::Over { mapping, .. } => !matches!(mapping, WindowMapping::Explode),
-            #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { .. } => true,
-
-            AExpr::AnonymousAgg { .. } | AExpr::Literal(_) | AExpr::Agg(_) | AExpr::Len => false,
-            AExpr::Function { options, input, .. }
-            | AExpr::AnonymousFunction { options, input, .. } => {
-                if options.flags.is_elementwise() {
-                    broadcasting_input_length_preserving(input.iter().map(|e| e.node()), arena)
-                } else if options.flags.is_length_preserving() {
-                    input.iter().all(|e| e.is_length_preserving(arena))
-                } else {
-                    false
-                }
-            },
-            AExpr::BinaryExpr { left, right, .. } => {
-                broadcasting_input_length_preserving([*left, *right], arena)
-            },
-            AExpr::Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => broadcasting_input_length_preserving([*predicate, *truthy, *falsy], arena),
-            AExpr::Cast { expr, .. } => is_length_preserving_ae(*expr, arena),
-            AExpr::Eval { expr, variant, .. } => {
-                variant.is_length_preserving() && is_length_preserving_ae(*expr, arena)
-            },
-            #[cfg(feature = "dtype-struct")]
-            AExpr::StructEval { expr, .. } => is_length_preserving_ae(*expr, arena),
-            AExpr::Sort { expr, .. } => is_length_preserving_ae(*expr, arena),
-            AExpr::Gather {
-                expr: _,
-                idx,
-                returns_scalar,
-                null_on_oob: _,
-            } => !returns_scalar && is_length_preserving_ae(*idx, arena),
-            AExpr::SortBy { expr, by, .. } => broadcasting_input_length_preserving(
-                std::iter::once(*expr).chain(by.iter().copied()),
-                arena,
-            ),
-
-            AExpr::Explode { .. } | AExpr::Filter { .. } | AExpr::Slice { .. } => false,
-        }
     }
 
     /// Is the top-level expression fallible based on the data values.

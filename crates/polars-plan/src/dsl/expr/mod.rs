@@ -49,6 +49,7 @@ pub enum AggExpr {
         input: Arc<Expr>,
         include_nulls: bool,
     },
+    // TODO: remove on next DSL break, deprecated in favor of FunctionExpr::Quantile.
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
@@ -635,6 +636,13 @@ impl EvalVariant {
             (Self::List | Self::ListAgg, DataType::List(inner)) => Ok(inner.as_ref()),
             #[cfg(feature = "dtype-array")]
             (Self::Array { .. } | Self::ArrayAgg, DataType::Array(inner, _)) => Ok(inner.as_ref()),
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg { .. }, dtype) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "expected Array datatype for array operation, got: {dtype:?}"
+                );
+            },
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -672,6 +680,13 @@ impl EvalVariant {
                     Ok(DataType::List(Box::new(output_element_dtype)))
                 }
             },
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg, dtype) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "expected Array datatype for array operation, got: {dtype:?}"
+                );
+            },
             (Self::Cumulative { min_samples: _ }, _) => Ok(output_element_dtype),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -690,16 +705,6 @@ impl EvalVariant {
             EvalVariant::List | EvalVariant::ListAgg => true,
             EvalVariant::Array { .. } | EvalVariant::ArrayAgg => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
-        }
-    }
-
-    pub fn is_length_preserving(&self) -> bool {
-        match self {
-            EvalVariant::List
-            | EvalVariant::ListAgg
-            | EvalVariant::Array { .. }
-            | EvalVariant::ArrayAgg
-            | EvalVariant::Cumulative { .. } => true,
         }
     }
 }

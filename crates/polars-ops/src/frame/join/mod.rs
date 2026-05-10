@@ -18,7 +18,9 @@ use std::hash::Hash;
 pub use args::*;
 use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
-pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
+pub use asof::{
+    _check_asof_columns, _join_asof_dispatch, AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy,
+};
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
@@ -650,19 +652,19 @@ fn prepare_keys_multiple(s: &[Series], nulls_equal: bool) -> PolarsResult<Binary
         encode_rows_vertical_par_unordered_broadcast_nulls(&keys)
     }
 }
+
+// Duplicate column names are allowed
 pub fn private_left_join_multiple_keys(
-    a: &DataFrame,
-    b: &DataFrame,
+    a: &[Column],
+    b: &[Column],
     nulls_equal: bool,
 ) -> PolarsResult<LeftJoinIds> {
     // @scalar-opt
     let a_cols = a
-        .columns()
         .iter()
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();
     let b_cols = b
-        .columns()
         .iter()
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();

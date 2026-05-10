@@ -100,8 +100,9 @@ impl<T: PolarsNumericType> Reducer for NumUnorderedImplodeReducer<T> {
 
         let values = out.freeze();
         let list_dtype = DataType::List(Box::new(dtype.clone()));
+        let phys_list_dtype = DataType::List(Box::new(dtype.to_physical()));
         let arr = ListArray::new(
-            list_dtype.to_arrow(CompatLevel::newest()),
+            phys_list_dtype.to_arrow(CompatLevel::newest()),
             offsets.freeze(),
             values.boxed(),
             None,

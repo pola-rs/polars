@@ -40,6 +40,14 @@ def test_error_on_reducing_map() -> None:
             pl.map_batches(["t", "y"], np.mean, return_dtype=pl.Float64)
         )
 
+    enum = pl.Enum(
+        [
+            "(-inf, 1]",
+            "(1, 2]",
+            "(2, 3]",
+            "(3, inf]",
+        ]
+    )
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(TypeError, match=r"`map` with `returns_scalar=False`"):
         df.select(
@@ -48,7 +56,10 @@ def test_error_on_reducing_map() -> None:
                 lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
                 is_elementwise=True,
                 return_dtype=pl.Struct(
-                    {"breakpoint": pl.Int64, "cat": pl.Categorical()}
+                    {
+                        "breakpoint": pl.Int64,
+                        "category": enum,
+                    }
                 ),
             )
             .over("group")
@@ -69,7 +80,7 @@ def test_error_on_reducing_map() -> None:
                 "breakpoint": [1.0, 2.0, 3.0, float("inf")],
                 "category": ["(-inf, 1]", "(1, 2]", "(2, 3]", "(3, inf]"],
             },
-            schema_overrides={"category": pl.Categorical()},
+            schema_overrides={"category": enum},
         ),
     )
 

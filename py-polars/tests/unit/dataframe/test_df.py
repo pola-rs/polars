@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     from polars import Expr
-    from polars._typing import JoinStrategy, UniqueKeepStrategy
+    from polars._typing import JoinStrategy, PolarsDataType, UniqueKeepStrategy
     from tests.conftest import PlMonkeyPatch
 
 
@@ -190,7 +190,7 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
         }
     )
     record_batches = tbl.to_batches(max_chunksize=1)
-    expected_schema = {
+    expected_schema: dict[str, PolarsDataType] = {
         "a": pl.Datetime("ms"),
         "b": pl.Datetime("ms"),
         "c": pl.Datetime("us"),
@@ -241,7 +241,7 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     # try a single column dtype override
     for t in (tbl, empty_tbl):
         df = pl.DataFrame(t, schema_overrides={"e": pl.Int8})
-        override_schema = expected_schema.copy()
+        override_schema: dict[str, PolarsDataType] = expected_schema.copy()
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
         assert df.rows() == expected_data[: (df.height)]
@@ -273,7 +273,6 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     assert df2.rows() == df.rows()[:3]
 
     assert df0.schema == {"id": pl.String, "points": pl.Int64}
-    print(df1.schema)
     assert df1.schema == {"x": pl.String, "y": pl.Int32}
     assert df2.schema == {"x": pl.String, "y": pl.Int32}
 
@@ -2810,7 +2809,7 @@ def test_set() -> None:
 
     # needs to be a 2 element tuple
     with pytest.raises(ValueError):
-        df[1, 2, 3] = 1
+        df[1, 2, 3] = 1  # type: ignore[index]
 
     # we cannot index with any type, such as bool
     with pytest.raises(TypeError):
@@ -2860,6 +2859,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_europe = "Europe/Amsterdam"
 
     dtm = datetime(2022, 10, 12, 12, 30)
+    type_overrides: dict[str, Any]
     for time_unit in DTYPE_TEMPORAL_UNITS:
         for type_overrides in (
             {

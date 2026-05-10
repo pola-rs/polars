@@ -17,10 +17,6 @@ pub enum IRArrayFunction {
     Var(u8),
     Mean,
     Median,
-    #[cfg(feature = "array_any_all")]
-    Any,
-    #[cfg(feature = "array_any_all")]
-    All,
     Sort(SortOptions),
     Reverse,
     ArgMin,
@@ -84,8 +80,6 @@ impl IRArrayFunction {
             Var(_) => mapper.ensure_is_array()?.var_dtype(),
             Mean => mapper.ensure_is_array()?.moment_dtype(),
             Median => mapper.ensure_is_array()?.moment_dtype(),
-            #[cfg(feature = "array_any_all")]
-            Any | All => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
             Sort(_) => mapper.ensure_is_array()?.with_same_dtype(),
             Reverse => mapper.ensure_is_array()?.with_same_dtype(),
             ArgMin | ArgMax => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
@@ -125,8 +119,6 @@ impl IRArrayFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRArrayFunction as A;
         match self {
-            #[cfg(feature = "array_any_all")]
-            A::Any | A::All => FunctionOptions::elementwise(),
             #[cfg(feature = "is_in")]
             A::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "array_count")]
@@ -204,10 +196,6 @@ impl Display for IRArrayFunction {
             Var(_) => "var",
             Mean => "mean",
             Median => "median",
-            #[cfg(feature = "array_any_all")]
-            Any => "any",
-            #[cfg(feature = "array_any_all")]
-            All => "all",
             Sort(_) => "sort",
             Reverse => "reverse",
             ArgMin => "arg_min",

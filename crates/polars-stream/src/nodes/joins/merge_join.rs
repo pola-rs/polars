@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::ops::RangeBounds;
 
 use polars_core::POOL;
 use polars_core::frame::builder::DataFrameBuilder;
@@ -6,6 +7,7 @@ use polars_core::prelude::*;
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
+use polars_utils::sort::reorder_cmp;
 use rayon::slice::ParallelSliceMut;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
@@ -662,28 +664,28 @@ fn find_mergeable_search(
     // First return chunks of nulls if there are any
     if !params.args.nulls_equal && !params.key_nulls_last && build_first == AnyValue::Null {
         let build_first_nonnull_idx =
-            binary_search_upper(build, &AnyValue::Null, params, build_params);
+            binary_search_upper(build, &AnyValue::Null, .., params, build_params);
         let build_split = build.split_at(build_first_nonnull_idx);
         return Ok(Ok((build_split, probe_empty_buf())));
     }
     if !params.args.nulls_equal && !params.key_nulls_last && probe_first == AnyValue::Null {
         let probe_first_nonnull_idx =
-            binary_search_upper(probe, &AnyValue::Null, params, probe_params);
+            binary_search_upper(probe, &AnyValue::Null, .., params, probe_params);
         let right_split = probe.split_at(probe_first_nonnull_idx);
         return Ok(Ok((build_empty_buf(), right_split)));
     }
 
-    let build_last_idx = usize::min(build.height(), search_limit);
-    let build_last = build_get(build_last_idx - 1);
+    let build_last_idx = usize::min(build.height(), search_limit) - 1;
+    let build_last = build_get(build_last_idx);
     let build_first_incomplete = match build_done {
-        false => binary_search_lower(build, &build_last, params, build_params),
+        false => binary_search_lower(build, &build_last, ..=build_last_idx, params, build_params),
         true => build.height(),
     };
 
-    let probe_last_idx = usize::min(probe.height(), search_limit);
-    let probe_last = probe_get(probe_last_idx - 1);
+    let probe_last_idx = usize::min(probe.height(), search_limit) - 1;
+    let probe_last = probe_get(probe_last_idx);
     let probe_first_incomplete = match probe_done {
-        false => binary_search_lower(probe, &probe_last, params, probe_params),
+        false => binary_search_lower(probe, &probe_last, ..=probe_last_idx, params, probe_params),
         true => probe.height(),
     };
 
@@ -713,6 +715,7 @@ fn find_mergeable_search(
             probe_mergeable_until = binary_search_upper(
                 probe,
                 &build_get(build_mergeable_until - 1),
+                ..probe_first_incomplete,
                 params,
                 probe_params,
             );
@@ -722,6 +725,7 @@ fn find_mergeable_search(
             build_mergeable_until = binary_search_upper(
                 build,
                 &probe_get(probe_mergeable_until - 1),
+                ..build_first_incomplete,
                 params,
                 build_params,
             );
@@ -737,34 +741,38 @@ fn find_mergeable_search(
     Ok(Ok((build_split, probe_split)))
 }
 
-fn binary_search_lower(
+fn binary_search_lower<R: RangeBounds<usize>>(
     dfsb: &DataFrameSearchBuffer,
     sv: &AnyValue,
+    range: R,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_le();
-    dfsb.binary_search(predicate, sp.key_col(), params.keys_row_encoded)
+    dfsb.binary_search_binary_offset_bypass_validity(
+        predicate,
+        sp.key_col(),
+        range,
+        params.keys_row_encoded,
+    )
 }
 
-fn binary_search_upper(
+fn binary_search_upper<R: RangeBounds<usize>>(
     dfsb: &DataFrameSearchBuffer,
     sv: &AnyValue,
+    range: R,
     params: &MergeJoinParams,
     sp: &MergeJoinSideParams,
 ) -> usize {
     let predicate = |x: &AnyValue<'_>| keys_cmp(sv, x, params).is_lt();
-    dfsb.binary_search(predicate, sp.key_col(), params.keys_row_encoded)
+    dfsb.binary_search_binary_offset_bypass_validity(
+        predicate,
+        sp.key_col(),
+        range,
+        params.keys_row_encoded,
+    )
 }
 
 fn keys_cmp(lhs: &AnyValue, rhs: &AnyValue, params: &MergeJoinParams) -> Ordering {
-    match AnyValue::partial_cmp(lhs, rhs).unwrap() {
-        Ordering::Equal => Ordering::Equal,
-        _ if lhs.is_null() && params.key_nulls_last => Ordering::Greater,
-        _ if rhs.is_null() && params.key_nulls_last => Ordering::Less,
-        _ if lhs.is_null() => Ordering::Less,
-        _ if rhs.is_null() => Ordering::Greater,
-        ord if params.key_descending => ord.reverse(),
-        ord => ord,
-    }
+    reorder_cmp(lhs, rhs, params.key_descending, params.key_nulls_last)
 }

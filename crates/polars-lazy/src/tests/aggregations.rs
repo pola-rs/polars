@@ -466,7 +466,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .agg([
             // keep the head as it test slice correctness
             col("book")
-                .gather(col("count").arg_sort(true, false).head(Some(2)))
+                .gather(col("count").arg_sort(true, false).head(Some(2)), false)
                 .alias("ordered"),
         ])
         .sort(["user"], Default::default())
@@ -551,6 +551,7 @@ fn test_take_in_groups() -> PolarsResult<()> {
         .select([col("B")
             .get(lit(0u32), false)
             .over([col("fruits")])
+            .unwrap()
             .alias("taken")])
         .collect()?;
 

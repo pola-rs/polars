@@ -39,19 +39,19 @@ fn update_alloc_size(bytes: i64) {
 }
 
 #[cfg(all(
-    not(feature = "default_alloc"),
+    feature = "fast_alloc",
     target_family = "unix",
     not(target_os = "emscripten"),
 ))]
 static UNDERLYING_ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[cfg(all(
-    not(feature = "default_alloc"),
+    feature = "fast_alloc",
     any(not(target_family = "unix"), target_os = "emscripten"),
 ))]
 static UNDERLYING_ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-#[cfg(feature = "default_alloc")]
+#[cfg(not(feature = "fast_alloc"))]
 static UNDERLYING_ALLOC: std::alloc::System = std::alloc::System;
 
 pub struct Allocator;
