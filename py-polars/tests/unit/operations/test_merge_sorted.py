@@ -428,3 +428,9 @@ def test_merge_sorted_deep_chain_with_sort_collect(n_frames: int) -> None:
     result = chained.sort("n", "foo").collect()
 
     assert_frame_equal(result, expected)
+
+
+def test_merge_sorted_with_list() -> None:
+    # See: https://github.com/pola-rs/polars/issues/27563
+    df = pl.DataFrame({"key": [""], "list": [[""]]})
+    df.merge_sorted(df, key="key")
