@@ -127,18 +127,91 @@ pub trait SeriesMethods: SeriesSealed {
             })
         }
 
-        let cmp_len = s_len - null_count - 1; // Number of comparisons we might have to do
-        // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
-        // Compare adjacent elements with no-copy slices that don't include any nulls
-        let offset = !options.nulls_last as i64 * null_count as i64;
-        let (s1, s2) = (s.slice(offset, cmp_len), s.slice(offset + 1, cmp_len));
-        let cmp_op = if options.descending {
-            Series::gt_eq
-        } else {
-            Series::lt_eq
-        };
-        Ok(cmp_op(&s1, &s2)?.all())
+        // Logical non-primitive types (e.g. String, Categorical, List, …): take only the contiguous
+        // non-null values (`non_null`), convert to physical storage with `to_physical_repr`, then
+        // (1) reuse `is_sorted_ca_num` when the physical type is primitive numeric,
+        // (2) else scan bool / string / binary values with `TotalOrd` (no full boolean compare series),
+        // (3) else fall back to pairwise `Series::lt_eq` / `gt_eq` (nested types, etc.).
+        let non_null_len = s_len - null_count;
+        if non_null_len <= 1 {
+            return Ok(true);
+        }
+
+        let offset = (!options.nulls_last as i64) * (null_count as i64);
+        let non_null = s.slice(offset, non_null_len);
+        polars_ensure!(non_null.null_count() == 0, ComputeError: "internal error: `is_sorted` non-null slice contains nulls");
+
+        let phys = non_null.to_physical_repr();
+        let s_phys = phys.as_ref();
+        if s_phys.dtype().is_primitive_numeric() {
+            with_match_physical_numeric_polars_type!(s_phys.dtype(), |$T| {
+                let ca: &ChunkedArray<$T> = s_phys.as_ref().as_ref().as_ref();
+                return Ok(is_sorted_ca_num::<$T>(ca, options))
+            })
+        }
+
+        match s_phys.dtype() {
+            DataType::Boolean => {
+                let ca = s_phys.bool()?;
+                Ok(is_sorted_adjacent_total_ord(ca.into_no_null_iter(), options.descending))
+            },
+            DataType::String => {
+                let ca = s_phys.str()?;
+                Ok(is_sorted_adjacent_total_ord(ca.into_no_null_iter(), options.descending))
+            },
+            DataType::Binary => {
+                let ca = s_phys.binary()?;
+                Ok(is_sorted_adjacent_total_ord(ca.into_no_null_iter(), options.descending))
+            },
+            DataType::BinaryOffset => {
+                let ca = s_phys.binary_offset()?;
+                Ok(is_sorted_adjacent_total_ord(ca.into_no_null_iter(), options.descending))
+            },
+            _ => {
+                let cmp_len = s_len - null_count - 1;
+                let offset = (!options.nulls_last as i64) * (null_count as i64);
+                let (s1, s2) = (s.slice(offset, cmp_len), s.slice(offset + 1, cmp_len));
+                let cmp_op = if options.descending {
+                    Series::gt_eq
+                } else {
+                    Series::lt_eq
+                };
+                Ok(cmp_op(&s1, &s2)?.all())
+            },
+        }
     }
+}
+
+/// Returns whether iterator elements are non-decreasing (`descending == false`) or non-increasing
+/// (`descending == true`) under [`TotalOrd`].
+///
+/// Assumes the iterator `it` yields **only** the non-null values in row order (one item per row). An empty
+/// iterator is considered sorted. Stops at the first pair that violates the ordering.
+fn is_sorted_adjacent_total_ord<T: TotalOrd>(
+    it: impl Iterator<Item = T>,
+    descending: bool,
+) -> bool {
+    let mut it = it;
+    // Sliding window: `prev` is always the previous element; seed with the first value.
+    let Some(mut prev) = it.next() else {
+        return true;
+    };
+    if descending {
+        for v in it {
+            if !prev.tot_ge(&v) {
+                return false;
+            }
+            prev = v;
+        }
+    } else {
+        for v in it {
+            if !prev.tot_le(&v) {
+                return false;
+            }
+            prev = v;
+        }
+    }
+    true
 }
 
 fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
