@@ -18,18 +18,8 @@ fn ext_to(s: &Column, dtype: DataType) -> PolarsResult<Column> {
         polars_bail!(ComputeError: "ext.to() requires an Extension dtype")
     };
 
-    if let DataType::Extension(_, _) = s.dtype() {
-        polars_bail!(
-            InvalidOperation:
-            "cannot call `.ext.to` on a column that is already an Extension type ({}); \
-            extension-to-extension conversion is not defined — if you want to pass the underlying \
-            storage into a new extension, do so explicitly with `.ext.storage().ext.to(...)`",
-            s.dtype()
-        )
-    };
-
     Ok(s.apply_unary_elementwise(|s| {
-        debug_assert!(*s.dtype() == **storage);
+        assert!(*s.dtype() == **storage);
         s.clone().into_extension(typ.clone())
     }))
 }
