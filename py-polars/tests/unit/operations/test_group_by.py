@@ -584,15 +584,27 @@ def test_group_by_next_raises_type_error() -> None:
     with pytest.raises(TypeError):
         next(gb)  # type: ignore[call-overload]
 
-    # iter() then next() must still work correctly
+    # iter() then next() must still work correctly, and the iterator is its own __iter__
     it = iter(
         pl.DataFrame({"a": [1, 1, 2], "b": [10, 20, 30]}).group_by(
             "a", maintain_order=True
         )
     )
+    assert iter(it) is it  # GroupByIter.__iter__ returns self
     name, group = next(it)
     assert name == (1,)
     assert group.shape == (2, 2)
+
+    # RollingGroupByIter is also its own iterator
+    dates = pl.date_range(date(2020, 1, 1), date(2020, 1, 4), eager=True)
+    df_roll = pl.DataFrame({"dt": dates, "v": [1, 2, 3, 4]})
+    roll_it = iter(df_roll.rolling("dt", period="2d"))
+    assert iter(roll_it) is roll_it  # RollingGroupByIter.__iter__ returns self
+
+    # DynamicGroupByIter is also its own iterator
+    df_dyn = pl.DataFrame({"dt": dates, "v": [1, 2, 3, 4]})
+    dyn_it = iter(df_dyn.group_by_dynamic("dt", every="2d"))
+    assert iter(dyn_it) is dyn_it  # DynamicGroupByIter.__iter__ returns self
 
 
 def test_group_by_iteration_selector() -> None:
