@@ -13,6 +13,9 @@ pub enum BooleanFunction {
     All {
         ignore_nulls: bool,
     },
+    IsEmpty {
+        ignore_nulls: bool,
+    },
     IsNull,
     IsNotNull,
     IsFinite,
@@ -53,6 +56,7 @@ impl Display for BooleanFunction {
         let s = match self {
             All { .. } => "all",
             Any { .. } => "any",
+            IsEmpty { .. } => "is_empty",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",

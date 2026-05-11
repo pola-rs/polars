@@ -750,6 +750,45 @@ class Expr:
         """
         return wrap_expr(self._pyexpr.all(ignore_nulls))
 
+    @unstable()
+    def is_empty(self, *, ignore_nulls: bool = False) -> Expr:
+        """
+        Return whether the column is empty.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If true a column containing only nulls will also be considered empty.
+            The default is false.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [None, None]})
+        >>> df.select(
+        ...     a=pl.col.x.is_empty(),
+        ...     b=pl.col.x.drop_nulls().is_empty(),
+        ...     c=pl.col.x.is_empty(ignore_nulls=True),
+        ... )
+        shape: (1, 3)
+        ┌───────┬──────┬──────┐
+        │ a     ┆ b    ┆ c    │
+        │ ---   ┆ ---  ┆ ---  │
+        │ bool  ┆ bool ┆ bool │
+        ╞═══════╪══════╪══════╡
+        │ false ┆ true ┆ true │
+        └───────┴──────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.is_empty(ignore_nulls))
+
     def arg_true(self) -> Expr:
         """
         Return indices where expression evaluates `True`.

@@ -15,6 +15,7 @@ pub fn function_expr_to_udf(func: IRBooleanFunction) -> SpecialEq<Arc<dyn Column
     match func {
         Any { ignore_nulls } => map!(any, ignore_nulls),
         All { ignore_nulls } => map!(all, ignore_nulls),
+        IsEmpty { ignore_nulls } => map!(is_empty, ignore_nulls),
         IsNull => map!(is_null),
         IsNotNull => map!(is_not_null),
         IsFinite => map!(is_finite),
@@ -61,6 +62,15 @@ fn all(s: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
     } else {
         Ok(Column::new(s.name().clone(), [ca.all_kleene()]))
     }
+}
+
+fn is_empty(s: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
+    let out = if ignore_nulls {
+        s.is_full_null()
+    } else {
+        s.is_empty()
+    };
+    Ok(Column::new(s.name().clone(), [out]))
 }
 
 fn is_null(s: &Column) -> PolarsResult<Column> {

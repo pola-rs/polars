@@ -319,6 +319,11 @@ pub trait SeriesTrait:
         self.len() == 0
     }
 
+    /// Check if Series only consists of nulls.
+    fn is_full_null(&self) -> bool {
+        self.len() == self.null_count()
+    }
+
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
