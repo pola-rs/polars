@@ -18,8 +18,15 @@ def test_pruned_metadata(tmp_path: Path) -> None:
     pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]}).write_parquet(path)
 
     # Project [a, b], predicate [a]: only a, b survive; stats only on a.
+    # `ParquetType` is a serde-tagged enum: each entry is a
+    # `{"PrimitiveType": {...}}` or `{"GroupType": {...}}` single-key dict;
+    # the column name lives in the variant's inner `field_info.name`.
     meta = json.loads(_bench_parquet_metadata_pruned_json(str(path), ["a", "b"], ["a"]))
-    assert [f["name"] for f in meta["schema_descr"]["fields"]] == ["a", "b"]
+    names = [
+        next(iter(f.values()))["field_info"]["name"]
+        for f in meta["schema_descr"]["fields"]
+    ]
+    assert names == ["a", "b"]
     cols = meta["row_groups"][0]["columns"]
     assert cols[0]["statistics"] is not None
     assert cols[1]["statistics"] is None
