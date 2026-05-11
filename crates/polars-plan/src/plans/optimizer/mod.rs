@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_error::feature_gated;
 
+use crate::plans::optimizer::parquet_metadata_prune::prune_parquet_metadata;
 use crate::plans::optimizer::projection_pushdown::projection_pushdown;
 use crate::prelude::*;
 
@@ -24,6 +25,7 @@ pub use expand_datasets::ExpandedPythonScan;
 mod collapse_sort;
 pub mod deep_copy;
 mod ir_traversal;
+mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
 mod simplify_expr;
@@ -284,6 +286,8 @@ pub fn optimize(
     }
 
     expand_datasets::expand_datasets(root, ir_arena, expr_arena, apply_scan_predicate_to_scan_ir)?;
+
+    prune_parquet_metadata(root, ir_arena, expr_arena);
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

@@ -1,4 +1,3 @@
-use std::ops::Deref;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -12,7 +11,7 @@ use polars_io::predicates::{
 };
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
-use polars_parquet::read::{Filter, ParquetType, PredicateFilter, PrimitiveLogicalType};
+use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 
@@ -426,10 +425,10 @@ impl RowGroupDecoder {
                 .parquet_columns()
                 .iter()
                 .any(|c| {
-                    let ParquetType::PrimitiveType(pt) = c.descriptor().base_type.deref() else {
-                        return false;
-                    };
-                    matches!(pt.logical_type, Some(PrimitiveLogicalType::Float16))
+                    matches!(
+                        c.descriptor().descriptor.primitive_type.logical_type,
+                        Some(PrimitiveLogicalType::Float16)
+                    )
                 });
 
         let cols_per_thread = (self

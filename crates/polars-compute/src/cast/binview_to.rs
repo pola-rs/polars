@@ -6,13 +6,12 @@ use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
 use bytemuck::cast_slice_mut;
-use chrono::Datelike;
 use num_traits::FromBytes;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::CastOptionsImpl;
 use super::binary_to::Parse;
-use super::temporal::EPOCH_DAYS_FROM_CE;
+use super::temporal::utf8_to_naive_date_scalar;
 #[cfg(feature = "dtype-decimal")]
 use crate::decimal::str_to_dec128;
 
@@ -134,13 +133,7 @@ pub fn utf8view_to_naive_timestamp(
 }
 
 pub(super) fn utf8view_to_date32(from: &Utf8ViewArray) -> PrimitiveArray<i32> {
-    let iter = from.iter().map(|x| {
-        x.and_then(|x| {
-            x.parse::<chrono::NaiveDate>()
-                .ok()
-                .map(|x| x.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
-        })
-    });
+    let iter = from.iter().map(|x| x.and_then(utf8_to_naive_date_scalar));
     PrimitiveArray::<i32>::from_trusted_len_iter(iter).to(ArrowDataType::Date32)
 }
 

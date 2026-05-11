@@ -1384,3 +1384,20 @@ def test_list_eval_exceed_idx_size() -> None:
         "len": [[2147483648], [2147483647], [2147483646]],
         "unique": [[None], [None], [None]],
     }
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (0, pl.lit(pl.Series([1, 2, 3]))),
+        (pl.lit(pl.Series([0, 1, 2])), 2),
+        (pl.lit(pl.Series([0, 1, 2])), pl.lit(pl.Series([3, 2, 1]))),
+    ],
+)
+def test_list_slice_broadcast_27480(offset: Any, length: Any) -> None:
+    result = pl.select(pl.lit([0, 1, 2]).list.slice(offset, length).alias("broadcast"))
+    expected = pl.select(
+        pl.repeat(pl.lit([0, 1, 2]), 3).list.slice(offset, length).alias("broadcast")
+    )
+
+    assert_frame_equal(result, expected)

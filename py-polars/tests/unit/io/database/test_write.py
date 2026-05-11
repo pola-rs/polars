@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars.io.database._utils import _open_adbc_connection
 from polars.testing import assert_frame_equal
 
@@ -153,6 +154,50 @@ class TestWriteDatabase:
 
         if engine == "adbc" and not uri_connection:
             assert conn._closed is False
+
+        if hasattr(conn, "close"):
+            conn.close()
+
+    def test_write_database_append_creates_missing_table(
+        self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
+    ) -> None:
+        """`append` should create table when one does not already exist."""
+        if engine == "adbc":
+            adbc_driver_manager = pytest.importorskip("adbc_driver_manager")
+            if parse_version(getattr(adbc_driver_manager, "__version__", "0.0")) < (
+                0,
+                7,
+            ):
+                pytest.skip("adbc-driver-manager < 0.7.0 has no create_append mode")
+
+        df = pl.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "name": ["a", "b", "c"],
+            }
+        )
+        tmp_path.mkdir(exist_ok=True)
+        test_db_uri = (
+            f"sqlite:///{tmp_path}/test_append_create_{int(uri_connection)}.db"
+        )
+
+        table_name = "test_append_create"
+        conn = self._get_connection(test_db_uri, engine, uri_connection)
+
+        assert (
+            df.write_database(
+                table_name=table_name,
+                connection=conn,
+                if_table_exists="append",
+                engine=engine,
+            )
+            == 3
+        )
+        result = pl.read_database(
+            query=f"SELECT * FROM {table_name}",
+            connection=create_engine(test_db_uri),
+        )
+        assert_frame_equal(result, df)
 
         if hasattr(conn, "close"):
             conn.close()
