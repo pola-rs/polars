@@ -180,3 +180,13 @@ def test_extension_to_extension_raises_27519() -> None:
         match=r"cannot call `\.ext\.to` on a column that is already an Extension type",
     ):
         s.to_frame().select(pl.col("x").ext.to(BExtension))
+
+
+def test_ext_to_mismatched_storage_raises_27519() -> None:
+    Ext = pl.Extension(name="a.ext", storage=pl.Int64)
+    s = pl.Series("x", [1.0], dtype=pl.Float64)
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match=r"column dtype must match",
+    ):
+        s.to_frame().select(pl.col("x").ext.to(Ext))

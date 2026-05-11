@@ -28,8 +28,16 @@ fn ext_to(s: &Column, dtype: DataType) -> PolarsResult<Column> {
         )
     };
 
+    if s.dtype() != &**storage {
+        polars_bail!(
+            SchemaMismatch:
+            "cannot convert column of type {} to extension {} with storage {}; \
+             column dtype must match the extension's storage type",
+            s.dtype(), typ.name(), **storage
+        )
+    }
+
     Ok(s.apply_unary_elementwise(|s| {
-        debug_assert!(*s.dtype() == **storage);
         s.clone().into_extension(typ.clone())
     }))
 }
