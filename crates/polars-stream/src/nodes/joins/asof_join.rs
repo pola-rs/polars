@@ -429,7 +429,6 @@ fn check_continuity(
     next_on: &AnyValue<'_>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    let err = || polars_err!(InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first");
     let iter = Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter()).enumerate();
     for (i, (descending, nulls_last)) in iter {
         match reorder_cmp(&prev_by[i], &next_by[i], *descending, *nulls_last) {
@@ -671,6 +670,30 @@ impl<'a> ByGroups<'a> {
             Some((start, len as usize))
         })
     }
+
+    fn iter_groups_check_sortedness(
+        &self,
+        df: &DataFrame,
+        descending: &[bool],
+        nulls_last: &[bool],
+    ) -> impl Iterator<Item = PolarsResult<(usize, usize)>> {
+        let iter = self.iter_groups();
+        iter.scan(None, |state: &mut Option<(_, _)>, group| match state {
+            Some(prev_group) => {
+                for (d, nl) in Iterator::zip(descending.iter(), nulls_last.iter()) {
+                    if !reorder_cmp(prev_group, group, *d, *nl).is_lt() {
+                        return Some(PolarsResult::Err(not_sorted_err()));
+                    }
+                    *state = Some(group);
+                }
+                Some(Ok(group))
+            },
+            None => {
+                *state = Some(group);
+                Some(Ok(group))
+            },
+        })
+    }
 }
 
 fn drop_columns(
@@ -803,6 +826,9 @@ fn compute_asof_join(
         let group_left_key = left_key.slice(left_start as i64, left_group_len);
         let group_right_key = right_key.slice(right_start as i64, right_chunk_len);
 
+        // TODO: [amber] Check the continuity of the groups here
+        // TODO: [amber] Also needs a _check_asof_columns
+
         let take_idx = _join_asof_dispatch(
             group_left_key.as_materialized_series(),
             group_right_key.as_materialized_series(),
@@ -822,4 +848,8 @@ fn compute_asof_join(
     let out_right =
         accumulate_dataframes_vertical_unchecked([initial].into_iter().chain(out_right));
     _finish_join(left_df, out_right, params.args.suffix.clone())
+}
+
+fn not_sorted_err() -> PolarsError {
+    polars_err!(InvalidOperation: "argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first")
 }
