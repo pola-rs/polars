@@ -660,6 +660,7 @@ impl<'a> AggregationContext<'a> {
                     let groups = (0..c.len() as IdxSize).map(|i| [i, 1]).collect();
                     GroupsType::new_slice(groups, false, true).into_sliceable()
                 });
+                self.set_original_len(false);
             },
             AggState::LiteralScalar(c) => {
                 assert_eq!(c.len(), 1);
@@ -668,6 +669,7 @@ impl<'a> AggregationContext<'a> {
                     let groups = vec![[0, 1]; self.groups.len()];
                     GroupsType::new_slice(groups, true, true).into_sliceable()
                 });
+                self.set_original_len(false);
             },
         }
     }
