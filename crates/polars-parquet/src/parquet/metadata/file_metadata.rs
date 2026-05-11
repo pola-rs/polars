@@ -104,14 +104,25 @@ impl FileMetadata {
         keep_top_level_names: &[polars_utils::pl_str::PlSmallStr],
         predicate_top_level_names: &[polars_utils::pl_str::PlSmallStr],
     ) -> ParquetResult<Self> {
-        let is_kept = |name: &str| keep_top_level_names.iter().any(|n| n.as_str() == name);
+        // Column name → keep-stats flag. Names not in the map are pruned
+        // entirely. O(1) lookup per chunk keeps this scalable to
+        // wide-column workloads (10k+ columns × many row groups).
+        use polars_utils::aliases::{InitHashMaps, PlHashMap};
+        let mut keep: PlHashMap<&str, bool> = PlHashMap::with_capacity(keep_top_level_names.len());
+        for name in keep_top_level_names {
+            keep.insert(name.as_str(), false);
+        }
+        for name in predicate_top_level_names {
+            // Promotes from false to true if already present.
+            keep.insert(name.as_str(), true);
+        }
 
         // 1. Filter top-level fields, preserving order from the source schema.
         let pruned_fields: Vec<crate::parquet::schema::types::ParquetType> = self
             .schema_descr
             .fields()
             .iter()
-            .filter(|f| is_kept(f.get_field_info().name.as_str()))
+            .filter(|f| keep.contains_key(f.get_field_info().name.as_str()))
             .cloned()
             .collect();
 
@@ -120,8 +131,6 @@ impl FileMetadata {
 
         // 3. Per row group: pick chunks whose top-level field is in `keep`,
         //    drop stats from non-predicate columns.
-        let keep_stats_for =
-            |name: &str| predicate_top_level_names.iter().any(|n| n.as_str() == name);
         let mut max_row_group_height = 0;
         let row_groups: Vec<RowGroupMetadata> = self
             .row_groups
@@ -130,13 +139,13 @@ impl FileMetadata {
                 let kept_chunks: Vec<crate::parquet::metadata::compact::CompactColumnChunk> = rg
                     .parquet_columns()
                     .iter()
-                    .filter(|c| is_kept(c.descriptor().path_in_schema[0].as_str()))
-                    .map(|c| {
+                    .filter_map(|c| {
+                        let keep_stats = *keep.get(c.descriptor().path_in_schema[0].as_str())?;
                         let mut chunk = c.compact_column_chunk().clone();
-                        if !keep_stats_for(c.descriptor().path_in_schema[0].as_str()) {
+                        if !keep_stats {
                             chunk.meta_data.statistics = None;
                         }
-                        chunk
+                        Some(chunk)
                     })
                     .collect();
 
