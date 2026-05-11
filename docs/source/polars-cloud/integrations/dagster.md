@@ -1,34 +1,31 @@
 # Dagster
 
-Integrate Polars Cloud authentication and compute sizing into a Dagster
-pipeline. Two patterns are documented below; both code blocks are complete and
-runnable on their own.
+Integrate Polars Cloud authentication and compute sizing into a Dagster pipeline. Two patterns are
+documented below; both code blocks are complete and runnable on their own.
 
-- **Single compute size** — every asset uses the same VM shape. The compute
-  resource auto-manages one `ComputeContext` per Dagster run via
-  `yield_for_execution`; asset bodies need no per-asset setup.
-- **Per-asset compute sizing** — different assets need different VM shapes.
-  Each asset opens a `session()` context manager on the compute resource it
-  needs.
+- **Single compute size** — every asset uses the same VM shape. The compute resource auto-manages
+  one `ComputeContext` per Dagster run via `yield_for_execution`; asset bodies need no per-asset
+  setup.
+- **Per-asset compute sizing** — different assets need different VM shapes. Each asset opens a
+  `session()` context manager on the compute resource it needs.
 
 Credentials are referenced through
 [`EnvVar`](https://docs.dagster.io/guides/operate/configuration/using-environment-variables-and-secrets#dagster-envvar-class)
-so the raw values are resolved at run launch and never displayed in the
-Dagster UI. Populate `POLARS_CLOUD_CLIENT_ID` and `POLARS_CLOUD_CLIENT_SECRET`
-in the Dagster deployment environment — either directly or by exporting from a
-secret manager (e.g.
+so the raw values are resolved at run launch and never displayed in the Dagster UI. Populate
+`POLARS_CLOUD_CLIENT_ID` and `POLARS_CLOUD_CLIENT_SECRET` in the Dagster deployment environment —
+either directly or by exporting from a secret manager (e.g.
 [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python.html)).
 
 In both patterns `PolarsCloudCompute` declares `PolarsCloudAuth` as a
-[nested resource](https://docs.dagster.io/guides/build/external-resources/defining-resources)
-so Dagster runs `PolarsCloudAuth.setup_for_execution` — which calls
-`authenticate(...)` — before any compute resource is used.
+[nested resource](https://docs.dagster.io/guides/build/external-resources/defining-resources) so
+Dagster runs `PolarsCloudAuth.setup_for_execution` — which calls `authenticate(...)` — before any
+compute resource is used.
 
 ## Pattern 1: single compute size
 
-The compute resource owns the `ComputeContext` lifecycle through
-`yield_for_execution`: one VM is started at run init and stopped on exit,
-including on failure. Asset bodies contain only Polars code.
+The compute resource owns the `ComputeContext` lifecycle through `yield_for_execution`: one VM is
+started at run init and stopped on exit, including on failure. Asset bodies contain only Polars
+code.
 
 ```python
 from contextlib import contextmanager
@@ -105,15 +102,13 @@ defs = Definitions(
 
 ## Pattern 2: per-asset compute sizing
 
-`set_compute_context` is process-global state, so a single auto-managed
-context cannot serve multiple VM shapes within one run. When assets need
-different shapes, each compute resource exposes a `session()` context manager
-instead of starting its `ComputeContext` at run init. The asset opens the
-session of the resource sized for it; the VM is stopped on exit, including on
-failure.
+`set_compute_context` is process-global state, so a single auto-managed context cannot serve
+multiple VM shapes within one run. When assets need different shapes, each compute resource exposes
+a `session()` context manager instead of starting its `ComputeContext` at run init. The asset opens
+the session of the resource sized for it; the VM is stopped on exit, including on failure.
 
-A single `PolarsCloudAuth` instance is reused for both compute resources, so
-the credentials are loaded once at run start.
+A single `PolarsCloudAuth` instance is reused for both compute resources, so the credentials are
+loaded once at run start.
 
 ```python
 from contextlib import contextmanager
@@ -188,6 +183,6 @@ defs = Definitions(
 )
 ```
 
-The Dagster resource key (the dictionary key in `Definitions.resources`) must
-match the parameter name in each asset signature. The type annotation is for
-editor and type-checker support; Dagster injects by key, not by type.
+The Dagster resource key (the dictionary key in `Definitions.resources`) must match the parameter
+name in each asset signature. The type annotation is for editor and type-checker support; Dagster
+injects by key, not by type.
