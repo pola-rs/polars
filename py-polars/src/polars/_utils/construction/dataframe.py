@@ -43,6 +43,7 @@ from polars._utils.various import (
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
+    Decimal,
     Duration,
     Enum,
     String,
@@ -573,9 +574,18 @@ def _sequence_of_sequence_to_pydf(
         )
 
         unpack_nested = False
+        bare_decimal_cols: list[tuple[str, int]] = []
         for col, tp in local_schema_override.items():
             if tp in (Categorical, Enum):
                 local_schema_override[col] = String
+            elif tp is Decimal:
+                # Bare Decimal (no precision/scale) cannot be serialized into the
+                # Rust schema dict. Replace with Unknown so from_rows infers the
+                # native type; we rebuild these columns afterwards using pl.Series
+                # which applies Python-level Decimal inference (mirrors the
+                # column-oriented construction path).
+                local_schema_override[col] = Unknown
+                bare_decimal_cols.append((col, column_names.index(col)))
             elif not unpack_nested and (tp.base_type() in (Unknown, Struct)):
                 unpack_nested = contains_nested(
                     getattr(first_element, col, None).__class__, is_namedtuple
@@ -596,6 +606,34 @@ def _sequence_of_sequence_to_pydf(
                 schema=local_schema_override or None,
                 infer_schema_length=infer_schema_length,
             )
+
+        if bare_decimal_cols:
+            for col, col_idx in bare_decimal_cols:
+                col_values = [row[col_idx] for row in data]
+                # Infer the concrete Decimal(precision, scale) from non-null values
+                # so that null-containing columns are handled correctly.
+                non_null = [v for v in col_values if v is not None]
+                decimal_dtype = (
+                    pl.Series("_", non_null, dtype=Decimal).dtype
+                    if non_null
+                    else Decimal(scale=0)
+                )
+                pyseries = pl.Series(
+                    col,
+                    col_values,
+                    dtype=decimal_dtype,
+                    strict=strict,
+                    nan_to_null=nan_to_null,
+                )._s
+                pydf.replace_column(col_idx, pyseries)
+            if schema_overrides:
+                bare_decimal_names = {col for col, _ in bare_decimal_cols}
+                schema_overrides = {
+                    k: v
+                    for k, v in schema_overrides.items()
+                    if k not in bare_decimal_names
+                } or None
+
         if column_names or schema_overrides:
             pydf = _post_apply_columns(
                 pydf, column_names, schema_overrides=schema_overrides, strict=strict

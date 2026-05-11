@@ -5,6 +5,7 @@ import sys
 from collections import OrderedDict
 from collections.abc import Mapping
 from datetime import date, datetime, time
+from decimal import Decimal as PyDecimal
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -252,3 +253,74 @@ def test_temporal_string_schema_overrides(schema_param: dict[str, SchemaDict]) -
             "datetime": datetime(2024, 1, 2, 13, 30, 0, 123456),
         },
     ]
+
+
+def test_dataframe_row_orient_bare_decimal_float() -> None:
+    # Regression test for https://github.com/pola-rs/polars/issues/27177
+    result = pl.DataFrame(
+        [("USD", 1000.0)],
+        schema={"asset": pl.String, "amount": pl.Decimal},
+        orient="row",
+    )
+    assert result["asset"].to_list() == ["USD"]
+    assert result["amount"].dtype.is_decimal()
+    assert result["amount"].to_list() == [PyDecimal("1000.0")]
+
+
+def test_dataframe_row_orient_bare_decimal_integer() -> None:
+    result = pl.DataFrame(
+        [(1, 500)],
+        schema={"id": pl.Int32, "amount": pl.Decimal},
+        orient="row",
+    )
+    assert result["amount"].dtype == pl.Decimal(scale=0)
+    assert result["amount"].to_list() == [PyDecimal("500")]
+
+
+def test_dataframe_row_orient_bare_decimal_with_nulls() -> None:
+    result = pl.DataFrame(
+        [("USD", None), ("EUR", 100.5)],
+        schema={"asset": pl.String, "amount": pl.Decimal},
+        orient="row",
+    )
+    assert result["amount"][0] is None
+    assert result["amount"].dtype.is_decimal()
+
+
+def test_dataframe_row_orient_explicit_decimal_scale_unaffected() -> None:
+    # Decimal(scale=2) instance should continue to work (no regression)
+    result = pl.DataFrame(
+        [("USD", PyDecimal("10.50"))],
+        schema={"asset": pl.String, "amount": pl.Decimal(scale=2)},
+        orient="row",
+    )
+    assert result["amount"].dtype == pl.Decimal(scale=2)
+    assert result["amount"].to_list() == [PyDecimal("10.50")]
+
+
+def test_dataframe_row_and_col_orient_bare_decimal_consistent() -> None:
+    # Both orientations should produce a Decimal column with the same value
+    row_df = pl.DataFrame(
+        [("USD", 1000.0)],
+        schema={"asset": pl.String, "amount": pl.Decimal},
+        orient="row",
+    )
+    col_df = pl.DataFrame(
+        [["USD"], [1000.0]],
+        schema={"asset": pl.String, "amount": pl.Decimal},
+    )
+    assert row_df["amount"].dtype.is_decimal()
+    assert col_df["amount"].dtype.is_decimal()
+    assert row_df["amount"].to_list() == col_df["amount"].to_list()
+
+
+def test_dataframe_row_orient_bare_decimal_only_column() -> None:
+    # schema_overrides is empty after bare Decimal cols are removed — exercises
+    # the `if schema_overrides` False branch in _sequence_of_sequence_to_pydf.
+    result = pl.DataFrame(
+        [(1000.0,)],
+        schema={"amount": pl.Decimal},
+        orient="row",
+    )
+    assert result["amount"].dtype.is_decimal()
+    assert result["amount"].to_list() == [PyDecimal("1000.0")]
