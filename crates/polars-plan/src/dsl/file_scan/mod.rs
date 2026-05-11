@@ -112,7 +112,8 @@ pub enum FileScanIR {
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
-        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        // `dsl-schema` only: `FileMetadata` has no `JsonSchema` impl.
+        #[cfg_attr(feature = "dsl-schema", serde(skip))]
         metadata: Option<FileMetadataRef>,
     },
 

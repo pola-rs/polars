@@ -2,6 +2,8 @@ use std::borrow::Cow;
 
 use arrow::array::PrimitiveArray;
 use num_traits::Zero;
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
 #[cfg(feature = "dtype-f16")]
@@ -42,6 +44,8 @@ fn out_dtype(in_dtype: &DataType) -> DataType {
     match in_dtype {
         Boolean => IDX_DTYPE,
         Int8 | UInt8 | Int16 | UInt16 => Int64,
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_, scale) => Decimal(DEC128_MAX_PREC, *scale),
         dt => dt.clone(),
     }
 }
