@@ -437,10 +437,9 @@ impl PhysicalExpr for AggregationExpr {
                         let groups = (0..col.len() as IdxSize).map(|i| [i, 1]).collect();
                         GroupsType::new_slice(groups, false, true).into_sliceable()
                     });
-                    return Ok(AggregationContext::from_agg_state(
-                        AggregatedScalar(col),
-                        groups,
-                    ));
+                    let mut out = AggregationContext::from_agg_state(AggregatedScalar(col), groups);
+                    out.set_original_len(false);
+                    return Ok(out);
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();

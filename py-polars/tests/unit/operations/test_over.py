@@ -192,12 +192,6 @@ def test_over_order_by_descending_nulls_agg_context() -> None:
     assert result["v"][0].to_list() == [6, 2, 5]
 
 
-def test_over_duplicate_partition_by_26921() -> None:
-    df = pl.DataFrame({"x": [1, 2, 3]})
-    with pytest.raises(pl.exceptions.DuplicateError):
-        df.with_columns(pl.len().over("x", "x"))
-
-
 def test_count_over_aggregated_list_respects_inner_nulls_27031() -> None:
     df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, None]})
 
@@ -218,3 +212,29 @@ def test_over_empty_order_by_27067() -> None:
     result = df.select(pl.col("a").sum().over("g", order_by=[]))
     expected = df.select(pl.col("a").sum().over("g"))
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col.a,
+        pl.col.a.reverse(),
+        pl.lit(1),
+        pl.lit("f"),
+        pl.lit([1]),
+        pl.col.a.mean(),
+        pl.col.s.first(),
+        pl.col.a.implode(),
+    ],
+)
+def test_over_duplicate_name_27443(expr: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [10, 10, 20],
+            "a": [1, 2, 3],
+            "s": ["a", "b", "c"],
+        }
+    )
+    out = df.select(expr.over(pl.col.g, pl.col.g))
+    expected = df.select(expr.over(pl.col.g))
+    assert_frame_equal(out, expected)
