@@ -5,22 +5,22 @@ use super::*;
 pub struct IsEmptyReduce {
     is_empty: MutableBitmap,
     evicted_is_empty: BitmapBuilder,
-    include_nulls: bool,
+    ignore_nulls: bool,
 }
 
 impl IsEmptyReduce {
-    pub fn new(include_nulls: bool) -> Self {
+    pub fn new(ignore_nulls: bool) -> Self {
         Self {
             is_empty: MutableBitmap::new(),
             evicted_is_empty: BitmapBuilder::new(),
-            include_nulls,
+            ignore_nulls,
         }
     }
 }
 
 impl GroupedReduction for IsEmptyReduce {
     fn new_empty(&self) -> Box<dyn GroupedReduction> {
-        Box::new(Self::new(self.include_nulls))
+        Box::new(Self::new(self.ignore_nulls))
     }
 
     fn reserve(&mut self, additional: usize) {
@@ -38,10 +38,10 @@ impl GroupedReduction for IsEmptyReduce {
         _seq_id: u64,
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
-        let is_empty = if self.include_nulls {
-            values.is_empty()
-        } else {
+        let is_empty = if self.ignore_nulls {
             values.is_full_null()
+        } else {
+            values.is_empty()
         };
         self.is_empty.and_pos(group_idx as usize, is_empty);
         Ok(())
@@ -60,7 +60,7 @@ impl GroupedReduction for IsEmptyReduce {
         let chunks = values.chunks();
         assert!(chunks.len() == 1);
         let arr = &*chunks[0];
-        if arr.has_nulls() && !self.include_nulls {
+        if arr.has_nulls() && !self.ignore_nulls {
             let valid = arr.validity().unwrap();
             for (i, g) in subset.iter().zip(group_idxs) {
                 let mut is_empty = self.is_empty.get_unchecked(g.idx());
@@ -105,7 +105,7 @@ impl GroupedReduction for IsEmptyReduce {
         Box::new(Self {
             is_empty: core::mem::take(&mut self.evicted_is_empty).into_mut(),
             evicted_is_empty: BitmapBuilder::new(),
-            include_nulls: self.include_nulls,
+            ignore_nulls: self.ignore_nulls,
         })
     }
 
