@@ -717,7 +717,7 @@ def test_streaming_asof_join(
     assert_frame_equal(actual, expected)
 
 
-def test_streaming_merge_join_undone_send_port_27547() -> None:
+def test_streaming_merge_join_send_port_done_27547() -> None:
     left = pl.LazyFrame({"key": [1, 2, 3], "left_payload": ["a", "b", "c"]})
     right = pl.LazyFrame({"key": [1, 2, 3], "right_payload": ["d", "e", "f"]})
     q = (
