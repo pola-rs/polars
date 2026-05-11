@@ -37,9 +37,7 @@ fn ext_to(s: &Column, dtype: DataType) -> PolarsResult<Column> {
         )
     }
 
-    Ok(s.apply_unary_elementwise(|s| {
-        s.clone().into_extension(typ.clone())
-    }))
+    Ok(s.apply_unary_elementwise(|s| s.clone().into_extension(typ.clone())))
 }
 
 fn ext_storage(s: &Column) -> PolarsResult<Column> {
