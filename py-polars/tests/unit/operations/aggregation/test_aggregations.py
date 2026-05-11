@@ -1080,8 +1080,9 @@ def test_agg_with_slice_then_cast_23682(
         pl.DataFrame({"a": [timedelta(seconds=10)]}, schema={"a": pl.Duration}),
     ],
 )
+@pytest.mark.parametrize("grouped", [False, True])
 def test_agg_invalid_same_engines_behavior(
-    op: str, expr: pl.Expr, df: pl.DataFrame
+    op: str, expr: pl.Expr, df: pl.DataFrame, grouped: bool
 ) -> None:
     # If the in-memory engine produces a good result, then the streaming engine
     # should also produce a good result, and then it should match the in-memory result.
@@ -1098,12 +1099,20 @@ def test_agg_invalid_same_engines_behavior(
     streaming_result, streaming_error = None, None
 
     try:
-        inmemory_result = df.select(expr)
+        if grouped:
+            inmemory_result = df.group_by("a").agg(expr)
+        else:
+            inmemory_result = df.select(expr)
     except pl.exceptions.PolarsError as e:
         inmemory_error = e
 
     try:
-        streaming_result = df.lazy().select(expr).collect(engine="streaming")
+        if grouped:
+            streaming_result = (
+                df.lazy().group_by("a").agg(expr).collect(engine="streaming")
+            )
+        else:
+            streaming_result = df.lazy().select(expr).collect(engine="streaming")
     except pl.exceptions.PolarsError as e:
         streaming_error = e
 
