@@ -631,10 +631,7 @@ impl Hash for LiteralValue {
                 }
             },
             LiteralValue::Range(range) => range.hash(state),
-            LiteralValue::Scalar(sc) => {
-                sc.dtype().hash(state);
-                sc.value().hash_impl(state, false);
-            },
+            LiteralValue::Scalar(sc) => sc.hash(state),
             LiteralValue::Dyn(d) => d.hash(state),
         }
     }
