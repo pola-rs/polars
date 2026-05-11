@@ -3,6 +3,8 @@ mod column_descriptor;
 mod column_order;
 mod compact;
 mod file_metadata;
+#[cfg(feature = "serde")]
+mod file_metadata_serde;
 mod row_metadata;
 mod schema_descriptor;
 mod sort;

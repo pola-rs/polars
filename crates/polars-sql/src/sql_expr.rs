@@ -807,6 +807,7 @@ impl SQLExprVisitor<'_> {
             func: function,
             ctx: self.ctx,
             active_schema: self.active_schema,
+            filter: None,
         };
         visitor.visit_function()
     }

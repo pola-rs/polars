@@ -583,7 +583,6 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     plan = q.explain()
 
     assert plan.startswith("SELECT")
-
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"len": pl.Series([5], dtype=pl.get_index_type())}),
@@ -593,7 +592,6 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     plan = q.explain()
 
     assert plan.startswith("SELECT")
-
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"a": pl.Series([[0, 1, 2, 3, 4]])}),
@@ -603,7 +601,6 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     plan = q.explain()
 
     assert plan.startswith("SELECT")
-
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"a": pl.Series([[0, 1, 2, 3, 4]])}),
@@ -613,7 +610,6 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     plan = q.explain()
 
     assert plan.startswith("SELECT")
-
     assert_frame_equal(
         q.collect(),
         pl.DataFrame(
@@ -630,7 +626,6 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     plan = q.explain()
 
     assert plan.startswith("SELECT")
-
     assert_frame_equal(
         q.collect(),
         pl.DataFrame(
@@ -645,24 +640,19 @@ def test_group_by_empty_or_scalar_key_exprs_23397() -> None:
     )
 
     q = lf.group_by().map_groups(lambda df: df, schema=lf.collect_schema())
-
     with pytest.raises(pl.exceptions.ComputeError, match="not implemented"):
         q.collect()
 
     q = lf.group_by().having(pl.len() != 5).agg(pl.len())
-
     plan = q.explain()
 
     assert "AGGREGATE" not in plan
-
     assert q.collect().shape == (0, 1)
 
     q = lf.group_by().having(pl.len() == 5).agg(pl.len())
-
     plan = q.explain()
 
     assert "AGGREGATE" not in plan
-
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"len": pl.Series([5], dtype=pl.get_index_type())}),

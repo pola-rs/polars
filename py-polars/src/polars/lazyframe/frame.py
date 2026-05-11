@@ -2253,7 +2253,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The `QueryResult` can always be consumed as a new `LazyFrame` by calling `.lazy`
 
-
         Parameters
         ----------
         engine
