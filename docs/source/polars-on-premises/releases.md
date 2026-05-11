@@ -15,8 +15,7 @@ $ curl -L 'https://get.onprem.pola.rs?version=<TAG>' --data @license.json --outp
 To pull the docker image:
 
 ```sh
-$ docker login -u polarscustomer -p <DockerHub_PAT_token>
-$ docker pull --platform linux/amd64 polarscloud/polars-on-premise:<TAG>
+$ docker pull polarscloud/polars-on-premise:<TAG>
 ```
 
 ### 0.3.1 (latest)
@@ -85,6 +84,6 @@ the following command:
 helm search repo polars-inc --versions
 ```
 
-The container can be pulled from the DockerHub after logging in using `polarscustomer` as username
-and the provided Personal Access Token (PAT) as password. The container images are tagged after the
+The container images are hosted on
+[Dockerhub](https://hub.docker.com/r/polarscloud/polars-on-premises) and are tagged after the
 versions listed above.
