@@ -1461,3 +1461,21 @@ def test_cse_is_in_large_haystack_27556(haystack_constructor: Any) -> None:
     )
 
     assert_frame_equal(q.collect(), pl.DataFrame({"i": [0, 1]}))
+
+
+def test_cse_projection_pushdown_27569() -> None:
+    lf = pl.LazyFrame({"a": [1], "b": [1]})
+
+    q = pl.concat(
+        [
+            lf.select("a").filter(pl.lit(True)),
+            lf.select("b").filter(pl.lit(True)),
+            lf.select("a", "b").filter(pl.lit(True)),
+        ],
+        how="diagonal",
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a": [1, None, 1], "b": [None, 1, 1]}),
+    )
