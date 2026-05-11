@@ -179,10 +179,9 @@ impl ComputeNode for StrptimeInferNode {
                     while let Ok(morsel) = recv.recv().await {
                         if infer_slot.is_none() {
                             let ca = morsel.df().columns()[0].str()?;
-                            if ca.null_count() < ca.len()
-                                && let Some(val) = ca.into_iter().flatten().next()
-                            {
-                                *infer_slot = FormatInfer::try_new(val, dtype, options)?;
+                            if let Some(idx) = ca.first_non_null() {
+                                *infer_slot =
+                                    FormatInfer::try_new(ca.get(idx).unwrap(), dtype, options)?;
                             }
                         }
 
