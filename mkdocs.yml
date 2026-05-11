@@ -159,6 +159,17 @@ nav:
     - polars-on-premises/index.md
     - Kubernetes:
       - polars-on-premises/kubernetes/getting-started.md
+      - Configuration:
+        - polars-on-premises/kubernetes/configuration/anonymous-results.md
+        - polars-on-premises/kubernetes/configuration/shuffle-data.md
+        - polars-on-premises/kubernetes/configuration/exposing.md
+        - polars-on-premises/kubernetes/configuration/monitoring.md
+        - polars-on-premises/kubernetes/configuration/temporary-data.md
+        - polars-on-premises/kubernetes/configuration/runtime.md
+        - polars-on-premises/kubernetes/configuration/license.md
+        - polars-on-premises/kubernetes/configuration/resource-allocation.md
+        - polars-on-premises/kubernetes/configuration/anonymous-users.md
+        - polars-on-premises/kubernetes/configuration/openlineage.md
     - Bare-metal:
       - polars-on-premises/bare-metal/getting-started.md
       - Configuration:

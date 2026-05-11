@@ -13,9 +13,58 @@ repository as follows:
 
 ```shell
 helm repo add polars-inc https://polars-inc.github.io/helm-charts
+helm repo update
 ```
 
 You can then run `helm search repo polars-inc` to see the available charts.
 
-Further explanation on the different configuration can be found in the
-[chart `README.md`](https://github.com/polars-inc/helm-charts/blob/main/charts/polars/README.md).
+Create a secret for the received offline license key.
+
+```shell
+kubectl create secret generic polars-offline-license --from-file=license.json=license.json
+```
+
+For this quickstart, we install a SeaweedFS instance for the output results. The following commands
+install the Polars chart and expose the services locally.
+
+```shell
+helm upgrade --install polars polars-inc/polars \
+    --set license.secretName=polars-offline-license \
+    --set license.secretProperty=license.json \
+    --set anonymousResults.seaweedfs.enabled=true
+kubectl port-forward svc/polars-scheduler 5051:5051
+kubectl port-forward svc/polars-observatory 3001:3001
+kubectl port-forward svc/polars-seaweedfs 8333:8333
+```
+
+You can then run a simple query like so:
+
+```python
+import polars as pl
+import polars_cloud as pc
+
+ctx = pc.ClusterContext(compute_address="localhost")
+
+result = (
+    pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 4, 5],
+        }
+    )
+    .with_columns(
+        pl.col("a").max().over("b").alias("c"),
+    )
+    .remote(ctx)
+    .execute()
+)
+
+print(result.head)
+```
+
+To get your polars cluster ready for production, see the different configuration values. Most
+importantly:
+
+- [Anonymous Results](/polars-on-premises/kubernetes/configuration/anonymous-results)
+- [Shuffle Data](/polars-on-premises/kubernetes/configuration/shuffle-data)
+- [Resource Allocation](/polars-on-premises/kubernetes/configuration/resource-allocation)

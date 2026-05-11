@@ -9,7 +9,7 @@ orchestrator such as Airflow or Dagster.
 
 !!! note "OpenLineage is only supported for Polars On-Prem"
 
-    Note that OpenLineage is currently only supported for Polars On-Prem and not for Polars Cloud. Obtain a license for Polars on-premises by [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
+    Note that OpenLineage is currently only supported for Polars On-Prem and not for Polars Cloud. Obtain a license for Polars On-Prem by [signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
 
 ## Setup
 
