@@ -211,7 +211,7 @@ pub fn is_empty<'a>(
 
     // TODO: dedicated impl.
     let ac = inputs[0].evaluate_on_groups(df, groups, state)?;
-    let counts = evaluate_count_on_ac(ac, ignore_nulls)?;
+    let counts = evaluate_count_on_ac(ac, !ignore_nulls)?;
     let is_empty = counts.equal(&Column::new_scalar(
         PlSmallStr::EMPTY,
         Scalar::new_idxsize(0),
