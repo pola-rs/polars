@@ -116,7 +116,7 @@ efficient to compare two categorical columns. We will see how to do that next.
 
 You are told that comparing columns with the data type `Categorical` is more efficient than if one
 of them is a string column. So, you change your code so that the second column is also a categorical
-column and then you perform your comparison... But Polars raises an exception:
+column and then you perform your comparison:
 
 {{code_block('user-guide/expressions/categoricals', 'categorical-comparison-categorical-column',
 ['Categorical'])}}
@@ -125,12 +125,10 @@ column and then you perform your comparison... But Polars raises an exception:
 --8<-- "python/user-guide/expressions/categoricals.py:categorical-comparison-categorical-column"
 ```
 
-By default, the values in columns with the data type `Categorical` are
-[encoded in the order they are seen in the column](#encodings), and independently from other
-columns, which means that Polars cannot compare efficiently two categorical columns that were
-created independently.
+The comparison returns a Boolean series. Polars compares categorical columns by their string values,
+even when the categories were created independently.
 
-Enabling the Polars string cache and creating the columns with the cache enabled fixes this issue:
+You can also enable the Polars string cache before creating the columns:
 
 {{code_block('user-guide/expressions/categoricals', 'stringcache-categorical-equality',
 ['StringCache', 'Categorical'])}}

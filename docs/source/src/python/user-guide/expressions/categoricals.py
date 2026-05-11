@@ -61,18 +61,12 @@ print(bears_cat == bears_str)
 # --8<-- [end:categorical-comparison-string-column]
 
 # --8<-- [start:categorical-comparison-categorical-column]
-from polars.exceptions import StringCacheMismatchError
-
 bears_cat2 = pl.Series(
     ["Panda", "Brown", "Brown", "Polar", "Polar"],
     dtype=pl.Categorical,
 )
 
-try:
-    print(bears_cat == bears_cat2)
-except StringCacheMismatchError as exc:
-    exc_str = str(exc).splitlines()[0]
-    print("StringCacheMismatchError:", exc_str)
+print(bears_cat == bears_cat2)
 # --8<-- [end:categorical-comparison-categorical-column]
 
 # --8<-- [start:stringcache-categorical-equality]

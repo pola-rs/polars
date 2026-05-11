@@ -45,10 +45,13 @@ def register_io_source(
                 project these columns if applied
             predicate
                 Polars expression. The reader must filter
-                their rows accordingly.
+                their rows accordingly. The expression is written against the
+                source schema before projection pushdown is applied, so the reader
+                must keep any columns needed by the predicate until after filtering.
             n_rows
                 Materialize only n rows from the source.
-                The reader can stop when `n_rows` are read.
+                The reader can stop when `n_rows` rows have been produced after
+                filtering.
             batch_size
                 A hint of the ideal batch size the reader's
                 generator must produce.

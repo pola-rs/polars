@@ -1040,6 +1040,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1.0 ┆ 1.0 ┆ 2.0 │
         │ 2.0 ┆ 2.5 ┆ 3.0 │
         └─────┴─────┴─────┘
+
+        Use :func:`functools.partial` to pass extra arguments to the function.
+
+        >>> from functools import partial
+        >>> def cast_matching_columns(
+        ...     lf: pl.LazyFrame, schema: pl.Schema, dtype: pl.DataType
+        ... ) -> pl.LazyFrame:
+        ...     columns = [name for name, dt in schema.items() if dt == dtype]
+        ...     return lf.with_columns(pl.col(columns).cast(pl.String))
+        >>> cast_float32 = partial(cast_matching_columns, dtype=pl.Float32)
+        >>> lf.pipe_with_schema(cast_float32).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ f64 ┆ str ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1.0 ┆ 1.0 ┆ 2.0 │
+        │ 2.0 ┆ 2.5 ┆ 3.0 │
+        └─────┴─────┴─────┘
         """
 
         def wrapper(lf_and_schema: Any) -> PyLazyFrame:

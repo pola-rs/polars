@@ -33,6 +33,30 @@ class ExprListNameSpace:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: int) -> Expr:
+        """
+        Get the list element at the given index.
+
+        This is shorthand for :meth:`get`.
+
+        Parameters
+        ----------
+        item
+            Index of the list element to return.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[1, 2, 3], [4, 5, 6]]})
+        >>> df.with_columns(third=pl.col("values").list[2])
+        shape: (2, 2)
+        ┌───────────┬───────┐
+        │ values    ┆ third │
+        │ ---       ┆ ---   │
+        │ list[i64] ┆ i64   │
+        ╞═══════════╪═══════╡
+        │ [1, 2, 3] ┆ 3     │
+        │ [4, 5, 6] ┆ 6     │
+        └───────────┴───────┘
+        """
         return self.get(item)
 
     def all(self, *, ignore_nulls: bool = True) -> Expr:
