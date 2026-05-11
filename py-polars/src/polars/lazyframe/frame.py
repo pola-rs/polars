@@ -8982,6 +8982,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         It is the callers responsibility that the frames
         are sorted in ascending order by that key otherwise
         the output will not make sense.
+        Null values must be sorted first.
 
         The schemas of both LazyFrames must be equal.
 
@@ -9049,6 +9050,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row order when the key is equal between the both dataframes.
 
         The key must be sorted in ascending order.
+        Null values must be sorted first.
         """
         require_same_type(self, other)
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order))

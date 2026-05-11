@@ -3542,6 +3542,12 @@ class Expr:
         ╞═════╡
         │  0  │
         └─────┘
+
+        Empty and all-null inputs return `0` rather than `None`.
+
+        >>> df = pl.DataFrame({"a": [None, None]})
+        >>> df.select(pl.col("a").sum()).item()
+        0
         """
         return wrap_expr(self._pyexpr.sum())
 

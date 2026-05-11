@@ -118,8 +118,8 @@ pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&A
 /// Appends are cheap, because it will not lead to a full reallocation of the whole array (as could be the case with a Rust Vec).
 ///
 /// However, multiple chunks in a [`ChunkedArray`] will slow down many operations that need random access because we have an extra indirection
-/// and indexes need to be mapped to the proper chunk. Arithmetic may also be slowed down by this.
-/// When multiplying two [`ChunkedArray`]s with different chunk sizes they cannot utilize [SIMD](https://en.wikipedia.org/wiki/SIMD) for instance.
+/// and indexes need to be mapped to the proper chunk. Many operations align or rechunk inputs before doing their work, which can add allocation
+/// and copying overhead. Arithmetic on aligned chunks can still use optimized kernels such as [SIMD](https://en.wikipedia.org/wiki/SIMD).
 ///
 /// If you want to have predictable performance
 /// (no unexpected re-allocation of memory), it is advised to call the [`ChunkedArray::rechunk`] after

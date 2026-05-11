@@ -316,6 +316,24 @@ pub trait StringNameSpaceImpl: AsString {
     }
 
     /// Check if strings contain a regex pattern.
+    ///
+    /// ```
+    /// # use polars_core::prelude::*;
+    /// # use polars_ops::chunked_array::strings::StringNameSpaceImpl;
+    /// let df = df!(
+    ///     "values" => &["foo", "bar", "foobar", "baz"],
+    /// )?;
+    ///
+    /// let mask = df
+    ///     .column("values")?
+    ///     .str()?
+    ///     .contains("foo", true)?;
+    ///
+    /// let filtered = df.filter(&mask)?;
+    /// assert_eq!(filtered.column("values")?.str()?.get(0), Some("foo"));
+    /// assert_eq!(filtered.column("values")?.str()?.get(1), Some("foobar"));
+    /// # PolarsResult::Ok(())
+    /// ```
     fn contains(&self, pat: &str, strict: bool) -> PolarsResult<BooleanChunked> {
         let ca = self.as_string();
         let res_reg = polars_utils::regex_cache::compile_regex(pat);

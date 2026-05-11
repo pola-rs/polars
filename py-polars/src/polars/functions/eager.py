@@ -617,6 +617,7 @@ def merge_sorted(
     It is the callers responsibility that the frames
     are sorted in ascending order by that key otherwise
     the output will not make sense.
+    Null values must be sorted first.
 
     .. warning::
         This functionality is considered **unstable**. It may be changed

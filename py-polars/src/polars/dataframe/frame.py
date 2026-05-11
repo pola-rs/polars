@@ -12536,6 +12536,7 @@ class DataFrame:
         It is the callers responsibility that the frames
         are sorted in ascending order by that key otherwise
         the output will not make sense.
+        Null values must be sorted first.
 
         The schemas of both DataFrames must be equal.
 
@@ -12603,6 +12604,7 @@ class DataFrame:
         row order when the key is equal between the both dataframes.
 
         The key must be sorted in ascending order.
+        Null values must be sorted first.
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
