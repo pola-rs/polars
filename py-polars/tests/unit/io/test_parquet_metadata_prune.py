@@ -32,7 +32,5 @@ def test_pruned_metadata(tmp_path: Path) -> None:
     assert cols[1]["statistics"] is None
 
     # Empty predicate drops all stats.
-    meta = json.loads(
-        _parquet_metadata_pruned_json(str(path), ["a", "b", "c"], [])
-    )
+    meta = json.loads(_parquet_metadata_pruned_json(str(path), ["a", "b", "c"], []))
     assert all(c["statistics"] is None for c in meta["row_groups"][0]["columns"])
