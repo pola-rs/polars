@@ -34,6 +34,9 @@ const PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH: &str =
     "POLARS_PARQUET_BINARY_STATISTICS_TRUNCATE_LEN";
 const DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH: u64 = 64;
 
+const PRUNE_PARQUET_METADATA: &str = "POLARS_PRUNE_PARQUET_METADATA";
+const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
+
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
 const DEFAULT_VERBOSE_SENSITIVE: bool = false;
@@ -77,6 +80,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     STREAMING_CHUNK_SIZE,
     ENGINE_AFFINITY,
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
+    PRUNE_PARQUET_METADATA,
     /*
     Not yet supported public options:
 
@@ -120,6 +124,7 @@ pub struct Config {
     ideal_morsel_size: AtomicU64,
     engine_affinity: AtomicU8,
     parquet_binary_statistics_truncate_length: AtomicU64,
+    prune_parquet_metadata: AtomicBool,
 
     // Private.
     verbose_sensitive: AtomicBool,
@@ -145,6 +150,7 @@ impl Config {
             parquet_binary_statistics_truncate_length: AtomicU64::new(
                 DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
             ),
+            prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
@@ -215,6 +221,11 @@ impl Config {
                     Ordering::Relaxed,
                 )
             },
+            PRUNE_PARQUET_METADATA => self.prune_parquet_metadata.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_PRUNE_PARQUET_METADATA),
+                Ordering::Relaxed,
+            ),
 
             // Private flags.
             VERBOSE_SENSITIVE => self.verbose_sensitive.store(
@@ -306,6 +317,12 @@ impl Config {
     pub fn parquet_binary_statistics_truncate_length(&self) -> u64 {
         self.parquet_binary_statistics_truncate_length
             .load(Ordering::Relaxed)
+    }
+
+    /// Whether the optimizer should prune parquet metadata to projected/predicate columns
+    /// before serializing the IR plan. See `parquet_metadata_prune` in `polars-plan`.
+    pub fn prune_parquet_metadata(&self) -> bool {
+        self.prune_parquet_metadata.load(Ordering::Relaxed)
     }
 
     /// Whether we should do verbose printing on sensitive information.
