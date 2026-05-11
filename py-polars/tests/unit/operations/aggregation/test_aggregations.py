@@ -1036,6 +1036,8 @@ def test_agg_with_slice_then_cast_23682(
     [
         ("any", pl.all().cast(pl.Boolean).any()),
         ("all", pl.all().cast(pl.Boolean).all()),
+        ("is_empty", pl.all().is_empty()),
+        ("is_empty_ignore_nulls", pl.all().is_empty(ignore_nulls=True)),
         ("arg_max", pl.all().arg_max()),
         ("arg_min", pl.all().arg_min()),
         ("min", pl.all().min()),
