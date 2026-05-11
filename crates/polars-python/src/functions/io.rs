@@ -136,7 +136,7 @@ pub fn _bench_parquet_metadata_bincode_size(
 /// columns survive, stats only on predicate columns). Local files only.
 #[cfg(all(feature = "parquet", feature = "json"))]
 #[pyfunction]
-pub fn _bench_parquet_metadata_pruned_json(
+pub fn _parquet_metadata_pruned_json(
     path: &str,
     projection: Vec<String>,
     predicate: Vec<String>,

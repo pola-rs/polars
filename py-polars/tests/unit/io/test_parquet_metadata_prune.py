@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars._plr import _bench_parquet_metadata_pruned_json
+from polars._plr import _parquet_metadata_pruned_json
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -21,7 +21,7 @@ def test_pruned_metadata(tmp_path: Path) -> None:
     # `ParquetType` is a serde-tagged enum: each entry is a
     # `{"PrimitiveType": {...}}` or `{"GroupType": {...}}` single-key dict;
     # the column name lives in the variant's inner `field_info.name`.
-    meta = json.loads(_bench_parquet_metadata_pruned_json(str(path), ["a", "b"], ["a"]))
+    meta = json.loads(_parquet_metadata_pruned_json(str(path), ["a", "b"], ["a"]))
     names = [
         next(iter(f.values()))["field_info"]["name"]
         for f in meta["schema_descr"]["fields"]
@@ -33,6 +33,6 @@ def test_pruned_metadata(tmp_path: Path) -> None:
 
     # Empty predicate drops all stats.
     meta = json.loads(
-        _bench_parquet_metadata_pruned_json(str(path), ["a", "b", "c"], [])
+        _parquet_metadata_pruned_json(str(path), ["a", "b", "c"], [])
     )
     assert all(c["statistics"] is None for c in meta["row_groups"][0]["columns"])
