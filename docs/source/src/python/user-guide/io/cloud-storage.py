@@ -43,6 +43,20 @@ storage_options = {
 df = pl.scan_parquet(source, storage_options=storage_options).collect()
 # --8<-- [end:scan_parquet_storage_options_aws]
 
+# --8<-- [start:scan_parquet_storage_options_s3_compatible]
+import polars as pl
+
+source = "s3://bucket/*.parquet"
+
+storage_options = {
+    "aws_access_key_id": "<secret>",
+    "aws_secret_access_key": "<secret>",
+    "aws_region": "fr-par",
+    "aws_endpoint_url": "https://s3.fr-par.scw.cloud",
+}
+df = pl.scan_parquet(source, storage_options=storage_options).collect()
+# --8<-- [end:scan_parquet_storage_options_s3_compatible]
+
 # --8<-- [start:credential_provider_class]
 lf = pl.scan_parquet(
     "s3://.../...",

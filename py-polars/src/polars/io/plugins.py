@@ -45,7 +45,11 @@ def register_io_source(
                 project these columns if applied
             predicate
                 Polars expression. The reader must filter
-                their rows accordingly.
+                their rows accordingly. Plugins can use the
+                :attr:`polars.Expr.meta` namespace to inspect the predicate and
+                push down supported fragments to the source system, but must still
+                apply the original predicate before yielding rows if the pushdown
+                is incomplete.
             n_rows
                 Materialize only n rows from the source.
                 The reader can stop when `n_rows` are read.

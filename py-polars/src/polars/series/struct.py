@@ -34,6 +34,11 @@ class StructNameSpace:
         self._s: PySeries = series._s
 
     def __getitem__(self, item: int | str) -> Series:
+        """
+        Return a struct field by name or by index.
+
+        This is shorthand for :meth:`field` when indexing by field name.
+        """
         if isinstance(item, int):
             return self.field(self.fields[item])
         elif isinstance(item, str):

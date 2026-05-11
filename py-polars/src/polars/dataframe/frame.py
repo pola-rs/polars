@@ -8877,6 +8877,8 @@ class DataFrame:
         *columns
             Names of the columns that should be removed from the dataframe.
             Accepts column selector input.
+            The string `"*"` is parsed as a wildcard selector. To drop a column
+            literally named `"*"`, use `polars.selectors.by_name("*")`.
         strict
             Validate that all column names exist in the current schema,
             and throw an exception if any do not.
@@ -8945,6 +8947,21 @@ class DataFrame:
         │ 6.0 │
         │ 7.0 │
         │ 8.0 │
+        └─────┘
+
+        Drop a column literally named ``"*"`` by using a selector.
+
+        >>> import polars.selectors as cs
+        >>> df = pl.DataFrame({"*": [1, 2], "foo": [3, 4]})
+        >>> df.drop(cs.by_name("*"))
+        shape: (2, 1)
+        ┌─────┐
+        │ foo │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 3   │
+        │ 4   │
         └─────┘
         """
         from polars.lazyframe.opt_flags import QueryOptFlags

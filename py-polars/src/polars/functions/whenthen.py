@@ -48,7 +48,9 @@ def when(
     --------
     Polars computes all expressions passed to `when-then-otherwise` in parallel and
     filters afterwards. This means each expression must be valid on its own, regardless
-    of the conditions in the `when-then-otherwise` chain.
+    of the conditions in the `when-then-otherwise` chain. Expressions are not
+    short-circuited, so every `then`, `otherwise`, and predicate expression must be
+    independently valid for all input rows.
 
     Notes
     -----
@@ -101,6 +103,26 @@ def when(
     │ 3   ┆ 4   ┆ true  ┆ 1    ┆ 5         ┆ 1   │
     │ 4   ┆ 0   ┆ true  ┆ 1    ┆ 1         ┆ 1   │
     └─────┴─────┴───────┴──────┴───────────┴─────┘
+
+    Because all expressions are evaluated independently, guards do not prevent
+    invalid computations in later branches. For example, the aggregation below is
+    evaluated before the `when` condition is applied.
+
+    >>> df = pl.DataFrame({"groups": ["a", "a", "b"], "vals": [1, 2, 3]})
+    >>> df.group_by("groups", maintain_order=True).agg(
+    ...     pl.when(pl.len() > 1)
+    ...     .then(pl.col("vals").first())
+    ...     .otherwise(pl.col("vals").sum())
+    ... )
+    shape: (2, 2)
+    ┌────────┬──────┐
+    │ groups ┆ vals │
+    │ ---    ┆ ---  │
+    │ str    ┆ i64  │
+    ╞════════╪══════╡
+    │ a      ┆ 1    │
+    │ b      ┆ 3    │
+    └────────┴──────┘
 
     Note that in regular Polars usage, a single string is parsed as a column name.
 

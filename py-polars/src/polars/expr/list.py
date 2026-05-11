@@ -1274,6 +1274,9 @@ class ExprListNameSpace:
         """
         Run any polars expression against the lists' elements.
 
+        Unlike :meth:`list.agg`, this method preserves list output for each row
+        even when the expression returns a scalar.
+
         Parameters
         ----------
         expr
@@ -1304,7 +1307,8 @@ class ExprListNameSpace:
 
         See Also
         --------
-        polars.Expr.list.agg: Evaluate any expression and automatically explode.
+        polars.Expr.list.agg: Evaluate expressions with aggregation-like
+            scalar inference.
         polars.Expr.arr.eval: Same for the Array datatype.
         """
         return wrap_expr(self._pyexpr.list_eval(expr._pyexpr, parallel))
@@ -1312,6 +1316,10 @@ class ExprListNameSpace:
     def agg(self, expr: Expr) -> Expr:
         """
         Run any polars aggregation expression against the lists' elements.
+
+        If Polars can determine statically that the expression returns a scalar,
+        this method returns one value per input row. Otherwise, it returns a list.
+        This mirrors the behaviour of expressions in a group-by aggregation.
 
         Parameters
         ----------
@@ -1346,7 +1354,7 @@ class ExprListNameSpace:
 
         See Also
         --------
-        polars.Expr.list.eval: Evaluates expressions without automatically exploding.
+        polars.Expr.list.eval: Evaluate expressions while preserving list output.
         polars.Expr.arr.agg: Same for the Array datatype.
         """
         return wrap_expr(self._pyexpr.list_agg(expr._pyexpr))

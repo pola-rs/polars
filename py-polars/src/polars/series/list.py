@@ -516,6 +516,11 @@ class ListNameSpace:
         """
 
     def __getitem__(self, item: int) -> Series:
+        """
+        Retrieve an element from each list by index.
+
+        This is shorthand for :meth:`get`.
+        """
         return self.get(item)
 
     def join(self, separator: IntoExprColumn, *, ignore_nulls: bool = True) -> Series:
@@ -989,6 +994,9 @@ class ListNameSpace:
         """
         Run any polars expression against the lists' elements.
 
+        Unlike :meth:`list.agg`, this method preserves list output for each row
+        even when the expression returns a scalar.
+
         Parameters
         ----------
         expr
@@ -1017,7 +1025,11 @@ class ListNameSpace:
     def agg(self, expr: Expr) -> Series:
         """
 
-        Run any polars aggregation expression against the list' elements.
+        Run any polars aggregation expression against the lists' elements.
+
+        If Polars can determine statically that the expression returns a scalar,
+        this method returns one value per input row. Otherwise, it returns a list.
+        This mirrors the behaviour of expressions in a group-by aggregation.
 
         Parameters
         ----------

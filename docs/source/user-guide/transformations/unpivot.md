@@ -19,3 +19,11 @@ Unpivot unpivots a DataFrame from wide format to long format
 ```python exec="on" result="text" session="user-guide/transformations/unpivot"
 --8<-- "python/user-guide/transformations/unpivot.py:unpivot"
 ```
+
+## Rust feature flag
+
+Rust users must enable the `pivot` feature to use `unpivot`:
+
+```shell
+cargo add polars -F lazy,pivot
+```

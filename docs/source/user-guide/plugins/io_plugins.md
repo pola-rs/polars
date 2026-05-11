@@ -73,7 +73,9 @@ The arguments of this function are predefined and this function must accept:
 
 - `predicate`
 
-  Polars expression. The reader must filter their rows accordingly.
+  Polars expression. The reader must filter their rows accordingly. If the reader can push down
+  only part of the predicate into the source system, it must still apply the original Polars
+  predicate before yielding the batch.
 
 - `n_rows`
 
@@ -125,22 +127,40 @@ def my_scan_csv(csv_str: str) -> pl.LazyFrame:
                 rows.append(row)
 
             df = pl.from_records(rows, schema=schema, orient="row")
-            n_rows -= df.height
+
+            # If the source supports predicate pushdown, the expression can be parsed
+            # to skip rows/groups. You can use `predicate.meta` to inspect the
+            # expression tree and map supported cases to source-native filters.
+            #
+            # This slow example applies the predicate in Polars before projection so
+            # that filters on non-projected columns still work.
+            if predicate is not None:
+                df = df.filter(predicate)
 
             # If we would make a performant reader, we would not read these
             # columns at all.
             if with_columns is not None:
                 df = df.select(with_columns)
 
-            # If the source supports predicate pushdown, the expression can be parsed
-            # to skip rows/groups.
-            if predicate is not None:
-                df = df.filter(predicate)
-
+            if n_rows is not None:
+                n_rows -= df.height
             yield df
 
     return register_io_source(io_source=source_generator, schema=schema)
 ```
+
+### Predicate introspection
+
+The `predicate` argument is a regular Polars expression. IO plugins can inspect it with the
+`Expr.meta` namespace and translate the parts they understand to the underlying source. For example,
+`predicate.meta.root_names()` shows which columns are referenced. More advanced plugins can use
+`predicate.meta.serialize(format="json")` for debugging or best-effort translation, but the
+serialized expression format is not a stable public API.
+
+When a plugin cannot translate the predicate completely, it should still evaluate the original
+Polars expression with `df.filter(predicate)` before yielding rows. This preserves correctness while
+letting the plugin opportunistically skip row groups, partitions, or remote records for the
+predicate fragments it does understand.
 
 ### Taking it for a (very slow) spin
 

@@ -8,7 +8,7 @@ corresponding programming language.
     ``` bash
     pip install polars
 
-    # Or for legacy CPUs without AVX2 support
+    # Or for CPUs that do not support AVX2
     pip install polars[rtcompat]
     ```
 
@@ -45,8 +45,8 @@ $2^{64}$ (~18 quintillion) by enabling the big index extension:
 
 ## Legacy CPU
 
-To install Polars for Python on an old CPU without
-[AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support, run:
+To install Polars for Python on a CPU without
+[AVX2](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support, run:
 
 === ":fontawesome-brands-python: Python"
 
@@ -216,6 +216,7 @@ The opt-in features are:
       - zlib
       - zstd
 - Dataframe operations:
+    - `pivot` - Pivot and unpivot dataframes.
     - `dynamic_group_by` - Group by based on a time window instead of predefined keys.
     Also activates rolling window group by operations.
     - `sort_multiple` - Allow sorting a dataframe on multiple columns.

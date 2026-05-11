@@ -50,6 +50,13 @@ expanded to a list of five expressions:
 --8<-- "python/user-guide/expressions/expression-expansion.py:expression-list"
 ```
 
+The expansion happens at the point where the expression is used by a context such as `select`,
+`with_columns`, or `group_by(...).agg(...)`. If you pass an expanding expression as an argument to
+another expression function, the context expands the resulting expression rather than calling the
+Python function once per selected column. For example, `pl.concat_list(pl.col("a", "b"))` creates a
+single list expression from the expanded inputs, while `pl.col("a", "b").round(2)` expands to one
+rounded expression per selected column.
+
 ### Expansion by data type
 
 We had to type five column names in the previous example but the function `col` can also

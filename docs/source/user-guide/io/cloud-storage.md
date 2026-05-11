@@ -1,7 +1,8 @@
 # Cloud storage
 
-Polars can read and write to AWS S3, Azure Blob Storage and Google Cloud Storage. The API is the
-same for all three storage providers.
+Polars can read and write to AWS S3, Azure Blob Storage and Google Cloud Storage. S3-compatible
+providers can also be used by configuring the S3 endpoint in `storage_options`. The API is the same
+for these storage providers.
 
 To read from cloud storage, additional dependencies may be needed depending on the use case and
 cloud storage provider:
@@ -44,6 +45,12 @@ use for authentication. This can be done in a few ways:
 - Credentials can be passed as configuration keys in a dict with the `storage_options` parameter:
 
 {{code_block('user-guide/io/cloud-storage','scan_parquet_storage_options_aws',['scan_parquet'])}}
+
+- For S3-compatible providers, set the provider endpoint. For example, to use Scaleway object
+  storage:
+
+{{code_block('user-guide/io/cloud-storage','scan_parquet_storage_options_s3_compatible',
+['scan_parquet'])}}
 
 ### Using one of the available `CredentialProvider*` utility classes
 

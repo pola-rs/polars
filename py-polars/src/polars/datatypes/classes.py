@@ -778,6 +778,9 @@ class Categories:
         """
         Creates a new `Categories` with a random name.
 
+        Use this when categorical columns should not share category mappings with
+        other categorical columns.
+
         Parameters
         ----------
         namespace
@@ -786,6 +789,13 @@ class Categories:
         physical : {UInt8, UInt16, UInt32}
             The physical type used to represent the categories. Defaults
             to :py:class:`UInt32`.
+
+        Examples
+        --------
+        >>> categories = pl.Categories.random()
+        >>> dtype = pl.Categorical(categories)
+        >>> dtype.categories is categories
+        True
         """
         if physical == pldt.UInt32:
             internal_phys = "u32"

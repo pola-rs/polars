@@ -146,7 +146,9 @@ def read_parquet(
     storage_options
         Options that indicate how to connect to a cloud provider.
 
-        The cloud providers currently supported are AWS, GCP, and Azure.
+        The cloud providers currently supported are AWS, GCP, and Azure. S3-compatible
+        providers can be used by setting an S3 endpoint, for example
+        `{"aws_endpoint_url": "https://s3.fr-par.scw.cloud"}`.
         See supported keys here:
 
         * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
@@ -411,7 +413,9 @@ def read_parquet_metadata(
     storage_options
         Options that indicate how to connect to a cloud provider.
 
-        The cloud providers currently supported are AWS, GCP, and Azure.
+        The cloud providers currently supported are AWS, GCP, and Azure. S3-compatible
+        providers can be used by setting an S3 endpoint, for example
+        `{"aws_endpoint_url": "https://s3.fr-par.scw.cloud"}`.
         See supported keys here:
 
         * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
@@ -581,7 +585,9 @@ def scan_parquet(
     storage_options
         Options that indicate how to connect to a cloud provider.
 
-        The cloud providers currently supported are AWS, GCP, and Azure.
+        The cloud providers currently supported are AWS, GCP, and Azure. S3-compatible
+        providers can be used by setting an S3 endpoint, for example
+        `{"aws_endpoint_url": "https://s3.fr-par.scw.cloud"}`.
         See supported keys here:
 
         * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
