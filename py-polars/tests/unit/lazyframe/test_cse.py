@@ -1439,3 +1439,25 @@ def test_cspe_create_nested_caches() -> None:
         1,  # select(a + 1)
         1,  # select(a + 1)
     ]
+
+
+@pytest.mark.parametrize(
+    "haystack_constructor",
+    [
+        list,
+        pl.lit,
+        lambda x: pl.Series(x).implode(),
+    ],
+)
+def test_cse_is_in_large_haystack_27556(haystack_constructor: Any) -> None:
+    lf = pl.LazyFrame({"i": [0, 1, 2]})
+    padding = 1003 * [99]
+
+    q = pl.concat(
+        [
+            lf.filter(pl.col("i").is_in(haystack_constructor(padding + [0]))),
+            lf.filter(pl.col("i").is_in(haystack_constructor(padding + [1]))),
+        ]
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"i": [0, 1]}))
