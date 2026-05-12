@@ -34,8 +34,7 @@ impl GroupedReduction for HasNullsReduce {
         _seq_id: u64,
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
-        // Short-circuit: skip if we already know this group has nulls.
-        if !unsafe { self.has_nulls.get_unchecked(group_idx as usize) } && values.null_count() > 0 {
+        if !unsafe { self.has_nulls.get_unchecked(group_idx as usize) } && values.has_nulls() {
             self.has_nulls.set(group_idx as usize, true);
         }
         Ok(())
@@ -60,11 +59,9 @@ impl GroupedReduction for HasNullsReduce {
                 let already_has_nulls = self.has_nulls.get_unchecked(g.idx());
                 if g.should_evict() {
                     self.evicted_has_nulls.push(already_has_nulls);
-                    // Reset for new group window; then apply current value.
                     let is_null = !valid.get_bit_unchecked(*i as usize);
                     self.has_nulls.set_unchecked(g.idx(), is_null);
                 } else {
-                    // OR in: once true, stays true.
                     if !already_has_nulls {
                         let is_null = !valid.get_bit_unchecked(*i as usize);
                         self.has_nulls.set_unchecked(g.idx(), is_null);
@@ -72,7 +69,6 @@ impl GroupedReduction for HasNullsReduce {
                 }
             }
         } else {
-            // No nulls in this batch — only handle evictions.
             for (_, g) in subset.iter().zip(group_idxs) {
                 if g.should_evict() {
                     self.evicted_has_nulls
@@ -93,7 +89,6 @@ impl GroupedReduction for HasNullsReduce {
         let other = other.as_any().downcast_ref::<Self>().unwrap();
         assert!(subset.len() == group_idxs.len());
         for (i, g) in subset.iter().zip(group_idxs) {
-            // OR: if either side has nulls, result has nulls.
             self.has_nulls
                 .or_pos_unchecked(*g as usize, other.has_nulls.get_unchecked(*i as usize));
         }
