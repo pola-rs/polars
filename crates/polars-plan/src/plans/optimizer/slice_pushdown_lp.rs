@@ -897,13 +897,9 @@ impl SlicePushDown {
                 },
                 Some(inner_state),
             ) if inner_state.offset < 0 => {
-                // HConcat null-pads shorter inputs up to the max input height
-                // before its output is sliced. A negative offset is resolved
-                // relative to that padded height, so it cannot be pushed into
-                // each input independently — each input would resolve the
-                // offset against its own (smaller) height and skip the rows
-                // that should have been nulls.
-                // See https://github.com/pola-rs/polars/issues/27552
+                // Negative offset cannot push through hconcat, as this would
+                // cause misalignment on inputs with non-equal lengths.
+                // https://github.com/pola-rs/polars/issues/27552
                 let lp = HConcat {
                     inputs,
                     schema,
@@ -919,10 +915,6 @@ impl SlicePushDown {
                 },
                 _,
             ) => {
-                // Non-negative offsets are safe: each input's slice yields
-                // min(height - offset, len) rows, and HConcat then null-pads
-                // shorter slices back up to the longest — matching the
-                // semantics of "pad to max height, then slice".
                 let lp = HConcat {
                     inputs,
                     schema,
