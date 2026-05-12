@@ -1,7 +1,10 @@
 use std::cell::{Cell, RefCell};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::LazyLock;
+use std::sync::mpsc::{TryRecvError, sync_channel};
 
-use rayon::{ThreadPool, ThreadPoolBuilder};
+use polars_utils::with_drop::WithDrop;
+use rayon::{ThreadPool, ThreadPoolBuilder, Yield};
 use tokio::runtime::{Builder, Runtime};
 
 pub struct POOL;
@@ -140,6 +143,50 @@ impl POOL {
             op(&THREAD_POOL)
         } else {
             NOOP_POOL.with(|v| op(&v.borrow()))
+        }
+    }
+
+    /// Calls a blocking function without blocking the rayon thread pool by
+    /// moving it to a different thread.
+    ///
+    /// If this thread isn't a rayon thread this simply calls f directly.
+    pub fn block_on<R: Send, F: FnOnce() -> R + Send>(&self, f: F) -> R {
+        if THREAD_POOL.current_thread_index().is_some() {
+            let (send, recv) = sync_channel(1);
+            let mut opt_f: Option<F> = Some(f);
+            let mut wrap_f = || {
+                let f = AssertUnwindSafe(opt_f.take().unwrap());
+                send.send(catch_unwind(f)).unwrap();
+            };
+
+            // SAFETY: we always await the future to completion before returning from here, meaning
+            // wrap_f stays alive for as long as it needs to. If for whatever reason we unwind we
+            // abort.
+            let abort = WithDrop::new((), |()| std::process::abort());
+            let ref_wrap_f: &mut (dyn Send + FnMut()) = &mut wrap_f;
+            let static_wrap_f: &'static mut (dyn Send + FnMut() + 'static) =
+                unsafe { core::mem::transmute(ref_wrap_f) };
+            ASYNC.spawn_blocking(static_wrap_f);
+
+            loop {
+                match recv.try_recv() {
+                    Ok(r) => {
+                        WithDrop::dismiss(abort);
+                        match r {
+                            Ok(v) => return v,
+                            Err(panic) => std::panic::resume_unwind(panic),
+                        }
+                    },
+                    Err(TryRecvError::Empty) => match rayon::yield_now() {
+                        Some(Yield::Executed) => {},
+                        Some(Yield::Idle) => std::thread::yield_now(),
+                        None => unreachable!(),
+                    },
+                    Err(TryRecvError::Disconnected) => unreachable!(),
+                }
+            }
+        } else {
+            f()
         }
     }
 }

@@ -7,7 +7,6 @@ use polars_io::catalog::unity::models::{
     CatalogInfo, ColumnInfo, DataSourceFormat, NamespaceInfo, TableInfo, TableType,
 };
 use polars_io::catalog::unity::schema::parse_type_json_str;
-use polars_io::pl_async;
 use pyo3::exceptions::PyValueError;
 use pyo3::sync::PyOnceLock;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyNone, PyTuple};
