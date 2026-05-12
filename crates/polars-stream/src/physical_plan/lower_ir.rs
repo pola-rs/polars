@@ -29,7 +29,7 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
-use polars_utils::{IdxSize, UnitVec, format_pl_smallstr, unique_column_name};
+use polars_utils::{IdxSize, format_pl_smallstr, unique_column_name};
 use slotmap::SlotMap;
 
 use super::lower_expr::build_hstack_stream;
@@ -1623,7 +1623,7 @@ pub fn lower_ir(
             let inputs = inputs.clone();
             let arg_map = arg_map.clone();
 
-            let trans_inputs: Vec<PhysStream> =
+            let trans_inputs: Vec<_> =
                 inputs.iter().map(|input| lower_ir!(*input)).try_collect()?;
 
             let trans_schemas: Vec<Arc<Schema>> = trans_inputs
@@ -1631,38 +1631,15 @@ pub fn lower_ir(
                 .map(|i| i.output_schema(phys_sm).clone())
                 .collect();
 
-            let phys_stream_for_arg =
-                |(input_idx, col_name, arg_name): (usize, &PlSmallStr, &PlSmallStr)| {
-                    let input = trans_inputs[input_idx];
-                    if trans_schemas[input_idx].len() == 1 && arg_name == col_name {
-                        // Use the input as is.
-                        Ok(input)
-                    } else {
-                        // Select a single column from the input, with an optional rename.
-                        let selector = AExprBuilder::col(col_name.clone(), expr_arena)
-                            .expr_ir(arg_name.clone());
-                        build_select_stream(
-                            input,
-                            &[selector],
-                            expr_arena,
-                            phys_sm,
-                            expr_cache,
-                            ctx,
-                        )
-                    }
-                };
-
             match operation {
                 UnoptimizedOperation::ColumnarFunction {
                     function,
                     options,
-                    arg_names,
                     output_name,
                 } => {
                     if trans_inputs.len() == 1 {
                         // Single input, can directly dispatch through a select.
-                        let expr_input =
-                            arg_map.arg_selectors(&trans_schemas, arg_names.as_deref(), expr_arena);
+                        let expr_input = arg_map.arg_selectors(&trans_schemas, expr_arena);
                         let expr = ExprIR::from_node(
                             expr_arena.add(AExpr::Function {
                                 input: expr_input,
@@ -1683,59 +1660,14 @@ pub fn lower_ir(
                     } else if options.is_row_separable() {
                         // We can zip the inputs together and dispatch through a select.
 
-                        let zip_schemas = |schemas: &[Arc<Schema>]| {
+                        let zip_schema = {
                             let mut zip_schema = Schema::default();
-                            for schema in schemas {
+                            for schema in &trans_schemas {
+                                // Will panic on column name collision
                                 zip_schema.hstack_mut(schema.as_ref().clone())?;
                             }
-                            PolarsResult::Ok(Arc::new(zip_schema))
+                            Arc::new(zip_schema)
                         };
-
-                        let (trans_inputs, trans_schemas, zip_schema) =
-                            if let Ok(zip_schema) = zip_schemas(&trans_schemas) {
-                                // Use the inputs as-is.
-                                (trans_inputs, trans_schemas, zip_schema)
-                            } else {
-                                // Column name collision, rename.
-                                let orig_trans_schemas = trans_schemas;
-
-                                // Generate unique names for all input columns.
-                                let trans_schemas: Vec<Arc<Schema>> = orig_trans_schemas
-                                    .iter()
-                                    .map(|ts| {
-                                        ts.iter_values()
-                                            .map(|dt| (unique_column_name(), dt.clone()))
-                                            .collect::<Schema>()
-                                            .into()
-                                    })
-                                    .collect();
-
-                                // Rename all input columns.
-                                let trans_inputs = trans_inputs
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(i, ti)| {
-                                        let in_schema = &orig_trans_schemas[i];
-                                        let out_schema = &trans_schemas[i];
-                                        let selectors: UnitVec<_> = in_schema
-                                            .iter_names()
-                                            .zip(out_schema.iter_names())
-                                            .map(|(from, to)| {
-                                                ExprIR::from_column_name(from.clone(), expr_arena)
-                                                    .with_alias(to.clone())
-                                            })
-                                            .collect();
-                                        build_select_stream(
-                                            ti, &selectors, expr_arena, phys_sm, expr_cache, ctx,
-                                        )
-                                    })
-                                    .collect::<PolarsResult<Vec<_>>>()?;
-
-                                let zip_schema = zip_schemas(&trans_schemas)
-                                    .expect("all columns have unique names");
-
-                                (trans_inputs, trans_schemas, zip_schema)
-                            };
 
                         let zip_node = phys_sm.insert(PhysNode::new(
                             zip_schema,
@@ -1745,8 +1677,7 @@ pub fn lower_ir(
                             },
                         ));
 
-                        let expr_input =
-                            arg_map.arg_selectors(&trans_schemas, arg_names.as_deref(), expr_arena);
+                        let expr_input = arg_map.arg_selectors(&trans_schemas, expr_arena);
                         let expr = ExprIR::from_node(
                             expr_arena.add(AExpr::Function {
                                 input: expr_input,
@@ -1765,15 +1696,12 @@ pub fn lower_ir(
                             ctx,
                         );
                     } else {
-                        let arg_inputs = arg_map
-                            .iter_args_with_names(&trans_schemas, arg_names.as_deref())
-                            .map(phys_stream_for_arg)
-                            .try_collect()?;
                         let func = function_expr_to_udf(function.clone()).into_inner();
                         let format_str = Some(format!("COLUMNAR {function}"));
                         PhysNodeKind::ColumnarFunction {
-                            inputs: arg_inputs,
+                            inputs: trans_inputs,
                             func,
+                            arg_map: Some(arg_map),
                             output_name,
                             format_str,
                         }
@@ -1783,15 +1711,10 @@ pub fn lower_ir(
                 UnoptimizedOperation::AnonymousColumnsUdf {
                     function,
                     options: _,
-                    arg_names,
                     output_name,
                     fmt_str,
                     ctx_schema: _,
                 } => {
-                    let arg_inputs = arg_map
-                        .iter_args_with_names(&trans_schemas, Some(&arg_names))
-                        .map(phys_stream_for_arg)
-                        .try_collect()?;
                     let func = function
                         .clone()
                         .materialize()
@@ -1800,8 +1723,9 @@ pub fn lower_ir(
                         .as_column_udf();
                     let format_str = Some(format!("ANONYMOUS {fmt_str}"));
                     PhysNodeKind::ColumnarFunction {
-                        inputs: arg_inputs,
+                        inputs: trans_inputs,
                         func,
+                        arg_map: Some(arg_map),
                         output_name,
                         format_str,
                     }

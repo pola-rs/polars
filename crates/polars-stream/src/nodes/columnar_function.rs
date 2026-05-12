@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use polars_core::schema::Schema;
 use polars_plan::dsl::ColumnsUdf;
+use polars_plan::plans::FunctionArgMap;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -13,6 +14,7 @@ pub enum ColumnarFunctionNode {
     Sink {
         sink_nodes: Vec<InMemorySinkNode>,
         func: Arc<dyn ColumnsUdf>,
+        arg_map: Option<FunctionArgMap>,
         output_name: PlSmallStr,
     },
     Source(InMemorySourceNode),
@@ -23,6 +25,7 @@ impl ColumnarFunctionNode {
     pub fn new(
         input_schemas: Vec<Arc<Schema>>,
         func: Arc<dyn ColumnsUdf>,
+        arg_map: Option<FunctionArgMap>,
         output_name: PlSmallStr,
     ) -> Self {
         Self::Sink {
@@ -31,6 +34,7 @@ impl ColumnarFunctionNode {
                 .map(InMemorySinkNode::new)
                 .collect(),
             func,
+            arg_map,
             output_name,
         }
     }
@@ -58,16 +62,35 @@ impl ComputeNode for ColumnarFunctionNode {
         if let Self::Sink {
             sink_nodes,
             func,
+            arg_map,
             output_name,
         } = self
         {
             assert!(recv.len() == sink_nodes.len());
             if recv.iter().all(|p| *p == PortState::Done) {
-                let mut cols = Vec::new();
+                let mut dfs = Vec::new();
                 for sink_node in sink_nodes {
                     let df = sink_node.get_output()?.unwrap();
-                    cols.extend(df.into_columns());
+                    dfs.push(df);
                 }
+
+                let mut cols = if let Some(arg_map) = arg_map {
+                    arg_map
+                        .iter()
+                        .map(|(input_idx, col_idx, arg_name)| {
+                            dfs[input_idx].columns()[col_idx]
+                                .clone()
+                                .with_name(arg_name.clone())
+                        })
+                        .collect()
+                } else {
+                    let mut cols = Vec::new();
+                    for df in dfs {
+                        cols.extend(df.into_columns());
+                    }
+                    cols
+                };
+
                 let out_col = func.call_udf(&mut cols)?.with_name(output_name.clone());
                 let source_node = InMemorySourceNode::new(
                     Arc::new(DataFrame::new(out_col.len(), vec![out_col])?),

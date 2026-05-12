@@ -416,8 +416,8 @@ impl<'a> TreeFmtNode<'a> {
                 } => ND(
                     wh(h, &format!("DISPATCH {operation}")),
                     arg_map
-                        .iter_arg_inputs()
-                        .map(|(input_idx, _col_idx)| &inputs[input_idx])
+                        .iter()
+                        .map(|(input_idx, _col_idx, _arg_name)| &inputs[input_idx])
                         .map(|input| self.lp_node(None, *input))
                         .collect(),
                 ),

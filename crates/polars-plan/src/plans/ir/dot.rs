@@ -346,7 +346,7 @@ impl<'a> IRDotDisplay<'a> {
                 operation,
                 arg_map,
             } => {
-                for input in arg_map.iter_arg_inputs().map(|(i, _c)| &inputs[i]) {
+                for input in arg_map.iter().map(|(i, _c, _n)| &inputs[i]) {
                     recurse!(*input);
                 }
                 write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;
