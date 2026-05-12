@@ -578,6 +578,10 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
             let ignore_nulls = *ignore_nulls;
             wrap_groups!(groups_dispatch::all, (ignore_nulls, v: bool))
         },
+        F::Boolean(IRBooleanFunction::IsEmpty { ignore_nulls }) => {
+            let ignore_nulls = *ignore_nulls;
+            wrap_groups!(groups_dispatch::is_empty, (ignore_nulls, v: bool))
+        },
         #[cfg(feature = "bitwise")]
         F::Bitwise(f) => {
             use polars_plan::plans::IRBitwiseFunction as B;
