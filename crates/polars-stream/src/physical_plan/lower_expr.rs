@@ -2142,7 +2142,9 @@ fn lower_exprs_with_ctx(
             AExpr::Function {
                 function:
                     IRFunctionExpr::Boolean(
-                        IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
+                        IRBooleanFunction::Any { .. }
+                        | IRBooleanFunction::All { .. }
+                        | IRBooleanFunction::IsEmpty { .. },
                     )
                     | IRFunctionExpr::MinBy
                     | IRFunctionExpr::MaxBy

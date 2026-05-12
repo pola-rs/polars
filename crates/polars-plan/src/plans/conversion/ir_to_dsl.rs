@@ -674,6 +674,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             F::Boolean(match f {
                 IB::Any { ignore_nulls } => B::Any { ignore_nulls },
                 IB::All { ignore_nulls } => B::All { ignore_nulls },
+                IB::IsEmpty { ignore_nulls } => B::IsEmpty { ignore_nulls },
                 IB::IsNull => B::IsNull,
                 IB::IsNotNull => B::IsNotNull,
                 IB::IsFinite => B::IsFinite,
