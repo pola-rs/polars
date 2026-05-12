@@ -1,6 +1,7 @@
 use std::sync::{Arc, OnceLock};
 
 use polars_error::PolarsResult;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::broadcast::{broadcast_columns, infer_broadcast_height};
 use super::validation::validate_columns_slice;
@@ -371,4 +372,6 @@ impl DataFrame {
         self.cached_schema = OnceLock::new();
         self
     }
+
+    fn is_sorted(&self, by: &[PlSmallStr]) -> bool {}
 }
