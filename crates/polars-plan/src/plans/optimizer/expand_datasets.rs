@@ -128,7 +128,7 @@ pub(super) fn expand_datasets(
 
                     // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
                     let parts: Vec<String> = MintermIter::new(predicate.node(), expr_arena)
-                        .filter_map(|node| predicate_to_pa(node, expr_arena, Default::default()))
+                        .filter_map(|node| predicate_to_pa(node, expr_arena))
                         .collect();
                     match parts.len() {
                         0 => None,

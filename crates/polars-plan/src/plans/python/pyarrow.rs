@@ -14,27 +14,6 @@ use crate::prelude::*;
 // Don't convert more than this amount of items to Python objects.
 const LIST_ITEM_LIMIT: usize = 100;
 
-#[derive(Default, Copy, Clone)]
-pub struct PyarrowArgs {
-    // pyarrow doesn't allow `filter([True, False])`
-    // but does allow `filter(field("a").isin([True, False]))`
-    #[allow(dead_code)]
-    allow_literal_series: bool,
-}
-
-fn sanitize(name: &str) -> Option<&str> {
-    if name.chars().all(|c| match c {
-        ' ' => true,
-        '-' => true,
-        '_' => true,
-        c => c.is_alphanumeric(),
-    }) {
-        Some(name)
-    } else {
-        None
-    }
-}
-
 #[cfg(feature = "is_in")]
 pub(crate) enum IsInHaystack {
     Empty, // fast path for when haystack is empty; returns False
@@ -88,11 +67,7 @@ pub(crate) fn needle_isin_haystack(lv: &LiteralValue, nulls_equal: bool) -> Opti
 }
 
 // convert predicate to pyarrow and then to the string repr
-pub fn predicate_to_pa(
-    predicate: Node,
-    expr_arena: &Arena<AExpr>,
-    _args: PyarrowArgs,
-) -> Option<String> {
+pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<String> {
     Python::attach(|py| {
         let pc = py.import("pyarrow.compute").ok()?;
         let expr = aexpr_to_pyarrow(py, &pc, predicate, expr_arena)?;
@@ -115,6 +90,7 @@ fn binary_op_method(op: &Operator) -> Option<&'static str> {
     })
 }
 
+// The main engine of converting AnyValue to a python object
 fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, PyAny>> {
     use pyo3::IntoPyObjectExt;
 
@@ -122,10 +98,7 @@ fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, P
     match av.as_borrowed() {
         AnyValue::Null => Some(py.None().into_bound(py)),
         AnyValue::Boolean(v) => v.into_bound_py_any(py).ok(),
-        AnyValue::String(s) => {
-            let s = sanitize(s)?;
-            s.into_pyobject(py).ok().map(|b| b.into_any())
-        },
+        AnyValue::String(s) => s.into_pyobject(py).ok().map(|b| b.into_any()),
         #[cfg(feature = "dtype-date")]
         AnyValue::Date(days) => {
             use chrono::Datelike;
@@ -194,6 +167,7 @@ fn series_to_py_list<'py>(py: Python<'py>, s: &Series) -> Option<Bound<'py, PyLi
     PyList::new(py, &items).ok()
 }
 
+// Convert an AExpr predicate to a pyarrow expression using python.
 pub fn aexpr_to_pyarrow<'py>(
     py: Python<'py>,
     pc: &Bound<'py, PyAny>,
@@ -207,10 +181,7 @@ pub fn aexpr_to_pyarrow<'py>(
             let r = aexpr_to_pyarrow(py, pc, *right, expr_arena)?;
             l.call_method1(method, (r,)).ok()
         },
-        AExpr::Column(name) => {
-            let name = sanitize(name)?;
-            pc.call_method1("field", (name,)).ok()
-        },
+        AExpr::Column(name) => pc.call_method1("field", (name,)).ok(),
         AExpr::Literal(LiteralValue::Series(_)) => None,
         AExpr::Literal(lv) => {
             let av = lv.to_any_value()?;
