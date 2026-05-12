@@ -124,7 +124,6 @@ parquet = ["polars-parquet", "polars-parquet/compression", "polars-core/partitio
 async = [
   "async-trait",
   "futures",
-  "tokio",
   "polars-error/regex",
   "polars-parquet?/async",
   "polars-utils/async-utils",
