@@ -33,6 +33,7 @@ pub(crate) struct SQLFunctionVisitor<'a> {
     pub(crate) func: &'a SQLFunction,
     pub(crate) ctx: &'a mut SQLContext,
     pub(crate) active_schema: Option<&'a Schema>,
+    pub(crate) filter: Option<Expr>,
 }
 
 /// SQL functions that are supported by Polars
@@ -630,6 +631,15 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT STDDEV(col1) FROM df;
     /// ```
     StdDev,
+    /// SQL 'string_agg' function (also known as `GROUP_CONCAT`).
+    /// Concatenates the input string values into a single string,
+    /// separated by the given delimiter (`,` if unspecified).
+    /// ```sql
+    /// SELECT STRING_AGG(col1) FROM df;
+    /// SELECT STRING_AGG(col1, ',' ORDER BY col2 DESC) FROM df;
+    /// SELECT STRING_AGG(DISTINCT col1, ',' ORDER BY col1) FROM df;
+    /// ```
+    StringAgg,
     /// SQL 'sum' function.
     /// Returns the sum of all the elements in the grouping.
     /// ```sql
@@ -688,12 +698,6 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ARRAY_UNIQUE(col1) FROM df;
     /// ```
     ArrayUnique,
-    /// SQL 'unnest' function.
-    /// Unnest/explodes an array column into multiple rows.
-    /// ```sql
-    /// SELECT unnest(col1) FROM df;
-    /// ```
-    Explode,
     /// SQL 'array_agg' function.
     /// Concatenates the input expressions, including nulls, into an array.
     /// ```sql
@@ -719,6 +723,12 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT ARRAY_CONTAINS(col1, 'foo') FROM df;
     /// ```
     ArrayContains,
+    /// SQL 'unnest' function.
+    /// Unnest/explodes an array column into multiple rows.
+    /// ```sql
+    /// SELECT UNNEST(col1) FROM df;
+    /// ```
+    Explode,
 
     // ----
     // Window functions
@@ -1029,6 +1039,7 @@ impl PolarsSQLFunctions {
             "quantile_cont" => Self::QuantileCont,
             "quantile_disc" => Self::QuantileDisc,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
+            "string_agg" | "listagg" | "group_concat" => Self::StringAgg,
             "sum" => Self::Sum,
             "var" | "variance" | "var_samp" => Self::Variance,
 
@@ -1085,15 +1096,18 @@ impl SQLFunctionVisitor<'_> {
         let function_name = PolarsSQLFunctions::try_from_sql(self.func, self.ctx)?;
         let function = self.func;
 
-        // TODO: implement the following functions where possible
+        // TODO: implement the following modifiers where possible
         if !function.within_group.is_empty() {
             polars_bail!(SQLInterface: "'WITHIN GROUP' is not currently supported")
         }
-        if function.filter.is_some() {
-            polars_bail!(SQLInterface: "'FILTER' is not currently supported")
-        }
         if function.null_treatment.is_some() {
             polars_bail!(SQLInterface: "'IGNORE|RESPECT NULLS' is not currently supported")
+        }
+        if let Some(filter_expr) = &function.filter {
+            if function.over.is_some() {
+                polars_bail!(SQLInterface: "'FILTER' combined with 'OVER' is not supported")
+            }
+            self.filter = Some(parse_sql_expr(filter_expr, self.ctx, self.active_schema)?);
         }
 
         let log_with_base =
@@ -1626,6 +1640,7 @@ impl SQLFunctionVisitor<'_> {
             },
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
+            StringAgg => self.visit_string_agg(),
             Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
             Variance => self.visit_unary(|e| e.var(1)),
 
@@ -1957,6 +1972,18 @@ impl SQLFunctionVisitor<'_> {
         }
     }
 
+    /// Parse an argument of the function currently being visited.
+    ///
+    /// Behaves like [`parse_sql_expr`] but also accounts for any
+    /// active `FILTER (WHERE …)` clause from the surrounding call.
+    fn parse_sql_arg(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        let parsed = parse_sql_expr(expr, self.ctx, self.active_schema)?;
+        Ok(match &self.filter {
+            Some(pred) => parsed.filter(pred.clone()),
+            None => parsed,
+        })
+    }
+
     fn visit_unary(&mut self, f: impl Fn(Expr) -> Expr) -> PolarsResult<Expr> {
         self.try_visit_unary(|e| Ok(f(e)))
     }
@@ -1964,14 +1991,10 @@ impl SQLFunctionVisitor<'_> {
     fn try_visit_unary(&mut self, f: impl Fn(Expr) -> PolarsResult<Expr>) -> PolarsResult<Expr> {
         let args = extract_args(self.func)?;
         match args.as_slice() {
-            [FunctionArgExpr::Expr(sql_expr)] => {
-                f(parse_sql_expr(sql_expr, self.ctx, self.active_schema)?)
+            [FunctionArgExpr::Expr(sql_expr)] => f(self.parse_sql_arg(sql_expr)?),
+            [FunctionArgExpr::Wildcard] => {
+                f(self.parse_sql_arg(&SQLExpr::Wildcard(AttachedToken::empty()))?)
             },
-            [FunctionArgExpr::Wildcard] => f(parse_sql_expr(
-                &SQLExpr::Wildcard(AttachedToken::empty()),
-                self.ctx,
-                self.active_schema,
-            )?),
             _ => self.not_supported_error(),
         }
         .and_then(|e| self.apply_window_spec(e, &self.func.over))
@@ -2029,8 +2052,8 @@ impl SQLFunctionVisitor<'_> {
                 FunctionArgExpr::Expr(sql_expr1),
                 FunctionArgExpr::Expr(sql_expr2),
             ] => {
-                let expr1 = parse_sql_expr(sql_expr1, self.ctx, self.active_schema)?;
-                let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
+                let expr1 = self.parse_sql_arg(sql_expr1)?;
+                let expr2 = Arg::from_sql_arg(sql_expr2, self)?;
                 f(expr1, expr2)
             },
             _ => self.not_supported_error(),
@@ -2049,7 +2072,7 @@ impl SQLFunctionVisitor<'_> {
         let mut expr_args = vec![];
         for arg in args {
             if let FunctionArgExpr::Expr(sql_expr) = arg {
-                expr_args.push(parse_sql_expr(sql_expr, self.ctx, self.active_schema)?);
+                expr_args.push(self.parse_sql_arg(sql_expr)?);
             } else {
                 return self.not_supported_error();
             };
@@ -2068,9 +2091,9 @@ impl SQLFunctionVisitor<'_> {
                 FunctionArgExpr::Expr(sql_expr2),
                 FunctionArgExpr::Expr(sql_expr3),
             ] => {
-                let expr1 = parse_sql_expr(sql_expr1, self.ctx, self.active_schema)?;
-                let expr2 = Arg::from_sql_expr(sql_expr2, self.ctx)?;
-                let expr3 = Arg::from_sql_expr(sql_expr3, self.ctx)?;
+                let expr1 = self.parse_sql_arg(sql_expr1)?;
+                let expr2 = Arg::from_sql_arg(sql_expr2, self)?;
+                let expr3 = Arg::from_sql_arg(sql_expr3, self)?;
                 f(expr1, expr2, expr3)
             },
             _ => self.not_supported_error(),
@@ -2085,53 +2108,97 @@ impl SQLFunctionVisitor<'_> {
         Ok(f())
     }
 
+    /// Apply in-arg "aggregate modifiers" inside an aggregate's argument
+    /// list, eg: `ARRAY_AGG(DISTINCT x ORDER BY y LIMIT 5)`. Composes
+    /// with the visitor-level `FILTER (WHERE …)` clause.
+    fn apply_aggregate_clauses(
+        &mut self,
+        mut base: Expr,
+        is_distinct: bool,
+        clauses: &[FunctionArgumentClause],
+        base_sql_expr: &SQLExpr,
+        func_name: &str,
+    ) -> PolarsResult<Expr> {
+        let mut order_by_clause = None;
+        let mut limit_clause = None;
+        for clause in clauses {
+            match clause {
+                FunctionArgumentClause::OrderBy(order_exprs) => {
+                    order_by_clause = Some(order_exprs.as_slice());
+                },
+                FunctionArgumentClause::Limit(limit_expr) => {
+                    limit_clause = Some(limit_expr);
+                },
+                _ => {},
+            }
+        }
+        if is_distinct {
+            // DISTINCT: apply unique first, then sort the deduplicated result.
+            base = base.unique_stable();
+            if let Some(order_by) = order_by_clause {
+                base = self.apply_order_by_to_distinct_array(base, order_by, base_sql_expr)?;
+            }
+        } else if let Some(order_by) = order_by_clause {
+            base = self.apply_order_by(base, order_by)?;
+        }
+        if let Some(limit_expr) = limit_clause {
+            let limit = parse_sql_expr(limit_expr, self.ctx, self.active_schema)?;
+            match limit {
+                Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= 0 => {
+                    base = base.head(Some(n as usize))
+                },
+                _ => {
+                    polars_bail!(SQLSyntax: "LIMIT in {} must be a positive integer", func_name)
+                },
+            };
+        }
+        Ok(base)
+    }
+
     fn visit_arr_agg(&mut self) -> PolarsResult<Expr> {
         let (args, is_distinct, clauses) = extract_args_and_clauses(self.func)?;
         match args.as_slice() {
             [FunctionArgExpr::Expr(sql_expr)] => {
-                let mut base = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
-                let mut order_by_clause = None;
-                let mut limit_clause = None;
-                for clause in &clauses {
-                    match clause {
-                        FunctionArgumentClause::OrderBy(order_exprs) => {
-                            order_by_clause = Some(order_exprs.as_slice());
-                        },
-                        FunctionArgumentClause::Limit(limit_expr) => {
-                            limit_clause = Some(limit_expr);
-                        },
-                        _ => {},
-                    }
-                }
-                if !is_distinct {
-                    // No DISTINCT: apply ORDER BY normally
-                    if let Some(order_by) = order_by_clause {
-                        base = self.apply_order_by(base, order_by)?;
-                    }
-                } else {
-                    // DISTINCT: apply unique, then sort the result
-                    base = base.unique_stable();
-                    if let Some(order_by) = order_by_clause {
-                        base = self.apply_order_by_to_distinct_array(base, order_by, sql_expr)?;
-                    }
-                }
-                if let Some(limit_expr) = limit_clause {
-                    let limit = parse_sql_expr(limit_expr, self.ctx, self.active_schema)?;
-                    match limit {
-                        Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(n))) if n >= 0 => {
-                            base = base.head(Some(n as usize))
-                        },
-                        _ => {
-                            polars_bail!(SQLSyntax: "LIMIT in ARRAY_AGG must be a positive integer")
-                        },
-                    };
-                }
+                let base = self.parse_sql_arg(sql_expr)?;
+                let base = self.apply_aggregate_clauses(
+                    base,
+                    is_distinct,
+                    &clauses,
+                    sql_expr,
+                    "ARRAY_AGG",
+                )?;
                 Ok(base.implode(true))
             },
             _ => {
                 polars_bail!(SQLSyntax: "ARRAY_AGG must have exactly one argument; found {}", args.len())
             },
         }
+    }
+
+    fn visit_string_agg(&mut self) -> PolarsResult<Expr> {
+        let (args, is_distinct, clauses) = extract_args_and_clauses(self.func)?;
+        let (sql_expr, separator) = match args.as_slice() {
+            [FunctionArgExpr::Expr(sql_expr)] => (sql_expr, lit(",")),
+            [
+                FunctionArgExpr::Expr(sql_expr),
+                FunctionArgExpr::Expr(sep_sql_expr),
+            ] => (
+                sql_expr,
+                parse_sql_expr(sep_sql_expr, self.ctx, self.active_schema)?,
+            ),
+            _ => polars_bail!(
+                SQLSyntax: "STRING_AGG expects 1-2 arguments (found {})",
+                args.len()
+            ),
+        };
+        let base = self.parse_sql_arg(sql_expr)?;
+        let base =
+            self.apply_aggregate_clauses(base, is_distinct, &clauses, sql_expr, "STRING_AGG")?;
+        Ok(base
+            .cast(DataType::String)
+            .implode(true)
+            .list()
+            .join(separator, true))
     }
 
     fn visit_arr_to_string(&mut self) -> PolarsResult<Expr> {
@@ -2219,19 +2286,26 @@ impl SQLFunctionVisitor<'_> {
                 }
             }
         }
+        // COUNT(*), COUNT(1) with FILTER: count rows where the predicate is true.
+        let count_star = || match &self.filter {
+            Some(pred) => pred.clone().sum(),
+            None => len(),
+        };
         let count_expr = match (is_distinct, args.as_slice()) {
             // COUNT(*), COUNT()
-            (false, [FunctionArgExpr::Wildcard] | []) => len(),
+            (false, [FunctionArgExpr::Wildcard] | []) => count_star(),
             // COUNT(<non-null literal>) is equivalent to COUNT(*)
-            (false, [FunctionArgExpr::Expr(sql_expr)]) if is_non_null_literal(sql_expr) => len(),
+            (false, [FunctionArgExpr::Expr(sql_expr)]) if is_non_null_literal(sql_expr) => {
+                count_star()
+            },
             // COUNT(col)
             (false, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
+                let expr = self.parse_sql_arg(sql_expr)?;
                 expr.count()
             },
             // COUNT(DISTINCT col)
             (true, [FunctionArgExpr::Expr(sql_expr)]) => {
-                let expr = parse_sql_expr(sql_expr, self.ctx, self.active_schema)?;
+                let expr = self.parse_sql_arg(sql_expr)?;
                 expr.clone().n_unique().sub(expr.null_count().gt(lit(0)))
             },
             _ => self.not_supported_error()?,
@@ -2246,9 +2320,11 @@ impl SQLFunctionVisitor<'_> {
 
         for ob in order_by {
             // Note: if not specified 'NULLS FIRST' is default for DESC, 'NULLS LAST' otherwise
-            // https://www.postgresql.org/docs/current/queries-order.html
+            // https://www.postgresql.org/docs/current/queries-order.html. Also: ORDER BY exprs
+            // share their length with the (possibly filtered) base, so they have to go through
+            // `parse_sql_arg` to apply any active FILTER.
             let desc_order = !ob.options.asc.unwrap_or(true);
-            by.push(parse_sql_expr(&ob.expr, self.ctx, self.active_schema)?);
+            by.push(self.parse_sql_arg(&ob.expr)?);
             nulls_last.push(!ob.options.nulls_first.unwrap_or(desc_order));
             descending.push(desc_order);
         }
@@ -2419,6 +2495,16 @@ pub(crate) trait FromSQLExpr {
     fn from_sql_expr(expr: &SQLExpr, ctx: &mut SQLContext) -> PolarsResult<Self>
     where
         Self: Sized;
+
+    /// Parse SQL expression as an argument of the function being visited, taking
+    /// the surrounding visitor into account. Allows active `FILTER (WHERE …)`
+    /// clauses to be applied to all args without each call knowing about FILTER.
+    fn from_sql_arg(expr: &SQLExpr, visitor: &mut SQLFunctionVisitor<'_>) -> PolarsResult<Self>
+    where
+        Self: Sized,
+    {
+        Self::from_sql_expr(expr, visitor.ctx)
+    }
 }
 
 impl FromSQLExpr for f64 {
@@ -2492,5 +2578,9 @@ impl FromSQLExpr for Expr {
         Self: Sized,
     {
         parse_sql_expr(expr, ctx, None)
+    }
+
+    fn from_sql_arg(expr: &SQLExpr, visitor: &mut SQLFunctionVisitor<'_>) -> PolarsResult<Self> {
+        visitor.parse_sql_arg(expr)
     }
 }
