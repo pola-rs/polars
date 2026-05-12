@@ -525,8 +525,8 @@ def _xl_setup_table_columns(
     count_total_overrides: dict[str, tuple[str, Format]] = {}
     for col, fn in column_total_funcs.items():
         if fn in _count_total_funcs:
-            tp = df.schema.get(col)
-            if tp is not None and tp.is_temporal():
+            col_tp = df.schema.get(col)
+            if col_tp is not None and col_tp.is_temporal():
                 fmt_obj = format_cache.get(
                     {"num_format": int_base_fmt, "valign": "vcenter"}
                 )
