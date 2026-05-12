@@ -170,6 +170,7 @@ pub(crate) fn set_cache_states(
 
     stack.push(init);
 
+    // Create the indexmap entries in topological graph order.
     ir_graph_traversal(
         root,
         &mut FnVisitors::new(
@@ -280,8 +281,8 @@ pub(crate) fn set_cache_states(
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
         let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming);
-        // `cache_schema_and_children` is topologically ordered. We rev() the iter to ensure all caches below
-        // the current cache are mutated before optimizing the current cache, otherwise we get `IR::Invalid`.
+        // rev() the iter to visit/optimize the caches below the current cache before the current cache,
+        // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
