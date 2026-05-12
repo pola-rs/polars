@@ -78,12 +78,16 @@ def test_has_nulls_group_by() -> None:
 
 
 def test_has_nulls_streaming_group_by() -> None:
-    lf = pl.LazyFrame(
-        {
-            "g": ["a", "b", "a", "b", "c", "c", "d", "d"],
-            "x": [None, 1, 2, 3, None, None, 4, 5],
-        }
-    ).group_by("g").agg(pl.col("x").has_nulls())
+    lf = (
+        pl.LazyFrame(
+            {
+                "g": ["a", "b", "a", "b", "c", "c", "d", "d"],
+                "x": [None, 1, 2, 3, None, None, 4, 5],
+            }
+        )
+        .group_by("g")
+        .agg(pl.col("x").has_nulls())
+    )
 
     assert_frame_equal(
         lf.collect(engine="streaming").sort("g"),
