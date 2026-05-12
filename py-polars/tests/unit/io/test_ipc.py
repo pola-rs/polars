@@ -101,6 +101,9 @@ def test_ipc_roundtrip_nostream_parametric(
     )
 )
 @pytest.mark.slow
+@pytest.mark.xfail(
+    reason="until https://github.com/apache/arrow/pull/49694 is merged and released"
+)
 def test_ipc_roundtrip_pandas_parametric(
     df: pl.DataFrame, compression: IpcCompression
 ) -> None:
