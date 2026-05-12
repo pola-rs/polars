@@ -34,7 +34,7 @@ impl GroupedReduction for HasNullsReduce {
         _seq_id: u64,
     ) -> PolarsResult<()> {
         let &[values] = values else { unreachable!() };
-        if !unsafe { self.has_nulls.get_unchecked(group_idx as usize) } && values.has_nulls() {
+        if values.has_nulls() {
             self.has_nulls.set(group_idx as usize, true);
         }
         Ok(())
@@ -56,16 +56,14 @@ impl GroupedReduction for HasNullsReduce {
         if arr.has_nulls() {
             let valid = arr.validity().unwrap();
             for (i, g) in subset.iter().zip(group_idxs) {
-                let already_has_nulls = self.has_nulls.get_unchecked(g.idx());
                 if g.should_evict() {
-                    self.evicted_has_nulls.push(already_has_nulls);
+                    self.evicted_has_nulls
+                        .push(self.has_nulls.get_unchecked(g.idx()));
                     let is_null = !valid.get_bit_unchecked(*i as usize);
                     self.has_nulls.set_unchecked(g.idx(), is_null);
                 } else {
-                    if !already_has_nulls {
-                        let is_null = !valid.get_bit_unchecked(*i as usize);
-                        self.has_nulls.set_unchecked(g.idx(), is_null);
-                    }
+                    let is_null = !valid.get_bit_unchecked(*i as usize);
+                    self.has_nulls.or_pos_unchecked(g.idx(), is_null);
                 }
             }
         } else {
