@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::schema::Schema;
 use polars_plan::dsl::Expr;
 use rayon::prelude::*;

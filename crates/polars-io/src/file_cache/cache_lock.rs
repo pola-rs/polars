@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use fs4::fs_std::FileExt;
 use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use polars_core::runtime::ASYNC;
 
 use super::utils::FILE_CACHE_PREFIX;
-use crate::pl_async;
 
 pub(super) static GLOBAL_FILE_CACHE_LOCK: LazyLock<GlobalLock> = LazyLock::new(|| {
     let path = FILE_CACHE_PREFIX.join(".process-lock");
@@ -28,7 +28,7 @@ pub(super) static GLOBAL_FILE_CACHE_LOCK: LazyLock<GlobalLock> = LazyLock::new(|
     let notify_lock_acquired = Arc::new(tokio::sync::Notify::new());
     let notify_lock_acquired_2 = notify_lock_acquired.clone();
 
-    pl_async::get_runtime().spawn(async move {
+    ASYNC.spawn(async move {
         let at_bool = std::mem::ManuallyDrop::new(at_bool);
         let access_tracker = at_bool.as_ref();
         let notify_lock_acquired = notify_lock_acquired_2;

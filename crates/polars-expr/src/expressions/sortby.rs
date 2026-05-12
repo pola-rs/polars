@@ -1,6 +1,6 @@
-use polars_core::POOL;
 use polars_core::chunked_array::from_iterator_par::ChunkedCollectParIterExt;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
 

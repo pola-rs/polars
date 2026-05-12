@@ -2,9 +2,10 @@ use std::borrow::Cow;
 
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
 use polars_core::utils::dtypes_to_supertype;
-use polars_core::{POOL, with_match_physical_numeric_polars_type};
+use polars_core::with_match_physical_numeric_polars_type;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 fn validate_column_lengths(cs: &[Column]) -> PolarsResult<()> {

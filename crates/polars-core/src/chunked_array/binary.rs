@@ -4,8 +4,8 @@ use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::POOL;
 use crate::utils::{_set_partition_size, _split_offsets};
 
 #[inline]

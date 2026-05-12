@@ -2,8 +2,8 @@ use std::fmt;
 use std::sync::Mutex;
 
 use polars_buffer::{Buffer, SharedStorage};
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;

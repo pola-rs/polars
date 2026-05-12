@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 
-use polars_core::POOL;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::chunked_array::from_iterator_par::{
     ChunkedCollectParIterExt, try_list_from_par_iter,
 };
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use rayon::prelude::*;
 
 use super::*;

@@ -1,5 +1,5 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 
 fn mode_indices(groups: GroupsType) -> Vec<IdxSize> {
     match groups {

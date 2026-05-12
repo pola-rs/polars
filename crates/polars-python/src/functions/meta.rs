@@ -1,6 +1,6 @@
-use polars_core::POOL;
 use polars_core::fmt::FloatFmt;
 use polars_core::prelude::IDX_DTYPE;
+use polars_core::runtime::POOL;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 

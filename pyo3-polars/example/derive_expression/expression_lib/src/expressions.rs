@@ -3,7 +3,7 @@ use std::fmt::Write;
 use polars::prelude::*;
 use polars_plan::prelude::FieldsMapper;
 use pyo3_polars::derive::{polars_expr, CallerContext};
-use pyo3_polars::export::polars_core::POOL;
+use pyo3_polars::export::polars_core::runtime::POOL;
 use serde::Deserialize;
 
 #[derive(Deserialize)]

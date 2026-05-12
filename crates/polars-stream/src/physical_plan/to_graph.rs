@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use num_traits::AsPrimitive;
 use parking_lot::Mutex;
+use polars_core::config;
 use polars_core::prelude::PlRandomState;
+use polars_core::runtime::POOL;
 use polars_core::schema::{Schema, SchemaRef};
-use polars_core::{POOL, config};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr};

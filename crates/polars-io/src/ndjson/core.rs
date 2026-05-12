@@ -3,8 +3,8 @@ use std::num::NonZeroUsize;
 
 pub use arrow::array::StructArray;
 use num_traits::pow::Pow;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::utils::accumulate_dataframes_vertical;
 use rayon::prelude::*;
 

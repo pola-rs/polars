@@ -1,9 +1,9 @@
 use std::ops::{BitAnd, BitOr};
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
+use polars_core::runtime::POOL;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBooleanFunction;
 use polars_utils::pl_str::PlSmallStr;

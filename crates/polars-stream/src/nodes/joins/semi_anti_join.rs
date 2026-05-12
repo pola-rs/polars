@@ -3,6 +3,7 @@ use std::sync::Arc;
 use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
 use polars_core::prelude::*;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::Schema;
 use polars_expr::groups::{Grouper, new_hash_grouper};
 use polars_expr::hash_keys::HashKeys;
@@ -247,7 +248,7 @@ impl BuildState {
             drop(arc_keys_per_local_builder);
             drop(key_drop_q_send);
 
-            polars_io::pl_async::get_runtime().block_on(async move {
+            ASYNC.block_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }

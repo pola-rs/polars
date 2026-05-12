@@ -4,13 +4,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use arrow::array::builder::ShareStrategy;
+use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
+use polars_core::runtime::{ASYNC, POOL};
 use polars_core::schema::{Schema, SchemaExt};
-use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
-use polars_io::pl_async::get_runtime;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
@@ -226,7 +226,6 @@ fn estimate_cardinality(
     let last_morsel_idx = to_process_end - 1;
     let last_morsel_len = morsels[last_morsel_idx].df().height();
     let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
-    let runtime = get_runtime();
 
     POOL.install(|| {
         let sample_cardinality = morsels[..to_process_end]
@@ -243,7 +242,7 @@ fn estimate_cardinality(
                         morsel.df()
                     };
                     let hash_keys =
-                        runtime.block_on(select_keys(df, key_selectors, params, state))?;
+                        ASYNC.block_on(select_keys(df, key_selectors, params, state))?;
                     hash_keys.sketch_cardinality(&mut sketch);
                     PolarsResult::Ok(sketch)
                 },
@@ -419,7 +418,7 @@ impl SampleState {
                     ));
                 }
 
-                polars_io::pl_async::get_runtime().block_on(async move {
+                ASYNC.block_on(async move {
                     for handle in join_handles {
                         handle.await?;
                     }
@@ -739,7 +738,7 @@ impl BuildState {
             drop(arc_morsels_per_local_builder);
             drop(morsel_drop_q_send);
 
-            polars_io::pl_async::get_runtime().block_on(async move {
+            ASYNC.block_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }

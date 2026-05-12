@@ -22,10 +22,10 @@ use rayon::prelude::*;
 pub use slice::*;
 
 use super::row_encode::_get_rows_encoded_ca;
-use crate::POOL;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
+use crate::runtime::POOL;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
 

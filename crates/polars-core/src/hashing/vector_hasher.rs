@@ -8,8 +8,8 @@ use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use super::*;
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::POOL;
 use crate::series::implementations::null::NullChunked;
 
 // See: https://github.com/tkaitchuck/aHash/blob/f9acd508bd89e7c5b2877a9510098100f9018d64/src/operations.rs#L4

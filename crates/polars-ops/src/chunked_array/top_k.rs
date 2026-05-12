@@ -1,9 +1,10 @@
 use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
+use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::series::IsSorted;
-use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_utils::total_ord::TotalOrd;
 
 fn first_n_valid_mask(num_valid: usize, out_len: usize) -> Option<Bitmap> {

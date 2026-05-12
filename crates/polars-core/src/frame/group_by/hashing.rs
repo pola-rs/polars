@@ -7,9 +7,9 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 use polars_utils::unitvec;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::hashing::*;
 use crate::prelude::*;
+use crate::runtime::POOL;
 use crate::utils::flatten;
 
 fn get_init_size() -> usize {

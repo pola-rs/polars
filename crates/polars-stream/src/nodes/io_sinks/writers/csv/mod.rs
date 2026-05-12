@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use polars_core::config;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_io::pl_async;
 use polars_io::prelude::{CsvSerializer, CsvWriterOptions};
 use polars_utils::index::NonZeroIdxSize;
 
@@ -105,7 +105,7 @@ impl FileWriterStarter for CsvWriterStarter {
             tokio::sync::mpsc::channel::<morsel_serializer::MorselSerializer>(max_serializers);
 
         let io_handle = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime().spawn(
+            ASYNC.spawn(
                 io_writer::IOWriter {
                     file,
                     filled_serializer_rx,

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::metrics::IOMetrics;
-use polars_io::pl_async;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -96,7 +96,7 @@ impl ComputeNode for IOSinkNode {
                         );
                     }
                     drop(phase_channel_tx);
-                    pl_async::get_runtime().block_on(task_handle)?;
+                    ASYNC.block_on(task_handle)?;
                 },
                 IOSinkNodeState::Finished => {},
                 IOSinkNodeState::Uninitialized { .. } => unreachable!(),

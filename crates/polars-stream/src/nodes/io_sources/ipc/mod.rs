@@ -5,6 +5,7 @@ use std::sync::Arc;
 use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
 use polars_core::prelude::DataType;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
@@ -12,7 +13,6 @@ use polars_core::utils::arrow::io::ipc::read::{
 use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
-use polars_io::pl_async;
 use polars_io::utils::byte_source::{
     BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
 };
@@ -94,7 +94,7 @@ impl FileReader for IpcFileReader {
         let cloud_options = self.cloud_options.clone();
         let io_metrics = self.io_metrics.clone();
 
-        let byte_source = pl_async::get_runtime()
+        let byte_source = ASYNC
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
@@ -116,7 +116,7 @@ impl FileReader for IpcFileReader {
             let (metadata_bytes, opt_full_bytes) = {
                 let byte_source = byte_source.clone();
 
-                pl_async::get_runtime()
+                ASYNC
                     .spawn(async move { read_ipc_metadata_bytes(&byte_source, verbose).await })
                     .await
                     .unwrap()?
@@ -135,7 +135,7 @@ impl FileReader for IpcFileReader {
             let byte_source_async = byte_source.clone();
             let metadata_async = file_metadata.clone();
             let checked = self.checked;
-            let dictionaries = pl_async::get_runtime()
+            let dictionaries = ASYNC
                 .spawn(async move {
                     read_dictionaries(&byte_source_async, metadata_async, verbose, checked).await
                 })
@@ -299,7 +299,6 @@ impl FileReader for IpcFileReader {
             .min(file_metadata.blocks.len())
             .max(1);
 
-        let io_runtime = polars_io::pl_async::get_runtime();
         let ideal_morsel_size = get_ideal_morsel_size();
 
         if verbose {
@@ -337,7 +336,7 @@ impl FileReader for IpcFileReader {
         // Task: Prefetch.
         let byte_source = byte_source.clone();
         let metadata = file_metadata.clone();
-        let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             let mut record_batch_data_fetcher = RecordBatchDataFetcher {
                 memory_prefetch_func,
                 metadata,
@@ -362,7 +361,7 @@ impl FileReader for IpcFileReader {
         }));
 
         // Task: Decode.
-        let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
             let mut current_row_offset: IdxSize = 0;
 
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
@@ -481,7 +480,7 @@ impl FileReader for IpcFileReader {
         });
 
         // Orchestration.
-        let join_task = io_runtime.spawn(async move {
+        let join_task = ASYNC.spawn(async move {
             prefetch_task.await.unwrap()?;
             decode_task.await.unwrap()?;
             distribute_task.await?;
