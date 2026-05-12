@@ -84,7 +84,7 @@ def test_is_not_null_followed_by_any() -> None:
         pl.col("val").is_not_null().any()
     )
 
-    assert r'[[(col("val").null_count()) < (col("val").len())]]' in result_lf.explain()
+    assert ".is_empty_ignore_nulls().not()" in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -95,7 +95,7 @@ def test_is_not_null_followed_by_any() -> None:
         .explain()
     )
     assert "null_count" not in non_optimized_result_plan
-    assert "is_not_null" in non_optimized_result_plan
+    assert "is_empty_ignore_nulls().not()" in non_optimized_result_plan
 
     # edge case of empty series
     lf = pl.LazyFrame({"val": []}, schema={"val": pl.Int32})

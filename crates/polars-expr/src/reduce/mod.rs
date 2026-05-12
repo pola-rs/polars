@@ -11,7 +11,7 @@ mod cov;
 mod first_last;
 mod first_last_nonnull;
 mod implode;
-mod len;
+mod is_empty;
 mod mean;
 mod min_max;
 mod min_max_by;

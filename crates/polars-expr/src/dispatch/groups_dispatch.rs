@@ -22,6 +22,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
+use crate::expressions::evaluate_count_on_ac;
 use crate::prelude::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
 use crate::state::ExecutionState;
 
@@ -197,6 +198,29 @@ pub fn all<'a>(
     ac.state = AggState::AggregatedScalar(out.into_column());
 
     Ok(ac)
+}
+
+pub fn is_empty<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+    ignore_nulls: bool,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 1);
+
+    // TODO: dedicated impl.
+    let ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    let counts = evaluate_count_on_ac(ac, !ignore_nulls)?;
+    let is_empty = counts.equal(&Column::new_scalar(
+        PlSmallStr::EMPTY,
+        Scalar::new_idxsize(0),
+        1,
+    ))?;
+    Ok(AggregationContext::from_agg_state(
+        AggState::AggregatedScalar(is_empty.into_column()),
+        Cow::Borrowed(groups),
+    ))
 }
 
 #[cfg(feature = "bitwise")]

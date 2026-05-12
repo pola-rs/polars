@@ -22,7 +22,7 @@ pub struct Scalar {
 impl Hash for Scalar {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.dtype.hash(state);
-        self.value.hash_impl(state, true);
+        self.value.hash_impl(state, false);
     }
 }
 

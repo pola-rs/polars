@@ -955,6 +955,13 @@ impl Column {
         self.len() == 0
     }
 
+    pub fn is_full_null(&self) -> bool {
+        match self {
+            Column::Series(s) => s.is_full_null(),
+            Column::Scalar(s) => s.is_full_null(),
+        }
+    }
+
     pub fn reverse(&self) -> Column {
         match self {
             Column::Series(s) => s.reverse().into(),
