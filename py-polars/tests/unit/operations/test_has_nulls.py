@@ -55,3 +55,37 @@ def test_has_nulls_expr() -> None:
     result = lf.select(pl.all().has_nulls())
     expected = pl.LazyFrame({"a": [True], "b": [False]})
     assert_frame_equal(result, expected)
+
+
+def test_has_nulls_group_by() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "a", "b", "b", "c", "c", "d"],
+            "x": [1, None, 2, 3, None, None, 4],
+        }
+    )
+
+    result = lf.group_by("g").agg(pl.col("x").has_nulls()).sort("g")
+    expected = pl.LazyFrame(
+        {"g": ["a", "b", "c", "d"], "x": [True, False, True, False]}
+    )
+
+    assert_frame_equal(result, expected)
+    assert_frame_equal(
+        result,
+        lf.group_by("g").agg(pl.col("x").null_count() > 0).sort("g"),
+    )
+
+
+def test_has_nulls_streaming_group_by() -> None:
+    lf = pl.LazyFrame(
+        {
+            "g": ["a", "b", "a", "b", "c", "c", "d", "d"],
+            "x": [None, 1, 2, 3, None, None, 4, 5],
+        }
+    ).group_by("g").agg(pl.col("x").has_nulls())
+
+    assert_frame_equal(
+        lf.collect(engine="streaming").sort("g"),
+        lf.collect(engine="in-memory").sort("g"),
+    )

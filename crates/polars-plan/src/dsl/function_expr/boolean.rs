@@ -16,6 +16,7 @@ pub enum BooleanFunction {
     IsEmpty {
         ignore_nulls: bool,
     },
+    HasNulls,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -66,6 +67,7 @@ impl Display for BooleanFunction {
                 ignore_nulls: false,
             } => "is_empty",
             IsEmpty { ignore_nulls: true } => "is_empty_ignore_nulls",
+            HasNulls => "has_nulls",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",
