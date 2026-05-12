@@ -134,6 +134,9 @@ class GroupBy:
         return self
 
     def __next__(self) -> tuple[tuple[Any, ...], DataFrame]:
+        if getattr(self, "_current_index", None) is None:
+            self.__iter__()
+            
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
