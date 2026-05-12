@@ -208,12 +208,7 @@ impl Expr {
 
     /// Compute the quantile per group.
     pub fn quantile(self, quantile: Expr, method: QuantileMethod) -> Self {
-        AggExpr::Quantile {
-            expr: Arc::new(self),
-            quantile: Arc::new(quantile),
-            method,
-        }
-        .into()
+        self.map_binary(FunctionExpr::Quantile { method }, quantile)
     }
 
     /// Get the group indexes of the group by operation.
@@ -359,12 +354,12 @@ impl Expr {
     }
 
     /// Take the values by idx.
-    pub fn gather<E: Into<Expr>>(self, idx: E) -> Self {
+    pub fn gather<E: Into<Expr>>(self, idx: E, null_on_oob: bool) -> Self {
         Expr::Gather {
             expr: Arc::new(self),
             idx: Arc::new(idx.into()),
             returns_scalar: false,
-            null_on_oob: false,
+            null_on_oob,
         }
     }
 

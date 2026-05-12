@@ -97,7 +97,7 @@ pub(crate) fn slice(
 // we take the underlying values array as a Series. This call stack
 // is hard to follow, so for this one case we make an exception
 // and use a thread local.
-thread_local!(static CHECK_LENGTH: Cell<bool> = const { Cell::new(true) });
+thread_local!(pub static CHECK_LENGTH: Cell<bool> = const { Cell::new(true) });
 
 /// Meant for internal use. In very rare conditions this can be turned off.
 /// # Safety

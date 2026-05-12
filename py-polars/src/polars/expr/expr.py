@@ -2881,7 +2881,10 @@ class Expr:
         )
 
     def gather(
-        self, indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any]
+        self,
+        indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
     ) -> Expr:
         """
         Take values by index.
@@ -2890,6 +2893,11 @@ class Expr:
         ----------
         indices
             An expression that leads to a UInt32 dtyped Series.
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            - True  -> set the result to null
+            - False -> raise an error
 
         Returns
         -------
@@ -2927,6 +2935,21 @@ class Expr:
         │ one   ┆ [2, 98]   │
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
+
+        Use `null_on_oob=True` to return null for out-of-bounds indices.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").gather([0, 1, 10], null_on_oob=True))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        │ 2    │
+        │ null │
+        └──────┘
         """
         if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
@@ -2934,7 +2957,7 @@ class Expr:
             indices_lit_pyexpr = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
             indices_lit_pyexpr = parse_into_expression(indices)
-        return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr))
+        return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr, null_on_oob))
 
     def get(self, index: int | Expr, *, null_on_oob: bool = False) -> Expr:
         """
@@ -3736,6 +3759,8 @@ class Expr:
         """
         Get unique values of this expression.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Parameters
         ----------
         maintain_order
@@ -3903,8 +3928,9 @@ class Expr:
         *more_exprs
             Additional columns to group by, specified as positional arguments.
         order_by
-            Order the window functions/aggregations with the partitioned groups by the
-            result of the expression passed to `order_by`.
+            Order rows within each partition group before evaluating the expression.
+            Useful for order-sensitive operations such as
+            :func:`cum_sum` or :func:`diff`.
         descending
             In case 'order_by' is given, indicate whether to order in
             ascending or descending order.
@@ -3915,9 +3941,9 @@ class Expr:
             - group_to_rows
                 If the aggregation results in multiple values per group, map them back
                 to their row position in the DataFrame. This can only be done if each
-                group yields the same elements before aggregation as after. If the
-                aggregation results in one scalar value per group, this value will be
-                mapped to every row.
+                group yields the same number of elements before aggregation as after. If
+                the aggregation results in one scalar value per group, this value will
+                be mapped to every row.
             - join
                 If the aggregation may result in multiple values per group, join the
                 values as 'List<group_dtype>' to each row position. Warning: this can be
@@ -5484,9 +5510,13 @@ Consider using {self}.implode() instead"""
         """
         # This cast enables tail with expressions that return unsigned integers,
         # for which negate otherwise raises InvalidOperationError.
-        offset = -(
-            wrap_expr(parse_into_expression(n)).cast(
-                Int64, strict=False, wrap_numerical=True
+        offset = (
+            -n
+            if isinstance(n, int)
+            else -(
+                wrap_expr(parse_into_expression(n)).cast(
+                    Int64, strict=False, wrap_numerical=True
+                )
             )
         )
         return self.slice(offset, n)

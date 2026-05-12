@@ -16,17 +16,21 @@ pub struct MergeSortedNode {
 
     starting_nulls: bool,
 
+    maintain_order: bool,
+
     // Not yet merged buffers.
     left_unmerged: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
 }
 
 impl MergeSortedNode {
-    pub fn new() -> Self {
+    pub fn new(maintain_order: bool) -> Self {
         Self {
             seq: MorselSeq::default(),
 
             starting_nulls: false,
+
+            maintain_order,
 
             left_unmerged: VecDeque::new(),
             right_unmerged: VecDeque::new(),
@@ -43,6 +47,7 @@ fn find_mergeable(
 
     is_first: bool,
     starting_nulls: &mut bool,
+    maintain_order: bool,
 ) -> PolarsResult<Option<(DataFrame, DataFrame)>> {
     fn first_non_empty(vd: &mut VecDeque<DataFrame>) -> Option<DataFrame> {
         let mut df = vd.pop_front()?;
@@ -134,13 +139,26 @@ fn find_mergeable(
         } else if left_key_last.lt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
-            let gt_mask = right_key.gt(&left_key_last)?;
-            right_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
+            if maintain_order {
+                // When maintaining order, hold back right-side rows with keys
+                // equal to left's max, since more left rows with that key may
+                // arrive in later morsels.
+                let gte_mask = right_key.gt_eq(&left_key_last)?;
+                right_cutoff = gte_mask.first_true_idx().unwrap_or(gte_mask.len());
+            } else {
+                let gt_mask = right_key.gt(&left_key_last)?;
+                right_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
+            }
         } else if left_key_last.gt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
             let gt_mask = left_key.gt(&right_key_last)?;
             left_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
+        } else if maintain_order {
+            // Keys are equal at both maxima. Hold back right-side rows with
+            // keys equal to the shared maximum to ensure left-biased ordering.
+            let gte_mask = right_key.gt_eq(&left_key_last)?;
+            right_cutoff = gte_mask.first_true_idx().unwrap_or(gte_mask.len());
         }
 
         let left_mergeable: DataFrame;
@@ -236,6 +254,7 @@ impl ComputeNode for MergeSortedNode {
 
         let seq = &mut self.seq;
         let starting_nulls = &mut self.starting_nulls;
+        let maintain_order = self.maintain_order;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
 
@@ -320,6 +339,7 @@ impl ComputeNode for MergeSortedNode {
                             right_unmerged,
                             seq.to_u64() == 0,
                             starting_nulls,
+                            maintain_order,
                         )? {
                             let left_mergeable =
                                 Morsel::new(left_mergeable, *seq, source_token.clone());
@@ -380,6 +400,7 @@ impl ComputeNode for MergeSortedNode {
                         right_unmerged,
                         seq.to_u64() == 0,
                         starting_nulls,
+                        maintain_order,
                     )? {
                         let left_mergeable =
                             Morsel::new(left_mergeable, *seq, source_token.clone());

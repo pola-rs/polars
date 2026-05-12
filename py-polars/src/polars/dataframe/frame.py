@@ -1064,10 +1064,10 @@ class DataFrame:
         properties.
 
         >>> df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-        >>> dfi = df.__dataframe__()
-        >>> dfi.num_rows()
+        >>> dfi = df.__dataframe__()  # doctest: +SKIP
+        >>> dfi.num_rows()  # doctest: +SKIP
         2
-        >>> dfi.get_column(1).dtype
+        >>> dfi.get_column(1).dtype  # doctest: +SKIP
         (<DtypeKind.FLOAT: 2>, 64, 'g', '=')
         """
         if nan_as_null:
@@ -1437,9 +1437,7 @@ class DataFrame:
         return get_df_item_by_key(self, key)
 
     def __setitem__(
-        self,
-        key: str | Sequence[int] | Sequence[str] | tuple[Any, str | int],
-        value: Any,
+        self, key: str | Sequence[str] | tuple[Any, str | int], value: Any
     ) -> None:  # pragma: no cover
         """
         Modify DataFrame elements in place, using assignment syntax.
@@ -4009,6 +4007,16 @@ class DataFrame:
         ... )
         >>> path: pathlib.Path = dirpath / "new_file.arrow"
         >>> df.write_ipc(path)
+
+        Write to a ``BytesIO`` object by passing ``file=None``. The returned
+        buffer's position is at the end of the written data, so call ``seek(0)``
+        before reading it back.
+
+        >>> buf = df.write_ipc(file=None)
+        >>> buf.seek(0)
+        0
+        >>> pl.read_ipc(buf).equals(df)
+        True
         """
         return_bytes = file is None
         target: str | Path | IO[bytes]
@@ -4506,7 +4514,7 @@ class DataFrame:
                     raise ModuleUpgradeRequiredError(msg)
                 mode = "replace"
             elif if_table_exists == "append":
-                mode = "append"
+                mode = "append" if driver_manager_version < (0, 7) else "create_append"
             else:
                 msg = (
                     f"unexpected value for `if_table_exists`: {if_table_exists!r}"
@@ -6116,6 +6124,8 @@ class DataFrame:
         """
         from polars.lazyframe import QueryOptFlags
 
+        optimizations = QueryOptFlags._eager()
+        optimizations.sort_collapse = True
         return (
             self.lazy()
             .sort(
@@ -6126,7 +6136,7 @@ class DataFrame:
                 multithreaded=multithreaded,
                 maintain_order=maintain_order,
             )
-            .collect(optimizations=QueryOptFlags._eager())
+            .collect(optimizations=optimizations)
         )
 
     def sql(self, query: str, *, table_name: str = "self") -> DataFrame:
@@ -8232,15 +8242,16 @@ class DataFrame:
                  - Returns all rows from the right table, and the matched rows from
                    the left table.
                * - **full**
-                 - Returns all rows when there is a match in either left or right.
+                 - Returns all rows from both tables, joining matching rows and
+                   filling non-matches with null values.
                * - **cross**
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
                  - Returns rows from the left table that have a match in the right
-                   table.
+                   table. Does not return columns from the right table.
                * - **anti**
                  - Returns rows from the left table that have no match in the right
-                   table.
+                   table. Does not return columns from the right table.
 
         left_on
             Name(s) of the left join column(s).
@@ -8539,6 +8550,64 @@ class DataFrame:
                 *predicates,
                 suffix=suffix,
             )
+            .collect(optimizations=QueryOptFlags._eager())
+        )
+
+    @unstable()
+    def gather(
+        self,
+        indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
+    ) -> DataFrame:
+        """
+        Selects rows from this DataFrame at the given indices.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        indices
+            The indices of the rows to select.
+
+        null_on_oob
+            If true when an index is out-of-bounds a null row will be generated
+            instead of raising an error.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [2, 1, 0], "s": ["foo", "bar", "baz"]})
+        >>> df.gather([2, 0, 0])
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 0   ┆ baz │
+        │ 2   ┆ foo │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+
+        >>> df.gather([0, 10, 1], null_on_oob=True)
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ x    ┆ s    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 2    ┆ foo  │
+        │ null ┆ null │
+        │ 1    ┆ bar  │
+        └──────┴──────┘
+        """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        return (
+            self.lazy()
+            .gather(indices, null_on_oob=null_on_oob)
             .collect(optimizations=QueryOptFlags._eager())
         )
 
@@ -12453,7 +12522,13 @@ class DataFrame:
             df.insert_column(0, cols)
         return df
 
-    def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
+    def merge_sorted(
+        self,
+        other: DataFrame,
+        key: str,
+        *,
+        maintain_order: bool = False,
+    ) -> DataFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
@@ -12470,6 +12545,10 @@ class DataFrame:
             Other DataFrame that must be merged
         key
             Key that is sorted.
+        maintain_order
+            If ``True``, the output is guaranteed to have left-biased ordering
+            for equal keys: rows from the left frame appear before rows from
+            the right frame when their keys are equal.
 
         Examples
         --------
@@ -12520,8 +12599,8 @@ class DataFrame:
 
         Notes
         -----
-        No guarantee is given over the output row order when the key is equal
-        between the both dataframes.
+        Unless ``maintain_order=True``, no guarantee is given over the output
+        row order when the key is equal between the both dataframes.
 
         The key must be sorted in ascending order.
         """
@@ -12531,7 +12610,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .merge_sorted(other.lazy(), key)
+            .merge_sorted(other.lazy(), key, maintain_order=maintain_order)
             .collect(optimizations=QueryOptFlags._eager())
         )
 

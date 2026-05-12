@@ -1,5 +1,6 @@
 pub mod backward_fill;
 pub mod callback_sink;
+pub mod columnar_function;
 #[cfg(feature = "cum_agg")]
 pub mod cum_agg;
 #[cfg(feature = "dynamic_group_by")]
@@ -9,6 +10,7 @@ pub mod dynamic_slice;
 pub mod ewm;
 pub mod filter;
 pub mod forward_fill;
+pub mod gather;
 pub mod gather_every;
 pub mod group_by;
 pub mod in_memory_map;

@@ -1,7 +1,7 @@
 # Slurm
 
-The quickstart below shows one way to run Polars queries on a Polars on-premises cluster using the
-Slurm Workflow Manager. As this is not an introduction to Slurm and its intricacies we will focus on
+The quickstart below shows one way to run Polars queries on a Polars On-Prem cluster using the Slurm
+Workflow Manager. As this is not an introduction to Slurm and its intricacies we will focus on
 making a barebone setup functional.
 
 <!-- dprint-ignore-start -->

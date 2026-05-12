@@ -276,6 +276,15 @@ impl<'a> IRDotDisplay<'a> {
                     Ok(())
                 })?;
             },
+            Gather {
+                input,
+                idxs,
+                null_on_oob,
+            } => {
+                recurse!(*input);
+                recurse!(*idxs);
+                write_label(f, id, |f| write!(f, "GATHER[null_on_oob: {null_on_oob}]"))?;
+            },
             MapFunction {
                 input, function, ..
             } => {
@@ -320,11 +329,23 @@ impl<'a> IRDotDisplay<'a> {
                 input_left,
                 input_right,
                 key,
+                maintain_order,
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
-                write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
+                write_label(f, id, |f| {
+                    write!(
+                        f,
+                        "MERGE_SORTED[maintain_order: {maintain_order}] ON '{key}'",
+                    )
+                })?;
+            },
+            UnoptimizedDispatch { inputs, operation } => {
+                for input in inputs {
+                    recurse!(*input);
+                }
+                write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }

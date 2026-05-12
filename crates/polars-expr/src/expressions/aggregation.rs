@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 
 use arrow::legacy::utils::CustomIterTools;
-use polars_compute::rolling::QuantileMethod;
 use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -425,11 +424,22 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_s.with_name(keep_name))
                 },
                 GroupByMethod::Implode { maintain_order: _ } => {
-                    AggregatedScalar(match ac.agg_state() {
+                    let col = match ac.agg_state() {
                         AggState::LiteralScalar(_) => unreachable!(), // handled above
                         AggState::AggregatedScalar(c) => c.as_list().into_column(),
-                        AggState::NotAggregated(_) | AggState::AggregatedList(_) => ac.aggregated(),
-                    })
+                        AggState::AggregatedList(c) => c.clone(),
+                        AggState::NotAggregated(_) => ac.aggregated(),
+                    };
+                    // TODO: Introduce `UpdateGroups::WithUnitLen` as a new lazy `groups()` method
+                    // and move the groups constructor there. Then, set `UpdateGroups::WithUnitLen` to
+                    // all AggregationExprs.
+                    let groups = Cow::Owned({
+                        let groups = (0..col.len() as IdxSize).map(|i| [i, 1]).collect();
+                        GroupsType::new_slice(groups, false, true).into_sliceable()
+                    });
+                    let mut out = AggregationContext::from_agg_state(AggregatedScalar(col), groups);
+                    out.set_original_len(false);
+                    return Ok(out);
                 },
                 GroupByMethod::Groups => {
                     let mut column: ListChunked = ac.groups().as_list_chunked();
@@ -501,150 +511,6 @@ impl PhysicalExpr for AggregationExpr {
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         Ok(self.output_field.clone())
-    }
-
-    fn is_scalar(&self) -> bool {
-        true
-    }
-}
-
-pub struct AggQuantileExpr {
-    input: Arc<dyn PhysicalExpr>,
-    quantile: Arc<dyn PhysicalExpr>,
-    method: QuantileMethod,
-}
-
-impl AggQuantileExpr {
-    pub fn new(
-        input: Arc<dyn PhysicalExpr>,
-        quantile: Arc<dyn PhysicalExpr>,
-        method: QuantileMethod,
-    ) -> Self {
-        Self {
-            input,
-            quantile,
-            method,
-        }
-    }
-}
-
-impl PhysicalExpr for AggQuantileExpr {
-    fn as_expression(&self) -> Option<&Expr> {
-        None
-    }
-
-    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let input = self.input.evaluate(df, state)?;
-
-        let quantile = self.quantile.evaluate(df, state)?;
-
-        polars_ensure!(quantile.len() <= 1, ComputeError:
-            "polars does not support varying quantiles yet, \
-            make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
-        );
-
-        let s = quantile.as_materialized_series();
-
-        match s.dtype() {
-            DataType::List(_) => {
-                let list = s.list()?;
-                let inner_s = list.get_as_series(0).unwrap();
-                if inner_s.has_nulls() {
-                    polars_bail!(ComputeError: "quantile expression contains null values");
-                }
-
-                let v: Vec<f64> = inner_s
-                    .cast(&DataType::Float64)?
-                    .f64()?
-                    .into_no_null_iter()
-                    .collect();
-
-                input
-                    .quantiles_reduce(&v, self.method)
-                    .map(|sc| sc.into_column(input.name().clone()))
-            },
-            _ => {
-                let q: f64 = quantile.get(0).unwrap().try_extract()?;
-                input
-                    .quantile_reduce(q, self.method)
-                    .map(|sc| sc.into_column(input.name().clone()))
-            },
-        }
-    }
-
-    #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups_impl<'a>(
-        &self,
-        df: &DataFrame,
-        groups: &'a GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<AggregationContext<'a>> {
-        let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
-
-        // AggregatedScalar has no defined group structure. We fix it up here, so that we can
-        // reliably call `agg_quantile` functions with the groups.
-        ac.set_groups_for_undefined_agg_states();
-
-        // don't change names by aggregations as is done in polars-core
-        let keep_name = ac.get_values().name().clone();
-
-        let quantile_column = self.quantile.evaluate(df, state)?;
-        polars_ensure!(
-            quantile_column.len() <= 1,
-            ComputeError:
-                "polars only supports computing a single quantile in a groupby aggregation context"
-        );
-        polars_ensure!(
-            quantile_column.dtype().is_numeric(),
-            SchemaMismatch:
-                "expected expression of dtype 'numeric' for quantile, got '{}'",
-            quantile_column.dtype()
-        );
-        let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
-
-        if let AggState::LiteralScalar(c) = &mut ac.state {
-            *c = c
-                .quantile_reduce(quantile, self.method)?
-                .into_column(keep_name);
-            return Ok(ac);
-        }
-
-        // SAFETY:
-        // groups are in bounds
-        let mut agg = unsafe {
-            ac.flat_naive()
-                .into_owned()
-                .agg_quantile(ac.groups(), quantile, self.method)
-        };
-        agg.rename(keep_name);
-        Ok(AggregationContext::from_agg_state(
-            AggregatedScalar(agg),
-            Cow::Borrowed(groups),
-        ))
-    }
-
-    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
-        // If the quantile expression is a literal that yields a list of floats,
-        // the aggregation returns a list of quantiles (one list per row/group).
-        // In that case, report `List(Float64)` as the output field.
-        let input_field = self.input.to_field(input_schema)?;
-        match self.quantile.to_field(input_schema) {
-            Ok(qf) => match qf.dtype() {
-                DataType::List(inner) => {
-                    if inner.is_float() {
-                        Ok(Field::new(
-                            input_field.name().clone(),
-                            DataType::List(Box::new(DataType::Float64)),
-                        ))
-                    } else {
-                        // fallback to input field
-                        Ok(input_field)
-                    }
-                },
-                _ => Ok(input_field),
-            },
-            Err(_) => Ok(input_field),
-        }
     }
 
     fn is_scalar(&self) -> bool {

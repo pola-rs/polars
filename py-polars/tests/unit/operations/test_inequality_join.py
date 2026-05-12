@@ -772,7 +772,7 @@ def test_range_join_single_parametric(
     ],
 )
 def test_range_join_dtypes(
-    s: pl.DataType,
+    s: pl.Series,
     lower_op: str | None,
     upper_op: str | None,
 ) -> None:
