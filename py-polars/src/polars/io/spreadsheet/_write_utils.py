@@ -346,7 +346,12 @@ def _xl_setup_table_columns(
     row_totals: RowTotalsDefinition | None = None,
     float_precision: int = 3,
     table_style: dict[str, Any] | str | None = None,
-) -> tuple[list[dict[str, Any]], dict[str | tuple[str, ...], str], DataFrame]:
+) -> tuple[
+    list[dict[str, Any]],
+    dict[str | tuple[str, ...], str],
+    dict[str, tuple[str, Format]],
+    DataFrame,
+]:
     """Setup and unify all column-related formatting/defaults."""
 
     # no excel support for compound types; cast to their simple string representation
@@ -510,6 +515,23 @@ def _xl_setup_table_columns(
     # optional custom header format
     col_header_format = format_cache.get(header_format) if header_format else None
 
+    # `count`/`count_nums` always produce an integer regardless of column dtype,
+    # so on a temporal column the totals row would otherwise inherit the column
+    # date/time number_format and render the count as a date. We compute the
+    # override format here and let the caller overwrite the totals cell after
+    # `ws.add_table()` (xlsxwriter does not honor a per-totals-cell format on
+    # the column dict). See issue #27283.
+    _count_total_funcs = {"count", "count_nums"}
+    count_total_overrides: dict[str, tuple[str, Format]] = {}
+    for col, fn in column_total_funcs.items():
+        if fn in _count_total_funcs:
+            tp = df.schema.get(col)
+            if tp is not None and tp.is_temporal():
+                fmt_obj = format_cache.get(
+                    {"num_format": int_base_fmt, "valign": "vcenter"}
+                )
+                count_total_overrides[col] = (fn, fmt_obj)
+
     # assemble table columns
     table_columns = [
         {
@@ -528,7 +550,7 @@ def _xl_setup_table_columns(
         }
         for col in df.columns
     ]
-    return table_columns, column_formats, df  # type: ignore[return-value]
+    return table_columns, column_formats, count_total_overrides, df  # type: ignore[return-value]
 
 
 def _xl_setup_table_options(

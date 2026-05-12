@@ -858,6 +858,52 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         assert_frame_equal(df, xldf)
 
 
+def test_excel_write_count_total_on_temporal_column() -> None:
+    # https://github.com/pola-rs/polars/issues/27283 — a `count`/`count_nums`
+    # total on a Date/Datetime/Time column was inheriting the column's temporal
+    # number_format, so the totals cell rendered as "1900-01-02" instead of "2".
+    from datetime import date, datetime, time
+
+    from openpyxl import load_workbook
+
+    df = pl.DataFrame(
+        {
+            "d": [date(2026, 4, 10), date(2026, 4, 11)],
+            "dt": [datetime(2026, 4, 10, 9, 0), datetime(2026, 4, 11, 9, 0)],
+            "t": [time(9, 0), time(10, 0)],
+            "name": ["a", "b"],
+            "amount": [10, 20],
+        }
+    )
+
+    xls = BytesIO()
+    df.write_excel(
+        xls,
+        worksheet="totals",
+        column_totals={
+            "d": "count",
+            "dt": "count",
+            "t": "count",
+            "name": "count",
+            "amount": "sum",
+        },
+    )
+
+    # Inspect the totals row directly: cells must not carry a temporal
+    # number_format that would render the integer count as a date/time.
+    xls.seek(0)
+    wb = load_workbook(xls)
+    ws = wb["totals"]
+    # 1 header row + 2 data rows + 1 totals row = row 4
+    totals_row = 4
+    for col_letter in ("A", "B", "C"):  # d, dt, t
+        cell = ws[f"{col_letter}{totals_row}"]
+        fmt = (cell.number_format or "").lower()
+        assert not any(tok in fmt for tok in ("yyyy", "mm", "dd", "hh", "ss")), (
+            f"{col_letter}{totals_row} count rendered with temporal format {cell.number_format!r}"
+        )
+
+
 @pytest.mark.parametrize("engine", ["calamine", "xlsx2csv"])
 def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(

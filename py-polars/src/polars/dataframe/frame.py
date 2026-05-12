@@ -3756,7 +3756,12 @@ class DataFrame:
         column_formats = column_formats or {}
         table_style, table_options = _xl_setup_table_options(table_style)
         table_name = table_name or _xl_unique_table_name(wb)
-        table_columns, column_formats, df = _xl_setup_table_columns(  # type: ignore[assignment]
+        (
+            table_columns,
+            column_formats,
+            count_total_overrides,
+            df,
+        ) = _xl_setup_table_columns(  # type: ignore[assignment]
             df=df,
             format_cache=fmt_cache,
             column_formats=column_formats,
@@ -3810,6 +3815,25 @@ class DataFrame:
                     **table_options,
                 },
             )
+
+            # overwrite totals-row cells for `count`/`count_nums` on temporal
+            # columns so the integer count is not rendered with the column's
+            # date/time format. See issue #27283 and `_xl_setup_table_columns`.
+            if count_total_overrides and bool(column_totals) and not is_empty:
+                _subtotal_codes = {"count": 103, "count_nums": 102}
+                totals_row = table_finish[0]
+                for col, (fn, fmt_obj) in count_total_overrides.items():
+                    col_idx = df.columns.index(col)
+                    escaped = (
+                        col.replace("'", "''")
+                        .replace("#", "'#")
+                        .replace("]", "']")
+                        .replace("[", "'[")
+                    )
+                    formula = f"=SUBTOTAL({_subtotal_codes[fn]},[{escaped}])"
+                    ws.write_formula(
+                        totals_row, table_start[1] + col_idx, formula, fmt_obj, 0
+                    )
 
             # apply conditional formats
             if conditional_formats:
