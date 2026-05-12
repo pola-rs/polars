@@ -95,7 +95,7 @@ def test_is_not_null_followed_by_any() -> None:
         .explain()
     )
     assert "null_count" not in non_optimized_result_plan
-    assert "is_not_null" in non_optimized_result_plan
+    assert "is_empty_ignore_nulls().not()" in non_optimized_result_plan
 
     # edge case of empty series
     lf = pl.LazyFrame({"val": []}, schema={"val": pl.Int32})
