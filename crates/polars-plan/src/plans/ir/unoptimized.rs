@@ -104,8 +104,7 @@ impl FunctionArgMap {
         self.map
             .iter()
             .map(|(input_idx, column_idx, arg_name)| {
-                let (input_name, dtype) =
-                    input_schemas[*input_idx].get_at_index(*column_idx).unwrap();
+                let (_, dtype) = input_schemas[*input_idx].get_at_index(*column_idx).unwrap();
                 Field::new(arg_name.clone(), dtype.clone())
             })
             .collect()
