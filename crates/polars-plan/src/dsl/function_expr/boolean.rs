@@ -13,6 +13,9 @@ pub enum BooleanFunction {
     All {
         ignore_nulls: bool,
     },
+    IsEmpty {
+        ignore_nulls: bool,
+    },
     IsNull,
     IsNotNull,
     IsFinite,
@@ -51,8 +54,18 @@ impl Display for BooleanFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use BooleanFunction::*;
         let s = match self {
-            All { .. } => "all",
-            Any { .. } => "any",
+            All {
+                ignore_nulls: false,
+            } => "all",
+            All { ignore_nulls: true } => "all_ignore_nulls",
+            Any {
+                ignore_nulls: false,
+            } => "any",
+            Any { ignore_nulls: true } => "any_ignore_nulls",
+            IsEmpty {
+                ignore_nulls: false,
+            } => "is_empty",
+            IsEmpty { ignore_nulls: true } => "is_empty_ignore_nulls",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",

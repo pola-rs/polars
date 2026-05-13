@@ -895,9 +895,26 @@ impl SlicePushDown {
                     schema,
                     options,
                 },
+                Some(inner_state),
+            ) if inner_state.offset < 0 => {
+                // Negative offset cannot push through hconcat, as this would
+                // cause misalignment on inputs with non-equal lengths.
+                // https://github.com/pola-rs/polars/issues/27552
+                let lp = HConcat {
+                    inputs,
+                    schema,
+                    options,
+                };
+                self.no_pushdown_finish_opt(lp, Some(inner_state), lp_arena)
+            },
+            (
+                HConcat {
+                    inputs,
+                    schema,
+                    options,
+                },
                 _,
             ) => {
-                // Slice can always be pushed down for horizontal concatenation
                 let lp = HConcat {
                     inputs,
                     schema,
