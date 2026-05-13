@@ -38,11 +38,17 @@ toml["env"] = env
 if sys.platform == "linux":
     profile = toml.get("profile", {})
     dev = profile.get("dev", {})
+    debug_release = profile.get("debug-release", {})
 
     if dev.get("split-debuginfo") is None:
         dev["split-debuginfo"] = "unpacked"
         profile["dev"] = dev
-        toml["profile"] = profile
+
+    if debug_release.get("split-debuginfo") is None:
+        debug_release["split-debuginfo"] = "unpacked"
+        profile["debug-release"] = debug_release
+
+    toml["profile"] = profile
 
 
 with config_toml.open("w") as f:
