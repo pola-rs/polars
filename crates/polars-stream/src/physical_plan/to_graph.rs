@@ -520,6 +520,7 @@ fn to_graph_rec<'a>(
             inputs,
             func,
             output_name,
+            arg_map,
             format_str: _,
         } => {
             let input_schemas = inputs
@@ -534,6 +535,7 @@ fn to_graph_rec<'a>(
                 nodes::columnar_function::ColumnarFunctionNode::new(
                     input_schemas,
                     func.clone(),
+                    arg_map.clone(),
                     output_name.clone(),
                 ),
                 input_keys,

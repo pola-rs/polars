@@ -1615,10 +1615,22 @@ pub fn lower_ir(
             return Ok(stream);
         },
         IR::ExtContext { .. } => todo!(),
-        IR::UnoptimizedDispatch { inputs, operation } => {
+        IR::UnoptimizedDispatch {
+            inputs,
+            arg_map,
+            operation,
+        } => {
             let operation = operation.clone();
             let inputs = inputs.clone();
-            let trans_inputs = inputs.iter().map(|input| lower_ir!(*input)).try_collect()?;
+            let arg_map = arg_map.clone();
+
+            let trans_inputs: Vec<_> =
+                inputs.iter().map(|input| lower_ir!(*input)).try_collect()?;
+
+            let trans_schemas: Vec<Arc<Schema>> = trans_inputs
+                .iter()
+                .map(|i| i.output_schema(phys_sm).clone())
+                .collect();
 
             match operation {
                 UnoptimizedOperation::ColumnarFunction {
@@ -1626,27 +1638,47 @@ pub fn lower_ir(
                     options,
                     output_name,
                 } => {
-                    if options.is_elementwise() {
-                        // If it is elementwise we can just zip the inputs together.
-                        let mut zip_schema = Schema::default();
-                        for input in inputs {
-                            zip_schema.hstack_mut(
-                                (*IR::schema_with_cache(input, ir_arena, schema_cache)).clone(),
-                            )?;
-                        }
-                        let zip_schema = Arc::new(zip_schema);
+                    if trans_inputs.len() == 1 {
+                        // Single input, can directly dispatch through a select.
+                        let expr_input = arg_map.arg_selectors(&trans_schemas, expr_arena);
+                        let expr = ExprIR::from_node(
+                            expr_arena.add(AExpr::Function {
+                                input: expr_input,
+                                function,
+                                options,
+                            }),
+                            expr_arena,
+                        )
+                        .with_alias(output_name);
+                        return build_select_stream(
+                            trans_inputs[0],
+                            &[expr],
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        );
+                    } else if options.is_row_separable() {
+                        // We can zip the inputs together and dispatch through a select.
+
+                        let zip_schema = {
+                            let mut zip_schema = Schema::default();
+                            for schema in &trans_schemas {
+                                // Will panic on column name collision
+                                zip_schema.hstack_mut(schema.as_ref().clone())?;
+                            }
+                            Arc::new(zip_schema)
+                        };
+
                         let zip_node = phys_sm.insert(PhysNode::new(
-                            zip_schema.clone(),
+                            zip_schema,
                             PhysNodeKind::Zip {
                                 inputs: trans_inputs,
                                 zip_behavior: ZipBehavior::Broadcast,
                             },
                         ));
 
-                        let expr_input = zip_schema
-                            .iter_names()
-                            .map(|n| ExprIR::from_column_name(n.clone(), expr_arena))
-                            .collect_vec();
+                        let expr_input = arg_map.arg_selectors(&trans_schemas, expr_arena);
                         let expr = ExprIR::from_node(
                             expr_arena.add(AExpr::Function {
                                 input: expr_input,
@@ -1670,6 +1702,7 @@ pub fn lower_ir(
                         PhysNodeKind::ColumnarFunction {
                             inputs: trans_inputs,
                             func,
+                            arg_map: Some(arg_map),
                             output_name,
                             format_str,
                         }
@@ -1693,6 +1726,7 @@ pub fn lower_ir(
                     PhysNodeKind::ColumnarFunction {
                         inputs: trans_inputs,
                         func,
+                        arg_map: Some(arg_map),
                         output_name,
                         format_str,
                     }
