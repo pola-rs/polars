@@ -54,7 +54,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_series_item_by_key
-from polars._utils.unstable import unstable
+from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
@@ -4051,7 +4051,10 @@ class Series:
         """
 
     def gather(
-        self, indices: int | list_[int] | Expr | Series | np.ndarray[Any, Any]
+        self,
+        indices: int | list_[int] | Expr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
     ) -> Series:
         """
         Take values by index.
@@ -4060,6 +4063,11 @@ class Series:
         ----------
         indices
             Index location used for selection.
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            - True  -> set the result to null
+            - False -> raise an error
 
         Examples
         --------
@@ -4070,6 +4078,16 @@ class Series:
         [
             2
             4
+        ]
+
+        Use `null_on_oob=True` to return null for out-of-bounds indices.
+
+        >>> s.gather([1, 10], null_on_oob=True)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            2
+            null
         ]
         """
 
@@ -4112,17 +4130,35 @@ class Series:
         """
         return self._s.has_nulls()
 
-    def is_empty(self) -> bool:
+    def is_empty(self, *, ignore_nulls: bool = False) -> bool:
         """
         Check if the Series is empty.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If true a series containing only nulls will also be considered empty.
+            The default is false.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
         >>> s = pl.Series("a", [], dtype=pl.Float32)
         >>> s.is_empty()
         True
+        >>> s = pl.Series("a", [None], dtype=pl.Float32)
+        >>> s.is_empty()
+        False
+        >>> s.is_empty(ignore_nulls=True)
+        True
         """
-        return self.len() == 0
+        if ignore_nulls:
+            msg = "the `ignore_nulls` parameter of `Series.is_empty()` is considered unstable."
+            issue_unstable_warning(msg)
+        return self._s.is_empty(ignore_nulls=ignore_nulls)
 
     def is_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> bool:
         """

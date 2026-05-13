@@ -1117,6 +1117,12 @@ impl PyLazyFrame {
             .into())
     }
 
+    fn gather(&self, idxs: Self, null_on_oob: bool) -> Self {
+        let ldf = self.ldf.read().clone();
+        let idxs = idxs.ldf.into_inner();
+        ldf.gather(idxs, null_on_oob).into()
+    }
+
     fn with_columns(&self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.read().clone();
         ldf.with_columns(exprs.to_exprs()).into()

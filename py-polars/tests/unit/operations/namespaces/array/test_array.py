@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_arr_min_max() -> None:
@@ -694,3 +697,25 @@ def test_array_get_broadcast_26217() -> None:
         {"literal": [42, 13, 37, 13, 37, 42, 13]}, schema={"literal": pl.UInt8}
     )
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming
+@pytest.mark.debug
+def test_array_idx_size_limit_eval(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_ARRAY_EVAL_IDX_SIZE_LIMIT", "20")
+    s = pl.Series([None])
+    width = 19
+    s = s.new_from_index(0, width)
+    assert (
+        pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width))
+        .to_frame()
+        .select(pl.col("a").arr.eval(pl.element().len() * pl.element()))
+        .head(1)
+        .item()
+        .to_list()
+        == [None] * width
+    )
+
+    captured = capfd.readouterr().err
+    assert "IdxSize limit hit; chunking branch hit" in captured

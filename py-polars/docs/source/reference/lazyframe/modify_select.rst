@@ -20,6 +20,7 @@ Manipulation/selection
     LazyFrame.fill_null
     LazyFrame.filter
     LazyFrame.first
+    LazyFrame.gather
     LazyFrame.gather_every
     LazyFrame.group_by
     LazyFrame.group_by_dynamic

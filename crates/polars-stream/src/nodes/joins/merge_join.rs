@@ -192,6 +192,11 @@ impl ComputeNode for MergeJoinNode {
         let input_channels_done = recv.iter().all(|r| *r == PortState::Done);
         let input_buffers_empty = self.build_unmerged.is_empty() && self.probe_unmerged.is_empty();
         let unmatched_buffers_empty = self.unmatched.is_empty();
+
+        if send[0] == PortState::Done {
+            self.state = Done;
+        }
+
         if self.params.args.maintain_order == MaintainOrderJoin::None {
             debug_assert!(unmatched_buffers_empty);
         }

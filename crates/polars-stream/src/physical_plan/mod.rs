@@ -515,6 +515,12 @@ pub enum PhysNodeKind {
         maintain_order: bool,
     },
 
+    Gather {
+        input: PhysStream,
+        idxs: PhysStream,
+        null_on_oob: bool,
+    },
+
     #[cfg(feature = "ewma")]
     EwmMean {
         input: PhysStream,
@@ -681,6 +687,13 @@ fn visit_node_inputs_mut(
                 rec!(input_right.node);
                 visit(input_left);
                 visit(input_right);
+            },
+
+            PhysNodeKind::Gather { input, idxs, .. } => {
+                rec!(input.node);
+                rec!(idxs.node);
+                visit(input);
+                visit(idxs);
             },
 
             PhysNodeKind::TopK { input, k, .. } => {

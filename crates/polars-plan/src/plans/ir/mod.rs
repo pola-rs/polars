@@ -116,6 +116,11 @@ pub enum IR {
         right_on: Vec<ExprIR>,
         options: Arc<JoinOptionsIR>,
     },
+    Gather {
+        input: Node,
+        idxs: Node,
+        null_on_oob: bool,
+    },
     HStack {
         input: Node,
         exprs: Vec<ExprIR>,

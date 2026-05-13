@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import warnings
-from collections.abc import Collection, Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from functools import lru_cache, partial, reduce
@@ -24,9 +24,11 @@ import polars.selectors as cs
 from polars import functions as F
 from polars._dependencies import (
     _PYARROW_AVAILABLE,
+    _check_for_numpy,
     import_optional,
     subprocess,
 )
+from polars._dependencies import numpy as np
 from polars._dependencies import polars_cloud as pc
 from polars._dependencies import pyarrow as pa
 from polars._typing import (
@@ -100,6 +102,7 @@ from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
 from polars.lazyframe.opt_flags import DEFAULT_QUERY_OPT_FLAGS, forward_old_opt_flags
+from polars.lazyframe.query_result import SingleNodeQueryResult
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
@@ -109,7 +112,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 if TYPE_CHECKING:
     import sys
     from builtins import slice as slice_
-    from collections.abc import Awaitable, Callable, Iterator, Sequence
+    from collections.abc import Awaitable, Callable, Iterator
     from io import IOBase
     from typing import IO, Concatenate, Literal, ParamSpec
 
@@ -128,7 +131,6 @@ if TYPE_CHECKING:
         import polars._plr as plr
 
     from polars import DataFrame, DataType, Expr
-    from polars._dependencies import numpy as np
     from polars._typing import (
         Alignment,
         ArrowSchemaExportable,
@@ -165,6 +167,7 @@ if TYPE_CHECKING:
     )
     from polars.config import TableFormatNames
     from polars.io.cloud import CredentialProviderFunction
+    from polars.lazyframe.query_result import QueryResult
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -1417,9 +1420,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         engine = _select_engine(engine)
 
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
-
         if optimized:
             optimizations = optimizations.__copy__()
             optimizations._pyoptflags.streaming = engine == "streaming"
@@ -1609,9 +1609,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... ).show_graph()  # doctest: +SKIP
         """
         engine = _select_engine(engine)
-
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
 
         optimizations = optimizations.__copy__()
         optimizations._pyoptflags.streaming = engine == "streaming"
@@ -2238,6 +2235,110 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return df, timings
 
+    @unstable()
+    def execute(
+        self,
+        *,
+        optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
+        engine: EngineType = "auto",
+        **_kwargs: Any,
+    ) -> QueryResult:
+        """
+        Execute the query into a `QueryResult`.
+
+        This method of materializing a `LazyFrame` makes no guarantees as to where
+        the result is materialized. This can be on the GPU for the GPU-engine,
+        on the cluster or remote storage for the distributed engine and the streaming
+        engine could spill the result if it needed to.
+
+        The `QueryResult` can always be consumed as a new `LazyFrame` by calling `.lazy`
+
+        Parameters
+        ----------
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query
+            is run using the polars in-memory engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars in-memory
+            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
+            control over the GPU engine, for example which device to use
+            on a system with multiple devices, is possible by providing a
+            :class:`~.GPUEngine` object with configuration options.
+
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+
+            .. note::
+               The GPU engine does not support streaming, if streaming is enabled,
+               then GPU execution is switched off.
+        optimizations
+            The optimization passes done during query optimization.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+
+        Returns
+        -------
+        DataFrame
+
+        See Also
+        --------
+        explain : Print the query plan that is evaluated with collect.
+        profile : Collect the LazyFrame and time each node in the computation graph.
+        polars.collect_all : Collect multiple LazyFrames at the same time.
+        polars.Config.set_streaming_chunk_size : Set the size of streaming batches.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": ["a", "b", "a", "b", "b", "c"],
+        ...         "b": [1, 2, 3, 4, 5, 6],
+        ...         "c": [6, 5, 4, 3, 2, 1],
+        ...     }
+        ... )
+        >>> lf.group_by("a").agg(pl.all().sum()).collect()  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        Collect in streaming mode
+
+        >>> lf.group_by("a").agg(pl.all().sum()).collect(
+        ...     engine="streaming"
+        ... )  # doctest: +SKIP
+        shape: (3, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ str ┆ i64 ┆ i64 │
+        ╞═════╪═════╪═════╡
+        │ a   ┆ 4   ┆ 10  │
+        │ b   ┆ 11  ┆ 10  │
+        │ c   ┆ 6   ┆ 1   │
+        └─────┴─────┴─────┘
+
+        Collect in GPU mode
+
+        """
+        df = self.collect(optimizations=optimizations, engine=engine)
+        return SingleNodeQueryResult(df)
+
     @overload
     def collect(
         self,
@@ -2297,7 +2398,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
         """
-        Materialize this LazyFrame into a DataFrame.
+        Materialize this `LazyFrame` into a `DataFrame`.
 
         By default, all query optimizations are enabled. Individual optimizations may
         be disabled by setting the corresponding parameter to `False`.
@@ -2485,9 +2586,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if new_streaming:
             engine = "streaming"
-
-        if engine == "streaming":
-            issue_unstable_warning("streaming mode is considered unstable.")
 
         callback = _gpu_engine_callback(
             engine,
@@ -6146,15 +6244,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - Returns all rows from the right table, and the matched rows from
                    the left table.
                * - **full**
-                 - Returns all rows when there is a match in either left or right.
+                 - Returns all rows from both tables, joining matching rows and
+                   filling non-matches with null values.
                * - **cross**
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
                  - Returns rows from the left table that have a match in the right
-                   table.
+                   table. Does not return columns from the right table.
                * - **anti**
                  - Returns rows from the left table that have no match in the right
-                   table.
+                   table. Does not return columns from the right table.
 
         left_on
             Join column of the left DataFrame.
@@ -6490,6 +6589,87 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 suffix,
             )
         )
+
+    @unstable()
+    def gather(
+        self,
+        indices: int
+        | Sequence[int]
+        | IntoExpr
+        | pl.Series
+        | np.ndarray[Any, Any]
+        | pl.LazyFrame,
+        *,
+        null_on_oob: bool = False,
+    ) -> LazyFrame:
+        """
+        Selects rows from this LazyFrame at the given indices.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        indices
+            The indices of the rows to select.
+
+            Due to the lack of a ``LazySeries`` it's permitted to pass a single-width
+            ``LazyFrame`` as indices as well.
+
+        null_on_oob
+            If true when an index is out-of-bounds a null row will be generated
+            instead of raising an error.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame({"x": [2, 1, 0], "s": ["foo", "bar", "baz"]})
+        >>> lf.gather([2, 0, 0]).collect()
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 0   ┆ baz │
+        │ 2   ┆ foo │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+
+        >>> lf.gather([0, 10, 1], null_on_oob=True).collect()
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ x    ┆ s    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 2    ┆ foo  │
+        │ null ┆ null │
+        │ 1    ┆ bar  │
+        └──────┴──────┘
+
+        >>> idxs = pl.LazyFrame({"i": [1, 10, 0], "b": [True, False, True]})
+        >>> lf.gather(idxs.filter(pl.col.b).select(pl.col.i)).collect()
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 1   ┆ bar │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+        """
+        if not isinstance(indices, pl.LazyFrame):
+            if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
+                _check_for_numpy(indices) and isinstance(indices, np.ndarray)
+            ):
+                indices_expr = F.lit(pl.Series("", indices, dtype=Int64))
+            else:
+                indices_expr = wrap_expr(parse_into_expression(indices))
+            indices = self.select(indices_expr)
+
+        return self._from_pyldf(self._ldf.gather(indices._ldf, null_on_oob))
 
     def with_columns(
         self,

@@ -156,7 +156,7 @@ fn create_physical_expr_inner(
 
     let aexpr = expr_arena.get(expression);
     match aexpr.clone() {
-        Len => Ok(Arc::new(phys_expr::CountExpr::new())),
+        Len => Ok(Arc::new(phys_expr::LenExpr::new())),
         #[cfg(feature = "dynamic_group_by")]
         Rolling {
             function,
@@ -379,18 +379,7 @@ fn create_physical_expr_inner(
                 .get(expression)
                 .to_field(&ToFieldContext::new(expr_arena, schema))?;
 
-            // Special case: Quantile supports multiple inputs.
-            // TODO refactor to FunctionExpr.
-            if let IRAggExpr::Quantile {
-                quantile, method, ..
-            } = agg
-            {
-                let quantile = create_physical_expr_inner(quantile, expr_arena, schema, state)?;
-                return Ok(Arc::new(AggQuantileExpr::new(input, quantile, method)));
-            }
-
             let groupby = GroupByMethod::from(agg.clone());
-
             let agg_type = AggregationType {
                 groupby,
                 allow_threading,

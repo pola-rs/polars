@@ -444,6 +444,7 @@ pub(super) fn convert_functions(
             I::Boolean(match boolean_function {
                 B::Any { ignore_nulls } => IB::Any { ignore_nulls },
                 B::All { ignore_nulls } => IB::All { ignore_nulls },
+                B::IsEmpty { ignore_nulls } => IB::IsEmpty { ignore_nulls },
                 B::IsNull => IB::IsNull,
                 B::IsNotNull => IB::IsNotNull,
                 B::IsFinite => IB::IsFinite,
@@ -806,6 +807,7 @@ pub(super) fn convert_functions(
         },
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
+        F::Quantile { method } => I::Quantile { method },
         #[cfg(feature = "mode")]
         F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]

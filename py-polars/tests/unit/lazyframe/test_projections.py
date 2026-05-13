@@ -1,3 +1,5 @@
+import io
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -421,7 +423,7 @@ def test_rolling_key_projected_13617() -> None:
     df = pl.DataFrame({"idx": [1, 2], "value": ["a", "b"]}).set_sorted("idx")
     ldf = df.lazy().select(pl.col("value").rolling("idx", period="1i"))
     plan = ldf.explain(optimizations=pl.QueryOptFlags(projection_pushdown=True))
-    assert r"2/2 COLUMNS" in plan
+    assert r"*/2 COLUMNS" in plan
     out = ldf.collect(optimizations=pl.QueryOptFlags(projection_pushdown=True))
     assert out.to_dict(as_series=False) == {"value": [["a"], ["b"]]}
 
@@ -773,14 +775,14 @@ def test_join_projection_pushdown_struct_field_as_key_24446() -> None:
     )
 
 
-def test_proj_pushdown_set_sorted_25247() -> None:
+def test_projection_pushdown_set_sorted_25247() -> None:
     q = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).set_sorted("a").select("b")
     plan = q.explain()
     assert "set_sorted" not in plan
 
 
 @pytest.mark.write_disk
-def test_proj_pushdown_row_index_reorder(tmp_path: Path) -> None:
+def test_projection_pushdown_row_index_reorder(tmp_path: Path) -> None:
     csv = b"\na,b\n1,2"
     data = pl.scan_csv(csv)
     data.sink_parquet(tmp_path / "data.parquet")
@@ -797,3 +799,131 @@ def test_proj_pushdown_row_index_reorder(tmp_path: Path) -> None:
             {"a": [1], "b": [2], "index": [0]}, schema_overrides={"index": pl.UInt32}
         )
         assert_frame_equal(actual, expected)
+
+
+def test_projection_pushdown_cspe() -> None:
+    lf = pl.LazyFrame({"a": 1, "b": 10, "c": 100}).cache()
+    q = pl.concat([lf.select("a"), lf.select(a="b")])
+
+    plan = q.explain()
+    assert 'DF ["a", "b", "c"]; PROJECT["a", "b"] 2/3 COLUMNS' in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 10]}))
+
+
+def test_projection_pushdown_with_columns_27388() -> None:
+    q = pl.LazyFrame({"a": 1, "b": 1}).with_columns(pl.col("b").alias("a")).select("a")
+    plan = q.explain()
+    assert plan.index('PROJECT["b"] 1/2 COLUMNS') > plan.index("DF")
+
+
+def test_projection_pushdown_removes_row_index() -> None:
+    q = pl.LazyFrame({"a": 1}).with_row_index().drop("index")
+    assert "ROW INDEX" not in q.explain()
+
+
+def test_projection_pushdown_select_len() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2]})
+
+    a_add1 = '(col("a")) + (1)'
+    assert a_add1 in lf.select(pl.col("a") + 1).explain()
+    q = lf.select(pl.col("a") + 1).select(pl.len())
+
+    assert a_add1 not in q.explain()
+    assert q.collect().item() == 3
+
+    q = lf.select(pl.lit(1)).select(pl.len())
+    assert q.collect().item() == 1
+
+
+def test_projection_pushdown_nonstrict_hconcat_select_len() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame({"a": [0, 1, 2]}),
+            pl.LazyFrame({"b": [0, 1, 2, 3, 4]}),
+        ],
+        how="horizontal",
+    ).select(pl.len())
+    plan = q.explain()
+
+    assert plan.index("len()") > plan.index("HCONCAT")
+    assert_frame_equal(
+        q.collect(),
+        pl.Series("len", [5], dtype=pl.get_index_type()).to_frame(),
+    )
+
+
+def test_projection_pushdown_non_projected_sort_column() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
+    q = lf.sort("a", descending=True).unique("b", maintain_order=True).drop("a")
+    plan = q.explain()
+
+    assert plan.index('simple π 1/1 ["b"]') > plan.index("UNIQUE")
+
+
+def test_projection_pushdown_filter_len_to_sum() -> None:
+    q = pl.LazyFrame({"a": [0, 1, 2]}).tail(2).filter(pl.col("a") < 2).select(pl.len())
+    plan = q.explain()
+    assert '(col("a")) < (2)].sum()' in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"len": 1}, schema={"len": pl.get_index_type()}),
+    )
+
+    q = (
+        pl.LazyFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
+        .tail(2)
+        .filter(pl.col("a") < 2)
+        .select(pl.col("b").len())
+    )
+    plan = q.explain()
+    assert 'PROJECT["a"] 1/2 COLUMNS' in plan
+    assert '(col("a")) < (2)].sum()' in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"b": 1}, schema={"b": pl.get_index_type()}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("sink", "scan"),
+    [
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+    ],
+)
+@pytest.mark.parametrize(
+    "slice",
+    [
+        None,
+        (0, 5),
+        (-5, 5),
+        (5, 10),  # overrun past the end
+        (-15, 10),  # overrun before the start
+        (-5, 10),  # overrun past the end
+        (-15, 20),  # overrun before the start and past the end
+    ],
+)
+@pytest.mark.parametrize("predicate", [None, pl.col("a") % 2 == 1])
+def test_projection_pushdown_fastcount_27534(
+    sink: Callable[[pl.DataFrame, io.BytesIO], None],
+    scan: Callable[[bytes], pl.LazyFrame],
+    slice: tuple[int, int] | None,
+    predicate: pl.Expr | None,
+) -> None:
+    df = pl.DataFrame({"a": range(10)})
+    buf = io.BytesIO()
+    sink(df, buf)
+    lf = scan(buf.getvalue())
+    if slice is not None:
+        df = df.slice(*slice)
+        lf = lf.slice(*slice)
+    if predicate is not None:
+        df = df.filter(predicate)
+        lf = lf.filter(predicate)
+
+    assert_frame_equal(lf.select(pl.len()).collect(), df.select(pl.len()))
+    assert_frame_equal(lf.collect(), df)

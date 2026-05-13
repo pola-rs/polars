@@ -12,12 +12,12 @@ pub trait Collection<T: ?Sized> {
 }
 
 /// Wrapper that implements indexing.
-pub struct CollectionWrap<T, C: Collection<T>> {
+pub struct CollectionWrap<T: ?Sized, C: Collection<T>> {
     inner: C,
     phantom: PhantomData<T>,
 }
 
-impl<T, C: Collection<T>> CollectionWrap<T, C> {
+impl<T: ?Sized, C: Collection<T>> CollectionWrap<T, C> {
     pub fn new(inner: C) -> Self {
         Self {
             inner,
@@ -52,7 +52,7 @@ impl<T, C: Collection<T>> CollectionWrap<T, C> {
     }
 }
 
-impl<T, C: Collection<T>> Deref for CollectionWrap<T, C> {
+impl<T: ?Sized, C: Collection<T>> Deref for CollectionWrap<T, C> {
     type Target = C;
 
     fn deref(&self) -> &Self::Target {
@@ -60,13 +60,13 @@ impl<T, C: Collection<T>> Deref for CollectionWrap<T, C> {
     }
 }
 
-impl<T, C: Collection<T>> DerefMut for CollectionWrap<T, C> {
+impl<T: ?Sized, C: Collection<T>> DerefMut for CollectionWrap<T, C> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<T, C: Collection<T>> Index<usize> for CollectionWrap<T, C> {
+impl<T: ?Sized, C: Collection<T>> Index<usize> for CollectionWrap<T, C> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -74,7 +74,7 @@ impl<T, C: Collection<T>> Index<usize> for CollectionWrap<T, C> {
     }
 }
 
-impl<T, C: Collection<T>> IndexMut<usize> for CollectionWrap<T, C> {
+impl<T: ?Sized, C: Collection<T>> IndexMut<usize> for CollectionWrap<T, C> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         self.get_mut(index).unwrap()
     }
@@ -92,7 +92,7 @@ impl<T: Clone, C: Collection<T>, const N: usize> TryFrom<CollectionWrap<T, C>> f
     }
 }
 
-impl<T, C: Collection<T>> From<C> for CollectionWrap<T, C> {
+impl<T: ?Sized, C: Collection<T>> From<C> for CollectionWrap<T, C> {
     fn from(value: C) -> Self {
         Self {
             inner: value,
@@ -101,7 +101,7 @@ impl<T, C: Collection<T>> From<C> for CollectionWrap<T, C> {
     }
 }
 
-impl<T> Collection<T> for &mut dyn Collection<T> {
+impl<T: ?Sized> Collection<T> for &mut dyn Collection<T> {
     fn len(&self) -> usize {
         (**self).len()
     }
@@ -115,13 +115,13 @@ impl<T> Collection<T> for &mut dyn Collection<T> {
     }
 }
 
-pub struct CollectionIter<'a, T: 'a, C: Collection<T>> {
+pub struct CollectionIter<'a, T: 'a + ?Sized, C: Collection<T>> {
     idx: usize,
     collection: &'a C,
     phantom: PhantomData<T>,
 }
 
-impl<'a, T, C: Collection<T>> Iterator for CollectionIter<'a, T, C> {
+impl<'a, T: 'a + ?Sized, C: Collection<T>> Iterator for CollectionIter<'a, T, C> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {

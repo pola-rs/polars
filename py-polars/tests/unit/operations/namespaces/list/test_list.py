@@ -1366,3 +1366,38 @@ def test_list_sample_fraction_with_replacement_27344() -> None:
 
     result = df.select(pl.col("x").list.sample(fraction=2, with_replacement=True))
     assert result["x"][0].to_list() == [1, 1]
+
+
+def test_list_eval_exceed_idx_size() -> None:
+    s = pl.Series([None])
+    s = s.new_from_index(0, 2**31)
+    assert (
+        pl.Series("a", [s, s.head(-1), s.head(-2)])
+        .to_frame()
+        .select(
+            count=pl.col("a").list.eval(pl.element().count()),
+            len=pl.col("a").list.eval(pl.element().len()),
+            unique=pl.col("a").list.eval(pl.element().unique()),
+        )
+    ).to_dict(as_series=False) == {
+        "count": [[0], [0], [0]],
+        "len": [[2147483648], [2147483647], [2147483646]],
+        "unique": [[None], [None], [None]],
+    }
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (0, pl.lit(pl.Series([1, 2, 3]))),
+        (pl.lit(pl.Series([0, 1, 2])), 2),
+        (pl.lit(pl.Series([0, 1, 2])), pl.lit(pl.Series([3, 2, 1]))),
+    ],
+)
+def test_list_slice_broadcast_27480(offset: Any, length: Any) -> None:
+    result = pl.select(pl.lit([0, 1, 2]).list.slice(offset, length).alias("broadcast"))
+    expected = pl.select(
+        pl.repeat(pl.lit([0, 1, 2]), 3).list.slice(offset, length).alias("broadcast")
+    )
+
+    assert_frame_equal(result, expected)
