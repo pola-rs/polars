@@ -60,7 +60,7 @@ class DeltaDataset:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
-        pyarrow_predicate: str | None = None,
+        pyarrow_predicate: Any | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
         import polars as pl
@@ -99,17 +99,11 @@ class DeltaDataset:
 
             dataset = table.to_pyarrow_dataset(**(self.pyarrow_options or {}))
 
-            pa_predicate_expr = None
-            if pyarrow_predicate is not None:
-                import pyarrow as pa  # noqa: F401
-
-                pa_predicate_expr = eval(pyarrow_predicate)
-
             func = partial(
                 polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl,
                 dataset,
                 n_rows=limit,
-                predicate=pa_predicate_expr,
+                predicate=pyarrow_predicate,
                 with_columns=projection,
             )
 

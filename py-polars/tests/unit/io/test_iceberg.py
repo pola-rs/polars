@@ -2673,7 +2673,7 @@ def test_scan_iceberg_partial_and_pushdown(
 
     # Verify: partial predicate was pushed
     assert "pyarrow_predicate = " in capture
-    assert "pa.compute.field('a') > 1" in capture
+    assert "<pyarrow.compute.Expression (a > 1)>" in capture
     # Verify: correctness
     assert len(result) == 2
     assert result["a"].to_list() == [2, 3]
