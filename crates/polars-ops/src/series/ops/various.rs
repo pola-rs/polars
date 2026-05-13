@@ -452,9 +452,31 @@ impl SeriesMethods for Series {}
 
 #[cfg(test)]
 mod is_sorted_tests {
+    use arrow::bitmap::Bitmap;
     use polars_core::prelude::*;
 
-    use super::SeriesMethods;
+    use super::{SeriesMethods, is_sorted_boolean_bitmap_slice, is_sorted_ca_bool};
+
+    #[test]
+    fn is_sorted_boolean_long_series() {
+        // `AlignedBitmapSlice` only uses `bulk_iter()` when the bitmap does not fit entirely in one
+        // `u64` packed prefix (`offset + len > 64`; e.g. length 137 → two bulk words on typical layout).
+        let v = vec![false; 137];
+        let s = Series::new("bitmap_bulk_ascending".into(), &v);
+        assert!(s.is_sorted(SortOptions::default()).unwrap());
+    }
+
+    #[test]
+    fn is_sorted_boolean_bitmap() {
+        let mut bits = vec![false, false, true];
+        bits.resize(137, true);
+        let bmp = Bitmap::from_iter(bits);
+        let mut prev = None;
+        assert!(
+            !is_sorted_boolean_bitmap_slice(&bmp, true, &mut prev),
+            "false→true at rows 1→2 is forbidden for descending"
+        );
+    }
 
     #[test]
     fn is_sorted_non_primitive_len_one_short_circuits() {
@@ -466,6 +488,28 @@ mod is_sorted_tests {
     }
 
     // calls `is_sorted_ca_bool` via `s_phys.bool()`
+    #[test]
+    fn is_sorted_ca_bool_len_at_most_one_short_circuits() {
+        // `Series::is_sorted` short-circuits when `non_null_len <= 1` before reaching
+        // `is_sorted_ca_bool`; call the helper to cover the `len <= 1` guard.
+        assert!(is_sorted_ca_bool(
+            &BooleanChunked::from_slice(PlSmallStr::EMPTY, &[]),
+            false,
+        ));
+        assert!(is_sorted_ca_bool(
+            &BooleanChunked::from_slice(PlSmallStr::EMPTY, &[]),
+            true,
+        ));
+        assert!(is_sorted_ca_bool(
+            &BooleanChunked::from_slice(PlSmallStr::EMPTY, &[false]),
+            false,
+        ));
+        assert!(is_sorted_ca_bool(
+            &BooleanChunked::from_slice(PlSmallStr::EMPTY, &[true]),
+            true,
+        ));
+    }
+
     #[test]
     fn is_sorted_boolean() {
         let s = Series::new("boolean_test".into(), &[false, true, true]);
