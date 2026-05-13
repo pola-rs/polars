@@ -1,14 +1,11 @@
 use std::sync::{Arc, OnceLock};
 
 use polars_error::PolarsResult;
-use polars_utils::pl_str::PlSmallStr;
 
 use super::broadcast::{broadcast_columns, infer_broadcast_height};
 use super::validation::validate_columns_slice;
-use crate::chunked_array::ops::SortOptions;
 use crate::frame::column::Column;
 use crate::schema::{Schema, SchemaRef};
-use crate::series::IsSorted;
 
 /// A contiguous growable collection of [`Column`]s that have the same length.
 ///

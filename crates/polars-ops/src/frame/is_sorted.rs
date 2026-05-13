@@ -55,13 +55,31 @@ impl DataFrameIsSorted for DataFrame {
             return SeriesMethods::is_sorted(s, options);
         }
 
-        let cols = by
-            .iter()
-            .map(|c| self.column(c).cloned())
-            .collect::<PolarsResult<Vec<_>>>()?;
+        let mut cols: Vec<Column> = Vec::with_capacity(by.len());
+        let mut desc: Vec<bool> = Vec::with_capacity(by.len());
+        let mut nls: Vec<bool> = Vec::with_capacity(by.len());
+        for (idx, c) in by.iter().enumerate() {
+            let col = self.column(c)?.clone();
+            if col.dtype().is_nested() {
+                let encoded = _get_rows_encoded_ca(
+                    c.clone(),
+                    &[col],
+                    &[descending[idx]],
+                    &[nulls_last[idx]],
+                    false,
+                )?;
+                cols.push(encoded.into_series().into_column());
+                desc.push(false);
+                nls.push(false);
+            } else {
+                cols.push(col);
+                desc.push(descending[idx]);
+                nls.push(nulls_last[idx]);
+            }
+        }
 
         let mut scratch_vec_pool = (1..cols.len()).map(|_| ScratchVec::default()).collect_vec();
-        is_sorted_cols(&cols, descending, nulls_last, &mut scratch_vec_pool)
+        is_sorted_cols(&cols, &desc, &nls, &mut scratch_vec_pool)
     }
 }
 
@@ -71,37 +89,16 @@ impl DataFrameIsSorted for DataFrame {
 /// a recursive check on the sliced tail `cols[1..]`.
 #[recursive]
 fn is_sorted_cols(
-    cols: &[Column],
+    by: &[Column],
     descending: &[bool],
     nulls_last: &[bool],
     scratch_pool: &mut [ScratchVec<Column>],
 ) -> PolarsResult<bool> {
-    let Some(first) = cols.first() else {
+    let Some((by, by_more)) = by.split_first() else {
         return Ok(true);
     };
-    let by_more = &cols[1..];
 
-    // Nested types: row-encode so they compare as plain bytes.
-    #[cfg(feature = "dtype-struct")]
-    if matches!(first.dtype(), DataType::Struct(_)) {
-        let encoded = _get_rows_encoded_ca(
-            PlSmallStr::EMPTY,
-            &[first.clone()],
-            &[descending[0]],
-            &[nulls_last[0]],
-            false,
-        )?;
-        let encoded_col = encoded.into_series().into_column();
-        let mut new_cols = Vec::with_capacity(cols.len());
-        new_cols.push(encoded_col);
-        new_cols.extend_from_slice(by_more);
-        return is_sorted_cols(&new_cols, descending, nulls_last, scratch_pool);
-    }
-
-    let s = first
-        .as_materialized_series()
-        .to_physical_repr()
-        .into_owned();
+    let s = by.as_materialized_series().to_physical_repr().into_owned();
 
     match s.dtype() {
         DataType::Boolean => {
@@ -135,7 +132,7 @@ fn is_sorted_cols(
         _ => {
             // TODO: allocates a full boolean series and doesn't propagate ties
             // to subsequent columns (see SeriesMethods::is_sorted)
-            is_sorted_fallback(first, by_more, descending, nulls_last)
+            is_sorted_fallback(by, by_more, descending, nulls_last)
         },
     }
 }
