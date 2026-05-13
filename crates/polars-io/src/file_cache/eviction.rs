@@ -3,12 +3,12 @@ use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use fs4::fs_std::FileExt;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
 
 use super::cache_lock::{GLOBAL_FILE_CACHE_LOCK, GlobalFileCacheGuardExclusive};
 use super::metadata::EntryMetadata;
-use crate::pl_async;
 
 #[derive(Debug, Clone)]
 pub(super) struct EvictionCandidate {
@@ -161,7 +161,7 @@ impl EvictionManager {
             );
         }
 
-        pl_async::get_runtime().spawn(async move {
+        ASYNC.spawn(async move {
             // Give some time at startup for other code to run.
             tokio::time::sleep(Duration::from_secs(3)).await;
             let mut last_eviction_time;

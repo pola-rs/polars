@@ -97,6 +97,11 @@ pub trait SeriesMethods: SeriesSealed {
                 &[options.nulls_last],
                 false,
             )?;
+            let options = SortOptions {
+                descending: false,
+                nulls_last: false,
+                ..options
+            };
             return encoded.into_series().is_sorted(options);
         }
 

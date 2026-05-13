@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
-use polars_io::pl_async;
 use polars_io::utils::file::Writeable;
 use polars_plan::dsl::file_provider::{FileProviderReturn, FileProviderType};
 use polars_plan::dsl::sink::SinkedPathInfo;
@@ -31,7 +31,7 @@ impl FileProvider {
                 FileProviderType::Function(f) => {
                     let f = f.clone();
 
-                    let out = pl_async::get_runtime()
+                    let out = ASYNC
                         .spawn_blocking(move || f.get_path_or_file(args))
                         .await
                         .unwrap()?;

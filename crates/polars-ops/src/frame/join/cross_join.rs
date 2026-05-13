@@ -122,7 +122,7 @@ fn cross_join_dfs<'a>(
     };
     let (l_df, r_df) = if parallel {
         try_raise_keyboard_interrupt();
-        POOL.install(|| rayon::join(create_left_df, create_right_df))
+        RAYON.install(|| rayon::join(create_left_df, create_right_df))
     } else {
         (create_left_df(), create_right_df())
     };
@@ -163,7 +163,7 @@ pub(super) fn fused_cross_filter(
     let rename_names = names.get_column_names();
     let rename_names = &rename_names[left.width()..];
 
-    let dfs = POOL
+    let dfs = RAYON
         .install(|| {
             cartesian_prod.par_iter().map(|(left, right)| {
                 let (mut left, right) = cross_join_dfs(left, right, None, false, maintain_order)?;

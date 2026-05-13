@@ -341,8 +341,12 @@ impl<'a> IRDotDisplay<'a> {
                     )
                 })?;
             },
-            UnoptimizedDispatch { inputs, operation } => {
-                for input in inputs {
+            UnoptimizedDispatch {
+                inputs,
+                operation,
+                arg_map,
+            } => {
+                for input in arg_map.iter().map(|(i, _c, _n)| &inputs[i]) {
                     recurse!(*input);
                 }
                 write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;

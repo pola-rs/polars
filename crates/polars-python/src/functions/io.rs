@@ -38,7 +38,6 @@ pub fn read_parquet_metadata(
     use std::io::Cursor;
 
     use polars_error::feature_gated;
-    use polars_io::pl_async::get_runtime;
     use polars_parquet::read::read_metadata;
     use polars_parquet::read::schema::read_custom_key_value_metadata;
 
@@ -60,7 +59,7 @@ pub fn read_parquet_metadata(
                     use polars_error::PolarsResult;
 
                     py.detach(|| {
-                        get_runtime().block_on(async {
+                        polars_core::runtime::ASYNC.block_on(async {
                             let mut reader =
                                 ParquetObjectStore::from_uri(p, cloud_options.as_ref(), None)
                                     .await?;

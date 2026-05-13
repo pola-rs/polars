@@ -284,6 +284,7 @@ impl Hash for IRHashWrap<'_> {
             },
             IR::UnoptimizedDispatch {
                 inputs: _,
+                arg_map: _,
                 operation,
             } => match operation {
                 UnoptimizedOperation::ColumnarFunction {
