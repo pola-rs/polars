@@ -464,4 +464,66 @@ mod is_sorted_tests {
 
         assert!(s.is_sorted(SortOptions::default()).unwrap());
     }
+
+    // calls `is_sorted_ca_bool` via `s_phys.bool()`
+    #[test]
+    fn is_sorted_boolean() {
+        let s = Series::new("boolean_test".into(), &[false, true, true]);
+        assert_eq!(s.dtype(), &DataType::Boolean);
+        assert_eq!(s.len(), 3);
+        assert!(!s.dtype().is_primitive_numeric());
+
+        assert!(s.is_sorted(SortOptions::default()).unwrap());
+        assert!(
+            !s.is_sorted(SortOptions::default().with_order_descending(true))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn is_sorted_binary_offset() {
+        let s = Series::from_any_values_and_dtype(
+            "binary_offset_test".into(),
+            &[
+                AnyValue::Binary(&[1]),
+                AnyValue::Binary(&[2, 2]),
+                AnyValue::Binary(&[3, 3, 3]),
+            ],
+            &DataType::BinaryOffset,
+            true,
+        )
+        .unwrap();
+        assert_eq!(s.dtype(), &DataType::BinaryOffset);
+        assert_eq!(s.len(), 3);
+        assert!(!s.dtype().is_primitive_numeric());
+
+        assert!(s.is_sorted(SortOptions::default()).unwrap());
+        assert!(
+            !s.is_sorted(SortOptions::default().with_order_descending(true))
+                .unwrap()
+        );
+    }
+
+    /// [`DataType::List`]: not primitive numeric, not the dedicated string/binary arms — `match`
+    /// falls through to adjacent-row `Series::lt_eq` / `gt_eq`. Polars does not implement `<=` for
+    /// list columns, so this returns [`Err`](PolarsResult::Err) after entering the wildcard arm.
+    #[test]
+    fn is_sorted_list_pairwise_fallback_returns_comparison_error() {
+        let ca: ListChunked = ListChunked::from_iter([
+            Series::new("_".into(), &[1i64]),
+            Series::new("_".into(), &[2i64]),
+            Series::new("_".into(), &[3i64]),
+        ]);
+        let s = ca.into_series();
+        assert!(matches!(s.dtype(), DataType::List(_)));
+        assert_eq!(s.len(), 3);
+        assert!(!s.dtype().is_primitive_numeric());
+
+        let err = s.is_sorted(SortOptions::default()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("<=") && msg.contains("list"),
+            "unexpected error message: {msg}"
+        );
+    }
 }
