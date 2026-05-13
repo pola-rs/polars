@@ -42,9 +42,10 @@ non_debug_logs = logs.filter(
 print(non_debug_logs)
 # --8<-- [end:log-levels]
 
-# --8<-- [start:string-comparison-error-display]
-logs.select(pl.col("level") > "Pretty bad")  # This is not a valid logging level
-# --8<-- [end:string-comparison-error-display]
+if False:  # Example that creates an error
+    # --8<-- [start:string-comparison-error-display]
+    logs.select(pl.col("level") > "Pretty bad")  # This is not a valid logging level
+    # --8<-- [end:string-comparison-error-display]
 
 # --8<-- [start:string-comparison-error-execution]
 try:

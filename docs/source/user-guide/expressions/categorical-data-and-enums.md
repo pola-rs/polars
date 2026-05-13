@@ -107,8 +107,7 @@ By default, all `Categorical` columns share a global mapping, so independently c
 the same encoding and can be combined without re-encoding. For finer control, you can pass a
 `pl.Categories` object when creating a column:
 
-{{code_block('user-guide/expressions/categoricals', 'categories-example', ['Categorical',
-'Categories'])}}
+{{code_block('user-guide/expressions/categoricals', 'categories-example', ['Categorical'])}}
 
 ```python exec="on" result="text" session="expressions/categoricals"
 --8<-- "python/user-guide/expressions/categoricals.py:categories-example"
