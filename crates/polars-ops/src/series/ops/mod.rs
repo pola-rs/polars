@@ -51,8 +51,7 @@ mod pct_change;
 mod rank;
 #[cfg(feature = "replace")]
 mod replace;
-#[cfg(feature = "rle")]
-mod rle;
+pub(crate) mod rle;
 #[cfg(feature = "rolling_window")]
 mod rolling;
 #[cfg(feature = "round_series")]
@@ -64,7 +63,7 @@ mod strings;
 mod to_dummies;
 #[cfg(feature = "unique_counts")]
 mod unique;
-mod various;
+pub(crate) mod various;
 
 #[cfg(feature = "abs")]
 pub use abs::*;

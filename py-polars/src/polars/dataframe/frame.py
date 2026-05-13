@@ -10217,6 +10217,51 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
+    def is_sorted(
+        self,
+        by: str | Iterable[str],
+        *more_by: str,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool | Sequence[bool] = False,
+    ) -> bool:
+        """
+        Check whether the DataFrame is sorted by the given columns.
+
+        Parameters
+        ----------
+        by
+            Column name(s) to check.
+        *more_by
+            Additional column names.
+        descending
+            Sort in descending order. When sorting by multiple columns, can be
+            specified per column by passing a sequence of booleans.
+        nulls_last
+            Place null values last. When sorting by multiple columns, can be
+            specified per column by passing a sequence of booleans.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [5, 4, 3]})
+        >>> df.is_sorted("a")
+        True
+        >>> df.is_sorted("b", descending=True)
+        True
+        >>> df.is_sorted("a", "b")
+        True
+        """
+        if isinstance(by, str):
+            by = [by]
+        else:
+            by = list(by)
+        by.extend(more_by)
+        n = len(by)
+        if isinstance(descending, bool):
+            descending = [descending] * n
+        if isinstance(nulls_last, bool):
+            nulls_last = [nulls_last] * n
+        return self._df.is_sorted(by, descending, nulls_last)
+
     def is_duplicated(self) -> Series:
         """
         Get a mask of all duplicated rows in this DataFrame.

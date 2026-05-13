@@ -7,5 +7,6 @@ pub use crate::frame::_merge_sorted_dfs;
 pub use crate::frame::join::*;
 #[cfg(feature = "pivot")]
 pub use crate::frame::unpivot::UnpivotDF;
+pub use crate::frame::is_sorted::DataFrameIsSorted;
 pub use crate::frame::{DataFrameJoinOps, DataFrameOps};
 pub use crate::series::*;

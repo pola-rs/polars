@@ -297,7 +297,7 @@ fn is_sorted_ca_bool(ca: &BooleanChunked, descending: bool) -> bool {
     }
 }
 
-fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
+pub(crate) fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
     vals: &[T],
     f: Cmp,
     previous: &mut T,
@@ -321,7 +321,10 @@ fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
 }
 
 // Assumes nulls last/first is already checked.
-fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOptions) -> bool {
+pub(crate) fn is_sorted_ca_num<T: PolarsNumericType>(
+    ca: &ChunkedArray<T>,
+    options: SortOptions,
+) -> bool {
     if let Ok(vals) = ca.cont_slice() {
         let mut previous = vals[0];
         return if options.descending {

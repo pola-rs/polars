@@ -42,6 +42,7 @@ serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 unicode-normalization = { workspace = true, optional = true }
 unicode-reverse = { workspace = true, optional = true }
+recursive = { workspace = true }
 
 [dependencies.jsonpath_lib]
 package = "jsonpath_lib_polars_vendor"
