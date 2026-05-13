@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_ops::prelude::ArgAgg;
@@ -639,14 +639,14 @@ where
 
     if !allow_threading
         || s.len() < thread_boundary
-        || POOL.current_thread_has_pending_tasks().unwrap_or(false)
+        || RAYON.current_thread_has_pending_tasks().unwrap_or(false)
     {
         return f(s);
     }
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let splits = _split_offsets(s.len(), n_threads);
 
-    let chunks = POOL.install(|| {
+    let chunks = RAYON.install(|| {
         splits
             .into_par_iter()
             .map(|(offset, len)| {

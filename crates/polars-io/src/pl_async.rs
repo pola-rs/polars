@@ -4,7 +4,7 @@ use std::sync::LazyLock;
 
 use polars_buffer::Buffer;
 use polars_core::config::{self, verbose};
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::sync::Semaphore;
 
@@ -169,7 +169,7 @@ fn get_semaphore() -> &'static (Semaphore, u32) {
                 FINISHED_TUNING.store(true);
                 budget
             })
-            .unwrap_or_else(|_| std::cmp::max(POOL.current_num_threads(), MAX_BUDGET_PER_REQUEST));
+            .unwrap_or_else(|_| std::cmp::max(RAYON.current_num_threads(), MAX_BUDGET_PER_REQUEST));
         (Semaphore::new(permits), permits as u32)
     })
 }

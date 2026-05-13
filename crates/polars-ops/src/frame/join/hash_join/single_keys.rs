@@ -47,7 +47,7 @@ where
         return vec![hm];
     }
 
-    POOL.install(|| {
+    RAYON.install(|| {
         // Compute the number of elements in each partition for each portion.
         let per_thread_partition_sizes: Vec<Vec<usize>> = keys
             .par_iter()

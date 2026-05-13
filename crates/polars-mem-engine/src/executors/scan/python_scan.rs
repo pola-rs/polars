@@ -61,7 +61,7 @@ impl Executor for PythonScanExec {
         }
         let with_columns = self.options.with_columns.take();
         let n_rows = self.options.n_rows.take();
-        POOL.block_on(|| {
+        RAYON.block_on(|| {
             Python::attach(|py| {
                 let python_scan_function = self.options.scan_fn.take().unwrap().0;
                 let python_scan_function = python_scan_function.bind(py);

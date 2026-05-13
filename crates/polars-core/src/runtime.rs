@@ -7,7 +7,7 @@ use polars_utils::with_drop::WithDrop;
 use rayon::{ThreadPool, ThreadPoolBuilder, Yield};
 use tokio::runtime::{Builder, Runtime};
 
-pub struct POOL;
+pub struct RAYON;
 
 // Thread locals to allow disabling threading for specific threads.
 #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
@@ -22,7 +22,7 @@ thread_local! {
     );
 }
 
-impl POOL {
+impl RAYON {
     pub fn install<OP, R>(&self, op: OP) -> R
     where
         OP: FnOnce() -> R + Send,
@@ -227,7 +227,7 @@ impl AsyncRuntime {
     fn new() -> Self {
         let n_threads = std::env::var("POLARS_ASYNC_THREAD_COUNT")
             .map(|x| x.parse::<usize>().expect("integer"))
-            .unwrap_or(usize::min(POOL.current_num_threads(), 32));
+            .unwrap_or(usize::min(RAYON.current_num_threads(), 32));
 
         let max_blocking = std::env::var("POLARS_MAX_BLOCKING_THREAD_COUNT")
             .map(|x| x.parse::<usize>().expect("integer"))

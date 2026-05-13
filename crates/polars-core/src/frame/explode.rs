@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::series::IsSorted;
 
 fn get_exploded(
@@ -79,7 +79,7 @@ impl DataFrame {
             df = df.drop(s.name().as_str())?;
         }
 
-        let exploded_columns = POOL.install(|| {
+        let exploded_columns = RAYON.install(|| {
             columns
                 .par_iter()
                 .map(|c| get_exploded(c.as_materialized_series(), options))
@@ -147,7 +147,7 @@ impl DataFrame {
             process_column(self, &mut df, exploded.clone())?;
             PolarsResult::Ok(df)
         };
-        let (df, result) = POOL.join(process_first, check_offsets);
+        let (df, result) = RAYON.join(process_first, check_offsets);
         let mut df = df?;
         result?;
 

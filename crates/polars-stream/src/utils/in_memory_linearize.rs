@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_utils::priority::Priority;
 use polars_utils::sync::SyncPtr;
 
@@ -21,7 +21,7 @@ pub fn linearize<T: Send + Sync>(mut morsels_per_pipe: Vec<Vec<(MorselSeq, T)>>)
 
     let n_threads = num_morsels
         .div_ceil(MORSELS_PER_THREAD)
-        .min(POOL.current_num_threads()) as u64;
+        .min(RAYON.current_num_threads()) as u64;
 
     // Partitioning based on sequence number.
     let max_seq = morsels_per_pipe
@@ -34,7 +34,7 @@ pub fn linearize<T: Send + Sync>(mut morsels_per_pipe: Vec<Vec<(MorselSeq, T)>>)
     let morsels_per_p = &morsels_per_pipe;
     let mut out: Vec<T> = Vec::with_capacity(num_morsels);
     let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
-    POOL.scope(|s| {
+    RAYON.scope(|s| {
         let mut out_offset = 0;
         let mut stop_idx_per_pipe = vec![0; morsels_per_p.len()];
         for t in 0..n_threads {

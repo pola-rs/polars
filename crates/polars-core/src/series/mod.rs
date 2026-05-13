@@ -44,7 +44,7 @@ use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};

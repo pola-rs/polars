@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 pub use arrow::array::StructArray;
 use num_traits::pow::Pow;
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::utils::accumulate_dataframes_vertical;
 use rayon::prelude::*;
 
@@ -112,7 +112,7 @@ impl<'a> CoreJsonReader<'a> {
         let file_chunks = get_file_chunks_json(bytes, n_threads);
 
         let row_index = self.row_index.as_ref().map(|ri| ri as &RowIndex);
-        let (mut dfs, prepredicate_heights) = POOL.install(|| {
+        let (mut dfs, prepredicate_heights) = RAYON.install(|| {
             file_chunks
                 .into_par_iter()
                 .map(|(start_pos, stop_at_nbytes)| {
@@ -153,7 +153,9 @@ impl<'a> CoreJsonReader<'a> {
     }
 
     pub fn as_df(&mut self) -> PolarsResult<DataFrame> {
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
+        let n_threads = self
+            .n_threads
+            .unwrap_or_else(|| RAYON.current_num_threads());
 
         let reader_bytes = self.reader_bytes.take().unwrap();
 

@@ -3,7 +3,7 @@ use std::hash::Hash;
 use num_traits::Zero;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
 use polars_core::utils::split_and_flatten;
@@ -91,11 +91,11 @@ where
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
+    let (left_asof, right_asof) = RAYON.join(|| left_asof.rechunk(), || right_asof.rechunk());
     let left_val_arr = left_asof.downcast_as_array();
     let right_val_arr = right_asof.downcast_as_array();
 
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     // `strict` is false so that we always flatten. Even if there are more chunks than threads.
     let split_by_left = split_and_flatten(by_left, n_threads);
     let split_by_right = split_and_flatten(by_right, n_threads);
@@ -158,7 +158,7 @@ where
             results
         });
 
-    let bufs = POOL.install(|| out.collect::<Vec<_>>());
+    let bufs = RAYON.install(|| out.collect::<Vec<_>>());
     Ok(flatten_nullable(&bufs))
 }
 
@@ -177,7 +177,7 @@ where
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
+    let (left_asof, right_asof) = RAYON.join(|| left_asof.rechunk(), || right_asof.rechunk());
     let left_val_arr = left_asof.downcast_as_array();
     let right_val_arr = right_asof.downcast_as_array();
 
@@ -221,7 +221,7 @@ where
             }
             results
         });
-    let bufs = POOL.install(|| iter.collect::<Vec<_>>());
+    let bufs = RAYON.install(|| iter.collect::<Vec<_>>());
     flatten_nullable(&bufs)
 }
 

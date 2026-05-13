@@ -13,7 +13,7 @@ use crate::chunked_array::comparison::*;
 use crate::frame::group_by::*;
 use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::series::implementations::SeriesWrap;
 
 impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
@@ -240,7 +240,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         if self.len() < 2 {
             return Ok(self.0.clone().into_series());
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
         // SAFETY:
         // groups are in bounds
@@ -254,7 +254,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
             0 => Ok(0),
             1 => Ok(1),
             _ => {
-                let main_thread = POOL.current_thread_index().is_none();
+                let main_thread = RAYON.current_thread_index().is_none();
                 let groups = self.group_tuples(main_thread, false)?;
                 Ok(groups.len())
             },
@@ -267,7 +267,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         // arg_unique requires a stable order
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();

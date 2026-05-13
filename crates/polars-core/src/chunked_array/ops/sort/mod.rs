@@ -25,7 +25,7 @@ use super::row_encode::_get_rows_encoded_ca;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
 
@@ -76,7 +76,7 @@ where
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
     if parallel {
-        POOL.install(|| match descending {
+        RAYON.install(|| match descending {
             true => slice.par_sort_by(|a, b| cmp(b, a)),
             false => slice.par_sort_by(cmp),
         })
@@ -94,7 +94,7 @@ where
     C: Send + Sync + Fn(&T, &T) -> Ordering,
 {
     if options.multithreaded {
-        POOL.install(|| match options.descending {
+        RAYON.install(|| match options.descending {
             true => slice.par_sort_unstable_by(|a, b| cmp(b, a)),
             false => slice.par_sort_unstable_by(cmp),
         })
@@ -251,7 +251,7 @@ fn arg_sort_numeric<T>(ca: &ChunkedArray<T>, mut options: SortOptions) -> IdxCa
 where
     T: PolarsNumericType,
 {
-    options.multithreaded &= POOL.current_num_threads() > 1;
+    options.multithreaded &= RAYON.current_num_threads() > 1;
     arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
         let iter = ca
@@ -319,7 +319,7 @@ where
     T: PolarsNumericType,
 {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<T> {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= RAYON.current_num_threads() > 1;
         sort_with_numeric(self, options)
     }
 
@@ -404,7 +404,7 @@ impl ChunkSort<StringType> for StringChunked {
 
 impl ChunkSort<BinaryType> for BinaryChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<BinaryType> {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= RAYON.current_num_threads() > 1;
         sort_with_fast_path!(self, options);
         // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
         // We must rechunk to ensure that all views point into the proper buffers.
@@ -500,7 +500,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
 
 impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     fn sort_with(&self, mut options: SortOptions) -> BinaryOffsetChunked {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= RAYON.current_num_threads() > 1;
         sort_with_fast_path!(self, options);
 
         let mut v: Vec<&[u8]> = Vec::with_capacity(self.len());
@@ -589,7 +589,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     }
 
     fn arg_sort(&self, mut options: SortOptions) -> IdxCa {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= RAYON.current_num_threads() > 1;
         let ca = self.rechunk();
         let arr = ca.downcast_as_array();
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
@@ -662,7 +662,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 #[cfg(feature = "dtype-struct")]
 impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= RAYON.current_num_threads() > 1;
         let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
@@ -687,7 +687,7 @@ impl ChunkSort<StructType> for StructChunked {
 
 impl ChunkSort<ListType> for ListChunked {
     fn sort_with(&self, mut options: SortOptions) -> ListChunked {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= RAYON.current_num_threads() > 1;
         let idx = self.arg_sort(options);
         let mut out = unsafe { self.take_unchecked(&idx) };
 
@@ -719,7 +719,7 @@ impl ChunkSort<ListType> for ListChunked {
 
 impl ChunkSort<BooleanType> for BooleanChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<BooleanType> {
-        options.multithreaded &= POOL.current_num_threads() > 1;
+        options.multithreaded &= RAYON.current_num_threads() > 1;
         sort_with_fast_path!(self, options);
         let mut bitmap = BitmapBuilder::with_capacity(self.len());
         let mut validity =
@@ -884,14 +884,14 @@ pub fn arg_sort(columns: &[Column], mut sort_options: SortMultipleOptions) -> Po
 /// The caller must ensure that the right indexes for `&[(_, IdxSize)]` are integers ranging from `0..idx.len`
 pub unsafe fn perfect_sort(idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
     let chunk_size = std::cmp::max(
-        idx.len() / POOL.current_num_threads(),
-        POOL.current_num_threads(),
+        idx.len() / RAYON.current_num_threads(),
+        RAYON.current_num_threads(),
     );
 
     out.reserve(idx.len());
     let ptr = out.as_mut_ptr() as *const IdxSize as usize;
 
-    POOL.install(|| {
+    RAYON.install(|| {
         idx.par_chunks(chunk_size).for_each(|indices| {
             let ptr = ptr as *mut IdxSize;
             for (idx_val, idx_location) in indices {

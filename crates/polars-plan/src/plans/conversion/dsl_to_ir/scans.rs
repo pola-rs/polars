@@ -351,7 +351,7 @@ pub async fn csv_file_info(
     missing_columns_policy: MissingColumnsPolicy,
 ) -> PolarsResult<FileInfo> {
     use polars_core::error::feature_gated;
-    use polars_core::runtime::POOL;
+    use polars_core::runtime::RAYON;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     // Holding _first_scan_source should guarantee sources is not empty.
@@ -577,7 +577,7 @@ pub async fn csv_file_info(
     );
     // Run inference in parallel with a specific merge order.
     // TODO: flatten to single level once Schema::to_supertype is commutative.
-    let si_results = POOL.join(
+    let si_results = RAYON.join(
         || infer_schema_func(0),
         || {
             (1..sources.len())
