@@ -6,11 +6,11 @@ use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::utils::_split_offsets;
 
 pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let len = by[0].len();
     let splits = _split_offsets(len, n_threads);
 
@@ -22,7 +22,7 @@ pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryO
         let rows = _get_rows_encoded_unordered(&sliced)?;
         Ok(rows.into_array())
     });
-    let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
+    let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
     Ok(BinaryOffsetChunked::from_chunk_iter(
         PlSmallStr::EMPTY,
@@ -34,7 +34,7 @@ pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryO
 pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     by: &[Column],
 ) -> PolarsResult<BinaryOffsetChunked> {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let len = by[0].len();
     let splits = _split_offsets(len, n_threads);
 
@@ -61,7 +61,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
         let validity = combine_validities_and_many(&validities);
         Ok(rows.into_array().with_validity_typed(validity))
     });
-    let chunks = POOL.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
+    let chunks = RAYON.install(|| chunks.collect::<PolarsResult<Vec<_>>>());
 
     Ok(BinaryOffsetChunked::from_chunk_iter(
         PlSmallStr::EMPTY,

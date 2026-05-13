@@ -3,7 +3,7 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_utils::total_ord::TotalOrd;
 
@@ -272,7 +272,7 @@ fn top_k_by_impl(
         return Ok(src.clone());
     }
 
-    let multithreaded = k >= 10000 && POOL.current_num_threads() > 1;
+    let multithreaded = k >= 10000 && RAYON.current_num_threads() > 1;
     let mut sort_options = SortMultipleOptions {
         descending: descending.into_iter().map(|x| !x).collect(),
         nulls_last: vec![true; by.len()],

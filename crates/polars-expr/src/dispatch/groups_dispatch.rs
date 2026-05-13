@@ -14,7 +14,7 @@ use polars_core::prelude::{
     AnyValue, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions, GroupsType,
     IDX_DTYPE, IntoColumn,
 };
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
 use polars_core::series::{ChunkCompareEq, Series};
 use polars_utils::itertools::Itertools;
@@ -41,7 +41,7 @@ pub fn reverse<'a>(
         return Ok(ac);
     }
 
-    POOL.install(|| {
+    RAYON.install(|| {
         let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -100,7 +100,7 @@ pub fn null_count<'a>(
         return Ok(ac);
     };
 
-    POOL.install(|| {
+    RAYON.install(|| {
         let validity = BitMask::from_bitmap(&validity);
         let null_count: Vec<IdxSize> = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
@@ -355,7 +355,7 @@ pub fn drop_items<'a>(
 
     ac.groups();
     let predicate = BitMask::from_bitmap(predicate);
-    POOL.install(|| {
+    RAYON.install(|| {
         let positions = GroupsType::Idx(match &**ac.groups.as_ref() {
             GroupsType::Idx(idxs) => idxs
                 .into_par_iter()
@@ -538,7 +538,7 @@ pub fn moment_agg<'a, S: Default>(
     let ca = ca.rechunk();
     let arr = ca.downcast_as_array();
 
-    let ca = POOL.install(|| match &**ac.groups.as_ref() {
+    let ca = RAYON.install(|| match &**ac.groups.as_ref() {
         GroupsType::Idx(idx) => {
             if let Some(validity) = arr.validity().filter(|v| v.unset_bits() > 0) {
                 idx.into_par_iter()
@@ -665,7 +665,7 @@ pub fn unique<'a>(
         }
     }
 
-    POOL.install(|| {
+    RAYON.install(|| {
         let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
@@ -723,7 +723,7 @@ fn fw_bw_fill_null<'a>(
     };
 
     let validity = BitMask::from_bitmap(&validity);
-    POOL.install(|| {
+    RAYON.install(|| {
         let positions = GroupsType::Idx(match &**ac.groups().as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()

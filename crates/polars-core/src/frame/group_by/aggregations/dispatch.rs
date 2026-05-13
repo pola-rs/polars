@@ -310,27 +310,28 @@ impl Series {
             }
         }
 
-        POOL.install(|| match groups {
-            GroupsType::Idx(idx) => idx
-                .all()
-                .into_par_iter()
-                .map_with(CloneWrapper(state), |state, idxs| unsafe {
-                    state.0.n_unique_idx(values, idxs.as_slice())
-                })
-                .collect::<NoNull<IdxCa>>(),
-            GroupsType::Slice {
-                groups,
-                overlapping: _,
-                monotonic: _,
-            } => groups
-                .into_par_iter()
-                .map_with(CloneWrapper(state), |state, [start, len]| {
-                    state.0.n_unique_slice(values, *start, *len)
-                })
-                .collect::<NoNull<IdxCa>>(),
-        })
-        .into_inner()
-        .into_series()
+        RAYON
+            .install(|| match groups {
+                GroupsType::Idx(idx) => idx
+                    .all()
+                    .into_par_iter()
+                    .map_with(CloneWrapper(state), |state, idxs| unsafe {
+                        state.0.n_unique_idx(values, idxs.as_slice())
+                    })
+                    .collect::<NoNull<IdxCa>>(),
+                GroupsType::Slice {
+                    groups,
+                    overlapping: _,
+                    monotonic: _,
+                } => groups
+                    .into_par_iter()
+                    .map_with(CloneWrapper(state), |state, [start, len]| {
+                        state.0.n_unique_slice(values, *start, *len)
+                    })
+                    .collect::<NoNull<IdxCa>>(),
+            })
+            .into_inner()
+            .into_series()
     }
 
     #[doc(hidden)]

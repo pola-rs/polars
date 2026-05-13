@@ -7,7 +7,7 @@ use arrow::array::builder::ShareStrategy;
 use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
-use polars_core::runtime::{ASYNC, POOL};
+use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
@@ -227,7 +227,7 @@ fn estimate_cardinality(
     let last_morsel_len = morsels[last_morsel_idx].df().height();
     let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
 
-    POOL.install(|| {
+    RAYON.install(|| {
         let sample_cardinality = morsels[..to_process_end]
             .par_iter()
             .enumerate()
@@ -531,7 +531,7 @@ impl BuildState {
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        POOL.scope(|s| {
+        RAYON.scope(|s| {
             for p in 0..num_partitions {
                 let probe_tables = &probe_tables;
                 s.spawn(move |_| {
@@ -1099,7 +1099,7 @@ impl ProbeState {
 
 impl Drop for ProbeState {
     fn drop(&mut self) {
-        POOL.install(|| {
+        RAYON.install(|| {
             // Parallel drop as the state might be quite big.
             self.table_per_partition.par_drain(..).for_each(drop);
         })

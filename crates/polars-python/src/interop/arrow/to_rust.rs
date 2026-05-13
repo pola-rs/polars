@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::utils::arrow::ffi;
 use pyo3::ffi::Py_uintptr_t;
@@ -131,7 +131,7 @@ pub fn to_rust_df(
             // dict encoded to categorical
             let columns = if run_parallel {
                 py.enter_polars(|| {
-                    POOL.install(|| {
+                    RAYON.install(|| {
                         columns
                             .into_par_iter()
                             .enumerate()

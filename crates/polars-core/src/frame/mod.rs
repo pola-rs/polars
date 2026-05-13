@@ -50,7 +50,7 @@ use strum_macros::IntoStaticStr;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::arg_sort;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::series::IsSorted;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
@@ -137,7 +137,7 @@ impl DataFrame {
             slf: &DataFrame,
             func: &(dyn Fn(&Column) -> PolarsResult<Column> + Send + Sync),
         ) -> PolarsResult<Vec<Column>> {
-            POOL.install(|| slf.columns().par_iter().map(func).collect())
+            RAYON.install(|| slf.columns().par_iter().map(func).collect())
         }
     }
 
@@ -145,7 +145,7 @@ impl DataFrame {
         return inner(self, &func);
 
         fn inner(slf: &DataFrame, func: &(dyn Fn(&Column) -> Column + Send + Sync)) -> Vec<Column> {
-            POOL.install(|| slf.columns().par_iter().map(func).collect())
+            RAYON.install(|| slf.columns().par_iter().map(func).collect())
         }
     }
 
@@ -290,7 +290,7 @@ impl DataFrame {
     /// This may lead to more peak memory consumption.
     pub fn rechunk_mut_par(&mut self) -> &mut Self {
         if self.columns().iter().any(|c| c.n_chunks() > 1) {
-            POOL.install(|| {
+            RAYON.install(|| {
                 unsafe { self.columns_mut_retain_schema() }
                     .par_iter_mut()
                     .for_each(|c| *c = c.rechunk());
@@ -1248,10 +1248,10 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_unchecked_impl(&self, idx: &IdxCa, allow_threads: bool) -> Self {
-        let cols = if allow_threads && POOL.current_num_threads() > 1 {
-            POOL.install(|| {
-                if POOL.current_num_threads() > self.width() {
-                    let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
+        let cols = if allow_threads && RAYON.current_num_threads() > 1 {
+            RAYON.install(|| {
+                if RAYON.current_num_threads() > self.width() {
+                    let stride = usize::max(idx.len().div_ceil(RAYON.current_num_threads()), 256);
                     if self.height() / stride >= 2 {
                         self.apply_columns_par(|c| {
                             // Nested types initiate a rechunk in their take_unchecked implementation.
@@ -1296,10 +1296,10 @@ impl DataFrame {
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
-        let cols = if allow_threads && POOL.current_num_threads() > 1 {
-            POOL.install(|| {
-                if POOL.current_num_threads() > self.width() {
-                    let stride = usize::max(idx.len().div_ceil(POOL.current_num_threads()), 256);
+        let cols = if allow_threads && RAYON.current_num_threads() > 1 {
+            RAYON.install(|| {
+                if RAYON.current_num_threads() > self.width() {
+                    let stride = usize::max(idx.len().div_ceil(RAYON.current_num_threads()), 256);
                     if self.height() / stride >= 2 {
                         self.apply_columns_par(|c| {
                             // Nested types initiate a rechunk in their take_unchecked implementation.
@@ -2460,7 +2460,7 @@ impl DataFrame {
         &mut self,
         hasher_builder: Option<PlSeedableRandomStateQuality>,
     ) -> PolarsResult<UInt64Chunked> {
-        let dfs = split_df(self, POOL.current_num_threads(), false);
+        let dfs = split_df(self, RAYON.current_num_threads(), false);
         let (cas, _) = _df_rows_to_hashes_threaded_vertical(&dfs, hasher_builder)?;
 
         let mut iter = cas.into_iter();
@@ -2544,7 +2544,7 @@ impl DataFrame {
         if parallel {
             // don't parallelize this
             // there is a lot of parallelization in take and this may easily SO
-            POOL.install(|| {
+            RAYON.install(|| {
                 match groups.as_ref() {
                     GroupsType::Idx(idx) => {
                         // Rechunk as the gather may rechunk for every group #17562.
@@ -2712,7 +2712,7 @@ impl Iterator for RecordBatchIter<'_> {
                 .par_iter()
                 .map(Column::as_materialized_series)
                 .map(|s| s.to_arrow(self.idx, self.compat_level));
-            POOL.install(|| iter.collect())
+            RAYON.install(|| iter.collect())
         } else {
             self.df
                 .columns()

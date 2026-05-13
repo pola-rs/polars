@@ -10,7 +10,7 @@ use chrono::NaiveDateTime;
 use chrono::TimeZone as _;
 use now::DateTimeNow;
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use rayon::prelude::*;
@@ -636,12 +636,12 @@ pub fn group_by_values(
         return Ok(GroupsSlice::from(vec![]));
     }
 
-    let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
+    let mut thread_offsets = _split_offsets(time.len(), RAYON.current_num_threads());
     // there are duplicates in the splits, so we opt for a single partition
     prune_splits_on_duplicates(time, &mut thread_offsets);
 
     // If we start from within parallel work we will do this single threaded.
-    let run_parallel = !POOL.current_thread_has_pending_tasks().unwrap_or(false);
+    let run_parallel = !RAYON.current_thread_has_pending_tasks().unwrap_or(false);
 
     // we have a (partial) lookbehind window
     if offset.negative && !offset.is_zero() {
@@ -664,7 +664,7 @@ pub fn group_by_values(
                 return Ok(GroupsSlice::from(vecs));
             }
 
-            POOL.install(|| {
+            RAYON.install(|| {
                 let vals = thread_offsets
                     .par_iter()
                     .copied()
@@ -737,7 +737,7 @@ pub fn group_by_values(
             return Ok(GroupsSlice::from(vecs));
         }
 
-        POOL.install(|| {
+        RAYON.install(|| {
             let vals = thread_offsets
                 .par_iter()
                 .copied()
@@ -777,7 +777,7 @@ pub fn group_by_values(
         // it must be that the window starts at t and t is a member
         // --t-----------
         //  [---]
-        POOL.install(|| {
+        RAYON.install(|| {
             let vals = thread_offsets
                 .par_iter()
                 .copied()

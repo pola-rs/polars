@@ -2,7 +2,7 @@ use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 
 impl From<RecordBatch> for DataFrame {
@@ -72,7 +72,7 @@ impl DataFrame {
 
         if parallel {
             // Parallel so that null_counts run in parallel
-            POOL.install(|| split.into_par_iter().map(split_fn).collect())
+            RAYON.install(|| split.into_par_iter().map(split_fn).collect())
         } else {
             split.into_iter().map(split_fn).collect()
         }

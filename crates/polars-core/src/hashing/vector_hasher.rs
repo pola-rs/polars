@@ -9,7 +9,7 @@ use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 use super::*;
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::series::implementations::null::NullChunked;
 
 // See: https://github.com/tkaitchuck/aHash/blob/f9acd508bd89e7c5b2877a9510098100f9018d64/src/operations.rs#L4
@@ -483,7 +483,7 @@ pub fn _df_rows_to_hashes_threaded_vertical(
 ) -> PolarsResult<(Vec<UInt64Chunked>, PlSeedableRandomStateQuality)> {
     let build_hasher = build_hasher.unwrap_or_default();
 
-    let hashes = POOL.install(|| {
+    let hashes = RAYON.install(|| {
         keys.into_par_iter()
             .map(|df| {
                 let hb = build_hasher.clone();

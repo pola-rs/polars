@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
 
@@ -246,7 +246,7 @@ impl PhysicalExpr for BinaryExpr {
             lhs = self.left.evaluate(df, state)?;
             rhs = self.right.evaluate(df, state)?;
         } else {
-            let (opt_lhs, opt_rhs) = POOL.install(|| {
+            let (opt_lhs, opt_rhs) = RAYON.install(|| {
                 rayon::join(
                     || self.left.evaluate(df, state),
                     || self.right.evaluate(df, state),
@@ -270,7 +270,7 @@ impl PhysicalExpr for BinaryExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let (result_a, result_b) = POOL.install(|| {
+        let (result_a, result_b) = RAYON.install(|| {
             rayon::join(
                 || self.left.evaluate_on_groups(df, groups, state),
                 || self.right.evaluate_on_groups(df, groups, state),

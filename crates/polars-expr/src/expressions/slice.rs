@@ -1,6 +1,6 @@
 use AnyValue::Null;
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::utils::{CustomIterTools, slice_offsets};
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
@@ -84,7 +84,7 @@ impl PhysicalExpr for SliceExpr {
     }
 
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
-        let results = POOL.install(|| {
+        let results = RAYON.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
                 .map(|e| e.evaluate(df, state))
@@ -104,7 +104,7 @@ impl PhysicalExpr for SliceExpr {
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let mut results = POOL.install(|| {
+        let mut results = RAYON.install(|| {
             [&self.offset, &self.length, &self.input]
                 .par_iter()
                 .map(|e| e.evaluate_on_groups(df, groups, state))

@@ -15,7 +15,7 @@ use polars_utils::total_ord::TotalHash;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::utils::{dtypes_to_schema, dtypes_to_supertype, try_get_supertype};
 
 #[cfg(feature = "object")]

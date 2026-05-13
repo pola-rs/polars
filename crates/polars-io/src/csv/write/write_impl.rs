@@ -3,7 +3,7 @@ mod serializer;
 use arrow::array::NullArray;
 use arrow::legacy::time_zone::Tz;
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_error::polars_ensure;
 use polars_utils::reuse_vec::reuse_vec;
 use rayon::prelude::*;
@@ -233,7 +233,7 @@ pub(crate) fn write(
             };
 
         if n_threads > 1 {
-            POOL.install(|| {
+            RAYON.install(|| {
                 buffers
                     .par_iter_mut()
                     .enumerate()

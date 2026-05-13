@@ -8,7 +8,7 @@ mod single_keys_outer;
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_core::utils::_set_partition_size;
 use polars_utils::index::ChunkId;
 use polars_utils::unique_column_name;
@@ -187,12 +187,12 @@ pub trait JoinDispatch: IntoDf {
 
             let join_tuples_left = df.column("a").unwrap().idx().unwrap();
             let join_tuples_right = df.column("b").unwrap().idx().unwrap();
-            POOL.join(
+            RAYON.join(
                 || unsafe { df_self.take_unchecked(join_tuples_left) },
                 || unsafe { other.take_unchecked(join_tuples_right) },
             )
         } else {
-            POOL.join(
+            RAYON.join(
                 || unsafe { df_self.take_unchecked(&idx_ca_l) },
                 || unsafe { other.take_unchecked(&idx_ca_r) },
             )

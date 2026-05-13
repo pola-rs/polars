@@ -1,5 +1,5 @@
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_ops::chunked_array::ListNameSpaceImpl;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
@@ -71,7 +71,7 @@ impl PhysicalExpr for SortExpr {
 
                 let mut sort_options = self.options;
                 sort_options.multithreaded = false;
-                let groups = POOL.install(|| {
+                let groups = RAYON.install(|| {
                     match ac.groups().as_ref().as_ref() {
                         GroupsType::Idx(groups) => {
                             groups

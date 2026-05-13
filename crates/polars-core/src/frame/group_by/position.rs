@@ -7,7 +7,7 @@ use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::utils::{NoNull, flatten, slice_slice};
 
 /// Indexes of the groups, the first index is stored separately.
@@ -57,7 +57,7 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
         let mut all = Vec::with_capacity(cap);
         let all_ptr = all.as_ptr() as usize;
 
-        POOL.install(|| {
+        RAYON.install(|| {
             v.into_par_iter()
                 .zip(offsets)
                 .for_each(|(mut inner, offset)| {
@@ -121,7 +121,7 @@ impl GroupsIdx {
                 })
                 .collect_trusted::<Vec<_>>()
         };
-        let (first, all) = POOL.install(|| rayon::join(take_first, take_all));
+        let (first, all) = RAYON.install(|| rayon::join(take_first, take_all));
         self.first = first;
         self.all = all;
         self.sorted = true

@@ -3,7 +3,7 @@ use std::cmp;
 use memchr::memchr2_iter;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
-use polars_core::runtime::POOL;
+use polars_core::runtime::RAYON;
 use polars_error::feature_gated;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
@@ -106,7 +106,7 @@ pub fn count_rows_from_reader_par(
     };
 
     let count = CountLines::new(quote_char, eol_char, comment_prefix.cloned());
-    POOL.install(|| {
+    RAYON.install(|| {
         let mut states = Vec::new();
         let eof_unterminated_row;
 

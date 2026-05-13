@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -131,7 +131,7 @@ impl DataFrame {
             // parallel writer; each column owns a disjoint contiguous stripe of the
             // output buffer.
             (IndexOrder::Fortran, _) | (IndexOrder::C, 0 | 1) => {
-                POOL.install(|| {
+                RAYON.install(|| {
                     columns.par_iter().enumerate().try_for_each(
                         |(col_idx, s)| -> PolarsResult<()> {
                             let s = cast_to_target(s)?;
@@ -174,7 +174,7 @@ impl DataFrame {
                 // would halve the cast-required traffic but needs per-source-dtype
                 // specialisation of the gather.
                 let cast_columns: Vec<Series> = if parallel {
-                    POOL.install(|| {
+                    RAYON.install(|| {
                         columns
                             .par_iter()
                             .map(cast_to_target)
@@ -343,7 +343,7 @@ impl DataFrame {
                     }
                 };
                 if parallel {
-                    POOL.install(|| (0..num_blocks).into_par_iter().for_each(writer));
+                    RAYON.install(|| (0..num_blocks).into_par_iter().for_each(writer));
                 } else {
                     (0..num_blocks).for_each(writer);
                 }

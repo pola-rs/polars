@@ -9,7 +9,7 @@ use rayon::prelude::*;
 
 use self::hashing::*;
 use crate::prelude::*;
-use crate::runtime::POOL;
+use crate::runtime::RAYON;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 
 pub mod aggregations;
@@ -253,7 +253,7 @@ impl<'a> GroupBy<'a> {
         } else {
             &self.groups
         };
-        POOL.install(|| {
+        RAYON.install(|| {
             self.selected_keys
                 .par_iter()
                 .map(Column::as_materialized_series)
