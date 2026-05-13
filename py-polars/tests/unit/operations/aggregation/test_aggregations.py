@@ -323,13 +323,9 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
     except IndexError:
         np_result = None
     if np_result:
-        # nan check
-        if np_result != np_result:
-            np_result = None
-        assert np.isclose(
-            pl.Series(a).quantile(q, interpolation="linear"),  # type: ignore[arg-type]
-            np_result,  # type: ignore[arg-type]
-        )
+        pl_result = pl.Series(a).quantile(q, interpolation="linear")
+        assert pl_result is not None
+        assert np.isclose(pl_result, np_result)
 
     df = pl.DataFrame({"a": a})
 
@@ -343,10 +339,9 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
 
 
 def test_mean_overflow() -> None:
-    assert np.isclose(
-        pl.Series([9_223_372_036_854_775_800, 100]).mean(),  # type: ignore[arg-type]
-        4.611686018427388e18,
-    )
+    mean = pl.Series([9_223_372_036_854_775_800, 100]).mean()
+    assert isinstance(mean, float)
+    assert np.isclose(mean, 4.611686018427388e18)
 
 
 def test_mean_null_simd() -> None:

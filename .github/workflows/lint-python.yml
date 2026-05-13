@@ -24,7 +24,7 @@ jobs:
       - run: ruff check --no-fix
       - run: ruff format --diff
 
-  mypy:
+  type-check:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -55,3 +55,7 @@ jobs:
         # Allow untyped calls for older Python versions (is this still necessary in 3.10?)
         # run: mypy ${{ (matrix.python-version == '3.9') && '--allow-untyped-calls' || '' }}
         run: mypy
+
+      - name: Run Pyrefly
+        working-directory: py-polars
+        run: pyrefly check
