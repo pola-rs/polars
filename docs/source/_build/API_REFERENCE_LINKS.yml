@@ -166,7 +166,6 @@ python:
   str.to_lowercase: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.to_lowercase.html
   str.to_titlecase: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.to_titlecase.html
   str.to_uppercase: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.str.to_uppercase.html
-  StringCache: https://docs.pola.rs/api/python/stable/reference/api/polars.StringCache.html
   struct: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.struct.html
   struct.field: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.struct.field.html
   struct.rename_fields: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.struct.rename_fields.html
