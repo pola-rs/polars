@@ -1,11 +1,11 @@
 # Prefect
 
-Integrate Polars Cloud authentication and per-task compute sizing into a Prefect flow using
-`Secret` blocks for credentials.
+Integrate Polars Cloud authentication and per-task compute sizing into a Prefect flow using `Secret`
+blocks for credentials.
 
 Credentials are stored as Prefect
-[`Secret` blocks](https://docs.prefect.io/v3/how-to-guides/configuration/store-secrets) so
-raw values are never hard-coded in flow code. Register and populate them once with the Prefect CLI:
+[`Secret` blocks](https://docs.prefect.io/v3/how-to-guides/configuration/store-secrets) so raw
+values are never hard-coded in flow code. Register and populate them once with the Prefect CLI:
 
 ```sh
 prefect block register -m prefect.blocks.system
