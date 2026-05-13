@@ -68,8 +68,6 @@ pub(super) fn expand_datasets(
                 dataset_object,
                 cached_ir,
             } => {
-                use crate::plans::pyarrow::predicate_to_pa;
-
                 let cached_ir = cached_ir.clone();
                 let mut guard = cached_ir.lock().unwrap();
 
@@ -120,23 +118,49 @@ pub(super) fn expand_datasets(
                     out
                 });
 
-                let pyarrow_predicate: Option<String> = if !unified_scan_args
-                    .has_row_index_or_slice()
+                let (pyarrow_predicate, pyarrow_predicate_key): (
+                    Option<PythonObject>,
+                    Option<String>,
+                ) = if !unified_scan_args.has_row_index_or_slice()
                     && let Some(predicate) = &predicate
                 {
-                    use crate::plans::aexpr::MintermIter;
+                    use pyo3::prelude::*;
 
-                    // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
-                    let parts: Vec<String> = MintermIter::new(predicate.node(), expr_arena)
-                        .filter_map(|node| predicate_to_pa(node, expr_arena))
-                        .collect();
-                    match parts.len() {
-                        0 => None,
-                        1 => Some(parts.into_iter().next().unwrap()),
-                        _ => Some(format!("({})", parts.join(" & "))),
-                    }
+                    use crate::plans::aexpr::MintermIter;
+                    use crate::plans::python::pyarrow::aexpr_to_pyarrow;
+
+                    // Convert minterms independently to allow partial conversion when
+                    // some minterms are unsupported.
+                    Python::attach(|py| -> (Option<PythonObject>, Option<String>) {
+                        let Ok(pc) = py.import("pyarrow.compute") else {
+                            return (None, None);
+                        };
+                        let mut combined: Option<Bound<'_, PyAny>> = None;
+                        for node in MintermIter::new(predicate.node(), expr_arena) {
+                            if let Some(pa) = aexpr_to_pyarrow(py, &pc, node, expr_arena) {
+                                combined = Some(match combined {
+                                    None => pa,
+                                    Some(prev) => match prev.call_method1("__and__", (pa,)) {
+                                        Ok(v) => v,
+                                        Err(_) => return (None, None),
+                                    },
+                                });
+                            }
+                        }
+                        match combined {
+                            None => (None, None),
+                            Some(expr) => {
+                                // Rely on the underlying python repr to get the string key out
+                                let key = expr
+                                    .call_method0("__str__")
+                                    .ok()
+                                    .and_then(|s| s.extract::<String>().ok());
+                                (Some(PythonObject(expr.unbind())), key)
+                            },
+                        }
+                    })
                 } else {
-                    None
+                    (None, None)
                 };
 
                 let existing_resolved_version_key = match guard.as_ref() {
@@ -146,7 +170,7 @@ pub(super) fn expand_datasets(
                             limit: cached_limit,
                             projection: cached_projection,
                             live_filter_columns: cached_live_filter_columns,
-                            pyarrow_predicate: cached_pyarrow_predicate,
+                            pyarrow_predicate_key: cached_pyarrow_predicate_key,
                             expanded_dsl: _,
                             python_scan: _,
                         } = resolved;
@@ -154,7 +178,7 @@ pub(super) fn expand_datasets(
                         (&limit == cached_limit
                             && &projection == cached_projection
                             && &live_filter_columns == cached_live_filter_columns
-                            && &pyarrow_predicate == cached_pyarrow_predicate)
+                            && &pyarrow_predicate_key == cached_pyarrow_predicate_key)
                             .then_some(version.as_str())
                     },
 
@@ -166,14 +190,14 @@ pub(super) fn expand_datasets(
                     limit,
                     projection.as_deref(),
                     live_filter_columns.as_deref(),
-                    pyarrow_predicate.as_deref(),
+                    pyarrow_predicate.as_ref(),
                 )? {
                     *guard = Some(ExpandedDataset {
                         version,
                         limit,
                         projection,
                         live_filter_columns,
-                        pyarrow_predicate,
+                        pyarrow_predicate_key,
                         expanded_dsl,
                         python_scan: None,
                     })
@@ -184,7 +208,7 @@ pub(super) fn expand_datasets(
                     limit: _,
                     projection: _,
                     live_filter_columns: _,
-                    pyarrow_predicate: _,
+                    pyarrow_predicate_key: _,
                     expanded_dsl,
                     python_scan,
                 } = guard.as_mut().unwrap();
@@ -382,7 +406,8 @@ pub struct ExpandedDataset {
     limit: Option<usize>,
     projection: Option<Arc<[PlSmallStr]>>,
     live_filter_columns: Option<Arc<[PlSmallStr]>>,
-    pyarrow_predicate: Option<String>,
+    // For determining if a cached expansion can be reused
+    pyarrow_predicate_key: Option<String>,
     expanded_dsl: DslPlan,
 
     /// Fallback python scan
@@ -414,7 +439,7 @@ impl Debug for ExpandedDataset {
             limit,
             projection,
             live_filter_columns,
-            pyarrow_predicate,
+            pyarrow_predicate_key,
             expanded_dsl,
 
             #[cfg(feature = "python")]
@@ -430,7 +455,7 @@ impl Debug for ExpandedDataset {
                 Ok(v) => v.to_string(),
                 Err(e) => e.to_string(),
             },
-            pyarrow_predicate: if pyarrow_predicate.is_some() {
+            pyarrow_predicate: if pyarrow_predicate_key.is_some() {
                 "Some(<redacted>)"
             } else {
                 "None"

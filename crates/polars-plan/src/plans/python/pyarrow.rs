@@ -66,12 +66,17 @@ pub(crate) fn needle_isin_haystack(lv: &LiteralValue, nulls_equal: bool) -> Opti
     Some(IsInHaystack::Series(haystack_series))
 }
 
-// convert predicate to pyarrow and then to the string repr
-pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<String> {
+// Convert predicate to a pyarrow expression
+pub fn predicate_to_pa(
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<polars_utils::python_function::PythonObject> {
+    use polars_utils::python_function::PythonObject;
+
     Python::attach(|py| {
         let pc = py.import("pyarrow.compute").ok()?;
         let expr = aexpr_to_pyarrow(py, &pc, predicate, expr_arena)?;
-        expr.call_method0("__str__").ok()?.extract::<String>().ok()
+        Some(PythonObject(expr.unbind()))
     })
 }
 

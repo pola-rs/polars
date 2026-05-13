@@ -24,7 +24,7 @@ pub struct PythonDatasetProviderVTable {
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
         filter_columns: Option<&[PlSmallStr]>,
-        pyarrow_predicate: Option<&str>,
+        pyarrow_predicate: Option<&PythonObject>,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>>,
 }
 
@@ -61,7 +61,7 @@ impl PythonDatasetProvider {
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
         filter_columns: Option<&[PlSmallStr]>,
-        pyarrow_predicate: Option<&str>,
+        pyarrow_predicate: Option<&PythonObject>,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
         (dataset_provider_vtable().unwrap().to_dataset_scan)(
             &self.dataset_object,
