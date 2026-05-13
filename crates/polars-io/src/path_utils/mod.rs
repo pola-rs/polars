@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 use polars_buffer::Buffer;
 use polars_core::config;
 use polars_core::error::{PolarsResult, polars_bail, to_compute_err};
+use polars_core::runtime::ASYNC;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -410,9 +411,10 @@ pub async fn expand_paths_hive(
                 if glob && has_glob(path.as_bytes()) {
                     hive_idx_tracker.update(0, path_idx)?;
 
-                    let iter = crate::pl_async::get_runtime().block_in_place_on(
-                        crate::async_glob(path.into_owned(), cloud_options.as_ref()),
-                    )?;
+                    let iter = ASYNC.block_in_place_on(crate::async_glob(
+                        path.into_owned(),
+                        cloud_options.as_ref(),
+                    ))?;
 
                     if first_path_has_scheme {
                         out_paths.extend(iter.into_iter().map(PlRefPath::new))
@@ -585,10 +587,10 @@ pub(crate) fn ensure_directory_init(path: &Path) -> std::io::Result<()> {
 mod tests {
     use std::path::PathBuf;
 
+    use polars_core::runtime::ASYNC;
     use polars_utils::pl_path::PlRefPath;
 
     use super::resolve_homedir;
-    use crate::pl_async::get_runtime;
 
     #[cfg(not(target_os = "windows"))]
     #[test]
@@ -645,7 +647,7 @@ mod tests {
 
         let path = "https://pola.rs/test.csv?token=bear";
         let paths = &[PlRefPath::new(path)];
-        let out = get_runtime()
+        let out = ASYNC
             .block_on(expand_paths(paths, true, &[], &mut None))
             .unwrap();
         assert_eq!(out.as_ref(), paths);

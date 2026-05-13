@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
+use polars_core::runtime::{ASYNC, POOL};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::Grouper;
@@ -475,7 +475,7 @@ impl GroupBySinkState {
             drop(arc_pre_aggs_per_local);
             drop(drop_q_send);
 
-            polars_io::pl_async::get_runtime().block_on(async move {
+            ASYNC.block_on(async move {
                 for handle in join_handles {
                     handle.await?;
                 }

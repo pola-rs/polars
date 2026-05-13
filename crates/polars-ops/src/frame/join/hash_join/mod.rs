@@ -8,7 +8,7 @@ mod single_keys_outer;
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
-use polars_core::POOL;
+use polars_core::runtime::POOL;
 use polars_core::utils::_set_partition_size;
 use polars_utils::index::ChunkId;
 use polars_utils::unique_column_name;

@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use polars_core::POOL;
+use polars_core::runtime::POOL;
 use polars_utils::priority::Priority;
 use polars_utils::sync::SyncPtr;
 

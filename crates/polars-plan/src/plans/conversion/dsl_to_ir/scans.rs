@@ -3,12 +3,13 @@ use std::sync::{LazyLock, RwLock};
 
 use either::Either;
 use polars_buffer::Buffer;
+use polars_core::runtime::ASYNC;
+use polars_io::RowIndex;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::*;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
 use polars_io::utils::compression::{ByteSourceReader, CompressedReader, SupportedCompression};
 use polars_io::utils::stream_buf_reader::ReaderSource;
-use polars_io::{RowIndex, pl_async};
 
 use super::*;
 
@@ -349,8 +350,8 @@ pub async fn csv_file_info(
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
     missing_columns_policy: MissingColumnsPolicy,
 ) -> PolarsResult<FileInfo> {
-    use polars_core::POOL;
     use polars_core::error::feature_gated;
+    use polars_core::runtime::POOL;
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     // Holding _first_scan_source should guarantee sources is not empty.
@@ -399,7 +400,7 @@ pub async fn csv_file_info(
             const INITIAL_FETCH: usize = 64 * 1024;
 
             // Collect metadata.
-            let byte_source = pl_async::get_runtime().block_on(async move {
+            let byte_source = ASYNC.block_on(async move {
                 source
                     .to_dyn_byte_source(&DynByteSourceBuilder::ObjectStore, cloud_options, None)
                     .await
@@ -408,14 +409,14 @@ pub async fn csv_file_info(
 
             let file_size = {
                 let byte_source = byte_source.clone();
-                pl_async::get_runtime().block_on(async move { byte_source.get_size().await })?
+                ASYNC.block_on(async move { byte_source.get_size().await })?
             };
 
             let compression = if file_size >= 4 {
                 let byte_source = byte_source.clone();
                 let magic_range = 0..4;
-                let magic_bytes = pl_async::get_runtime()
-                    .block_on(async move { byte_source.get_range(magic_range).await })?;
+                let magic_bytes =
+                    ASYNC.block_on(async move { byte_source.get_range(magic_range).await })?;
                 SupportedCompression::check(&magic_bytes)
             } else {
                 None
@@ -435,8 +436,8 @@ pub async fn csv_file_info(
                     reached_eof = true
                 } else {
                     let byte_source = byte_source.clone();
-                    let fetch_bytes = pl_async::get_runtime()
-                        .block_on(async move { byte_source.get_range(range).await })?;
+                    let fetch_bytes =
+                        ASYNC.block_on(async move { byte_source.get_range(range).await })?;
                     offset += fetch_bytes.len();
                     truncated_bytes.extend_from_slice(fetch_bytes.as_ref());
                 }
@@ -657,7 +658,7 @@ pub async fn ndjson_file_info(
         let first_scan_source = first_scan_source.into_owned()?.clone();
         let cloud_options = cloud_options.cloned();
         // TODO. Support IOMetrics collection during planning phase.
-        let byte_source = pl_async::get_runtime()
+        let byte_source = ASYNC
             .spawn(async move {
                 first_scan_source
                     .as_scan_source_ref()
@@ -674,7 +675,7 @@ pub async fn ndjson_file_info(
 
         let file_size = {
             let byte_source = byte_source.clone();
-            pl_async::get_runtime()
+            ASYNC
                 .spawn(async move { byte_source.get_size().await })
                 .await
                 .unwrap()?
@@ -694,7 +695,7 @@ pub async fn ndjson_file_info(
                 reached_eof = true
             } else {
                 let byte_source = byte_source.clone();
-                let fetch_bytes = pl_async::get_runtime()
+                let fetch_bytes = ASYNC
                     .spawn(async move { byte_source.get_range(range).await })
                     .await
                     .unwrap()?;

@@ -7,7 +7,6 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::trusted_len::TrustMyLength;
 use polars_compute::rolling::QuantileMethod;
 use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
-use polars_core::POOL;
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -15,6 +14,7 @@ use polars_core::prelude::{
     AnyValue, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions, GroupsType,
     IDX_DTYPE, IntoColumn,
 };
+use polars_core::runtime::POOL;
 use polars_core::scalar::Scalar;
 use polars_core::series::{ChunkCompareEq, Series};
 use polars_utils::itertools::Itertools;

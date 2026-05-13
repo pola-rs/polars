@@ -43,8 +43,8 @@ use polars_error::feature_gated;
 use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
-use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
+use crate::runtime::POOL;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};

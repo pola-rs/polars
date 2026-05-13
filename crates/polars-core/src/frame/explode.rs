@@ -4,9 +4,9 @@ use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-use crate::POOL;
 use crate::chunked_array::ops::explode::offsets_to_indexes;
 use crate::prelude::*;
+use crate::runtime::POOL;
 use crate::series::IsSorted;
 
 fn get_exploded(

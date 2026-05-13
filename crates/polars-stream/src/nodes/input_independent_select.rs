@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::prelude::IntoColumn;
+use polars_core::runtime::POOL;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::*;
 

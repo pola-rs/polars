@@ -8,8 +8,8 @@ use polars_utils::hashing::DirtyHash;
 use rayon::prelude::*;
 
 use self::hashing::*;
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::POOL;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 
 pub mod aggregations;

@@ -2,8 +2,8 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::POOL;
 use crate::utils::try_get_supertype;
 
 /// Get the supertype that is valid for all columns in the [`DataFrame`].

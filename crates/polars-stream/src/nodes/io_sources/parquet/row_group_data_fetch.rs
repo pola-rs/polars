@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
+use polars_core::runtime::ASYNC;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
@@ -82,9 +83,8 @@ impl RowGroupDataFetcher {
             let projection = self.projection.clone();
             let is_full_projection = self.is_full_projection;
             let memory_prefetch_func = self.memory_prefetch_func;
-            let io_runtime = polars_io::pl_async::get_runtime();
 
-            let handle = io_runtime.spawn(async move {
+            let handle = ASYNC.spawn(async move {
                 let row_group_metadata = &metadata.row_groups[idx];
                 let fetched_bytes =
                     if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {

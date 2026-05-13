@@ -5,8 +5,8 @@ use polars_row::{RowEncodingContext, RowEncodingOptions, RowsEncoded, convert_co
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::POOL;
 use crate::utils::_split_offsets;
 
 pub fn encode_rows_vertical_par_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked> {

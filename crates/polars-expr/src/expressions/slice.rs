@@ -1,6 +1,6 @@
 use AnyValue::Null;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::utils::{CustomIterTools, slice_offsets};
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;

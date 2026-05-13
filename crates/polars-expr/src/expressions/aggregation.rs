@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_ops::prelude::ArgAgg;

@@ -21,8 +21,8 @@ pub use schema::*;
 pub use series::*;
 pub use supertype::*;
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::POOL;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);

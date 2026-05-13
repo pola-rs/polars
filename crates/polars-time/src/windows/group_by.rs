@@ -9,8 +9,8 @@ use chrono::NaiveDateTime;
 #[cfg(feature = "timezones")]
 use chrono::TimeZone as _;
 use now::DateTimeNow;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use rayon::prelude::*;

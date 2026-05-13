@@ -4,10 +4,11 @@ use arrow::bitmap::Bitmap;
 use arrow::datatypes::ArrowSchemaRef;
 use polars_buffer::Buffer;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
+use polars_core::config;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical;
-use polars_core::{POOL, config};
 use polars_parquet::read::{self, ColumnChunkMetadata, FileMetadata, Filter, RowGroupMetadata};
 use rayon::prelude::*;
 

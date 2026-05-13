@@ -1,6 +1,6 @@
 use arrow::legacy::time_zone::Tz;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::POOL;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_par;
 use polars_ops::series::SeriesMethods;
