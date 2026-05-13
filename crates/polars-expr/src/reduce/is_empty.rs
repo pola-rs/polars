@@ -60,7 +60,7 @@ impl GroupedReduction for IsEmptyReduce {
         let chunks = values.chunks();
         assert!(chunks.len() == 1);
         let arr = &*chunks[0];
-        if arr.has_nulls() && !self.ignore_nulls {
+        if arr.has_nulls() && self.ignore_nulls {
             let valid = arr.validity().unwrap();
             for (i, g) in subset.iter().zip(group_idxs) {
                 let mut is_empty = self.is_empty.get_unchecked(g.idx());
@@ -68,7 +68,7 @@ impl GroupedReduction for IsEmptyReduce {
                     self.evicted_is_empty.push(is_empty);
                     is_empty = true;
                 }
-                is_empty |= valid.get_bit_unchecked(*i as usize);
+                is_empty &= !valid.get_bit_unchecked(*i as usize);
                 self.is_empty.set_unchecked(g.idx(), is_empty);
             }
         } else {
