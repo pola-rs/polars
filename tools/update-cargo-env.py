@@ -33,5 +33,17 @@ else:
 
 toml["env"] = env
 
+# On linux, building with dev profile might fail at link time, because debug symbols
+# exceed 4 GB. Unless "profile.dev.split-debuginfo" is set already, set it to "unpacked"
+if sys.platform == "linux":
+    profile = toml.get("profile", {})
+    dev = profile.get("dev", {})
+
+    if dev.get("split-debuginfo") is None:
+        dev["split-debuginfo"] = "unpacked"
+        profile["dev"] = dev
+        toml["profile"] = profile
+
+
 with config_toml.open("w") as f:
     tomlkit.dump(toml, f)
