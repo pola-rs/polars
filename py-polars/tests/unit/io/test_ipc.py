@@ -93,7 +93,7 @@ def test_ipc_roundtrip_nostream_parametric(
             pl.UInt32,
             pl.UInt64,
             pl.Boolean,
-            pl.Datetime,
+            # pl.Datetime,  # until https://github.com/apache/arrow/pull/49694 is merged
         ],
         allow_null=False,
         allow_nan=False,  # NaN values come back as nulls
