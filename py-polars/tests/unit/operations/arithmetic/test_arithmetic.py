@@ -931,6 +931,26 @@ def test_float_truediv_output_type() -> None:
 
 
 @pytest.mark.parametrize(
+    ("rhs_dtype", "rhs_name"),
+    [
+        (pl.Date, "Date"),
+        (pl.Datetime, "Datetime"),
+        (pl.Time, "Time"),
+    ],
+)
+def test_truediv_numeric_temporal_rhs_raises_in_schema(
+    rhs_dtype: pl.DataType, rhs_name: str
+) -> None:
+    lf = pl.LazyFrame(
+        {"a": [1], "b": [None]}, schema={"a": pl.Int32, "b": rhs_dtype}
+    ).select(pl.col("a") / pl.col("b"))
+    with pytest.raises(
+        InvalidOperationError, match=f"division of '{rhs_name}' datatype is not allowed"
+    ):
+        lf.collect_schema()
+
+
+@pytest.mark.parametrize(
     "dtype",
     [
         pl.Float64,

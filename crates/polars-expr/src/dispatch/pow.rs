@@ -189,6 +189,10 @@ pub(super) fn pow(s: &mut [Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn sqrt(base: &Column) -> PolarsResult<Column> {
+    polars_ensure!(
+        base.dtype().is_primitive_numeric(),
+        InvalidOperation: "`sqrt` operation not supported for dtype `{}`", base.dtype()
+    );
     match base.dtype() {
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {
@@ -220,6 +224,10 @@ where
 }
 
 pub(super) fn cbrt(base: &Column) -> PolarsResult<Column> {
+    polars_ensure!(
+        base.dtype().is_primitive_numeric(),
+        InvalidOperation: "`cbrt` operation not supported for dtype `{}`", base.dtype()
+    );
     match base.dtype() {
         #[cfg(feature = "dtype-f16")]
         DataType::Float16 => {

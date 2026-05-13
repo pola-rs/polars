@@ -33,12 +33,34 @@ impl IRFunctionExpr {
             #[cfg(feature = "business")]
             Business(func) => func.get_field(mapper),
             #[cfg(feature = "abs")]
-            Abs => mapper.with_same_dtype(),
+            Abs => {
+                let dt = mapper.args()[0].dtype();
+                polars_ensure!(
+                    dt.is_numeric() || matches!(dt, DataType::Duration(_)),
+                    InvalidOperation: "`abs` operation not supported for dtype `{}`", dt
+                );
+                mapper.with_same_dtype()
+            },
             Negate => mapper.with_same_dtype(),
             NullCount => mapper.with_dtype(IDX_DTYPE),
             Pow(pow_function) => match pow_function {
                 IRPowFunction::Generic => mapper.pow_dtype(),
-                _ => mapper.map_numeric_to_float_dtype(true),
+                IRPowFunction::Sqrt => {
+                    let dt = mapper.args()[0].dtype();
+                    polars_ensure!(
+                        dt.is_primitive_numeric(),
+                        InvalidOperation: "`sqrt` operation not supported for dtype `{}`", dt
+                    );
+                    mapper.map_numeric_to_float_dtype(true)
+                },
+                IRPowFunction::Cbrt => {
+                    let dt = mapper.args()[0].dtype();
+                    polars_ensure!(
+                        dt.is_primitive_numeric(),
+                        InvalidOperation: "`cbrt` operation not supported for dtype `{}`", dt
+                    );
+                    mapper.map_numeric_to_float_dtype(true)
+                },
             },
             Coalesce => mapper.map_to_supertype(),
             #[cfg(feature = "row_hash")]
@@ -738,6 +760,14 @@ impl<'a> FieldsMapper<'a> {
     pub(super) fn pow_dtype(&self) -> PolarsResult<Field> {
         let dtype1 = self.fields[0].dtype();
         let dtype2 = self.fields[1].dtype();
+        polars_ensure!(
+            dtype1.is_primitive_numeric(),
+            InvalidOperation: "`pow` operation not supported for dtype `{}` as base", dtype1
+        );
+        polars_ensure!(
+            dtype2.is_primitive_numeric(),
+            InvalidOperation: "`pow` operation not supported for dtype `{}` as exponent", dtype2
+        );
         let out_dtype = if dtype1.is_integer() {
             if dtype2.is_float() { dtype2 } else { dtype1 }
         } else {

@@ -106,6 +106,24 @@ def test_abs_date() -> None:
         df.select(pl.col("date").abs())
 
 
+def test_abs_collect_schema_raises_non_numeric() -> None:
+    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
+        pl.col("a").abs()
+    )
+    with pytest.raises(
+        InvalidOperationError, match="`abs` operation not supported for dtype `str`"
+    ):
+        lf.collect_schema()
+
+
+def test_abs_collect_schema_raises_date() -> None:
+    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.Date}).select(pl.col("a").abs())
+    with pytest.raises(
+        InvalidOperationError, match="`abs` operation not supported for dtype `date`"
+    ):
+        lf.collect_schema()
+
+
 def test_abs_series_builtin() -> None:
     s = pl.Series("a", [-1, 0, 1, None])
     result = abs(s)

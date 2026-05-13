@@ -1,4 +1,7 @@
+import pytest
+
 import polars as pl
+from polars.exceptions import InvalidOperationError
 
 
 def test_pow_dtype() -> None:
@@ -57,3 +60,66 @@ def test_pow_dtype() -> None:
     ]
     assert df.collect().dtypes == expected
     assert df.collect_schema().dtypes() == expected
+
+
+def test_pow_collect_schema_raises_non_numeric_base() -> None:
+    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
+        pl.col("a") ** 2
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match="`pow` operation not supported for dtype `str` as base",
+    ):
+        lf.collect_schema()
+
+
+def test_pow_collect_schema_raises_non_numeric_exponent() -> None:
+    lf = pl.LazyFrame({"a": [1], "b": [None]}, schema={"a": pl.Int64, "b": pl.String}).select(
+        pl.col("a") ** pl.col("b")
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match="`pow` operation not supported for dtype `str` as exponent",
+    ):
+        lf.collect_schema()
+
+
+def test_sqrt_collect_schema_raises_non_numeric() -> None:
+    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
+        pl.col("a").sqrt()
+    )
+    with pytest.raises(
+        InvalidOperationError, match="`sqrt` operation not supported for dtype `str`"
+    ):
+        lf.collect_schema()
+
+
+def test_sqrt_collect_raises_non_numeric() -> None:
+    # Previously this silently auto-cast String -> Float64; now matches `pow` and raises.
+    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
+        pl.col("a").sqrt()
+    )
+    with pytest.raises(
+        InvalidOperationError, match="`sqrt` operation not supported for dtype `str`"
+    ):
+        lf.collect()
+
+
+def test_cbrt_collect_schema_raises_non_numeric() -> None:
+    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
+        pl.col("a").cbrt()
+    )
+    with pytest.raises(
+        InvalidOperationError, match="`cbrt` operation not supported for dtype `str`"
+    ):
+        lf.collect_schema()
+
+
+def test_cbrt_collect_raises_non_numeric() -> None:
+    lf = pl.LazyFrame({"a": [None]}, schema={"a": pl.String}).select(
+        pl.col("a").cbrt()
+    )
+    with pytest.raises(
+        InvalidOperationError, match="`cbrt` operation not supported for dtype `str`"
+    ):
+        lf.collect()
