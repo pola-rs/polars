@@ -45,14 +45,15 @@ impl DataFrameIsSorted for DataFrame {
         }
 
         if let &[ref single_by] = by {
-            // Fast path
-            let s = self.column(single_by)?.as_materialized_series();
-            let options = SortOptions {
-                descending: descending[0],
-                nulls_last: nulls_last[0],
-                ..Default::default()
-            };
-            return SeriesMethods::is_sorted(s, options);
+            let col = self.column(single_by)?;
+            if !col.dtype().is_nested() {
+                let options = SortOptions {
+                    descending: descending[0],
+                    nulls_last: nulls_last[0],
+                    ..Default::default()
+                };
+                return SeriesMethods::is_sorted(col.as_materialized_series(), options);
+            }
         }
 
         let mut cols: Vec<Column> = Vec::with_capacity(by.len());
