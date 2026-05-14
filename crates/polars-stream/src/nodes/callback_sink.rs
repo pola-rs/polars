@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_plan::prelude::PlanCallback;
 
@@ -62,7 +63,7 @@ impl ComputeNode for CallbackSinkNode {
                         .is_some_and(|chunk_size| self.buffer.height() <= chunk_size.into())
                 );
                 state.spawn_subphase_task(async move {
-                    polars_io::pl_async::get_runtime()
+                    ASYNC
                         .spawn_blocking(move || function.call(df))
                         .await
                         .unwrap()?;
@@ -113,7 +114,7 @@ impl ComputeNode for CallbackSinkNode {
                         .split_at(self.buffer.height().min(chunk_size) as i64);
 
                     let function = self.function.clone();
-                    let should_stop = polars_io::pl_async::get_runtime()
+                    let should_stop = ASYNC
                         .spawn_blocking(move || function.call(df))
                         .await
                         .unwrap()?;

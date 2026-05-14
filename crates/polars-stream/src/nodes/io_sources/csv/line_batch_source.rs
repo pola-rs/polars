@@ -1,8 +1,8 @@
 use std::ops::Range;
 
 use polars_buffer::Buffer;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_io::pl_async;
 use polars_io::prelude::_csv_read_internal::CountLines;
 use polars_io::utils::compression::ByteSourceReader;
 use polars_io::utils::slice::SplitSlicePosition;
@@ -80,8 +80,8 @@ impl LineBatchSource {
         let verbose = self.verbose;
         let mut line_batch_tx = self.line_batch_tx;
 
-        let read_loop_handle = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime().spawn_blocking(move || {
+        let read_loop_handle =
+            tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
                 let handle = tokio::runtime::Handle::current();
                 if verbose {
                     eprintln!("[CsvSource]: Start line splitting async");
@@ -106,8 +106,7 @@ impl LineBatchSource {
                 }
 
                 PolarsResult::Ok(producer.n_rows_skipped())
-            }),
-        );
+            }));
 
         let n_rows_skipped = read_loop_handle.await.unwrap()?;
 

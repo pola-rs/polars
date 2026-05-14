@@ -49,6 +49,7 @@ pub enum AggExpr {
         input: Arc<Expr>,
         include_nulls: bool,
     },
+    // TODO: remove on next DSL break, deprecated in favor of FunctionExpr::Quantile.
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,

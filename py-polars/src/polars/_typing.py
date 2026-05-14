@@ -19,7 +19,12 @@ if TYPE_CHECKING:
     from typing import TypeAlias
 
     from sqlalchemy.engine import Connection, Engine
-    from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        AsyncConnection,
+        AsyncEngine,
+        AsyncSession,
+        async_sessionmaker,
+    )
     from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
@@ -117,6 +122,7 @@ class PandasSeries(Protocol):
 
     def to_frame(self, *args: Any, **kwargs: Any) -> Any: ...
     def isna(self, *args: Any, **kwargs: Any) -> Any: ...
+    def rename_axis(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 class PandasIndex(Protocol):
@@ -395,7 +401,7 @@ class Cursor(BasicCursor):
 
 AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
 AlchemyAsyncConnection: TypeAlias = Union[
-    "AsyncConnection", "AsyncEngine", "AsyncSession"
+    "AsyncConnection", "AsyncEngine", "AsyncSession", "async_sessionmaker[AsyncSession]"
 ]
 ConnectionOrCursor: TypeAlias = (
     BasicConnection | BasicCursor | Cursor | AlchemyConnection | AlchemyAsyncConnection

@@ -33,7 +33,6 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::POOL;
 #[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
@@ -41,6 +40,7 @@ use polars_core::chunked_array::ops::row_encode::{
 use polars_core::datatypes::DataType;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::slice_offsets;
 #[allow(unused_imports)]
@@ -232,7 +232,7 @@ pub trait DataFrameJoinOps: IntoDf {
             let Some(JoinTypeOptions::IEJoin(options)) = options else {
                 unreachable!()
             };
-            let func = if POOL.current_num_threads() > 1
+            let func = if RAYON.current_num_threads() > 1
                 && !left_df.shape_has_zero()
                 && !other.shape_has_zero()
             {
@@ -611,13 +611,13 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                     a.set_sorted_flag(IsSorted::Ascending);
                 }
 
-                POOL.join(
+                RAYON.join(
                     // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
                     || unsafe { other.take_unchecked(b.idx().unwrap()) },
                 )
             } else {
-                POOL.join(
+                RAYON.join(
                     // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
                     || unsafe { other.take_unchecked(right.into_series().idx().unwrap()) },
@@ -652,19 +652,19 @@ fn prepare_keys_multiple(s: &[Series], nulls_equal: bool) -> PolarsResult<Binary
         encode_rows_vertical_par_unordered_broadcast_nulls(&keys)
     }
 }
+
+// Duplicate column names are allowed
 pub fn private_left_join_multiple_keys(
-    a: &DataFrame,
-    b: &DataFrame,
+    a: &[Column],
+    b: &[Column],
     nulls_equal: bool,
 ) -> PolarsResult<LeftJoinIds> {
     // @scalar-opt
     let a_cols = a
-        .columns()
         .iter()
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();
     let b_cols = b
-        .columns()
         .iter()
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();

@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 use std::ops::RangeBounds;
 
-use polars_core::POOL;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_ops::frame::merge_join::*;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_utils::UnitVec;
@@ -192,6 +192,11 @@ impl ComputeNode for MergeJoinNode {
         let input_channels_done = recv.iter().all(|r| *r == PortState::Done);
         let input_buffers_empty = self.build_unmerged.is_empty() && self.probe_unmerged.is_empty();
         let unmatched_buffers_empty = self.unmatched.is_empty();
+
+        if send[0] == PortState::Done {
+            self.state = Done;
+        }
+
         if self.params.args.maintain_order == MaintainOrderJoin::None {
             debug_assert!(unmatched_buffers_empty);
         }
@@ -204,7 +209,7 @@ impl ComputeNode for MergeJoinNode {
             if self.unmatched.is_empty() {
                 self.state = Done;
             } else {
-                POOL.install(|| {
+                RAYON.install(|| {
                     self.unmatched.par_sort_by_key(|(seq, _df)| *seq);
                 });
                 let mut all_unmatched = DataFrame::empty_with_schema(&self.params.output_schema);

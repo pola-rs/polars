@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_buffer::Buffer;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_io::pl_async;
 use polars_io::prelude::{ParquetWriteOptions, get_encodings};
 use polars_parquet::write::{
     CompressedPage, Encoding, SchemaDescriptor, Version, WriteOptions, to_parquet_schema,
@@ -113,10 +113,10 @@ impl FileWriterStarter for ParquetWriterStarter {
         };
 
         let arrow_schema = Arc::clone(&self.arrow_schema);
-        let num_leaf_columns = schema_descriptor.leaves().len();
+        let num_leaf_columns = schema_descriptor.columns().len();
 
         let io_handle = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime().spawn(
+            ASYNC.spawn(
                 io_writer::IOWriter {
                     file,
                     encoded_row_group_rx,

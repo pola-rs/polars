@@ -6,7 +6,9 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.feather as paf
+import pyarrow.ipc
 import pytest
 from hypothesis import given
 
@@ -91,7 +93,7 @@ def test_ipc_roundtrip_nostream_parametric(
             pl.UInt32,
             pl.UInt64,
             pl.Boolean,
-            pl.Datetime,
+            # pl.Datetime,  # until https://github.com/apache/arrow/pull/49694 is merged
         ],
         allow_null=False,
         allow_nan=False,  # NaN values come back as nulls
@@ -569,3 +571,19 @@ def test_roundtrip_empty_str_list_21163() -> None:
     bytes = df.serialize()
     deserialized = pl.DataFrame.deserialize(io.BytesIO(bytes))
     assert_frame_equal(df, deserialized)
+
+
+def test_read_ipc_compressed_empty_bitmap_27532() -> None:
+    schema = pa.schema([("bool", pa.bool_())])
+    f = io.BytesIO()
+
+    with pyarrow.ipc.new_file(
+        f,
+        schema,
+        options=pyarrow.ipc.IpcWriteOptions(compression="lz4_frame"),
+    ) as w:
+        w.write_batch(pa.record_batch([pa.array([], type=pa.bool_())], schema=schema))
+
+    f.seek(0)
+
+    assert_frame_equal(pl.read_ipc(f), pl.DataFrame(schema={"bool": pl.Boolean}))

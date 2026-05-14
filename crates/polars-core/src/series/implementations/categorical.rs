@@ -16,7 +16,7 @@ unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
 impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
     unsafe fn apply_on_phys<F>(&self, apply: F) -> CategoricalChunked<T>
     where
-        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
+        F: FnOnce(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
     {
         let cats = apply(self.0.physical());
         unsafe { CategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone()) }
@@ -24,7 +24,9 @@ impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
 
     unsafe fn try_apply_on_phys<F>(&self, apply: F) -> PolarsResult<CategoricalChunked<T>>
     where
-        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
+        F: FnOnce(
+            &ChunkedArray<T::PolarsPhysical>,
+        ) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
     {
         let cats = apply(self.0.physical())?;
         unsafe {
@@ -250,6 +252,10 @@ macro_rules! impl_cat_series {
 
             fn rechunk(&self) -> Series {
                 unsafe { self.apply_on_phys(|cats| cats.rechunk().into_owned()).into_series() }
+            }
+
+            fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+                unsafe { self.apply_on_phys(move |cats| cats.clone().with_validity(validity)).into_series() }
             }
 
             fn new_from_index(&self, index: usize, length: usize) -> Series {

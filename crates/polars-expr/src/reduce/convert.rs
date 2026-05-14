@@ -16,7 +16,7 @@ use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
 use crate::reduce::implode::new_unordered_implode_reduction;
-use crate::reduce::len::LenReduce;
+use crate::reduce::is_empty::IsEmptyReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
@@ -77,7 +77,6 @@ pub fn into_reduction(
                 input,
                 maintain_order: false,
             } => (new_unordered_implode_reduction(get_dt(*input)?), *input),
-            IRAggExpr::Quantile { .. } => todo!(),
             IRAggExpr::Median(_) => todo!(),
             IRAggExpr::NUnique(_) => todo!(),
             IRAggExpr::Implode { .. } => todo!(),
@@ -85,7 +84,7 @@ pub fn into_reduction(
         },
         AExpr::Len => {
             if let Some(first_column) = schema.iter_names().next() {
-                let out: Box<dyn GroupedReduction> = Box::new(LenReduce::default());
+                let out: Box<dyn GroupedReduction> = Box::new(CountReduce::new(true));
                 let expr = expr_arena.add(AExpr::Column(first_column.as_str().into()));
 
                 (out, expr)
@@ -161,6 +160,10 @@ pub fn into_reduction(
                 },
                 IRBooleanFunction::All { ignore_nulls } => {
                     (new_all_reduction(*ignore_nulls), input)
+                },
+                IRBooleanFunction::IsEmpty { ignore_nulls } => {
+                    let is_empty = Box::new(IsEmptyReduce::new(*ignore_nulls)) as Box<_>;
+                    (is_empty, input)
                 },
                 _ => unreachable!(),
             }

@@ -2,15 +2,11 @@ use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
-#[cfg(feature = "list_gather")]
-use num_traits::ToPrimitive;
-#[cfg(feature = "list_gather")]
-use num_traits::{NumCast, Signed, Zero};
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::try_get_supertype;
+use polars_core::utils::{CustomIterTools, try_get_supertype};
 
 use super::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
@@ -18,7 +14,7 @@ use crate::chunked_array::list::sum_mean::sum_with_nulls;
 #[cfg(feature = "diff")]
 use crate::prelude::diff;
 use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
-use crate::series::ArgAgg;
+use crate::series::{ArgAgg, convert_and_bound_index};
 
 pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
     for arr in ca.downcast_iter() {
@@ -848,109 +844,34 @@ impl ListNameSpaceImpl for ListChunked {}
 #[cfg(feature = "list_gather")]
 fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Series> {
     let len = s.len();
-    let idx = cast_index(idx, len, null_on_oob)?;
-    let idx = idx.idx().unwrap();
-    s.take(idx)
+    let idx = convert_and_bound_index(&idx, len, null_on_oob)?;
+    s.take(&idx)
 }
 
-#[cfg(feature = "list_gather")]
-fn cast_signed_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
-where
-    T::Native: Copy + PartialOrd + PartialEq + NumCast + Signed + Zero,
-{
-    idx.iter()
-        .map(|opt_idx| opt_idx.and_then(|idx| idx.negative_to_usize(len).map(|idx| idx as IdxSize)))
-        .collect::<IdxCa>()
-        .into_series()
-}
+pub fn slice_broadcast_list(
+    single_list: Option<Series>,
+    offsets: &Int64Chunked,
+    lengths: &Int64Chunked,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> ListChunked {
+    debug_assert!(target_len == offsets.len().max(lengths.len()));
 
-#[cfg(feature = "list_gather")]
-fn cast_unsigned_index_ca<T: PolarsNumericType>(idx: &ChunkedArray<T>, len: usize) -> Series
-where
-    T::Native: Copy + PartialOrd + ToPrimitive,
-{
-    idx.iter()
-        .map(|opt_idx| {
-            opt_idx.and_then(|idx| {
-                let idx = idx.to_usize().unwrap();
-                if idx >= len {
-                    None
-                } else {
-                    Some(idx as IdxSize)
-                }
-            })
-        })
-        .collect::<IdxCa>()
-        .into_series()
-}
-
-#[cfg(feature = "list_gather")]
-fn cast_index(idx: Series, len: usize, null_on_oob: bool) -> PolarsResult<Series> {
-    let idx_null_count = idx.null_count();
-    use DataType::*;
-    let out = match idx.dtype() {
-        #[cfg(feature = "big_idx")]
-        UInt32 => {
-            if null_on_oob {
-                let a = idx.u32().unwrap();
-                cast_unsigned_index_ca(a, len)
-            } else {
-                idx.cast(&IDX_DTYPE).unwrap()
-            }
-        },
-        #[cfg(feature = "big_idx")]
-        UInt64 => {
-            if null_on_oob {
-                let a = idx.u64().unwrap();
-                cast_unsigned_index_ca(a, len)
-            } else {
-                idx
-            }
-        },
-        #[cfg(not(feature = "big_idx"))]
-        UInt64 => {
-            if null_on_oob {
-                let a = idx.u64().unwrap();
-                cast_unsigned_index_ca(a, len)
-            } else {
-                idx.cast(&IDX_DTYPE).unwrap()
-            }
-        },
-        #[cfg(not(feature = "big_idx"))]
-        UInt32 => {
-            if null_on_oob {
-                let a = idx.u32().unwrap();
-                cast_unsigned_index_ca(a, len)
-            } else {
-                idx
-            }
-        },
-        dt if dt.is_unsigned_integer() => idx.cast(&IDX_DTYPE).unwrap(),
-        Int8 => {
-            let a = idx.i8().unwrap();
-            cast_signed_index_ca(a, len)
-        },
-        Int16 => {
-            let a = idx.i16().unwrap();
-            cast_signed_index_ca(a, len)
-        },
-        Int32 => {
-            let a = idx.i32().unwrap();
-            cast_signed_index_ca(a, len)
-        },
-        Int64 => {
-            let a = idx.i64().unwrap();
-            cast_signed_index_ca(a, len)
-        },
-        _ => {
-            unreachable!()
-        },
+    let Some(single_list) = single_list else {
+        return ListChunked::full_null_with_dtype(name, target_len, inner_dtype);
     };
-    polars_ensure!(
-        out.null_count() == idx_null_count || null_on_oob,
-        OutOfBounds: "gather indices are out of bounds"
-    );
-    Ok(out)
-}
 
-// TODO: implement the above for ArrayChunked as well?
+    let iter = (0..target_len).map(|index| {
+        let opt_offset = offsets.get(if offsets.len() == 1 { 0 } else { index });
+        let opt_length = lengths.get(if lengths.len() == 1 { 0 } else { index });
+        match (opt_offset, opt_length) {
+            (Some(offset), Some(length)) => Some(single_list.slice(offset, length as usize)),
+            _ => None,
+        }
+    });
+
+    let mut out: ListChunked = iter.collect_trusted();
+    out.rename(name);
+    out
+}

@@ -2039,7 +2039,7 @@ def test_custom_writable_object(chunk_override: None) -> None:
 def test_read_filelike_object_12266(
     chunk_override: None, csv: bytes, expected: pl.DataFrame
 ) -> None:
-    buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
+    buf = io.BufferedReader(io.BytesIO(csv))
     df = pl.read_csv(buf)
     assert_frame_equal(df, expected)
 
@@ -2047,7 +2047,7 @@ def test_read_filelike_object_12266(
 def test_read_filelike_object_12404(chunk_override: None) -> None:
     expected = pl.DataFrame({"a": [1, 1], "b": [2, 2]})
     csv = expected.write_csv(line_terminator=";").encode()
-    buf = io.BufferedReader(io.BytesIO(csv))  # type: ignore[arg-type]
+    buf = io.BufferedReader(io.BytesIO(csv))
     df = pl.read_csv(buf, eol_char=";")
     assert_frame_equal(df, expected)
 
@@ -3172,4 +3172,16 @@ def test_scan_csv_missing_columns_27268() -> None:
                 "a": [None, "a1"],
             }
         ),
+    )
+
+
+@pytest.mark.write_disk
+def test_read_csv_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
+    path = tmp_path / "test.csv"
+    path.write_text("h1,h2\n1,2\n2,3\n")
+
+    expected = pl.DataFrame({"h1": [1, 2]})
+    assert_frame_equal(
+        pl.read_csv(path, columns=[0], use_pyarrow=True),
+        expected,
     )

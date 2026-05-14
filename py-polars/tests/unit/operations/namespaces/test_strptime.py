@@ -711,6 +711,26 @@ def test_to_time_format_warning() -> None:
     assert result == time(5, 10, 10, 74)
 
 
+@pytest.mark.parametrize(
+    ("expr", "dtype"),
+    [
+        (pl.col("a").str.to_time(), pl.Time),
+        (pl.col("a").str.to_date(), pl.Date),
+        (pl.col("a").str.to_date(exact=False), pl.Date),
+        (pl.col("a").str.to_datetime(), pl.Datetime),
+        (pl.col("a").str.to_datetime(exact=False), pl.Datetime),
+    ],
+)
+def test_all_nulls_(expr: pl.Expr, dtype: pl.DataType) -> None:
+    df = pl.DataFrame(
+        {"a": [None, None]},
+        schema_overrides={"a": pl.String},
+    )
+    result = df.with_columns(expr)["a"]
+    expected = pl.Series("a", [None, None], dtype=dtype)
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.parametrize("exact", [True, False])
 def test_to_datetime_ambiguous_earliest(exact: bool) -> None:
     result = (

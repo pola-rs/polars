@@ -1236,7 +1236,7 @@ def test_delta_dataset_does_not_pickle_table_object(tmp_path: Path) -> None:
     dataset = pickle.loads(pickle.dumps(dataset))
     assert dataset.table_.get() is None
 
-    assert_frame_equal(dataset.to_dataset_scan()[0].collect(), df)  # type: ignore[index]
+    assert_frame_equal(dataset.to_dataset_scan()[0].collect(), df)
 
 
 @pytest.mark.parametrize("use_pyarrow", [True, False])

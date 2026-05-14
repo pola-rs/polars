@@ -69,7 +69,7 @@ fn write_scan(
     name: &str,
     sources: &ScanSources,
     indent: usize,
-    n_columns: i64,
+    n_columns: usize,
     total_columns: usize,
     row_estimation: Option<usize>,
     predicate: &Option<ExprIRDisplay<'_>>,
@@ -85,7 +85,7 @@ fn write_scan(
     )?;
 
     let total_columns = total_columns - usize::from(row_index.is_some());
-    if n_columns > 0 {
+    if n_columns != usize::MAX {
         write!(
             f,
             "\n{:indent$}PROJECT {n_columns}/{total_columns} COLUMNS",
@@ -499,17 +499,6 @@ impl Display for ExprIRDisplay<'_> {
                     } => write!(f, "{}.len()", self.with_root(input)),
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
-                    Quantile {
-                        expr,
-                        quantile,
-                        method,
-                    } => write!(
-                        f,
-                        "{}.quantile({}, interpolation='{}')",
-                        self.with_root(expr),
-                        self.with_root(quantile),
-                        <&'static str>::from(method),
-                    ),
                 }
             },
             Cast {
@@ -715,8 +704,8 @@ pub fn write_ir_non_recursive(
             let n_columns = options
                 .with_columns
                 .as_ref()
-                .map(|s| s.len() as i64)
-                .unwrap_or(-1);
+                .map(|s| s.len())
+                .unwrap_or(usize::MAX);
 
             let predicate = match &options.predicate {
                 PythonPredicate::Polars(e) => Some(e.display(expr_arena)),
@@ -769,8 +758,8 @@ pub fn write_ir_non_recursive(
             let n_columns = unified_scan_args
                 .projection
                 .as_ref()
-                .map(|columns| columns.len() as i64)
-                .unwrap_or(-1);
+                .map(|columns| columns.len())
+                .unwrap_or(usize::MAX);
 
             let row_estimation = if file_info.row_estimation.1 != usize::MAX {
                 Some(file_info.row_estimation.1)
@@ -950,6 +939,13 @@ pub fn write_ir_non_recursive(
 
             Ok(())
         },
+        IR::Gather {
+            input: _,
+            idxs: _,
+            null_on_oob,
+        } => {
+            write!(f, "{:indent$}GATHER[null_on_oob: {null_on_oob}]", "")
+        },
         IR::HStack {
             input: _,
             exprs,
@@ -1009,6 +1005,11 @@ pub fn write_ir_non_recursive(
             "{:indent$}MERGE SORTED[maintain_order: {}] ON '{key}'",
             "", maintain_order
         ),
+        IR::UnoptimizedDispatch {
+            inputs: _,
+            arg_map: _,
+            operation,
+        } => write!(f, "{:indent$}DISPATCH {operation}", ""),
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
     }
 }

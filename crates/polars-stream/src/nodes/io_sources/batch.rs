@@ -84,7 +84,7 @@ pub type GetBatchFn =
 pub use get_batch_state::GetBatchState;
 
 mod get_batch_state {
-    use polars_io::pl_async::get_runtime;
+    use polars_core::runtime::ASYNC;
 
     use super::{DataFrame, GetBatchFn, PolarsResult, StreamingExecutionState};
 
@@ -99,7 +99,7 @@ mod get_batch_state {
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            get_runtime()
+            ASYNC
                 .spawn_blocking({
                     move || unsafe { slf.next_impl(&execution_state).map(|x| (slf, x)) }
                 })
@@ -111,7 +111,7 @@ mod get_batch_state {
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            get_runtime()
+            ASYNC
                 .spawn_blocking({
                     move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
                 })

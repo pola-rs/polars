@@ -955,6 +955,13 @@ impl Column {
         self.len() == 0
     }
 
+    pub fn is_full_null(&self) -> bool {
+        match self {
+            Column::Series(s) => s.is_full_null(),
+            Column::Scalar(s) => s.is_full_null(),
+        }
+    }
+
     pub fn reverse(&self) -> Column {
         match self {
             Column::Series(s) => s.reverse().into(),
@@ -1039,14 +1046,9 @@ impl Column {
         }
 
         if self.null_count() == self.len() {
-            // We might need to maintain order so just respect the descending parameter.
-            let values = if options.descending {
-                (0..self.len() as IdxSize).rev().collect()
-            } else {
-                (0..self.len() as IdxSize).collect()
-            };
-
-            return IdxCa::from_vec(self.name().clone(), values);
+            // If all key values are null, then they are all equal,
+            // so we can just return the original dataframe.
+            return IdxCa::from_iter_values(self.name().clone(), 0..self.len() as IdxSize);
         }
 
         let is_sorted = Some(self.is_sorted_flag());

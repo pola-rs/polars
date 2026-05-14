@@ -454,10 +454,8 @@ def test_struct_pyarrow_dataset_5796(tmp_path: Path) -> None:
 def test_parquet_chunks_545(case: int) -> None:
     f = io.BytesIO()
     # repeat until it has case instances
-    df = pd.DataFrame(
-        np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),
-        columns=["floats", "dates"],
-    )
+    values: list[Any] = [1.0, pd.to_datetime("2010-10-10")]
+    df = pd.DataFrame(np.tile(values, [case, 1]), columns=["floats", "dates"])
 
     # write as parquet
     df.to_parquet(f)
@@ -3504,6 +3502,66 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     assert_frame_equal(out, pl.select(x=value).select(pl.first().cast(scan_dtype)))
 
 
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
+def test_is_in_string_pushdown_27416(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Simplified repro of the user's setup.
+    # `is_in(["0","9"])` over 5 row groups whose value ranges tile [0..9].
+    # Only RG1 (contains "0") and RG5 (contains "9") match, 3 RGs must be pruned.
+    df = pl.DataFrame({"sym": [str(i) for i in range(10)], "val": list(range(10))})
+
+    def fixture() -> io.BytesIO:
+        f = io.BytesIO()
+        df.write_parquet(f, row_group_size=2, statistics="full")
+        f.seek(0)
+        return f
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_parquet(fixture()).filter(pl.col("sym").is_in(["0", "9"])).collect()
+
+    assert_frame_equal(
+        out.sort("val"), pl.DataFrame({"sym": ["0", "9"], "val": [0, 9]})
+    )
+
+    assert "Predicate pushdown: reading 2 / 5 row groups" in capfd.readouterr().err
+
+
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
+def test_is_in_string_pushdown_null_haystack(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Under `nulls_equal=True`, a null in the haystack matches column-null
+    # rows so the all-null row group must not be skipped; row groups that
+    # contain neither "1" nor "9" nor nulls are still pruned.
+    df = pl.DataFrame(
+        {
+            "sym": ["0", "1", "2", "3", None, None, "6", "7", "8", "9"],
+            "val": list(range(10)),
+        }
+    )
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2, statistics="full")
+    f.seek(0)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = (
+        pl.scan_parquet(f)
+        .filter(pl.col("sym").is_in([None, "1", "9"], nulls_equal=True))
+        .collect()
+    )
+
+    assert_frame_equal(
+        out.sort("val"),
+        pl.DataFrame({"sym": ["1", None, None, "9"], "val": [1, 4, 5, 9]}),
+    )
+    assert "Predicate pushdown: reading 3 / 5 row groups" in capfd.readouterr().err
+
+
 def test_roundtrip_int128() -> None:
     f = io.BytesIO()
     s = pl.Series("a", [1, 2, 3], pl.Int128)
@@ -3738,7 +3796,10 @@ def test_between_prefiltering_parametric(s: pl.Series, start: int, end: int) -> 
         (pl.Float64, pa.float64()),
         (pl.Decimal(38, 10), pa.decimal128(38, 10)),
         (pl.Categorical, pa.dictionary(pa.uint32(), pa.string())),
-        (pl.Enum(["x", "y", "z"]), pa.dictionary(pa.uint8(), pa.string())),
+        (
+            pl.Enum(["x", "y", "z"]),
+            pa.dictionary(pa.uint8(), pa.string(), ordered=True),
+        ),
         (pl.List(pl.Int32), pa.large_list(pa.int32())),
         (pl.Array(pl.Int32, 3), pa.list_(pa.int32(), 3)),
         (
@@ -4135,3 +4196,68 @@ def test_parquet_duplicate_column_names_27393(tmp_path: Path) -> None:
 
     with pytest.raises(pl.exceptions.DuplicateError):
         pl.scan_parquet(path).collect_schema()
+
+
+@pytest.mark.write_disk
+def test_read_parquet_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
+    path = tmp_path / "test.parquet"
+    pl.DataFrame({"h1": [1, 2], "h2": [2, 3]}).write_parquet(path)
+
+    expected = pl.DataFrame({"h1": [1, 2]})
+    assert_frame_equal(
+        pl.read_parquet(path, columns=[0], use_pyarrow=True),
+        expected,
+    )
+
+
+def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
+    path = io_files_path / "nested_maps.snappy.parquet"
+
+    expected = pl.DataFrame(
+        {
+            "a": [
+                [
+                    {
+                        "key": "a",
+                        "value": [
+                            {"key": 1, "value": True},
+                            {"key": 2, "value": False},
+                        ],
+                    }
+                ],
+                [{"key": "b", "value": [{"key": 1, "value": True}]}],
+                [{"key": "c", "value": []}],
+                [{"key": "d", "value": []}],
+                [{"key": "e", "value": [{"key": 1, "value": True}]}],
+                [
+                    {
+                        "key": "f",
+                        "value": [
+                            {"key": 3, "value": True},
+                            {"key": 4, "value": False},
+                            {"key": 5, "value": True},
+                        ],
+                    }
+                ],
+            ],
+            "b": [1, 1, 1, 1, 1, 1],
+            "c": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        },
+        schema={
+            "a": pl.List(
+                pl.Struct(
+                    {
+                        "key": pl.String,
+                        "value": pl.List(
+                            pl.Struct({"key": pl.Int32, "value": pl.Boolean})
+                        ),
+                    }
+                )
+            ),
+            "b": pl.Int32,
+            "c": pl.Float64,
+        },
+    )
+
+    assert_frame_equal(pl.read_parquet(path), expected)
+    assert_frame_equal(pl.scan_parquet(path).collect(), expected)

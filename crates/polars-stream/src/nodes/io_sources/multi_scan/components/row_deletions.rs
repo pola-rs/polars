@@ -12,7 +12,6 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
-use polars_io::pl_async;
 use polars_plan::dsl::deletion::DeletionFilesList;
 #[cfg(feature = "python")]
 use polars_plan::dsl::deletion::DeltaDeletionVectorProvider;
@@ -298,7 +297,7 @@ impl DeletionFilesProvider {
                             .get_or_try_init(|| async {
                                 let provider = provider.clone();
                                 let selected_paths = selected_paths.clone();
-                                pl_async::get_runtime()
+                                polars_core::runtime::ASYNC
                                     .spawn_blocking(move || provider.call(selected_paths))
                                     .await
                                     .unwrap()

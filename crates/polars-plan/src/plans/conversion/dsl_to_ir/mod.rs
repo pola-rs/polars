@@ -5,9 +5,9 @@ use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_core::runtime::ASYNC;
 use polars_error::feature_gated;
 use polars_io::ExternalCompression;
-use polars_io::pl_async::get_runtime;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
@@ -151,14 +151,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     {
         let verbose = ctxt.verbose;
         let cache_file_info = ctxt.cache_file_info.clone();
-        use tokio::runtime::Handle;
-
         let fut = fetch_metadata(&lp, cache_file_info, verbose);
-        if let Ok(_handle) = Handle::try_current() {
-            get_runtime().block_in_place_on(fut)?;
-        } else {
-            get_runtime().block_on(fut)?;
-        }
+        ASYNC.block_in_place_on(fut)?;
     }
 
     let v = match lp {
@@ -667,6 +661,25 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             )
             .map_err(|e| e.context(failed_here!(join)))
             .map(|t| t.0);
+        },
+        DslPlan::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => {
+            let input =
+                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
+            let idxs =
+                to_alp_impl(owned(idxs), ctxt).map_err(|e| e.context(failed_here!(gather)))?;
+            let idxs_schema = ctxt.lp_arena.get(idxs).schema(ctxt.lp_arena);
+            polars_ensure!(idxs_schema.len() == 1, InvalidOperation: "'gather' indices DataFrame should have a single column");
+            let idx_dtype = &idxs_schema.get_at_index(0).unwrap().1;
+            polars_ensure!(idx_dtype.is_integer(), InvalidOperation: "'gather' indices must have integer dtype");
+            IR::Gather {
+                input,
+                idxs,
+                null_on_oob,
+            }
         },
         DslPlan::HStack {
             input,

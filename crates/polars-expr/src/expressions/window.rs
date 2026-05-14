@@ -1,16 +1,16 @@
-use std::cmp::Ordering;
 use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustMyLength;
+use polars_core::downcast_as_macro_arg_physical;
 use polars_core::error::feature_gated;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::sort::perfect_sort;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
@@ -553,7 +553,13 @@ impl PhysicalExpr for WindowExpr {
                 let update_groups = !matches!(&ac.update_groups, UpdateGroups::No);
                 match (
                     &ac.update_groups,
-                    set_by_groups(&out_column, &ac, df.height(), update_groups),
+                    set_by_groups(
+                        &out_column,
+                        &ac,
+                        gb.get_groups(),
+                        df.height(),
+                        update_groups,
+                    ),
                 ) {
                     // for aggregations that reduce like sum, mean, first and are numeric
                     // we take the group locations to directly map them to the right place
@@ -599,13 +605,13 @@ impl PhysicalExpr for WindowExpr {
                                         .1,
                                 ))
                             } else {
-                                let df_right =
-                                    unsafe { DataFrame::new_unchecked_infer_height(keys) };
-                                let df_left = unsafe {
-                                    DataFrame::new_unchecked_infer_height(group_by_columns)
-                                };
                                 Ok(Arc::new(
-                                    private_left_join_multiple_keys(&df_left, &df_right, true)?.1,
+                                    private_left_join_multiple_keys(
+                                        &group_by_columns,
+                                        &keys,
+                                        true,
+                                    )?
+                                    .1,
                                 ))
                             }
                         };
@@ -844,23 +850,20 @@ impl PhysicalExpr for WindowExpr {
                                         unsafe { validity.get_bit_unchecked(in_group_idx_a) };
                                     let is_valid_b =
                                         unsafe { validity.get_bit_unchecked(in_group_idx_b) };
+
+                                    if !(is_valid_a & is_valid_b) {
+                                        let mut cmp = is_valid_a.cmp(&is_valid_b);
+                                        if options.nulls_last {
+                                            cmp = cmp.reverse();
+                                        }
+                                        return cmp;
+                                    }
+
                                     let order_a = unsafe { arr.get_unchecked(in_group_idx_a) };
                                     let order_b = unsafe { arr.get_unchecked(in_group_idx_b) };
 
-                                    if !is_valid_a & !is_valid_b {
-                                        return Ordering::Equal;
-                                    }
-
                                     let mut cmp = order_a.cmp(&order_b);
-                                    if !is_valid_a {
-                                        cmp = Ordering::Less;
-                                    }
-                                    if !is_valid_b {
-                                        cmp = Ordering::Greater;
-                                    }
-                                    if options.descending
-                                        | ((!is_valid_a | !is_valid_b) & options.nulls_last)
-                                    {
+                                    if options.descending {
                                         cmp = cmp.reverse();
                                     }
                                     cmp
@@ -1041,25 +1044,29 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
 fn set_by_groups(
     s: &Column,
     ac: &AggregationContext,
+    gb_groups: &GroupPositions,
     len: usize,
     update_groups: bool,
 ) -> Option<Column> {
-    if update_groups
-        || !ac.original_len
-        || matches!(
-            ac.agg_state(),
-            AggState::AggregatedScalar(_) | AggState::LiteralScalar(_)
-        )
-    {
-        return None;
-    }
+    let groups = match ac.agg_state() {
+        AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) => gb_groups,
+        AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
+            if update_groups || !ac.original_len {
+                return None;
+            } else {
+                &ac.groups
+            }
+        },
+    };
+
     if s.dtype().to_physical().is_primitive_numeric() {
         let dtype = s.dtype();
         let s = s.to_physical_repr();
 
         macro_rules! dispatch {
-            ($ca:expr) => {{ Some(set_numeric($ca, &ac.groups, len)) }};
+            ($ca:expr) => {{ Some(set_numeric($ca, groups, len)) }};
         }
+
         downcast_as_macro_arg_physical!(&s, dispatch)
             .map(|s| unsafe { s.from_physical_unchecked(dtype) }.unwrap())
             .map(Column::from)
@@ -1084,7 +1091,7 @@ fn set_numeric<T: PolarsNumericType>(
         match groups {
             GroupsType::Idx(groups) => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
-                POOL.install(|| {
+                RAYON.install(|| {
                     agg_vals
                         .par_iter()
                         .zip(groups.all().par_iter())
@@ -1099,7 +1106,7 @@ fn set_numeric<T: PolarsNumericType>(
             },
             GroupsType::Slice { groups, .. } => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
-                POOL.install(|| {
+                RAYON.install(|| {
                     agg_vals
                         .par_iter()
                         .zip(groups.par_iter())
@@ -1126,7 +1133,7 @@ fn set_numeric<T: PolarsNumericType>(
         let validity_ptr = validity.as_mut_ptr();
         let sync_ptr_validity = unsafe { SyncPtr::new(validity_ptr) };
 
-        let n_threads = POOL.current_num_threads();
+        let n_threads = RAYON.current_num_threads();
         let offsets = _split_offsets(ca.len(), n_threads);
 
         match groups {
