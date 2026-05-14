@@ -626,7 +626,7 @@ impl PyLazyFrame {
 
             // We use a tokio spawn_blocking here as it has a high blocking
             // thread pool limit.
-            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+            polars_core::runtime::ASYNC.spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
                     .map(|r| match r {

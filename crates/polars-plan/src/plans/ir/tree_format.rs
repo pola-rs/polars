@@ -409,10 +409,15 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                         .collect(),
                 ),
-                UnoptimizedDispatch { inputs, operation } => ND(
+                UnoptimizedDispatch {
+                    inputs,
+                    operation,
+                    arg_map,
+                } => ND(
                     wh(h, &format!("DISPATCH {operation}")),
-                    inputs
+                    arg_map
                         .iter()
+                        .map(|(input_idx, _col_idx, _arg_name)| &inputs[input_idx])
                         .map(|input| self.lp_node(None, *input))
                         .collect(),
                 ),

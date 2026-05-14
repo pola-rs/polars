@@ -57,7 +57,7 @@ impl Executor for JoinExec {
             let mut state_left = state.split();
             state_right.branch_idx += 1;
 
-            POOL.join(
+            RAYON.join(
                 move || input_left.execute(&mut state_left),
                 move || input_right.execute(&mut state_right),
             )

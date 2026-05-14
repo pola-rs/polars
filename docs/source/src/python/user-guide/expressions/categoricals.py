@@ -42,6 +42,25 @@ non_debug_logs = logs.filter(
 print(non_debug_logs)
 # --8<-- [end:log-levels]
 
+if False:  # Example that creates an error
+    # --8<-- [start:string-comparison-error-display]
+    logs.select(pl.col("level") > "Pretty bad")  # This is not a valid logging level
+    # --8<-- [end:string-comparison-error-display]
+
+# --8<-- [start:string-comparison-error-execution]
+try:
+    logs.select(pl.col("level") > "Pretty bad")
+except InvalidOperationError as err:
+    print(err)
+else:
+    raise AssertionError("Expected an InvalidOperationError")
+# --8<-- [end:string-comparison-error-execution]
+
+# --8<-- [start:enum-column-comparison]
+str_series = pl.Series(["info", "debug", "debug", "error"])
+print(logs["level"] == str_series)
+# --8<-- [end:enum-column-comparison]
+
 # --8<-- [start:categorical-example]
 bears_cat = pl.Series(
     ["Polar", "Panda", "Brown", "Brown", "Polar"], dtype=pl.Categorical
@@ -49,81 +68,37 @@ bears_cat = pl.Series(
 print(bears_cat)
 # --8<-- [end:categorical-example]
 
+# --8<-- [start:categories-example]
+bear_categories = pl.Categories(name="bear_species", physical=pl.UInt8)
+bears = pl.DataFrame(
+    {"species": ["Polar", "Brown", "Panda", "Brown", "Polar"]},
+    schema_overrides={"species": pl.Categorical(bear_categories)},
+)
+print(bears)
+# --8<-- [end:categories-example]
+
 # --8<-- [start:categorical-comparison-string]
-print(bears_cat < "Cat")
+print(
+    pl.DataFrame({"categorical": bears_cat}).with_columns(
+        (pl.col("categorical") < "Cat").alias('categorical < "Cat"')
+    )
+)
 # --8<-- [end:categorical-comparison-string]
 
 # --8<-- [start:categorical-comparison-string-column]
-bears_str = pl.Series(
-    ["Panda", "Brown", "Brown", "Polar", "Polar"],
+print(
+    pl.DataFrame(
+        {
+            "categorical": bears_cat,
+            "string": pl.Series(["Panda", "Brown", "Brown", "Polar", "Polar"]),
+        }
+    ).with_columns(
+        (pl.col("categorical") == pl.col("string")).alias("categorical == string"),
+    )
 )
-print(bears_cat == bears_str)
 # --8<-- [end:categorical-comparison-string-column]
 
-# --8<-- [start:categorical-comparison-categorical-column]
-from polars.exceptions import StringCacheMismatchError
-
-bears_cat2 = pl.Series(
-    ["Panda", "Brown", "Brown", "Polar", "Polar"],
-    dtype=pl.Categorical,
-)
-
-try:
-    print(bears_cat == bears_cat2)
-except StringCacheMismatchError as exc:
-    exc_str = str(exc).splitlines()[0]
-    print("StringCacheMismatchError:", exc_str)
-# --8<-- [end:categorical-comparison-categorical-column]
-
-# --8<-- [start:stringcache-categorical-equality]
-with pl.StringCache():
-    bears_cat = pl.Series(
-        ["Polar", "Panda", "Brown", "Brown", "Polar"], dtype=pl.Categorical
-    )
-    bears_cat2 = pl.Series(
-        ["Panda", "Brown", "Brown", "Polar", "Polar"], dtype=pl.Categorical
-    )
-
-print(bears_cat == bears_cat2)
-# --8<-- [end:stringcache-categorical-equality]
-
-# --8<-- [start:stringcache-categorical-comparison-lexical]
-import warnings
-
-with pl.StringCache():
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-        bears_cat = pl.Series(
-            ["Polar", "Panda", "Brown", "Brown", "Polar"],
-            dtype=pl.Categorical(ordering="lexical"),
-        )
-    bears_cat2 = pl.Series(
-        ["Panda", "Brown", "Brown", "Polar", "Polar"], dtype=pl.Categorical
-    )
-
-print(bears_cat > bears_cat2)
-# --8<-- [end:stringcache-categorical-comparison-lexical]
-
-# --8<-- [start:stringcache-categorical-comparison-physical]
-with pl.StringCache():
-    bears_cat = pl.Series(
-        # Polar <  Panda <  Brown
-        ["Polar", "Panda", "Brown", "Brown", "Polar"],
-        dtype=pl.Categorical,
-    )
-    bears_cat2 = pl.Series(
-        ["Panda", "Brown", "Brown", "Polar", "Polar"], dtype=pl.Categorical
-    )
-
-print(bears_cat > bears_cat2)
-# --8<-- [end:stringcache-categorical-comparison-physical]
-
 # --8<-- [start:concatenating-categoricals]
-import warnings
-
-from polars.exceptions import CategoricalRemappingWarning
-
 male_bears = pl.DataFrame(
     {
         "species": ["Polar", "Brown", "Panda"],
@@ -138,11 +113,7 @@ female_bears = pl.DataFrame(
     },
     schema_overrides={"species": pl.Categorical},
 )
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=CategoricalRemappingWarning)
-    bears = pl.concat([male_bears, female_bears], how="vertical")
-
+bears = pl.concat([male_bears, female_bears], how="vertical")
 print(bears)
 # --8<-- [end:concatenating-categoricals]
 
@@ -168,15 +139,14 @@ cat2_series = pl.Series(
     ["Panda", "Brown", "Brown", "Polar", "Polar"], dtype=pl.Categorical
 )
 
-# Triggers a CategoricalRemappingWarning.
-print(cat_bears.append(cat2_series))
+print(cat_bears.extend(cat2_series))
 # --8<-- [end:append]
 
 # --8<-- [start:enum_append]
 dtype = pl.Enum(["Polar", "Panda", "Brown"])
 cat_bears = pl.Series(["Polar", "Panda", "Brown", "Brown", "Polar"], dtype=dtype)
 cat2_series = pl.Series(["Panda", "Brown", "Brown", "Polar", "Polar"], dtype=dtype)
-print(cat_bears.append(cat2_series))
+print(cat_bears.extend(cat2_series))
 # --8<-- [end:enum_append]
 
 # --8<-- [start:enum_error]
@@ -186,20 +156,6 @@ try:
 except Exception as e:
     print(e)
 # --8<-- [end:enum_error]
-
-# --8<-- [start:equality]
-dtype = pl.Enum(["Polar", "Panda", "Brown"])
-cat_bears = pl.Series(["Brown", "Panda", "Polar"], dtype=dtype)
-cat_series2 = pl.Series(["Polar", "Panda", "Brown"], dtype=dtype)
-print(cat_bears == cat_series2)
-# --8<-- [end:equality]
-
-# --8<-- [start:global_equality]
-with pl.StringCache():
-    cat_bears = pl.Series(["Brown", "Panda", "Polar"], dtype=pl.Categorical)
-    cat_series2 = pl.Series(["Polar", "Panda", "Black"], dtype=pl.Categorical)
-    print(cat_bears == cat_series2)
-# --8<-- [end:global_equality]
 
 # --8<-- [start:equality]
 dtype = pl.Enum(["Polar", "Panda", "Brown"])

@@ -1,3 +1,4 @@
 mypy[faster-cache]==1.19.1
+pyrefly==1.0.0
 ruff==0.15.0
 typos==1.43.3
