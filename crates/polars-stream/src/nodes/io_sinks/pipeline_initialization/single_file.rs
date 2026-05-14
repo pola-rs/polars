@@ -2,9 +2,9 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
-use polars_io::pl_async;
 use polars_plan::dsl::sink::SinkedPathInfo;
 use polars_plan::dsl::{SinkTarget, UnifiedSinkArgs};
 use polars_utils::pl_str::PlSmallStr;
@@ -74,7 +74,7 @@ pub fn start_single_file_sink_pipeline(
 
     let file_open_task = {
         let io_metrics = io_metrics.clone();
-        tokio_handle_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
+        tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
             target
                 .open_into_writeable_async(
                     cloud_options.as_deref(),

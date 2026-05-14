@@ -11416,10 +11416,6 @@ Consider using {self}.implode() instead"""
         replace_strict
         str.replace
 
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
-
         Examples
         --------
         Replace a single value by another value. Values that were not replaced remain
@@ -11591,10 +11587,6 @@ Consider using {self}.implode() instead"""
         --------
         replace
         str.replace
-
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------

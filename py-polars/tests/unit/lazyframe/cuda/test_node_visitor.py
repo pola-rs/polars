@@ -121,7 +121,7 @@ def test_run_on_pandas() -> None:
     q1 = pl.LazyFrame({"foo": [1, 2, 3]})
     q2 = pl.LazyFrame({"foo": [1], "bar": [2]})
     q = q1.join(q2, on="foo")
-    assert q.collect(
+    assert q.collect(  # pyrefly: ignore[no-matching-overload]
         post_opt_callback=run_on_pandas  # type: ignore[call-overload]
     ).to_dict(as_series=False) == {
         "foo": [2],
@@ -165,6 +165,6 @@ def test_node_traverse_sink(tmp_path: Path) -> None:
         ]
 
     q = pl.LazyFrame({"x": [0, 1, 2]}).sink_parquet(tmp_path / "a", lazy=True)
-    q.collect(
+    q.collect(  # pyrefly: ignore[no-matching-overload]
         post_opt_callback=callback  # type: ignore[call-overload]
     )

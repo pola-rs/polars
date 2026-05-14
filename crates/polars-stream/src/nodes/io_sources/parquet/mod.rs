@@ -3,13 +3,14 @@ use std::sync::Arc;
 use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
 use polars_core::prelude::ArrowSchema;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_error::{PolarsResult, polars_err};
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::{BufferByteSource, DynByteSource, DynByteSourceBuilder};
-use polars_io::{RowIndex, pl_async};
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
@@ -87,7 +88,7 @@ impl FileReader for ParquetFileReader {
         let cloud_options = self.cloud_options.clone();
         let io_metrics = self.io_metrics.clone();
 
-        let byte_source = pl_async::get_runtime()
+        let byte_source = ASYNC
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
@@ -109,7 +110,7 @@ impl FileReader for ParquetFileReader {
             let (metadata_bytes, opt_full_bytes) = {
                 let byte_source = byte_source.clone();
 
-                pl_async::get_runtime()
+                ASYNC
                     .spawn(async move {
                         metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
                     })

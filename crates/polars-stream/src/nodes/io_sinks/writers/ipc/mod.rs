@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use polars_core::config;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
-use polars_io::pl_async;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
@@ -99,7 +99,7 @@ impl FileWriterStarter for IpcWriterStarter {
             let compat_level = options.compat_level;
 
             let io_handle = tokio_handle_ext::AbortOnDropHandle(
-                pl_async::get_runtime().spawn(
+                ASYNC.spawn(
                     io_writer::IOWriter {
                         file,
                         ipc_batch_rx,

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_buffer::Buffer;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use tokio::sync::mpsc::Sender;
@@ -38,12 +39,11 @@ impl ChunkDataFetcher {
             let chunk_size = self.chunk_size;
             let current_byte_source = self.byte_source.clone();
             let memory_prefetch_func = self.memory_prefetch_func;
-            let io_runtime = polars_io::pl_async::get_runtime();
 
             let range = byte_offset..std::cmp::min(file_size, byte_offset + chunk_size);
             let range_len = range.len();
 
-            let handle = io_runtime.spawn(async move {
+            let handle = ASYNC.spawn(async move {
                 let fetched_bytes =
                     if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
                         let slice = mem_slice.0.as_ref();

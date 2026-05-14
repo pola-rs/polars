@@ -2,8 +2,8 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::utils::try_get_supertype;
 
 /// Get the supertype that is valid for all columns in the [`DataFrame`].
@@ -138,7 +138,7 @@ impl DataFrame {
 
                 f(&l, &r).map(Column::from)
             });
-        let mut cols = POOL.install(|| cols.collect::<PolarsResult<Vec<_>>>())?;
+        let mut cols = RAYON.install(|| cols.collect::<PolarsResult<Vec<_>>>())?;
 
         let col_len = cols.len();
         if col_len < max_width {

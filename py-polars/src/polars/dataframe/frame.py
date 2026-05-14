@@ -8423,10 +8423,6 @@ class DataFrame:
         │ 3   ┆ 8.0 ┆ c   ┆ y     ┆ b         │
         │ 3   ┆ 8.0 ┆ c   ┆ z     ┆ d         │
         └─────┴─────┴─────┴───────┴───────────┘
-
-        Notes
-        -----
-        For joining on columns with categorical data, see :class:`polars.StringCache`.
         """
         require_same_type(self, other)
 

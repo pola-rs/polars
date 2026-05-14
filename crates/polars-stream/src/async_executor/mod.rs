@@ -17,7 +17,7 @@ use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
 use park_group::ParkGroup;
 use parking_lot::Mutex;
-use polars_core::ALLOW_RAYON_THREADS;
+use polars_core::runtime::ALLOW_RAYON_THREADS;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};

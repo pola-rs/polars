@@ -1,8 +1,8 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_io::pl_async;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_plan::dsl::file_provider::FileProviderArgs;
 
@@ -32,8 +32,7 @@ impl PartitionSinkStarter {
     ) -> PolarsResult<FileSinkTaskData> {
         let file_provider = Arc::clone(&self.file_provider);
         let file_open_task = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime()
-                .spawn(async move { file_provider.open_file(file_provider_args).await }),
+            ASYNC.spawn(async move { file_provider.open_file(file_provider_args).await }),
         );
 
         let (morsel_tx, morsel_rx) = connector::connector();

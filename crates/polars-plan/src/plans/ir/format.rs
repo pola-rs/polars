@@ -1007,6 +1007,7 @@ pub fn write_ir_non_recursive(
         ),
         IR::UnoptimizedDispatch {
             inputs: _,
+            arg_map: _,
             operation,
         } => write!(f, "{:indent$}DISPATCH {operation}", ""),
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),

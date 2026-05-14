@@ -27,7 +27,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
 mod io;
@@ -260,6 +260,7 @@ pub enum PhysNodeKind {
     ColumnarFunction {
         inputs: Vec<PhysStream>,
         func: Arc<dyn ColumnsUdf>,
+        arg_map: Option<FunctionArgMap>,
         output_name: PlSmallStr,
         format_str: Option<String>,
     },

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::ParallelStrategy;
@@ -22,8 +23,6 @@ impl ParquetReadImpl {
     #[allow(clippy::type_complexity)]
     pub(super) fn init_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
-        let io_runtime = polars_io::pl_async::get_runtime();
-
         let use_statistics = self.options.use_statistics;
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
@@ -31,7 +30,7 @@ impl ParquetReadImpl {
         if let Some((_, 0)) = self.normalized_pre_slice {
             return (
                 morsel_rx,
-                tokio_handle_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
+                tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(std::future::ready(Ok(())))),
             );
         }
 
@@ -66,7 +65,7 @@ impl ParquetReadImpl {
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
 
-        let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
                 bigidx,
@@ -168,7 +167,7 @@ impl ParquetReadImpl {
 
         // Decode loop (spawns decodes on the computational executor).
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
-        let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
                 let row_group_data = prefetch_task.await.unwrap()?;
                 let row_group_decoder = row_group_decoder.clone();
@@ -259,7 +258,7 @@ impl ParquetReadImpl {
             PolarsResult::Ok(())
         });
 
-        let join_task = io_runtime.spawn(async move {
+        let join_task = ASYNC.spawn(async move {
             prefetch_task.await.unwrap()?;
             decode_task.await.unwrap()?;
             distribute_task.await?;
