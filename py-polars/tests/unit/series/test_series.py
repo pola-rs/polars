@@ -2503,7 +2503,7 @@ def test_series_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
     else:
         assert len(result) == 2
         assert set(result).issubset({1, 2, 3, 4})
-        
+
 
 def test_is_sorted_struct_27613() -> None:
     s = pl.Series([{"x": 1, "y": 1}, {"x": 1, "y": 2}, {"x": 2, "y": 0}])
