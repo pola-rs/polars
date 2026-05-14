@@ -2,8 +2,8 @@ use std::cmp;
 use std::num::NonZeroUsize;
 
 use polars_buffer::Buffer;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_io::pl_async;
 use polars_io::utils::compression::{ByteSourceReader, SupportedCompression};
 use polars_io::utils::stream_buf_reader::ReaderSource;
 use polars_utils::mem::prefetch::prefetch_l2;
@@ -78,8 +78,8 @@ impl LineBatchDistributor {
             verbose,
         } = self;
 
-        let read_loop_handle = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime().spawn_blocking(move || {
+        let read_loop_handle =
+            tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
                 let handle = tokio::runtime::Handle::current();
                 if verbose {
                     eprintln!("[NDJsonFileReader]: Start line batch distributor async");
@@ -105,8 +105,7 @@ impl LineBatchDistributor {
                 }
 
                 PolarsResult::Ok(producer.n_rows_skipped())
-            }),
-        );
+            }));
 
         let n_rows_skipped = read_loop_handle.await.unwrap()?;
 

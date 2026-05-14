@@ -35,7 +35,6 @@ use crate::dataframe::PyDataFrame;
 use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
-use crate::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -118,7 +117,6 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyDataTypeExpr>().unwrap();
     m.add_class::<PySelector>().unwrap();
-    m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
@@ -299,12 +297,6 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::enable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::disable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::using_string_cache))
         .unwrap();
 
     // Numeric formatting

@@ -50,7 +50,7 @@ simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
 strum = { workspace = true, optional = true }
 strum_macros = { workspace = true, optional = true }
-tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
+tokio = { workspace = true }
 zmij = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
@@ -124,7 +124,6 @@ parquet = ["polars-parquet", "polars-parquet/compression", "polars-core/partitio
 async = [
   "async-trait",
   "futures",
-  "tokio",
   "polars-error/regex",
   "polars-parquet?/async",
   "polars-utils/async-utils",

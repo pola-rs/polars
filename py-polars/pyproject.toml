@@ -91,6 +91,24 @@ all = [
   "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
 ]
 
+[tool.pyrefly]
+project-includes = ["tests"]
+search-path = ["./src", "."]
+ignore-missing-imports = [
+  "_polars_runtime_32.*",
+  "_polars_runtime_64.*",
+  "_polars_runtime_compat.*",
+  "IPython.*",
+  "altair.*",
+  "duckdb.*",
+  "pyiceberg.*",
+]
+# pyrefly equivalent of mypy's `follow_imports = "skip"`
+replace-imports-with-any = [
+  "pyarrow.*",
+  "pyiceberg.*",
+]
+
 [tool.mypy]
 files = ["src/polars", "tests"]
 strict = true

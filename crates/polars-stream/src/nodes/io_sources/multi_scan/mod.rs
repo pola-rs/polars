@@ -7,9 +7,9 @@ pub mod reader_interface;
 use std::sync::{Arc, Mutex};
 
 use pipeline::initialization::initialize_multi_scan_pipeline;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
-use polars_io::pl_async;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -76,8 +76,7 @@ impl ComputeNode for MultiScan {
             // Refresh first - in case there is an error we end here instead of ending when we go
             // into spawn.
             async_executor::task_scope(|s| {
-                pl_async::get_runtime()
-                    .block_on(s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)))
+                ASYNC.block_on(s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)))
             })?;
 
             match self.state {

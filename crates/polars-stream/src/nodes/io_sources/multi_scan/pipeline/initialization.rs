@@ -3,9 +3,9 @@ use std::sync::{Arc, Mutex};
 
 use futures::StreamExt;
 use polars_core::prelude::PlHashMap;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
-use polars_io::pl_async::get_runtime;
 use polars_mem_engine::scan_predicate::initialize_scan_predicate;
 use polars_plan::dsl::PredicateFileSkip;
 use polars_utils::row_counter::RowCounter;
@@ -163,7 +163,7 @@ async fn finish_initialize_multi_scan_pipeline(
         let sources = config.sources.clone();
         let cloud_options = config.cloud_options.clone();
 
-        get_runtime()
+        ASYNC
             .spawn(async move {
                 let sources = sources.clone();
                 assert!(sources.as_paths().is_some());
@@ -202,7 +202,7 @@ async fn finish_initialize_multi_scan_pipeline(
                     || reader_capabilities.contains(ReaderCapabilities::ROW_INDEX))
                 && (config.deletion_files.is_none()
                     || reader_capabilities.contains(ReaderCapabilities::EXTERNAL_FILTER_MASK))
-                && !get_runtime()
+                && !ASYNC
                     .spawn(is_compressed_source(
                         config.sources.get(0).unwrap().into_owned()?,
                         config.cloud_options.clone(),

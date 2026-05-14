@@ -232,7 +232,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         if self.len() < 2 {
             return Ok(self.0.clone().into_series());
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
         // SAFETY:
         // groups are in bounds
@@ -248,7 +248,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             1 => Ok(1),
             _ => {
                 // TODO! try row encoding
-                let main_thread = POOL.current_thread_index().is_none();
+                let main_thread = RAYON.current_thread_index().is_none();
                 let groups = self.group_tuples(main_thread, false)?;
                 Ok(groups.len())
             },
@@ -262,7 +262,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name().clone(), first))

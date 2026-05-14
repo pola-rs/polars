@@ -1,9 +1,9 @@
 use std::ops::{BitAnd, BitOr};
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
+use polars_core::runtime::RAYON;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBooleanFunction;
 use polars_utils::pl_str::PlSmallStr;
@@ -168,7 +168,7 @@ fn not(s: &Column) -> PolarsResult<Column> {
 
 // We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
 fn any_horizontal(s: &[Column]) -> PolarsResult<Column> {
-    let out = POOL
+    let out = RAYON
         .install(|| {
             s.par_iter()
                 .try_fold(
@@ -190,7 +190,7 @@ fn any_horizontal(s: &[Column]) -> PolarsResult<Column> {
 
 // We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
 fn all_horizontal(s: &[Column]) -> PolarsResult<Column> {
-    let out = POOL
+    let out = RAYON
         .install(|| {
             s.par_iter()
                 .try_fold(

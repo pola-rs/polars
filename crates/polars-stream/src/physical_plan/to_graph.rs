@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use num_traits::AsPrimitive;
 use parking_lot::Mutex;
+use polars_core::config;
 use polars_core::prelude::PlRandomState;
+use polars_core::runtime::RAYON;
 use polars_core::schema::{Schema, SchemaRef};
-use polars_core::{POOL, config};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr};
@@ -79,7 +80,7 @@ pub fn physical_plan_to_graph(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
     // Get the number of threads from the rayon thread-pool as that respects our config.
-    let num_pipelines = POOL.current_num_threads();
+    let num_pipelines = RAYON.current_num_threads();
     let mut ctx = GraphConversionContext {
         phys_sm,
         expr_arena,
@@ -519,6 +520,7 @@ fn to_graph_rec<'a>(
             inputs,
             func,
             output_name,
+            arg_map,
             format_str: _,
         } => {
             let input_schemas = inputs
@@ -533,6 +535,7 @@ fn to_graph_rec<'a>(
                 nodes::columnar_function::ColumnarFunctionNode::new(
                     input_schemas,
                     func.clone(),
+                    arg_map.clone(),
                     output_name.clone(),
                 ),
                 input_keys,

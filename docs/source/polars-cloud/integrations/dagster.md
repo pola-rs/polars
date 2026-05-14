@@ -26,28 +26,27 @@ pay the cost of spinning it up while the smaller-VM assets are running.
 from contextlib import contextmanager
 
 import polars as pl
+import polars_cloud as pc
 from dagster import asset, ConfigurableResource, Definitions, EnvVar
-
-from polars_cloud import ComputeContext, authenticate, set_compute_context
 
 
 class PolarsCloudAuth(ConfigurableResource):
-    """Service-account authentication for Polars Cloud."""
+    """Service account authentication for Polars Cloud."""
 
     client_id: str
     client_secret: str
 
     def setup_for_execution(self, context) -> None:
-        authenticate(client_id=self.client_id, client_secret=self.client_secret)
+        pc.authenticate(client_id=self.client_id, client_secret=self.client_secret)
 
 
 class PolarsCloudCompute(ConfigurableResource):
     """Polars Cloud compute context with auto-managed VM lifecycle.
 
-    Declares ``PolarsCloudAuth`` as a nested resource so Dagster runs
-    ``authenticate(...)`` before this resource is used. ``yield_for_execution``
-    starts a ``ComputeContext`` of the configured shape and the ``finally``
-    clause guarantees the VM is released even when an asset raises.
+    Declares `PolarsCloudAuth` as a nested resource so Dagster runs `authenticate(...)`
+    before this resource is used. `yield_for_execution(...)` starts a `ComputeContext`
+    of the configured shape and the `finally` clause guarantees the VM is released even
+    when an asset raises.
     """
 
     auth: PolarsCloudAuth
@@ -56,9 +55,10 @@ class PolarsCloudCompute(ConfigurableResource):
 
     @contextmanager
     def yield_for_execution(self, context):
-        ctx = ComputeContext(cpus=self.cpus, memory=self.memory)
+        ctx = pc.ComputeContext(cpus=self.cpus, memory=self.memory)
+        ctx.start()
         try:
-            set_compute_context(ctx)
+            pc.set_compute_context(ctx)
             yield self
         finally:
             ctx.stop()
@@ -80,8 +80,8 @@ def joined(large_vm: PolarsCloudCompute):
     pl.scan_parquet(...).remote().sink_parquet(...)
 
 
-# Share a single ``PolarsCloudAuth`` instance between the compute resources so
-# the credentials are loaded once per run.
+# Share a single `PolarsCloudAuth` instance between the compute resources so the
+# credentials are loaded once per run.
 auth = PolarsCloudAuth(
     client_id=EnvVar("POLARS_CLOUD_CLIENT_ID"),
     client_secret=EnvVar("POLARS_CLOUD_CLIENT_SECRET"),
