@@ -2508,6 +2508,7 @@ def test_replace_with_expr_raises_22591(old: list[Any], new: list[Any]) -> None:
     ):
         s.replace(old, new)
 
+
 def test_is_sorted_struct_27613() -> None:
     s = pl.Series([{"x": 1, "y": 1}, {"x": 1, "y": 2}, {"x": 2, "y": 0}])
     assert s.is_sorted()
