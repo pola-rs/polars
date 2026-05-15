@@ -84,6 +84,8 @@ pub(super) struct StartReaderArgsConstant {
     pub(super) forbid_extra_columns: Option<ForbidExtraColumns>,
     pub(super) num_pipelines: usize,
     pub(super) disable_morsel_split: bool,
+    /// Precomputed last-morsel split factor; see `BeginReadArgs::last_morsel_pipelines`.
+    pub(super) last_morsel_pipelines: usize,
     pub(super) verbose: bool,
 }
 

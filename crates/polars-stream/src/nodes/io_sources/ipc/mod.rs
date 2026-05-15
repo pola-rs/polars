@@ -191,6 +191,7 @@ impl FileReader for IpcFileReader {
             cast_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
+            last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -407,7 +408,9 @@ impl FileReader for IpcFileReader {
         // Task: Distributor.
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
-        let last_morsel_min_split = num_pipelines;
+        //
+        // `last_morsel_pipelines` is precomputed at the multi-scan layer so the split budget is
+        // shared across files in the scan.
         let distribute_task = async_executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
@@ -464,7 +467,7 @@ impl FileReader for IpcFileReader {
                     &df,
                     ideal_morsel_size,
                     next.is_none(),
-                    last_morsel_min_split,
+                    last_morsel_pipelines,
                 ) {
                     if morsel_send
                         .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
