@@ -263,3 +263,145 @@ pub fn aexpr_to_pyarrow<'py>(
         _ => None,
     }
 }
+
+fn extract_column_name<'a>(node: Node, expr_arena: &'a Arena<AExpr>) -> Option<&'a str> {
+    match expr_arena.get(node) {
+        AExpr::Column(name) => Some(name.as_str()),
+        _ => None,
+    }
+}
+
+// Get a literal out of a node w/series guard
+fn _extract_literal_value<'py>(
+    py: Python<'py>,
+    node: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<Bound<'py, PyAny>> {
+    if let AExpr::Literal(lv) = expr_arena.get(node) {
+        if matches!(lv, LiteralValue::Series(_)) {
+            return None;
+        }
+        let av = lv.to_any_value()?;
+        anyvalue_to_py(py, av)
+    } else {
+        None
+    }
+}
+
+// Converts AExpr predicate to `pyiceberg.expressions.BooleanExpression``
+// eventually passed to `table.scan(row_filter=...)`
+pub fn aexpr_to_pyiceberg<'py>(
+    py: Python<'py>,
+    pe: &Bound<'py, PyAny>,
+    predicate: Node,
+    expr_arena: &Arena<AExpr>,
+) -> Option<Bound<'py, PyAny>> {
+    match expr_arena.get(predicate) {
+        AExpr::BinaryExpr { left, right, op } => match op {
+            Operator::And | Operator::LogicalAnd => {
+                let l = aexpr_to_pyiceberg(py, pe, *left, expr_arena)?;
+                let r = aexpr_to_pyiceberg(py, pe, *right, expr_arena)?;
+                pe.getattr("And").ok()?.call1((l, r)).ok()
+            },
+            Operator::Or | Operator::LogicalOr => {
+                let l = aexpr_to_pyiceberg(py, pe, *left, expr_arena)?;
+                let r = aexpr_to_pyiceberg(py, pe, *right, expr_arena)?;
+                pe.getattr("Or").ok()?.call1((l, r)).ok()
+            },
+            Operator::Eq
+            | Operator::NotEq
+            | Operator::Lt
+            | Operator::LtEq
+            | Operator::Gt
+            | Operator::GtEq => {
+                // Iceberg seems to only support `column op literal` format.
+                // Have to normalize the expression to figure out which side is the column, and which the literal.
+                let (col_name, lit, op) =
+                    if let Some(name) = extract_column_name(*left, expr_arena) {
+                        (name, _extract_literal_value(py, *right, expr_arena)?, *op)
+                    } else {
+                        let name = extract_column_name(*right, expr_arena)?;
+                        let lit = _extract_literal_value(py, *left, expr_arena)?;
+                        let mirrored = match op {
+                            Operator::Lt => Operator::Gt,
+                            Operator::LtEq => Operator::GtEq,
+                            Operator::Gt => Operator::Lt,
+                            Operator::GtEq => Operator::LtEq,
+                            other => *other,
+                        };
+                        (name, lit, mirrored)
+                    };
+                let class = match op {
+                    Operator::Eq => "EqualTo",
+                    Operator::NotEq => "NotEqualTo",
+                    Operator::Lt => "LessThan",
+                    Operator::LtEq => "LessThanOrEqual",
+                    Operator::Gt => "GreaterThan",
+                    Operator::GtEq => "GreaterThanOrEqual",
+                    _ => return None,
+                };
+                pe.getattr(class).ok()?.call1((col_name, lit)).ok()
+            },
+            _ => None,
+        },
+        // Iceberg doesn't have a way of expressing a column as a mask so we have to convert it to `column ==True`
+        AExpr::Column(name) => pe.getattr("EqualTo").ok()?.call1((name.as_str(), true)).ok(),
+        #[cfg(feature = "is_in")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
+            input,
+            ..
+        } => {
+            let colname = extract_column_name(input.first()?.node(), expr_arena)?;
+            let rhs_node = input.get(1)?.node();
+            let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
+                return None;
+            };
+            let values_list = match needle_isin_haystack(lv, *nulls_equal)? {
+                IsInHaystack::Empty => return pe.getattr("AlwaysFalse").ok()?.call0().ok(),
+                IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
+            };
+            pe.getattr("In").ok()?.call1((colname, values_list)).ok()
+        },
+        #[cfg(feature = "is_between")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
+            input,
+            ..
+        } => {
+            let colname = extract_column_name(input.first()?.node(), expr_arena)?;
+            let lower = _extract_literal_value(py, input.get(1)?.node(), expr_arena)?;
+            let upper = _extract_literal_value(py, input.get(2)?.node(), expr_arena)?;
+            let left_class = match closed {
+                ClosedInterval::None | ClosedInterval::Right => "GreaterThan",
+                ClosedInterval::Both | ClosedInterval::Left => "GreaterThanOrEqual",
+            };
+            let right_class = match closed {
+                ClosedInterval::None | ClosedInterval::Left => "LessThan",
+                ClosedInterval::Both | ClosedInterval::Right => "LessThanOrEqual",
+            };
+            let l = pe.getattr(left_class).ok()?.call1((colname, lower)).ok()?;
+            let r = pe.getattr(right_class).ok()?.call1((colname, upper)).ok()?;
+            pe.getattr("And").ok()?.call1((l, r)).ok()
+        },
+        AExpr::Function {
+            function, input, ..
+        } => match function {
+            IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
+                let inner = aexpr_to_pyiceberg(py, pe, input.first()?.node(), expr_arena)?;
+                pe.getattr("Not").ok()?.call1((inner,)).ok()
+            },
+            IRFunctionExpr::Boolean(IRBooleanFunction::IsNull) => {
+                let colname = extract_column_name(input.first()?.node(), expr_arena)?;
+                pe.getattr("IsNull").ok()?.call1((colname,)).ok()
+            },
+            IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => {
+                let colname = extract_column_name(input.first()?.node(), expr_arena)?;
+                let is_null = pe.getattr("IsNull").ok()?.call1((colname,)).ok()?;
+                pe.getattr("Not").ok()?.call1((is_null,)).ok()
+            },
+            _ => None,
+        },
+        _ => None,
+    }
+}
