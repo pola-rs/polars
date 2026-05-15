@@ -16,7 +16,7 @@ use polars_utils::unique_id::UniqueId;
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
-pub use unoptimized::UnoptimizedOperation;
+pub use unoptimized::{FunctionArgMap, UnoptimizedOperation};
 
 use self::hive::HivePartitionsDf;
 use crate::prelude::*;
@@ -169,6 +169,7 @@ pub enum IR {
     },
     UnoptimizedDispatch {
         inputs: Vec<Node>,
+        arg_map: FunctionArgMap,
         operation: UnoptimizedOperation,
     },
     #[default]

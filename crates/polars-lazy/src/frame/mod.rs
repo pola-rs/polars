@@ -769,7 +769,8 @@ impl LazyFrame {
         let runner = move || {
             // We use a tokio spawn_blocking here as it has a high blocking
             // thread pool limit.
-            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+
+            polars_core::runtime::ASYNC.spawn_blocking(move || {
                 if let Err(e) = ldf.collect_with_engine(engine) {
                     runner_send.send(Err(e)).ok();
                 }

@@ -454,10 +454,8 @@ def test_struct_pyarrow_dataset_5796(tmp_path: Path) -> None:
 def test_parquet_chunks_545(case: int) -> None:
     f = io.BytesIO()
     # repeat until it has case instances
-    df = pd.DataFrame(
-        np.tile([1.0, pd.to_datetime("2010-10-10")], [case, 1]),
-        columns=["floats", "dates"],
-    )
+    values: list[Any] = [1.0, pd.to_datetime("2010-10-10")]
+    df = pd.DataFrame(np.tile(values, [case, 1]), columns=["floats", "dates"])
 
     # write as parquet
     df.to_parquet(f)

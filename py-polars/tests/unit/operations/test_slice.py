@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 if TYPE_CHECKING:
@@ -159,6 +159,33 @@ def test_hconcat_slice_pushdown() -> None:
 
     df_out = out.collect()
     assert_frame_equal(df_out, expected)
+
+
+def test_hconcat_tail_unequal_heights_27552() -> None:
+    # Regression for https://github.com/pola-rs/polars/issues/27552
+    # HConcat null-pads shorter inputs to the longest input's height; a
+    # negative-offset slice (e.g. .tail(n)) over the concat must reflect those
+    # padded nulls, not each input's own last n rows.
+    a = pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
+    b = pl.LazyFrame({"y": [10, 20, 30]})
+
+    lazy_out = pl.concat([a, b], how="horizontal").tail(2).collect()
+    eager_out = pl.concat([a.collect(), b.collect()], how="horizontal").tail(2)
+
+    assert_frame_equal(lazy_out, eager_out)
+
+
+def test_hconcat_tail_unequal_heights_strict_raises_27552() -> None:
+    # Regression for https://github.com/pola-rs/polars/issues/27552
+    # With strict=True, horizontal concat of unequal-height inputs must raise,
+    # even when followed by a negative-offset slice. Before the fix, the slice
+    # was pushed into each input and equalised their post-slice heights,
+    # silently bypassing the strict-mode height check.
+    a = pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
+    b = pl.LazyFrame({"y": [10, 20, 30]})
+
+    with pytest.raises(ShapeError):
+        pl.concat([a, b], how="horizontal", strict=True).tail(2).collect()
 
 
 @pytest.mark.parametrize(
