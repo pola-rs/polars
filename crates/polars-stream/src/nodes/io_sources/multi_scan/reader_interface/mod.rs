@@ -150,6 +150,12 @@ pub struct BeginReadArgs {
 
     pub num_pipelines: usize,
     pub disable_morsel_split: bool,
+    /// Minimum number of pieces a reader should split a file's last morsel into, to keep
+    /// downstream pipelines busy. The multi-scan layer precomputes this so the per-file
+    /// budget is shared across files in the same scan. When many files are concurrent,
+    /// file-level parallelism already saturates the pipeline and per-file last-morsel
+    /// splitting just inflates metadata overhead.
+    pub last_morsel_pipelines: usize,
     pub callbacks: FileReaderCallbacks,
     // TODO
     // We could introduce dynamic `Option<Box<dyn Any>>` for the reader to use. That would help
@@ -168,6 +174,7 @@ impl Default for BeginReadArgs {
             cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
             num_pipelines: 1,
             disable_morsel_split: false,
+            last_morsel_pipelines: 1,
             callbacks: FileReaderCallbacks::default(),
         }
     }

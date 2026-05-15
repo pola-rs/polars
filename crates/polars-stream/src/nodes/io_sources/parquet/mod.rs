@@ -179,6 +179,7 @@ impl FileReader for ParquetFileReader {
             cast_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: true,
+            last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx: _,
@@ -207,6 +208,7 @@ impl FileReader for ParquetFileReader {
             cast_columns_policy,
             num_pipelines,
             disable_morsel_split,
+            last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -337,6 +339,7 @@ impl FileReader for ParquetFileReader {
                 num_pipelines,
                 row_group_prefetch_size,
                 target_values_per_thread,
+                last_morsel_pipelines,
             },
             verbose,
             memory_prefetch_func,
@@ -448,6 +451,9 @@ struct Config {
     /// Minimum number of values for a parallel spawned task to process to amortize
     /// parallelism overhead.
     target_values_per_thread: usize,
+    /// Minimum number of pieces to split this file's last morsel into. Precomputed by the
+    /// multi-scan layer to share the parallelism budget across files.
+    last_morsel_pipelines: usize,
 }
 
 impl ParquetReadImpl {
