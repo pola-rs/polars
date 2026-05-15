@@ -167,7 +167,10 @@ pub(super) fn expand_datasets(
                                     combined_ice = Some(match combined_ice {
                                         None => ice,
                                         Some(prev) => {
-                                            match pe.getattr("And").and_then(|c| c.call1((prev, ice))) {
+                                            match pe
+                                                .getattr("And")
+                                                .and_then(|c| c.call1((prev, ice)))
+                                            {
                                                 Ok(v) => v,
                                                 Err(_) => return (None, None, None),
                                             }
@@ -189,7 +192,8 @@ pub(super) fn expand_datasets(
                                 },
                             };
 
-                            let ice_obj: Option<PythonObject> = combined_ice.map(|e| PythonObject(e.unbind()));
+                            let ice_obj: Option<PythonObject> =
+                                combined_ice.map(|e| PythonObject(e.unbind()));
 
                             (pa_obj, key, ice_obj)
                         },

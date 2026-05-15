@@ -264,7 +264,7 @@ pub fn aexpr_to_pyarrow<'py>(
     }
 }
 
-fn extract_column_name<'a>(node: Node, expr_arena: &'a Arena<AExpr>) -> Option<&'a str> {
+fn extract_column_name(node: Node, expr_arena: &Arena<AExpr>) -> Option<&str> {
     match expr_arena.get(node) {
         AExpr::Column(name) => Some(name.as_str()),
         _ => None,
@@ -316,21 +316,21 @@ pub fn aexpr_to_pyiceberg<'py>(
             | Operator::GtEq => {
                 // Iceberg seems to only support `column op literal` format.
                 // Have to normalize the expression to figure out which side is the column, and which the literal.
-                let (col_name, lit, op) =
-                    if let Some(name) = extract_column_name(*left, expr_arena) {
-                        (name, _extract_literal_value(py, *right, expr_arena)?, *op)
-                    } else {
-                        let name = extract_column_name(*right, expr_arena)?;
-                        let lit = _extract_literal_value(py, *left, expr_arena)?;
-                        let mirrored = match op {
-                            Operator::Lt => Operator::Gt,
-                            Operator::LtEq => Operator::GtEq,
-                            Operator::Gt => Operator::Lt,
-                            Operator::GtEq => Operator::LtEq,
-                            other => *other,
-                        };
-                        (name, lit, mirrored)
+                let (col_name, lit, op) = if let Some(name) = extract_column_name(*left, expr_arena)
+                {
+                    (name, _extract_literal_value(py, *right, expr_arena)?, *op)
+                } else {
+                    let name = extract_column_name(*right, expr_arena)?;
+                    let lit = _extract_literal_value(py, *left, expr_arena)?;
+                    let mirrored = match op {
+                        Operator::Lt => Operator::Gt,
+                        Operator::LtEq => Operator::GtEq,
+                        Operator::Gt => Operator::Lt,
+                        Operator::GtEq => Operator::LtEq,
+                        other => *other,
                     };
+                    (name, lit, mirrored)
+                };
                 let class = match op {
                     Operator::Eq => "EqualTo",
                     Operator::NotEq => "NotEqualTo",
@@ -345,7 +345,11 @@ pub fn aexpr_to_pyiceberg<'py>(
             _ => None,
         },
         // Iceberg doesn't have a way of expressing a column as a mask so we have to convert it to `column ==True`
-        AExpr::Column(name) => pe.getattr("EqualTo").ok()?.call1((name.as_str(), true)).ok(),
+        AExpr::Column(name) => pe
+            .getattr("EqualTo")
+            .ok()?
+            .call1((name.as_str(), true))
+            .ok(),
         #[cfg(feature = "is_in")]
         AExpr::Function {
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
