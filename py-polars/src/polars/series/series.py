@@ -125,7 +125,6 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Generator, Mapping
 
     import jax
-    import numpy.typing as npt
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -1574,7 +1573,7 @@ class Series:
 
     def __array__(
         self,
-        dtype: npt.DTypeLike | None = None,
+        dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
