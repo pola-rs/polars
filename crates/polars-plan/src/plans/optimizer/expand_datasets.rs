@@ -118,49 +118,84 @@ pub(super) fn expand_datasets(
                     out
                 });
 
-                let (pyarrow_predicate, pyarrow_predicate_key): (
+                // We build pyarrow and pyiceberg expr objects
+                // Delta consumes `pyarrow_predicate`
+                // Iceberg consumes `iceberg_predicate`
+                let (pyarrow_predicate, pyarrow_predicate_key, iceberg_predicate): (
                     Option<PythonObject>,
-                    Option<String>,
+                    Option<String>, // The cache key of the arrow repr
+                    Option<PythonObject>,
                 ) = if !unified_scan_args.has_row_index_or_slice()
                     && let Some(predicate) = &predicate
                 {
                     use pyo3::prelude::*;
 
                     use crate::plans::aexpr::MintermIter;
-                    use crate::plans::python::pyarrow::aexpr_to_pyarrow;
+                    use crate::plans::python::pyarrow::{aexpr_to_pyarrow, aexpr_to_pyiceberg};
 
                     // Convert minterms independently to allow partial conversion when
                     // some minterms are unsupported.
-                    Python::attach(|py| -> (Option<PythonObject>, Option<String>) {
-                        let Ok(pc) = py.import("pyarrow.compute") else {
-                            return (None, None);
-                        };
-                        let mut combined: Option<Bound<'_, PyAny>> = None;
-                        for node in MintermIter::new(predicate.node(), expr_arena) {
-                            if let Some(pa) = aexpr_to_pyarrow(py, &pc, node, expr_arena) {
-                                combined = Some(match combined {
-                                    None => pa,
-                                    Some(prev) => match prev.call_method1("__and__", (pa,)) {
-                                        Ok(v) => v,
-                                        Err(_) => return (None, None),
-                                    },
-                                });
+                    Python::attach(
+                        |py| -> (Option<PythonObject>, Option<String>, Option<PythonObject>) {
+                            // If we can't import pyarrow we can't do any pushdown
+                            let Ok(pc) = py.import("pyarrow.compute") else {
+                                return (None, None, None);
+                            };
+
+                            let pe = py.import("pyiceberg.expressions").ok();
+
+                            let mut combined_pa: Option<Bound<'_, PyAny>> = None;
+                            let mut combined_ice: Option<Bound<'_, PyAny>> = None;
+
+                            for node in MintermIter::new(predicate.node(), expr_arena) {
+                                if let Some(pa) = aexpr_to_pyarrow(py, &pc, node, expr_arena) {
+                                    // Combine them all w/and python overload
+                                    combined_pa = Some(match combined_pa {
+                                        None => pa,
+                                        Some(prev) => match prev.call_method1("__and__", (pa,)) {
+                                            Ok(v) => v,
+                                            Err(_) => return (None, None, None),
+                                        },
+                                    });
+                                }
+
+                                // If we have pyiceberg we can try to convert it
+                                if let Some(pe) = pe.as_ref()
+                                    && let Some(ice) = aexpr_to_pyiceberg(py, pe, node, expr_arena)
+                                {
+                                    // Iceberg's and is a function but same idea applies as using the overload for pyarrow
+                                    combined_ice = Some(match combined_ice {
+                                        None => ice,
+                                        Some(prev) => {
+                                            match pe.getattr("And").and_then(|c| c.call1((prev, ice))) {
+                                                Ok(v) => v,
+                                                Err(_) => return (None, None, None),
+                                            }
+                                        },
+                                    });
+                                }
                             }
-                        }
-                        match combined {
-                            None => (None, None),
-                            Some(expr) => {
-                                // Rely on the underlying python repr to get the string key out
-                                let key = expr
-                                    .call_method0("__str__")
-                                    .ok()
-                                    .and_then(|s| s.extract::<String>().ok());
-                                (Some(PythonObject(expr.unbind())), key)
-                            },
-                        }
-                    })
+
+                            // For both pyarrow and pyiceberg we unbind the objs but we get the key from pyarrow
+                            let (pa_obj, key) = match combined_pa {
+                                None => (None, None),
+                                Some(expr) => {
+                                    // Rely on the underlying python repr to get the string key out
+                                    let key = expr
+                                        .call_method0("__str__")
+                                        .ok()
+                                        .and_then(|s| s.extract::<String>().ok());
+                                    (Some(PythonObject(expr.unbind())), key)
+                                },
+                            };
+
+                            let ice_obj: Option<PythonObject> = combined_ice.map(|e| PythonObject(e.unbind()));
+
+                            (pa_obj, key, ice_obj)
+                        },
+                    )
                 } else {
-                    (None, None)
+                    (None, None, None)
                 };
 
                 let existing_resolved_version_key = match guard.as_ref() {
@@ -191,6 +226,7 @@ pub(super) fn expand_datasets(
                     projection.as_deref(),
                     live_filter_columns.as_deref(),
                     pyarrow_predicate.as_ref(),
+                    iceberg_predicate.as_ref(),
                 )? {
                     *guard = Some(ExpandedDataset {
                         version,

@@ -83,6 +83,7 @@ pub fn to_dataset_scan(
     projection: Option<&[PlSmallStr]>,
     filter_columns: Option<&[PlSmallStr]>,
     pyarrow_predicate: Option<&PythonObject>,
+    iceberg_predicate: Option<&PythonObject>,
 ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
     Python::attach(|py| {
         let kwargs = PyDict::new(py);
@@ -119,6 +120,11 @@ pub fn to_dataset_scan(
         kwargs.set_item(
             intern!(py, "pyarrow_predicate"),
             pyarrow_predicate.map(|p| p.0.bind(py)),
+        )?;
+
+        kwargs.set_item(
+            intern!(py, "iceberg_predicate"),
+            iceberg_predicate.map(|p| p.0.bind(py)),
         )?;
 
         let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = dataset_object
