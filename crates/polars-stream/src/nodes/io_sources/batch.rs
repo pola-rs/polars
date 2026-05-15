@@ -181,6 +181,7 @@ impl FileReader for BatchFnReader {
             cast_columns_policy: _,
             num_pipelines: _,
             disable_morsel_split: _,
+            last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
                     mut file_schema_tx,

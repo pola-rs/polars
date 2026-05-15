@@ -419,6 +419,7 @@ async fn start_reader_impl(
         forbid_extra_columns,
         num_pipelines,
         disable_morsel_split,
+        last_morsel_pipelines,
         verbose,
     } = constant_args;
 
@@ -616,6 +617,7 @@ async fn start_reader_impl(
         cast_columns_policy: cast_columns_policy.clone(),
         num_pipelines,
         disable_morsel_split,
+        last_morsel_pipelines,
         callbacks,
     };
 
