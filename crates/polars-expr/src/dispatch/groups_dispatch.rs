@@ -153,7 +153,7 @@ pub fn has_nulls<'a>(
         return Ok(ac);
     };
 
-    POOL.install(|| {
+    RAYON.install(|| {
         let validity = BitMask::from_bitmap(&validity);
         let has_nulls: Vec<bool> = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
