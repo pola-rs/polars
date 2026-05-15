@@ -7,6 +7,8 @@ pub mod output;
 use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
 use output::FileReaderOutputRecv;
+use polars_async::executor::JoinHandle;
+use polars_async::primitives::oneshot_channel;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
@@ -15,8 +17,6 @@ use polars_plan::dsl::CastColumnsPolicy;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::JoinHandle;
-use crate::async_primitives::oneshot_channel;
 pub use crate::nodes::io_sources::multi_scan::components::projection::Projection;
 
 /// Interface to read a single file

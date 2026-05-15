@@ -2977,6 +2977,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-async"
+version = "0.53.0"
+dependencies = [
+ "atomic-waker",
+ "crossbeam-channel",
+ "crossbeam-deque",
+ "crossbeam-utils",
+ "parking_lot",
+ "pin-project-lite",
+ "polars-error",
+ "polars-utils",
+ "rand 0.9.2",
+ "slotmap",
+ "tokio",
+]
+
+[[package]]
 name = "polars-buffer"
 version = "0.53.0"
 dependencies = [
@@ -3044,6 +3061,7 @@ dependencies = [
  "ndarray",
  "num-traits",
  "polars-arrow",
+ "polars-async",
  "polars-buffer",
  "polars-compute",
  "polars-config",
@@ -3562,22 +3580,18 @@ version = "0.53.0"
 dependencies = [
  "async-channel",
  "async-trait",
- "atomic-waker",
  "bitflags",
  "bytes",
  "chrono-tz",
  "crossbeam-channel",
- "crossbeam-deque",
  "crossbeam-queue",
- "crossbeam-utils",
  "futures",
  "memchr",
- "memmap2",
  "num-traits",
  "parking_lot",
  "percent-encoding",
- "pin-project-lite",
  "polars-arrow",
+ "polars-async",
  "polars-buffer",
  "polars-compute",
  "polars-config",
@@ -3594,7 +3608,6 @@ dependencies = [
  "polars-time",
  "polars-utils",
  "pyo3",
- "rand 0.9.2",
  "rayon",
  "recursive",
  "schemars",

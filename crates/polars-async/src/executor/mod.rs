@@ -18,13 +18,16 @@ use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
 use park_group::ParkGroup;
 use parking_lot::Mutex;
-use polars_core::runtime::ALLOW_RAYON_THREADS;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::with_drop::WithDrop;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
 use task::{Cancellable, DynTask, Runnable};
+
+thread_local! {
+    pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
+}
 
 static NUM_EXECUTOR_THREADS: RelaxedCell<usize> = RelaxedCell::new_usize(0);
 pub fn set_num_threads(t: usize) {
@@ -558,7 +561,6 @@ where
 /// over this thread's task execution duties.
 ///
 /// Simply directly calls f() if this thread is not an async executor thread.
-#[expect(unused)]
 pub fn block_in_place<R, F: FnOnce() -> R>(f: F) -> R {
     let thread_id = TLS_THREAD_ID.replace(usize::MAX);
     if thread_id == usize::MAX {
