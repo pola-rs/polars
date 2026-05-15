@@ -1,0 +1,29 @@
+[package]
+name = "polars-async"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Async runtime and utilities of the Polars project."
+
+[dependencies]
+atomic-waker = { workspace = true }
+crossbeam-channel = { workspace = true }
+crossbeam-deque = { workspace = true }
+crossbeam-utils = { workspace = true }
+parking_lot = { workspace = true }
+pin-project-lite = { workspace = true }
+rand = { workspace = true }
+slotmap = { workspace = true }
+tokio = { workspace = true }
+
+polars-error = { workspace = true }
+polars-utils = { workspace = true }
+
+[features]
+default = []
+
+[lints]
+workspace = true

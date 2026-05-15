@@ -3,6 +3,7 @@ use std::ops::Range;
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::pushable::Pushable;
+use polars_async::executor::{self, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
@@ -11,7 +12,6 @@ use polars_parquet::read::RowGroupMetadata;
 use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_all};
 use polars_utils::format_pl_smallstr;
 
-use crate::async_executor::{self, TaskPriority};
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 struct StatisticsColumns {
@@ -105,7 +105,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
 
     // Note: We are spawning here onto the computational async runtime because the caller is being run
     // on a tokio async thread.
-    let skip_row_group_mask = async_executor::spawn(TaskPriority::High, async move {
+    let skip_row_group_mask = executor::spawn(TaskPriority::High, async move {
         let row_groups_slice = &metadata.row_groups[row_group_slice.clone()];
 
         if let Some(ri) = &mut row_index {

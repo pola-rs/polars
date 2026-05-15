@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitToken;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -7,7 +8,6 @@ use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::async_primitives::wait_group::WaitToken;
 use crate::utils::tokio_handle_ext;
 
 pub(crate) struct ChunkDataFetcher {

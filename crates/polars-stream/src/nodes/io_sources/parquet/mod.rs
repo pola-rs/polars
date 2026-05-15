@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use async_trait::async_trait;
+use polars_async::executor::{self};
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::ArrowSchema;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
@@ -21,8 +23,6 @@ use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileRead
 use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
-use crate::async_executor::{self};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::metrics::OptIOMetrics;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -255,7 +255,7 @@ impl FileReader for ParquetFileReader {
 
             return Ok((
                 rx,
-                async_executor::spawn(TaskPriority::Low, std::future::ready(Ok(()))),
+                executor::spawn(TaskPriority::Low, std::future::ready(Ok(()))),
             ));
         }
 
@@ -292,7 +292,7 @@ impl FileReader for ParquetFileReader {
         if let Some(single_morsel_height) = single_morsel_height {
             let (mut tx, rx) = FileReaderOutputSend::new_serial();
 
-            let handle = async_executor::spawn(TaskPriority::Low, async move {
+            let handle = executor::spawn(TaskPriority::Low, async move {
                 let _ = tx
                     .send_morsel(Morsel::new(
                         DataFrame::empty_with_height(single_morsel_height),
@@ -357,7 +357,7 @@ impl FileReader for ParquetFileReader {
 
         Ok((
             output_recv,
-            async_executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
         ))
     }
 

@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use arrow::io::ipc::read::FileMetadata;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
@@ -9,7 +10,6 @@ use polars_plan::dsl::ScanSource;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{DynByteSourceBuilder, IpcFileReader};
-use crate::async_primitives::wait_group::WaitGroup;
 #[cfg(feature = "ipc")]
 use crate::metrics::IOMetrics;
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
