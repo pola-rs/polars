@@ -41,6 +41,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       # Note that we specify --lib, --bins etc
@@ -94,6 +95,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Compile integration tests
@@ -114,6 +116,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install cargo hack
@@ -135,6 +138,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Build DSL schema check

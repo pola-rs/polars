@@ -183,6 +183,7 @@ impl DeletionFilesProvider {
                                     cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                                     num_pipelines,
                                     disable_morsel_split: false,
+                                    last_morsel_pipelines: 1,
                                     callbacks: FileReaderCallbacks {
                                         file_schema_tx: None,
                                         n_rows_in_file_tx: None,
