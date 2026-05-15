@@ -411,6 +411,17 @@ async fn finish_initialize_multi_scan_pipeline(
     let max_concurrent_scans = config.max_concurrent_scans();
     let disable_morsel_split = config.disable_morsel_split;
 
+    // Share the last-morsel split budget across files in the scan: divide it by the number
+    // of files that can be in flight at once, so the total morsel count at end-of-file
+    // boundaries stays bounded by `num_pipelines`.
+    let n_effective_sources = sources.len().saturating_sub(
+        skip_files_mask
+            .as_ref()
+            .map_or(0, |m| m.num_skipped_files()),
+    );
+    let last_morsel_pipelines =
+        num_pipelines.div_ceil(n_effective_sources.min(max_concurrent_scans).max(1));
+
     let (started_reader_tx, started_reader_rx) =
         tokio::sync::mpsc::channel(max_concurrent_scans.max(2) - 1);
 
@@ -435,6 +446,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 forbid_extra_columns: config.forbid_extra_columns.clone(),
                 num_pipelines,
                 disable_morsel_split,
+                last_morsel_pipelines,
                 verbose,
             },
             verbose,
