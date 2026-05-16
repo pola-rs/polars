@@ -167,7 +167,7 @@ def test_hist_non_numeric_dtype_raises() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
         s.to_frame().select(pl.col("a").hist(bins=bins))
     with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
-        s.hist(bins=bins)
+        s.hist(bins=bins)  # type: ignore[arg-type]
     with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
         s.hist()
 
