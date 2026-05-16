@@ -161,30 +161,14 @@ def test_hist_invalid_bins() -> None:
 
 
 def test_hist_non_numeric_dtype_raises() -> None:
-    # https://github.com/pola-rs/polars/issues/27155 -- `hist` used to panic
-    # ("chunked array is not contiguous") when the input series was non-numeric
-    # because the `bins` argument was processed before the numeric-dtype check.
     s = pl.Series("a", ["A", "G", "Y", "Z"])
     bins = pl.Series("bins", ["N"])
-    # Lazy expression path (the original reporter's reproducer).
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="'hist' is only supported for numeric data",
-    ):
+    msg = "'hist' is only supported for numeric data"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
         s.to_frame().select(pl.col("a").hist(bins=bins))
-    # Eager Series method with bins -- same underlying `hist_series`,
-    # different Python wrapper layer.
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="'hist' is only supported for numeric data",
-    ):
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
         s.hist(bins=bins)
-    # Eager without bins -- the pre-existing path that already errored
-    # cleanly; locked in as a regression guard.
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="'hist' is only supported for numeric data",
-    ):
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
         s.hist()
 
 
