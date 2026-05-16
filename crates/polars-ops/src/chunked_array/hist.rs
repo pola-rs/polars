@@ -239,10 +239,9 @@ pub fn hist_series(
     include_category: bool,
     include_breakpoint: bool,
 ) -> PolarsResult<Series> {
-    // Reject non-numeric input before touching `bins`. Otherwise the bins
-    // processing below (cast → rechunk → cont_slice) can panic when the
-    // user calls `hist` on a non-numeric series — even though `hist` is
-    // not defined for such input. See #27155.
+    // Reject non-numeric input before processing `bins`, otherwise the
+    // cast/rechunk/cont_slice pipeline below panics on the Err from
+    // `cont_slice`. See #27155.
     polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "'hist' is only supported for numeric data");
 
     let mut bins_arg = None;
