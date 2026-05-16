@@ -160,6 +160,26 @@ def test_hist_invalid_bins() -> None:
         s.hist(bins=[1, 0])  # invalid order
 
 
+def test_hist_non_numeric_dtype_raises_not_panics() -> None:
+    # https://github.com/pola-rs/polars/issues/27155 — `hist` used to panic
+    # ("chunked array is not contiguous") when the input series was non-numeric
+    # because the `bins` argument was processed before the numeric-dtype check.
+    s = pl.Series("a", ["A", "G", "Y", "Z"])
+    bins = pl.Series("bins", ["N"])
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="'hist' is only supported for numeric data",
+    ):
+        s.to_frame().select(pl.col("a").hist(bins=bins))
+    # Same check without `bins` — the pre-existing path that already errored
+    # cleanly; this just locks it in.
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="'hist' is only supported for numeric data",
+    ):
+        s.hist()
+
+
 def test_hist_bin_outside_data() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[-10, -9])
