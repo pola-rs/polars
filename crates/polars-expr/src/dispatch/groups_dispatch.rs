@@ -11,8 +11,8 @@ use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
-    AnyValue, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions, GroupsType,
-    IDX_DTYPE, IntoColumn,
+    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions,
+    GroupsType, IDX_DTYPE, IntoColumn,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -155,7 +155,7 @@ pub fn has_nulls<'a>(
 
     RAYON.install(|| {
         let validity = BitMask::from_bitmap(&validity);
-        let has_nulls: Vec<bool> = match &**ac.groups.as_ref() {
+        let has_nulls: BooleanChunked = match &**ac.groups.as_ref() {
             GroupsType::Idx(idx) => idx
                 .into_par_iter()
                 .map(|(_, idx)| {
@@ -177,7 +177,7 @@ pub fn has_nulls<'a>(
                 .collect(),
         };
 
-        ac.state = AggState::AggregatedScalar(Column::new(name, has_nulls));
+        ac.state = AggState::AggregatedScalar(has_nulls.with_name(name).into_column());
     });
 
     Ok(ac)
