@@ -260,3 +260,9 @@ def test_bytes_scalar_broadcast_27620() -> None:
     result = pl.DataFrame({"a": b"foo", "b": "foo", "c": [10, 20, 30]})
     expected = pl.DataFrame({"a": [b"foo"] * 3, "b": ["foo"] * 3, "c": [10, 20, 30]})
     assert_frame_equal(result, expected)
+
+
+def test_bytearray_scalar_broadcast_27640() -> None:
+    result = pl.DataFrame({"a": bytearray(b"foo"), "b": "foo", "c": [10, 20, 30]})
+    expected = pl.DataFrame({"a": [b"foo"] * 3, "b": ["foo"] * 3, "c": [10, 20, 30]})
+    assert_frame_equal(result, expected)

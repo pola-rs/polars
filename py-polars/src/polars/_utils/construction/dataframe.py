@@ -388,7 +388,19 @@ def _expand_dict_values(
                         nan_to_null=nan_to_null,
                     )
                 elif val is None or isinstance(  # type: ignore[redundant-expr]
-                    val, (int, float, str, bytes, bool, date, datetime, time, timedelta)
+                    val,
+                    (
+                        int,
+                        float,
+                        str,
+                        bytes,
+                        bytearray,
+                        bool,
+                        date,
+                        datetime,
+                        time,
+                        timedelta,
+                    ),
                 ):
                     updated_data[name] = F.repeat(
                         val, array_len, dtype=dtype, eager=True

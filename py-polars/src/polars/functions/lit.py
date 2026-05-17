@@ -171,6 +171,10 @@ def lit(
         else:
             return wrap_expr(plr.lit(value, allow_object=False, is_scalar=True))
 
+    elif isinstance(value, bytearray):
+        value_s = pl.Series("literal", [bytes(value)], dtype=dtype)
+        return wrap_expr(plr.lit(value_s._s, allow_object, is_scalar=True))
+
     elif isinstance(value, pl.Series):
         value = value._s
         return wrap_expr(plr.lit(value, allow_object, is_scalar=False))

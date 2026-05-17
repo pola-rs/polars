@@ -229,7 +229,7 @@ def _in_marimo_notebook() -> bool:
 def arrlen(obj: Any) -> int | None:
     """Return length of (non-string/dict) sequence; returns None for non-sequences."""
     try:
-        return None if isinstance(obj, (str, bytes, dict)) else len(obj)
+        return None if isinstance(obj, (str, bytes, bytearray, dict)) else len(obj)
     except TypeError:
         return None
 
