@@ -245,7 +245,13 @@ fn get_dtype(
 ) -> PolarsResult<(ArrowDataType, IpcField)> {
     if let Some(extension) = extension {
         let (name, metadata) = extension;
-        let (dtype, fields) = get_dtype(field, None, false)?;
+        // Forward `may_be_dictionary` so an Extension-wrapped Dictionary preserves its
+        // dictionary encoding on the recursion (sets IpcField.dictionary_id, returns
+        // ArrowDataType::Dictionary<...> as the inner). Passing `false` here drops the
+        // dictionary branch entirely and silently flattens Extension<Dictionary<T>> to
+        // Extension<T>, which breaks IPC reads for extension-over-categorical and
+        // similar shapes.
+        let (dtype, fields) = get_dtype(field, None, may_be_dictionary)?;
         return Ok((
             ArrowDataType::Extension(Box::new(ExtensionType {
                 name,
