@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import io
 import os
-import warnings
 from collections import defaultdict
 from collections.abc import (
     Generator,
@@ -73,6 +72,7 @@ from polars._utils.various import (
     NO_DEFAULT,
     _in_notebook,
     is_bool_sequence,
+    issue_warning,
     normalize_filepath,
     parse_version,
     qualified_type_name,
@@ -4514,12 +4514,11 @@ class DataFrame:
             )
 
             if not commit and isinstance(connection, str):
-                warnings.warn(
+                issue_warning(
                     "commit=False has no effect when connection is a URI string: "
                     "Polars owns the connection and will close it after writing, "
                     "so no data will be persisted.",
                     UserWarning,
-                    stacklevel=2,
                 )
 
             driver_manager = import_optional("adbc_driver_manager")
@@ -4556,12 +4555,11 @@ class DataFrame:
                 raise ValueError(msg)
 
             if not commit and not getattr(conn, "_commit_supported", True):
-                warnings.warn(
+                issue_warning(
                     "commit=False has no effect because the ADBC connection has "
                     "autocommit enabled (or the driver does not support transactions). "
                     "Data will be committed automatically.",
                     UserWarning,
-                    stacklevel=2,
                 )
 
             with (
