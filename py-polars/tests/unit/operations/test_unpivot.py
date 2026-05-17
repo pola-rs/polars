@@ -318,3 +318,55 @@ def test_unpivot_projection_pushdown_schema_25720() -> None:
             ]
         ),
     )
+
+
+# https://github.com/pola-rs/polars/issues/27037
+def test_unpivot_expr_on_27037() -> None:
+    df = pl.DataFrame({"x": [1, 2], "y": [3, 4], "z": ["a", "b"]})
+
+    # Single Expr in `on`
+    result = df.unpivot(pl.col("x"))
+    expected = pl.DataFrame({"variable": ["x", "x"], "value": [1, 2]})
+    assert_frame_equal(result, expected, check_row_order=False)
+
+    # Single Expr in `index`
+    result = df.unpivot(pl.col("x"), index=pl.col("z"))
+    expected = pl.DataFrame(
+        {
+            "z": ["a", "b"],
+            "variable": ["x", "x"],
+            "value": [1, 2],
+        }
+    )
+    assert_frame_equal(result, expected, check_row_order=False)
+
+    # pl.col shorthand attribute access
+    result = df.unpivot(pl.col.x)
+    expected = pl.DataFrame({"variable": ["x", "x"], "value": [1, 2]})
+    assert_frame_equal(result, expected, check_row_order=False)
+
+    # Expr with pattern matching (wildcard)
+    result = df.unpivot(pl.col("^[xy]$"))
+    expected = pl.DataFrame(
+        {
+            "variable": ["x", "x", "y", "y"],
+            "value": [1, 2, 3, 4],
+        }
+    )
+    assert_frame_equal(result, expected, check_row_order=False)
+
+    # Expr in both `on` and `index`
+    result = df.unpivot(pl.col("x"), index=pl.col("z"), variable_name="var", value_name="val")
+    expected = pl.DataFrame(
+        {
+            "z": ["a", "b"],
+            "var": ["x", "x"],
+            "val": [1, 2],
+        }
+    )
+    assert_frame_equal(result, expected, check_row_order=False)
+
+    # DataFrame result matches LazyFrame result
+    lf_result = df.lazy().unpivot(pl.col("x"), index=pl.col("z")).collect()
+    df_result = df.unpivot(pl.col("x"), index=pl.col("z"))
+    assert_frame_equal(df_result, lf_result, check_row_order=False)
