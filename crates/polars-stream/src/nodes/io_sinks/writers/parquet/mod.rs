@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -11,8 +13,6 @@ use polars_parquet::write::{
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 use crate::nodes::io_sinks::components::size::{
     NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
@@ -80,7 +80,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
-    ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
+    ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let InitializedState {
             encodings,
             schema_descriptor,
@@ -101,7 +101,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         };
 
         let (encoded_row_group_tx, encoded_row_group_rx) = tokio::sync::mpsc::channel::<
-            async_executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>,
+            executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>,
         >(num_pipelines.get());
 
         let key_value_metadata = self.options.key_value_metadata.clone();
@@ -132,7 +132,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         );
 
         let arrow_schema = Arc::clone(&self.arrow_schema);
-        let compute_handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
+        let compute_handle = executor::AbortOnDropHandle::new(executor::spawn(
             TaskPriority::High,
             row_group_encoder::RowGroupEncoder {
                 morsel_rx,
@@ -146,7 +146,7 @@ impl FileWriterStarter for ParquetWriterStarter {
             .run(),
         ));
 
-        Ok(async_executor::spawn(TaskPriority::Low, async move {
+        Ok(executor::spawn(TaskPriority::Low, async move {
             compute_handle.await?;
             io_handle.await.unwrap()?;
             Ok(())

@@ -2,13 +2,13 @@ use std::mem;
 use std::ops::BitAnd;
 
 use arrow::array::builder::ShareStrategy;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_ops::frame::{_finish_join, IEJoinOptions, InequalityOperator, JoinArgs, JoinBuildSide};
 use polars_ops::series::{SearchSortedSide, search_sorted};
 
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};

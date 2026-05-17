@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::LazyLock;
 use std::sync::mpsc::{TryRecvError, sync_channel};
@@ -12,7 +12,6 @@ pub struct RAYON;
 // Thread locals to allow disabling threading for specific threads.
 #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
 thread_local! {
-    pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
     static NOOP_POOL: RefCell<ThreadPool> = RefCell::new(
         ThreadPoolBuilder::new()
             .use_current_thread()
@@ -139,7 +138,9 @@ impl RAYON {
         OP: FnOnce(&ThreadPool) -> R + Send,
         R: Send,
     {
-        if ALLOW_RAYON_THREADS.get() || THREAD_POOL.current_thread_index().is_some() {
+        if polars_async::executor::ALLOW_RAYON_THREADS.get()
+            || THREAD_POOL.current_thread_index().is_some()
+        {
             op(&THREAD_POOL)
         } else {
             NOOP_POOL.with(|v| op(&v.borrow()))

@@ -1,13 +1,13 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor;
+use polars_async::primitives::connector;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_plan::dsl::file_provider::FileProviderArgs;
 
-use crate::async_executor;
-use crate::async_primitives::connector;
 use crate::nodes::TaskPriority;
 use crate::nodes::io_sinks::components::file_provider::FileProvider;
 use crate::nodes::io_sinks::components::file_sink::{FileSinkPermit, FileSinkTaskData};
@@ -43,7 +43,7 @@ impl PartitionSinkStarter {
             self.num_pipelines_per_sink,
         )?;
 
-        let task_handle = async_executor::spawn(TaskPriority::High, async move {
+        let task_handle = executor::spawn(TaskPriority::High, async move {
             writer_handle.await?;
             Ok(file_permit)
         });
