@@ -243,6 +243,19 @@ fn get_dtype(
     extension: Extension,
     may_be_dictionary: bool,
 ) -> PolarsResult<(ArrowDataType, IpcField)> {
+    if let Some(extension) = extension {
+        let (name, metadata) = extension;
+        let (dtype, fields) = get_dtype(field, None, false)?;
+        return Ok((
+            ArrowDataType::Extension(Box::new(ExtensionType {
+                name,
+                inner: dtype,
+                metadata,
+            })),
+            fields,
+        ));
+    }
+
     if let Some(dictionary) = field.dictionary()? {
         if may_be_dictionary {
             let int = dictionary
@@ -256,19 +269,6 @@ fn get_dtype(
                 ipc_field,
             ));
         }
-    }
-
-    if let Some(extension) = extension {
-        let (name, metadata) = extension;
-        let (dtype, fields) = get_dtype(field, None, false)?;
-        return Ok((
-            ArrowDataType::Extension(Box::new(ExtensionType {
-                name,
-                inner: dtype,
-                metadata,
-            })),
-            fields,
-        ));
     }
 
     let type_ = field

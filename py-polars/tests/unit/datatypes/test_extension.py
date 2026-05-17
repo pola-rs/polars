@@ -190,3 +190,28 @@ def test_ext_to_mismatched_storage_raises_27519() -> None:
         match=r"column dtype must match",
     ):
         s.to_frame().select(pl.col("x").ext.to(Ext))
+
+
+def test_concat_different_extension_dtypes_raises_27512() -> None:
+    """Concatenating different Extension dtypes should raise SchemaError.
+
+    Regression test for https://github.com/pola-rs/polars/issues/27512.
+    Without the Extension match arm in `impl PartialEq for DataType`,
+    distinct Extension types fall through to the discriminant comparison
+    and are treated as equal, so `pl.concat` silently coalesces.
+    """
+    ExtA = pl.Extension(name="extension.a", storage=pl.Int64)
+    ExtB = pl.Extension(name="extension.b", storage=pl.Int64)
+    ExtAFloat = pl.Extension(name="extension.a", storage=pl.Float64)
+
+    df_a = pl.DataFrame(range(2), schema={"col": ExtA})
+    df_b = pl.DataFrame(range(2), schema={"col": ExtB})
+    df_a_float = pl.DataFrame([0.0, 1.0], schema={"col": ExtAFloat})
+
+    # Different extension name, same storage -> raise
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.concat([df_a, df_b])
+
+    # Same extension name, different storage -> raise
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.concat([df_a, df_a_float])
