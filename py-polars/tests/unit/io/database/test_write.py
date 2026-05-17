@@ -464,3 +464,90 @@ def test_write_database_adbc_no_commit_warns_on_autocommit() -> None:
 
     if hasattr(conn, "close"):
         conn.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
+def test_write_database_adbc_uri_no_commit_warns() -> None:
+    """Confirm that commit=False warns when an ADBC URI string is passed."""
+    df = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
+    with pytest.warns(UserWarning, match="commit=False has no effect when connection is a URI string"):
+        df.write_database("test_uri_warn", connection="sqlite:///:memory:", engine="adbc", commit=False)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "use_engine",
+    [
+        pytest.param(False, id="uri"),
+        pytest.param(True, id="engine"),
+    ],
+)
+def test_write_database_sa_commit(tmp_path: Path, use_engine: bool) -> None:
+    """Confirm that commit=True (default) persists data via SQLAlchemy URI and Engine."""
+    df = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
+    tmp_path.mkdir(exist_ok=True)
+    uri = f"sqlite:///{tmp_path}/test_sa_commit_flag.db"
+
+    connection: Any = create_engine(uri, poolclass=NullPool) if use_engine else uri
+    df.write_database("test_sa_commit_flag", connection=connection, commit=True)
+
+    result = pl.read_database("SELECT * FROM test_sa_commit_flag", connection=create_engine(uri))
+    assert_frame_equal(result, df)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    "use_engine",
+    [
+        pytest.param(False, id="uri"),
+        pytest.param(True, id="engine"),
+    ],
+)
+def test_write_database_sa_no_commit(tmp_path: Path, use_engine: bool) -> None:
+    """Confirm that commit=False suppresses the commit via SQLAlchemy URI and Engine."""
+    initial = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
+    extra = pl.DataFrame({"key": ["c", "d"], "value": [3, 4]})
+    tmp_path.mkdir(exist_ok=True)
+    uri = f"sqlite:///{tmp_path}/test_sa_no_commit_flag_{int(use_engine)}.db"
+    sa_engine = create_engine(uri, poolclass=NullPool)
+
+    # Write initial rows and commit so the table exists with known contents
+    initial.write_database("test_sa_no_commit_flag", connection=uri, commit=True)
+
+    # Write extra rows without committing — they should not be persisted
+    connection: Any = create_engine(uri, poolclass=NullPool) if use_engine else uri
+    extra.write_database(
+        "test_sa_no_commit_flag",
+        connection=connection,
+        if_table_exists="append",
+        commit=False,
+    )
+
+    result = pl.read_database("SELECT * FROM test_sa_no_commit_flag", connection=sa_engine)
+    assert_frame_equal(result, initial)
+
+
+@pytest.mark.write_disk
+def test_write_database_sa_connection_no_commit(tmp_path: Path) -> None:
+    """Confirm that commit=False on a bare SQLAlchemy Connection leaves txn open."""
+    initial = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
+    extra = pl.DataFrame({"key": ["c", "d"], "value": [3, 4]})
+    tmp_path.mkdir(exist_ok=True)
+    uri = f"sqlite:///{tmp_path}/test_sa_conn_no_commit.db"
+    sa_engine = create_engine(uri, poolclass=NullPool)
+
+    # Write initial rows and commit so the table exists with known contents
+    initial.write_database("test_sa_conn_no_commit", connection=uri, commit=True)
+
+    # Open a bare connection, append extra rows without committing, then roll back
+    with sa_engine.connect() as conn:
+        extra.write_database(
+            "test_sa_conn_no_commit",
+            connection=conn,
+            if_table_exists="append",
+            commit=False,
+        )
+        conn.rollback()
+
+    result = pl.read_database("SELECT * FROM test_sa_conn_no_commit", connection=sa_engine)
+    assert_frame_equal(result, initial)

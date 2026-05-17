@@ -4391,6 +4391,9 @@ class DataFrame:
             Support for instantiated connection objects in addition to URI strings, and
             a new `engine_options` parameter.
 
+        .. versionadded:: 1.40.0
+            The `commit` parameter.
+
         Parameters
         ----------
         table_name
@@ -4423,14 +4426,24 @@ class DataFrame:
               method. Note that when passing an instantiated connection object, PyArrow
               is required for SQLite and Snowflake drivers.
         commit
-            If ``True`` (default), commit the transaction after writing. Only
-            applicable when ``engine="adbc"``; ignored for other engines. Set to
+            If ``True`` (default), commit the transaction after writing. Set to
             ``False`` to manage the transaction yourself, allowing you to commit or
             roll back after the call returns.
 
-            Note: when ``connection`` is a URI string, Polars opens and closes the
-            connection internally; setting ``commit=False`` in that case means the
-            data will not be persisted.
+            Behaviour varies by connection type:
+
+            * **ADBC connection object**: fully honoured — Polars commits or not
+              based on this flag.
+            * **ADBC URI string**: ``commit=False`` emits a ``UserWarning`` because
+              Polars owns and closes the connection, so no data will be persisted.
+            * **SQLAlchemy URI string or ``Engine``**: Polars opens a ``Connection``
+              internally and commits or not based on this flag.
+            * **SQLAlchemy ``Connection`` (no open transaction)**: Polars begins a
+              transaction and commits or not based on this flag, leaving an open
+              transaction for the caller when ``commit=False``.
+            * **SQLAlchemy ``Connection`` (caller-owned transaction)** or
+              **``Session``**: Polars never commits — the caller controls the
+              transaction. This flag has no effect in these cases.
 
         Examples
         --------
@@ -4499,6 +4512,15 @@ class DataFrame:
                 if isinstance(connection, str)
                 else (connection, False)
             )
+
+            if not commit and isinstance(connection, str):
+                warnings.warn(
+                    "commit=False has no effect when connection is a URI string: "
+                    "Polars owns the connection and will close it after writing, "
+                    "so no data will be persisted.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
             driver_manager = import_optional("adbc_driver_manager")
 
@@ -4678,22 +4700,7 @@ class DataFrame:
                 min_version=("2.0" if pd_version >= (2, 2) else "1.4"),
                 min_err_prefix="pandas >= 2.2 requires",
             )
-            # note: the catalog (database) should be a part of the connection string
-            from sqlalchemy.engine import Connectable, create_engine
-            from sqlalchemy.orm import Session
-
-            sa_object: Connectable
-            if isinstance(connection, str):
-                sa_object = create_engine(connection)
-            elif isinstance(connection, Session):
-                sa_object = connection.connection()
-            elif isinstance(connection, Connectable):
-                sa_object = connection
-            else:
-                msg = (
-                    f"unrecognised connection type {qualified_type_name(connection)!r}"
-                )
-                raise TypeError(msg)
+            from polars.io.database._utils import _write_database_sqlalchemy
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:
@@ -4702,17 +4709,17 @@ class DataFrame:
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export *without* copying data
-            res: int | None = self.to_pandas(
-                use_pyarrow_extension_array=True,
-            ).to_sql(
-                name=unpacked_table_name,
+            pandas_df = self.to_pandas(use_pyarrow_extension_array=True)
+
+            return _write_database_sqlalchemy(
+                df=pandas_df,
+                table_name=unpacked_table_name,
                 schema=db_schema,
-                con=sa_object,
-                if_exists=if_table_exists,
-                index=False,
-                **(engine_options or {}),
+                connection=connection,
+                if_table_exists=if_table_exists,
+                engine_options=engine_options,
+                commit=commit,
             )
-            return -1 if res is None else res
 
         elif isinstance(engine, str):
             msg = f"engine {engine!r} is not supported"
