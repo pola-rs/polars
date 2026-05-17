@@ -470,8 +470,15 @@ def test_write_database_adbc_no_commit_warns_on_autocommit() -> None:
 def test_write_database_adbc_uri_no_commit_warns() -> None:
     """Confirm that commit=False warns when an ADBC URI string is passed."""
     df = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
-    with pytest.warns(UserWarning, match="commit=False has no effect when connection is a URI string"):
-        df.write_database("test_uri_warn", connection="sqlite:///:memory:", engine="adbc", commit=False)
+    with pytest.warns(
+        UserWarning, match="commit=False has no effect when connection is a URI string"
+    ):
+        df.write_database(
+            "test_uri_warn",
+            connection="sqlite:///:memory:",
+            engine="adbc",
+            commit=False,
+        )
 
 
 @pytest.mark.write_disk
@@ -491,7 +498,9 @@ def test_write_database_sa_commit_flag(tmp_path: Path, use_engine: bool) -> None
     connection: Any = create_engine(uri, poolclass=NullPool) if use_engine else uri
     df.write_database("test_sa_commit_flag", connection=connection, commit=True)
 
-    result = pl.read_database("SELECT * FROM test_sa_commit_flag", connection=create_engine(uri))
+    result = pl.read_database(
+        "SELECT * FROM test_sa_commit_flag", connection=create_engine(uri)
+    )
     assert_frame_equal(result, df)
 
 
@@ -523,7 +532,9 @@ def test_write_database_sa_no_commit(tmp_path: Path, use_engine: bool) -> None:
         commit=False,
     )
 
-    result = pl.read_database("SELECT * FROM test_sa_no_commit_flag", connection=sa_engine)
+    result = pl.read_database(
+        "SELECT * FROM test_sa_no_commit_flag", connection=sa_engine
+    )
     assert_frame_equal(result, initial)
 
 
@@ -549,5 +560,7 @@ def test_write_database_sa_connection_no_commit(tmp_path: Path) -> None:
         )
         conn.rollback()
 
-    result = pl.read_database("SELECT * FROM test_sa_conn_no_commit", connection=sa_engine)
+    result = pl.read_database(
+        "SELECT * FROM test_sa_conn_no_commit", connection=sa_engine
+    )
     assert_frame_equal(result, initial)
