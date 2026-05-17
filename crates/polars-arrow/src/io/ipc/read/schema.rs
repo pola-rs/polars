@@ -245,7 +245,7 @@ fn get_dtype(
 ) -> PolarsResult<(ArrowDataType, IpcField)> {
     if let Some(extension) = extension {
         let (name, metadata) = extension;
-        let (dtype, fields) = get_dtype(field, None, false)?;
+        let (dtype, fields) = get_dtype(field, None, may_be_dictionary)?;
         return Ok((
             ArrowDataType::Extension(Box::new(ExtensionType {
                 name,
