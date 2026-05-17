@@ -776,7 +776,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     write!(&mut formatted, ", \"{c}\"").unwrap();
                 }
 
-                write!(&mut formatted, "\"{lst}\"").unwrap();
                 polars_bail!(SchemaMismatch: "missing columns in `match_to_schema`: {formatted}");
             }
 
