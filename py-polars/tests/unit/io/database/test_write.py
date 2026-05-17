@@ -482,8 +482,8 @@ def test_write_database_adbc_uri_no_commit_warns() -> None:
         pytest.param(True, id="engine"),
     ],
 )
-def test_write_database_sa_commit(tmp_path: Path, use_engine: bool) -> None:
-    """Confirm that commit=True (default) persists data via SQLAlchemy URI and Engine."""
+def test_write_database_sa_commit_flag(tmp_path: Path, use_engine: bool) -> None:
+    """Confirm that commit=True persists data via SQLAlchemy URI and Engine."""
     df = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
     tmp_path.mkdir(exist_ok=True)
     uri = f"sqlite:///{tmp_path}/test_sa_commit_flag.db"

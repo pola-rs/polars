@@ -194,13 +194,14 @@ def _write_database_sqlalchemy(
     connection: Any,
     if_table_exists: str,
     engine_options: dict[str, Any] | None,
+    *,
     commit: bool,
 ) -> int:
     """Write a DataFrame to a database table using the SQLAlchemy engine."""
-    from polars._utils.various import qualified_type_name
-
-    from sqlalchemy.engine import Connection, Connectable, Engine, create_engine
+    from sqlalchemy.engine import Connectable, Connection, Engine, create_engine
     from sqlalchemy.orm import Session
+
+    from polars._utils.various import qualified_type_name
 
     def _to_sql(con: Any) -> int | None:
         return df.to_sql(
