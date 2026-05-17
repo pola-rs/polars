@@ -4391,7 +4391,7 @@ class DataFrame:
             Support for instantiated connection objects in addition to URI strings, and
             a new `engine_options` parameter.
 
-        .. versionadded:: 1.40.0
+        .. versionadded:: 1.41.0
             The `commit` parameter.
 
         Parameters

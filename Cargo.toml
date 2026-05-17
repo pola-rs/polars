@@ -112,6 +112,7 @@ zmij = "1.0.0"
 zstd = "0.13"
 
 polars = { version = "0.53.0", path = "crates/polars", default-features = false }
+polars-async = { version = "0.53.0", path = "crates/polars-async", default-features = false }
 polars-buffer = { version = "0.53.0", path = "crates/polars-buffer", default-features = false }
 polars-compute = { version = "0.53.0", path = "crates/polars-compute", default-features = false }
 polars-config = { version = "0.53.0", path = "crates/polars-config", default-features = false }

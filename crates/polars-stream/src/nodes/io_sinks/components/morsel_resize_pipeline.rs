@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
+use polars_async::primitives::connector;
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_utils::IdxSize;
 
-use crate::async_primitives::connector;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::components::size::{RowCountAndSize, TakeableRowsProvider};
