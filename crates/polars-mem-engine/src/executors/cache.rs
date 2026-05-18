@@ -105,13 +105,13 @@ impl Executor for CachePrefiller {
                 scan_handles.push(ASYNC.spawn(async move {
                     let _permit = parallel_scan_exec_limit.acquire().await.unwrap();
 
-                    tokio::task::spawn_blocking(move || {
-                        prefill.execute(&mut state)?;
-
-                        Ok(())
-                    })
-                    .await
-                    .unwrap()
+                    ASYNC
+                        .spawn_blocking(move || {
+                            prefill.execute(&mut state)?;
+                            Ok(())
+                        })
+                        .await
+                        .unwrap()
                 }));
 
                 continue;
