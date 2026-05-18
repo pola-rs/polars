@@ -6,12 +6,13 @@ use polars_error::PolarsResult;
 use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
+use pyo3::types::PyAnyMethods;
 use pyo3::{PyErr, PyResult, Python};
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::series::PySeries;
-use crate::timeout::{cancel_polars_timeout, schedule_polars_timeout};
+use crate::timeout::{cancel_polars_timeout, is_timeout_enabled, schedule_polars_timeout};
 
 /// Calls method on downcasted ChunkedArray for all possible publicly exposed Polars dtypes.
 #[macro_export]
@@ -130,7 +131,14 @@ impl EnterPolarsExt for Python<'_> {
         T: Ungil + Send,
         E: Ungil + Send + Into<PyPolarsErr>,
     {
-        let timeout = schedule_polars_timeout();
+        let timeout = if is_timeout_enabled() {
+            let tb = self.import(pyo3::intern!(self, "traceback"))?;
+            let format_stack = tb.getattr("format_stack")?;
+            let lines: Vec<String> = format_stack.call0()?.extract()?;
+            schedule_polars_timeout(Some(lines.join("\n")))
+        } else {
+            None
+        };
         let ret = self.detach(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
         cancel_polars_timeout(timeout);
         match ret {
