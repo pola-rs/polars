@@ -124,6 +124,13 @@ pub trait EnterPolarsExt {
     }
 }
 
+fn get_traceback(py: Python<'_>) -> PyResult<String> {
+    let tb = py.import(pyo3::intern!(py, "traceback"))?;
+    let format_stack = tb.getattr("format_stack")?;
+    let lines: Vec<String> = format_stack.call0()?.extract()?;
+    Ok(lines.join("\n"))
+}
+
 impl EnterPolarsExt for Python<'_> {
     fn enter_polars<T, E, F>(self, f: F) -> PyResult<T>
     where
@@ -132,10 +139,7 @@ impl EnterPolarsExt for Python<'_> {
         E: Ungil + Send + Into<PyPolarsErr>,
     {
         let timeout = if is_timeout_enabled() {
-            let tb = self.import(pyo3::intern!(self, "traceback"))?;
-            let format_stack = tb.getattr("format_stack")?;
-            let lines: Vec<String> = format_stack.call0()?.extract()?;
-            schedule_polars_timeout(Some(lines.join("\n")))
+            schedule_polars_timeout(get_traceback(self).ok())
         } else {
             None
         };
