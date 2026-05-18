@@ -57,6 +57,11 @@ impl Expr {
         binary_expr(self, Operator::FloorDivide, rhs)
     }
 
+    /// True divide `self` by `rhs`
+    pub fn true_div(self, rhs: Self) -> Self {
+        binary_expr(self, Operator::TrueDivide, rhs)
+    }
+
     /// Raise expression to the power `exponent`
     pub fn pow<E: Into<Expr>>(self, exponent: E) -> Self {
         self.map_binary(PowFunction::Generic, exponent.into())
