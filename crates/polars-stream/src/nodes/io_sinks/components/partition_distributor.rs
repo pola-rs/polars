@@ -1,13 +1,13 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::executor::{self, TaskPriority};
 use polars_core::prelude::{InitHashMaps, PlHashSet, PlIndexMap};
 use polars_error::PolarsResult;
 use polars_plan::dsl::file_provider::FileProviderArgs;
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{self, TaskPriority};
 use crate::nodes::io_sinks::components::error_capture::{ErrorCapture, ErrorHandle};
 use crate::nodes::io_sinks::components::file_sink::FileSinkPermit;
 use crate::nodes::io_sinks::components::partition_key::PartitionKey;
@@ -20,7 +20,7 @@ use crate::nodes::io_sinks::components::size::RowCountAndSize;
 pub struct PartitionDistributor {
     pub node_name: PlSmallStr,
     pub partitioned_dfs_rx: tokio::sync::mpsc::Receiver<
-        async_executor::AbortOnDropHandle<PolarsResult<PartitionedDataFrames>>,
+        executor::AbortOnDropHandle<PolarsResult<PartitionedDataFrames>>,
     >,
     pub partition_morsel_sender: PartitionMorselSender,
     pub error_capture: ErrorCapture,
@@ -278,7 +278,7 @@ impl PartitionDistributor {
             total_sink_opens = total_sink_opens.saturating_add(partition.num_sink_opens);
 
             if let Some(file_sink_task_data) = partition.file_sink_task_data.take() {
-                async_executor::spawn(
+                executor::spawn(
                     TaskPriority::Low,
                     error_capture
                         .clone()

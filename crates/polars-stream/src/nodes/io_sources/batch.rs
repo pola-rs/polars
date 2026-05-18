@@ -1,13 +1,13 @@
 //! Reads batches from a `dyn Fn`
 
 use async_trait::async_trait;
+use polars_async::executor::{JoinHandle, TaskPriority, spawn};
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{JoinHandle, TaskPriority, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::{

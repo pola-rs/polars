@@ -11,8 +11,8 @@ use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
-    AnyValue, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions, GroupsType,
-    IDX_DTYPE, IntoColumn,
+    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions,
+    GroupsType, IDX_DTYPE, IntoColumn,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -125,6 +125,59 @@ pub fn null_count<'a>(
         };
 
         ac.state = AggState::AggregatedScalar(Column::new(name, null_count));
+    });
+
+    Ok(ac)
+}
+
+pub fn has_nulls<'a>(
+    inputs: &[Arc<dyn PhysicalExpr>],
+    df: &DataFrame,
+    groups: &'a GroupPositions,
+    state: &ExecutionState,
+) -> PolarsResult<AggregationContext<'a>> {
+    assert_eq!(inputs.len(), 1);
+
+    let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+
+    if let AggState::AggregatedScalar(s) | AggState::LiteralScalar(s) = &mut ac.state {
+        *s = s.is_null().into_column();
+        return Ok(ac);
+    }
+
+    ac.groups();
+    let values = ac.flat_naive();
+    let name = values.name().clone();
+    let Some(validity) = values.rechunk_validity() else {
+        ac.state = AggState::AggregatedScalar(Column::new_scalar(name, false.into(), groups.len()));
+        return Ok(ac);
+    };
+
+    RAYON.install(|| {
+        let validity = BitMask::from_bitmap(&validity);
+        let has_nulls: BooleanChunked = match &**ac.groups.as_ref() {
+            GroupsType::Idx(idx) => idx
+                .into_par_iter()
+                .map(|(_, idx)| {
+                    idx.iter()
+                        .any(|i| !unsafe { validity.get_bit_unchecked(*i as usize) })
+                })
+                .collect(),
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+                monotonic: _,
+            } => groups
+                .into_par_iter()
+                .map(|[start, length]| {
+                    unsafe { validity.sliced_unchecked(*start as usize, *length as usize) }
+                        .unset_bits()
+                        > 0
+                })
+                .collect(),
+        };
+
+        ac.state = AggState::AggregatedScalar(has_nulls.with_name(name).into_column());
     });
 
     Ok(ac)
