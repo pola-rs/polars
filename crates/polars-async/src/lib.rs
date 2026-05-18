@@ -55,7 +55,7 @@ impl RuntimeManager {
     /// over this thread's task execution duties.
     ///
     /// Simply directly calls f() if this thread is not an async executor thread.
-    pub fn block_in_place<R, F: FnOnce() -> R>(f: F) -> R {
+    pub fn block_in_place<R, F: FnOnce() -> R>(&self, f: F) -> R {
         if THREAD_SPAWNED_BY_POLARS_EXECUTOR.get() {
             executor::block_in_place(f)
         } else {
