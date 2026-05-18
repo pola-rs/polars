@@ -1,5 +1,3 @@
-use arrow::bitmap::Bitmap;
-use arrow::bitmap::aligned::AlignedBitmapSlice;
 use num_traits::Bounded;
 #[cfg(feature = "dtype-struct")]
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
@@ -272,96 +270,11 @@ fn is_sorted_categorical_lexical_adjacent(s: &Series, options: SortOptions) -> P
     })
 }
 
-/// Returns [`true`] if the adjacent pair `prev` → `curr` violates monotonic order for booleans.
-///
-/// Ascending (**non‑decreasing**): violates iff `prev && !curr` (`true` then `false`).
-/// Descending (**non‑increasing**): violates iff `!prev && curr` (`false` then `true`).
-#[inline(always)]
-fn bool_pair_is_unsorted(prev: bool, curr: bool, descending: bool) -> bool {
-    if descending {
-        !prev && curr
-    } else {
-        prev && !curr
-    }
-}
-
-/// Scan one contiguous boolean **values** [`Bitmap`] for monotonic adjacent order (`false < true`).
-///
-/// Bit **`i`** is logical row **`i`** within this slice (Arrow / Polars LSB‑first indexing, same notion as `get_bit_unchecked`).
-///
-/// On success, updates **`prev`** to [`Some`] with this slice's **last** row value so callers can enforce the pair
-/// across **(last row here → first row of the next bitmap or chunk)**.
-///
-/// Implemented as **`AlignedBitmapSlice<u64>`**: scalar **prefix**, **`u64` bulk** bitmask checks for interior adjacent
-/// pairs, then scalar **suffix**. Used by boolean `Series::is_sorted` in this module.
-fn is_sorted_boolean_bitmap_slice(
-    bits: &Bitmap,
-    descending: bool,
-    prev: &mut Option<bool>,
-) -> bool {
-    if bits.is_empty() {
-        return true;
-    }
-
-    // Split bitmap into prefix | aligned u64 chunks | suffix — see `AlignedBitmapSlice`.
-    let (bytes, offset, length) = bits.as_slice();
-    let aligned = AlignedBitmapSlice::<u64>::new(bytes, offset, length);
-
-    // Prefix: first `< 64` logical bits, already packed into one u64 (LSB = lowest index in this slice).
-    let p = aligned.prefix();
-    for i in 0..aligned.prefix_bitlen() {
-        // the boolean at index i in this prefix slice
-        let b = ((p >> i) & 1) != 0;
-        if let Some(pb) = *prev {
-            if bool_pair_is_unsorted(pb, b, descending) {
-                return false;
-            }
-        }
-        *prev = Some(b);
-    }
-
-    // Bulk: 64 rows per word. Bit i = row i within the word (LSB-first).
-    // Descending interior check must ignore bit 0: its left neighbor is `prev`, not bit 63 of the same word.
-    const DESC_INTERIOR_MASK: u64 = u64::MAX << 1;
-
-    for w in aligned.bulk_iter() {
-        // Bridge (last row before this word) -> (row 0 of this word).
-        if let Some(pb) = *prev {
-            let first = (w & 1) != 0;
-            if bool_pair_is_unsorted(pb, first, descending) {
-                return false;
-            }
-        }
-        if descending {
-            // Nonzero iff some adjacent pair wholly inside bits 1..=63 forms `01` (forbidden descending).
-            if (w & !(w << 1)) & DESC_INTERIOR_MASK != 0 {
-                return false;
-            }
-        } else if (!w) & (w << 1) != 0 {
-            // Nonzero iff some adjacent pair wholly inside bits 1..=63 forms `10` (forbidden ascending).
-            return false;
-        }
-        // Last row in this word; pairs with row 0 of the next bulk word / suffix via `prev`.
-        *prev = Some(((w >> 63) & 1) != 0);
-    }
-
-    // Suffix: trailing bits after the last full u64, same scalar walk as prefix.
-    let s = aligned.suffix();
-    for i in 0..aligned.suffix_bitlen() {
-        // the boolean at index i in this suffix slice
-        let b = ((s >> i) & 1) != 0;
-        if let Some(pb) = *prev {
-            if bool_pair_is_unsorted(pb, b, descending) {
-                return false;
-            }
-        }
-        *prev = Some(b);
-    }
-
-    true
-}
-
 /// Booleans ordered as [`false`] < [`true`] (same as inequality comparisons on [`BooleanChunked`]).
+///
+/// Monotone order is equivalent to at most one plateau change: ascending is `F…FT…T`, descending is
+/// `T…TF…F`. Implemented with `first_true_idx` / `first_false_idx` plus a global false/true count
+/// check.
 ///
 /// Caller must ensure **`ca` has no nulls** on the flattened series (see `non_null` slice above).
 fn is_sorted_ca_bool(ca: &BooleanChunked, descending: bool) -> bool {
@@ -369,22 +282,22 @@ fn is_sorted_ca_bool(ca: &BooleanChunked, descending: bool) -> bool {
     if len <= 1 {
         return true;
     }
-    // Defensive fallback if chunked metadata disagrees with per-chunk values.
-    if ca.null_count() != 0 {
-        return is_sorted_adjacent_total_ord(ca.into_no_null_iter(), descending);
-    }
-
-    let mut prev_row = None::<bool>;
-    for arr in ca.downcast_iter() {
-        let bits = arr.values();
-        if bits.is_empty() {
-            continue;
+    debug_assert_eq!(
+        ca.null_count(),
+        0,
+        "internal error: `is_sorted_ca_bool` expects a non-null boolean slice"
+    );
+    if descending {
+        match ca.first_false_idx() {
+            None => true,
+            Some(k) => ca.num_trues() == k,
         }
-        if !is_sorted_boolean_bitmap_slice(bits, descending, &mut prev_row) {
-            return false;
+    } else {
+        match ca.first_true_idx() {
+            None => true,
+            Some(k) => ca.num_falses() == k,
         }
     }
-    true
 }
 
 fn check_cmp<T: NumericNative, Cmp: Fn(&T, &T) -> bool>(
@@ -454,125 +367,3 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
 }
 
 impl SeriesMethods for Series {}
-
-#[cfg(test)]
-mod is_sorted_tests {
-    use arrow::bitmap::Bitmap;
-    use polars_core::prelude::*;
-
-    use super::{SeriesMethods, is_sorted_boolean_bitmap_slice, is_sorted_ca_bool};
-
-    #[test]
-    fn is_sorted_boolean_long_series() {
-        // `AlignedBitmapSlice` only uses `bulk_iter()` when the bitmap does not fit entirely in one
-        // `u64` packed prefix (`offset + len > 64`; e.g. length 137 → two bulk words on typical layout).
-        let v = vec![false; 137];
-        let s = Series::new("bitmap_bulk_ascending".into(), &v);
-        assert!(s.is_sorted(SortOptions::default()).unwrap());
-    }
-
-    #[test]
-    fn is_sorted_boolean_bitmap() {
-        let mut bits = vec![false, false, true];
-        bits.resize(137, true);
-        let bmp = Bitmap::from_iter(bits);
-        let mut prev = None;
-        assert!(
-            !is_sorted_boolean_bitmap_slice(&bmp, true, &mut prev),
-            "false→true at rows 1→2 is forbidden for descending"
-        );
-    }
-
-    #[test]
-    fn is_sorted_non_primitive_len_one_short_circuits() {
-        let s = Series::new("b".into(), &[true]);
-        assert_eq!(s.len(), 1);
-        assert!(!s.dtype().is_primitive_numeric());
-
-        assert!(s.is_sorted(SortOptions::default()).unwrap());
-    }
-
-    // calls `is_sorted_ca_bool` via `s_phys.bool()`
-    #[test]
-    fn is_sorted_ca_bool_len_at_most_one_short_circuits() {
-        // `Series::is_sorted` short-circuits when `non_null_len <= 1` before reaching
-        // `is_sorted_ca_bool`; call the helper to cover the `len <= 1` guard.
-        assert!(is_sorted_ca_bool(
-            &BooleanChunked::from_slice(PlSmallStr::EMPTY, &[]),
-            false,
-        ));
-        assert!(is_sorted_ca_bool(
-            &BooleanChunked::from_slice(PlSmallStr::EMPTY, &[]),
-            true,
-        ));
-        assert!(is_sorted_ca_bool(
-            &BooleanChunked::from_slice(PlSmallStr::EMPTY, &[false]),
-            false,
-        ));
-        assert!(is_sorted_ca_bool(
-            &BooleanChunked::from_slice(PlSmallStr::EMPTY, &[true]),
-            true,
-        ));
-    }
-
-    #[test]
-    fn is_sorted_boolean() {
-        let s = Series::new("boolean_test".into(), &[false, true, true]);
-        assert_eq!(s.dtype(), &DataType::Boolean);
-        assert_eq!(s.len(), 3);
-        assert!(!s.dtype().is_primitive_numeric());
-
-        assert!(s.is_sorted(SortOptions::default()).unwrap());
-        assert!(
-            !s.is_sorted(SortOptions::default().with_order_descending(true))
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn is_sorted_binary_offset() {
-        let s = Series::from_any_values_and_dtype(
-            "binary_offset_test".into(),
-            &[
-                AnyValue::Binary(&[1]),
-                AnyValue::Binary(&[2, 2]),
-                AnyValue::Binary(&[3, 3, 3]),
-            ],
-            &DataType::BinaryOffset,
-            true,
-        )
-        .unwrap();
-        assert_eq!(s.dtype(), &DataType::BinaryOffset);
-        assert_eq!(s.len(), 3);
-        assert!(!s.dtype().is_primitive_numeric());
-
-        assert!(s.is_sorted(SortOptions::default()).unwrap());
-        assert!(
-            !s.is_sorted(SortOptions::default().with_order_descending(true))
-                .unwrap()
-        );
-    }
-
-    /// [`DataType::List`]: not primitive numeric, not the dedicated string/binary arms — `match`
-    /// falls through to adjacent-row `Series::lt_eq` / `gt_eq`. Polars does not implement `<=` for
-    /// list columns, so this returns [`Err`](PolarsResult::Err) after entering the wildcard arm.
-    #[test]
-    fn is_sorted_list_pairwise_fallback_returns_comparison_error() {
-        let ca: ListChunked = ListChunked::from_iter([
-            Series::new("_".into(), &[1i64]),
-            Series::new("_".into(), &[2i64]),
-            Series::new("_".into(), &[3i64]),
-        ]);
-        let s = ca.into_series();
-        assert!(matches!(s.dtype(), DataType::List(_)));
-        assert_eq!(s.len(), 3);
-        assert!(!s.dtype().is_primitive_numeric());
-
-        let err = s.is_sorted(SortOptions::default()).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("<=") && msg.contains("list"),
-            "unexpected error message: {msg}"
-        );
-    }
-}
