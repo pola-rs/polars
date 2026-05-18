@@ -49,6 +49,7 @@ pub enum AggExpr {
         input: Arc<Expr>,
         include_nulls: bool,
     },
+    // TODO: remove on next DSL break, deprecated in favor of FunctionExpr::Quantile.
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
@@ -704,16 +705,6 @@ impl EvalVariant {
             EvalVariant::List | EvalVariant::ListAgg => true,
             EvalVariant::Array { .. } | EvalVariant::ArrayAgg => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
-        }
-    }
-
-    pub fn is_length_preserving(&self) -> bool {
-        match self {
-            EvalVariant::List
-            | EvalVariant::ListAgg
-            | EvalVariant::Array { .. }
-            | EvalVariant::ArrayAgg
-            | EvalVariant::Cumulative { .. } => true,
         }
     }
 }

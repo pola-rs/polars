@@ -2,14 +2,34 @@ use std::hash::BuildHasher;
 
 use hashbrown::hash_map::RawEntryMut;
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
+use polars_core::config::verbose;
+use polars_core::prelude::PlHashMap;
+use polars_core::schema::Schema;
+use polars_error::PolarsResult;
 use polars_utils::aliases::PlFixedStateQuality;
+use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::_boost_hash_combine;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::vec::CapacityByFactor;
 
-use super::*;
 use crate::constants::CSE_REPLACED;
+use crate::plans::visitor::{
+    IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
+    Visitor,
+};
+use crate::plans::{AExpr, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue, OutputName};
+use crate::prelude::ProjectionOptions;
 use crate::prelude::visitor::AexprNode;
+
+type Accepted = Option<(VisitRecursion, bool)>;
+// Don't allow this node in a cse.
+const REFUSE_NO_MEMBER: Accepted = Some((VisitRecursion::Continue, false));
+// Don't allow this node, but allow as a member of a cse.
+const REFUSE_ALLOW_MEMBER: Accepted = Some((VisitRecursion::Continue, true));
+const REFUSE_SKIP: Accepted = Some((VisitRecursion::Skip, false));
+// Accept this node.
+const ACCEPT: Accepted = None;
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {

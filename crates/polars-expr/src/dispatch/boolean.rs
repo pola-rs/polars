@@ -1,9 +1,9 @@
 use std::ops::{BitAnd, BitOr};
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
+use polars_core::runtime::RAYON;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBooleanFunction;
 use polars_utils::pl_str::PlSmallStr;
@@ -15,6 +15,8 @@ pub fn function_expr_to_udf(func: IRBooleanFunction) -> SpecialEq<Arc<dyn Column
     match func {
         Any { ignore_nulls } => map!(any, ignore_nulls),
         All { ignore_nulls } => map!(all, ignore_nulls),
+        IsEmpty { ignore_nulls } => map!(is_empty, ignore_nulls),
+        HasNulls => map!(has_nulls),
         IsNull => map!(is_null),
         IsNotNull => map!(is_not_null),
         IsFinite => map!(is_finite),
@@ -61,6 +63,19 @@ fn all(s: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
     } else {
         Ok(Column::new(s.name().clone(), [ca.all_kleene()]))
     }
+}
+
+fn is_empty(s: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
+    let out = if ignore_nulls {
+        s.is_full_null()
+    } else {
+        s.is_empty()
+    };
+    Ok(Column::new(s.name().clone(), [out]))
+}
+
+fn has_nulls(s: &Column) -> PolarsResult<Column> {
+    Ok(Column::new(s.name().clone(), [s.has_nulls()]))
 }
 
 fn is_null(s: &Column) -> PolarsResult<Column> {
@@ -158,7 +173,7 @@ fn not(s: &Column) -> PolarsResult<Column> {
 
 // We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
 fn any_horizontal(s: &[Column]) -> PolarsResult<Column> {
-    let out = POOL
+    let out = RAYON
         .install(|| {
             s.par_iter()
                 .try_fold(
@@ -180,7 +195,7 @@ fn any_horizontal(s: &[Column]) -> PolarsResult<Column> {
 
 // We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
 fn all_horizontal(s: &[Column]) -> PolarsResult<Column> {
-    let out = POOL
+    let out = RAYON
         .install(|| {
             s.par_iter()
                 .try_fold(

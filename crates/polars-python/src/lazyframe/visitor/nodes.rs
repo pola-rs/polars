@@ -273,6 +273,17 @@ pub struct Join {
 }
 
 #[pyclass(frozen)]
+/// Join operation
+pub struct Gather {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    idxs: usize,
+    #[pyo3(get)]
+    null_on_oob: bool,
+}
+
+#[pyclass(frozen)]
 /// Merge sorted operation
 pub struct MergeSorted {
     #[pyo3(get)]
@@ -281,6 +292,8 @@ pub struct MergeSorted {
     input_right: usize,
     #[pyo3(get)]
     key: String,
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 
 #[pyclass(frozen)]
@@ -581,6 +594,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             },
         }
         .into_py_any(py),
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => Gather {
+            input: input.0,
+            idxs: idxs.0,
+            null_on_oob: *null_on_oob,
+        }
+        .into_py_any(py),
         IR::HStack {
             input,
             exprs,
@@ -744,12 +767,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_left,
             input_right,
             key,
+            maintain_order,
         } => MergeSorted {
             input_left: input_left.0,
             input_right: input_right.0,
             key: key.to_string(),
+            maintain_order: *maintain_order,
         }
         .into_py_any(py),
+        IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a UnoptimizedDispatch node",
+        )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

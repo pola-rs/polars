@@ -6,13 +6,12 @@ use arrow::datatypes::{ArrowDataType, Field, TimeUnit};
 use arrow::offset::Offset;
 use arrow::types::NativeType;
 use bytemuck::cast_slice_mut;
-use chrono::Datelike;
 use num_traits::FromBytes;
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 
 use super::CastOptionsImpl;
 use super::binary_to::Parse;
-use super::temporal::EPOCH_DAYS_FROM_CE;
+use super::temporal::utf8_to_naive_date_scalar;
 #[cfg(feature = "dtype-decimal")]
 use crate::decimal::str_to_dec128;
 
@@ -24,8 +23,9 @@ pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 /// in the array.
 pub(super) fn binview_to_dictionary<K: DictionaryKey>(
     from: &BinaryViewArray,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<[u8]>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<[u8]>>::new(ordered);
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 
@@ -34,8 +34,9 @@ pub(super) fn binview_to_dictionary<K: DictionaryKey>(
 
 pub(super) fn utf8view_to_dictionary<K: DictionaryKey>(
     from: &Utf8ViewArray,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<str>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableBinaryViewArray<str>>::new(ordered);
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 
@@ -132,13 +133,7 @@ pub fn utf8view_to_naive_timestamp(
 }
 
 pub(super) fn utf8view_to_date32(from: &Utf8ViewArray) -> PrimitiveArray<i32> {
-    let iter = from.iter().map(|x| {
-        x.and_then(|x| {
-            x.parse::<chrono::NaiveDate>()
-                .ok()
-                .map(|x| x.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
-        })
-    });
+    let iter = from.iter().map(|x| x.and_then(utf8_to_naive_date_scalar));
     PrimitiveArray::<i32>::from_trusted_len_iter(iter).to(ArrowDataType::Date32)
 }
 

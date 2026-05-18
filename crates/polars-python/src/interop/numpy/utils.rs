@@ -9,6 +9,8 @@ use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
 
+use crate::interned;
+
 pub(super) fn get_numpy_module(py: Python) -> PyResult<Bound<PyModule>> {
     PyModule::import(py, intern!(py, "numpy"))
 }
@@ -84,17 +86,18 @@ pub(super) fn reshape_numpy_array(
         .getattr(py, intern!(py, "shape"))?
         .extract::<Vec<usize>>(py)?;
 
+    let method = interned::RESHAPE.get(py);
     if shape.len() == 1 {
         // In this case, we can avoid allocating a Vec.
         let new_shape = (height, width);
-        arr.call_method1(py, intern!(py, "reshape"), new_shape)
+        arr.call_method1(py, method, new_shape)
     } else {
         let mut new_shape_vec = vec![height, width];
         for v in &shape[1..] {
             new_shape_vec.push(*v)
         }
         let new_shape = PyTuple::new(py, new_shape_vec)?;
-        arr.call_method1(py, intern!(py, "reshape"), new_shape)
+        arr.call_method1(py, method, new_shape)
     }
 }
 

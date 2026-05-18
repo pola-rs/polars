@@ -61,6 +61,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           workspaces: py-polars
           save-if: ${{ github.ref_name == 'main' }}
 

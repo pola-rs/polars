@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::functions::concat_df_horizontal;
 use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
@@ -11,7 +12,6 @@ use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
-use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::SourceToken;
 use crate::physical_plan::ZipBehavior;
 
@@ -172,47 +172,28 @@ impl ComputeNode for ZipNode {
 
         let mut all_broadcast = true;
         let mut all_done_or_broadcast = true;
-        let mut at_least_one_non_broadcast_done = false;
-        let mut at_least_one_non_broadcast_nonempty = false;
+        let mut nonbroadcast_len = None;
+        let mut all_nonbroadcast_match_len = true;
         for (recv_idx, recv_state) in recv.iter().enumerate() {
             let input_head = &mut self.input_heads[recv_idx];
             if *recv_state == PortState::Done {
                 input_head.notify_no_more_morsels();
-
                 all_done_or_broadcast &=
                     input_head.is_broadcast == Some(true) || input_head.total_len == 0;
-                at_least_one_non_broadcast_done |=
-                    input_head.is_broadcast == Some(false) && input_head.total_len == 0;
+                if input_head.is_broadcast != Some(true) {
+                    all_nonbroadcast_match_len &=
+                        nonbroadcast_len.is_none_or(|l| l == input_head.total_len);
+                    nonbroadcast_len = Some(input_head.total_len);
+                }
             } else {
                 all_done_or_broadcast = false;
             }
 
             all_broadcast &= input_head.is_broadcast == Some(true);
-            at_least_one_non_broadcast_nonempty |=
-                input_head.is_broadcast == Some(false) && input_head.total_len > 0;
         }
 
-        match self.zip_behavior {
-            ZipBehavior::Broadcast => {
-                polars_ensure!(
-                    !(at_least_one_non_broadcast_done && at_least_one_non_broadcast_nonempty),
-                    ShapeMismatch: "zip node received non-equal length inputs"
-                );
-            },
-            ZipBehavior::Strict => {
-                if let Some(first_len) = self.input_heads.first().map(|h| h.total_len) {
-                    let all_len_equal = self
-                        .input_heads
-                        .iter()
-                        .filter(|h| h.is_broadcast == Some(false))
-                        .all(|h| h.total_len == first_len);
-                    polars_ensure!(
-                        all_len_equal,
-                        ShapeMismatch: "zip node received non-equal length inputs"
-                    );
-                }
-            },
-            ZipBehavior::NullExtend => {},
+        if !matches!(self.zip_behavior, ZipBehavior::NullExtend) {
+            polars_ensure!(all_nonbroadcast_match_len, ShapeMismatch: "zip node received non-equal length inputs");
         }
 
         let all_output_sent = all_done_or_broadcast && !all_broadcast;

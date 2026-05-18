@@ -81,7 +81,7 @@ def test_dtype_inference_from_string(
     expected_dtype: PolarsDataType,
 ) -> None:
     inferred_dtype = dtype_from_database_typename(value)
-    assert inferred_dtype == expected_dtype  # type: ignore[operator]
+    assert inferred_dtype == expected_dtype
 
 
 @pytest.mark.parametrize(

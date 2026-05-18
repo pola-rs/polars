@@ -3,6 +3,7 @@ use std::ops::Range;
 use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::pushable::Pushable;
+use polars_async::executor::{self, TaskPriority};
 use polars_core::prelude::*;
 use polars_io::RowIndex;
 use polars_io::predicates::ScanIOPredicate;
@@ -11,7 +12,6 @@ use polars_parquet::read::RowGroupMetadata;
 use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_all};
 use polars_utils::format_pl_smallstr;
 
-use crate::async_executor::{self, TaskPriority};
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 struct StatisticsColumns {
@@ -105,7 +105,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
 
     // Note: We are spawning here onto the computational async runtime because the caller is being run
     // on a tokio async thread.
-    let skip_row_group_mask = async_executor::spawn(TaskPriority::High, async move {
+    let skip_row_group_mask = executor::spawn(TaskPriority::High, async move {
         let row_groups_slice = &metadata.row_groups[row_group_slice.clone()];
 
         if let Some(ri) = &mut row_index {
@@ -132,7 +132,8 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
                 continue;
             }
 
-            let mut statistics = load_parquet_column_statistics(row_groups_slice, projection)?;
+            let mut statistics =
+                load_parquet_column_statistics(row_groups_slice, projection, &metadata.footer_buf)?;
 
             // Note: Order is important here. We re-use the transform for the output column, meaning
             // that it may set the column name.
@@ -172,6 +173,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
 fn load_parquet_column_statistics(
     row_groups: &[RowGroupMetadata],
     projection: &ArrowFieldProjection,
+    footer_buf: &[u8],
 ) -> PolarsResult<StatisticsColumns> {
     let arrow_field = projection.arrow_field();
 
@@ -197,7 +199,7 @@ fn load_parquet_column_statistics(
 
     let idx = idxs[0];
 
-    let Some(statistics) = deserialize_all(arrow_field, row_groups, idx)? else {
+    let Some(statistics) = deserialize_all(arrow_field, row_groups, idx, footer_buf)? else {
         return null_statistics();
     };
 

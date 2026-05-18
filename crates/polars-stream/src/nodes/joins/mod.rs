@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
 use crossbeam_queue::ArrayQueue;
-use polars_core::POOL;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::wait_group::WaitGroup;
+use polars_core::runtime::RAYON;
 use polars_error::PolarsResult;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::pipe::{PortReceiver, RecvPort, port_channel};
 
@@ -129,7 +129,7 @@ impl Default for BufferedStream {
 
 impl Drop for BufferedStream {
     fn drop(&mut self) {
-        POOL.install(|| {
+        RAYON.install(|| {
             // Parallel drop as the state might be quite big.
             (0..self.morsels.len()).into_par_iter().for_each(|_| {
                 drop(self.morsels.pop());

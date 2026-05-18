@@ -84,7 +84,9 @@ def assert_sql_matches(
     frames: pl.DataFrame | pl.LazyFrame | dict[str, pl.DataFrame | pl.LazyFrame],
     *,
     query: str,
-    compare_with: Literal["sqlite", "duckdb"] | Collection[Literal["sqlite", "duckdb"]],
+    compare_with: Literal["sqlite", "duckdb"]
+    | Collection[Literal["sqlite", "duckdb"]]
+    | None,
     check_dtypes: bool = False,
     check_row_order: bool = True,
     check_column_names: bool = True,
@@ -108,6 +110,7 @@ def assert_sql_matches(
         One or more named SQL engines to use as a reference for comparison.
         - 'sqlite': Use Python's built-in `sqlite3` module.
         - 'duckdb': Use DuckDB (requires `duckdb` to be installed separately).
+        - None: Don't compare against a backend (requires that "expected" is set).
     check_dtypes
         Require that the comparison frame dtypes match; defaults to False, as different
         backends may use different type systems, and we care about the values.
@@ -153,7 +156,12 @@ def assert_sql_matches(
     with pl.SQLContext(frames=frames, eager=True) as ctx:
         polars_result = ctx.execute(query=query, eager=True)
 
-    if isinstance(compare_with, str):
+    if not compare_with:
+        if expected is None:
+            msg = "if no comparison backend specified, `expected` is required"
+            raise ValueError(msg)
+        compare_with = []
+    elif isinstance(compare_with, str):
         compare_with = [compare_with]
 
     for comparison_backend in compare_with:

@@ -1,4 +1,6 @@
-try:
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
     from polars._plr import (
         CategoricalRemappingWarning,
         ColumnNotFoundError,
@@ -20,89 +22,112 @@ try:
         StringCacheMismatchError,
         StructFieldNotFoundError,
     )
-except ImportError:
-    # redefined for documentation purposes when there is no binary
+else:
+    try:
+        from polars._plr import (
+            CategoricalRemappingWarning,
+            ColumnNotFoundError,
+            ComputeError,
+            DuplicateError,
+            InvalidOperationError,
+            MapWithoutReturnDtypeWarning,
+            NoDataError,
+            OutOfBoundsError,
+            PanicException,
+            PerformanceWarning,
+            PolarsError,
+            PolarsWarning,
+            SchemaError,
+            SchemaFieldNotFoundError,
+            ShapeError,
+            SQLInterfaceError,
+            SQLSyntaxError,
+            StringCacheMismatchError,
+            StructFieldNotFoundError,
+        )
+    except ImportError:
+        # redefined for documentation purposes when there is no binary
 
-    class PolarsError(Exception):  # type: ignore[no-redef]
-        """Base class for all Polars errors."""
+        class PolarsError(Exception):  # type: ignore[no-redef]
+            """Base class for all Polars errors."""
 
-    class ColumnNotFoundError(PolarsError):  # type: ignore[no-redef]
-        """
-        Exception raised when a specified column is not found.
+        class ColumnNotFoundError(PolarsError):  # type: ignore[no-redef]
+            """
+            Exception raised when a specified column is not found.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select("b")
-        polars.exceptions.ColumnNotFoundError: b
-        """
+            Examples
+            --------
+            >>> df = pl.DataFrame({"a": [1, 2, 3]})
+            >>> df.select("b")
+            polars.exceptions.ColumnNotFoundError: b
+            """
 
-    class ComputeError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when Polars could not perform an underlying computation."""
+        class ComputeError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when Polars could not perform an underlying computation."""  # noqa: W505
 
-    class DuplicateError(PolarsError):  # type: ignore[no-redef]
-        """
-        Exception raised when a column name is duplicated.
+        class DuplicateError(PolarsError):  # type: ignore[no-redef]
+            """
+            Exception raised when a column name is duplicated.
 
-        Examples
-        --------
-        >>> df = pl.DataFrame({"a": [1, 1, 1]})
-        >>> pl.concat([df, df], how="horizontal")
-        polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
-        """  # noqa: W505
+            Examples
+            --------
+            >>> df = pl.DataFrame({"a": [1, 1, 1]})
+            >>> pl.concat([df, df], how="horizontal")
+            polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
+            """  # noqa: W505
 
-    class InvalidOperationError(PolarsError):  # type: ignore[no-redef]
-        """
-        Exception raised when an operation is not allowed (or possible) against a given object or data structure.
+        class InvalidOperationError(PolarsError):  # type: ignore[no-redef]
+            """
+            Exception raised when an operation is not allowed (or possible) against a given object or data structure.
 
-        Examples
-        --------
-        >>> s = pl.Series("a", [1, 2, 3])
-        >>> s.is_in(["x", "y"])
-        polars.exceptions.InvalidOperationError: `is_in` cannot check for String values in Int64 data
-        """  # noqa: W505
+            Examples
+            --------
+            >>> s = pl.Series("a", [1, 2, 3])
+            >>> s.is_in(["x", "y"])
+            polars.exceptions.InvalidOperationError: `is_in` cannot check for String values in Int64 data
+            """  # noqa: W505
 
-    class NoDataError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when an operation cannot be performed on an empty data structure."""  # noqa: W505
+        class NoDataError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when an operation cannot be performed on an empty data structure."""  # noqa: W505
 
-    class OutOfBoundsError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when the given index is out of bounds."""
+        class OutOfBoundsError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when the given index is out of bounds."""
 
-    class PanicException(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
+        class PanicException(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
-    class SchemaError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when an unexpected schema mismatch causes an error."""
+        class SchemaError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when an unexpected schema mismatch causes an error."""
 
-    class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when a specified schema field is not found."""
+        class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when a specified schema field is not found."""
 
-    class ShapeError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
+        class ShapeError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
 
-    class SQLInterfaceError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when an error occurs in the SQL interface."""
+        class SQLInterfaceError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when an error occurs in the SQL interface."""
 
-    class SQLSyntaxError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised from the SQL interface when encountering invalid syntax."""
+        class SQLSyntaxError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised from the SQL interface when encountering invalid syntax."""  # noqa: W505
 
-    class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when string caches come from different sources."""
+        class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when string caches come from different sources."""
 
-    class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef]
-        """Exception raised when a specified Struct field is not found."""
+        class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef]
+            """Exception raised when a specified Struct field is not found."""
 
-    class PolarsWarning(Exception):  # type: ignore[no-redef]
-        """Base class for all Polars warnings."""
+        class PolarsWarning(Exception):  # type: ignore[no-redef]
+            """Base class for all Polars warnings."""
 
-    class PerformanceWarning(PolarsWarning):  # type: ignore[no-redef]
-        """Warning issued to indicate potential performance pitfalls."""
+        class PerformanceWarning(PolarsWarning):  # type: ignore[no-redef]
+            """Warning issued to indicate potential performance pitfalls."""
 
-    class CategoricalRemappingWarning(PerformanceWarning):  # type: ignore[no-redef]
-        """Warning issued when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
+        class CategoricalRemappingWarning(PerformanceWarning):  # type: ignore[no-redef]
+            """Warning issued when a categorical needs to be remapped to be compatible with another categorical."""  # noqa: W505
 
-    class MapWithoutReturnDtypeWarning(PolarsWarning):  # type: ignore[no-redef]
-        """Warning issued when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
+        class MapWithoutReturnDtypeWarning(PolarsWarning):  # type: ignore[no-redef]
+            """Warning issued when `map_elements` is performed without specifying the return dtype."""  # noqa: W505
 
 
 class RowsError(PolarsError):

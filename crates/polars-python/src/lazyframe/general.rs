@@ -626,7 +626,7 @@ impl PyLazyFrame {
 
             // We use a tokio spawn_blocking here as it has a high blocking
             // thread pool limit.
-            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+            polars_core::runtime::ASYNC.spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
                     .map(|r| match r {
@@ -1117,6 +1117,12 @@ impl PyLazyFrame {
             .into())
     }
 
+    fn gather(&self, idxs: Self, null_on_oob: bool) -> Self {
+        let ldf = self.ldf.read().clone();
+        let idxs = idxs.ldf.into_inner();
+        ldf.gather(idxs, null_on_oob).into()
+    }
+
     fn with_columns(&self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.read().clone();
         ldf.with_columns(exprs.to_exprs()).into()
@@ -1516,12 +1522,12 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    fn merge_sorted(&self, other: Self, key: &str) -> PyResult<Self> {
+    fn merge_sorted(&self, other: Self, key: &str, maintain_order: bool) -> PyResult<Self> {
         let out = self
             .ldf
             .read()
             .clone()
-            .merge_sorted(other.ldf.into_inner(), key)
+            .merge_sorted(other.ldf.into_inner(), key, maintain_order)
             .map_err(PyPolarsErr::from)?;
         Ok(out.into())
     }

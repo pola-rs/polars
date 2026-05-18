@@ -273,7 +273,6 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     assert df2.rows() == df.rows()[:3]
 
     assert df0.schema == {"id": pl.String, "points": pl.Int64}
-    print(df1.schema)
     assert df1.schema == {"x": pl.String, "y": pl.Int32}
     assert df2.schema == {"x": pl.String, "y": pl.Int32}
 
@@ -2810,7 +2809,7 @@ def test_set() -> None:
 
     # needs to be a 2 element tuple
     with pytest.raises(ValueError):
-        df[1, 2, 3] = 1
+        df[1, 2, 3] = 1  # type: ignore[index]
 
     # we cannot index with any type, such as bool
     with pytest.raises(TypeError):
