@@ -309,7 +309,7 @@ async fn distribute_work_task(
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
-                left_buffer.push_back(left_df);
+                left_buffer.push_front(left_df);
                 stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df| {
                     left_buffer.push_back(df)
                 })
