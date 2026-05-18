@@ -138,6 +138,9 @@ class GroupBy:
         return self
 
     def __next__(self) -> tuple[tuple[Any, ...], DataFrame]:
+        if not hasattr(self, "_current_index"):
+            # next() was called before iter(); set up iteration state.
+            iter(self)
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -919,6 +922,9 @@ class RollingGroupBy:
         return self
 
     def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
+        if not hasattr(self, "_current_index"):
+            # next() was called before iter(); set up iteration state.
+            iter(self)
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 
@@ -1109,6 +1115,9 @@ class DynamicGroupBy:
         return self
 
     def __next__(self) -> tuple[tuple[object, ...], DataFrame]:
+        if not hasattr(self, "_current_index"):
+            # next() was called before iter(); set up iteration state.
+            iter(self)
         if self._current_index >= len(self._group_indices):
             raise StopIteration
 

@@ -577,6 +577,15 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
+def test_group_by_next_without_iter() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3, 4]})
+    # next() previously raised AttributeError because _current_index was
+    # only set in __iter__; check that it now yields the first group.
+    group, data = next(df.group_by("foo", maintain_order=True))
+    assert group == (1,)
+    assert data.rows() == [(1,)]
+
+
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
