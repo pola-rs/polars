@@ -135,8 +135,9 @@ pub trait SeriesMethods: SeriesSealed {
         // (1) reuse `is_sorted_ca_num` when the physical type is primitive numeric (temporal /
         //     Decimal, Enum-as-integer, …) after `to_physical_repr`;
         // (2) for ordinary [`DataType::Categorical`], compare adjacent **decoded strings** (`iter_str`),
-        // (3) else scan booleans via a bitmap/`u64` word kernel / string+binary with `TotalOrd`,
-        // (4) else fall back to pairwise `Series::lt_eq` / `gt_eq` (nested types, etc.).
+        // (3) uses a dedicated kernel for boolean values,
+        // (4) else scans string / binary values with `TotalOrd`,
+        // (5) else fall back to pairwise `Series::lt_eq` / `gt_eq` (nested types, etc.).
         let non_null_len = s_len - null_count;
         if non_null_len <= 1 {
             return Ok(true);
@@ -144,7 +145,11 @@ pub trait SeriesMethods: SeriesSealed {
 
         let offset = (!options.nulls_last as i64) * (null_count as i64);
         let non_null = s.slice(offset, non_null_len);
-        polars_ensure!(non_null.null_count() == 0, ComputeError: "internal error: `is_sorted` non-null slice contains nulls");
+        debug_assert_eq!(
+            non_null.null_count(),
+            0,
+            "internal error: `is_sorted` non-null slice contains nulls"
+        );
 
         #[cfg(feature = "dtype-categorical")]
         if matches!(non_null.dtype(), DataType::Categorical(_, _)) {
