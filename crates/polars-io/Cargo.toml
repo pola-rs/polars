@@ -40,6 +40,7 @@ object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true, features = ["json"] }
@@ -135,6 +136,7 @@ cloud = [
   "serde_json",
   "serde",
   "file_cache",
+  "rand",
   "reqwest",
   "http",
 ]

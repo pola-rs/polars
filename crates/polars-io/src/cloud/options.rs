@@ -32,6 +32,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "cloud")]
+use super::dns::{ReqwestDNSCachingConnector, get_cloud_dns_cache_ttl};
+#[cfg(feature = "cloud")]
 use crate::cloud::ObjectStoreErrorContext;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
@@ -356,9 +358,17 @@ impl CloudOptions {
         let opt_credential_provider =
             self.initialized_credential_provider(clear_cached_credentials)?;
 
+        let connector = ReqwestDNSCachingConnector::new(get_cloud_dns_cache_ttl());
+
         let mut builder = AmazonS3Builder::from_env()
             .with_client_options(get_client_options())
+            .with_http_connector(connector)
             .with_url(url.clone().to_string());
+
+        // // kdn TODO RM
+        // let mut builder = AmazonS3Builder::from_env()
+        //     .with_client_options(get_client_options())
+        //     .with_url(url.clone().to_string());
 
         if let Some(credential_provider) = &opt_credential_provider {
             let storage_update_options = parse_untyped_config::<AmazonS3ConfigKey, _>(
@@ -526,10 +536,13 @@ impl CloudOptions {
 
         let verbose = polars_core::config::verbose();
 
+        let connector = ReqwestDNSCachingConnector::new(get_cloud_dns_cache_ttl());
+
         // The credential provider `self.credentials` is prioritized if it is set. We also need
         // `from_env()` as it may source environment configured storage account name.
-        let mut builder =
-            MicrosoftAzureBuilder::from_env().with_client_options(get_client_options());
+        let mut builder = MicrosoftAzureBuilder::from_env()
+            .with_client_options(get_client_options())
+            .with_http_connector(connector);
 
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
@@ -593,7 +606,11 @@ impl CloudOptions {
             GoogleCloudStorageBuilder::new()
         };
 
-        let mut builder = builder.with_client_options(get_client_options());
+        let connector = ReqwestDNSCachingConnector::new(get_cloud_dns_cache_ttl());
+
+        let mut builder = builder
+            .with_client_options(get_client_options())
+            .with_http_connector(connector);
 
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
@@ -623,6 +640,8 @@ impl CloudOptions {
 
     #[cfg(feature = "http")]
     pub fn build_http(&self, url: PlRefPath) -> PolarsResult<impl object_store::ObjectStore> {
+        let connector = ReqwestDNSCachingConnector::new(get_cloud_dns_cache_ttl());
+
         let out = object_store::http::HttpBuilder::new()
             .with_url(url.to_string())
             .with_client_options({
@@ -634,6 +653,7 @@ impl CloudOptions {
                 }
                 opts
             })
+            .with_http_connector(connector)
             .build()
             .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
 
