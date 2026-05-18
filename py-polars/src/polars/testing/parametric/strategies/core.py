@@ -247,6 +247,8 @@ def series(  # noqa: D417
         s = select(when(mask).then(s).alias(s.name)).to_series()
 
     # Apply chunking
+    if not allow_chunks:
+        s = s.rechunk()
     if allow_chunks and size > 1 and draw(st.booleans()):
         split_at = size // 2
         s = s[:split_at].append(s[split_at:])

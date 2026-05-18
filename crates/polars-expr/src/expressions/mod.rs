@@ -12,6 +12,7 @@ mod field;
 mod filter;
 mod gather;
 mod group_iter;
+mod len;
 mod literal;
 #[cfg(feature = "dynamic_group_by")]
 mod rolling;
@@ -42,6 +43,7 @@ pub(crate) use eval::*;
 pub(crate) use field::*;
 pub(crate) use filter::*;
 pub(crate) use gather::*;
+pub(crate) use len::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
@@ -97,6 +99,15 @@ impl AggState {
             | AggState::NotAggregated(s)
             | AggState::LiteralScalar(s)
             | AggState::AggregatedScalar(s) => s.name(),
+        }
+    }
+
+    pub fn rename(&mut self, name: PlSmallStr) {
+        match self {
+            AggState::AggregatedList(s)
+            | AggState::NotAggregated(s)
+            | AggState::LiteralScalar(s)
+            | AggState::AggregatedScalar(s) => s.rename(name),
         }
     }
 
@@ -253,7 +264,11 @@ impl<'a> AggregationContext<'a> {
         self.state = agg_state;
     }
 
-    fn from_agg_state(
+    fn rename(&mut self, name: PlSmallStr) {
+        self.state.rename(name);
+    }
+
+    pub(crate) fn from_agg_state(
         agg_state: AggState,
         groups: Cow<'a, GroupPositions>,
     ) -> AggregationContext<'a> {
@@ -638,7 +653,7 @@ impl<'a> AggregationContext<'a> {
 
     /// Fixes groups for `AggregatedScalar` and `LiteralScalar` so that they point to valid
     /// data elements in the `AggState` values.
-    fn set_groups_for_undefined_agg_states(&mut self) {
+    pub(crate) fn set_groups_for_undefined_agg_states(&mut self) {
         match &self.state {
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
             AggState::AggregatedScalar(c) => {
@@ -647,6 +662,7 @@ impl<'a> AggregationContext<'a> {
                     let groups = (0..c.len() as IdxSize).map(|i| [i, 1]).collect();
                     GroupsType::new_slice(groups, false, true).into_sliceable()
                 });
+                self.set_original_len(false);
             },
             AggState::LiteralScalar(c) => {
                 assert_eq!(c.len(), 1);
@@ -655,6 +671,7 @@ impl<'a> AggregationContext<'a> {
                     let groups = vec![[0, 1]; self.groups.len()];
                     GroupsType::new_slice(groups, true, true).into_sliceable()
                 });
+                self.set_original_len(false);
             },
         }
     }
@@ -683,7 +700,20 @@ pub trait PhysicalExpr: Send + Sync {
     }
 
     /// Take a DataFrame and evaluate the expression.
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
+    ///
+    /// Note: implementers should implement evaluate_impl instead, as this wraps
+    /// that call with an error context.
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        self.evaluate_impl(df, state).map_err(|e| {
+            if let Some(expr) = self.as_expression() {
+                e.with_expr_context(expr.to_string().into())
+            } else {
+                e
+            }
+        })
+    }
+
+    fn evaluate_impl(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column>;
 
     /// Some expression that are not aggregations can be done per group
     /// Think of sort, slice, filter, shift, etc.
@@ -709,6 +739,23 @@ pub trait PhysicalExpr: Send + Sync {
     // this means filters will be incorrect and lead to invalid results down the line
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        self.evaluate_on_groups_impl(df, groups, state)
+            .map_err(|e| {
+                if let Some(expr) = self.as_expression() {
+                    e.with_expr_context(expr.to_string().into())
+                } else {
+                    e
+                }
+            })
+    }
+
+    #[allow(clippy::ptr_arg)]
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,

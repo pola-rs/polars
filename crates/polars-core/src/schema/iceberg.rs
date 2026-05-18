@@ -178,13 +178,20 @@ fn arrow_field_to_iceberg_column_rec(
         },
 
         dtype => {
-            if let ADT::Dictionary(_key_type, value_type, _is_sorted) = dtype
+            if let ADT::Dictionary(_key_type, value_type, _is_ordered) = dtype
                 && !value_type.is_nested()
             {
                 let dtype =
                     DataType::from_arrow_field(&ArrowField::new(name.clone(), dtype.clone(), true));
 
                 IcebergColumnType::Primitive { dtype }
+            } else if let ADT::Extension(ext_type) = dtype
+                && let DataType::Binary = DataType::from_arrow_dtype(&ext_type.inner)
+            {
+                // Iceberg UUID type will hit this branch.
+                IcebergColumnType::Primitive {
+                    dtype: DataType::Binary,
+                }
             } else if dtype.is_nested() {
                 polars_bail!(
                     ComputeError:

@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use arrow::io::ipc::read::FileMetadata;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
@@ -9,7 +10,6 @@ use polars_plan::dsl::ScanSource;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{DynByteSourceBuilder, IpcFileReader};
-use crate::async_primitives::wait_group::WaitGroup;
 #[cfg(feature = "ipc")]
 use crate::metrics::IOMetrics;
 use crate::nodes::io_sources::multi_scan::reader_interface::FileReader;
@@ -51,8 +51,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
         let prefetch_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
-                    .ok()
-                    .unwrap_or_else(|| {
+                    .unwrap_or_else(|_| {
                         panic!("invalid value for POLARS_RECORD_BATCH_PREFETCH_SIZE: {x}")
                     })
                     .get()
@@ -97,11 +96,12 @@ impl FileReaderBuilder for IpcReaderBuilder {
             None
         };
 
-        let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
-            DynByteSourceBuilder::ObjectStore
-        } else {
-            DynByteSourceBuilder::Mmap
-        };
+        let byte_source_builder =
+            if scan_source.is_cloud_url() || polars_config::config().force_async() {
+                DynByteSourceBuilder::ObjectStore
+            } else {
+                DynByteSourceBuilder::Mmap
+            };
 
         let reader = IpcFileReader {
             scan_source,

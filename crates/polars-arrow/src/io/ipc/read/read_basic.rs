@@ -113,7 +113,7 @@ fn read_compressed_buffer<T: NativeType, R: Read + Seek>(
 
     if is_little_endian != is_native_little_endian() {
         polars_bail!(ComputeError:
-            "Reading compressed and big endian IPC".to_string(),
+            "Reading compressed and big endian IPC",
         )
     }
 
@@ -297,6 +297,10 @@ fn read_compressed_bitmap<R: Read + Seek>(
     reader: &mut R,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<u8>> {
+    if row_limit == 0 {
+        return Ok(vec![]);
+    }
+
     scratch.clear();
     scratch.try_reserve(bytes)?;
     reader.by_ref().take(bytes as u64).read_to_end(scratch)?;

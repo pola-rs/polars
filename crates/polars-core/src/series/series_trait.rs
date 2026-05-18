@@ -3,8 +3,6 @@ use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_compute::rolling::QuantileMethod;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
@@ -13,8 +11,6 @@ use crate::prelude::*;
 use crate::utils::{first_non_null, last_non_null};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub enum IsSorted {
     Ascending,
     Descending,
@@ -323,9 +319,15 @@ pub trait SeriesTrait:
         self.len() == 0
     }
 
+    /// Check if Series only consists of nulls.
+    fn is_full_null(&self) -> bool {
+        self.len() == self.null_count()
+    }
+
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
+    /// Returns the validity of this series as a single bitmap.
     fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks().len() == 1 {
             return self.chunks()[0].validity().cloned();
@@ -345,6 +347,9 @@ pub trait SeriesTrait:
         }
         bm.into_opt_validity()
     }
+
+    /// Sets the validity mask of this Series to the given bitmap.
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series;
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {

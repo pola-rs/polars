@@ -6,8 +6,8 @@ use polars_utils::idx_vec::IdxVec;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::utils::{NoNull, flatten, slice_slice};
 
 /// Indexes of the groups, the first index is stored separately.
@@ -15,7 +15,9 @@ use crate::utils::{NoNull, flatten, slice_slice};
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
     pub(crate) sorted: bool,
+    /// Positions of the start of each group.
     first: Vec<IdxSize>,
+    /// Global positions of all elements of all groups.
     all: Vec<IdxVec>,
 }
 
@@ -55,7 +57,7 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
         let mut all = Vec::with_capacity(cap);
         let all_ptr = all.as_ptr() as usize;
 
-        POOL.install(|| {
+        RAYON.install(|| {
             v.into_par_iter()
                 .zip(offsets)
                 .for_each(|(mut inner, offset)| {
@@ -119,7 +121,7 @@ impl GroupsIdx {
                 })
                 .collect_trusted::<Vec<_>>()
         };
-        let (first, all) = POOL.install(|| rayon::join(take_first, take_all));
+        let (first, all) = RAYON.install(|| rayon::join(take_first, take_all));
         self.first = first;
         self.all = all;
         self.sorted = true
@@ -750,12 +752,7 @@ impl Default for GroupPositions {
 impl GroupPositions {
     pub fn slice(&self, offset: i64, len: usize) -> Self {
         let offset = self.offset + offset;
-        slice_groups(
-            self.original.clone(),
-            offset,
-            // invariant that len should be in bounds, so truncate if not
-            if len > self.len { self.len } else { len },
-        )
+        slice_groups(self.original.clone(), offset, len)
     }
 
     pub fn sort(&mut self) {

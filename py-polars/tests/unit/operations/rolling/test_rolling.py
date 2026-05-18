@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         RankMethod,
         TimeUnit,
     )
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -266,7 +267,7 @@ def test_rolling_kurtosis() -> None:
     )
 
 
-@pytest.mark.parametrize("time_zone", [None, "US/Central"])
+@pytest.mark.parametrize("time_zone", [None, "America/Chicago"])
 @pytest.mark.parametrize(
     ("rolling_fn", "expected_values", "expected_dtype"),
     [
@@ -1290,10 +1291,13 @@ def test_rolling_with_dst() -> None:
     df = pl.DataFrame(
         {"a": [datetime(2020, 10, 26, 1), datetime(2020, 10, 26)], "b": [1, 2]}
     ).with_columns(pl.col("a").dt.replace_time_zone("Europe/London"))
-    with pytest.raises(ComputeError, match="is ambiguous"):
-        df.select(pl.col("b").rolling_sum_by("a", "1d"))
-    with pytest.raises(ComputeError, match="is ambiguous"):
-        df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
+    result = df.select(pl.col("b").rolling_sum_by("a", "1d"))
+    expected = pl.DataFrame({"b": [3, 2]})
+    assert_frame_equal(result, expected)
+
+    result = df.sort("a").select(pl.col("b").rolling_sum_by("a", "1d"))
+    expected = pl.DataFrame({"b": [2, 3]})
+    assert_frame_equal(result, expected)
 
 
 def interval_defs() -> SearchStrategy[ClosedInterval]:
@@ -2345,3 +2349,94 @@ def test_rolling_rank_closed_left_26147() -> None:
         x_flipped_ranked=pl.Series([2.0, 1.0]),
     )
     assert_frame_equal(actual, expected)
+
+
+def test_rolling_cov_no_panic_26741() -> None:
+    result = (
+        pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})
+        .cast({"x": pl.Float64, "y": pl.Int8})
+        .with_columns(z=pl.rolling_cov("x", "y", window_size=2).fill_null(0))
+    )
+    expected = pl.DataFrame(
+        {"x": [1.0, 2.0, 3.0], "y": [1, 2, 3], "z": [0.0, 0.5, 0.5]},
+        schema={"x": pl.Float64, "y": pl.Int8, "z": pl.Float64},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_corr_no_panic_26741() -> None:
+    result = (
+        pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1, 2, 3]})
+        .cast({"x": pl.Float32, "y": pl.Int8})
+        .with_columns(z=pl.rolling_corr("x", "y", window_size=2).fill_null(0))
+    )
+    expected = pl.DataFrame(
+        {"x": [1.0, 2.0, 3.0], "y": [1, 2, 3], "z": [0.0, 1.0, 1.0]},
+        schema={"x": pl.Float32, "y": pl.Int8, "z": pl.Float32},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_cov_corr_float32_26741() -> None:
+    df = pl.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1.0, 2.0, 3.0]}).cast(
+        {"x": pl.Float32, "y": pl.Float32}
+    )
+    assert (
+        df.with_columns(z=pl.rolling_cov("x", "y", window_size=2).fill_null(0))[
+            "z"
+        ].dtype
+        == pl.Float32
+    )
+    assert (
+        df.with_columns(z=pl.rolling_corr("x", "y", window_size=2).fill_null(0))[
+            "z"
+        ].dtype
+        == pl.Float32
+    )
+
+
+def test_rolling_empty_windows_streaming_26732() -> None:
+    df = pl.DataFrame({"idx": [1, 2, 3], "a": [1, 1, 1]})
+    expected = pl.DataFrame({"idx": [1, 2, 3], "a": [1, 1, 1], "sum": [0, 0, 0]})
+
+    result = (
+        df.lazy()
+        .with_columns(
+            sum=pl.sum("a").rolling(index_column="idx", period="1i", offset="5i")
+        )
+        .collect(engine="streaming")
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_corr_ddof_invariant_27013() -> None:
+    x = [1.0, 2.0, 3.0, 4.0, 5.0]
+    y = [10.0, 20.0, 30.0, 40.0, 50.0]
+    df = pl.DataFrame({"x": x, "y": y})
+
+    r1 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5))["x"][-1]
+    assert r1 == pytest.approx(1.0)
+
+    with pytest.warns(DeprecationWarning, match="ddof"):
+        r0 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=0))[
+            "x"
+        ][-1]
+    with pytest.warns(DeprecationWarning, match="ddof"):
+        r2 = df.select(pl.rolling_corr("x", "y", window_size=5, min_samples=5, ddof=2))[
+            "x"
+        ][-1]
+
+    assert r0 == pytest.approx(1.0)
+    assert r2 == pytest.approx(1.0)
+
+
+def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    df = pl.LazyFrame({"index": [1, 4, 2, 3], "values": [1, 2, 3, 4]})
+    q = df.rolling("index", period="2i").agg(pl.col("values"))
+    with pytest.raises(
+        InvalidOperationError,
+        match="argument in operation 'rolling' is not sorted",
+    ):
+        q.collect(engine="streaming")

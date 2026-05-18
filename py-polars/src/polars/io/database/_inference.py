@@ -207,7 +207,6 @@ def dtype_from_database_typename(
 
 
 def dtype_from_cursor_description(
-    cursor: Any,
     description: tuple[Any, ...],
 ) -> PolarsDataType | None:
     """Attempt to infer Polars dtype from database cursor description `type_code`."""
@@ -278,7 +277,7 @@ def integer_dtype_from_nbits(
         (64, True): UInt64,
         (128, False): Int128,
         (128, True): Int128,  # UInt128 not (yet?) supported
-    }.get((bits, unsigned), None)
+    }.get((bits, unsigned))
 
     if dtype is None and default is not None:
         return default

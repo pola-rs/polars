@@ -361,8 +361,8 @@ def test_fallback_without_dtype_large_int() -> None:
         PySeries.new_from_any_values("", values, strict=True)
 
     result = wrap_s(PySeries.new_from_any_values("", values, strict=False))
-    assert result.dtype == pl.Float64
-    assert result.to_list() == [1.0, 340282366920938500000000000000000000000.0, None]
+    assert result.dtype == pl.Int64
+    assert result.to_list() == [1, None, None]
 
 
 def test_fallback_with_dtype_large_int() -> None:
@@ -377,6 +377,27 @@ def test_fallback_with_dtype_large_int() -> None:
     )
     assert result.dtype == pl.Int128
     assert result.to_list() == [1, None, None]
+
+
+def test_i128_overflow_to_null_26659() -> None:
+    i128_min = -(1 << 127)
+    values = [
+        i128_min,
+        i128_min - 1,
+        i128_min - 2,
+        i128_min - (1 << 63),
+        -(1 << 128),
+    ]
+    result = pl.DataFrame({"a": pl.Series(values, dtype=pl.Int128, strict=False)})
+    expected_values = [
+        i128_min,
+        None,
+        None,
+        None,
+        None,
+    ]
+    expected = pl.DataFrame({"a": pl.Series(expected_values, dtype=pl.Int128)})
+    assert_frame_equal(result, expected)
 
 
 def test_fallback_with_dtype_strict_failure_enum_casting() -> None:

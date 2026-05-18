@@ -1,13 +1,11 @@
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::utils::materialize_dyn_int;
 
 use super::*;
 
 impl IRFunctionExpr {
-    pub(crate) fn get_field(
-        &self,
-        _input_schema: &Schema,
-        fields: &[Field],
-    ) -> PolarsResult<Field> {
+    pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
 
         let mapper = FieldsMapper { fields };
@@ -79,7 +77,12 @@ impl IRFunctionExpr {
                         _ => unreachable!("should be Some(RollingFnParams::Rank)"),
                     },
                     #[cfg(feature = "cov")]
-                    CorrCov { .. } => mapper.map_to_float_dtype(),
+                    CorrCov { .. } => mapper.try_map_dtypes(|dtypes| {
+                        Ok(match try_get_supertype(dtypes[0], dtypes[1])? {
+                            dt if dt.is_float() => dt,
+                            _ => DataType::Float64,
+                        })
+                    }),
                     #[cfg(feature = "moment")]
                     Skew | Kurtosis => mapper.map_to_float_dtype(),
                     Map(_) => mapper.try_map_field(|field| {
@@ -120,13 +123,6 @@ impl IRFunctionExpr {
                 }
             },
             Rechunk => mapper.with_same_dtype(),
-            Append { upcast } => {
-                if *upcast {
-                    mapper.map_to_supertype()
-                } else {
-                    mapper.with_same_dtype()
-                }
-            },
             ShiftAndFill => mapper.with_same_dtype(),
             DropNans => mapper.with_same_dtype(),
             DropNulls => mapper.with_same_dtype(),
@@ -135,6 +131,7 @@ impl IRFunctionExpr {
                 has_min: _,
                 has_max: _,
             } => mapper.with_same_dtype(),
+            Quantile { method: _ } => mapper.moment_dtype(),
             #[cfg(feature = "mode")]
             Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
@@ -142,6 +139,7 @@ impl IRFunctionExpr {
             #[cfg(feature = "moment")]
             Kurtosis(..) => mapper.with_dtype(DataType::Float64),
             ArgUnique | ArgMin | ArgMax | ArgSort { .. } => mapper.with_dtype(IDX_DTYPE),
+            MinBy | MaxBy => mapper.with_same_dtype(),
             Product => mapper.map_dtype(|dtype| {
                 use DataType as T;
                 match dtype {
@@ -152,6 +150,8 @@ impl IRFunctionExpr {
                     T::UInt64 => T::UInt64,
                     #[cfg(feature = "dtype-i128")]
                     T::Int128 => T::Int128,
+                    #[cfg(feature = "dtype-decimal")]
+                    T::Decimal(_p, s) => T::Decimal(DEC128_MAX_PREC, *s),
                     _ => T::Int64,
                 }
             }),
@@ -253,9 +253,7 @@ impl IRFunctionExpr {
                 DataType::UInt16 => DataType::Int32,
                 DataType::UInt8 => DataType::Int16,
                 #[cfg(feature = "dtype-decimal")]
-                DataType::Decimal(_, scale) => {
-                    DataType::Decimal(polars_compute::decimal::DEC128_MAX_PREC, *scale)
-                },
+                DataType::Decimal(_, scale) => DataType::Decimal(DEC128_MAX_PREC, *scale),
                 dt => dt.clone(),
             }),
             #[cfg(feature = "pct_change")]
@@ -278,32 +276,41 @@ impl IRFunctionExpr {
             Log => mapper.log_dtype(),
             Unique(_) => mapper.with_same_dtype(),
             #[cfg(feature = "round_series")]
-            Round { .. } | RoundSF { .. } | Floor | Ceil => mapper.with_same_dtype(),
+            Round { .. } | RoundSF { .. } | Truncate { .. } | Floor | Ceil => {
+                mapper.with_same_dtype()
+            },
             #[cfg(feature = "fused")]
             Fused(_) => mapper.map_to_supertype(),
-            ConcatExpr(_) => mapper.map_to_supertype(),
+            ConcatExpr { .. } => mapper.map_to_supertype(),
             #[cfg(feature = "cov")]
             Correlation { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "peaks")]
             PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]
             Cut {
-                include_breaks: false,
-                ..
-            } => mapper.with_dtype(DataType::from_categories(Categories::global())),
-            #[cfg(feature = "cutqcut")]
-            Cut {
-                include_breaks: true,
-                ..
+                breaks,
+                labels,
+                left_closed,
+                include_breaks,
             } => {
-                let struct_dt = DataType::Struct(vec![
-                    Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
-                    Field::new(
-                        PlSmallStr::from_static("category"),
-                        DataType::from_categories(Categories::global()),
-                    ),
-                ]);
-                mapper.with_dtype(struct_dt)
+                let cut_labels: Vec<PlSmallStr> = if let Some(l) = labels {
+                    polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
+                    l.clone()
+                } else {
+                    compute_labels(breaks, *left_closed)?
+                };
+                let enum_dtype = DataType::from_frozen_categories(FrozenCategories::new(
+                    cut_labels.iter().map(|s| s.as_str()),
+                )?);
+                if *include_breaks {
+                    let struct_dt = DataType::Struct(vec![
+                        Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
+                        Field::new(PlSmallStr::from_static("category"), enum_dtype),
+                    ]);
+                    mapper.with_dtype(struct_dt)
+                } else {
+                    mapper.with_dtype(enum_dtype)
+                }
             },
             #[cfg(feature = "repeat_by")]
             RepeatBy => mapper.map_dtype(|dt| DataType::List(dt.clone().into())),
@@ -432,14 +439,7 @@ impl IRFunctionExpr {
             FillNullWithStrategy(_) => mapper.with_same_dtype(),
             GatherEvery { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "reinterpret")]
-            Reinterpret(signed) => {
-                let dt = if *signed {
-                    DataType::Int64
-                } else {
-                    DataType::UInt64
-                };
-                mapper.with_dtype(dt)
-            },
+            Reinterpret(dtype) => mapper.with_dtype(dtype.clone()),
             ExtendConstant => mapper.with_same_dtype(),
 
             RowEncode(..) => mapper.try_map_field(|_| {
@@ -450,6 +450,7 @@ impl IRFunctionExpr {
             }),
             #[cfg(feature = "dtype-struct")]
             RowDecode(fields, _) => mapper.with_dtype(DataType::Struct(fields.to_vec())),
+            DynamicPred { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
 

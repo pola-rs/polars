@@ -2,11 +2,13 @@ use std::any::Any;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
+use parking_lot::RwLock;
 use polars_core::prelude::row_encode::_get_rows_encoded;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_plan::plans::{DynamicPred, PredicateExpr, TrivialPredicateExpr};
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 use polars_utils::sort::ReorderWithNulls;
@@ -60,17 +62,18 @@ impl DfSubset {
     }
 }
 
-pub struct BottomKWithPayload<P> {
+struct BottomKWithPayload<P> {
     k: usize,
     heap: BinaryHeap<Priority<P, (DfsKey, RowIdxKey)>>,
     df_subsets: SlotMap<DfsKey, DfSubset>,
     row_idxs: SlotMap<RowIdxKey, IdxSize>,
     to_prune: SecondaryMap<DfsKey, ()>,
     gather_idxs: Vec<IdxSize>,
+    shared_optimum: Arc<RwLock<Option<P>>>,
 }
 
 impl<P: Ord + Clone> BottomKWithPayload<P> {
-    pub fn new(k: usize) -> Self {
+    pub fn new(k: usize, shared_optimum: Arc<RwLock<Option<P>>>) -> Self {
         Self {
             k,
             heap: BinaryHeap::with_capacity(k + 1),
@@ -78,6 +81,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             row_idxs: SlotMap::with_key(),
             to_prune: SecondaryMap::new(),
             gather_idxs: Vec::new(),
+            shared_optimum,
         }
     }
 
@@ -86,6 +90,7 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         df: DataFrame,
         keys: impl IntoIterator<Item = Q>,
         is_less: impl Fn(&Q, &P) -> bool,
+        is_less_owned: impl Fn(&P, &P) -> bool,
         to_owned: impl Fn(Q) -> P,
     ) {
         let dfs_key = self.df_subsets.insert(DfSubset {
@@ -94,16 +99,29 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
             subset_len: 0,
         });
 
+        let mut new_optimum = false;
         for (row_idx, key) in keys.into_iter().enumerate() {
-            self.add_one(
+            new_optimum |= self.add_one(
                 dfs_key,
                 row_idx.try_into().unwrap(),
                 key,
                 &is_less,
                 &to_owned,
-            )
+            );
         }
         self.prune();
+
+        if new_optimum && self.heap.len() == self.k {
+            let new_shared_opt = if let Some(v) = self.shared_optimum.read().clone() {
+                is_less_owned(self.peek_optimum().unwrap(), &v)
+            } else {
+                true
+            };
+
+            if new_shared_opt {
+                *self.shared_optimum.write() = self.peek_optimum().cloned();
+            }
+        }
     }
 
     fn add_one<Q>(
@@ -113,16 +131,19 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         key: Q,
         is_less: impl Fn(&Q, &P) -> bool,
         to_owned: impl Fn(Q) -> P,
-    ) {
+    ) -> bool {
         // We use a max-heap for our bottom k. This means the top element in our heap (peek())
         // is the first to be replaced.
-        if self.heap.len() < self.k || is_less(&key, &self.heap.peek().unwrap().0) {
+        let mut new_optimum = false;
+        if self.heap.len() < self.k || is_less(&key, self.peek_optimum().unwrap()) {
             let row_idx_key = self.row_idxs.insert(row_idx);
             let df_subset = &mut self.df_subsets[dfs_key];
             df_subset.subset_len += 1;
             df_subset.rows.push(row_idx_key);
+            let opt = self.heap.peek().map(|p| p.1);
             self.heap
                 .push(Priority(to_owned(key), (dfs_key, row_idx_key)));
+            new_optimum = opt != self.heap.peek().map(|p| p.1);
         }
 
         if self.heap.len() > self.k {
@@ -134,6 +155,8 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
                 self.to_prune.insert(dfs_key, ());
             }
         }
+
+        new_optimum
     }
 
     pub fn prune(&mut self) {
@@ -189,10 +212,15 @@ impl<P: Ord + Clone> BottomKWithPayload<P> {
         self.to_prune.clear();
         Some(ret.unwrap())
     }
+
+    fn peek_optimum(&self) -> Option<&P> {
+        self.heap.peek().map(|x| &x.0)
+    }
 }
 
 trait DfByKeyReducer: Any + Send + 'static {
     fn new_empty(&self) -> Box<dyn DfByKeyReducer>;
+    fn new_pred(&self) -> Arc<dyn PredicateExpr>;
     fn add(&mut self, df: DataFrame, keys: DataFrame);
     fn combine(&mut self, other: &dyn DfByKeyReducer);
     fn finalize(self: Box<Self>) -> Option<DataFrame>;
@@ -209,7 +237,7 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool>
 {
     fn new(k: usize) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k),
+            inner: BottomKWithPayload::new(k, Arc::default()),
         }
     }
 }
@@ -219,7 +247,13 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
 {
     fn new_empty(&self) -> Box<dyn DfByKeyReducer> {
         Box::new(Self {
-            inner: BottomKWithPayload::new(self.inner.k),
+            inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
+        })
+    }
+
+    fn new_pred(&self) -> Arc<dyn PredicateExpr> {
+        Arc::new(PrimitiveBottomKPredicate::<T, REVERSE, NULLS_LAST> {
+            shared_optimum: self.inner.shared_optimum.clone(),
         })
     }
 
@@ -232,6 +266,7 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
             key_ca
                 .iter()
                 .map(|opt_x| ReorderWithNulls(opt_x.map(TotalOrdWrap))),
+            |l, r| l < r,
             |l, r| l < r,
             |x| x,
         );
@@ -247,6 +282,46 @@ impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> DfByKeyR
     }
 }
 
+struct PrimitiveBottomKPredicate<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool>
+{
+    #[allow(clippy::type_complexity)]
+    shared_optimum: Arc<
+        RwLock<Option<ReorderWithNulls<TotalOrdWrap<T::Physical<'static>>, REVERSE, NULLS_LAST>>>,
+    >,
+}
+
+impl<T: PolarsNumericType, const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
+    for PrimitiveBottomKPredicate<T, REVERSE, NULLS_LAST>
+{
+    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>> {
+        let Some(v) = self.shared_optimum.read().clone() else {
+            return Ok(None);
+        };
+
+        if columns[0].dtype().is_null() || matches!(columns[0], Column::Scalar(_)) {
+            let cv = columns[0]
+                .get(0)?
+                .null_to_none()
+                .map(|v| TotalOrdWrap(v.try_extract().unwrap()));
+            let keep = ReorderWithNulls(cv) < v;
+            let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(keep));
+            Ok(Some(Column::new_scalar(
+                PlSmallStr::EMPTY,
+                s,
+                columns[0].len(),
+            )))
+        } else {
+            let keys = columns[0].as_materialized_series();
+            let key_ca: &ChunkedArray<T> = keys.as_phys_any().downcast_ref().unwrap();
+            let pred: BooleanChunked = key_ca
+                .iter()
+                .map(|opt_x| ReorderWithNulls(opt_x.map(TotalOrdWrap)) < v)
+                .collect_ca(PlSmallStr::EMPTY);
+            Ok(Some(Column::from(pred.into_series())))
+        }
+    }
+}
+
 struct BinaryBottomK<const REVERSE: bool, const NULLS_LAST: bool> {
     inner: BottomKWithPayload<ReorderWithNulls<Vec<u8>, REVERSE, NULLS_LAST>>,
 }
@@ -254,7 +329,7 @@ struct BinaryBottomK<const REVERSE: bool, const NULLS_LAST: bool> {
 impl<const REVERSE: bool, const NULLS_LAST: bool> BinaryBottomK<REVERSE, NULLS_LAST> {
     fn new(k: usize) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k),
+            inner: BottomKWithPayload::new(k, Arc::default()),
         }
     }
 }
@@ -264,7 +339,13 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
 {
     fn new_empty(&self) -> Box<dyn DfByKeyReducer> {
         Box::new(Self {
-            inner: BottomKWithPayload::new(self.inner.k),
+            inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
+        })
+    }
+
+    fn new_pred(&self) -> Arc<dyn PredicateExpr> {
+        Arc::new(BinaryBottomKPredicate {
+            shared_optimum: self.inner.shared_optimum.clone(),
         })
     }
 
@@ -273,14 +354,15 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
         let key_ca = if let Ok(ca_str) = keys[0].str() {
             ca_str.as_binary()
         } else {
-            df[0].binary().unwrap().clone()
+            keys[0].binary().unwrap().clone()
         };
         self.inner.add_df(
             df,
             key_ca
                 .iter()
                 .map(ReorderWithNulls::<_, REVERSE, NULLS_LAST>),
-            |l, r| l < &ReorderWithNulls(r.0.as_deref()),
+            |l, r| l < &r.as_deref(),
+            |l, r| l < r,
             |x| ReorderWithNulls(x.0.map(<[u8]>::to_vec)),
         );
     }
@@ -295,6 +377,51 @@ impl<const REVERSE: bool, const NULLS_LAST: bool> DfByKeyReducer
     }
 }
 
+struct BinaryBottomKPredicate<const REVERSE: bool, const NULLS_LAST: bool> {
+    shared_optimum: Arc<RwLock<Option<ReorderWithNulls<Vec<u8>, REVERSE, NULLS_LAST>>>>,
+}
+
+impl<const REVERSE: bool, const NULLS_LAST: bool> PredicateExpr
+    for BinaryBottomKPredicate<REVERSE, NULLS_LAST>
+{
+    fn evaluate(&self, columns: &[Column]) -> PolarsResult<Option<Column>> {
+        let Some(v) = self.shared_optimum.read().clone() else {
+            return Ok(None);
+        };
+
+        if columns[0].dtype().is_null() || matches!(columns[0], Column::Scalar(_)) {
+            let scalar = columns[0].get(0)?;
+            let cv = match &scalar {
+                AnyValue::Null => None,
+                AnyValue::String(s) => Some(s.as_bytes()),
+                AnyValue::StringOwned(s) => Some(s.as_bytes()),
+                AnyValue::Binary(b) => Some(*b),
+                AnyValue::BinaryOwned(b) => Some(b.as_slice()),
+                _ => unreachable!(),
+            };
+            let keep = ReorderWithNulls(cv) < v.as_deref();
+            let s = Scalar::new(DataType::Boolean, AnyValue::Boolean(keep));
+            Ok(Some(Column::new_scalar(
+                PlSmallStr::EMPTY,
+                s,
+                columns[0].len(),
+            )))
+        } else {
+            let keys = columns[0].as_materialized_series();
+            let key_ca = if let Ok(ca_str) = keys.str() {
+                ca_str.as_binary()
+            } else {
+                keys.binary().unwrap().clone()
+            };
+            let pred: BooleanChunked = key_ca
+                .iter()
+                .map(|opt_x| ReorderWithNulls(opt_x) < v.as_deref())
+                .collect_ca(PlSmallStr::EMPTY);
+            Ok(Some(Column::from(pred.into_series())))
+        }
+    }
+}
+
 struct RowEncodedBottomK {
     inner: BottomKWithPayload<Vec<u8>>,
     reverse: Vec<bool>,
@@ -304,7 +431,7 @@ struct RowEncodedBottomK {
 impl RowEncodedBottomK {
     fn new(k: usize, reverse: Vec<bool>, nulls_last: Vec<bool>) -> Self {
         Self {
-            inner: BottomKWithPayload::new(k),
+            inner: BottomKWithPayload::new(k, Arc::default()),
             reverse,
             nulls_last,
         }
@@ -314,10 +441,15 @@ impl RowEncodedBottomK {
 impl DfByKeyReducer for RowEncodedBottomK {
     fn new_empty(&self) -> Box<dyn DfByKeyReducer> {
         Box::new(Self {
-            inner: BottomKWithPayload::new(self.inner.k),
+            inner: BottomKWithPayload::new(self.inner.k, self.inner.shared_optimum.clone()),
             reverse: self.reverse.clone(),
             nulls_last: self.nulls_last.clone(),
         })
+    }
+
+    fn new_pred(&self) -> Arc<dyn PredicateExpr> {
+        // Not implemented for row-encoded keys.
+        Arc::new(TrivialPredicateExpr)
     }
 
     fn add(&mut self, df: DataFrame, keys: DataFrame) {
@@ -328,6 +460,7 @@ impl DfByKeyReducer for RowEncodedBottomK {
             df,
             keys_encoded.values_iter(),
             |l, r| *l < r.as_slice(),
+            |l, r| l < r,
             |x| x.to_vec(),
         );
     }
@@ -399,6 +532,7 @@ pub struct TopKNode {
     key_schema: Arc<Schema>,
     key_selectors: Vec<StreamExpr>,
     state: TopKState,
+    dyn_pred: Option<DynamicPred>,
 }
 
 impl TopKNode {
@@ -408,6 +542,7 @@ impl TopKNode {
         nulls_last: Vec<bool>,
         key_schema: Arc<Schema>,
         key_selectors: Vec<StreamExpr>,
+        dyn_pred: Option<DynamicPred>,
     ) -> Self {
         Self {
             reverse,
@@ -415,6 +550,7 @@ impl TopKNode {
             key_schema,
             key_selectors,
             state: TopKState::WaitingForK(InMemorySinkNode::new(k_schema)),
+            dyn_pred,
         }
     }
 }
@@ -454,6 +590,9 @@ impl ComputeNode for TopKNode {
                 if k > 0 {
                     let reducer =
                         new_top_k_reducer(k, &self.reverse, &self.nulls_last, &self.key_schema);
+                    if let Some(dyn_pred) = &self.dyn_pred {
+                        dyn_pred.set(reducer.new_pred());
+                    }
                     let reducers = (0..state.num_pipelines)
                         .map(|_| reducer.new_empty())
                         .collect();

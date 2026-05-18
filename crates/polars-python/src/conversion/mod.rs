@@ -11,6 +11,8 @@ use std::hash::{Hash, Hasher};
 pub use categorical::PyCategories;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
+#[cfg(feature = "pivot")]
+use polars::frame::PivotColumnNaming;
 use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
@@ -18,7 +20,7 @@ use polars::prelude::ColumnMapping;
 use polars::prelude::default_values::{
     DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
 };
-use polars::prelude::deletion::DeletionFilesList;
+use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
 use polars_compute::decimal::dec128_verify_prec_scale;
@@ -32,6 +34,7 @@ use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
@@ -50,7 +53,7 @@ use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
 use crate::series::{PySeries, import_schema_pycapsule};
 use crate::utils::to_py_err;
-use crate::{PyDataFrame, PyLazyFrame};
+use crate::{PyDataFrame, PyLazyFrame, interned};
 
 /// # Safety
 /// Should only be implemented for transparent types
@@ -357,11 +360,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Field> {
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let name = ob
-            .getattr(intern!(py, "name"))?
+            .getattr(interned::NAME.get(py))?
             .str()?
             .extract::<PyBackedStr>()?;
         let dtype = ob
-            .getattr(intern!(py, "dtype"))?
+            .getattr(interned::DTYPE.get(py))?
             .extract::<Wrap<DataType>>()?;
         Ok(Wrap(Field::new((&*name).into(), dtype.0)))
     }
@@ -378,7 +381,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
             "DataTypeClass" => {
                 // just the class, not an object
                 let name = ob
-                    .getattr(intern!(py, "__name__"))?
+                    .getattr(interned::DUNDER_NAME.get(py))?
                     .str()?
                     .extract::<PyBackedStr>()?;
                 match &*name {
@@ -1265,6 +1268,24 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<SearchSortedSide> {
     }
 }
 
+#[cfg(feature = "pivot")]
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PivotColumnNaming> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => PivotColumnNaming::Auto,
+            "combine" => PivotColumnNaming::Combine,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`column_naming` must be one of {{'auto', 'combine'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ClosedInterval> {
     type Error = PyErr;
 
@@ -1411,18 +1432,25 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
 
         let py = ob.py();
 
-        let integer_upcast = match &*ob
-            .getattr(intern!(py, "integer_cast"))?
-            .extract::<PyBackedStr>()?
-        {
-            "upcast" => true,
-            "forbid" => false,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "unknown option for integer_cast: {v}"
-                )));
-            },
-        };
+        let mut integer_upcast = false;
+        let mut integer_to_float_cast = false;
+
+        let integer_cast_object = ob.getattr(intern!(py, "integer_cast"))?;
+
+        parse_multiple_options("integer_cast", integer_cast_object, |v| {
+            match v {
+                "upcast" => integer_upcast = true,
+                "allow-float" => integer_to_float_cast = true,
+                "forbid" => {},
+                v => {
+                    return Err(PyValueError::new_err(format!(
+                        "unknown option for integer_cast: {v}"
+                    )));
+                },
+            }
+
+            Ok(())
+        })?;
 
         let mut float_upcast = false;
         let mut float_downcast = false;
@@ -1431,9 +1459,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
 
         parse_multiple_options("float_cast", float_cast_object, |v| {
             match v {
-                "forbid" => {},
                 "upcast" => float_upcast = true,
                 "downcast" => float_downcast = true,
+                "forbid" => {},
                 v => {
                     return Err(PyValueError::new_err(format!(
                         "unknown option for float_cast: {v}"
@@ -1505,6 +1533,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
 
         return Ok(Wrap(CastColumnsPolicy {
             integer_upcast,
+            integer_to_float_cast,
             float_upcast,
             float_downcast,
             datetime_nanoseconds_downcast,
@@ -1820,6 +1849,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DeletionFilesList> {
                 }
 
                 DeletionFilesList::IcebergPositionDelete(Arc::new(out))
+            },
+
+            "delta-deletion-vector" => {
+                let callback: Py<PyAny> = ob.extract()?;
+                DeletionFilesList::Delta(DeltaDeletionVectorProvider::new(PythonObject(callback)))
             },
 
             v => {

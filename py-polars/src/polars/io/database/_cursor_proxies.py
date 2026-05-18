@@ -35,12 +35,16 @@ class ODBCCursorProxy:
         self.query = query
 
     def fetch_arrow_table(
-        self, batch_size: int = 10_000, *, fetch_all: bool = False
+        self,
+        batch_size: int = 10_000,
+        *,
+        fetch_all: bool = False,  # noqa: ARG002
     ) -> pa.Table:
         """Fetch all results as a pyarrow Table."""
         from pyarrow import Table
 
         return Table.from_batches(
+            # TODO: is this fetch_all not supposed to be from the argument?
             self.fetch_record_batches(batch_size=batch_size, fetch_all=True)
         )
 

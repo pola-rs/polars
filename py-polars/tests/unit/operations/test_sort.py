@@ -888,6 +888,30 @@ def test_sort_by_11653() -> None:
     ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "sort_by": [1.0, 1.0]}
 
 
+def test_sort_by_nulls_last_agg_map_batches() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a", "a", "a", "b", "b", "b"],
+            "val": [10, 20, 30, 40, 50, 60],
+            "order": [None, 2.0, 1.0, 3.0, None, 1.0],
+        }
+    )
+
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("val")
+        .map_batches(lambda s: s, return_dtype=pl.Int64)
+        .sort_by("order", nulls_last=True)
+    )
+    assert result["val"].to_list() == [[30, 20, 10], [60, 40, 50]]
+
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("val")
+        .map_batches(lambda s: s, return_dtype=pl.Int64)
+        .sort_by("order", nulls_last=False)
+    )
+    assert result["val"].to_list() == [[10, 30, 20], [50, 60, 40]]
+
+
 @pytest.mark.parametrize(
     ("sort_function"),
     [
@@ -1265,3 +1289,30 @@ def test_sort_by_empty_list_eval_25433() -> None:
     out = df.select(pl.col.a.list.eval(pl.element().sort_by(pl.element())))
     expected = pl.DataFrame({"a": [sorted(some_list), []]})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_sort_already_sorted_no_rechunk_25733() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    df2 = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
+    df = pl.concat([df1, df2], rechunk=False).with_columns(pl.col("a").set_sorted())
+    assert df.n_chunks() == 2
+
+    result = df.sort("a")
+    assert result.n_chunks() == 2  # No rechunk happened
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sort_maintain_order_all_nulls_27514(
+    descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame(
+        {"a": [None, None, None, None]}, schema={"a": pl.Int32}
+    ).with_row_index()
+    result = (
+        df.lazy()
+        .sort("a", descending=descending, nulls_last=nulls_last, maintain_order=True)
+        .collect()
+    )
+    assert_frame_equal(result, df)

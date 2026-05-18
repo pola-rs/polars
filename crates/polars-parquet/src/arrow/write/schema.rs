@@ -48,9 +48,9 @@ fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
             }
             D::Struct(fields)
         },
-        D::Dictionary(it, dtype, sorted) => {
+        D::Dictionary(it, dtype, ordered) => {
             let dtype = convert_dtype(*dtype);
-            D::Dictionary(it, Box::new(dtype), sorted)
+            D::Dictionary(it, Box::new(dtype), ordered)
         },
         D::Extension(ext) => {
             let dtype = convert_dtype(ext.inner);
@@ -93,6 +93,8 @@ pub fn schema_to_metadata_key(schema: &ArrowSchema) -> KeyValue {
 
 /// Creates a [`ParquetType`] from a [`Field`].
 pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
+    const PARQUET_FIELD_ID_KEY: &str = "PARQUET:field_id";
+
     let name = field.name.clone();
     let repetition = if field.is_nullable {
         Repetition::Optional
@@ -100,7 +102,11 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
         Repetition::Required
     };
 
-    let field_id: Option<i32> = None;
+    let field_id: Option<i32> = field
+        .metadata
+        .as_ref()
+        .and_then(|m| m.get(PARQUET_FIELD_ID_KEY))
+        .and_then(|v| v.parse().ok());
 
     // create type from field
     let (physical_type, primitive_converted_type, primitive_logical_type) = match field
@@ -228,8 +234,9 @@ pub fn to_parquet_type(field: &Field) -> PolarsResult<ParquetType> {
                         field_id,
                     )?);
                 } else {
-                    polars_bail!(InvalidOperation:
-                        "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.".to_string(),
+                    polars_bail!(
+                        InvalidOperation:
+                        "Unable to write struct type with no child field to Parquet. Consider adding a dummy child field.",
                     )
                 }
             }

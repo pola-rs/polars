@@ -95,16 +95,22 @@ impl CatalogClient {
                     "{}{}",
                     &self.workspace_url, "/api/2.1/unity-catalog/temporary-table-credentials"
                 ))
-                .query(&[
-                    ("table_id", table_id),
-                    ("operation", if write { "READ_WRITE" } else { "READ" }),
-                ]),
+                .json(&Body {
+                    table_id,
+                    operation: if write { "READ_WRITE" } else { "READ" },
+                }),
         )
         .await?;
 
         let out: TableCredentials = decode_json_response(&bytes)?;
 
-        Ok(out)
+        return Ok(out);
+
+        #[derive(serde::Serialize)]
+        struct Body<'a> {
+            table_id: &'a str,
+            operation: &'a str,
+        }
     }
 
     pub async fn create_catalog(

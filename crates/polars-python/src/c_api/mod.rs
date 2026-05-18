@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.37.1";
+pub static PYPOLARS_VERSION: &str = "1.40.1";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -35,7 +35,6 @@ use crate::dataframe::PyDataFrame;
 use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
-use crate::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -92,6 +91,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Slice>().unwrap();
     m.add_class::<Len>().unwrap();
     m.add_class::<Window>().unwrap();
+    m.add_class::<Rolling>().unwrap();
     m.add_class::<PyOperator>().unwrap();
     m.add_class::<PyStringFunction>().unwrap();
     m.add_class::<PyBooleanFunction>().unwrap();
@@ -117,7 +117,6 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyDataTypeExpr>().unwrap();
     m.add_class::<PySelector>().unwrap();
-    m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
@@ -261,6 +260,10 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::py_get_engine_affinity))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::config_reload_env_vars))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::config_reload_env_var))
+        .unwrap();
 
     #[cfg(feature = "sql")]
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
@@ -272,6 +275,14 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
+        .unwrap();
+    #[cfg(all(feature = "parquet", feature = "json"))]
+    m.add_wrapped(wrap_pyfunction!(
+        functions::_bench_parquet_metadata_bincode_size
+    ))
+    .unwrap();
+    #[cfg(all(feature = "parquet", feature = "json"))]
+    m.add_wrapped(wrap_pyfunction!(functions::_parquet_metadata_pruned_json))
         .unwrap();
     #[cfg(feature = "clipboard")]
     m.add_wrapped(wrap_pyfunction!(functions::read_clipboard_string))
@@ -286,12 +297,6 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::enable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::disable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::using_string_cache))
         .unwrap();
 
     // Numeric formatting
@@ -322,6 +327,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "object")]
     m.add_wrapped(wrap_pyfunction!(functions::__register_startup_deps))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::gen_uuid_v7))
+        .unwrap();
 
     // Functions - random
     m.add_wrapped(wrap_pyfunction!(functions::set_random_seed))
@@ -349,6 +356,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(testing::assert_series_equal_py))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(testing::assert_dataframe_equal_py))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(testing::assert_schema_equal_py))
         .unwrap();
 
     // Exceptions - Errors
@@ -455,6 +464,8 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "allocator")]
     {
         m.add("_allocator", allocator::create_allocator_capsule(py)?)?;
+        m.add_wrapped(wrap_pyfunction!(allocator::_estimate_memory_usage))
+            .unwrap();
     }
 
     m.add("_debug", cfg!(debug_assertions))?;

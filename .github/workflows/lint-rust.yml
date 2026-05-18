@@ -45,10 +45,11 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy with all features enabled
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro
+        run: python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
 
   # Default feature set should compile on the stable toolchain
   clippy-stable:
@@ -65,10 +66,11 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
-        run: cargo clippy --all-targets --locked -- -D warnings -D clippy::dbg_macro
+        run: python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
 
   rustfmt:
     if: github.ref_name != 'main'
@@ -103,3 +105,15 @@ jobs:
           --features object
           -p polars-core
 #          -p polars-arrow
+
+  deny:
+    if: github.ref_name != 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Run cargo deny
+        run: cargo deny check

@@ -9,7 +9,7 @@ from datetime import time
 from glob import glob
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Any, NoReturn, overload
+from typing import IO, TYPE_CHECKING, Any, NoReturn, cast, overload
 
 import polars._reexport as pl
 from polars import from_arrow
@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from polars._typing import ExcelSpreadsheetEngine, FileSource, SchemaDict
 
 
-def _sources(source: FileSource) -> tuple[Any, bool]:
+def _sources(source: FileSource | memoryview[int]) -> tuple[Any, bool]:
     """Unpack any glob patterns, standardise file paths."""
     read_multiple_workbooks = True
     sources: list[Any] = []
@@ -111,7 +111,7 @@ def _unpack_read_results(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -132,7 +132,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -153,7 +153,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int,
     sheet_name: str,
@@ -174,9 +174,9 @@ def read_excel(
 
 # note: 'ignore' required as mypy thinks that the return value for
 # Literal[0] overlaps with the return value for other integers
-@overload  # type: ignore[overload-overlap]
-def read_excel(
-    source: FileSource,
+@overload
+def read_excel(  # type: ignore[overload-overlap]
+    source: FileSource | memoryview[int],
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -197,7 +197,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -218,7 +218,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: list[str] | tuple[str, ...],
@@ -240,7 +240,7 @@ def read_excel(
 @deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
 @deprecate_renamed_parameter("read_csv_options", "read_options", version="0.20.7")
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str, ...] | Callable[[str], bool] | None = None,
@@ -479,8 +479,8 @@ def read_ods(
 ) -> NoReturn: ...
 
 
-@overload  # type: ignore[overload-overlap]
-def read_ods(
+@overload
+def read_ods(  # type: ignore[overload-overlap]
     source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
@@ -1078,7 +1078,7 @@ def _read_spreadsheet_calamine(
 
     if fastexcel_version < (0, 11, 2):
         ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
-        df = ws.to_polars()
+        df: pl.DataFrame = ws.to_polars()
     else:
         if table_name:
             if col_names := read_options.get("use_columns"):
@@ -1095,10 +1095,10 @@ def _read_spreadsheet_calamine(
         elif _PYARROW_AVAILABLE:
             # eager loading is faster / more memory-efficient, but requires pyarrow
             ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)
-            df = from_arrow(ws_arrow)
+            df = cast("pl.DataFrame", from_arrow(ws_arrow))
         else:
             ws_arrow = parser.load_sheet(sheet_name, **read_options)
-            df = from_arrow(ws_arrow)
+            df = cast("pl.DataFrame", from_arrow(ws_arrow))
 
         if read_options.get("header_row", False) is None and not read_options.get(
             "column_names"
@@ -1138,7 +1138,7 @@ def _read_spreadsheet_calamine(
         if str_to_temporal:
             lf = lf.with_columns(*str_to_temporal)
         if updated_overrides:
-            lf = lf.cast(dtypes=updated_overrides)
+            lf = lf.cast(dtypes=updated_overrides)  # type: ignore[arg-type]
         df = lf.collect()
 
     # standardise on string dtype for null columns in empty frame

@@ -60,17 +60,17 @@ def assert_index_of(
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
 def test_float(dtype: pl.DataType) -> None:
-    values = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
+    values: list[Any] = [1.5, np.nan, np.inf, 3.0, None, -np.inf, 0.0, -0.0, -np.nan]
     if dtype == pl.Float32:
         # Can't pass Python literals to index_of() for Float32
-        values = [(None if v is None else np.float32(v)) for v in values]  # type: ignore[misc]
+        values = [(None if v is None else np.float32(v)) for v in values]
 
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
     sorted_series_desc = series.sort(descending=True)
     chunked_series = pl.concat([pl.Series([1, 7], dtype=dtype), series], rechunk=False)
 
-    extra_values = [
+    extra_values: list[Any] = [
         np.int8(3),
         np.float32(1.5),
         np.float32(2**10),
@@ -81,7 +81,7 @@ def test_float(dtype: pl.DataType) -> None:
         for value in values:
             assert_index_of(s, value, convert_to_literal=True)
             assert_index_of(s, value, convert_to_literal=False)
-        for value in extra_values:  # type: ignore[assignment]
+        for value in extra_values:
             assert_index_of(s, value)
 
     # -np.nan should match np.nan:
@@ -321,8 +321,8 @@ def test_non_found_correct_type() -> None:
 
 def test_error_on_multiple_values() -> None:
     with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="needle of `index_of` can only contain",
+        pl.exceptions.ShapeError,
+        match="non-scalar value passed to",
     ):
         pl.Series("a", [1, 2, 3]).index_of(pl.Series([2, 3]))
 

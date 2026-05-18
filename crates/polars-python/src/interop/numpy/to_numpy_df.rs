@@ -15,6 +15,8 @@ use super::utils::{
 };
 use crate::conversion::Wrap;
 use crate::dataframe::PyDataFrame;
+use crate::interned;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyDataFrame {
@@ -62,7 +64,7 @@ pub(super) fn df_to_numpy(
                         "copy not allowed: cannot create a writable array without copying data",
                     ));
                 }
-                arr = arr.call_method0(py, intern!(py, "copy"))?;
+                arr = arr.call_method0(py, interned::COPY.get(py))?;
             }
             return Ok(arr);
         }
@@ -256,7 +258,8 @@ fn try_df_to_numpy_numeric_supertype(
 
     let np_array = match st {
         dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
-            df.to_ndarray::<$T>(order).ok()?.into_pyarray(py).into_py_any(py).ok()?
+            let arr = py.enter_polars(|| df.to_ndarray::<$T>(order)).ok()?;
+            arr.into_pyarray(py).into_py_any(py).ok()?
         }),
         _ => return None,
     };
@@ -274,14 +277,14 @@ fn df_columns_to_numpy(
 
         // Convert multidimensional arrays to 1D object arrays.
         let shape: Vec<usize> = arr
-            .getattr(py, intern!(py, "shape"))
+            .getattr(py, interned::SHAPE.get(py))
             .unwrap()
             .extract(py)
             .unwrap();
         if shape.len() > 1 {
             // TODO: Downcast the NumPy array to Rust and split without calling into Python.
             let subarrays = (0..shape[0]).map(|idx| {
-                arr.call_method1(py, intern!(py, "__getitem__"), (idx,))
+                arr.call_method1(py, interned::DUNDER_GETITEM.get(py), (idx,))
                     .unwrap()
             });
             arr = PyArray1::from_iter(py, subarrays).into_py_any(py).unwrap();

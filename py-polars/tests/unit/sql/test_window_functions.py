@@ -207,8 +207,8 @@ def test_window_function_order_by_multi() -> None:
         }
     )
     # Note: Polars uses ROWS semantics, not RANGE semantics; we make that explicit in
-    # the query below so we can compare the result with SQLite as relational databases
-    # usually default to RANGE semantics if not given an explicit frame spec:
+    # the query below so we can compare the result with SQLite (relational databases
+    # usually default to RANGE semantics if not given an explicit frame spec)
     #
     # RANGE >> gives peer groups the same value: (A,X) → [25, 25, ...]
     # ROWS >> gives each row its own cumulative: (A,X) → [10, 25, ...]
@@ -290,6 +290,42 @@ def test_window_function_with_nulls() -> None:
             "cat_count": [2, 2, 2, 2, 1],
             "value_count": [1, 1, 2, 2, 1],
             "cat_count_global": [4, 4, 4, 4, 4],
+        },
+    )
+
+
+def test_window_cumulative_agg_with_nulls() -> None:
+    df = pl.DataFrame(
+        {
+            "idx": [3, 1, 5, 2, 2, 4, 1, 3],
+            "grp": ["yy", "xx", "xx", "yy", "xx", "xx", "yy", "xx"],
+            "val": [None, 10.0, 50.0, 40.0, 20.0, None, None, 30.0],
+        }
+    )
+    query = """
+        SELECT
+            *,
+            SUM(val) OVER w AS cum_sum,
+            MIN(val) OVER w AS cum_min,
+            MAX(val) OVER w AS cum_max
+        FROM self
+        WINDOW w AS (
+            PARTITION BY grp
+            ORDER BY idx ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        )
+        ORDER BY grp, idx
+    """
+    assert_sql_matches(
+        df,
+        query=query,
+        compare_with="sqlite",
+        expected={
+            "grp": ["xx", "xx", "xx", "xx", "xx", "yy", "yy", "yy"],
+            "idx": [1, 2, 3, 4, 5, 1, 2, 3],
+            "val": [10.0, 20.0, 30.0, None, 50.0, None, 40.0, None],
+            "cum_sum": [10.0, 30.0, 60.0, 60.0, 110.0, None, 40.0, 40.0],
+            "cum_min": [10.0, 10.0, 10.0, 10.0, 10.0, None, 40.0, 40.0],
+            "cum_max": [10.0, 20.0, 30.0, 30.0, 50.0, None, 40.0, 40.0],
         },
     )
 

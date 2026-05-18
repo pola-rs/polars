@@ -241,7 +241,10 @@ fn test_binary_over_3930() -> PolarsResult<()> {
 
     let ss = col("score").pow(2);
     let mdiff = (ss.clone().shift(lit(-1)) - ss.shift(lit(1))) / lit(2);
-    let out = df.lazy().select([mdiff.over([col("class")])]).collect()?;
+    let out = df
+        .lazy()
+        .select([mdiff.over([col("class")]).unwrap()])
+        .collect()?;
 
     let out = out.column("score")?;
     let out = out.f64()?;

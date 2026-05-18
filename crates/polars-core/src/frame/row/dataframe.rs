@@ -80,17 +80,17 @@ impl DataFrame {
             .into_iter()
             .zip(schema.iter_names())
             .map(|(b, name)| {
-                let mut c = b.into_series().into_column();
+                let mut c = b.into_series()?.into_column();
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
                 if c.is_empty() {
-                    Column::full_null(name.clone(), expected_len, c.dtype())
+                    Ok(Column::full_null(name.clone(), expected_len, c.dtype()))
                 } else {
                     c.rename(name.clone());
-                    c
+                    Ok(c)
                 }
             })
-            .collect();
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         DataFrame::new(expected_len, v)
     }
@@ -123,17 +123,17 @@ impl DataFrame {
             .into_iter()
             .zip(schema.iter_names())
             .map(|(b, name)| {
-                let mut c = b.into_series().into_column();
+                let mut c = b.into_series()?.into_column();
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
                 if c.is_empty() {
-                    Column::full_null(name.clone(), expected_len, c.dtype())
+                    Ok(Column::full_null(name.clone(), expected_len, c.dtype()))
                 } else {
                     c.rename(name.clone());
-                    c
+                    Ok(c)
                 }
             })
-            .collect();
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         DataFrame::new(expected_len, v)
     }

@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import DuplicateError, InvalidOperationError
+from polars.exceptions import ComputeError, DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -955,9 +955,13 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
     )
 
     # ensure wildcard expansion is on input
-    assert df.lazy().select(
-        pl.col("meta_data").struct.with_fields("*")
-    ).collect().schema["meta_data"].fields == [  # type: ignore[attr-defined]
+    schema_dtype = (
+        df.lazy()
+        .select(pl.col("meta_data").struct.with_fields("*"))
+        .collect()
+        .schema["meta_data"]
+    )
+    assert schema_dtype.fields == [  # type: ignore[attr-defined]
         pl.Field("system_data", pl.String),
         pl.Field("user_data", pl.String),
         pl.Field("id", pl.Int64),
@@ -1106,6 +1110,38 @@ def test_zfs_unnest(size: int) -> None:
     a = pl.Series("a", [{}] * size, pl.Struct([])).struct.unnest()
     assert a.height == size
     assert a.width == 0
+
+
+def test_unnest_zero_field_struct_preserves_height() -> None:
+    df = pl.Series("a", [{}, {}, {}, {}, {}], pl.Struct([])).to_frame()
+    result = df.unnest("a")
+    assert result.shape == (5, 0)
+
+
+def test_unnest_all_struct_columns() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [{"x": 1, "y": 2}, {"x": 3, "y": 4}],
+            "c": ["foo", "bar"],
+            "d": [{"z": 5}, {"z": 6}],
+        }
+    )
+    # Unnest all struct columns by calling without arguments
+    result = df.unnest()
+    assert result.columns == ["a", "x", "y", "c", "z"]
+    assert result["x"].to_list() == [1, 3]
+    assert result["y"].to_list() == [2, 4]
+    assert result["z"].to_list() == [5, 6]
+
+    # LazyFrame should work the same way
+    result_lazy = df.lazy().unnest().collect()
+    assert_frame_equal(result, result_lazy)
+
+    # Unnesting when there are no struct columns should return the same dataframe
+    df_no_structs = pl.DataFrame({"a": [1, 2], "b": ["foo", "bar"]})
+    result = df_no_structs.unnest()
+    assert_frame_equal(result, df_no_structs)
 
 
 @pytest.mark.parametrize("size", [0, 1, 2, 13])
@@ -1865,3 +1901,23 @@ def test_join_struct_error_lazy_26276() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
         lhs.join(rhs, on="x").collect()
+
+
+def test_from_dicts_mixed_struct_schema_raises_not_panics_27170() -> None:
+    records = [{"id": f"id_{i}", "vals": [{"value": i}]} for i in range(200)]
+    records += [{"id": f"bad_{i}", "vals": [{"value": {"key": i}}]} for i in range(5)]
+
+    with pytest.raises(ComputeError):
+        pl.DataFrame(records)
+
+
+def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
+    df = pl.DataFrame({"s": [{"x": 10, "y": 11}, {"x": 20, "y": 21}]})
+
+    out = df.select(
+        pl.col.s.struct.with_fields(fma=pl.field("x") * pl.lit(2) + pl.field("y"))
+    )
+    expected = pl.concat(
+        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})], how="horizontal"
+    )
+    assert_frame_equal(out.unnest("s"), expected)

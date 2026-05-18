@@ -77,6 +77,7 @@ pub fn concat_df_horizontal(
     dfs: &[DataFrame],
     check_duplicates: bool,
     strict: bool,
+    unit_length_as_scalar: bool,
 ) -> PolarsResult<DataFrame> {
     let output_height = dfs
         .iter()
@@ -88,7 +89,7 @@ pub fn concat_df_horizontal(
 
     let mut out_width = 0;
 
-    let all_equal_height = dfs.iter().all(|df| {
+    let all_equal_height = dfs.iter().filter(|df| df.shape() != (0, 0)).all(|df| {
         out_width += df.width();
         df.height() == output_height
     });
@@ -104,19 +105,32 @@ pub fn concat_df_horizontal(
 
         owned_df = dfs
             .iter()
+            .filter(|df| df.shape() != (0, 0))
             .cloned()
             .map(|mut df| {
                 out_width += df.width();
+                let h = df.height();
 
-                if df.height() != output_height {
-                    let diff = output_height - df.height();
+                if h != output_height {
+                    if unit_length_as_scalar && h == 1 {
+                        // SAFETY: We extend each scalar column length to
+                        // `output_height`. Then, we set the height of the resulting dataframe.
+                        unsafe { df.columns_mut() }.iter_mut().for_each(|c| {
+                            let Column::Scalar(s) = c else {
+                                panic!("only supported for scalars");
+                            };
 
-                    // SAFETY: We extend each column with nulls to the point of being of length
-                    // `output_height`. Then, we set the height of the resulting dataframe.
-                    unsafe { df.columns_mut() }.iter_mut().for_each(|c| {
-                        *c = c.extend_constant(AnyValue::Null, diff).unwrap();
-                    });
+                            *c = Column::Scalar(s.resize(output_height));
+                        });
+                    } else {
+                        let diff = output_height - h;
 
+                        // SAFETY: We extend each column with nulls to the point of being of length
+                        // `output_height`. Then, we set the height of the resulting dataframe.
+                        unsafe { df.columns_mut() }.iter_mut().for_each(|c| {
+                            *c = c.extend_constant(AnyValue::Null, diff).unwrap();
+                        });
+                    }
                     unsafe {
                         df.set_height(output_height);
                     }

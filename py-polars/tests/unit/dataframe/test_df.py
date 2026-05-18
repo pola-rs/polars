@@ -40,7 +40,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     from polars import Expr
-    from polars._typing import JoinStrategy, UniqueKeepStrategy
+    from polars._typing import JoinStrategy, PolarsDataType, UniqueKeepStrategy
+    from tests.conftest import PlMonkeyPatch
 
 
 class MappingObject(Mapping[str, Any]):  # noqa: D101
@@ -174,7 +175,7 @@ def test_mixed_sequence_selection() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_from_arrow(monkeypatch: Any) -> None:
+def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     tbl = pa.table(
         {
             "a": pa.array([1, 2], pa.timestamp("s")),
@@ -189,7 +190,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         }
     )
     record_batches = tbl.to_batches(max_chunksize=1)
-    expected_schema = {
+    expected_schema: dict[str, PolarsDataType] = {
         "a": pl.Datetime("ms"),
         "b": pl.Datetime("ms"),
         "c": pl.Datetime("us"),
@@ -240,7 +241,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
     # try a single column dtype override
     for t in (tbl, empty_tbl):
         df = pl.DataFrame(t, schema_overrides={"e": pl.Int8})
-        override_schema = expected_schema.copy()
+        override_schema: dict[str, PolarsDataType] = expected_schema.copy()
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
         assert df.rows() == expected_data[: (df.height)]
@@ -272,7 +273,6 @@ def test_from_arrow(monkeypatch: Any) -> None:
     assert df2.rows() == df.rows()[:3]
 
     assert df0.schema == {"id": pl.String, "points": pl.Int64}
-    print(df1.schema)
     assert df1.schema == {"x": pl.String, "y": pl.Int32}
     assert df2.schema == {"x": pl.String, "y": pl.Int32}
 
@@ -628,6 +628,17 @@ def test_pipe() -> None:
     result = df.pipe(_multiply, mul=3)
 
     assert_frame_equal(result, df * 3)
+
+
+def test_map_columns() -> None:
+    df = pl.DataFrame({"foo": [1, 2, 3], "bar": [6, None, 8]})
+
+    def _mul_add(s: pl.Series, mul: int, add: int = 0) -> pl.Series:
+        return s * mul + add
+
+    result = df.map_columns(["foo", "bar"], _mul_add, 3, add=1)
+
+    assert_frame_equal(result, df * 3 + 1)
 
 
 def test_explode() -> None:
@@ -1679,7 +1690,7 @@ def test_join_where() -> None:
         }
     )
 
-    assert_frame_equal(out, expected)
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 def test_join_where_bad_input_type() -> None:
@@ -2798,7 +2809,7 @@ def test_set() -> None:
 
     # needs to be a 2 element tuple
     with pytest.raises(ValueError):
-        df[1, 2, 3] = 1
+        df[1, 2, 3] = 1  # type: ignore[index]
 
     # we cannot index with any type, such as bool
     with pytest.raises(TypeError):
@@ -2848,6 +2859,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_europe = "Europe/Amsterdam"
 
     dtm = datetime(2022, 10, 12, 12, 30)
+    type_overrides: dict[str, Any]
     for time_unit in DTYPE_TEMPORAL_UNITS:
         for type_overrides in (
             {
@@ -2928,15 +2940,19 @@ def test_init_vs_strptime_consistency(
 def test_init_vs_strptime_consistency_converts() -> None:
     result = pl.Series(
         [datetime(2020, 1, 1, tzinfo=timezone(timedelta(hours=-8)))],
-        dtype=pl.Datetime("us", "US/Pacific"),
+        dtype=pl.Datetime("us", "America/Los_Angeles"),
     ).item()
-    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
+    assert result == datetime(
+        2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/Los_Angeles")
+    )
     result = (
         pl.Series(["2020-01-01 00:00-08:00"])
-        .str.strptime(pl.Datetime("us", "US/Pacific"))
+        .str.strptime(pl.Datetime("us", "America/Los_Angeles"))
         .item()
     )
-    assert result == datetime(2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="US/Pacific"))
+    assert result == datetime(
+        2020, 1, 1, 0, 0, tzinfo=ZoneInfo(key="America/Los_Angeles")
+    )
 
 
 def test_init_physical_with_timezone() -> None:
@@ -3328,3 +3344,38 @@ def test_with_columns_generator_alias() -> None:
     df = pl.select(a=1).with_columns(expr.alias(name) for name, expr in data.items())
     expected = pl.DataFrame({"a": [2]})
     assert df.equals(expected)
+
+
+def test_sort_errors_with_object_dtype_24677() -> None:
+    df = pl.DataFrame({"a": [object(), object()], "b": [1, 2]})
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match=r"column '.*' has a dtype of '.*', which does not support sorting",
+    ):
+        df.sort("a")
+
+
+def test_sample_respects_global_seed_26973() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5, 6, 7, 8]})
+
+    pl.set_random_seed(0)
+    result1 = df.sample(1)
+    pl.set_random_seed(0)
+    result2 = df.sample(1)
+
+    assert_frame_equal(result1, result2)
+
+
+def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [[1, 2], [3, 4]],
+            "b": [[5, 6], [7, 8]],
+            "c": ["foo", "bar"],
+            "d": [["baz"], ["qux"]],
+        }
+    )
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.transpose()

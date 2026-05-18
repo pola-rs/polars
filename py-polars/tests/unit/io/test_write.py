@@ -12,6 +12,8 @@ from tests.unit.io.conftest import format_file_uri
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from tests.conftest import PlMonkeyPatch
+
 READ_WRITE_FUNC_PARAM = [
     (pl.read_parquet, pl.DataFrame.write_parquet),
     (lambda *a: pl.scan_csv(*a).collect(), pl.DataFrame.write_csv),
@@ -39,19 +41,19 @@ READ_WRITE_FUNC_PARAM = [
 )
 @pytest.mark.write_disk
 def test_write_async(
-    read_func: Callable[[Path], pl.DataFrame],
-    write_func: Callable[[pl.DataFrame, Path], None],
+    read_func: Callable[[str], pl.DataFrame],
+    write_func: Callable[[pl.DataFrame, str], None],
     tmp_path: Path,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = (tmp_path / "1").absolute()
-    path = format_file_uri(path)  # type: ignore[assignment]
+    path_str = format_file_uri(path)
 
     df = pl.DataFrame({"x": 1})
 
-    write_func(df, path)
+    write_func(df, path_str)
 
-    assert_frame_equal(read_func(path), df)
+    assert_frame_equal(read_func(path_str), df)
 
 
 @pytest.mark.parametrize(
@@ -65,16 +67,15 @@ def test_write_async_force_async(
     write_func: Callable[[pl.DataFrame, Path], None],
     opt_absolute_fn: Callable[[Path], Path],
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     tmp_path.mkdir(exist_ok=True)
     path = opt_absolute_fn(tmp_path / "1")
 
     df = pl.DataFrame({"x": 1})
 
     write_func(df, path)
-
     assert_frame_equal(read_func(path), df)
 
 

@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -17,7 +18,7 @@ enum NegativeSliceState {
 
 #[derive(Default)]
 struct Buffer {
-    frames: VecDeque<DataFrame>,
+    frames: VecDeque<SpillFrame>,
     total_len: usize,
 }
 
@@ -25,6 +26,7 @@ pub struct NegativeSliceNode {
     state: NegativeSliceState,
     slice_offset: i64,
     length: usize,
+    spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl NegativeSliceNode {
@@ -34,6 +36,7 @@ impl NegativeSliceNode {
             state: NegativeSliceState::Buffering(Buffer::default()),
             slice_offset,
             length,
+            spill_ctx: MostRecentSpillContext::new(),
         }
     }
 }
@@ -62,7 +65,7 @@ impl ComputeNode for NegativeSliceNode {
                 let signed_stop_offset =
                     signed_start_offset.saturating_add_unsigned(self.length as u64);
 
-                // Trim the frames in the buffer to just those that are relevant.
+                // Trim the tokens in the buffer to just those that are relevant.
                 while buffer.total_len > 0
                     && signed_start_offset >= buffer.frames.front().unwrap().height() as i64
                 {
@@ -81,7 +84,12 @@ impl ComputeNode for NegativeSliceNode {
                 if buffer.total_len == 0 {
                     self.state = Done;
                 } else {
-                    let mut df = accumulate_dataframes_vertical_unchecked(buffer.frames.drain(..));
+                    let dfs: Vec<_> = buffer
+                        .frames
+                        .drain(..)
+                        .map(|sf| sf.into_df_blocking())
+                        .collect();
+                    let mut df = accumulate_dataframes_vertical_unchecked(dfs);
                     let clamped_start = signed_start_offset.max(0);
                     let len = (signed_stop_offset - clamped_start).max(0) as usize;
                     df = df.slice(clamped_start, len);
@@ -122,10 +130,13 @@ impl ComputeNode for NegativeSliceNode {
                 let mut recv = recv_ports[0].take().unwrap().serial();
                 assert!(send_ports[0].is_none());
                 let max_buffer_needed = self.slice_offset.unsigned_abs() as usize;
+                let spill_ctx = self.spill_ctx.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         buffer.total_len += morsel.df().height();
-                        buffer.frames.push_back(morsel.into_df());
+                        buffer
+                            .frames
+                            .push_back(SpillFrame::new(morsel.into_df(), &*spill_ctx).await);
 
                         if buffer.total_len - buffer.frames.front().unwrap().height()
                             >= max_buffer_needed

@@ -56,6 +56,7 @@ Delta Lake
    read_delta
    scan_delta
    DataFrame.write_delta
+   LazyFrame.sink_delta
 
 Excel / ODS
 ~~~~~~~~~~~
@@ -86,6 +87,7 @@ Iceberg
 
    scan_iceberg
    DataFrame.write_iceberg
+   LazyFrame.sink_iceberg
 
 JSON
 ~~~~

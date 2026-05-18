@@ -216,12 +216,12 @@ def test_dtype_concat_3735() -> None:
     for dt in NUMERIC_DTYPES:
         d1 = pl.DataFrame([pl.Series("val", [1, 2], dtype=dt)])
 
-    d2 = pl.DataFrame([pl.Series("val", [3, 4], dtype=dt)])
-    df = pl.concat([d1, d2])
+        d2 = pl.DataFrame([pl.Series("val", [3, 4], dtype=dt)])
+        df = pl.concat([d1, d2])
 
-    assert df.shape == (4, 1)
-    assert df.columns == ["val"]
-    assert df.to_series().to_list() == [1, 2, 3, 4]
+        assert df.shape == (4, 1)
+        assert df.columns == ["val"]
+        assert df.to_series().to_list() == [1, 2, 3, 4]
 
 
 def test_opaque_filter_on_lists_3784() -> None:
@@ -238,9 +238,11 @@ def test_opaque_filter_on_lists_3784() -> None:
     assert (
         df_groups.filter(
             pl.col("str_list").map_elements(
-                lambda variant: pre in variant
-                and succ in variant
-                and variant.to_list().index(pre) < variant.to_list().index(succ),
+                lambda variant: (
+                    pre in variant
+                    and succ in variant
+                    and variant.to_list().index(pre) < variant.to_list().index(succ)
+                ),
                 return_dtype=pl.Boolean,
             )
         )

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias
 
 from polars._utils.parse.expr import parse_into_list_of_expressions
 from polars._utils.unstable import issue_unstable_warning
@@ -16,12 +16,16 @@ if TYPE_CHECKING:
     with contextlib.suppress(ImportError):  # Module not available when building docs
         from polars._plr import PyExpr
 
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
     from typing import IO
 
     from polars._typing import StorageOptionsDict, SyncOnCloseMethod
     from polars.expr import Expr
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
+
+
+class _InternalPlPathProviderConfig:
+    pl_path_provider_id: ClassVar[str]
 
 
 class PartitionBy:
@@ -84,6 +88,7 @@ class PartitionBy:
         file_path_provider: Callable[
             [FileProviderArgs], str | Path | IO[bytes] | IO[str]
         ]
+        | _InternalPlPathProviderConfig
         | None = None,
         key: str | Expr | Sequence[str | Expr] | Mapping[str, Expr] | None = None,
         include_key: bool | None = None,
@@ -153,7 +158,9 @@ class _PartitionByInner:
 
     base_path: str
     file_path_provider: (
-        Callable[[FileProviderArgs], str | Path | IO[bytes] | IO[str]] | None
+        Callable[[FileProviderArgs], str | Path | IO[bytes] | IO[str]]
+        | _InternalPlPathProviderConfig
+        | None
     )
     key: list[PyExpr] | None
     include_key: bool | None
@@ -161,7 +168,17 @@ class _PartitionByInner:
     approximate_bytes_per_file: int
 
 
-@dataclass
+@dataclass(kw_only=True)
+class SinkedPathsCallbackArgs:
+    """Information on sinked paths."""
+
+    paths: list[str]
+
+
+SinkedPathsCallback: TypeAlias = Callable[[SinkedPathsCallbackArgs], None]
+
+
+@dataclass(kw_only=True)
 class _SinkOptions:
     """
     Holds sink options that are generic over file / target type.
@@ -176,6 +193,7 @@ class _SinkOptions:
     # Cloud
     storage_options: StorageOptionsDict | None = None
     credential_provider: CredentialProviderBuilder | None = None
+    sinked_paths_callback: SinkedPathsCallback | None = None
 
 
 def _parse_to_pyexpr_list(

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing.asserts.frame import assert_frame_equal
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 def lazified_read_lines(*a: Any, **kw: Any) -> pl.LazyFrame:
@@ -21,10 +24,10 @@ def test_scan_lines(
     force_unit_chunk_size: bool,
     carriage_return: bool,
     capfd: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     if patch_scan_lines:
-        monkeypatch.setattr(pl, "scan_lines", lazified_read_lines)
+        plmonkeypatch.setattr(pl, "scan_lines", lazified_read_lines)
         assert pl.scan_lines is lazified_read_lines
 
     if carriage_return:
@@ -36,15 +39,15 @@ def test_scan_lines(
             last_bytes = bytes.replace(data, b"\n", b"\r\n")
             return inner(last_bytes, *a, **kw)
 
-        monkeypatch.setattr(pl, "scan_lines", wrapped)
+        plmonkeypatch.setattr(pl, "scan_lines", wrapped)
 
         pl.scan_lines(b"\n\n")
         assert last_bytes == b"\r\n\r\n"
 
     if force_unit_chunk_size:
-        monkeypatch.setenv("POLARS_FORCE_NDJSON_CHUNK_SIZE", "1")
+        plmonkeypatch.setenv("POLARS_FORCE_NDJSON_READ_SIZE", "1")
 
-        with monkeypatch.context() as cx:
+        with plmonkeypatch.context() as cx:
             capfd.readouterr()
             cx.setenv("POLARS_VERBOSE", "1")
             pl.scan_lines(b"").collect()
@@ -53,7 +56,7 @@ def test_scan_lines(
 
     assert_frame_equal(
         pl.scan_lines(b"").collect(),
-        pl.DataFrame(schema={"lines": pl.String}),
+        pl.DataFrame(schema={"line": pl.String}),
     )
 
     assert_frame_equal(
@@ -63,7 +66,7 @@ def test_scan_lines(
 
     assert_frame_equal(
         pl.scan_lines(b"").collect(),
-        pl.DataFrame(schema={"lines": pl.String}),
+        pl.DataFrame(schema={"line": pl.String}),
     )
 
     lf = pl.scan_lines(b"""\
@@ -76,26 +79,26 @@ EEE
 
     assert_frame_equal(
         lf.slice(2, 1).collect(),
-        pl.DataFrame({"lines": ["CCC"]}),
+        pl.DataFrame({"line": ["CCC"]}),
     )
 
     assert_frame_equal(
         lf.with_row_index().slice(2, 1).collect(),
         pl.DataFrame(
-            {"index": [2], "lines": ["CCC"]},
+            {"index": [2], "line": ["CCC"]},
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
 
     assert_frame_equal(
         lf.slice(-2, 1).collect(),
-        pl.DataFrame({"lines": ["DDD"]}),
+        pl.DataFrame({"line": ["DDD"]}),
     )
 
     assert_frame_equal(
         lf.with_row_index().slice(-2, 1).collect(),
         pl.DataFrame(
-            {"index": [3], "lines": ["DDD"]},
+            {"index": [3], "line": ["DDD"]},
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
@@ -110,7 +113,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 5 * [v]}),
+            pl.DataFrame({"line": 5 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 5
@@ -119,7 +122,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": [v]}),
+            pl.DataFrame({"line": [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 1
@@ -129,7 +132,7 @@ EEE
         assert_frame_equal(
             q.collect(),
             pl.DataFrame(
-                {"index": [4], "lines": [v]},
+                {"index": [4], "line": [v]},
                 schema_overrides={"index": pl.get_index_type()},
             ),
         )
@@ -140,7 +143,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame(schema={"lines": pl.String}),
+            pl.DataFrame(schema={"line": pl.String}),
         )
 
         assert q.select(pl.len()).collect().item() == 0
@@ -149,7 +152,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": [v]}),
+            pl.DataFrame({"line": [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 1
@@ -159,7 +162,7 @@ EEE
         assert_frame_equal(
             q.collect(),
             pl.DataFrame(
-                {"index": [4], "lines": [v]},
+                {"index": [4], "line": [v]},
                 schema_overrides={"index": pl.get_index_type()},
             ),
         )
@@ -170,7 +173,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 4 * [v]}),
+            pl.DataFrame({"line": 4 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 4
@@ -179,7 +182,7 @@ EEE
 
         assert_frame_equal(
             q.collect(),
-            pl.DataFrame({"lines": 5 * [v]}),
+            pl.DataFrame({"line": 5 * [v]}),
         )
 
         assert q.select(pl.len()).collect().item() == 5
@@ -192,9 +195,9 @@ EEE
 
 
 def test_scan_lines_negative_slice_reversed_read(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_NDJSON_CHUNK_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_NDJSON_READ_SIZE", "1")
     q = pl.scan_lines(b"\xff" + 5000 * b"abc\n")
 
     with pytest.raises(ComputeError, match="invalid utf8"):

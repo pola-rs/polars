@@ -15,6 +15,7 @@ doctest = false
 libloading = { workspace = true, optional = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
@@ -27,7 +28,7 @@ polars-utils = { workspace = true }
 
 arrow = { workspace = true }
 bitflags = { workspace = true }
-blake3 = { workspace = true, optional = true }
+blake3 = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
@@ -35,6 +36,7 @@ chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
 futures = { workspace = true }
 hashbrown = { workspace = true }
+indexmap = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
 percent-encoding = { workspace = true }
@@ -61,6 +63,7 @@ python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object",
 serde = [
   "dep:serde",
   "polars-buffer/serde",
+  "polars-config/serde",
   "polars-core/serde-lazy",
   "polars-core/serde",
   "polars-time/serde",
@@ -194,13 +197,11 @@ meta = []
 pivot = ["polars-core/rows", "polars-ops/pivot"]
 top_k = ["polars-ops/top_k"]
 semi_anti_join = ["polars-ops/semi_anti_join"]
-cse = ["blake3"]
+cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = ["polars-ops/fused"]
-array_any_all = ["polars-ops/array_any_all", "dtype-array"]
 list_sets = ["polars-ops/list_sets"]
-list_any_all = ["polars-ops/list_any_all"]
 list_drop_nulls = ["polars-ops/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample"]
 cutqcut = ["polars-ops/cutqcut"]
@@ -241,7 +242,6 @@ features = [
   "dtype-array",
   "is_last_distinct",
   "dtype-time",
-  "array_any_all",
   "month_start",
   "month_end",
   "offset_by",
@@ -252,7 +252,6 @@ features = [
   "python",
   "cloud",
   "string_to_integer",
-  "list_any_all",
   "pct_change",
   "list_gather",
   "list_filter",

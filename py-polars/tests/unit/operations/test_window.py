@@ -1047,3 +1047,17 @@ def test_shape_mismatch_group_by_unique_slice() -> None:
         match="the length of the window expression did not match that of the group",
     ):
         q.collect()
+
+
+def test_over_literal_cum_sum_26800() -> None:
+    df = pl.DataFrame({"g": [10, 10, 10, 20, 20, 10], "one": [1, 1, 1, 1, 1, 1]})
+
+    q = df.lazy().with_columns(pl.lit(1).cum_sum().over("g").alias("cum_sum"))
+    out = q.collect()
+
+    expected = df.with_columns(pl.lit(1).cast(pl.Int64).alias("cum_sum"))
+
+    q = df.lazy().with_columns(pl.col.one.first().cum_sum().over("g").alias("cum_sum"))
+    out = q.collect()
+
+    assert_frame_equal(out, expected)

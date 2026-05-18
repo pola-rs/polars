@@ -164,8 +164,9 @@ def test_max_size_partition_lambda(
         lf,
         pl.PartitionBy(
             tmp_path,
-            file_path_provider=lambda args: tmp_path
-            / f"abc-{args.index_in_partition:08}.{io_type['ext']}",
+            file_path_provider=lambda args: (
+                tmp_path / f"abc-{args.index_in_partition:08}.{io_type['ext']}"
+            ),
             max_rows_per_file=max_size,
         ),
         engine=engine,
@@ -201,7 +202,9 @@ def test_partition_by_key(
         lf,
         pl.PartitionBy(
             tmp_path,
-            file_path_provider=lambda args: f"{args.partition_keys.item()}.{io_type['ext']}",
+            file_path_provider=lambda args: (
+                f"{args.partition_keys.item()}.{io_type['ext']}"
+            ),
             key="a",
         ),
         engine=engine,
@@ -239,7 +242,9 @@ def test_partition_by_key(
         lf,
         pl.PartitionBy(
             tmp_path,
-            file_path_provider=lambda args: f"{args.partition_keys.item()}.{io_type['ext']}",
+            file_path_provider=lambda args: (
+                f"{args.partition_keys.item()}.{io_type['ext']}"
+            ),
             key=pl.col.a.cast(pl.String()),
         ),
         engine=engine,
@@ -403,7 +408,7 @@ def test_parquet_preserve_order_within_partition_23376(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
+def test_file_path_cb_absolute_path(tmp_path: Path) -> None:
     i = 0
 
     def new_path(_: Any) -> str:
@@ -415,7 +420,9 @@ def test_file_path_cb_new_cloud_path(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2]})
     df.lazy().sink_csv(
         pl.PartitionBy(
-            "s3://bucket-x", file_path_provider=new_path, max_rows_per_file=1
+            format_file_uri(tmp_path),
+            file_path_provider=new_path,
+            max_rows_per_file=1,
         )
     )
 

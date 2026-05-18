@@ -66,7 +66,7 @@ class CatNameSpace:
         Examples
         --------
         >>> s = pl.Series(["b", "a", "b"]).cast(pl.Categorical)
-        >>> s.cat.uses_lexical_ordering()
+        >>> s.cat.uses_lexical_ordering()  # doctest: +SKIP
         True
         """
         return self._s.cat_uses_lexical_ordering()

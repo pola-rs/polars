@@ -2,14 +2,34 @@ use std::hash::BuildHasher;
 
 use hashbrown::hash_map::RawEntryMut;
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
+use polars_core::config::verbose;
+use polars_core::prelude::PlHashMap;
+use polars_core::schema::Schema;
+use polars_error::PolarsResult;
 use polars_utils::aliases::PlFixedStateQuality;
+use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::_boost_hash_combine;
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::vec::CapacityByFactor;
 
-use super::*;
 use crate::constants::CSE_REPLACED;
+use crate::plans::visitor::{
+    IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
+    Visitor,
+};
+use crate::plans::{AExpr, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue, OutputName};
+use crate::prelude::ProjectionOptions;
 use crate::prelude::visitor::AexprNode;
+
+type Accepted = Option<(VisitRecursion, bool)>;
+// Don't allow this node in a cse.
+const REFUSE_NO_MEMBER: Accepted = Some((VisitRecursion::Continue, false));
+// Don't allow this node, but allow as a member of a cse.
+const REFUSE_ALLOW_MEMBER: Accepted = Some((VisitRecursion::Continue, true));
+const REFUSE_SKIP: Accepted = Some((VisitRecursion::Skip, false));
+// Accept this node.
+const ACCEPT: Accepted = None;
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -162,8 +182,13 @@ pub struct NaiveExprMerger {
 
 impl NaiveExprMerger {
     pub fn add_expr(&mut self, node: Node, arena: &Arena<AExpr>) {
-        let node = AexprNode::new(node);
-        node.visit(self, arena).unwrap();
+        AexprNode::new(node).visit(self, arena).unwrap();
+    }
+
+    pub fn add_and_get_uniq_id(&mut self, node: Node, arena: &Arena<AExpr>) -> u32 {
+        let aexpr_node = AexprNode::new(node);
+        aexpr_node.visit(self, arena).unwrap();
+        *self.node_to_uniq_id.get(&node).unwrap()
     }
 
     pub fn get_uniq_id(&self, node: Node) -> Option<u32> {
@@ -834,7 +859,7 @@ impl CommonSubExprOptimizer {
                             continue;
                         }
                         scratch.clear();
-                        let aes = expr_arena.get_many_mut([original, new]);
+                        let aes = expr_arena.get_disjoint_mut([original, new]);
 
                         // Only follow paths that are the same.
                         if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
@@ -854,7 +879,7 @@ impl CommonSubExprOptimizer {
                             stack.push((scratch[i], scratch[i + offset]));
                         }
 
-                        match expr_arena.get_many_mut([original, new]) {
+                        match expr_arena.get_disjoint_mut([original, new]) {
                             [
                                 AExpr::Function {
                                     input: input_original,

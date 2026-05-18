@@ -1,5 +1,5 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_ops::chunked_array::ListNameSpaceImpl;
 use polars_utils::idx_vec::IdxVec;
 use rayon::prelude::*;
@@ -47,13 +47,13 @@ impl PhysicalExpr for SortExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.physical_expr.evaluate(df, state)?;
         series.sort_with(self.options)
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -71,7 +71,7 @@ impl PhysicalExpr for SortExpr {
 
                 let mut sort_options = self.options;
                 sort_options.multithreaded = false;
-                let groups = POOL.install(|| {
+                let groups = RAYON.install(|| {
                     match ac.groups().as_ref().as_ref() {
                         GroupsType::Idx(groups) => {
                             groups

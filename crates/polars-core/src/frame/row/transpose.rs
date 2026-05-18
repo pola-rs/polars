@@ -62,8 +62,8 @@ impl DataFrame {
                 let columns = self
                     .materialized_column_iter()
                     // first cast to supertype before casting to physical to ensure units are correct
-                    .map(|s| s.cast(dtype).unwrap().cast(&phys_dtype).unwrap())
-                    .collect::<Vec<_>>();
+                    .map(|s| s.cast(dtype)?.cast(&phys_dtype))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
                 // this is very expensive. A lot of cache misses here.
                 // This is the part that is performance critical.
@@ -189,7 +189,7 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
     let values_buf_ptr = &mut values_buf as *mut Vec<Vec<T::Native>> as usize;
     let validity_buf_ptr = &mut validity_buf as *mut Vec<Vec<bool>> as usize;
 
-    POOL.install(|| {
+    RAYON.install(|| {
         cols.iter()
             .map(Column::as_materialized_series)
             .enumerate()
@@ -262,7 +262,7 @@ pub(super) fn numeric_transpose<T: PolarsNumericType>(
             );
             ChunkedArray::<T>::with_chunk(name.clone(), arr).into_column()
         });
-    POOL.install(|| cols_t.par_extend(par_iter));
+    RAYON.install(|| cols_t.par_extend(par_iter));
 }
 
 #[cfg(test)]

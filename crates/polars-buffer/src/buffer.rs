@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 
 use bytemuck::{Pod, Zeroable};
 use either::Either;
+use polars_utils::range::{check_range, decode_range_unchecked};
 
 use crate::storage::SharedStorage;
 
@@ -215,7 +216,7 @@ impl<T> Buffer<T> {
     #[inline]
     pub fn slice_in_place<R: RangeBounds<usize>>(&mut self, range: R) {
         unsafe {
-            let Range { start, end } = crate::check_range(range, ..self.len());
+            let Range { start, end } = check_range(range, ..self.len());
             self.ptr = self.ptr.add(start);
             self.length = end - start;
         }
@@ -228,10 +229,38 @@ impl<T> Buffer<T> {
     #[inline]
     pub unsafe fn slice_in_place_unchecked<R: RangeBounds<usize>>(&mut self, range: R) {
         unsafe {
-            let Range { start, end } = crate::decode_range_unchecked(range, ..self.len());
+            let Range { start, end } = decode_range_unchecked(range, ..self.len());
             self.ptr = self.ptr.add(start);
             self.length = end - start;
         }
+    }
+
+    /// Divides one buffer into two at an index.
+    ///
+    /// The first will contain all indices from `[0, mid)` (excluding
+    /// the index `mid` itself) and the second will contain all
+    /// indices from `[mid, len)` (excluding the index `len` itself).
+    ///
+    /// # Panics
+    /// Panics if `mid > len`.
+    #[must_use]
+    pub fn split_at(self, mid: usize) -> (Self, Self) {
+        (self.clone().sliced(..mid), self.sliced(mid..))
+    }
+
+    /// Splits the buffer into two at the given index.
+    ///
+    /// Returns a buffer containing the elements in the range
+    /// `[at, len)`. After the call, self will be left containing
+    /// the elements `[0, at)`.
+    ///
+    /// # Panics
+    /// Panics if `at > len`.
+    #[must_use]
+    pub fn split_off(&mut self, at: usize) -> Self {
+        let out = self.clone().sliced(at..);
+        self.slice_in_place(..at);
+        out
     }
 
     /// Returns a pointer to the start of the storage underlying this buffer.

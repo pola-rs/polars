@@ -20,10 +20,6 @@ pub enum ArrayFunction {
     Var(u8),
     Mean,
     Median,
-    #[cfg(feature = "array_any_all")]
-    Any,
-    #[cfg(feature = "array_any_all")]
-    All,
     Sort(SortOptions),
     Reverse,
     ArgMin,
@@ -60,10 +56,6 @@ impl fmt::Display for ArrayFunction {
             Var(_) => "var",
             Mean => "mean",
             Median => "median",
-            #[cfg(feature = "array_any_all")]
-            Any => "any",
-            #[cfg(feature = "array_any_all")]
-            All => "all",
             Sort(_) => "sort",
             Reverse => "reverse",
             ArgMin => "arg_min",

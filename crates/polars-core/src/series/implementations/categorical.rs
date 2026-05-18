@@ -16,7 +16,7 @@ unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
 impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
     unsafe fn apply_on_phys<F>(&self, apply: F) -> CategoricalChunked<T>
     where
-        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
+        F: FnOnce(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
     {
         let cats = apply(self.0.physical());
         unsafe { CategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone()) }
@@ -24,7 +24,9 @@ impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
 
     unsafe fn try_apply_on_phys<F>(&self, apply: F) -> PolarsResult<CategoricalChunked<T>>
     where
-        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
+        F: FnOnce(
+            &ChunkedArray<T::PolarsPhysical>,
+        ) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
     {
         let cats = apply(self.0.physical())?;
         unsafe {
@@ -100,7 +102,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_min(groups) }
                 } else {
                     self.apply_on_phys(|phys| phys.agg_min(groups).$ca_fn().unwrap().clone())
                         .into_series()
@@ -110,7 +112,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_max(groups) }
                 } else {
                     self.apply_on_phys(|phys| phys.agg_max(groups).$ca_fn().unwrap().clone())
                         .into_series()
@@ -120,7 +122,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_arg_min(groups) }
                 } else {
                     self.0.physical().agg_arg_min(groups)
                 }
@@ -129,7 +131,7 @@ macro_rules! impl_cat_series {
             #[cfg(feature = "algorithm_group_by")]
             unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
                 if self.0.uses_lexical_ordering() {
-                    unimplemented!()
+                    unsafe { self.0.agg_arg_max(groups) }
                 } else {
                     self.0.physical().agg_arg_max(groups)
                 }
@@ -250,6 +252,10 @@ macro_rules! impl_cat_series {
 
             fn rechunk(&self) -> Series {
                 unsafe { self.apply_on_phys(|cats| cats.rechunk().into_owned()).into_series() }
+            }
+
+            fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+                unsafe { self.apply_on_phys(move |cats| cats.clone().with_validity(validity)).into_series() }
             }
 
             fn new_from_index(&self, index: usize, length: usize) -> Series {

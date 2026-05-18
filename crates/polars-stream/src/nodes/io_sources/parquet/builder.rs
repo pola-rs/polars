@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
@@ -9,7 +10,6 @@ use polars_plan::dsl::ScanSource;
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{FileReader, ParquetFileReader};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::metrics::{IOMetrics, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
@@ -61,13 +61,17 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let prefetch_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
-                    .ok()
-                    .unwrap_or_else(|| {
+                    .unwrap_or_else(|_| {
                         panic!("invalid value for POLARS_ROW_GROUP_PREFETCH_SIZE: {x}")
                     })
                     .get()
             })
-            .unwrap_or(execution_state.num_pipelines.saturating_mul(2))
+            .unwrap_or(
+                execution_state
+                    .num_pipelines
+                    .saturating_mul(2)
+                    .clamp(8, 512),
+            )
             .max(1);
 
         self.prefetch_limit.store(prefetch_limit);
@@ -100,11 +104,12 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         let config = self.options.clone();
         let verbose = config::verbose();
 
-        let byte_source_builder = if scan_source.is_cloud_url() || config::force_async() {
-            DynByteSourceBuilder::ObjectStore
-        } else {
-            DynByteSourceBuilder::Mmap
-        };
+        let byte_source_builder =
+            if scan_source.is_cloud_url() || polars_config::config().force_async() {
+                DynByteSourceBuilder::ObjectStore
+            } else {
+                DynByteSourceBuilder::Mmap
+            };
 
         assert!(self.prefetch_limit.load() > 0);
 

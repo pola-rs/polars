@@ -19,14 +19,16 @@ if TYPE_CHECKING:
     from typing import TypeAlias
 
     from sqlalchemy.engine import Connection, Engine
-    from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        AsyncConnection,
+        AsyncEngine,
+        AsyncSession,
+        async_sessionmaker,
+    )
     from sqlalchemy.orm import Session
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
-    from polars._dependencies import pandas as pd
-    from polars._dependencies import pyarrow as pa
-    from polars._dependencies import torch
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import Selector
@@ -50,6 +52,99 @@ class ArrowSchemaExportable(Protocol):
     """Type protocol for Arrow C Schema Interface via Arrow PyCapsule Interface."""
 
     def __arrow_c_schema__(self) -> object: ...
+
+
+class NumpyArray(Protocol):
+    """Protocol to match NumPy Arrays without needing NumPy installed."""
+
+    def byteswap(self, *args: Any, **kwargs: Any) -> Any: ...
+    def conjugate(self, *args: Any, **kwargs: Any) -> Any: ...
+    def ravel(self, *args: Any, **kwargs: Any) -> Any: ...
+    def searchsorted(self, *args: Any, **kwargs: Any) -> Any: ...
+    def swapaxes(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowArray(Protocol):
+    """
+    Protocol to match PyArrow arrays without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def buffers(self, *args: Any, **kwargs: Any) -> Any: ...
+    def tolist(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowChunkedArray(Protocol):
+    """
+    Protocol to match PyArrow chunked arrays without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def iterchunks(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowTable(Protocol):
+    """
+    Protocol to match PyArrow tables without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def filter(self, *args: Any, **kwargs: Any) -> Any: ...
+    def group_by(self, *args: Any, **kwargs: Any) -> Any: ...
+    def add_column(self, *args: Any, **kwargs: Any) -> Any: ...
+    def remove_column(self, *args: Any, **kwargs: Any) -> Any: ...
+    def take(self, *args: Any, **kwargs: Any) -> Any: ...
+    def to_pandas(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasDataFrame(Protocol):
+    """
+    Protocol to match pandas dataframes without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def where(self, *args: Any, **kwargs: Any) -> Any: ...
+    def groupby(self, *args: Any, **kwargs: Any) -> Any: ...
+    def unstack(self, *args: Any, **kwargs: Any) -> Any: ...
+    def pivot_table(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasSeries(Protocol):
+    """
+    Protocol to match pandas series without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def to_frame(self, *args: Any, **kwargs: Any) -> Any: ...
+    def isna(self, *args: Any, **kwargs: Any) -> Any: ...
+    def rename_axis(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasIndex(Protocol):
+    """
+    Protocol to match pandas indexes without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def to_series(self, *args: Any, **kwargs: Any) -> Any: ...
+    def isna(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class TorchTensor(Protocol):
+    """
+    Protocol to match PyTorch tensors without needing PyTorch installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def cuda(self, *args: Any, **kwargs: Any) -> Any: ...
+    def backward(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 # Data types
@@ -91,6 +186,7 @@ IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
 IntoExpr: TypeAlias = PythonLiteral | IntoExprColumn | None
 
 ComparisonOperator: TypeAlias = Literal["eq", "neq", "gt", "lt", "gt_eq", "lt_eq"]
+Alignment: TypeAlias = Literal["left", "center", "right", "LEFT", "CENTER", "RIGHT"]
 
 # selector type, and related collection/sequence
 SelectorType: TypeAlias = "Selector"
@@ -102,6 +198,7 @@ Ambiguous: TypeAlias = Literal["earliest", "latest", "raise", "null"]
 AvroCompression: TypeAlias = Literal["uncompressed", "snappy", "deflate"]
 CsvQuoteStyle: TypeAlias = Literal["necessary", "always", "non_numeric", "never"]
 CategoricalOrdering: TypeAlias = Literal["physical", "lexical"]
+CsvCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 CsvEncoding: TypeAlias = Literal["utf8", "utf8-lossy"]
 ColumnMapping: TypeAlias = tuple[
     Literal["iceberg-column-mapping"],
@@ -112,9 +209,10 @@ ColumnMapping: TypeAlias = tuple[
 DefaultFieldValues: TypeAlias = tuple[
     Literal["iceberg"], dict[int, Union["Series", str]]
 ]
-DeletionFiles: TypeAlias = tuple[
-    Literal["iceberg-position-delete"], dict[int, list[str]]
-]
+DeletionFiles: TypeAlias = (
+    tuple[Literal["iceberg-position-delete"], dict[int, list[str]]]
+    | tuple[Literal["delta-deletion-vector"], Callable[["DataFrame"], "DataFrame"]]
+)
 FillNullStrategy: TypeAlias = Literal[
     "forward", "backward", "min", "max", "mean", "zero", "one"
 ]
@@ -126,6 +224,7 @@ Label: TypeAlias = Literal["left", "right", "datapoint"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
 ]
+NdjsonCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 ParallelStrategy: TypeAlias = Literal[
@@ -142,7 +241,7 @@ QuantileMethod: TypeAlias = Literal[
 ]
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
-RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero"]
+RoundMode: TypeAlias = Literal["half_to_even", "half_away_from_zero", "to_zero"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
 Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[
@@ -210,16 +309,31 @@ TransferEncoding: TypeAlias = Literal["hex", "base64"]
 WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
 ExplainFormat: TypeAlias = Literal["plain", "tree"]
 
-# type signature for allowed frame init
-FrameInitTypes: TypeAlias = Union[
-    Mapping[str, Union[Sequence[object], Mapping[str, Sequence[object]], "Series"]],
-    Sequence[Any],
-    "np.ndarray[Any, Any]",
-    "pa.Table",
-    "pd.DataFrame",
+# type signature for allowed series init
+ArrayLike: TypeAlias = Union[
+    Iterable[Any],
+    "Series",
+    "PyArrowArray",
+    "PyArrowChunkedArray",
+    "NumpyArray",
+    "PandasSeries",
+    "PandasIndex",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
-    "torch.Tensor",
+]
+
+
+# type signature for allowed frame init
+FrameInitTypes: TypeAlias = Union[
+    Mapping[str, ArrayLike | NonNestedLiteral | None],
+    Iterable[Any],
+    NumpyArray,
+    PyArrowTable,
+    PandasDataFrame,
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
+    TorchTensor,
+    "DataFrame",
 ]
 
 # Excel IO
@@ -287,7 +401,7 @@ class Cursor(BasicCursor):
 
 AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
 AlchemyAsyncConnection: TypeAlias = Union[
-    "AsyncConnection", "AsyncEngine", "AsyncSession"
+    "AsyncConnection", "AsyncEngine", "AsyncSession", "async_sessionmaker[AsyncSession]"
 ]
 ConnectionOrCursor: TypeAlias = (
     BasicConnection | BasicCursor | Cursor | AlchemyConnection | AlchemyAsyncConnection
@@ -347,6 +461,7 @@ DeprecationType: TypeAlias = Literal[
 
 
 __all__ = [
+    "Alignment",
     "Ambiguous",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
@@ -398,6 +513,7 @@ __all__ = [
     "MultiColSelector",
     "MultiIndexSelector",
     "MultiNameSelector",
+    "NdjsonCompression",
     "NonExistent",
     "NonNestedLiteral",
     "NullBehavior",

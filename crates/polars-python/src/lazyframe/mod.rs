@@ -18,7 +18,7 @@ use pyo3::pybacked::PyBackedStr;
 
 use crate::prelude::Wrap;
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[repr(transparent)]
 pub struct PyLazyFrame {
     pub ldf: RwLock<LazyFrame>,
@@ -46,7 +46,7 @@ impl From<PyLazyFrame> for LazyFrame {
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(frozen, from_py_object)]
 #[repr(transparent)]
 pub struct PyOptFlags {
     pub inner: RwLock<OptFlags>,

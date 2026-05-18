@@ -110,21 +110,11 @@ impl MinMaxKernel for BooleanArray {
     type Scalar<'a> = bool;
 
     fn min_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        if self.len() - self.null_count() == 0 {
-            return None;
-        }
-
-        let unset_bits = self.values().unset_bits();
-        Some(unset_bits == 0)
+        crate::boolean::all(self)
     }
 
     fn max_ignore_nan_kernel(&self) -> Option<Self::Scalar<'_>> {
-        if self.len() - self.null_count() == 0 {
-            return None;
-        }
-
-        let set_bits = self.values().set_bits();
-        Some(set_bits > 0)
+        crate::boolean::any(self)
     }
 
     #[inline(always)]

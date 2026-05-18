@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .clone()
         .lazy()
         .select([col("Theatre").value_counts(true, true, "count", false)])
-        .unnest(by_name(["Theatre"], true), None)
+        .unnest(by_name(["Theatre"], true, false), None)
         .collect()?;
     println!("{result}");
     // --8<-- [end:struct_unnest]
@@ -74,12 +74,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 None,
             )
-            .over([col("Movie"), col("Theatre")])
+            .over([col("Movie"), col("Theatre")])?
             .alias("Rank")])
         // .filter(as_struct(&[col("Movie"), col("Theatre")]).is_duplicated())
         // Error: .is_duplicated() not available if you try that
         // https://github.com/pola-rs/polars/issues/3803
-        .filter(len().over([col("Movie"), col("Theatre")]).gt(lit(1)))
+        .filter(len().over([col("Movie"), col("Theatre")])?.gt(lit(1)))
         .collect()?;
     println!("{result}");
     // --8<-- [end:struct_ranking]

@@ -95,7 +95,7 @@ def call_expr(func: SeriesMethod) -> SeriesMethod:
     """Dispatch Series method to an expression implementation."""
 
     @wraps(func)
-    def wrapper(self: Any, *args: P.args, **kwargs: P.kwargs) -> Series:
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Series:
         s = wrap_s(self._s)
         expr = F.col(s.name)
         if (namespace := getattr(self, "_accessor", None)) is not None:

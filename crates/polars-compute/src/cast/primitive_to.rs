@@ -16,6 +16,7 @@ use polars_utils::vec::PushUnchecked;
 
 use super::CastOptionsImpl;
 use super::temporal::*;
+use crate::comparisons::TotalEqKernel;
 #[cfg(feature = "dtype-decimal")]
 use crate::decimal::{dec128_verify_prec_scale, f64_to_dec128, i128_to_dec128};
 
@@ -164,10 +165,11 @@ fn primitive_to_values_and_offsets<T: NativeType + SerPrimitive, O: Offset>(
 pub fn primitive_to_boolean<T: NativeType>(
     from: &PrimitiveArray<T>,
     to_type: ArrowDataType,
-) -> BooleanArray {
-    let iter = from.values().iter().map(|v| *v != T::default());
-    let values = Bitmap::from_trusted_len_iter(iter);
-
+) -> BooleanArray
+where
+    PrimitiveArray<T>: TotalEqKernel<Scalar = T>,
+{
+    let values = from.tot_ne_kernel_broadcast(&T::default());
     BooleanArray::new(to_type, values, from.validity().cloned())
 }
 
@@ -177,6 +179,7 @@ pub(super) fn primitive_to_boolean_dyn<T>(
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
+    PrimitiveArray<T>: TotalEqKernel<Scalar = T>,
 {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(primitive_to_boolean::<T>(from, to_type)))
@@ -335,9 +338,10 @@ where
 
 pub(super) fn primitive_to_dictionary_dyn<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &dyn Array,
+    ordered: bool,
 ) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
-    primitive_to_dictionary::<T, K>(from).map(|x| Box::new(x) as Box<dyn Array>)
+    primitive_to_dictionary::<T, K>(from, ordered).map(|x| Box::new(x) as Box<dyn Array>)
 }
 
 /// Cast [`PrimitiveArray`] to [`DictionaryArray`]. Also known as packing.
@@ -346,11 +350,13 @@ pub(super) fn primitive_to_dictionary_dyn<T: NativeType + Eq + Hash, K: Dictiona
 /// in the array.
 pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &PrimitiveArray<T>,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
     let iter = from.iter().map(|x| x.copied());
-    let mut array = MutableDictionaryArray::<K, _>::try_empty(MutablePrimitiveArray::<T>::from(
-        from.dtype().clone(),
-    ))?;
+    let mut array = MutableDictionaryArray::<K, _>::try_empty(
+        MutablePrimitiveArray::<T>::from(from.dtype().clone()),
+        ordered,
+    )?;
     array.reserve(from.len());
     array.try_extend(iter)?;
 
@@ -417,7 +423,7 @@ pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
         primitive_map_is_valid(
             from,
             |v| (0..MICROSECONDS_IN_DAY).contains(&v),
-            ArrowDataType::Time32(TimeUnit::Microsecond),
+            ArrowDataType::Time64(TimeUnit::Microsecond),
         )
     }
 }

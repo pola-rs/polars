@@ -2,6 +2,7 @@ use super::functions::convert_functions;
 use super::*;
 use crate::constants::{get_pl_element_name, get_pl_structfields_name};
 use crate::plans::iterator::ArenaExprIter;
+use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 
 pub fn to_expr_ir(expr: Expr, ctx: &mut ExprToIRContext) -> PolarsResult<ExprIR> {
     let (node, output_name) = to_aexpr_impl(expr, ctx)?;
@@ -263,16 +264,6 @@ pub(super) fn to_aexpr_impl(
                         output_name,
                     )
                 },
-                AggExpr::MinBy { input, by } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
-                    (IRAggExpr::MinBy { input, by }, output_name)
-                },
-                AggExpr::MaxBy { input, by } => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    let (by, _) = to_aexpr_mat_lit_arc!(by)?;
-                    (IRAggExpr::MaxBy { input, by }, output_name)
-                },
                 AggExpr::Median(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Median(input), output_name)
@@ -305,9 +296,18 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Mean(input), output_name)
                 },
-                AggExpr::Implode(input) => {
+                AggExpr::Implode {
+                    input,
+                    maintain_order,
+                } => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::Implode(input), output_name)
+                    (
+                        IRAggExpr::Implode {
+                            input,
+                            maintain_order,
+                        },
+                        output_name,
+                    )
                 },
                 AggExpr::Count {
                     input,
@@ -327,16 +327,17 @@ pub(super) fn to_aexpr_impl(
                     quantile,
                     method,
                 } => {
-                    let (expr, output_name) = to_aexpr_mat_lit_arc!(expr)?;
-                    let (quantile, _) = to_aexpr_mat_lit_arc!(quantile)?;
-                    (
-                        IRAggExpr::Quantile {
-                            expr,
-                            quantile,
-                            method,
-                        },
-                        output_name,
-                    )
+                    // Quantile was moved out from IRAggExpr as it is multi-input.
+                    let expr = to_expr_ir(owned(expr), ctx)?;
+                    let quantile = to_expr_ir(owned(quantile), ctx)?;
+                    let output_name = quantile.output_name().clone();
+                    let function = IRFunctionExpr::Quantile { method };
+                    let aexpr = AExpr::Function {
+                        input: vec![expr, quantile],
+                        options: function.function_options(),
+                        function,
+                    };
+                    return Ok((ctx.arena.add(aexpr), output_name));
                 },
                 AggExpr::Sum(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
@@ -448,13 +449,15 @@ pub(super) fn to_aexpr_impl(
                 None
             };
 
+            let partition_nodes = partition_by
+                .into_iter()
+                .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
+                .collect::<PolarsResult<_>>()?;
+
             (
                 AExpr::Over {
                     function,
-                    partition_by: partition_by
-                        .into_iter()
-                        .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
-                        .collect::<PolarsResult<_>>()?,
+                    partition_by: partition_nodes,
                     order_by,
                     mapping,
                 },
@@ -512,7 +515,11 @@ pub(super) fn to_aexpr_impl(
                 EvalVariant::List | EvalVariant::ListAgg => {},
                 EvalVariant::Array { as_list } => {
                     polars_ensure!(
-                        as_list || is_length_preserving_ae(evaluation, ctx.arena),
+                        as_list ||
+                        matches!(
+                            aexpr_projection_height_rec(evaluation, ctx.arena, &mut Default::default(), &mut Default::default()),
+                            ExprProjectionHeight::Column
+                        ),
                         InvalidOperation: "`array.eval` is not allowed with non-length preserving expressions. Enable `as_list` if you want to output a variable amount of items per row."
                     )
                 },
@@ -619,6 +626,13 @@ pub(super) fn to_aexpr_impl(
 
         e @ Expr::SubPlan { .. } | e @ Expr::Selector(_) => {
             polars_bail!(InvalidOperation: "'Expr: {}' not allowed in this context/location", e)
+        },
+        // Should never go from IR -> DSL -> IR
+        Expr::Display {
+            inputs: _,
+            fmt_str: _,
+        } => {
+            unreachable!()
         },
     };
     Ok((ctx.arena.add(v), output_name))

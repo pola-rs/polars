@@ -81,7 +81,7 @@ impl ExprOrigin {
             {
                 ExprOrigin::Right
             } else {
-                polars_bail!(ColumnNotFound: "{}", column_name)
+                polars_bail!(ColumnNotFound: "{column_name}")
             },
         )
     }

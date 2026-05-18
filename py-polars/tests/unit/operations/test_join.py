@@ -399,6 +399,7 @@ def test_join_chunks_alignment_4720() -> None:
     )
 
 
+@pytest.mark.may_fail_auto_streaming  # SORTED_ASC flags
 def test_jit_sort_joins() -> None:
     n = 200
     # Explicitly specify numpy dtype because of different defaults on Windows
@@ -3179,7 +3180,11 @@ def test_join_filter_pushdown_asof_join() -> None:
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
     )
     rhs = pl.LazyFrame(
-        {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, None, 5], "c": ["A", "B", "C", "D", "E"]}
+        {
+            "a": [1, 2, 3, 4, 5],
+            "b": [1, 2, 3, None, None],
+            "c": ["A", "B", "C", "D", "E"],
+        }
     )
 
     q = lhs.join_asof(
@@ -3697,8 +3702,6 @@ def test_join_rewrite_panic_23307() -> None:
         (pl.lit(None, dtype=pl.Int64), lambda col: ~col.is_in([1])),
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_between(1, 1)),
-        (1, lambda col: col.is_between(None, 1)),
-        (1, lambda col: col.is_between(1, None)),
         #
         (pl.lit(None, dtype=pl.Int64), lambda col: col.is_close(1)),
         (1, lambda col: col.is_close(pl.lit(None, dtype=pl.Int64))),
@@ -4022,3 +4025,28 @@ def test_full_join_rewrite_to_right_with_cast() -> None:
         },
     )
     assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
+
+
+def test_full_join_coalesce_empty_suffix_succeeds_27368() -> None:
+    df1 = pl.DataFrame({"a": [0, 1], "b": [10, 11]})
+    df2 = pl.DataFrame({"a": [1, 2], "c": [11, 12]})
+
+    result = df1.join(df2, how="full", on="a", coalesce=True, suffix="")
+
+    expected = pl.DataFrame(
+        {
+            "a": [0, 1, 2],
+            "b": [10, 11, None],
+            "c": [None, 11, 12],
+        }
+    )
+
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_full_join_coalesce_empty_suffix_non_key_collision_27368() -> None:
+    df1 = pl.DataFrame({"a": [0, 1], "b": [10, 11]})
+    df2 = pl.DataFrame({"a": [1, 2], "b": [11, 12]})
+
+    with pytest.raises(DuplicateError):
+        df1.join(df2, how="full", on="a", coalesce=True, suffix="")

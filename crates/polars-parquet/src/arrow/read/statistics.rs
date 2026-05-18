@@ -1,4 +1,5 @@
 //! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
+
 use arrow::array::{
     Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray,
     MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray,
@@ -43,14 +44,6 @@ pub struct ColumnStatistics {
 
     /// Statistics of the leaf array of the column
     statistics: ParquetStatistics,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ColumnPathSegment {
-    List { is_large: bool },
-    FixedSizeList { width: usize },
-    Dictionary { key: IntegerType, is_sorted: bool },
-    Struct { column_idx: usize },
 }
 
 /// Arrow-deserialized parquet statistics of a leaf-column
@@ -170,7 +163,8 @@ impl ColumnStatistics {
             }};
         }
 
-        use {ArrowDataType as D, ParquetPhysicalType as PPT};
+        use ArrowDataType as D;
+        use ParquetPhysicalType as PPT;
         let (min_value, max_value) = match (self.field.dtype(), &self.physical_type) {
             (D::Null, _) => (None, None),
 
@@ -210,7 +204,7 @@ impl ColumnStatistics {
 
             (D::Timestamp(time_unit, _), PPT::Int96) => {
                 rmap!(expect_int96, @prim [u32; 3], |x| {
-                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
                 })
             },
             (D::Timestamp(time_unit, _), PPT::Int64) => {
@@ -298,6 +292,7 @@ pub fn deserialize_all(
     field: &Field,
     row_groups: &[RowGroupMetadata],
     field_idx: usize,
+    footer_buf: &[u8],
 ) -> ParquetResult<Option<ArrowColumnStatisticsArrays>> {
     assert!(!row_groups.is_empty());
     use ArrowDataType as D;
@@ -328,7 +323,7 @@ pub fn deserialize_all(
 
                     for rg in row_groups {
                         let column = &rg.parquet_columns()[field_idx];
-                        let s = column.statistics().transpose()?;
+                        let s = column.statistics(footer_buf).transpose()?;
 
                         let (v_min, v_max, v_null_count, v_distinct_count) = match s {
                             None => (None, None, None, None),
@@ -399,12 +394,19 @@ pub fn deserialize_all(
                 }};
             }
 
-            use {ArrowDataType as D, ParquetPhysicalType as PPT};
+            use ArrowDataType as D;
+            use ParquetPhysicalType as PPT;
             let (min_value, max_value) = match (field.dtype(), physical_type) {
-                (D::Null, _) => (
-                    NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                    NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                ),
+                (D::Null, _) => {
+                    for rg in row_groups {
+                        null_count.push(Some(rg.num_rows() as IdxSize));
+                        distinct_count.push(Some(0));
+                    }
+                    (
+                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                    )
+                },
 
                 (D::Boolean, _) => rmap!(
                     expect_boolean,
@@ -460,7 +462,7 @@ pub fn deserialize_all(
 
                 (D::Timestamp(time_unit, _), PPT::Int96) => {
                     rmap!(expect_int96, MutablePrimitiveArray::<i64>, @prim [u32; 3], |x| {
-                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
                     })
                 },
                 (D::Timestamp(time_unit, _), PPT::Int64) => {
@@ -550,47 +552,52 @@ pub fn deserialize_all(
 pub fn deserialize<'a>(
     field: &Field,
     columns: &mut impl ExactSizeIterator<Item = &'a ColumnChunkMetadata>,
+    footer_buf: &[u8],
 ) -> ParquetResult<Option<Statistics>> {
     use ArrowDataType as D;
     match field.dtype() {
         D::List(field) | D::LargeList(field) => Ok(Some(Statistics::List(
-            deserialize(field.as_ref(), columns)?.map(Box::new),
+            deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
         ))),
-        D::Dictionary(key, dtype, is_sorted) => Ok(Some(Statistics::Dictionary(
+        D::Dictionary(key, dtype, ordered) => Ok(Some(Statistics::Dictionary(
             *key,
             deserialize(
                 &Field::new(PlSmallStr::EMPTY, dtype.as_ref().clone(), true),
                 columns,
+                footer_buf,
             )?
             .map(Box::new),
-            *is_sorted,
+            *ordered,
         ))),
         D::FixedSizeList(field, width) => Ok(Some(Statistics::FixedSizeList(
-            deserialize(field.as_ref(), columns)?.map(Box::new),
+            deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
             *width,
         ))),
         D::Struct(fields) => {
             let field_columns = fields
                 .iter()
-                .map(|f| deserialize(f, columns))
+                .map(|f| deserialize(f, columns, footer_buf))
                 .collect::<ParquetResult<_>>()?;
             Ok(Some(Statistics::Struct(field_columns)))
         },
         _ => {
             let column = columns.next().unwrap();
 
-            Ok(column.statistics().transpose()?.map(|statistics| {
-                let primitive_type = &column.descriptor().descriptor.primitive_type;
+            Ok(column
+                .statistics(footer_buf)
+                .transpose()?
+                .map(|statistics| {
+                    let primitive_type = &column.descriptor().descriptor.primitive_type;
 
-                Statistics::Column(Box::new(ColumnStatistics {
-                    field: field.clone(),
+                    Statistics::Column(Box::new(ColumnStatistics {
+                        field: field.clone(),
 
-                    logical_type: primitive_type.logical_type,
-                    physical_type: primitive_type.physical_type,
+                        logical_type: primitive_type.logical_type,
+                        physical_type: primitive_type.physical_type,
 
-                    statistics,
+                        statistics,
+                    }))
                 }))
-            }))
         },
     }
 }

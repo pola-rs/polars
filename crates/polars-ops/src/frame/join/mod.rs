@@ -18,7 +18,9 @@ use std::hash::Hash;
 pub use args::*;
 use arrow::trusted_len::TrustedLen;
 #[cfg(feature = "asof_join")]
-pub use asof::{AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy};
+pub use asof::{
+    _check_asof_columns, _join_asof_dispatch, AsOfOptions, AsofJoin, AsofJoinBy, AsofStrategy,
+};
 pub use cross_join::CrossJoin;
 #[cfg(feature = "chunked_ids")]
 use either::Either;
@@ -31,7 +33,6 @@ use hashbrown::hash_map::{Entry, RawEntryMut};
 pub use iejoin::{IEJoinOptions, InequalityOperator};
 #[cfg(feature = "merge_sorted")]
 pub use merge_sorted::_merge_sorted_dfs;
-use polars_core::POOL;
 #[allow(unused_imports)]
 use polars_core::chunked_array::ops::row_encode::{
     encode_rows_vertical_par_unordered, encode_rows_vertical_par_unordered_broadcast_nulls,
@@ -39,6 +40,7 @@ use polars_core::chunked_array::ops::row_encode::{
 use polars_core::datatypes::DataType;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 pub(super) use polars_core::series::IsSorted;
 use polars_core::utils::slice_offsets;
 #[allow(unused_imports)]
@@ -220,10 +222,8 @@ pub trait DataFrameJoinOps: IntoDf {
         {
             polars_bail!(
                 ComputeError:
-                    format!(
-                        "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
-                        l.name(), l.dtype().pretty_format(), r.name(), r.dtype().pretty_format()
-                    )
+                    "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
+                    l.name(), l.dtype().pretty_format(), r.name(), r.dtype().pretty_format()
             );
         };
 
@@ -232,7 +232,7 @@ pub trait DataFrameJoinOps: IntoDf {
             let Some(JoinTypeOptions::IEJoin(options)) = options else {
                 unreachable!()
             };
-            let func = if POOL.current_num_threads() > 1
+            let func = if RAYON.current_num_threads() > 1
                 && !left_df.shape_has_zero()
                 && !other.shape_has_zero()
             {
@@ -328,7 +328,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     },
                 },
                 #[cfg(feature = "iejoin")]
-                JoinType::IEJoin => {
+                JoinType::IEJoin | JoinType::Range => {
                     unreachable!()
                 },
                 JoinType::Cross => {
@@ -374,7 +374,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
             #[cfg(feature = "iejoin")]
-            JoinType::IEJoin => {
+            JoinType::IEJoin | JoinType::Range => {
                 unreachable!()
             },
             JoinType::Cross => {
@@ -611,13 +611,13 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                     a.set_sorted_flag(IsSorted::Ascending);
                 }
 
-                POOL.join(
+                RAYON.join(
                     // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df.take_unchecked(a.idx().unwrap()) },
                     || unsafe { other.take_unchecked(b.idx().unwrap()) },
                 )
             } else {
-                POOL.join(
+                RAYON.join(
                     // SAFETY: join indices are known to be in bounds
                     || unsafe { left_df.take_unchecked(left.into_series().idx().unwrap()) },
                     || unsafe { other.take_unchecked(right.into_series().idx().unwrap()) },
@@ -652,19 +652,19 @@ fn prepare_keys_multiple(s: &[Series], nulls_equal: bool) -> PolarsResult<Binary
         encode_rows_vertical_par_unordered_broadcast_nulls(&keys)
     }
 }
+
+// Duplicate column names are allowed
 pub fn private_left_join_multiple_keys(
-    a: &DataFrame,
-    b: &DataFrame,
+    a: &[Column],
+    b: &[Column],
     nulls_equal: bool,
 ) -> PolarsResult<LeftJoinIds> {
     // @scalar-opt
     let a_cols = a
-        .columns()
         .iter()
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();
     let b_cols = b
-        .columns()
         .iter()
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();

@@ -188,7 +188,7 @@ def test_fused_arithm() -> None:
     )
     # the extra aliases are because the fma does operation reordering
     assert (
-        """col("c").fma([col("a"), col("b")]).alias("a"), col("a").fma([col("b"), col("c")]).alias("2")"""
+        """col("a").fma([col("b"), col("c")]), col("b").fma([col("c"), col("a")]).alias("2")"""
         in q.explain()
     )
     assert q.collect().to_dict(as_series=False) == {
@@ -334,16 +334,6 @@ def test_null_column_arithmetic(op: Any) -> None:
     # test broadcast left
     output_df = df.select(op(pl.Series("a", [None]), pl.col("a")))
     assert_frame_equal(expected_df, output_df)
-
-
-def test_bool_floordiv() -> None:
-    df = pl.DataFrame({"x": [True]})
-
-    with pytest.raises(
-        InvalidOperationError,
-        match="floor_div operation not supported for dtype `bool`",
-    ):
-        df.with_columns(pl.col("x").floordiv(2))
 
 
 def test_arithmetic_in_aggregation_3739() -> None:

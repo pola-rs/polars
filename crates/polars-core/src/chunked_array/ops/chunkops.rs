@@ -97,7 +97,7 @@ pub(crate) fn slice(
 // we take the underlying values array as a Series. This call stack
 // is hard to follow, so for this one case we make an exception
 // and use a thread local.
-thread_local!(static CHECK_LENGTH: Cell<bool> = const { Cell::new(true) });
+thread_local!(pub static CHECK_LENGTH: Cell<bool> = const { Cell::new(true) });
 
 /// Meant for internal use. In very rare conditions this can be turned off.
 /// # Safety
@@ -331,29 +331,33 @@ impl<T: PolarsObject> ObjectChunked<T> {
         if self.chunks.len() == 1 {
             self.clone()
         } else {
-            let mut builder = ObjectChunkedBuilder::new(self.name().clone(), self.len());
-            let chunks = self.downcast_iter();
+            use crate::chunked_array::object::registry::run_with_gil;
 
-            // todo! use iterators once implemented
-            // no_null path
-            if !self.has_nulls() {
-                for arr in chunks {
-                    for idx in 0..arr.len() {
-                        builder.append_value(arr.value(idx).clone())
-                    }
-                }
-            } else {
-                for arr in chunks {
-                    for idx in 0..arr.len() {
-                        if arr.is_valid(idx) {
+            run_with_gil(|| {
+                let mut builder = ObjectChunkedBuilder::new(self.name().clone(), self.len());
+                let chunks = self.downcast_iter();
+
+                // todo! use iterators once implemented
+                // no_null path
+                if !self.has_nulls() {
+                    for arr in chunks {
+                        for idx in 0..arr.len() {
                             builder.append_value(arr.value(idx).clone())
-                        } else {
-                            builder.append_null()
+                        }
+                    }
+                } else {
+                    for arr in chunks {
+                        for idx in 0..arr.len() {
+                            if arr.is_valid(idx) {
+                                builder.append_value(arr.value(idx).clone())
+                            } else {
+                                builder.append_null()
+                            }
                         }
                     }
                 }
-            }
-            builder.finish()
+                builder.finish()
+            })
         }
     }
 }

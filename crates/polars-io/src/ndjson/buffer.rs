@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 
 use polars_core::frame::row::AnyValueBuffer;
@@ -354,40 +355,79 @@ struct ValueDisplay<'a>(&'a Value<'a>);
 
 impl std::fmt::Display for ValueDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use std::fmt::Display;
+
         use Value::*;
 
         match self.0 {
-            Static(s) => write!(f, "{s}"),
-            String(s) => write!(f, r#""{s}""#),
+            Static(s) => Display::fmt(s, f),
+            String(s) => {
+                f.write_char('"')?;
+
+                let s: &mut &[u8] = &mut s.as_bytes();
+
+                while !s.is_empty() {
+                    f.write_str({
+                        let i = memchr::memchr3(b'"', b'\n', b'\r', s);
+
+                        // Safety: If `i` is `Some(_)`, it points to an ASCII char.
+                        unsafe {
+                            str::from_utf8_unchecked(s.split_off(..i.unwrap_or(s.len())).unwrap())
+                        }
+                    })?;
+
+                    if let Some(&[c]) = s.split_off(..1) {
+                        match c {
+                            b'"' => f.write_str(r#"\""#)?,
+                            b'\n' => f.write_str(r#"\n"#)?,
+                            b'\r' => f.write_str(r#"\r"#)?,
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+
+                f.write_char('"')?;
+
+                Ok(())
+            },
             Array(a) => {
-                write!(f, "[")?;
+                f.write_char('[')?;
 
                 let mut iter = a.iter();
 
                 for v in (&mut iter).take(1) {
-                    write!(f, "{}", ValueDisplay(v))?;
+                    ValueDisplay(v).fmt(f)?;
                 }
 
                 for v in iter {
-                    write!(f, ", {}", ValueDisplay(v))?;
+                    f.write_str(", ")?;
+                    ValueDisplay(v).fmt(f)?;
                 }
 
-                write!(f, "]")
+                f.write_char(']')
             },
             Object(o) => {
-                write!(f, "{{")?;
+                f.write_char('{')?;
 
                 let mut iter = o.iter();
 
                 for (k, v) in (&mut iter).take(1) {
-                    write!(f, r#""{}": {}"#, k, ValueDisplay(v))?;
+                    f.write_char('"')?;
+
+                    f.write_str(k)?;
+                    f.write_str(r#"": "#)?;
+                    ValueDisplay(v).fmt(f)?;
                 }
 
                 for (k, v) in iter {
-                    write!(f, r#", "{}": {}"#, k, ValueDisplay(v))?;
+                    f.write_str(r#", ""#)?;
+
+                    f.write_str(k)?;
+                    f.write_str(r#"": "#)?;
+                    ValueDisplay(v).fmt(f)?;
                 }
 
-                write!(f, "}}")
+                f.write_char('}')
             },
         }
     }

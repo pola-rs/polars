@@ -1,5 +1,5 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
 
@@ -69,7 +69,7 @@ pub fn apply_operator(left: &Column, right: &Column, op: Operator) -> PolarsResu
         Operator::Plus => left + right,
         Operator::Minus => left - right,
         Operator::Multiply => left * right,
-        Operator::Divide => left / right,
+        Operator::RustDivide => left / right,
         Operator::TrueDivide => match left.dtype() {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => left / right,
@@ -229,7 +229,7 @@ impl PhysicalExpr for BinaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         // Window functions may set a global state that determine their output
         // state, so we don't let them run in parallel as they race
         // they also saturate the thread pool by themselves, so that's fine.
@@ -246,7 +246,7 @@ impl PhysicalExpr for BinaryExpr {
             lhs = self.left.evaluate(df, state)?;
             rhs = self.right.evaluate(df, state)?;
         } else {
-            let (opt_lhs, opt_rhs) = POOL.install(|| {
+            let (opt_lhs, opt_rhs) = RAYON.install(|| {
                 rayon::join(
                     || self.left.evaluate(df, state),
                     || self.right.evaluate(df, state),
@@ -264,13 +264,13 @@ impl PhysicalExpr for BinaryExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
-        let (result_a, result_b) = POOL.install(|| {
+        let (result_a, result_b) = RAYON.install(|| {
             rayon::join(
                 || self.left.evaluate_on_groups(df, groups, state),
                 || self.right.evaluate_on_groups(df, groups, state),

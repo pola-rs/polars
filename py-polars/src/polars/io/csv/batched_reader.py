@@ -32,7 +32,7 @@ class BatchedCsvReader:
         missing_utf8_is_empty_string: bool = False,
         ignore_errors: bool = False,
         try_parse_dates: bool = False,
-        n_threads: int | None = None,
+        n_threads: int | None = None,  # noqa: ARG002
         infer_schema_length: int | None = N_INFER_DEFAULT,
         batch_size: int = 50_000,
         n_rows: int | None = None,

@@ -6,7 +6,7 @@ use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
 use polars_ops::prelude::JoinType;
-use polars_plan::plans::IR;
+use polars_plan::plans::{HintIR, IR};
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
@@ -49,6 +49,9 @@ fn scan_type_to_pyobject(
         },
         #[cfg(feature = "scan_lines")]
         FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
+        FileScanIR::ExpandedPaths { name } => {
+            Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
         },
@@ -83,7 +86,7 @@ pub struct Filter {
     predicate: PyExprIR,
 }
 
-#[pyclass(frozen)]
+#[pyclass(frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: UnifiedScanArgs,
@@ -92,11 +95,11 @@ pub struct PyFileOptions {
 #[pymethods]
 impl PyFileOptions {
     #[getter]
-    fn n_rows(&self) -> Option<(i64, usize)> {
+    fn n_rows(&self) -> Option<(i64, IdxSize)> {
         self.inner
             .pre_slice
             .clone()
-            .map(|slice| <(i64, usize)>::try_from(slice).unwrap())
+            .map(|slice| slice.to_signed_offset_len())
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {
@@ -139,15 +142,18 @@ impl PyFileOptions {
     fn deletion_files(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.deletion_files {
             None => py.None().into_any(),
-
             Some(DeletionFilesList::IcebergPositionDelete(paths)) => {
                 let out = PyDict::new(py);
-
                 for (k, v) in paths.iter() {
                     out.set_item(*k, v.as_ref())?;
                 }
-
                 ("iceberg-position-delete", out)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
+            Some(DeletionFilesList::Delta(provider)) => {
+                ("delta-deletion-vector", provider.callback().0.clone_ref(py))
                     .into_pyobject(py)?
                     .into_any()
                     .unbind()
@@ -267,6 +273,17 @@ pub struct Join {
 }
 
 #[pyclass(frozen)]
+/// Join operation
+pub struct Gather {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    idxs: usize,
+    #[pyo3(get)]
+    null_on_oob: bool,
+}
+
+#[pyclass(frozen)]
 /// Merge sorted operation
 pub struct MergeSorted {
     #[pyo3(get)]
@@ -275,6 +292,8 @@ pub struct MergeSorted {
     input_right: usize,
     #[pyo3(get)]
     key: String,
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 
 #[pyclass(frozen)]
@@ -326,7 +345,7 @@ pub struct HConcat {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: (),
+    options: Py<PyAny>,
 }
 #[pyclass(frozen)]
 /// This allows expressions to access other tables
@@ -492,7 +511,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: *slice,
+            slice: slice.as_ref().map(|t| (t.0, t.1)),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {
@@ -575,6 +594,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             },
         }
         .into_py_any(py),
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => Gather {
+            input: input.0,
+            idxs: idxs.0,
+            null_on_oob: *null_on_oob,
+        }
+        .into_py_any(py),
         IR::HStack {
             input,
             exprs,
@@ -655,6 +684,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     sources,
                     scan_type,
                     alias,
+                    ..
                 } => {
                     let sources = sources
                         .into_paths()
@@ -678,7 +708,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
 
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
-                FunctionIR::Hint(_) => return Err(PyNotImplementedError::new_err("hint ir")),
+                FunctionIR::Hint(hint) => match hint {
+                    HintIR::Sorted(sorted_vec) => {
+                        let sorted_info: Vec<_> = sorted_vec
+                            .iter()
+                            .map(|s| (s.column.as_str(), s.descending, s.nulls_last))
+                            .collect();
+                        ("hint_sorted", sorted_info).into_py_any(py)?
+                    },
+                },
             },
         }
         .into_py_any(py),
@@ -691,10 +729,15 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         IR::HConcat {
             inputs,
             schema: _,
-            options: _,
+            options,
         } => HConcat {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            options: (),
+            options: (
+                options.parallel,
+                options.strict,
+                options.broadcast_unit_length,
+            )
+                .into_py_any(py)?,
         }
         .into_py_any(py),
         IR::ExtContext {
@@ -724,12 +767,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_left,
             input_right,
             key,
+            maintain_order,
         } => MergeSorted {
             input_left: input_left.0,
             input_right: input_right.0,
             key: key.to_string(),
+            maintain_order: *maintain_order,
         }
         .into_py_any(py),
+        IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a UnoptimizedDispatch node",
+        )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

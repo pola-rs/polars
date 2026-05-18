@@ -4,7 +4,10 @@ use std::sync::Arc;
 
 use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
+use polars_async::executor::{self, JoinHandle, TaskPriority};
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::DataType;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
@@ -12,7 +15,6 @@ use polars_core::utils::arrow::io::ipc::read::{
 use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
-use polars_io::pl_async;
 use polars_io::utils::byte_source::{
     BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
 };
@@ -27,8 +29,6 @@ use record_batch_decode::RecordBatchDecoder;
 
 use super::multi_scan::reader_interface::BeginReadArgs;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
-use crate::async_executor::{self, JoinHandle, TaskPriority};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::metrics::OptIOMetrics;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::ipc::metadata::read_ipc_metadata_bytes;
@@ -92,12 +92,17 @@ impl FileReader for IpcFileReader {
         let scan_source = self.scan_source.clone();
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();
+        let io_metrics = self.io_metrics.clone();
 
-        let byte_source = pl_async::get_runtime()
+        let byte_source = ASYNC
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
-                    .to_dyn_byte_source(&byte_source_builder, cloud_options.as_deref())
+                    .to_dyn_byte_source(
+                        &byte_source_builder,
+                        cloud_options.as_deref(),
+                        io_metrics.0,
+                    )
                     .await
             })
             .await
@@ -110,12 +115,9 @@ impl FileReader for IpcFileReader {
         } else {
             let (metadata_bytes, opt_full_bytes) = {
                 let byte_source = byte_source.clone();
-                let io_metrics = self.io_metrics.clone();
 
-                pl_async::get_runtime()
-                    .spawn(async move {
-                        read_ipc_metadata_bytes(&byte_source, verbose, &io_metrics).await
-                    })
+                ASYNC
+                    .spawn(async move { read_ipc_metadata_bytes(&byte_source, verbose).await })
                     .await
                     .unwrap()?
             };
@@ -131,19 +133,11 @@ impl FileReader for IpcFileReader {
 
         let dictionaries = {
             let byte_source_async = byte_source.clone();
-            let io_metrics = self.io_metrics.clone();
             let metadata_async = file_metadata.clone();
             let checked = self.checked;
-            let dictionaries = pl_async::get_runtime()
+            let dictionaries = ASYNC
                 .spawn(async move {
-                    read_dictionaries(
-                        &byte_source_async,
-                        io_metrics,
-                        metadata_async,
-                        verbose,
-                        checked,
-                    )
-                    .await
+                    read_dictionaries(&byte_source_async, metadata_async, verbose, checked).await
                 })
                 .await
                 .unwrap()?;
@@ -197,6 +191,7 @@ impl FileReader for IpcFileReader {
             cast_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
+            last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -305,7 +300,6 @@ impl FileReader for IpcFileReader {
             .min(file_metadata.blocks.len())
             .max(1);
 
-        let io_runtime = polars_io::pl_async::get_runtime();
         let ideal_morsel_size = get_ideal_morsel_size();
 
         if verbose {
@@ -339,12 +333,11 @@ impl FileReader for IpcFileReader {
             Option::take(&mut self.record_batch_prefetch_sync.prev_all_spawned);
         let rb_prefetch_current_all_spawned =
             Option::take(&mut self.record_batch_prefetch_sync.current_all_spawned);
-        let io_metrics = self.io_metrics.clone();
 
         // Task: Prefetch.
         let byte_source = byte_source.clone();
         let metadata = file_metadata.clone();
-        let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             let mut record_batch_data_fetcher = RecordBatchDataFetcher {
                 memory_prefetch_func,
                 metadata,
@@ -357,7 +350,6 @@ impl FileReader for IpcFileReader {
                 prefetch_send,
                 rb_prefetch_semaphore,
                 rb_prefetch_current_all_spawned,
-                io_metrics,
             };
 
             if let Some(rb_prefetch_prev_all_spawned) = rb_prefetch_prev_all_spawned {
@@ -370,7 +362,7 @@ impl FileReader for IpcFileReader {
         }));
 
         // Task: Decode.
-        let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
             let mut current_row_offset: IdxSize = 0;
 
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
@@ -397,7 +389,7 @@ impl FileReader for IpcFileReader {
                     SplitSlicePosition::Before => continue,
                     SplitSlicePosition::Overlapping(rows_offset, rows_len) => {
                         let record_batch_decoder = record_batch_decoder.clone();
-                        let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                        let decode_fut = executor::spawn(TaskPriority::High, async move {
                             record_batch_decoder
                                 .record_batch_data_to_df(record_batch_data, rows_offset, rows_len)
                                 .await
@@ -416,8 +408,10 @@ impl FileReader for IpcFileReader {
         // Task: Distributor.
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
-        let last_morsel_min_split = num_pipelines;
-        let distribute_task = async_executor::spawn(TaskPriority::High, async move {
+        //
+        // `last_morsel_pipelines` is precomputed at the multi-scan layer so the split budget is
+        // shared across files in the scan.
+        let distribute_task = executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -473,7 +467,7 @@ impl FileReader for IpcFileReader {
                     &df,
                     ideal_morsel_size,
                     next.is_none(),
-                    last_morsel_min_split,
+                    last_morsel_pipelines,
                 ) {
                     if morsel_send
                         .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
@@ -489,7 +483,7 @@ impl FileReader for IpcFileReader {
         });
 
         // Orchestration.
-        let join_task = io_runtime.spawn(async move {
+        let join_task = ASYNC.spawn(async move {
             prefetch_task.await.unwrap()?;
             decode_task.await.unwrap()?;
             distribute_task.await?;
@@ -500,14 +494,13 @@ impl FileReader for IpcFileReader {
 
         Ok((
             morsel_recv,
-            async_executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
         ))
     }
 }
 
 async fn read_dictionaries(
     byte_source: &DynByteSource,
-    io_metrics: OptIOMetrics,
     file_metadata: Arc<FileMetadata>,
     verbose: bool,
     checked: UnsafeBool,
@@ -530,11 +523,7 @@ async fn read_dictionaries(
     for block in blocks {
         let range = block.offset as usize
             ..block.offset as usize + block.meta_data_length as usize + block.body_length as usize;
-        let fut = byte_source.get_range(range.clone());
-        let bytes = match byte_source {
-            DynByteSource::Buffer(_) => fut.await?,
-            DynByteSource::Cloud(_) => io_metrics.record_download(range.len() as u64, fut).await?,
-        };
+        let bytes = byte_source.get_range(range).await?;
 
         let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
 

@@ -1,7 +1,7 @@
 use arrow::types::{
     AlignedBytes, Bytes2Alignment2, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
 };
-use num_traits::{FromBytes, ToBytes};
+use num_traits::{FromBytes, ToBytes, Zero};
 use polars_utils::float16::pf16;
 
 use crate::parquet::schema::types::PhysicalType;
@@ -33,11 +33,25 @@ pub trait NativeType:
 
     fn ord(&self, other: &Self) -> std::cmp::Ordering;
 
+    /// Normalize a minimum statistic value per the Parquet specification.
+    /// For floating-point types, if the value is zero, returns -0.0.
+    #[inline]
+    fn norm_min(self) -> Self {
+        self
+    }
+
+    /// Normalize a maximum statistic value per the Parquet specification.
+    /// For floating-point types, if the value is zero, returns +0.0.
+    #[inline]
+    fn norm_max(self) -> Self {
+        self
+    }
+
     const TYPE: PhysicalType;
 }
 
 macro_rules! native {
-    ($type:ty, $unaligned:ty, $physical_type:expr$(, $pq_scalar:ident)?) => {
+    ($type:ty, $unaligned:ty, $physical_type:expr$(, $pq_scalar:ident)?$(; zero = $zero:expr)?) => {
         impl TryFrom<&ParquetScalar> for $type {
             type Error = ();
             fn try_from(value: &ParquetScalar) -> Result<$type, Self::Error> {
@@ -69,6 +83,18 @@ macro_rules! native {
                 self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
             }
 
+            $(
+            #[inline]
+            fn norm_min(self) -> Self {
+                if self == $zero { -$zero } else { self }
+            }
+
+            #[inline]
+            fn norm_max(self) -> Self {
+                if self == $zero { $zero } else { self }
+            }
+            )?
+
             const TYPE: PhysicalType = $physical_type;
         }
     };
@@ -87,8 +113,8 @@ macro_rules! no_parquet_scalar_impl {
 
 native!(i32, Bytes4Alignment4, PhysicalType::Int32, Int32);
 native!(i64, Bytes8Alignment8, PhysicalType::Int64, Int64);
-native!(f32, Bytes4Alignment4, PhysicalType::Float, Float32);
-native!(f64, Bytes8Alignment8, PhysicalType::Double, Float64);
+native!(f32, Bytes4Alignment4, PhysicalType::Float, Float32; zero = 0.0f32);
+native!(f64, Bytes8Alignment8, PhysicalType::Double, Float64; zero = 0.0f64);
 
 use crate::parquet::types::PhysicalType::FixedLenByteArray;
 
@@ -111,6 +137,24 @@ impl NativeType for pf16 {
     #[inline]
     fn ord(&self, other: &Self) -> std::cmp::Ordering {
         self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+    }
+
+    #[inline]
+    fn norm_min(self) -> Self {
+        if self == pf16::zero() {
+            -pf16::zero()
+        } else {
+            self
+        }
+    }
+
+    #[inline]
+    fn norm_max(self) -> Self {
+        if self == pf16::zero() {
+            pf16::zero()
+        } else {
+            self
+        }
     }
 }
 
@@ -168,12 +212,14 @@ impl NativeType for [u32; 3] {
 
     #[inline]
     fn ord(&self, other: &Self) -> std::cmp::Ordering {
-        int96_to_i64_ns(*self).ord(&int96_to_i64_ns(*other))
+        int96_to_i64_ns(*self)
+            .unwrap_or(i64::MAX)
+            .ord(&int96_to_i64_ns(*other).unwrap_or(i64::MAX))
     }
 }
 
 #[inline]
-pub fn int96_to_i64_ns(value: [u32; 3]) -> i64 {
+pub fn int96_to_i64_ns(value: [u32; 3]) -> Option<i64> {
     const JULIAN_DAY_OF_EPOCH: i64 = 2_440_588;
     const SECONDS_PER_DAY: i64 = 86_400;
     const NANOS_PER_SECOND: i64 = 1_000_000_000;
@@ -182,7 +228,9 @@ pub fn int96_to_i64_ns(value: [u32; 3]) -> i64 {
     let nanoseconds = ((value[1] as i64) << 32) + value[0] as i64;
     let seconds = (day - JULIAN_DAY_OF_EPOCH) * SECONDS_PER_DAY;
 
-    seconds * NANOS_PER_SECOND + nanoseconds
+    seconds
+        .checked_mul(NANOS_PER_SECOND)
+        .and_then(|ns| ns.checked_add(nanoseconds))
 }
 
 #[inline]

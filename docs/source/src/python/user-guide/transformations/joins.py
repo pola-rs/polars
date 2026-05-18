@@ -1,25 +1,17 @@
 # --8<-- [start:prep-data]
 import pathlib
-import requests
 
 
 DATA = [
-    (
-        "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_groups.csv",
-        "docs/assets/data/monopoly_props_groups.csv",
-    ),
-    (
-        "https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/data/monopoly_props_prices.csv",
-        "docs/assets/data/monopoly_props_prices.csv",
-    ),
+    pathlib.Path("docs/assets/data/monopoly_props_groups.csv"),
+    pathlib.Path("docs/assets/data/monopoly_props_prices.csv"),
 ]
 
 
-for url, dest in DATA:
-    if pathlib.Path(dest).exists():
-        continue
-    with open(dest, "wb") as f:
-        f.write(requests.get(url, timeout=10).content)
+for path in DATA:
+    if not path.exists():
+        msg = f"missing docs fixture: {path}"
+        raise FileNotFoundError(msg)
 # --8<-- [end:prep-data]
 
 # --8<-- [start:props_groups]
@@ -166,13 +158,15 @@ print(df_quotes)
 # --8<-- [end:df_quotes]
 
 # --8<-- [start:asof]
-df_asof_join = df_trades.join_asof(df_quotes, on="time", by="stock")
+df_asof_join = df_trades.join_asof(
+    df_quotes, on="time", by="stock", check_sortedness=False
+)
 print(df_asof_join)
 # --8<-- [end:asof]
 
 # --8<-- [start:asof-tolerance]
 df_asof_tolerance_join = df_trades.join_asof(
-    df_quotes, on="time", by="stock", tolerance="1m"
+    df_quotes, on="time", by="stock", tolerance="1m", check_sortedness=False
 )
 print(df_asof_tolerance_join)
 # --8<-- [end:asof-tolerance]

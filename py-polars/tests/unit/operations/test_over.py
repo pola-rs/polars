@@ -153,3 +153,88 @@ def test_first_last_over() -> None:
     result = df.select(pl.col("b").last(ignore_nulls=True).over("a"))
     expected = pl.DataFrame({"b": pl.Series([3, 3, 3, 3, 6, 6, 6, 6], dtype=pl.Int32)})
     assert_frame_equal(result, expected)
+
+
+def test_nulls_last_over_24989() -> None:
+    lf = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [4, 5, 6], "c": [None, 7, 8], "i": [1, None, 2]}
+    )
+    out = (
+        lf.with_columns(
+            pl.col("b", "c")
+            .first()
+            .over("a", order_by="i", nulls_last=True)
+            .name.suffix("_first")
+        )
+        .sort("i")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 2],
+            "b": [5, 4, 6],
+            "c": [7, None, 8],
+            "i": [None, 1, 2],
+            "b_first": [4, 4, 6],
+            "c_first": [None, None, 8],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_over_order_by_descending_nulls_agg_context() -> None:
+    df = pl.DataFrame({"g": ["a", "a", "a"], "v": [1, 2, 3], "d": [1, None, 2]})
+    expr = pl.col("v").cum_sum().over("g", order_by="d", descending=True)
+
+    result = df.group_by("g", maintain_order=True).agg(expr.alias("v"))
+
+    assert result["v"][0].to_list() == [6, 2, 5]
+
+
+def test_count_over_aggregated_list_respects_inner_nulls_27031() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, None]})
+
+    result = df.with_columns(
+        pl.col("x").cum_sum().count().over("g").alias("x_count"),
+    )
+
+    assert result.get_column("x_count").to_list() == [2, 2, 2]
+
+
+def test_over_empty_order_by_27067() -> None:
+    # Empty order_by with no partition_by should raise, not panic.
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(x=1).select(pl.col.x.over(order_by=[]))
+
+    # Empty order_by with partition_by should work (order_by is ignored).
+    df = pl.DataFrame({"a": [1, 2, 3], "g": ["x", "x", "y"]})
+    result = df.select(pl.col("a").sum().over("g", order_by=[]))
+    expected = df.select(pl.col("a").sum().over("g"))
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col.a,
+        pl.col.a.reverse(),
+        pl.lit(1),
+        pl.lit("f"),
+        pl.lit([1]),
+        pl.col.a.mean(),
+        pl.col.s.first(),
+        pl.col.a.implode(),
+    ],
+)
+def test_over_duplicate_name_27443(expr: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [10, 10, 20],
+            "a": [1, 2, 3],
+            "s": ["a", "b", "c"],
+        }
+    )
+    out = df.select(expr.over(pl.col.g, pl.col.g))
+    expected = df.select(expr.over(pl.col.g))
+    assert_frame_equal(out, expected)

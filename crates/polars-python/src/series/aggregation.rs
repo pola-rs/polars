@@ -36,6 +36,17 @@ impl PySeries {
         })
     }
 
+    fn is_empty(&self, py: Python<'_>, ignore_nulls: bool) -> PyResult<bool> {
+        py.enter_polars(|| {
+            let s = self.series.read();
+            PolarsResult::Ok(if ignore_nulls {
+                s.is_full_null()
+            } else {
+                s.is_empty()
+            })
+        })
+    }
+
     fn arg_max(&self, py: Python) -> PyResult<Option<usize>> {
         py.enter_polars_ok(|| self.series.read().arg_max())
     }

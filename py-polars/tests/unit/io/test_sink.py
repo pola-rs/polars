@@ -1,13 +1,23 @@
+from __future__ import annotations
+
 import io
+import os
+from itertools import permutations
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
-from polars._typing import EngineType
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+
+if TYPE_CHECKING:
+    from polars._typing import EngineType
+    from polars.io.partition import SinkedPathsCallbackArgs
+    from tests.conftest import PlMonkeyPatch
+
 
 SINKS = [
     (pl.scan_ipc, pl.LazyFrame.sink_ipc),
@@ -164,7 +174,8 @@ def test_sink_empty(sink: Any, scan: Any) -> None:
 
 @pytest.mark.parametrize(("scan", "sink"), SINKS)
 def test_sink_boolean_panic_25806(sink: Any, scan: Any) -> None:
-    df = pl.select(bool=pl.repeat(True, 300_000))
+    morsel_size = int(os.environ.get("POLARS_IDEAL_MORSEL_SIZE", 100_000))
+    df = pl.select(bool=pl.repeat(True, 3 * morsel_size))
 
     f = io.BytesIO()
     sink(df.lazy(), f)
@@ -318,3 +329,145 @@ def test_write_alternative_extension(
 def test_write_unsupported_compression(write_fn_name: str, fmt: str) -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         write_fn(pl.DataFrame(), write_fn_name)("x", compression=fmt)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("file_name", ["凸变英雄X", "影分身の術"])
+def test_sink_path_slicing_utf8_boundaries_26324(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, file_name: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    df = pl.DataFrame({"a": 1})
+    df.write_parquet(file_name)
+
+    assert_frame_equal(pl.scan_parquet(file_name).collect(), df)
+
+
+@pytest.mark.parametrize("file_format", ["parquet", "ipc", "csv", "ndjson"])
+@pytest.mark.parametrize("partitioned", [True, False])
+@pytest.mark.write_disk
+def test_sink_metrics(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+    file_format: str,
+    tmp_path: Path,
+    partitioned: bool,
+) -> None:
+    path = tmp_path / "a"
+
+    df = pl.DataFrame({"a": 1})
+
+    with plmonkeypatch.context() as cx:
+        cx.setenv("POLARS_LOG_METRICS", "1")
+        cx.setenv("POLARS_FORCE_ASYNC", "1")
+        capfd.readouterr()
+        getattr(pl.LazyFrame, f"sink_{file_format}")(
+            df.lazy(),
+            path
+            if not partitioned
+            else pl.PartitionBy("", file_path_provider=(lambda _: path), key="a"),
+        )
+        capture = capfd.readouterr().err
+
+    [line] = (x for x in capture.splitlines() if x.startswith("io-sink"))
+
+    logged_bytes_sent = int(
+        pl.select(pl.lit(line).str.extract(r"total_bytes_sent=(\d+)")).item()
+    )
+
+    assert logged_bytes_sent == path.stat().st_size
+
+    assert_frame_equal(getattr(pl, f"scan_{file_format}")(path).collect(), df)
+
+
+@pytest.mark.parametrize(
+    ("base_path", "provided_path"),
+    [
+        *permutations(["/", "s3://", "file:///"], 2),
+        ("/a/", "/b/"),
+    ],
+)
+def test_sink_file_provider_absolute_path_not_under_base_path(
+    base_path: str, provided_path: str
+) -> None:
+    df = pl.DataFrame({"a": 1})
+
+    with pytest.raises(
+        ComputeError,
+        match=r"provided path.*is absolute but does not start with base path",
+    ):
+        df.lazy().sink_parquet(
+            pl.PartitionBy(
+                base_path,
+                file_path_provider=lambda _: provided_path,
+                max_rows_per_file=1,
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "s",
+    ["/", "\\"],
+)
+def test_sink_file_provider_forbid_parent_dir_component(s: str) -> None:
+    df = pl.DataFrame({"a": 1})
+
+    err_cx = pytest.raises(
+        ComputeError,
+        match=r"provided path.*contained parent dir component",
+    )
+
+    def expect_err(p: str) -> None:
+        with err_cx:
+            df.lazy().sink_parquet(
+                pl.PartitionBy(
+                    "",
+                    file_path_provider=lambda _: p,
+                    max_rows_per_file=1,
+                )
+            )
+
+    expect_err("..")
+    expect_err(f"{s}..")
+    expect_err(f"..{s}")
+    expect_err(f"{s}..{s}")
+
+
+@pytest.mark.write_disk
+def test_sinked_paths_callback(tmp_path: Path) -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+
+    out_path = tmp_path / "a.parquet"
+    lst: list[SinkedPathsCallbackArgs] = []
+    lf.sink_parquet(out_path, _sinked_paths_callback=lst.append)
+
+    assert [Path(x) for x in lst[0].paths] == [out_path]
+
+    out_dir = tmp_path / "multiple"
+    lst = []
+    lf.sink_parquet(
+        pl.PartitionBy(
+            out_dir,
+            max_rows_per_file=1,
+        ),
+        _sinked_paths_callback=lst.append,
+    )
+
+    assert [Path(x) for x in lst[0].paths] == [
+        out_dir / "00000000.parquet",
+        out_dir / "00000001.parquet",
+        out_dir / "00000002.parquet",
+        out_dir / "00000003.parquet",
+        out_dir / "00000004.parquet",
+    ]
+
+    with pytest.raises(ComputeError, match="encountered non-path sink target"):
+        lf.sink_parquet(
+            pl.PartitionBy(
+                out_dir,
+                file_path_provider=lambda _: io.BytesIO(),
+                max_rows_per_file=1,
+            ),
+            _sinked_paths_callback=lambda _: None,
+        )

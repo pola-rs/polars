@@ -15,6 +15,7 @@ import polars.selectors as cs
 from polars import Expr
 from polars.exceptions import (
     ColumnNotFoundError,
+    ComputeError,
     InvalidOperationError,
 )
 from polars.meta import get_index_type
@@ -22,9 +23,10 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
     from polars._typing import PolarsDataType, TimeUnit
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_group_by() -> None:
@@ -64,6 +66,16 @@ def test_group_by() -> None:
     result = df.group_by("b", maintain_order=True).agg(pl.count("a"))
     assert result.rows() == [("a", 2), ("b", 3)]
     assert result.columns == ["b", "a"]
+
+
+def test_group_by_count_respects_inner_nulls_in_aggregated_list_27031() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, None]})
+
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("x").cum_sum().count().alias("x_count")
+    )
+
+    assert result.rows() == [(1, 2)]
 
 
 @pytest.mark.parametrize(
@@ -965,8 +977,8 @@ def test_perfect_hash_table_null_values() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_group_by_partitioned_ending_cast(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+def test_group_by_partitioned_ending_cast(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     df = pl.DataFrame({"a": [1] * 5, "b": [1] * 5})
     out = df.group_by(["a", "b"]).agg(pl.len().cast(pl.Int64).alias("num"))
     expected = pl.DataFrame({"a": [1], "b": [1], "num": [5]})
@@ -1088,8 +1100,8 @@ def test_group_by_with_null() -> None:
     assert_frame_equal(expected, output)
 
 
-def test_partitioned_group_by_14954(monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
+def test_partitioned_group_by_14954(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_PARTITION", "1")
     assert (
         pl.DataFrame({"a": range(20)})
         .select(pl.col("a") % 2)
@@ -1411,8 +1423,8 @@ def test_group_by_map_groups_slice_pushdown_20002() -> None:
 
 
 @typing.no_type_check
-def test_group_by_lit_series(capfd: Any, monkeypatch: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_group_by_lit_series(capfd: Any, plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
     n = 10
     df = pl.DataFrame({"x": np.ones(2 * n), "y": n * list(range(2))})
     a = np.ones(n, dtype=float)
@@ -2036,7 +2048,7 @@ def test_group_by_unique_parametric(
     ],
 )
 def test_group_by_any_all(expr: Callable[[pl.Expr], pl.Expr]) -> None:
-    combinations = [
+    combinations: Sequence[list[bool | None]] = [
         [True, None],
         [None, None],
         [False, None],
@@ -2210,7 +2222,7 @@ def test_group_by_explode_none_dtype_25045() -> None:
 def test_group_by_forward_backward_fill(
     expr: Callable[[pl.Expr], pl.Expr], is_scalar: bool
 ) -> None:
-    combinations = [
+    combinations: Sequence[list[int | None]] = [
         [1, None, 2, None, None],
         [None, 1, 2, 3, 4],
         [None, None, None, None, None],
@@ -2399,7 +2411,7 @@ def test_group_by_drop_nans(s: pl.Series) -> None:
             True,
         ),
         (
-            lambda e: e.fill_null(strategy="forward").over([e, e]),
+            lambda e: e.fill_null(strategy="forward").over([e]),
             True,
             False,
             True,
@@ -2938,3 +2950,133 @@ def test_group_by_sum_on_strings_should_error_24659() -> None:
         match=r"`sum`.*operation not supported for dtype.*str",
     ):
         pl.DataFrame({"str": ["a", "b"]}).group_by(1).agg(pl.col.str.sum())
+
+
+@pytest.mark.parametrize("tail", [0, 1, 4, 5, 6, 10])
+def test_unique_head_tail_26429(tail: int) -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3, 4, 5],
+        }
+    )
+    out = df.lazy().unique().tail(tail).collect()
+    expected = min(tail, df.height)
+    assert len(out) == expected
+
+
+def test_group_by_cse_alias_26423() -> None:
+    df = pl.LazyFrame({"a": [1, 2, 1, 2, 3, 4]})
+    result = df.group_by("a").agg(pl.len(), pl.len().alias("len_a")).collect()
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4], "len": [2, 2, 1, 1], "len_a": [2, 2, 1, 1]},
+        schema={
+            "a": pl.Int64,
+            "len": pl.get_index_type(),
+            "len_a": pl.get_index_type(),
+        },
+    )
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_group_by_agg_get_oob_error_26747() -> None:
+    df = pl.DataFrame({"x": [1, 1, 2, 3]})
+
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
+        df.group_by("x").agg(y=pl.col.x.get(100))
+
+
+def test_group_by_arg_max_boolean_26978() -> None:
+    # https://github.com/pola-rs/polars/issues/26978
+    df = pl.DataFrame(
+        {
+            "group": ["A"] * 5,
+            "val": [False, False, True, True, True],
+        }
+    )
+
+    result = df.group_by("group").agg(pl.col("val").arg_max())
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {"group": ["A"], "val": pl.Series([2], dtype=pl.get_index_type())}
+        ),
+    )
+
+    result = df.with_columns(pl.row_index().max_by("val").over("group"))
+    # max_by doesn't guarantee which tied row is returned, so extract the
+    # actual value and verify it is one of the valid True-indices (2, 3, 4).
+    idx_val = result["index"][0]
+    assert idx_val in {2, 3, 4}
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "group": ["A", "A", "A", "A", "A"],
+                "val": [False, False, True, True, True],
+                "index": pl.Series([idx_val] * 5, dtype=pl.get_index_type()),
+            }
+        ),
+    )
+
+
+def test_structify_keyword_27147() -> None:
+    df = pl.DataFrame({"b": [1, 1, 2]})
+    result = df.group_by("b").agg(__structify=pl.len()).sort("b")
+    expected = pl.DataFrame(
+        {"b": [1, 2], "__structify": [2, 1]},
+        schema_overrides={"__structify": pl.UInt32},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_group_by_arg_max_arg_min_binary_27171() -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"key": ["a", "a", "b"], "val": [b"x", b"y", b"z"]})
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").arg_max())
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"key": ["a", "b"], "val": pl.Series([1, 0], dtype=idx_dtype)}),
+    )
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").arg_min())
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"key": ["a", "b"], "val": pl.Series([0, 0], dtype=idx_dtype)}),
+    )
+
+
+def test_group_by_arg_max_string_single_element_27171() -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"key": ["a", "a", "b"], "val": ["x", "y", "z"]})
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").arg_max())
+    assert_frame_equal(
+        result,
+        pl.DataFrame({"key": ["a", "b"], "val": pl.Series([1, 0], dtype=idx_dtype)}),
+    )
+
+
+def test_group_by_arg_min_string_nullable_single_element_27171() -> None:
+    idx_dtype = pl.get_index_type()
+    df = pl.DataFrame({"key": ["a", "a", "b", "c"], "val": ["x", None, "z", "w"]})
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").arg_min())
+    assert_frame_equal(
+        result,
+        pl.DataFrame(
+            {
+                "key": ["a", "b", "c"],
+                "val": pl.Series([0, 0, 0], dtype=idx_dtype),
+            }
+        ),
+    )
+
+
+def test_group_by_max_by_min_by_string_single_element_27171() -> None:
+    df = pl.DataFrame(
+        {"key": ["a", "a", "b"], "val": [10, 20, 30], "by": ["x", "y", "z"]}
+    )
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").max_by("by"))
+    assert result.filter(pl.col("key") == "a")["val"][0] == 20
+    assert result.filter(pl.col("key") == "b")["val"][0] == 30
+
+    result = df.group_by("key", maintain_order=True).agg(pl.col("val").min_by("by"))
+    assert result.filter(pl.col("key") == "a")["val"][0] == 10
+    assert result.filter(pl.col("key") == "b")["val"][0] == 30

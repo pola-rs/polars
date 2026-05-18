@@ -1,7 +1,9 @@
 name: Test Pyodide
 
 on:
-  # disabled for now
+  push:
+    branches:
+      - disabled-pyodide-tests  # disabled for now
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

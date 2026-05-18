@@ -27,7 +27,12 @@ if TYPE_CHECKING:
 
     from _pytest.capture import CaptureFixture
 
-    from polars._typing import MapElementsStrategy, PolarsDataType
+    from polars._typing import (
+        EpochTimeUnit,
+        MapElementsStrategy,
+        PolarsDataType,
+    )
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_init_signature_match() -> None:
@@ -68,8 +73,11 @@ def test_implode() -> None:
 
 def test_lazyframe_membership_operator() -> None:
     ldf = pl.LazyFrame({"name": ["Jane", "John"], "age": [20, 30]})
-    assert "name" in ldf
-    assert "phone" not in ldf
+
+    with pytest.raises(PerformanceWarning):
+        assert "name" in ldf
+
+    assert "phone" not in ldf.collect_schema()
 
     # note: cannot use lazyframe in boolean context
     with pytest.raises(TypeError, match="ambiguous"):
@@ -579,6 +587,62 @@ def test_round(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> N
     assert_series_equal(
         ldf.select(pl.col("value").round(decimals=ndigits)).collect().to_series(),
         pl.Series("value", [expected], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected"),
+    [
+        (1.005, 2, 1.0),
+        (1835.665, 2, 1835.66),
+        (-1835.665, 2, -1835.66),
+        (2.49, 0, 2.0),
+        (123.45678, 2, 123.45),
+        (1254, 2, 1254.0),
+        (1254, 0, 1254.0),
+        (123.55, 0, 123.0),
+        (123.55, 1, 123.5),
+        (1.0e20, 2, 100000000000000000000.0),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_truncate(n: float, ndigits: int, expected: float, dtype: pl.DataType) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").truncate(decimals=ndigits)).collect().to_series(),
+        pl.Series("value", [expected], dtype=dtype),
+    )
+
+
+@pytest.mark.parametrize(
+    ("n", "ndigits", "expected1", "expected2"),
+    [
+        (0.5, 0, 0.0, 1.0),
+        (1.5, 0, 2.0, 2.0),
+        (2.5, 0, 2.0, 3.0),
+        (-0.5, 0, -0.0, -1.0),
+        (-1.5, 0, -2.0, -2.0),
+        (2.25, 1, 2.2, 2.3),
+        (2.75, 1, 2.8, 2.8),
+        (-2.25, 1, -2.2, -2.3),
+    ],
+)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_round_mode(
+    n: float, ndigits: int, expected1: float, expected2: float, dtype: pl.DataType
+) -> None:
+    ldf = pl.LazyFrame({"value": [n]}, schema_overrides={"value": dtype})
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="half_to_even"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected1], dtype=dtype),
+    )
+    assert_series_equal(
+        ldf.select(pl.col("value").round(ndigits, mode="half_away_from_zero"))
+        .collect()
+        .to_series(),
+        pl.Series("value", [expected2], dtype=dtype),
     )
 
 
@@ -1165,8 +1229,8 @@ def test_lazy_cache_same_key() -> None:
 
 @pytest.mark.may_fail_cloud  # reason: inspects logs
 @pytest.mark.may_fail_auto_streaming
-def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+def test_lazy_cache_hit(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": ["x", "y", "z"]})
     add_node = ldf.select([(pl.col("a") + pl.col("b")).alias("a"), pl.col("c")]).cache()
@@ -1262,10 +1326,11 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
     exp_dt = datetime(2006, 5, 17, 15, 34, 4)
     expected = pl.DataFrame(
         [
+            # 'd' → Date, 'ns' → Datetime('ns'), otherwise → Datetime('us')
             pl.Series("timestamp_d", [date(2006, 5, 17)]),
-            pl.Series("timestamp_s", [exp_dt]),  # s is no Polars dtype, defaults to us
-            pl.Series("timestamp_ms", [exp_dt]).cast(pl.Datetime("ms")),
-            pl.Series("timestamp_us", [exp_dt]),  # us is Polars Datetime default
+            pl.Series("timestamp_s", [exp_dt]),
+            pl.Series("timestamp_ms", [exp_dt]),
+            pl.Series("timestamp_us", [exp_dt]),
             pl.Series("timestamp_ns", [exp_dt]).cast(pl.Datetime("ns")),
         ]
     )
@@ -1283,6 +1348,67 @@ def test_from_epoch(input_dtype: PolarsDataType) -> None:
     ts_col = pl.col("timestamp_s")
     with pytest.raises(ValueError):
         _ = ldf.select(pl.from_epoch(ts_col, time_unit="s2"))  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize(
+    ("input_dtype", "epoch_value", "time_unit", "expected_datetime"),
+    [
+        # 32-bit types with large positive values (original overflow case)
+        (pl.Int32, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt32, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        # larger integer types
+        (pl.Int64, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt64, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.Int128, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        (pl.UInt128, 1_721_068_200, "s", datetime(2024, 7, 15, 18, 30)),
+        # small unsigned types
+        (pl.UInt8, 100, "s", datetime(1970, 1, 1, 0, 1, 40)),
+        (pl.UInt16, 32_000, "s", datetime(1970, 1, 1, 8, 53, 20)),
+        # small signed types (positive values)
+        (pl.Int8, 100, "s", datetime(1970, 1, 1, 0, 1, 40)),
+        (pl.Int16, 32_000, "ms", datetime(1970, 1, 1, 0, 0, 32)),
+        # signed types with negative values (pre-epoch)
+        (pl.Int8, -100, "s", datetime(1969, 12, 31, 23, 58, 20)),
+        (pl.Int16, -32_000, "s", datetime(1969, 12, 31, 15, 6, 40)),
+        (pl.Int32, -1_721_068_200, "s", datetime(1915, 6, 19, 5, 30)),
+        (pl.Int64, -1_721_068_200, "s", datetime(1915, 6, 19, 5, 30)),
+        # milliseconds (with subsecond component)
+        (pl.Int64, 1_721_068_200_456, "ms", datetime(2024, 7, 15, 18, 30, 0, 456000)),
+        (pl.Int32, 2_000_456, "ms", datetime(1970, 1, 1, 0, 33, 20, 456000)),
+        (pl.Int64, -1_721_068_200_456, "ms", datetime(1915, 6, 19, 5, 29, 59, 544000)),
+        # nanoseconds (with subsecond component)
+        (
+            pl.UInt128,
+            1_721_068_200_456_789_000,
+            "ns",
+            datetime(2024, 7, 15, 18, 30, 0, 456789),
+        ),
+        (
+            pl.UInt128,
+            2_721_068_200_999_999_000,
+            "ns",
+            datetime(2056, 3, 23, 20, 16, 40, 999999),
+        ),
+        (
+            pl.Int128,
+            -1_721_068_200_456_789_000,
+            "ns",
+            datetime(1915, 6, 19, 5, 29, 59, 543211),
+        ),
+    ],
+)
+def test_from_epoch_27107(
+    input_dtype: PolarsDataType,
+    epoch_value: int,
+    time_unit: EpochTimeUnit,
+    expected_datetime: datetime,
+) -> None:
+    ldf = pl.LazyFrame({"ts": [epoch_value]}, schema={"ts": input_dtype})
+    res = ldf.select(pl.from_epoch("ts", time_unit=time_unit))
+
+    dtype = pl.Datetime(time_unit if time_unit == "ns" else "us")
+    expected = pl.LazyFrame({"ts": [expected_datetime]}, schema={"ts": dtype})
+    assert_frame_equal(res, expected)
 
 
 def test_from_epoch_str() -> None:
@@ -1447,6 +1573,8 @@ def test_lf_properties() -> None:
         assert lf.dtypes == [pl.Int64, pl.Float64, pl.String]
     with pytest.warns(PerformanceWarning):
         assert lf.width == 3
+    with pytest.warns(PerformanceWarning):
+        assert "foo" in lf
 
 
 def test_lf_unnest() -> None:
@@ -1585,7 +1713,7 @@ def test_join_where() -> None:
         }
     )
 
-    assert_frame_equal(out, expected)
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 def test_join_where_bad_input_type() -> None:
@@ -1700,3 +1828,19 @@ def test_cache_hit_child_removal() -> None:
     assert_frame_equal(df1.tail(3), df, check_row_order=False)
     assert_frame_equal(df2.head(3), df, check_row_order=False)
     assert_frame_equal(df2.tail(3), df, check_row_order=False)
+
+
+def test_sum_decimal_widens_precision_27269() -> None:
+    from decimal import Decimal
+
+    lf = pl.LazyFrame(
+        {"x": [Decimal("5000000000000.00"), Decimal("5000000000000.00")]},
+        schema={"x": pl.Decimal(15, 2)},
+    )
+    assert lf.select(pl.sum("x")).collect_schema()["x"] == pl.Decimal(38, 2)
+
+
+def test_execute() -> None:
+    assert pl.LazyFrame({"a": [1, 2, 3, 4]}).select(pl.col.a).execute().lazy().select(
+        sum=pl.col.a.sum(), count=pl.len()
+    ).collect().to_dict(as_series=False) == {"sum": [10], "count": [4]}

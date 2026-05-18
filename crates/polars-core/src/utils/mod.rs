@@ -9,19 +9,20 @@ use std::ops::{Deref, DerefMut};
 mod schema;
 
 pub use any_value::*;
+pub use arrow;
 use arrow::bitmap::Bitmap;
 pub use arrow::legacy::utils::*;
 pub use arrow::trusted_len::TrustMyLength;
 use flatten::*;
 use num_traits::{One, Zero};
+pub use rayon;
 use rayon::prelude::*;
 pub use schema::*;
 pub use series::*;
 pub use supertype::*;
-pub use {arrow, rayon};
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::RAYON;
 
 #[repr(transparent)]
 pub struct Wrap<T>(pub T);
@@ -35,7 +36,7 @@ impl<T> Deref for Wrap<T> {
 
 #[inline(always)]
 pub fn _set_partition_size() -> usize {
-    POOL.current_num_threads()
+    RAYON.current_num_threads()
 }
 
 /// Just a wrapper structure which is useful for certain impl specializations.

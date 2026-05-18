@@ -1,12 +1,12 @@
 use std::cmp::Reverse;
 
+use polars_async::primitives::linearizer::Linearizer;
 use polars_core::frame::DataFrame;
 use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 
-use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 
@@ -32,7 +32,7 @@ impl ApplyRowIndexOrLimit {
 
         if verbose {
             eprintln!(
-                "[NDJSON ApplyRowIndexOrLimit]: init: \
+                "[NDJson ApplyRowIndexOrLimit]: init: \
                 limit: {:?}, \
                 row_index: {:?}",
                 &limit, &row_index
@@ -86,7 +86,7 @@ impl ApplyRowIndexOrLimit {
         drop(morsel_receiver);
 
         if verbose {
-            eprintln!("[NDJSON ApplyRowIndexOrLimit]: returning");
+            eprintln!("[NDJson ApplyRowIndexOrLimit]: returning");
         }
 
         Ok(())

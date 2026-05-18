@@ -208,8 +208,13 @@ def test_gather_array_outer_validity_19482() -> None:
 def test_gather_len_19561() -> None:
     N = 4
     df = pl.DataFrame({"foo": ["baz"] * N, "bar": range(N)})
-    idxs = pl.int_range(1, N).repeat_by(pl.int_range(1, N)).flatten()
-    gather = pl.col.bar.gather(idxs).alias("gather")
+
+    idxs = (
+        pl.int_range(1, N)
+        .repeat_by(pl.int_range(1, N))
+        .list.explode(keep_nulls=False, empty_as_null=False)
+    )
+    gather = pl.col("bar").gather(idxs).alias("gather")
 
     assert df.group_by("foo").agg(gather.len()).to_dict(as_series=False) == {
         "foo": ["baz"],
@@ -467,3 +472,17 @@ def test_get_typed_index_default_raises_out_of_bounds(idx_dtype: pl.DataType) ->
 
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
         df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype)))
+
+
+def test_expr_gather_null_on_oob() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    result = df.select(pl.col("a").gather([0, 1, 10], null_on_oob=True))
+    assert result["a"].to_list() == [1, 2, None]
+
+
+def test_series_gather_null_on_oob() -> None:
+    s = pl.Series("a", [1, 2, 3])
+
+    result = s.gather([0, 1, 10], null_on_oob=True)
+    assert result.to_list() == [1, 2, None]

@@ -1,6 +1,8 @@
 use std::num::{NonZeroU64, NonZeroUsize};
 
 use futures::FutureExt;
+use polars_async::executor;
+use polars_async::primitives::connector;
 use polars_error::PolarsResult;
 use polars_io::utils::file::Writeable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
@@ -8,8 +10,6 @@ use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor;
-use crate::async_primitives::connector;
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::components::size::TakeableRowsProvider;
 use crate::utils::tokio_handle_ext;
@@ -28,7 +28,7 @@ pub trait FileWriterStarter: Send + Sync + 'static {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: NonZeroUsize,
-    ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>>;
+    ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>>;
 }
 
 pub struct FileOpenTaskHandle {

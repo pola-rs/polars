@@ -1,4 +1,5 @@
 use polars_core::utils::concat_df;
+use recursive::recursive;
 
 use super::*;
 
@@ -8,6 +9,7 @@ pub(crate) struct UnionExec {
 }
 
 impl Executor for UnionExec {
+    #[recursive]
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
         #[cfg(debug_assertions)]
@@ -81,9 +83,9 @@ impl Executor for UnionExec {
             // we don't use par_iter directly because the LP may also start threads for every LP (for instance scan_csv)
             // this might then lead to a rayon SO. So we take a multitude of the threads to keep work stealing
             // within bounds
-            let out = POOL.install(|| {
+            let out = RAYON.install(|| {
                 inputs
-                    .chunks_mut(POOL.current_num_threads() * 3)
+                    .chunks_mut(RAYON.current_num_threads() * 3)
                     .map(|chunk| {
                         chunk
                             .into_par_iter()

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
 from functools import partial
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
+import polars as pl
 from polars._utils.logging import eprint
+from polars._utils.various import parse_version
 from polars.io.cloud.credential_provider._providers import (
     _get_credentials_from_provider_expiry_aware,
 )
-from polars.io.delta._utils import _extract_pl_data_statistics, _fill_missing_columns
+from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
 from polars.io.parquet.functions import scan_parquet
 from polars.io.scan_options.cast_options import ScanCastOptions
 from polars.schema import Schema
@@ -19,7 +22,7 @@ if TYPE_CHECKING:
 
     from deltalake import DeltaTable
 
-    from polars._typing import StorageOptionsDict
+    from polars._typing import DeletionFiles, StorageOptionsDict
     from polars.io.cloud._utils import NoPickleOption
     from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.lazyframe.frame import LazyFrame
@@ -60,6 +63,7 @@ class DeltaDataset:
         pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
+        import polars as pl
         import polars._utils.logging
 
         verbose = polars._utils.logging.verbose()
@@ -134,15 +138,55 @@ class DeltaDataset:
                 f"path expansion time: {elapsed:.3f}s"
             )
 
-        pl_table_statistics = _extract_pl_data_statistics(table)
-
-        # Predicate pushown expects all statistics to be present for every column
-        # that is not a partition column.
-        pl_table_statistics = _fill_missing_columns(
-            pl_table_statistics,
-            table.schema(),
-            table_md.partition_columns,
+        table_statistics = (
+            _extract_table_statistics_from_delta_add_actions(
+                pl.DataFrame(table.get_add_actions()),
+                filter_columns=filter_columns,
+                schema=schema,
+                verbose=verbose,
+            )
+            if filter_columns is not None
+            else None
         )
+
+        reader_features = table.protocol().reader_features
+        has_deletion_vectors = (
+            reader_features is not None and "deletionVectors" in reader_features
+        )
+
+        deletion_files: DeletionFiles | None = None
+        if has_deletion_vectors:
+            import deltalake
+
+            dv_min_version = (1, 4, 2)
+            installed = parse_version(deltalake.__version__)
+            if installed < dv_min_version:
+                msg = (
+                    f"reading delta deletion vectors requires "
+                    f"deltalake >= {'.'.join(str(v) for v in dv_min_version)}, "
+                    f"found {installed}."
+                )
+                raise ImportError(msg)
+
+            def _deletion_vector_callback(
+                requested_paths: pl.DataFrame,
+            ) -> pl.DataFrame:
+                delta_deletion_vectors = _fetch_deletion_vectors(table)
+                if delta_deletion_vectors is None:
+                    return pl.DataFrame(
+                        {"selection_vector": [None] * len(requested_paths)},
+                        schema={"selection_vector": pl.List(pl.Boolean)},
+                    )
+                return _extract_delta_deletion_vectors(
+                    requested_paths, delta_deletion_vectors
+                )
+
+            deletion_files = (
+                "delta-deletion-vector",
+                _deletion_vector_callback,
+            )
+        else:
+            deletion_files = None
 
         return scan_parquet(
             paths,
@@ -154,7 +198,8 @@ class DeltaDataset:
             storage_options=self.storage_options,
             credential_provider=self.credential_provider_builder,  # type: ignore[arg-type]
             rechunk=self.rechunk,
-            _table_statistics=pl_table_statistics,
+            _table_statistics=table_statistics,
+            _deletion_files=deletion_files,
         ), version_key
 
     #
@@ -178,6 +223,9 @@ class DeltaDataset:
                 NOT_SUPPORTED_READER_VERSION,
                 SUPPORTED_READER_FEATURES,
             )
+
+            # Some reader features require explicit support by the engine (polars)
+            SUPPORTED_READER_FEATURES.add("deletionVectors")
 
             from polars.io.delta._utils import _get_delta_lake_table
 
@@ -236,3 +284,75 @@ class DeltaDataset:
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         self.__dict__ = state
+
+
+def _extract_delta_deletion_vectors(
+    requested_paths: pl.DataFrame,
+    delta_deletion_vectors: pl.DataFrame,
+) -> pl.DataFrame:
+    """
+    Extract the deletion_vectors for the provided requested_paths.
+
+    Input requested_paths schema is "path": String.
+    Output series schema is "selection_vector": List(Boolean), maintaining order.
+
+    The selection_vector from deltalake is a keep-mask (True = keep).
+    """
+    assert requested_paths.schema == {"path": pl.String}
+
+    delta_dv_schema = {"filepath": pl.String, "selection_vector": pl.List(pl.Boolean)}
+    delta_deletion_vectors = delta_deletion_vectors.select(delta_dv_schema.keys())
+    assert delta_deletion_vectors.schema == delta_dv_schema
+
+    file_prefix = "file://" if sys.platform != "win32" else "file:///"
+    joined_df = (
+        requested_paths.lazy()
+        .with_columns(
+            pl.col("path")
+            .str.replace("^lakefs://", "s3://")
+            .str.strip_prefix(file_prefix)
+        )
+        .join(
+            delta_deletion_vectors.lazy().with_columns(
+                pl.col("filepath")
+                .str.replace("^lakefs://", "s3://")
+                .str.strip_prefix(file_prefix)
+            ),
+            left_on="path",
+            right_on="filepath",
+            how="left",
+            maintain_order="left",
+        )
+        .select(["selection_vector"])
+        .collect()
+    )
+
+    assert joined_df.height == len(requested_paths)
+
+    return joined_df
+
+
+def _fetch_deletion_vectors(table: DeltaTable) -> pl.DataFrame | None:
+    """
+    Fetch the deletion_vectors, mapping file_uri to "deletion_vector".
+
+    Schema: {"filepath": pl.String, "selection_vector": pl.List(pl.Boolean)}
+
+    The selection_vector from deltalake is a keep-mask (True = keep), so
+    the more accurate term would be "selection_vector".
+
+    Returns None if the table has no deletion vectors.
+    """
+    import polars._utils.logging
+
+    verbose = polars._utils.logging.verbose()
+
+    dv_table = pl.DataFrame(table.deletion_vectors())
+
+    if verbose and dv_table.height > 0:
+        eprint(f"DeltaDataset: has deletion_vectors, file_count: {len(dv_table)}")
+
+    if len(dv_table) == 0:
+        return None
+
+    return dv_table

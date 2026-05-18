@@ -25,9 +25,8 @@ pub struct PlPath {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-// TODO: Derive for next release.
-// #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-// #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 /// Reference-counted [`PlPath`].
 ///
 /// # Windows paths invariant
@@ -163,8 +162,14 @@ impl PlPath {
     pub fn join(&self, other: impl AsRef<str>) -> PlRefPath {
         let other = other.as_ref();
 
-        if CloudScheme::from_path(other).is_some() {
+        if CloudScheme::from_path(other).is_some()
+            || other.starts_with('/')
+            || other.starts_with('\\')
+        {
             PlRefPath::new(other)
+        } else if CloudScheme::from_path(self.as_str()).is_some() {
+            let lhs = self.as_str().trim_end_matches('/');
+            PlRefPath::new(format!("{lhs}/{other}"))
         } else {
             PlRefPath::try_from_pathbuf(self.as_std_path().join(other)).unwrap()
         }
@@ -372,8 +377,6 @@ macro_rules! impl_cloud_scheme {
     };
 }
 
-/// This must be at least the length of the longest scheme listed below.
-const MAX_SCHEME_LEN: usize = 8;
 impl_cloud_scheme! {
     Abfs = "abfs",
     Abfss = "abfss",
@@ -392,17 +395,13 @@ impl_cloud_scheme! {
 }
 
 impl CloudScheme {
-    pub fn from_path(mut path: &str) -> Option<Self> {
+    pub fn from_path(path: &str) -> Option<Self> {
         if let Some(stripped) = path.strip_prefix("file:") {
             return Some(if stripped.starts_with("//") {
                 Self::File
             } else {
                 Self::FileNoHostname
             });
-        }
-
-        if path.len() > MAX_SCHEME_LEN {
-            path = &path[..MAX_SCHEME_LEN]
         }
 
         Self::from_scheme_str(&path[..path.find("://")?])
@@ -447,50 +446,6 @@ pub fn format_file_uri(absolute_local_path: &str) -> PlRefPath {
         }
     } else {
         PlRefPath::new(format_pl_refstr!("file://{absolute_local_path}"))
-    }
-}
-
-#[cfg(feature = "serde")]
-mod _serde_impl {
-    use serde::{Deserialize, Serialize};
-
-    use super::super::plpath::PlPath as LegacyPlPath;
-    use crate::pl_path::PlRefPath;
-
-    impl Serialize for PlRefPath {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: serde::Serializer,
-        {
-            LegacyPlPath::serialize(&self.clone().into(), serializer)
-        }
-    }
-
-    impl<'de> Deserialize<'de> for PlRefPath {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: serde::Deserializer<'de>,
-        {
-            LegacyPlPath::deserialize(deserializer).map(Into::into)
-        }
-    }
-}
-
-#[cfg(feature = "dsl-schema")]
-use super::plpath::PlPath as LegacyPlPath;
-
-#[cfg(feature = "dsl-schema")]
-impl schemars::JsonSchema for PlRefPath {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        LegacyPlPath::schema_name()
-    }
-
-    fn schema_id() -> std::borrow::Cow<'static, str> {
-        LegacyPlPath::schema_id()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        LegacyPlPath::json_schema(generator)
     }
 }
 
@@ -582,6 +537,20 @@ mod tests {
         assert_eq!(
             PlRefPath::new("s3://.../...").join("az://.../...").as_str(),
             "az://.../..."
+        );
+
+        assert_eq!(
+            PlRefPath::new("s3://.../...")
+                .join("a=1/b=1/00000000.parquet")
+                .as_str(),
+            "s3://.../.../a=1/b=1/00000000.parquet"
+        );
+
+        assert_eq!(
+            PlRefPath::new("s3://.../...//")
+                .join("a=1/b=1/00000000.parquet")
+                .as_str(),
+            "s3://.../.../a=1/b=1/00000000.parquet"
         );
 
         fn _assert_plpath_join(base: &str, added: &str, expect: &str) {

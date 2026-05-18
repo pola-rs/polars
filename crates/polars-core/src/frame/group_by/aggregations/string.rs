@@ -4,7 +4,7 @@ pub fn _agg_helper_idx_bin<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &'a IdxVec)) -> Option<&'a [u8]> + Send + Sync,
 {
-    let ca: BinaryChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BinaryChunked = RAYON.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -12,23 +12,7 @@ pub fn _agg_helper_slice_bin<'a, F>(groups: &'a [[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<&'a [u8]> + Send + Sync,
 {
-    let ca: BinaryChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
-    ca.into_series()
-}
-
-pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
-where
-    F: Fn((IdxSize, &'a IdxVec)) -> Option<IdxSize> + Send + Sync,
-{
-    let ca: IdxCa = POOL.install(|| groups.into_par_iter().map(f).collect());
-    ca.into_series()
-}
-
-pub fn _agg_helper_slice_idx<F>(groups: &[[IdxSize; 2]], f: F) -> Series
-where
-    F: Fn([IdxSize; 2]) -> Option<IdxSize> + Send + Sync,
-{
-    let ca: IdxCa = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BinaryChunked = RAYON.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
@@ -177,28 +161,25 @@ impl BinaryChunked {
         let arr = ca_self.downcast_as_array();
         let no_nulls = arr.null_count() == 0;
         match groups {
-            GroupsType::Idx(groups) => {
-                _agg_helper_idx_idx(groups, |(_, idx)| {
-                    debug_assert!(idx.len() <= ca_self.len());
+            GroupsType::Idx(groups) => _agg_helper_idx_idx(groups, |(first, idx)| {
+                debug_assert!(idx.len() <= ca_self.len());
 
-                    if idx.is_empty() {
-                        None
-                    } else if idx.len() == 1 {
-                        // arg within group
-                        if no_nulls { Some(0) } else { None }
-                    } else if no_nulls {
-                        take_agg_bin_iter_unchecked_no_null_arg(
-                            arr,
-                            indexes_to_usizes(idx),
-                            |acc, cur| if cur.1 < acc.1 { cur } else { acc },
-                        )
-                    } else {
-                        take_agg_bin_iter_unchecked_arg(arr, indexes_to_usizes(idx), |acc, cur| {
-                            if cur.1 < acc.1 { cur } else { acc }
-                        })
-                    }
-                })
-            },
+                if idx.is_empty() {
+                    None
+                } else if idx.len() == 1 {
+                    arr.is_valid(first as usize).then_some(0)
+                } else if no_nulls {
+                    take_agg_bin_iter_unchecked_no_null_arg(
+                        arr,
+                        indexes_to_usizes(idx),
+                        |acc, cur| if cur.1 < acc.1 { cur } else { acc },
+                    )
+                } else {
+                    take_agg_bin_iter_unchecked_arg(arr, indexes_to_usizes(idx), |acc, cur| {
+                        if cur.1 < acc.1 { cur } else { acc }
+                    })
+                }
+            }),
 
             GroupsType::Slice {
                 groups: groups_slice,
@@ -207,13 +188,7 @@ impl BinaryChunked {
                 debug_assert!(len <= self.len() as IdxSize);
                 match len {
                     0 => None,
-                    1 => {
-                        if no_nulls {
-                            Some(0)
-                        } else {
-                            None
-                        }
-                    },
+                    1 => arr.is_valid(first as usize).then_some(0),
                     _ => {
                         let arr_group = _slice_from_offsets(&ca_self, first, len);
                         arr_group.arg_min_binary().map(|i| i as IdxSize)
@@ -248,11 +223,7 @@ impl BinaryChunked {
                 if idx.is_empty() {
                     None
                 } else if idx.len() == 1 {
-                    if no_nulls || arr.is_valid(first as usize) {
-                        Some(first)
-                    } else {
-                        None
-                    }
+                    arr.is_valid(first as usize).then_some(0)
                 } else if no_nulls {
                     take_agg_bin_iter_unchecked_no_null_arg(
                         arr,
@@ -273,13 +244,7 @@ impl BinaryChunked {
                 debug_assert!(len <= self.len() as IdxSize);
                 match len {
                     0 => None,
-                    1 => {
-                        if no_nulls {
-                            Some(0)
-                        } else {
-                            None
-                        }
-                    },
+                    1 => arr.is_valid(first as usize).then_some(0),
                     _ => {
                         let arr_group = _slice_from_offsets(&ca_self, first, len);
                         arr_group.arg_max_binary().map(|i| i as IdxSize)

@@ -9,8 +9,10 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
+polars-async = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true, features = ["gather"] }
+polars-config = { workspace = true }
 polars-dtype = { workspace = true }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
@@ -42,6 +44,7 @@ schemars = { workspace = true, optional = true, features = ["uuid1"] }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
+tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"] }
 uuid = { workspace = true }
 xxhash-rust = { workspace = true }
 
@@ -141,6 +144,7 @@ serde = [
   "dep:serde",
   "bitflags/serde",
   "polars-buffer/serde",
+  "polars-config/serde",
   "polars-schema/serde",
   "polars-utils/serde",
   "polars-compute/serde",

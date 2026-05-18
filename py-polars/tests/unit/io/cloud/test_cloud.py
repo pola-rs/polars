@@ -4,11 +4,15 @@ import contextlib
 import subprocess
 import sys
 from functools import partial
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.io.cloud._utils import _is_aws_cloud
+
+if TYPE_CHECKING:
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.slow
@@ -88,11 +92,12 @@ def test_is_aws_cloud() -> None:
     )
 
 
+@pytest.mark.slow
 def test_storage_options_retry_config(
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
     capture = subprocess.check_output(
         [

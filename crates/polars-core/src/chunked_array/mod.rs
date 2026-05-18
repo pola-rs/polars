@@ -5,6 +5,7 @@ use std::sync::Arc;
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::compute::concatenate::concatenate_unchecked;
+use arrow::compute::utils::combine_validities_and;
 use polars_compute::filter::filter_with_bitmap;
 
 use crate::prelude::{ChunkTakeUnchecked, *};
@@ -57,9 +58,6 @@ pub use struct_::StructChunked;
 use self::flags::{StatisticsFlags, StatisticsFlagsIM};
 use crate::series::IsSorted;
 use crate::utils::{first_non_null, first_null, last_non_null};
-
-#[cfg(not(feature = "dtype-categorical"))]
-pub struct RevMapping {}
 
 pub type ChunkLenIter<'a> = std::iter::Map<std::slice::Iter<'a, ArrayRef>, fn(&ArrayRef) -> usize>;
 
@@ -600,15 +598,27 @@ where
         unsafe { arr.get_unchecked(arr.len() - 1) }
     }
 
-    pub fn set_validity(&mut self, validity: &Bitmap) {
-        assert_eq!(self.len(), validity.len());
+    pub fn set_validity(&mut self, validity: Option<Bitmap>) {
+        assert!(
+            !self.dtype().is_struct(),
+            "set_outer_validity should be used for struct types"
+        );
+        if let Some(v) = &validity {
+            assert_eq!(self.len(), v.len());
+        }
         let mut i = 0;
         for chunk in unsafe { self.chunks_mut() } {
-            *chunk = chunk.with_validity(Some(validity.clone().sliced(i, chunk.len())));
+            *chunk =
+                chunk.with_validity(validity.as_ref().map(|v| v.clone().sliced(i, chunk.len())));
             i += chunk.len();
         }
-        self.null_count = validity.unset_bits();
+        self.null_count = validity.map(|v| v.unset_bits()).unwrap_or(0);
         self.set_fast_explode_list(false);
+    }
+
+    pub fn with_validity(mut self, validity: Option<Bitmap>) -> Self {
+        self.set_validity(validity);
+        self
     }
 }
 
@@ -621,7 +631,6 @@ where
     pub fn deposit(&self, validity: &Bitmap) -> Self {
         let set_bits = validity.set_bits();
 
-        assert_eq!(self.null_count(), 0);
         assert_eq!(self.len(), set_bits);
 
         if set_bits == validity.len() {
@@ -645,7 +654,10 @@ where
         }));
 
         let mut ca = unsafe { ChunkTakeUnchecked::take_unchecked(self, &gather_idxs) };
-        ca.set_validity(validity);
+        ca.set_validity(combine_validities_and(
+            Some(validity),
+            ca.rechunk_validity().as_ref(),
+        ));
         ca
     }
 }
@@ -733,7 +745,7 @@ impl ArrayChunked {
         length: usize,
     ) -> Self {
         let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
-        let arrow_dtype = dtype.to_arrow(CompatLevel::newest());
+        let arrow_dtype = dtype.to_arrow(CompatLevel::newest()).to_storage_recursive();
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
             use arrow::array::builder::{ArrayBuilder, make_builder};

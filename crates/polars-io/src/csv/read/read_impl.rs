@@ -2,8 +2,8 @@ use std::fmt;
 use std::sync::Mutex;
 
 use polars_buffer::{Buffer, SharedStorage};
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
 #[cfg(feature = "polars-time")]
 use polars_time::prelude::*;
@@ -18,7 +18,7 @@ use super::reader::prepare_csv_schema;
 #[cfg(feature = "decompress")]
 use super::utils::decompress;
 use crate::RowIndex;
-use crate::csv::read::{CsvReadOptions, read_until_start_and_infer_schema};
+use crate::csv::read::{CsvReadOptions, read_until_start_and_infer_schema_from_compressed_reader};
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 use crate::utils::compression::{CompressedReader, SupportedCompression};
@@ -66,7 +66,7 @@ pub fn cast_columns(
     };
 
     if parallel {
-        let cols = POOL.install(|| {
+        let cols = RAYON.install(|| {
             df.columns()
                 .into_par_iter()
                 .map(|s| {
@@ -216,8 +216,12 @@ impl<'a> CoreReader<'a> {
         };
 
         // Since this is also used to skip to the start, always call it.
-        let (inferred_schema, leftover) =
-            read_until_start_and_infer_schema(&read_options, None, None, &mut compressed_reader)?;
+        let (inferred_schema, leftover) = read_until_start_and_infer_schema_from_compressed_reader(
+            &read_options,
+            None,
+            None,
+            &mut compressed_reader,
+        )?;
 
         let mut schema = match schema {
             Some(schema) => schema,
@@ -346,7 +350,9 @@ impl<'a> CoreReader<'a> {
             return Ok(df);
         }
 
-        let n_threads = self.n_threads.unwrap_or_else(|| POOL.current_num_threads());
+        let n_threads = self
+            .n_threads
+            .unwrap_or_else(|| RAYON.current_num_threads());
 
         // This is chosen by benchmarking on ny city trip csv dataset.
         // We want small enough chunks such that threads start working as soon as possible
@@ -392,7 +398,7 @@ impl<'a> CoreReader<'a> {
         let check_utf8 = matches!(self.parse_options.encoding, CsvEncoding::Utf8)
             && self.schema.iter_fields().any(|f| f.dtype().is_string());
 
-        POOL.scope(|s| {
+        RAYON.scope(|s| {
             // Pass 1: identify chunks for parallel processing (line parsing).
             loop {
                 let b = unsafe { bytes.get_unchecked(total_offset..) };
@@ -462,9 +468,9 @@ impl<'a> CoreReader<'a> {
                                         b.len()
                                     );
                                     if slf.ignore_errors {
-                                        polars_warn!("{}", msg);
+                                        polars_warn!("{msg}");
                                     } else {
-                                        polars_bail!(ComputeError: msg);
+                                        polars_bail!(ComputeError: msg)
                                     }
                                 }
 

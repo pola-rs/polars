@@ -4,7 +4,10 @@ from typing import IO
 import pytest
 
 import polars as pl
+from polars._typing import ConcatMethod
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal
+from tests.conftest import PlMonkeyPatch
 
 
 @pytest.mark.may_fail_cloud  # reason: @serialize-stack-overflow
@@ -399,6 +402,13 @@ def test_concat_with_empty_dataframes() -> None:
     assert_frame_equal(result2, df_with_data)
 
 
+def test_concat_with_empty_dataframes_strict_25725() -> None:
+    df = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    result = pl.concat([df, df.select([])], how="horizontal", strict=True)
+    expected = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
+    assert_frame_equal(result, expected)
+
+
 def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
     df = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
     result = pl.concat([df, df.select([])], how="horizontal", strict=False)
@@ -412,3 +422,92 @@ def test_concat_with_empty_dataframes_nonstrict_25727() -> None:
         schema={"c": pl.Int64, "a": pl.Int64, "b": pl.String},
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "how",
+    [
+        "align",
+        "align_full",
+        "align_inner",
+        "align_left",
+        "align_right",
+    ],
+)
+@pytest.mark.parametrize(
+    "n_dfs",
+    [3, 4, 5, 6],  # balanced tree +/- 1
+)
+def test_concat_align_associativity_26788(how: ConcatMethod, n_dfs: int) -> None:
+    # create every possible key combination over `n_dfs` dataframes
+    n_dfs = n_dfs
+    keys = [
+        [x for x in range(1 << n_dfs) if not (x >> (n_dfs - 1 - i) & 1)]
+        for i in range(n_dfs)
+    ]
+    dfs = [
+        pl.DataFrame({"k": key})
+        .with_columns((i * 100 + pl.col.k).alias(f"v_{i}"))
+        .lazy()
+        for i, key in enumerate(keys)
+    ]
+
+    chained_from_left = dfs[0]
+    for df in dfs[1:]:
+        chained_from_left = pl.concat([chained_from_left, df], how=how)
+
+    full = pl.concat(dfs, how=how)
+    assert_frame_equal(chained_from_left, full)
+
+
+def test_concat_horizontal_zero_width_height_mismatch_26876() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame(height=5),
+            pl.LazyFrame(height=3),
+        ],
+        how="horizontal",
+        strict=True,
+    )
+
+    with pytest.raises(ShapeError):
+        q.collect()
+
+
+def test_concat_horizontal_lazy_strict_raises_shape_error_27415(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    hconcat = pl.concat(
+        [
+            pl.LazyFrame({"x": [0, 1]}),
+            pl.LazyFrame({"y": [0, 1, 2]}),
+            pl.LazyFrame({"z": [0, -1, -2]}),
+        ],
+        how="horizontal",
+        strict=True,
+    )
+
+    q = hconcat.select("y")
+
+    with pytest.raises(ShapeError):
+        q.collect()
+
+    plmonkeypatch.setenv("POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS", "1")
+    q = hconcat.select("y")
+    plan = q.explain()
+
+    assert "HCONCAT" not in plan
+    assert_frame_equal(q.collect(), pl.DataFrame({"y": [0, 1, 2]}))
+
+    q = hconcat.select("z", "y")
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "z": [0, -1, -2],
+                "y": [0, 1, 2],
+            }
+        ),
+    )

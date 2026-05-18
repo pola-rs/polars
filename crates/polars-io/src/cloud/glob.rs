@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use futures::TryStreamExt;
 use object_store::path::Path;
-use polars_core::error::to_compute_err;
 use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
@@ -236,22 +235,16 @@ pub async fn glob(
     let path = Some(&path);
 
     let mut locations = store
-        .try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
-
-            async {
-                let store = st;
-                store
-                    .list(path)
-                    .try_filter_map(|x| async move {
-                        let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
-                            .then_some(x.location);
-                        Ok(out)
-                    })
-                    .try_collect::<Vec<_>>()
-                    .await
-                    .map_err(to_compute_err)
-            }
+        .exec_with_rebuild_retry_on_err(|store| async move {
+            store
+                .list(path)
+                .try_filter_map(|x| async move {
+                    let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
+                        .then_some(x.location);
+                    Ok(out)
+                })
+                .try_collect::<Vec<_>>()
+                .await
         })
         .await?;
 

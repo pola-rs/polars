@@ -7,6 +7,7 @@ use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::total_ord::TotalOrd;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -15,20 +16,20 @@ use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 
 #[inline]
-fn ge_allow_eq<T: PartialOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
-    match l.partial_cmp(r) {
-        Some(Ordering::Equal) => allow_eq,
-        Some(Ordering::Greater) => true,
-        _ => false,
+fn ge_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
+    match l.tot_cmp(r) {
+        Ordering::Equal => allow_eq,
+        Ordering::Greater => true,
+        Ordering::Less => false,
     }
 }
 
 #[inline]
-fn lt_allow_eq<T: PartialOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
-    match l.partial_cmp(r) {
-        Some(Ordering::Equal) => allow_eq,
-        Some(Ordering::Less) => true,
-        _ => false,
+fn lt_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
+    match l.tot_cmp(r) {
+        Ordering::Equal => allow_eq,
+        Ordering::Less => true,
+        Ordering::Greater => false,
     }
 }
 
@@ -48,7 +49,7 @@ struct AsofJoinForwardState {
     allow_eq: bool,
 }
 
-impl<T: PartialOrd> AsofJoinState<T> for AsofJoinForwardState {
+impl<T: TotalOrd> AsofJoinState<T> for AsofJoinForwardState {
     fn new(allow_eq: bool) -> Self {
         AsofJoinForwardState {
             scan_offset: Default::default(),
@@ -81,7 +82,7 @@ struct AsofJoinBackwardState {
     allow_eq: bool,
 }
 
-impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
+impl<T: TotalOrd> AsofJoinState<T> for AsofJoinBackwardState {
     fn new(allow_eq: bool) -> Self {
         AsofJoinBackwardState {
             scan_offset: Default::default(),
@@ -217,7 +218,7 @@ pub struct AsOfOptions {
     pub check_sortedness: bool,
 }
 
-fn check_asof_columns(
+pub fn _check_asof_columns(
     a: &Series,
     b: &Series,
     has_tolerance: bool,
@@ -286,7 +287,7 @@ pub trait AsofJoin: IntoDf {
     ) -> PolarsResult<DataFrame> {
         let self_df = self.to_df();
 
-        check_asof_columns(
+        _check_asof_columns(
             left_key,
             right_key,
             tolerance.is_some(),
@@ -296,67 +297,9 @@ pub trait AsofJoin: IntoDf {
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 
-        let mut take_idx = match left_key.dtype() {
-            #[cfg(feature = "dtype-i128")]
-            DataType::Int128 => {
-                let ca = left_key.i128().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            DataType::Int64 => {
-                let ca = left_key.i64().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            DataType::Int32 => {
-                let ca = left_key.i32().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            #[cfg(feature = "dtype-u128")]
-            DataType::UInt128 => {
-                let ca = left_key.u128().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            DataType::UInt64 => {
-                let ca = left_key.u64().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            DataType::UInt32 => {
-                let ca = left_key.u32().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            #[cfg(feature = "dtype-f16")]
-            DataType::Float16 => {
-                let ca = left_key.f16().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            DataType::Float32 => {
-                let ca = left_key.f32().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            DataType::Float64 => {
-                let ca = left_key.f64().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            DataType::Boolean => {
-                let ca = left_key.bool().unwrap();
-                join_asof::<BooleanType>(ca, &right_key, strategy, allow_eq)
-            },
-            DataType::Binary => {
-                let ca = left_key.binary().unwrap();
-                join_asof::<BinaryType>(ca, &right_key, strategy, allow_eq)
-            },
-            DataType::String => {
-                let ca = left_key.str().unwrap();
-                let right_binary = right_key.cast(&DataType::Binary).unwrap();
-                join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy, allow_eq)
-            },
-            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
-                let left_key = left_key.cast(&DataType::Int32).unwrap();
-                let right_key = right_key.cast(&DataType::Int32).unwrap();
-                let ca = left_key.i32().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
-            },
-            dt => polars_bail!(opq = asof_join, dt),
-        }?;
+        let mut take_idx =
+            _join_asof_dispatch(&left_key, &right_key, strategy, tolerance, allow_eq)?;
+
         try_raise_keyboard_interrupt();
 
         // Drop right join column.
@@ -377,6 +320,77 @@ pub trait AsofJoin: IntoDf {
 
         _finish_join(left, right_df, suffix)
     }
+}
+
+pub fn _join_asof_dispatch(
+    left_key: &Series,
+    right_key: &Series,
+    strategy: AsofStrategy,
+    tolerance: Option<AnyValue<'static>>,
+    allow_eq: bool,
+) -> PolarsResult<IdxCa> {
+    let take_idx = match left_key.dtype() {
+        DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
+            let left_key = left_key.cast(&DataType::Int32).unwrap();
+            let right_key = right_key.cast(&DataType::Int32).unwrap();
+            let ca = left_key.i32().unwrap();
+            join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
+        },
+        DataType::Int32 => {
+            let ca = left_key.i32().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        DataType::Int64 => {
+            let ca = left_key.i64().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => {
+            let ca = left_key.i128().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        DataType::UInt32 => {
+            let ca = left_key.u32().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        DataType::UInt64 => {
+            let ca = left_key.u64().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => {
+            let ca = left_key.u128().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = left_key.f16().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        DataType::Float32 => {
+            let ca = left_key.f32().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        DataType::Float64 => {
+            let ca = left_key.f64().unwrap();
+            join_asof_numeric(ca, right_key, strategy, tolerance, allow_eq)
+        },
+        DataType::Boolean => {
+            let ca = left_key.bool().unwrap();
+            join_asof::<BooleanType>(ca, right_key, strategy, allow_eq)
+        },
+        DataType::Binary => {
+            let ca = left_key.binary().unwrap();
+            join_asof::<BinaryType>(ca, right_key, strategy, allow_eq)
+        },
+        DataType::String => {
+            let ca = left_key.str().unwrap();
+            let right_binary = right_key.cast(&DataType::Binary).unwrap();
+            join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy, allow_eq)
+        },
+        dt => polars_bail!(opq = asof_join, dt),
+    }?;
+    Ok(take_idx)
 }
 
 impl AsofJoin for DataFrame {}

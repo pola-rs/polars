@@ -10,9 +10,9 @@ from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
+    NO_DEFAULT,
     find_stacklevel,
     issue_warning,
-    no_default,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
@@ -2646,7 +2646,7 @@ class ExprStringNameSpace:
     def replace_many(
         self,
         patterns: IntoExpr | Mapping[str, str],
-        replace_with: IntoExpr | NoDefault = no_default,
+        replace_with: IntoExpr | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
         leftmost: bool = False,
@@ -2826,7 +2826,7 @@ class ExprStringNameSpace:
         │ abcd     ┆ z        │
         └──────────┴──────────┘
         """  # noqa: W505
-        if replace_with is no_default:
+        if replace_with is NO_DEFAULT:
             if not isinstance(patterns, Mapping):
                 msg = "`replace_with` argument is required if `patterns` argument is not a Mapping type"
                 raise TypeError(msg)
@@ -3189,11 +3189,27 @@ class ExprStringNameSpace:
 
 
 def _validate_format_argument(format: str | None) -> None:
-    if format is not None and ".%f" in format:
-        message = (
-            "Detected the pattern `.%f` in the chrono format string."
+    if format is None:
+        return
+
+    arg_info_list = [
+        (
+            ".%f",
             " This pattern should not be used to parse values after a decimal point."
-            " Use `%.f` instead."
-            " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
-        )
-        warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())
+            " Use `%.f` instead.",
+        ),
+        (
+            "%f",
+            " This pattern should not be used to parse microseconds."
+            " Instead, use e.g. `%3f` for decimal fraction of a second with a fixed length of 3.",
+        ),
+    ]
+
+    for arg_info in arg_info_list:
+        if arg_info[0] in format:
+            message = (
+                f"Detected the pattern `{arg_info[0]}` in the chrono format string."
+                f"{arg_info[1]}"
+                " See the full specification: https://docs.rs/chrono/latest/chrono/format/strftime"
+            )
+            warnings.warn(message, ChronoFormatWarning, stacklevel=find_stacklevel())

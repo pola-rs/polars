@@ -459,7 +459,7 @@ impl StructChunked {
         self.fields_as_series()
             .into_iter()
             .find(|s| s.name().as_str() == name)
-            .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))
+            .ok_or_else(|| polars_err!(StructFieldNotFound: "{name}"))
     }
     pub(crate) fn set_outer_validity(&mut self, validity: Option<Bitmap>) {
         assert_eq!(self.chunks().len(), 1);

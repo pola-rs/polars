@@ -1,3 +1,5 @@
+#[cfg(feature = "pivot")]
+use polars_core::frame::PivotColumnNaming;
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 use serde::{Deserialize, Serialize};
@@ -74,6 +76,11 @@ pub(crate) enum SerializableDslPlanNode {
         predicates: Vec<Expr>,
         options: Arc<JoinOptions>,
     },
+    Gather {
+        input: DslPlanKey,
+        idxs: DslPlanKey,
+        null_on_oob: bool,
+    },
     HStack {
         input: DslPlanKey,
         exprs: Vec<Expr>,
@@ -99,6 +106,7 @@ pub(crate) enum SerializableDslPlanNode {
         agg: Expr,
         maintain_order: bool,
         separator: PlSmallStr,
+        column_naming: PivotColumnNaming,
     },
     Distinct {
         input: DslPlanKey,
@@ -143,6 +151,7 @@ pub(crate) enum SerializableDslPlanNode {
         input_left: DslPlanKey,
         input_right: DslPlanKey,
         key: PlSmallStr,
+        maintain_order: bool,
     },
     IR {
         dsl: DslPlanKey,
@@ -177,7 +186,8 @@ fn convert_dsl_plan_to_serializable_plan(
     plan: &DslPlan,
     arenas: &mut SerializeArenas,
 ) -> SerializableDslPlanNode {
-    use {DslPlan as DP, SerializableDslPlanNode as SP};
+    use DslPlan as DP;
+    use SerializableDslPlanNode as SP;
 
     match plan {
         #[cfg(feature = "python")]
@@ -247,6 +257,15 @@ fn convert_dsl_plan_to_serializable_plan(
             predicates: predicates.clone(),
             options: options.clone(),
         },
+        DP::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => SP::Gather {
+            input: dsl_plan_key(input, arenas),
+            idxs: dsl_plan_key(idxs, arenas),
+            null_on_oob: *null_on_oob,
+        },
         DP::HStack {
             input,
             exprs,
@@ -284,6 +303,7 @@ fn convert_dsl_plan_to_serializable_plan(
             agg,
             maintain_order,
             separator,
+            column_naming,
         } => SP::Pivot {
             input: dsl_plan_key(input, arenas),
             on: on.clone(),
@@ -293,6 +313,7 @@ fn convert_dsl_plan_to_serializable_plan(
             agg: agg.clone(),
             maintain_order: *maintain_order,
             separator: separator.clone(),
+            column_naming: *column_naming,
         },
         DP::Distinct { input, options } => SP::Distinct {
             input: dsl_plan_key(input, arenas),
@@ -354,10 +375,12 @@ fn convert_dsl_plan_to_serializable_plan(
             input_left,
             input_right,
             key,
+            maintain_order,
         } => SP::MergeSorted {
             input_left: dsl_plan_key(input_left, arenas),
             input_right: dsl_plan_key(input_right, arenas),
             key: key.clone(),
+            maintain_order: *maintain_order,
         },
         DP::IR {
             dsl,
@@ -420,7 +443,8 @@ fn try_convert_serializable_plan_to_dsl_plan(
     ser_dsl_plan: &SerializableDslPlan,
     arenas: &mut DeserializeArenas,
 ) -> Result<DslPlan, PolarsError> {
-    use {DslPlan as DP, SerializableDslPlanNode as SP};
+    use DslPlan as DP;
+    use SerializableDslPlanNode as SP;
 
     match node {
         #[cfg(feature = "python")]
@@ -490,6 +514,15 @@ fn try_convert_serializable_plan_to_dsl_plan(
             predicates: predicates.clone(),
             options: options.clone(),
         }),
+        SP::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => Ok(DP::Gather {
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
+            idxs: get_dsl_plan(*idxs, ser_dsl_plan, arenas)?,
+            null_on_oob: *null_on_oob,
+        }),
         SP::HStack {
             input,
             exprs,
@@ -529,6 +562,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             agg,
             maintain_order,
             separator,
+            column_naming,
         } => Ok(DP::Pivot {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
             on: on.clone(),
@@ -538,6 +572,7 @@ fn try_convert_serializable_plan_to_dsl_plan(
             agg: agg.clone(),
             maintain_order: *maintain_order,
             separator: separator.clone(),
+            column_naming: *column_naming,
         }),
         SP::Distinct { input, options } => Ok(DP::Distinct {
             input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
@@ -599,10 +634,12 @@ fn try_convert_serializable_plan_to_dsl_plan(
             input_left,
             input_right,
             key,
+            maintain_order,
         } => Ok(DP::MergeSorted {
             input_left: get_dsl_plan(*input_left, ser_dsl_plan, arenas)?,
             input_right: get_dsl_plan(*input_right, ser_dsl_plan, arenas)?,
             key: key.clone(),
+            maintain_order: *maintain_order,
         }),
         SP::IR {
             dsl: dsl_key,

@@ -6,7 +6,7 @@
 # BUILD
 # -----
 
-maturin
+maturin<=1.12.4  # https://github.com/PyO3/maturin/issues/3106
 # extra dependency for maturin (linux-only)
 patchelf; platform_system == 'Linux'
 pip
@@ -37,14 +37,15 @@ boto3
 cloudpickle
 fsspec
 pyiceberg>=0.7.1; python_version < '3.13'
-s3fs
+pyiceberg-core!=0.9.0  # 0.9.0 is missing a wheel
+s3fs>=2026.2.0
 # Spreadsheet
 fastexcel>=0.11.5
 openpyxl
 xlsx2csv
 xlsxwriter>=3.2.9
 # Other I/O
-deltalake>=1.1.4
+deltalake>=1.5.1
 # Csv
 zstandard
 # Plotting
@@ -64,6 +65,7 @@ orjson
 # TOOLING
 # -------
 
+tomlkit
 pytest==8.3.2
 pytest-codspeed==3.2.0
 pytest-cov==6.0.0

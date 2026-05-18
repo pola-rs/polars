@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use polars_async::executor;
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::ParallelStrategy;
@@ -9,7 +11,6 @@ use polars_utils::IdxSize;
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetReadImpl};
-use crate::async_executor;
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
@@ -22,8 +23,6 @@ impl ParquetReadImpl {
     #[allow(clippy::type_complexity)]
     pub(super) fn init_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
-        let io_runtime = polars_io::pl_async::get_runtime();
-
         let use_statistics = self.options.use_statistics;
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
@@ -31,7 +30,7 @@ impl ParquetReadImpl {
         if let Some((_, 0)) = self.normalized_pre_slice {
             return (
                 morsel_rx,
-                tokio_handle_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
+                tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(std::future::ready(Ok(())))),
             );
         }
 
@@ -65,9 +64,8 @@ impl ParquetReadImpl {
         let rg_prefetch_prev_all_spawned = Option::take(&mut self.rg_prefetch_prev_all_spawned);
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
-        let io_metrics = self.io_metrics.clone();
 
-        let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
                 bigidx,
@@ -141,7 +139,6 @@ impl ParquetReadImpl {
                 memory_prefetch_func,
                 metadata,
                 byte_source,
-                io_metrics,
                 row_group_slice,
                 row_group_mask,
                 row_offset,
@@ -170,11 +167,11 @@ impl ParquetReadImpl {
 
         // Decode loop (spawns decodes on the computational executor).
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
-        let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
                 let row_group_data = prefetch_task.await.unwrap()?;
                 let row_group_decoder = row_group_decoder.clone();
-                let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                let decode_fut = executor::spawn(TaskPriority::High, async move {
                     row_group_decoder.row_group_data_to_df(row_group_data).await
                 });
                 if decode_send.send((decode_fut, permit)).await.is_err() {
@@ -186,9 +183,12 @@ impl ParquetReadImpl {
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
-        let last_morsel_min_split = self.config.num_pipelines;
+        //
+        // `last_morsel_pipelines` is precomputed by the multi-scan layer so the split budget
+        // is shared across files in the scan.
+        let last_morsel_pipelines = self.config.last_morsel_pipelines;
         let disable_morsel_split = self.disable_morsel_split;
-        let distribute_task = async_executor::spawn(TaskPriority::High, async move {
+        let distribute_task = executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -245,7 +245,7 @@ impl ParquetReadImpl {
                     &df,
                     ideal_morsel_size,
                     next.is_none(),
-                    last_morsel_min_split,
+                    last_morsel_pipelines,
                 ) {
                     if morsel_sender
                         .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
@@ -261,7 +261,7 @@ impl ParquetReadImpl {
             PolarsResult::Ok(())
         });
 
-        let join_task = io_runtime.spawn(async move {
+        let join_task = ASYNC.spawn(async move {
             prefetch_task.await.unwrap()?;
             decode_task.await.unwrap()?;
             distribute_task.await?;
@@ -367,7 +367,7 @@ pub(crate) fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
     last_morsel: bool,
-    last_morsel_min_split: usize,
+    last_morsel_pipelines: usize,
 ) -> impl Iterator<Item = DataFrame> + '_ {
     let mut n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
         // num_rows > (1.5 * ideal_morsel_size)
@@ -377,7 +377,7 @@ pub(crate) fn split_to_morsels(
     };
 
     if last_morsel {
-        n_morsels = n_morsels.max(last_morsel_min_split);
+        n_morsels = n_morsels.max(last_morsel_pipelines);
     }
 
     let rows_per_morsel = df.height().div_ceil(n_morsels).max(1);

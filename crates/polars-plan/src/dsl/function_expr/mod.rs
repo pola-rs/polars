@@ -149,6 +149,9 @@ pub enum FunctionExpr {
     Shift,
     DropNans,
     DropNulls,
+    Quantile {
+        method: QuantileMethod,
+    },
     #[cfg(feature = "mode")]
     Mode {
         maintain_order: bool,
@@ -168,6 +171,8 @@ pub enum FunctionExpr {
         descending: bool,
         nulls_last: bool,
     },
+    MinBy,
+    MaxBy,
     Product,
     #[cfg(feature = "rank")]
     Rank {
@@ -253,6 +258,10 @@ pub enum FunctionExpr {
         digits: i32,
     },
     #[cfg(feature = "round_series")]
+    Truncate {
+        decimals: u32,
+    },
+    #[cfg(feature = "round_series")]
     Floor,
     #[cfg(feature = "round_series")]
     Ceil,
@@ -292,7 +301,7 @@ pub enum FunctionExpr {
         method: random::RandomMethod,
         seed: Option<u64>,
     },
-    SetSortedFlag(IsSorted),
+    SetSortedFlag(AExprSorted),
     #[cfg(feature = "ffi_plugin")]
     /// Creating this node is unsafe
     /// This will lead to calls over FFI.
@@ -365,7 +374,7 @@ pub enum FunctionExpr {
         offset: usize,
     },
     #[cfg(feature = "reinterpret")]
-    Reinterpret(bool),
+    Reinterpret(Option<bool>, Option<DataType>),
     ExtendConstant,
 
     RowEncode(RowEncodingVariant),
@@ -474,7 +483,7 @@ impl Hash for FunctionExpr {
                 ignore_nulls.hash(state)
             },
             MaxHorizontal | MinHorizontal | DropNans | DropNulls | Reverse | ArgUnique | ArgMin
-            | ArgMax | Product | Shift | ShiftAndFill | Rechunk => {},
+            | ArgMax | Product | Shift | ShiftAndFill | Rechunk | MinBy | MaxBy => {},
             Append { upcast } => upcast.hash(state),
             ArgSort {
                 descending,
@@ -483,6 +492,7 @@ impl Hash for FunctionExpr {
                 descending.hash(state);
                 nulls_last.hash(state);
             },
+            Quantile { method } => method.hash(state),
             #[cfg(feature = "mode")]
             Mode { maintain_order } => maintain_order.hash(state),
             #[cfg(feature = "abs")]
@@ -582,12 +592,14 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "round_series")]
             FunctionExpr::RoundSF { digits } => digits.hash(state),
             #[cfg(feature = "round_series")]
+            Truncate { decimals } => decimals.hash(state),
+            #[cfg(feature = "round_series")]
             FunctionExpr::Floor => {},
             #[cfg(feature = "round_series")]
             Ceil => {},
             UpperBound => {},
             LowerBound => {},
-            ConcatExpr(a) => a.hash(state),
+            ConcatExpr(rechunk) => rechunk.hash(state),
             #[cfg(feature = "peaks")]
             PeakMin => {},
             #[cfg(feature = "peaks")]
@@ -655,7 +667,10 @@ impl Hash for FunctionExpr {
             FillNullWithStrategy(strategy) => strategy.hash(state),
             GatherEvery { n, offset } => (n, offset).hash(state),
             #[cfg(feature = "reinterpret")]
-            Reinterpret(signed) => signed.hash(state),
+            Reinterpret(signed, dtype) => {
+                signed.hash(state);
+                dtype.hash(state);
+            },
             ExtendConstant => {},
             #[cfg(feature = "top_k")]
             TopKBy { descending } => descending.hash(state),
@@ -727,6 +742,7 @@ impl Display for FunctionExpr {
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
+            Quantile { method: _ } => "quantile",
             #[cfg(feature = "mode")]
             Mode { maintain_order } => {
                 if *maintain_order {
@@ -743,6 +759,8 @@ impl Display for FunctionExpr {
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             ArgSort { .. } => "arg_sort",
+            MinBy => "min_by",
+            MaxBy => "max_by",
             Product => "product",
             Repeat => "repeat",
             #[cfg(feature = "rank")]
@@ -813,12 +831,14 @@ impl Display for FunctionExpr {
             #[cfg(feature = "round_series")]
             RoundSF { .. } => "round_sig_figs",
             #[cfg(feature = "round_series")]
+            Truncate { .. } => "truncate",
+            #[cfg(feature = "round_series")]
             Floor => "floor",
             #[cfg(feature = "round_series")]
             Ceil => "ceil",
             UpperBound => "upper_bound",
             LowerBound => "lower_bound",
-            ConcatExpr(_) => "concat_expr",
+            ConcatExpr(..) => "concat_expr",
             #[cfg(feature = "cov")]
             Correlation { method, .. } => return Display::fmt(method, f),
             #[cfg(feature = "peaks")]
@@ -870,7 +890,7 @@ impl Display for FunctionExpr {
             FillNullWithStrategy(_) => "fill_null_with_strategy",
             GatherEvery { .. } => "gather_every",
             #[cfg(feature = "reinterpret")]
-            Reinterpret(_) => "reinterpret",
+            Reinterpret(_, _) => "reinterpret",
             ExtendConstant => "extend_constant",
 
             RowEncode(..) => "row_encode",

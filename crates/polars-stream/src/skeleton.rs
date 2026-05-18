@@ -3,10 +3,11 @@ use std::cmp::Reverse;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::query_result::QueryResult;
+use polars_core::runtime::RAYON;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
-use polars_plan::plans::{IR, IRPlan};
+use polars_plan::plans::{IR, IRPlan, IRPlanSorted};
 use polars_plan::prelude::AExpr;
 use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::arena::{Arena, Node};
@@ -43,9 +44,11 @@ pub fn visualize_physical_plan(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<String> {
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
+    let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
 
     let ctx = StreamingLowerIRContext {
         prepare_visualization: true,
+        sortedness: &sortedness,
     };
     let root_phys_node =
         crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm, ctx)?;
@@ -98,8 +101,10 @@ impl StreamingQuery {
             std::fs::write(visual_path, visualization).unwrap();
         }
         let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
+        let sortedness = IRPlanSorted::resolve(node, ir_arena, expr_arena);
         let ctx = StreamingLowerIRContext {
             prepare_visualization: cfg_prepare_visualization_data(),
+            sortedness: &sortedness,
         };
         let root_phys_node = crate::physical_plan::build_physical_plan(
             node,
@@ -122,7 +127,7 @@ impl StreamingQuery {
         let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
         {
-            crate::async_executor::track_task_metrics(true);
+            polars_async::executor::track_task_metrics(true);
             Some(Arc::default())
         } else {
             None
@@ -189,10 +194,10 @@ impl StreamingQuery {
                 let morsels_sent = node_metrics.morsels_sent;
                 let max_sent = node_metrics.largest_morsel_sent;
 
-                let download_total_active_time =
-                    Duration::from_nanos(node_metrics.download_total_active_ns);
-                let download_total_bytes_requested = node_metrics.download_total_bytes_requested;
-                let download_total_bytes_received = node_metrics.download_total_bytes_received;
+                let io_total_active_time = Duration::from_nanos(node_metrics.io_total_active_ns);
+                let io_total_bytes_requested = node_metrics.io_total_bytes_requested;
+                let io_total_bytes_received = node_metrics.io_total_bytes_received;
+                let io_total_bytes_sent = node_metrics.io_total_bytes_sent;
 
                 lines.push(
                     (total_time, format!(
@@ -201,7 +206,11 @@ impl StreamingQuery {
                                  update({update_time:.2?}, n={total_updates}, max={max_update_time:.2?}), \
                                  recv(row={rows_received}, morsel={morsels_received}, max={max_received}), \
                                  sent(row={rows_sent}, morsel={morsels_sent}, max={max_sent}), \
-                                 download(total_active_time={download_total_active_time:.2?}, total_bytes_requested={download_total_bytes_requested}, total_bytes_received={download_total_bytes_received})"))
+                                 io(\
+                                    total_active_time={io_total_active_time:.2?}, \
+                                    total_bytes_requested={io_total_bytes_requested}, \
+                                    total_bytes_received={io_total_bytes_received}, \
+                                    total_bytes_sent={io_total_bytes_sent})"))
                 );
 
                 total_query_ns += total_ns;
@@ -241,30 +250,6 @@ impl StreamingQuery {
                     .remove(phys_to_graph[root_phys_node])
                     .unwrap_or_else(DataFrame::empty),
             )),
-        }
-    }
-}
-
-pub enum QueryResult {
-    Single(DataFrame),
-    /// Collected to multiple in-memory sinks
-    Multiple(Vec<DataFrame>),
-}
-
-impl QueryResult {
-    pub fn unwrap_single(self) -> DataFrame {
-        use QueryResult::*;
-        match self {
-            Single(df) => df,
-            Multiple(_) => panic!(),
-        }
-    }
-
-    pub fn unwrap_multiple(self) -> Vec<DataFrame> {
-        use QueryResult::*;
-        match self {
-            Single(_) => panic!(),
-            Multiple(dfs) => dfs,
         }
     }
 }

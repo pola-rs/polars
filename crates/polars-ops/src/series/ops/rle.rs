@@ -49,6 +49,11 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
             rle_lengths_helper_ca(ca, lengths);
             return Ok(());
         },
+        DataType::BinaryOffset => {
+            let ca: &BinaryOffsetChunked = s.as_ref().as_ref().as_ref();
+            rle_lengths_helper_ca(ca, lengths);
+            return Ok(());
+        },
         _ => {},
     }
 
@@ -76,7 +81,7 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
     Ok(())
 }
 
-fn rle_lengths_helper_ca<'a, T>(ca: &'a ChunkedArray<T>, lengths: &mut Vec<IdxSize>)
+pub fn rle_lengths_helper_ca<'a, T>(ca: &'a ChunkedArray<T>, lengths: &mut Vec<IdxSize>)
 where
     T: PolarsDataType,
     T::Physical<'a>: TotalHash + TotalEq + ToTotalOrd + Copy,

@@ -1,11 +1,12 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::pipe::PortReceiver;
@@ -25,9 +26,10 @@ struct ShiftState {
     offset: i64,
     rows_received: usize,
     rows_sent: usize,
-    buffer: VecDeque<DataFrame>,
+    frames: VecDeque<SpillFrame>,
     fill: DataFrame,
     seq: MorselSeq,
+    spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl ShiftState {
@@ -49,7 +51,8 @@ impl ShiftState {
                         continue;
                     }
                     self.rows_received += morsel.df().height();
-                    self.buffer.push_back(morsel.into_df());
+                    self.frames
+                        .push_back(SpillFrame::new(morsel.into_df(), &*self.spill_ctx).await);
                 }
             }
 
@@ -59,11 +62,15 @@ impl ShiftState {
                 let len = self.rows_received.min(self.offset as usize) - self.rows_sent;
                 df = self.fill.new_from_index(0, len);
             } else {
-                let src = self.buffer.front_mut().unwrap();
+                let src = self.frames.front_mut().unwrap();
                 let len = self.rows_received - self.rows_sent;
-                (df, *src) = src.split_at(len as i64);
+                let mut src_df = src.get_mut().await;
+                let (head, tail) = src_df.split_at(len as i64);
+                *src_df = tail;
+                df = head;
+                drop(src_df);
                 if src.height() == 0 {
-                    self.buffer.pop_front();
+                    self.frames.pop_front();
                 }
             };
             self.rows_sent += df.height();
@@ -211,9 +218,10 @@ impl ComputeNode for ShiftNode {
                     offset,
                     rows_received: 0,
                     rows_sent: 0,
-                    buffer: VecDeque::new(),
+                    frames: VecDeque::new(),
                     fill: fill_frame,
                     seq: MorselSeq::default(),
+                    spill_ctx: MostRecentSpillContext::new(),
                 })
             }
         }

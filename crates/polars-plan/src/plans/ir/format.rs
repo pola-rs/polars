@@ -69,7 +69,7 @@ fn write_scan(
     name: &str,
     sources: &ScanSources,
     indent: usize,
-    n_columns: i64,
+    n_columns: usize,
     total_columns: usize,
     row_estimation: Option<usize>,
     predicate: &Option<ExprIRDisplay<'_>>,
@@ -85,7 +85,7 @@ fn write_scan(
     )?;
 
     let total_columns = total_columns - usize::from(row_index.is_some());
-    if n_columns > 0 {
+    if n_columns != usize::MAX {
         write!(
             f,
             "\n{:indent$}PROJECT {n_columns}/{total_columns} COLUMNS",
@@ -246,6 +246,7 @@ impl<'a> IRDisplay<'a> {
                 input_left,
                 input_right,
                 key: _,
+                ..
             } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 write!(f, ":")?;
@@ -461,16 +462,6 @@ impl Display for ExprIRDisplay<'_> {
                             write!(f, ".max()")
                         }
                     },
-                    MinBy { input, by } => {
-                        let input = self.with_root(input);
-                        let by = self.with_root(by);
-                        write!(f, "{input}.min_by({by})",)
-                    },
-                    MaxBy { input, by } => {
-                        let input = self.with_root(input);
-                        let by = self.with_root(by);
-                        write!(f, "{input}.max_by({by})",)
-                    },
                     Median(expr) => write!(f, "{}.median()", self.with_root(expr)),
                     Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
                     First(expr) => write!(f, "{}.first()", self.with_root(expr)),
@@ -485,7 +476,16 @@ impl Display for ExprIRDisplay<'_> {
                             write!(f, ".item()")
                         }
                     },
-                    Implode(expr) => write!(f, "{}.implode()", self.with_root(expr)),
+                    Implode {
+                        input,
+                        maintain_order,
+                    } => {
+                        if *maintain_order {
+                            write!(f, "{}.implode()", self.with_root(input))
+                        } else {
+                            write!(f, "{}.implode(maintain_order=false)", self.with_root(input))
+                        }
+                    },
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
                     AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),
@@ -499,17 +499,6 @@ impl Display for ExprIRDisplay<'_> {
                     } => write!(f, "{}.len()", self.with_root(input)),
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
-                    Quantile {
-                        expr,
-                        quantile,
-                        method,
-                    } => write!(
-                        f,
-                        "{}.quantile({}, interpolation='{}')",
-                        self.with_root(expr),
-                        self.with_root(quantile),
-                        <&'static str>::from(method),
-                    ),
                 }
             },
             Cast {
@@ -545,8 +534,7 @@ impl Display for ExprIRDisplay<'_> {
                     write!(f, ".{function}()")
                 }
             },
-            AnonymousFunction { input, fmt_str, .. }
-            | AnonymousStreamingAgg { input, fmt_str, .. } => {
+            AnonymousFunction { input, fmt_str, .. } | AnonymousAgg { input, fmt_str, .. } => {
                 let fst = self.with_root(&input[0]);
                 fst.fmt(f)?;
                 if input.len() >= 2 {
@@ -716,8 +704,8 @@ pub fn write_ir_non_recursive(
             let n_columns = options
                 .with_columns
                 .as_ref()
-                .map(|s| s.len() as i64)
-                .unwrap_or(-1);
+                .map(|s| s.len())
+                .unwrap_or(usize::MAX);
 
             let predicate = match &options.predicate {
                 PythonPredicate::Polars(e) => Some(e.display(expr_arena)),
@@ -770,8 +758,8 @@ pub fn write_ir_non_recursive(
             let n_columns = unified_scan_args
                 .projection
                 .as_ref()
-                .map(|columns| columns.len() as i64)
-                .unwrap_or(-1);
+                .map(|columns| columns.len())
+                .unwrap_or(usize::MAX);
 
             let row_estimation = if file_info.row_estimation.1 != usize::MAX {
                 Some(file_info.row_estimation.1)
@@ -862,8 +850,12 @@ pub fn write_ir_non_recursive(
                 f.write_char('[')?;
 
                 let mut comma = false;
-                if let Some((o, l)) = slice {
-                    write!(f, "slice: ({o}, {l})")?;
+                if let Some((o, l, dyn_pred)) = slice {
+                    if let Some(dyn_pred) = &dyn_pred {
+                        write!(f, "slice: ({o}, {l}, {dyn_pred:?})")?;
+                    } else {
+                        write!(f, "slice: ({o}, {l})")?;
+                    }
                     comma = true;
                 }
                 if sort_options.maintain_order {
@@ -947,6 +939,13 @@ pub fn write_ir_non_recursive(
 
             Ok(())
         },
+        IR::Gather {
+            input: _,
+            idxs: _,
+            null_on_oob,
+        } => {
+            write!(f, "{:indent$}GATHER[null_on_oob: {null_on_oob}]", "")
+        },
         IR::HStack {
             input: _,
             exprs,
@@ -1000,7 +999,17 @@ pub fn write_ir_non_recursive(
             input_left: _,
             input_right: _,
             key,
-        } => write!(f, "{:indent$}MERGE SORTED ON '{key}'", ""),
+            maintain_order,
+        } => write!(
+            f,
+            "{:indent$}MERGE SORTED[maintain_order: {}] ON '{key}'",
+            "", maintain_order
+        ),
+        IR::UnoptimizedDispatch {
+            inputs: _,
+            arg_map: _,
+            operation,
+        } => write!(f, "{:indent$}DISPATCH {operation}", ""),
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),
     }
 }

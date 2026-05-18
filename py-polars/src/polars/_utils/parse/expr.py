@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, overload
 
@@ -84,8 +85,6 @@ def _structify_expression(expr: Expr) -> Expr:
 
 def parse_into_list_of_expressions(
     *inputs: IntoExpr | Iterable[IntoExpr],
-    __structify: bool = False,
-    __require_selectors: bool = False,
     **named_inputs: IntoExpr,
 ) -> list[PyExpr]:
     """
@@ -98,23 +97,46 @@ def parse_into_list_of_expressions(
     **named_inputs
         Additional inputs to be parsed as expressions, specified as keyword arguments.
         The expressions will be renamed to the keyword used.
-    __structify
-        Convert multi-column expressions to a single struct expression.
-    __require_selectors
-        Require that all inputs are valid selectors (eg: column names or selector
-        expressions), disallowing literals.
 
     Returns
     -------
     list of PyExpr
     """
+    structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+    exprs = _parse_positional_inputs(inputs, structify=structify)  # type: ignore[arg-type]
+    if named_inputs:
+        named_exprs = _parse_named_inputs(named_inputs, structify=structify)
+        exprs.extend(named_exprs)
+    return exprs
+
+
+def parse_into_list_of_expressions_require_selectors(
+    *inputs: IntoExpr | Iterable[IntoExpr],
+    **named_inputs: IntoExpr,
+) -> list[PyExpr]:
+    """
+    Parse multiple inputs (required to be valid selectors) into a list of expressions.
+
+    Parameters
+    ----------
+    *inputs
+        Inputs to be parsed as expressions, specified as positional arguments.
+    **named_inputs
+        Additional inputs to be parsed as expressions, specified as keyword arguments.
+        The expressions will be renamed to the keyword used.
+
+    Returns
+    -------
+    list of PyExpr
+    """
+    structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
     exprs = _parse_positional_inputs(
         inputs,  # type: ignore[arg-type]
-        require_selectors=__require_selectors,
-        structify=__structify,
+        structify=structify,
+        require_selectors=True,
     )
     if named_inputs:
-        named_exprs = _parse_named_inputs(named_inputs, structify=__structify)
+        named_exprs = _parse_named_inputs(named_inputs, structify=structify)
         exprs.extend(named_exprs)
     return exprs
 
@@ -144,9 +166,11 @@ def parse_into_selector(
     raise_if_not_selector: bool = True,
 ) -> pl.Selector | None:
     if isinstance(i, str):
-        import polars.selectors as cs
-
-        return cs.by_name([i], require_all=strict)
+        return pl.Selector._by_name(
+            names=[i],
+            strict=strict,
+            expand_patterns=True,
+        )
     elif isinstance(i, pl.Selector):
         return i
     elif isinstance(i, pl.Expr):
@@ -163,16 +187,18 @@ def parse_list_into_selector(
     strict: bool = True,
 ) -> pl.Selector:
     if isinstance(inputs, Collection) and not isinstance(inputs, str):
-        import polars.selectors as cs
-
-        columns = list(filter(lambda i: isinstance(i, str), inputs))
-        selector = cs.by_name(columns, require_all=strict)  # type: ignore[arg-type]
-
+        columns: list[str] = [i for i in inputs if isinstance(i, str)]
+        selector = pl.Selector._by_name(
+            names=columns,
+            strict=strict,
+            expand_patterns=True,
+        )
         if len(columns) == len(inputs):
             return selector
 
-        # A bit cleaner
         if len(columns) == 0:
+            import polars.selectors as cs
+
             selector = cs.empty()
 
         for i in inputs:
@@ -224,7 +250,7 @@ def _parse_inputs_as_iterable(
     return inputs
 
 
-def _is_iterable(input: Any | Iterable[Any]) -> bool:
+def _is_iterable(input: Any) -> bool:
     return isinstance(input, Iterable) and not isinstance(
         input, (str, bytes, pl.Series)
     )

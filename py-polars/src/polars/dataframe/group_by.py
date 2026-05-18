@@ -119,12 +119,16 @@ class GroupBy:
 
         self.df = self.df.rechunk()
         temp_col = "__POLARS_GB_GROUP_INDICES"
-        groups_df = (
+
+        lgb = (
             self.df.lazy()
             .with_row_index("__POLARS_GB_ROW_INDEX")
             .group_by(*self.by, **self.named_by, maintain_order=self.maintain_order)
-            .agg(F.first().alias(temp_col))
-            .collect(optimizations=QueryOptFlags.none())
+        )
+        if self.predicates:
+            lgb = lgb.having(self.predicates)
+        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+            optimizations=QueryOptFlags.none()
         )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
@@ -365,14 +369,13 @@ class GroupBy:
         if self.named_by:
             msg = "cannot call `map_groups` when grouping by named expressions"
             raise TypeError(msg)
-        if not all(isinstance(c, str) for c in self.by):
+        by = list(_parse_inputs_as_iterable(self.by))
+        if not all(isinstance(c, str) for c in by):
             msg = "cannot call `map_groups` when grouping by an expression"
             raise TypeError(msg)
 
-        by_strs: list[str] = self.by  # type: ignore[assignment]
-
         return self.df.__class__._from_pydf(
-            self.df._df.group_by_map_groups(by_strs, function, self.maintain_order)
+            self.df._df.group_by_map_groups(by, function, self.maintain_order)
         )
 
     def head(self, n: int = 5) -> DataFrame:
@@ -889,7 +892,8 @@ class RollingGroupBy:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         temp_col = "__POLARS_GB_GROUP_INDICES"
-        groups_df = (
+
+        lgb = (
             self.df.lazy()
             .with_row_index("__POLARS_GB_ROW_INDEX")
             .rolling(
@@ -899,8 +903,13 @@ class RollingGroupBy:
                 closed=self.closed,
                 group_by=self.group_by,
             )
-            .agg(F.first().alias(temp_col))
-            .collect(optimizations=QueryOptFlags.none())
+        )
+
+        if self.predicates:
+            lgb = lgb.having(self.predicates)
+
+        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+            optimizations=QueryOptFlags.none()
         )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()
@@ -1071,7 +1080,8 @@ class DynamicGroupBy:
         from polars.lazyframe.opt_flags import QueryOptFlags
 
         temp_col = "__POLARS_GB_GROUP_INDICES"
-        groups_df = (
+
+        lgb = (
             self.df.lazy()
             .with_row_index("__POLARS_GB_ROW_INDEX")
             .group_by_dynamic(
@@ -1085,8 +1095,11 @@ class DynamicGroupBy:
                 group_by=self.group_by,
                 start_by=self.start_by,
             )
-            .agg(F.first().alias(temp_col))
-            .collect(optimizations=QueryOptFlags.none())
+        )
+        if self.predicates:
+            lgb = lgb.having(self.predicates)
+        groups_df = lgb.agg(F.first().alias(temp_col)).collect(
+            optimizations=QueryOptFlags.none()
         )
 
         self._group_names = groups_df.select(F.all().exclude(temp_col)).iter_rows()

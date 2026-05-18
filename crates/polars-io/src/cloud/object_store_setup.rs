@@ -105,6 +105,10 @@ pub(crate) struct PolarsObjectStoreBuilder {
 }
 
 impl PolarsObjectStoreBuilder {
+    pub(super) fn path(&self) -> &PlRefPath {
+        &self.path
+    }
+
     pub(super) async fn build_impl(
         &self,
         // Whether to clear cached credentials for Python credential providers.
@@ -166,7 +170,7 @@ impl PolarsObjectStoreBuilder {
                 {
                     #[cfg(feature = "http")]
                     {
-                        let store = options.build_http(self.path.as_str())?;
+                        let store = options.build_http(self.path.clone())?;
                         PolarsResult::Ok(Arc::new(store) as Arc<dyn ObjectStore>)
                     }
                 }

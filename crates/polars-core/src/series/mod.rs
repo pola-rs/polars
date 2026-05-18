@@ -18,14 +18,12 @@ macro_rules! invalid_operation_panic {
 pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
+pub mod arrow_export;
 pub mod builder;
-#[cfg(feature = "dtype-categorical")]
-pub mod categorical_to_arrow;
+
 mod comparison;
 mod from;
 pub mod implementations;
-mod into;
-pub use into::ToArrowConverter;
 pub(crate) mod iterator;
 pub mod ops;
 #[cfg(feature = "proptest")]
@@ -45,8 +43,8 @@ use polars_error::feature_gated;
 use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
-use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
+use crate::runtime::RAYON;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
@@ -162,15 +160,11 @@ impl Eq for Wrap<Series> {}
 
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let rs = PlSeedableRandomStateQuality::fixed();
-        let mut h = vec![];
-        if self.0.vec_hash(rs, &mut h).is_ok() {
-            let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
-            h.hash(state)
-        } else {
-            self.len().hash(state);
-            self.null_count().hash(state);
-            self.dtype().hash(state);
+        self.dtype().hash(state);
+        self.len().hash(state);
+
+        for av in self.iter() {
+            av.hash(state);
         }
     }
 }
@@ -214,6 +208,12 @@ impl Series {
             Ok(ca) => ca.0,
             Err(ca) => ca.as_ref().as_ref().clone(),
         }
+    }
+
+    /// Returns a reference to the Arrow ArrayRef
+    #[inline]
+    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
+        &self.chunks()[chunk_idx] as &ArrayRef
     }
 
     /// # Safety
@@ -463,8 +463,9 @@ impl Series {
         }
 
         let new_options = match options {
-            // Strictness is handled on this level to improve error messages.
-            CastOptions::Strict => CastOptions::NonStrict,
+            // Strictness is handled on this level to improve error messages, if not nested.
+            // Nested types could hide cast errors, so have to be done internally.
+            CastOptions::Strict if !dtype.is_nested() => CastOptions::NonStrict,
             opt => opt,
         };
 
@@ -849,6 +850,8 @@ impl Series {
                 Float16 => Ok(self.f16().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-decimal")]
+                Decimal(..) => Ok(self.decimal().unwrap().prod_reduce()),
                 dt => {
                     polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
                 },

@@ -1,5 +1,6 @@
 mod simplify_functions;
 
+use num_traits::Zero;
 use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
@@ -174,6 +175,15 @@ impl OptimizationRule for SimplifyBooleanRule {
                 let input = &input[0];
                 let ae = expr_arena.get(input.node());
                 eval_negate(ae)
+            },
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::DynamicPred { pred },
+                options,
+            } if pred.id().is_none() => {
+                // The sender of this dynamic predicate was dropped,
+                // so the result is always true.
+                Some(AExpr::Literal(Scalar::from(true).into()))
             },
             _ => None,
         };
@@ -439,6 +449,30 @@ impl OptimizationRule for SimplifyExprRule {
                     _ => None,
                 }
             },
+            // drop_nulls().first() -> first(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::First(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::FirstNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
+            // drop_nulls().last()  -> last(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::Last(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::LastNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {
@@ -474,7 +508,7 @@ impl OptimizationRule for SimplifyExprRule {
                     },
                     Minus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l - r),
                     Multiply => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l * r),
-                    Divide => {
+                    RustDivide => {
                         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
                             (left_aexpr, right_aexpr)
                         {
@@ -671,9 +705,14 @@ impl OptimizationRule for SimplifyExprRule {
                             None
                         }
                     },
-                    Modulus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l
-                        .wrapping_floor_div_mod(r)
-                        .1),
+                    Modulus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| {
+                        if r.is_zero() {
+                            // TODO: this should optimize to `null` once we can express "is dynamic int but actually contains null"
+                            return Ok(None);
+                        }
+
+                        l.wrapping_floor_div_mod(r).1
+                    }),
                     Lt => eval_binary_cmp_same_type!(left_aexpr, <, right_aexpr),
                     Gt => eval_binary_cmp_same_type!(left_aexpr, >, right_aexpr),
                     Eq | EqValidity => eval_binary_cmp_same_type!(left_aexpr, ==, right_aexpr),
@@ -685,9 +724,14 @@ impl OptimizationRule for SimplifyExprRule {
                     And | LogicalAnd => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
                     Or | LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
-                    FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l
-                        .wrapping_floor_div_mod(r)
-                        .0),
+                    FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| {
+                        if r.is_zero() {
+                            // TODO: this should optimize to `null` once we can express "is dynamic int but actually contains null"
+                            return Ok(None);
+                        }
+
+                        l.wrapping_floor_div_mod(r).0
+                    }),
                 };
                 if out.is_some() {
                     return Ok(out);

@@ -1,13 +1,15 @@
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use components::row_deletions::DeletionFilesProvider;
 use futures::StreamExt;
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::PolarsResult;
+use polars_io::metrics::IOMetrics;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan::pipeline::models::ResolvedSliceInfo;
 use crate::nodes::io_sources::multi_scan::{MultiScanConfig, components};
@@ -15,6 +17,7 @@ use crate::nodes::io_sources::multi_scan::{MultiScanConfig, components};
 pub async fn resolve_to_positive_slice(
     config: &MultiScanConfig,
     execution_state: &StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<ResolvedSliceInfo> {
     match config.pre_slice.clone() {
         None => Ok(ResolvedSliceInfo {
@@ -33,7 +36,7 @@ pub async fn resolve_to_positive_slice(
             row_deletions: Default::default(),
         }),
 
-        Some(_) => resolve_negative_slice(config, execution_state).await,
+        Some(_) => resolve_negative_slice(config, execution_state, io_metrics).await,
     }
 }
 
@@ -41,6 +44,7 @@ pub async fn resolve_to_positive_slice(
 async fn resolve_negative_slice(
     config: &MultiScanConfig,
     execution_state: &StreamingExecutionState,
+    io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<ResolvedSliceInfo> {
     let verbose = config.verbose;
 
@@ -73,11 +77,12 @@ async fn resolve_negative_slice(
         });
     }
 
-    let deletion_files_provider = DeletionFilesProvider::new(
+    let deletion_files_provider = DeletionFilesProvider::try_new(
         config.deletion_files.clone(),
+        config.sources.clone(),
         execution_state,
-        config.io_metrics(),
-    );
+        io_metrics,
+    )?;
     let num_pipelines = config.num_pipelines();
 
     let mut initialized_readers =
@@ -86,7 +91,7 @@ async fn resolve_negative_slice(
         config
             .deletion_files
             .as_ref()
-            .map_or(0, |x| x.num_files_with_deletions())
+            .map_or(0, |x| x.num_files_with_deletions().unwrap_or(1))
             .min(num_pipelines.saturating_add(4)),
     );
 
@@ -113,7 +118,7 @@ async fn resolve_negative_slice(
                     Ok(reader)
                 });
 
-            AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
+            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                 let mut reader = reader?;
 
                 if verbose {

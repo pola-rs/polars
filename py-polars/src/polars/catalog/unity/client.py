@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import importlib.util
 import os
 import sys
 from typing import TYPE_CHECKING, Any, Literal
@@ -618,6 +619,9 @@ class Catalog:
         from polars.io.cloud.credential_provider._builder import (
             CredentialProviderBuilder,
         )
+        from polars.io.cloud.credential_provider._providers import (
+            CredentialProviderAzure,
+        )
 
         if credential_provider != "auto":
             if credential_provider:
@@ -639,6 +643,21 @@ class Catalog:
 
             if storage_update_options:
                 storage_options = {**(storage_options or {}), **storage_update_options}
+
+            if (
+                table_info.storage_location is not None
+                and (
+                    azure_storage_account_name
+                    := CredentialProviderAzure._extract_adls_uri_storage_account(
+                        table_info.storage_location
+                    )
+                )
+                is not None
+            ):
+                storage_options = storage_options or {}
+                storage_options["azure_storage_account_name"] = (
+                    azure_storage_account_name
+                )
 
             for _ in v:
                 pass

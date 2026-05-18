@@ -1,5 +1,5 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_utils::UnitVec;
 
 use super::*;
@@ -22,17 +22,17 @@ impl PhysicalExpr for FilterExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let s_f = || self.input.evaluate(df, state);
         let predicate_f = || self.by.evaluate(df, state);
 
-        let (series, predicate) = POOL.install(|| rayon::join(s_f, predicate_f));
+        let (series, predicate) = RAYON.install(|| rayon::join(s_f, predicate_f));
         let (series, predicate) = (series?, predicate?);
 
         series.filter(predicate.bool()?)
     }
 
-    fn evaluate_on_groups<'a>(
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -41,7 +41,7 @@ impl PhysicalExpr for FilterExpr {
         let ac_s_f = || self.input.evaluate_on_groups(df, groups, state);
         let ac_predicate_f = || self.by.evaluate_on_groups(df, groups, state);
 
-        let (ac_s, ac_predicate) = POOL.install(|| rayon::join(ac_s_f, ac_predicate_f));
+        let (ac_s, ac_predicate) = RAYON.install(|| rayon::join(ac_s_f, ac_predicate_f));
         let (mut ac_s, mut ac_predicate) = (ac_s?, ac_predicate?);
 
         ac_s.set_groups_for_undefined_agg_states();

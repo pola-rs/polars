@@ -1,12 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use polars_async::executor::TaskMetrics;
+pub use polars_io::metrics::{IOMetrics, OptIOMetrics};
 use slotmap::{SecondaryMap, SlotMap};
 
 use crate::LogicalPipe;
-use crate::async_executor::TaskMetrics;
 use crate::graph::{GraphNodeKey, LogicalPipeKey};
-pub use crate::metrics_io::{IOMetrics, OptIOMetrics};
 use crate::pipe::PipeMetrics;
 
 #[derive(Default, Clone)]
@@ -27,9 +27,10 @@ pub struct NodeMetrics {
     pub rows_received: u64,
     pub largest_morsel_received: u64,
 
-    pub download_total_active_ns: u64,
-    pub download_total_bytes_requested: u64,
-    pub download_total_bytes_received: u64,
+    pub io_total_active_ns: u64,
+    pub io_total_bytes_requested: u64,
+    pub io_total_bytes_received: u64,
+    pub io_total_bytes_sent: u64,
 
     pub state_update_in_progress: bool,
     pub num_running_tasks: u32,
@@ -47,10 +48,18 @@ impl NodeMetrics {
         self.num_running_tasks += (!task_metrics.done.load()) as u32;
     }
 
-    fn add_io_recv(&mut self, io_metrics: &IOMetrics) {
-        self.download_total_active_ns += io_metrics.active_io_time_metrics.active_io_total_ns();
-        self.download_total_bytes_requested += io_metrics.bytes_requested.load();
-        self.download_total_bytes_received += io_metrics.bytes_received.load();
+    fn add_io(&mut self, io_metrics: &IOMetrics) {
+        self.io_total_active_ns += io_metrics.io_timer.total_time_live_ns();
+        self.io_total_bytes_requested += io_metrics.bytes_requested.load();
+        self.io_total_bytes_received += io_metrics.bytes_received.load();
+        self.io_total_bytes_sent += io_metrics.bytes_sent.load();
+    }
+
+    fn reset_io_metrics(&mut self) {
+        self.io_total_active_ns = 0;
+        self.io_total_bytes_requested = 0;
+        self.io_total_bytes_received = 0;
+        self.io_total_bytes_sent = 0;
     }
 
     fn start_state_update(&mut self) {
@@ -86,7 +95,7 @@ impl NodeMetrics {
 #[derive(Default, Clone)]
 pub struct GraphMetrics {
     node_metrics: SecondaryMap<GraphNodeKey, NodeMetrics>,
-    in_progress_download_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<IOMetrics>>>,
+    in_progress_io_metrics: SecondaryMap<GraphNodeKey, Arc<IOMetrics>>,
     in_progress_task_metrics: SecondaryMap<GraphNodeKey, Vec<Arc<TaskMetrics>>>,
     in_progress_pipe_metrics: SecondaryMap<LogicalPipeKey, Vec<Arc<PipeMetrics>>>,
 }
@@ -129,12 +138,10 @@ impl GraphMetrics {
             }
         }
 
-        for (key, in_progress_download_metrics) in self.in_progress_download_metrics.iter_mut() {
+        for (key, io_metrics) in self.in_progress_io_metrics.iter_mut() {
             let this_node_metrics = self.node_metrics.entry(key).unwrap().or_default();
-            this_node_metrics.num_running_tasks = 0;
-            for download_metrics in in_progress_download_metrics.drain(..) {
-                this_node_metrics.add_io_recv(&download_metrics);
-            }
+            this_node_metrics.reset_io_metrics();
+            this_node_metrics.add_io(io_metrics);
         }
 
         for (key, in_progress_pipe_metrics) in self.in_progress_pipe_metrics.iter_mut() {
@@ -163,23 +170,29 @@ impl GraphMetrics {
     }
 }
 
-pub struct MetricsBuilder {
+pub struct NodeMetricsRegistrator {
     pub graph_key: GraphNodeKey,
     pub graph_metrics: Arc<parking_lot::Mutex<GraphMetrics>>,
 }
 
-impl MetricsBuilder {
-    pub fn new_download_metrics(&self) -> Arc<IOMetrics> {
-        let io_metrics: Arc<IOMetrics> = Default::default();
+impl NodeMetricsRegistrator {
+    /// # Panics
+    /// When debug_assertions enabled, panics if called more than once for a node within a single
+    /// phase.
+    pub fn register_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
+        let mut guard = self.graph_metrics.lock();
 
-        self.graph_metrics
-            .lock()
-            .in_progress_download_metrics
-            .entry(self.graph_key)
-            .unwrap()
-            .or_default()
-            .push(Arc::clone(&io_metrics));
+        use slotmap::secondary::Entry;
 
-        io_metrics
+        match guard.in_progress_io_metrics.entry(self.graph_key).unwrap() {
+            Entry::Occupied(e) => {
+                // Each node should only have 1 set of metrics, identified by the Arc address.
+                // But the registration can be called multiple times (per phase).
+                assert!(Arc::ptr_eq(&io_metrics, e.get()));
+            },
+            Entry::Vacant(e) => {
+                e.insert(io_metrics);
+            },
+        };
     }
 }
