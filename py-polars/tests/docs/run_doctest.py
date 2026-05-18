@@ -74,7 +74,7 @@ for mod, methods in OPTIONAL_MODULES_AND_METHODS.items():
 
 
 def doctest_teardown(d: doctest.DocTest) -> None:
-    # don't let config changes or string cache state leak between tests
+    # don't let config changes leak between tests
     pl.Config.restore_defaults()
 
 

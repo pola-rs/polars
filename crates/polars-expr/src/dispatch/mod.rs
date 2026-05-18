@@ -570,6 +570,7 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
     Some(match func {
         F::NullCount => wrap_groups!(groups_dispatch::null_count),
         F::Reverse => wrap_groups!(groups_dispatch::reverse),
+        F::Boolean(IRBooleanFunction::HasNulls) => wrap_groups!(groups_dispatch::has_nulls),
         F::Boolean(IRBooleanFunction::Any { ignore_nulls }) => {
             let ignore_nulls = *ignore_nulls;
             wrap_groups!(groups_dispatch::any, (ignore_nulls, v: bool))
@@ -577,6 +578,10 @@ pub fn function_expr_to_groups_udf(func: &IRFunctionExpr) -> Option<SpecialEq<Ar
         F::Boolean(IRBooleanFunction::All { ignore_nulls }) => {
             let ignore_nulls = *ignore_nulls;
             wrap_groups!(groups_dispatch::all, (ignore_nulls, v: bool))
+        },
+        F::Boolean(IRBooleanFunction::IsEmpty { ignore_nulls }) => {
+            let ignore_nulls = *ignore_nulls;
+            wrap_groups!(groups_dispatch::is_empty, (ignore_nulls, v: bool))
         },
         #[cfg(feature = "bitwise")]
         F::Bitwise(f) => {

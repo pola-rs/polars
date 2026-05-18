@@ -2,15 +2,15 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::connector::{ReceiverExt, SenderExt, connector_with};
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::linearizer::Linearizer;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_error::PolarsResult;
 use polars_utils::priority::Priority;
 use polars_utils::relaxed_cell::RelaxedCell;
 
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::connector::{ReceiverExt, SenderExt, connector_with};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::linearizer::Linearizer;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::graph::LogicalPipeKey;
 use crate::metrics::GraphMetrics;
 use crate::morsel::{Morsel, MorselSeq};

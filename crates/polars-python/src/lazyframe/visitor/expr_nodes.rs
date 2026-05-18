@@ -191,6 +191,8 @@ impl PyStringFunction {
 pub enum PyBooleanFunction {
     Any,
     All,
+    IsEmpty,
+    HasNulls,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -1118,6 +1120,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRBooleanFunction::All { ignore_nulls } => {
                         (PyBooleanFunction::All, *ignore_nulls).into_py_any(py)
                     },
+                    IRBooleanFunction::IsEmpty { ignore_nulls } => {
+                        (PyBooleanFunction::IsEmpty, *ignore_nulls).into_py_any(py)
+                    },
+                    IRBooleanFunction::HasNulls => (PyBooleanFunction::HasNulls,).into_py_any(py),
                     IRBooleanFunction::IsNull => (PyBooleanFunction::IsNull,).into_py_any(py),
                     IRBooleanFunction::IsNotNull => (PyBooleanFunction::IsNotNull,).into_py_any(py),
                     IRBooleanFunction::IsFinite => (PyBooleanFunction::IsFinite,).into_py_any(py),

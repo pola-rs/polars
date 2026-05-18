@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::BitmapBuilder;
+use polars_async::executor;
 use polars_core::prelude::*;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::Schema;
 use polars_expr::groups::{Grouper, new_hash_grouper};
 use polars_expr::hash_keys::HashKeys;
@@ -13,7 +15,6 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::sparse_init_vec::SparseInitVec;
 
-use crate::async_executor;
 use crate::expression::StreamExpr;
 use crate::nodes::compute_node_prelude::*;
 
@@ -175,7 +176,7 @@ impl BuildState {
         let groupers: SparseInitVec<Box<dyn Grouper>> =
             SparseInitVec::with_capacity(num_partitions);
 
-        async_executor::task_scope(|s| {
+        executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_keys_per_local_builder = Arc::new(keys_per_local_builder);
@@ -247,7 +248,7 @@ impl BuildState {
             drop(arc_keys_per_local_builder);
             drop(key_drop_q_send);
 
-            polars_io::pl_async::get_runtime().block_on(async move {
+            ASYNC.block_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }

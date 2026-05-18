@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime, time
 from typing import Any
 
 import pytest
@@ -858,6 +859,85 @@ def test_json_decode_primitive_to_list_11053() -> None:
     ).unnest("decoded_json")
     expected = pl.DataFrame({"col1": [["123"], ["xyz"]], "col2": [["123"], None]})
     assert_frame_equal(output, expected)
+
+
+def test_json_decode_temporal_strings() -> None:
+    df = pl.DataFrame(
+        {
+            "js": [
+                '{"mkt": "AUD/USD", "value": 0.6402, "dtm": "2024-01-04 07:10:13",'
+                ' "dt": "2024-01-04", "tm": "07:10:13"}',
+                '{"mkt": "AUD/USD", "value": 0.6473, "dtm": "2025-02-05 08:11:14",'
+                ' "dt": "2025-02-05", "tm": "08:11:14"}',
+                '{"mkt": "AUD/USD", "value": 0.6078, "dtm": "2026-03-06 09:12:15",'
+                ' "dt": "2026-03-06", "tm": "09:12:15"}',
+                '{"mkt": "AUD/USD", "value": null, "dtm": null, "dt": null, "tm": null}',
+            ]
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "mkt": ["AUD/USD", "AUD/USD", "AUD/USD", "AUD/USD"],
+            "value": [0.6402, 0.6473, 0.6078, None],
+            "dtm": [
+                datetime(2024, 1, 4, 7, 10, 13),
+                datetime(2025, 2, 5, 8, 11, 14),
+                datetime(2026, 3, 6, 9, 12, 15),
+                None,
+            ],
+            "dt": [
+                date(2024, 1, 4),
+                date(2025, 2, 5),
+                date(2026, 3, 6),
+                None,
+            ],
+            "tm": [
+                time(7, 10, 13),
+                time(8, 11, 14),
+                time(9, 12, 15),
+                None,
+            ],
+        },
+        schema={
+            "mkt": pl.String,
+            "value": pl.Float64,
+            "dtm": pl.Datetime("us"),
+            "dt": pl.Date,
+            "tm": pl.Time,
+        },
+    )
+    js_schema = pl.Struct(
+        {
+            "mkt": pl.String,
+            "value": pl.Float64,
+            "dtm": pl.Datetime("us"),
+            "dt": pl.Date,
+            "tm": pl.Time,
+        }
+    )
+    res = df.select(pl.col("js").str.json_decode(dtype=js_schema))
+    assert_frame_equal(res.unnest("js"), expected)
+
+
+def test_json_decode_temporal_numeric() -> None:
+    schema = pl.Struct({"dt": pl.Date, "tm": pl.Time})
+    df = pl.DataFrame(
+        {
+            "js": [
+                '{"dt": 19726, "tm": 25813000000000}',
+                '{"dt": null, "tm": null}',
+            ]
+        }
+    )
+    out = df.select(pl.col("js").str.json_decode(dtype=schema)).unnest("js")
+    expected = pl.DataFrame(
+        {
+            "dt": [date(2024, 1, 4), None],
+            "tm": [time(7, 10, 13), None],
+        },
+        schema={"dt": pl.Date, "tm": pl.Time},
+    )
+    assert_frame_equal(out, expected)
 
 
 def test_jsonpath_single() -> None:

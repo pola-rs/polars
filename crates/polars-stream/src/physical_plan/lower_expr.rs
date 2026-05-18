@@ -2142,7 +2142,10 @@ fn lower_exprs_with_ctx(
             AExpr::Function {
                 function:
                     IRFunctionExpr::Boolean(
-                        IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
+                        IRBooleanFunction::Any { .. }
+                        | IRBooleanFunction::All { .. }
+                        | IRBooleanFunction::IsEmpty { .. }
+                        | IRBooleanFunction::HasNulls,
                     )
                     | IRFunctionExpr::MinBy
                     | IRFunctionExpr::MaxBy
@@ -2617,6 +2620,7 @@ fn lower_exprs_with_ctx(
                 let kind = PhysNodeKind::ColumnarFunction {
                     inputs,
                     func,
+                    arg_map: None,
                     output_name: out_name.clone(),
                     format_str,
                 };

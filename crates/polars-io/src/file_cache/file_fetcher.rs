@@ -1,10 +1,10 @@
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
 
 use super::metadata::FileVersion;
 use super::utils::last_modified_u64;
 use crate::cloud::PolarsObjectStore;
-use crate::pl_async;
 
 pub trait FileFetcher: Send + Sync {
     fn get_uri(&self) -> &PlRefPath;
@@ -93,8 +93,7 @@ impl FileFetcher for CloudFileFetcher {
     }
 
     fn fetch_metadata(&self) -> PolarsResult<RemoteMetadata> {
-        let metadata =
-            pl_async::get_runtime().block_in_place_on(self.object_store.head(&self.cloud_path))?;
+        let metadata = ASYNC.block_in_place_on(self.object_store.head(&self.cloud_path))?;
 
         Ok(RemoteMetadata {
             size: metadata.size,
@@ -108,7 +107,7 @@ impl FileFetcher for CloudFileFetcher {
     }
 
     fn fetch(&self, local_path: &std::path::Path) -> PolarsResult<()> {
-        pl_async::get_runtime().block_in_place_on(async {
+        ASYNC.block_in_place_on(async {
             let file = &mut tokio::fs::OpenOptions::new()
                 .write(true)
                 .truncate(true)

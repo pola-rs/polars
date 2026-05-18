@@ -147,6 +147,7 @@ json = [
   "polars/json",
   "polars-utils/serde",
   "polars-mem-engine/json",
+  "polars-parquet?/serde",
 ]
 scan_lines = ["polars/scan_lines", "polars-mem-engine/scan_lines"]
 trigonometry = ["polars/trigonometry"]

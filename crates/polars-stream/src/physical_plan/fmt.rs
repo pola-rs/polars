@@ -365,6 +365,7 @@ fn visualize_plan_rec(
         PhysNodeKind::ColumnarFunction {
             inputs,
             func: _,
+            arg_map: _,
             output_name,
             format_str,
         } => {

@@ -8,7 +8,7 @@ pub(super) fn optimize_functions(
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
         // is_null().any() -> null_count() > 0
-        // is_not_null().any() ->  null_count() < len()
+        // is_not_null().any() -> ~is_empty(ignore_nulls=True)
         // CORRECTNESS: we can ignore 'ignore_nulls' since is_null/is_not_null never produces NULLS
         IRFunctionExpr::Boolean(IRBooleanFunction::Any { ignore_nulls: _ }) => {
             let input_node = expr_arena.get(input[0].node());
@@ -26,26 +26,12 @@ pub(super) fn optimize_functions(
                     input,
                     function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                     options: _,
-                } => {
-                    // we should perform optimization only if the original expression is a column
-                    // so in case of disabled CSE, we will not suffer from performance regression
-                    if input.len() == 1 {
-                        let is_not_null_input_node = input[0].node();
-                        match expr_arena.get(is_not_null_input_node) {
-                            AExpr::Column(_) => Some(AExpr::BinaryExpr {
-                                op: Operator::Lt,
-                                left: expr_arena.add(new_null_count(input)),
-                                right: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
-                                    input: is_not_null_input_node,
-                                    include_nulls: true,
-                                })),
-                            }),
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    }
-                },
+                } => Some(
+                    AExprBuilder::new_from_node(input[0].node())
+                        .is_empty(true, expr_arena)
+                        .not(expr_arena)
+                        .build(expr_arena),
+                ),
                 _ => None,
             }
         },

@@ -156,7 +156,7 @@ fn create_physical_expr_inner(
 
     let aexpr = expr_arena.get(expression);
     match aexpr.clone() {
-        Len => Ok(Arc::new(phys_expr::CountExpr::new())),
+        Len => Ok(Arc::new(phys_expr::LenExpr::new())),
         #[cfg(feature = "dynamic_group_by")]
         Rolling {
             function,

@@ -6,7 +6,7 @@ use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::try_get_supertype;
+use polars_core::utils::{CustomIterTools, try_get_supertype};
 
 use super::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
@@ -846,4 +846,32 @@ fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Serie
     let len = s.len();
     let idx = convert_and_bound_index(&idx, len, null_on_oob)?;
     s.take(&idx)
+}
+
+pub fn slice_broadcast_list(
+    single_list: Option<Series>,
+    offsets: &Int64Chunked,
+    lengths: &Int64Chunked,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> ListChunked {
+    debug_assert!(target_len == offsets.len().max(lengths.len()));
+
+    let Some(single_list) = single_list else {
+        return ListChunked::full_null_with_dtype(name, target_len, inner_dtype);
+    };
+
+    let iter = (0..target_len).map(|index| {
+        let opt_offset = offsets.get(if offsets.len() == 1 { 0 } else { index });
+        let opt_length = lengths.get(if lengths.len() == 1 { 0 } else { index });
+        match (opt_offset, opt_length) {
+            (Some(offset), Some(length)) => Some(single_list.slice(offset, length as usize)),
+            _ => None,
+        }
+    });
+
+    let mut out: ListChunked = iter.collect_trusted();
+    out.rename(name);
+    out
 }
