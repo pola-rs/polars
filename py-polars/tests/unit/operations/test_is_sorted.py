@@ -451,13 +451,11 @@ def test_is_sorted_time() -> None:
 
 
 def test_is_sorted_boolean_long_all_false() -> None:
-    # Long all-`False` row-major boolean series (regression for `BooleanChunked::is_sorted` fast path).
     s = pl.Series("all_false_monotone", [False] * 137)
     assert s.is_sorted()
 
 
 def test_is_sorted_boolean_false_true_transition_descending_large() -> None:
-    # false→true transition invalid for descending; long series stresses multi-chunk / wide bitmap layouts.
     values = [False, False] + [True] * (137 - 2)
     assert not pl.Series(values).is_sorted(descending=True)
 
@@ -497,11 +495,13 @@ def test_is_sorted_binary_asc_desc() -> None:
 
 
 def test_is_sorted_list_pairwise_fallback_error() -> None:
-    # List dtype falls through to row-wise comparison; `<`/`<=` for lists are unsupported.
+    # List dtype falls through to row-wise comparison; but
+    # `<`/`<=` for lists are unsupported, so this raises an error.
     s = pl.Series("_", [[1], [2], [3]])
     assert isinstance(s.dtype, pl.List)
 
     with pytest.raises(InvalidOperationError) as exc:
         s.is_sorted()
-    msg = str(exc.value)
-    assert "<=" in msg and "list" in msg.lower()
+    msg = str(exc.value).lower()
+    assert "<=" in msg
+    assert "list" in msg
