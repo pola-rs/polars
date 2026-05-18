@@ -440,9 +440,11 @@ impl AExprBuilder {
     }
 
     pub fn has_nulls(self, arena: &mut Arena<AExpr>) -> Self {
-        let nc = self.null_count(arena);
-        let idx_zero = Self::lit_scalar(Scalar::from(0 as IdxSize), arena);
-        nc.gt(idx_zero, arena)
+        Self::function(
+            vec![self.expr_ir_unnamed()],
+            IRFunctionExpr::Boolean(IRBooleanFunction::HasNulls),
+            arena,
+        )
     }
 
     pub fn drop_nulls(self, arena: &mut Arena<AExpr>) -> Self {

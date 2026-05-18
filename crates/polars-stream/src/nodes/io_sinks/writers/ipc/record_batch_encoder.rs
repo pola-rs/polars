@@ -4,6 +4,9 @@ use std::sync::Arc;
 use arrow::array::Array;
 use arrow::datatypes::Field as ArrowField;
 use arrow::io::ipc::write::encode_dictionary_values;
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
+use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::prelude::CompatLevel;
 use polars_core::series::arrow_export::ToArrowConverter;
 use polars_core::utils::arrow;
@@ -13,9 +16,6 @@ use polars_core::utils::arrow::io::ipc::write::{
 use polars_error::PolarsResult;
 use polars_utils::concat_vec::ConcatVec as _;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
-use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
 use crate::nodes::io_sinks::writers::ipc::IpcBatch;
@@ -119,8 +119,8 @@ impl RecordBatchEncoder {
                 }),
             );
 
-            let array_combine_handle = async_executor::AbortOnDropHandle::new(
-                async_executor::spawn(TaskPriority::High, async move {
+            let array_combine_handle =
+                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
                     let mut buffers: Vec<arrow::io::ipc::format::ipc::Buffer> = vec![];
                     let mut buffer_offset: i64 = 0;
 
@@ -165,8 +165,7 @@ impl RecordBatchEncoder {
                     );
 
                     encoded_data
-                }),
-            );
+                }));
 
             if ipc_batch_tx
                 .send(IpcBatch::Record(array_combine_handle, permit))

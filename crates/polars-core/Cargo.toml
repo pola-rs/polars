@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
+polars-async = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true, features = ["gather"] }
 polars-config = { workspace = true }

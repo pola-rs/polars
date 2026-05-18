@@ -2,6 +2,9 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
+use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_parquet::parquet::error::ParquetResult;
@@ -11,16 +14,13 @@ use polars_parquet::write::{
 };
 use polars_utils::UnitVec;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
-use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::writers::parquet::EncodedRowGroup;
 
 pub struct RowGroupEncoder {
     pub morsel_rx: connector::Receiver<SinkMorsel>,
     pub encoded_row_group_tx:
-        tokio::sync::mpsc::Sender<async_executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>>,
+        tokio::sync::mpsc::Sender<executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>>,
     /// Note: We assume it is checked in IR that this will match the schema of incoming morsels.
     pub arrow_schema: ArrowSchemaRef,
     pub schema_descriptor: Arc<SchemaDescriptor>,
@@ -46,8 +46,8 @@ impl RowGroupEncoder {
             let schema_descriptor = Arc::clone(&schema_descriptor);
             let encodings = Buffer::clone(&encodings);
 
-            let row_group_encode_handle = async_executor::AbortOnDropHandle::new(
-                async_executor::spawn(TaskPriority::High, async move {
+            let row_group_encode_handle =
+                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
                     let (df, morsel_permit) = morsel.into_inner();
                     let num_rows = df.height();
 
@@ -108,8 +108,7 @@ impl RowGroupEncoder {
                         data,
                         morsel_permit,
                     })
-                }),
-            );
+                }));
 
             if encoded_row_group_tx
                 .send(row_group_encode_handle)

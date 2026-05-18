@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
+use polars_async::executor;
 use polars_core::frame::DataFrame;
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_error::PolarsResult;
@@ -12,7 +13,6 @@ use polars_utils::reuse_vec::reuse_vec;
 use slotmap::{SecondaryMap, SparseSecondaryMap};
 use tokio::task::JoinHandle;
 
-use crate::async_executor;
 use crate::graph::{Graph, GraphNode, GraphNodeKey, LogicalPipeKey, PortState};
 use crate::metrics::{GraphMetrics, NodeMetricsRegistrator};
 use crate::pipe::PhysicalPipe;
@@ -183,7 +183,7 @@ fn run_subgraph(
         }
     }
 
-    async_executor::task_scope(|scope| {
+    executor::task_scope(|scope| {
         // Using SlotMap::iter_mut we can get simultaneous mutable references. By storing them and
         // removing the references from the secondary map as we do our topological sort we ensure
         // they are unique.
@@ -304,7 +304,7 @@ pub fn execute_graph(
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
     // Get the number of threads from the rayon thread-pool as that respects our config.
     let num_pipelines = RAYON.current_num_threads();
-    async_executor::set_num_threads(num_pipelines);
+    executor::set_num_threads(num_pipelines);
 
     let (query_tasks_send, query_tasks_recv) = crossbeam_channel::unbounded();
     let (subphase_tasks_send, subphase_tasks_recv) = crossbeam_channel::unbounded();
