@@ -1,5 +1,6 @@
 use std::ops::Range;
 
+use polars_async::primitives::distributor_channel::{self};
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
@@ -11,7 +12,6 @@ use polars_utils::mem::prefetch::prefetch_l2;
 use polars_utils::slice_enum::Slice;
 
 use super::{NO_SLICE, SLICE_ENDED};
-use crate::async_primitives::distributor_channel::{self};
 use crate::nodes::MorselSeq;
 use crate::utils::tokio_handle_ext;
 

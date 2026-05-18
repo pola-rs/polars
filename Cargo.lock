@@ -94,7 +94,7 @@ dependencies = [
  "snap",
  "strum",
  "strum_macros",
- "thiserror 2.0.18",
+ "thiserror",
  "uuid",
 ]
 
@@ -2725,7 +2725,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
- "thiserror 2.0.18",
+ "thiserror",
  "tokio",
  "tracing",
  "url",
@@ -2977,6 +2977,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-async"
+version = "0.53.0"
+dependencies = [
+ "atomic-waker",
+ "crossbeam-channel",
+ "crossbeam-deque",
+ "crossbeam-utils",
+ "parking_lot",
+ "pin-project-lite",
+ "polars-error",
+ "polars-utils",
+ "rand 0.9.2",
+ "slotmap",
+ "tokio",
+]
+
+[[package]]
 name = "polars-buffer"
 version = "0.53.0"
 dependencies = [
@@ -3044,6 +3061,7 @@ dependencies = [
  "ndarray",
  "num-traits",
  "polars-arrow",
+ "polars-async",
  "polars-buffer",
  "polars-compute",
  "polars-config",
@@ -3562,22 +3580,18 @@ version = "0.53.0"
 dependencies = [
  "async-channel",
  "async-trait",
- "atomic-waker",
  "bitflags",
  "bytes",
  "chrono-tz",
  "crossbeam-channel",
- "crossbeam-deque",
  "crossbeam-queue",
- "crossbeam-utils",
  "futures",
  "memchr",
- "memmap2",
  "num-traits",
  "parking_lot",
  "percent-encoding",
- "pin-project-lite",
  "polars-arrow",
+ "polars-async",
  "polars-buffer",
  "polars-compute",
  "polars-config",
@@ -3594,7 +3608,6 @@ dependencies = [
  "polars-time",
  "polars-utils",
  "pyo3",
- "rand 0.9.2",
  "rayon",
  "recursive",
  "schemars",
@@ -3865,7 +3878,7 @@ dependencies = [
  "pyo3-polars-derive",
  "serde",
  "serde-pickle",
- "thiserror 1.0.69",
+ "thiserror",
 ]
 
 [[package]]
@@ -3914,7 +3927,7 @@ dependencies = [
  "rustc-hash",
  "rustls",
  "socket2",
- "thiserror 2.0.18",
+ "thiserror",
  "tokio",
  "tracing",
  "web-time",
@@ -3935,7 +3948,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.18",
+ "thiserror",
  "tinyvec",
  "tracing",
  "web-time",
@@ -4899,31 +4912,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
 dependencies = [
- "thiserror-impl 2.0.18",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.116",
+ "thiserror-impl",
 ]
 
 [[package]]

@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use arrow::array::builder::ShareStrategy;
+use polars_async::executor;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
@@ -25,8 +27,6 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
 use super::{BufferedStream, LOPSIDED_SAMPLE_FACTOR};
-use crate::async_executor;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
@@ -398,7 +398,7 @@ impl SampleState {
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
-            crate::async_executor::task_scope(|scope| {
+            executor::task_scope(|scope| {
                 let mut join_handles = Vec::new();
                 let receivers = sampled_build_morsels
                     .reinsert(state.num_pipelines, None, scope, &mut join_handles)
@@ -641,7 +641,7 @@ impl BuildState {
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        async_executor::task_scope(|s| {
+        executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);

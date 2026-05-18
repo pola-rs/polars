@@ -127,7 +127,7 @@ impl StreamingQuery {
         let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
         {
-            crate::async_executor::track_task_metrics(true);
+            polars_async::executor::track_task_metrics(true);
             Some(Arc::default())
         } else {
             None
