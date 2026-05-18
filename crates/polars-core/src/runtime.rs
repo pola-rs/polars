@@ -5,7 +5,6 @@ use std::sync::mpsc::{TryRecvError, sync_channel};
 
 use polars_utils::with_drop::WithDrop;
 use rayon::{ThreadPool, ThreadPoolBuilder, Yield};
-use tokio::runtime::{Builder, Runtime};
 
 pub struct RAYON;
 
