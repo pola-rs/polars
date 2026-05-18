@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -294,13 +293,18 @@ pub trait ListNameSpaceImpl: AsList {
             periods.len()
         );
 
-        // Broadcast `self`
-        let mut ca = Cow::Borrowed(ca);
-        if ca.len() == 1 && periods.len() != 1 {
-            // Optimize: Don't broadcast and instead have a special path.
-            ca = Cow::Owned(ca.new_from_index(0, periods.len()));
+        let target_len = periods.len();
+        if ca.len() == 1 && target_len > 1 {
+            let single_list = ca.get_as_series(0);
+            let out = shift_broadcast_list(
+                single_list,
+                periods,
+                target_len,
+                ca.name().clone(),
+                ca.inner_dtype(),
+            );
+            return Ok(self.same_type(out));
         }
-        let ca = ca.as_ref();
 
         let out = match periods.len() {
             1 => {
@@ -869,6 +873,29 @@ pub fn slice_broadcast_list(
             (Some(offset), Some(length)) => Some(single_list.slice(offset, length as usize)),
             _ => None,
         }
+    });
+
+    let mut out: ListChunked = iter.collect_trusted();
+    out.rename(name);
+    out
+}
+
+fn shift_broadcast_list(
+    single_list: Option<Series>,
+    periods: &Int64Chunked,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> ListChunked {
+    debug_assert!(target_len == periods.len());
+
+    let Some(single_list) = single_list else {
+        return ListChunked::full_null_with_dtype(name, target_len, inner_dtype);
+    };
+
+    let iter = (0..target_len).map(|index| {
+        let opt_period = periods.get(index);
+        opt_period.map(|period| single_list.shift(period))
     });
 
     let mut out: ListChunked = iter.collect_trusted();
