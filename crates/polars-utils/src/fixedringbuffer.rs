@@ -1,3 +1,5 @@
+use std::mem::ManuallyDrop;
+
 /// A ring-buffer with a size determined at creation-time
 ///
 /// This makes it perfectly suited for buffers that produce and consume at different speeds.
@@ -24,14 +26,14 @@ const fn wrapping_add(x: usize, n: usize, capacity: usize) -> usize {
 
 impl<T> FixedRingBuffer<T> {
     pub fn new(capacity: usize) -> Self {
-        let buffer = Vec::with_capacity(capacity);
+        let mut buffer = ManuallyDrop::new(Vec::with_capacity(capacity));
 
         Self {
             start: 0,
             length: 0,
 
             _buffer_capacity: buffer.capacity(),
-            buffer: buffer.leak() as *mut [T] as *mut T,
+            buffer: buffer.as_mut_ptr(),
             capacity,
         }
     }
@@ -212,5 +214,12 @@ mod tests {
         assert_eq!(frb.pop_front(), Some(Box::new(1)));
         assert_eq!(frb.pop_front(), Some(Box::new(3)));
         assert_eq!(frb.pop_front(), None);
+    }
+
+    #[test]
+    fn first_push_preserves_allocation_provenance() {
+        let mut frb = FixedRingBuffer::new(1);
+
+        assert_eq!(frb.push("a"), Some(()));
     }
 }
