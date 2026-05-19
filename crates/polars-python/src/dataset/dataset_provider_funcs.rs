@@ -4,6 +4,7 @@ use std::sync::Arc;
 use polars::prelude::{DslPlan, PlSmallStr, Schema, SchemaRef};
 use polars_core::config;
 use polars_error::PolarsResult;
+use polars_plan::dsl::DatasetPredicate;
 use polars_utils::python_function::PythonObject;
 use pyo3::conversion::FromPyObject;
 use pyo3::exceptions::PyValueError;
@@ -82,8 +83,7 @@ pub fn to_dataset_scan(
     limit: Option<usize>,
     projection: Option<&[PlSmallStr]>,
     filter_columns: Option<&[PlSmallStr]>,
-    pyarrow_predicate: Option<&PythonObject>,
-    iceberg_predicate: Option<&PythonObject>,
+    predicate: &DatasetPredicate,
 ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
     Python::attach(|py| {
         let kwargs = PyDict::new(py);
@@ -117,14 +117,25 @@ pub fn to_dataset_scan(
             kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
         }
 
+        // Provider has to define `_PREDICATE_DIALECT` on the dataset object to determine
+        // which predicate to use.
+        let dialect: PyBackedStr = dataset_object
+            .getattr(py, "_PREDICATE_DIALECT")?
+            .extract(py)?;
+        let selected = match &*dialect {
+            "pyarrow" => predicate.pyarrow.as_ref(),
+            "iceberg" => predicate.iceberg.as_ref(),
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown dataset predicate dialect: {other:?}"
+                ))
+                .into());
+            },
+        };
+        // ie. pyarrow_predicate
         kwargs.set_item(
-            intern!(py, "pyarrow_predicate"),
-            pyarrow_predicate.map(|p| p.0.bind(py)),
-        )?;
-
-        kwargs.set_item(
-            intern!(py, "iceberg_predicate"),
-            iceberg_predicate.map(|p| p.0.bind(py)),
+            format!("{dialect}_predicate"),
+            selected.map(|p| p.0.bind(py)),
         )?;
 
         let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = dataset_object

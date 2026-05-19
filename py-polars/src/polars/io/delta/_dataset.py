@@ -45,6 +45,8 @@ class DeltaDataset:
 
     rechunk: bool
 
+    _PREDICATE_DIALECT = "pyarrow"
+
     #
     # PythonDatasetProvider interface functions
     #
@@ -61,7 +63,6 @@ class DeltaDataset:
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
         pyarrow_predicate: Any | None = None,
-        iceberg_predicate: Any | None = None,  # noqa: ARG002 (unused but part of the rust signature)
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
         import polars as pl

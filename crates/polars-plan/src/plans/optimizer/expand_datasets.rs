@@ -11,6 +11,7 @@ use polars_utils::slice_enum::Slice;
 use polars_utils::{format_pl_smallstr, unitvec};
 
 #[cfg(feature = "python")]
+use crate::dsl::DatasetPredicate;
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
 use crate::plans::{AExpr, IR};
@@ -224,13 +225,17 @@ pub(super) fn expand_datasets(
                     None => None,
                 };
 
+                let predicate = DatasetPredicate {
+                    pyarrow: pyarrow_predicate,
+                    iceberg: iceberg_predicate,
+                };
+
                 if let Some((expanded_dsl, version)) = dataset_object.to_dataset_scan(
                     existing_resolved_version_key,
                     limit,
                     projection.as_deref(),
                     live_filter_columns.as_deref(),
-                    pyarrow_predicate.as_ref(),
-                    iceberg_predicate.as_ref(),
+                    &predicate,
                 )? {
                     *guard = Some(ExpandedDataset {
                         version,
