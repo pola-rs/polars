@@ -11,9 +11,8 @@ use crate::dsl::Expr;
 use crate::plans::deep_copy::deep_copy_ir_delete_caches;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
-use crate::plans::{AExpr, PredicatePushDown, IR};
-use crate::prelude::to_expr_ir;
-use crate::prelude::ExprToIRContext;
+use crate::plans::{AExpr, IR, PredicatePushDown};
+use crate::prelude::{ExprToIRContext, to_expr_ir};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names;
 
@@ -95,67 +94,67 @@ fn predicates_can_pass_subtree(
 
     Ok(!matches!(lp_arena.get(top), IR::Filter { .. }))
 } // 1. This will ensure that all equal caches communicate the amount of columns
-  //    they need to project.
-  // 2. This will ensure we apply predicate in the subtrees below the caches.
-  //    If the predicate above the cache is the same for all matching caches, that filter will be
-  //    applied as well.
-  //
-  // # Example
-  // Consider this tree, where `SUB-TREE` is duplicate and can be cached.
-  //
-  //
-  //                         Tree
-  //                         |
-  //                         |
-  //    |--------------------|-------------------|
-  //    |                                        |
-  //    SUB-TREE                                 SUB-TREE
-  //
-  // STEPS:
-  // - 1. CSE will run and will insert cache nodes
-  //
-  //                         Tree
-  //                         |
-  //                         |
-  //    |--------------------|-------------------|
-  //    |                                        |
-  //    | CACHE 0                                | CACHE 0
-  //    |                                        |
-  //    SUB-TREE                                 SUB-TREE
-  //
-  // - 2. predicate and projection pushdown will run and will insert optional FILTER and PROJECTION above the caches
-  //
-  //                         Tree
-  //                         |
-  //                         |
-  //    |--------------------|-------------------|
-  //    | FILTER (optional)                      | FILTER (optional)
-  //    | PROJ (optional)                        | PROJ (optional)
-  //    |                                        |
-  //    | CACHE 0                                | CACHE 0
-  //    |                                        |
-  //    SUB-TREE                                 SUB-TREE
-  //
-  // # Projection optimization
-  // The union of the projection is determined and the projection will be pushed down.
-  //
-  //                         Tree
-  //                         |
-  //                         |
-  //    |--------------------|-------------------|
-  //    | FILTER (optional)                      | FILTER (optional)
-  //    | CACHE 0                                | CACHE 0
-  //    |                                        |
-  //    SUB-TREE                                 SUB-TREE
-  //    UNION PROJ (optional)                    UNION PROJ (optional)
-  //
-  // # Filter optimization
-  // Depending on the predicates the predicate pushdown optimization will run.
-  // Possible cases:
-  // - NO FILTERS: run predicate pd from the cache nodes -> finish
-  // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
-  // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
-  // - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+//    they need to project.
+// 2. This will ensure we apply predicate in the subtrees below the caches.
+//    If the predicate above the cache is the same for all matching caches, that filter will be
+//    applied as well.
+//
+// # Example
+// Consider this tree, where `SUB-TREE` is duplicate and can be cached.
+//
+//
+//                         Tree
+//                         |
+//                         |
+//    |--------------------|-------------------|
+//    |                                        |
+//    SUB-TREE                                 SUB-TREE
+//
+// STEPS:
+// - 1. CSE will run and will insert cache nodes
+//
+//                         Tree
+//                         |
+//                         |
+//    |--------------------|-------------------|
+//    |                                        |
+//    | CACHE 0                                | CACHE 0
+//    |                                        |
+//    SUB-TREE                                 SUB-TREE
+//
+// - 2. predicate and projection pushdown will run and will insert optional FILTER and PROJECTION above the caches
+//
+//                         Tree
+//                         |
+//                         |
+//    |--------------------|-------------------|
+//    | FILTER (optional)                      | FILTER (optional)
+//    | PROJ (optional)                        | PROJ (optional)
+//    |                                        |
+//    | CACHE 0                                | CACHE 0
+//    |                                        |
+//    SUB-TREE                                 SUB-TREE
+//
+// # Projection optimization
+// The union of the projection is determined and the projection will be pushed down.
+//
+//                         Tree
+//                         |
+//                         |
+//    |--------------------|-------------------|
+//    | FILTER (optional)                      | FILTER (optional)
+//    | CACHE 0                                | CACHE 0
+//    |                                        |
+//    SUB-TREE                                 SUB-TREE
+//    UNION PROJ (optional)                    UNION PROJ (optional)
+//
+// # Filter optimization
+// Depending on the predicates the predicate pushdown optimization will run.
+// Possible cases:
+// - NO FILTERS: run predicate pd from the cache nodes -> finish
+// - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
+// - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
+// - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
 pub(crate) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<IR>,

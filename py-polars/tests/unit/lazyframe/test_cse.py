@@ -1494,6 +1494,8 @@ def test_cse_projection_pushdown_27569() -> None:
         q.collect(),
         pl.DataFrame({"a": [1, None, 1], "b": [None, 1, 1]}),
     )
+
+
 def test_multiplexer_simple_concat() -> None:
     common = pl.LazyFrame({"x": [1, 2, 3]}).with_columns(x2=pl.col.x * pl.col.x)
     lf = pl.concat([common.filter(pl.col.x2 == k) for k in range(5)])
