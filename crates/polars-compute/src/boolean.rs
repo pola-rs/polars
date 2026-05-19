@@ -5,7 +5,6 @@ use arrow::datatypes::ArrowDataType;
 
 /// Whether the value bitmap contains any `true` (caller must ensure no nulls).
 /// Performs an early exit when the first `true` is found.
-#[inline]
 fn any_no_null(bits: &Bitmap) -> bool {
     let (bytes, offset, len) = bits.as_slice();
     leading_zeros(bytes, offset, len) < len
@@ -13,7 +12,6 @@ fn any_no_null(bits: &Bitmap) -> bool {
 
 /// Whether every bit in the value bitmap is `true` (caller must ensure no nulls).
 /// Performs an early exit when the first `false` is found.
-#[inline]
 fn all_no_null(bits: &Bitmap) -> bool {
     let (bytes, offset, len) = bits.as_slice();
     leading_ones(bytes, offset, len) == len
