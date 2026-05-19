@@ -579,8 +579,6 @@ pub trait ListNameSpaceImpl: AsList {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
-        use std::borrow::Cow;
-
         let ca = self.as_list();
 
         let n_s = n.strict_cast(&IDX_DTYPE)?;
@@ -593,13 +591,21 @@ pub trait ListNameSpaceImpl: AsList {
             n.len()
         );
 
-        // Broadcast `self`
-        let mut ca = Cow::Borrowed(ca);
-        if ca.len() == 1 && n.len() != 1 {
-            // Optimize: Don't broadcast and instead have a special path.
-            ca = Cow::Owned(ca.new_from_index(0, n.len()));
+        let target_len = n.len();
+        if ca.len() == 1 && target_len > 1 {
+            let single_list = ca.get_as_series(0);
+            let out = sample_n_broadcast_list(
+                single_list,
+                n,
+                with_replacement,
+                shuffle,
+                seed,
+                target_len,
+                ca.name().clone(),
+                ca.inner_dtype(),
+            )?;
+            return Ok(self.same_type(out));
         }
-        let ca = ca.as_ref();
 
         let out = match n.len() {
             1 => {
@@ -901,4 +907,40 @@ fn shift_broadcast_list(
     let mut out: ListChunked = iter.collect_trusted();
     out.rename(name);
     out
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn sample_n_broadcast_list(
+    single_list: Option<Series>,
+    n: &IdxCa,
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> PolarsResult<ListChunked> {
+    debug_assert!(target_len == n.len());
+
+    let Some(single_list) = single_list else {
+        return Ok(ListChunked::full_null_with_dtype(
+            name,
+            target_len,
+            inner_dtype,
+        ));
+    };
+
+    let mut out: ListChunked = (0..target_len)
+        .map(|i| -> PolarsResult<Option<Series>> {
+            match n.get(i) {
+                Some(n_val) => single_list
+                    .sample_n(n_val as usize, with_replacement, shuffle, seed)
+                    .map(Some),
+                None => Ok(None),
+            }
+        })
+        .collect::<PolarsResult<_>>()?;
+
+    out.rename(name);
+    Ok(out)
 }
