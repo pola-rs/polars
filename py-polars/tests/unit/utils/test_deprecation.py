@@ -49,6 +49,17 @@ def test_deprecate_renamed_parameter(recwarn: Any) -> None:
     assert "rab" in str(recwarn[1].message)
 
 
+def test_deprecated_under_deprecate_renamed_parameter() -> None:
+    # Regression test for https://github.com/pola-rs/polars/issues/26536
+    # @deprecated must issue a warning even when stacked below other decorators.
+    @deprecate_renamed_parameter("old_name", "new_name", version="99.0.0")
+    @deprecated("`hello` is deprecated.")
+    def hello(new_name: str | None = None) -> None: ...
+
+    with pytest.deprecated_call():
+        hello(new_name="value")
+
+
 class Foo:  # noqa: D101
     @deprecate_nonkeyword_arguments(allowed_args=["self", "baz"], version="1.0.0")
     def bar(
