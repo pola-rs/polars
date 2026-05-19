@@ -11,7 +11,9 @@ use crate::dsl::Expr;
 use crate::plans::deep_copy::deep_copy_ir_delete_caches;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
-use crate::plans::{AExpr, IR, PredicatePushDown};
+use crate::plans::{AExpr, PredicatePushDown, IR};
+use crate::prelude::to_expr_ir;
+use crate::prelude::ExprToIRContext;
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names;
 
@@ -65,143 +67,95 @@ fn get_upper_predicates(
 
 type TwoParents = [Option<Node>; 2];
 
-fn should_remove_cache_for_predicates(
+fn predicates_can_pass_subtree(
     child: Node,
     predicate_union: &PlHashMap<Expr, u32>,
-    lp_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
-) -> bool {
-    predicate_union.keys().any(|pred| {
-        let predicate_cols: PlHashSet<_> = expr_to_leaf_column_names(pred).into_iter().collect();
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    pushdown_maintain_errors: bool,
+    new_streaming: bool,
+) -> PolarsResult<bool> {
+    let child_copy = deep_copy_ir_delete_caches(child, lp_arena, expr_arena);
 
-        if predicate_cols.is_empty() {
-            return true;
-        }
+    let schema = lp_arena.get(child_copy).schema(lp_arena).into_owned();
 
-        let mut stack = vec![child];
-        let mut scratch = vec![];
+    let mut top = child_copy;
+    for expr in predicate_union.keys() {
+        let expr_ir = to_expr_ir(expr.clone(), &mut ExprToIRContext::new(expr_arena, &schema))?;
+        top = lp_arena.add(IR::Filter {
+            input: top,
+            predicate: expr_ir,
+        });
+    }
 
-        while let Some(node) = stack.pop() {
-            let ir = lp_arena.get(node);
+    let mut pred_pd =
+        PredicatePushDown::new(pushdown_maintain_errors, new_streaming).block_at_cache(1);
+    let optimized = pred_pd.optimize(lp_arena.take(top), lp_arena, expr_arena)?;
+    lp_arena.replace(top, optimized);
 
-            match ir {
-                IR::HStack { exprs, input, .. } => {
-                    if exprs
-                        .iter()
-                        .any(|expr| predicate_cols.contains(expr.output_name()))
-                    {
-                        return false;
-                    }
-                    stack.push(*input);
-                },
-
-                IR::GroupBy {
-                    keys, input, apply, ..
-                } => {
-                    if apply.is_some() {
-                        return false;
-                    }
-
-                    let input_schema = lp_arena.get(*input).schema(lp_arena);
-                    let mut key_schema = Schema::with_capacity(keys.len());
-
-                    for key in keys {
-                        if let AExpr::Column(c) = expr_arena.get(key.node()) {
-                            if let Some(dtype) = input_schema.get(c) {
-                                key_schema.insert(key.output_name().clone(), dtype.clone());
-                            }
-                        }
-                    }
-
-                    if predicate_cols
-                        .iter()
-                        .any(|col| !key_schema.contains(col.as_str()))
-                    {
-                        return false;
-                    }
-
-                    stack.push(*input);
-                },
-
-                IR::Select { input, .. } => {
-                    stack.push(*input);
-                },
-
-                IR::Slice { .. } | IR::HConcat { .. } => {
-                    return false;
-                },
-
-                _ => {
-                    ir.copy_inputs(&mut scratch);
-                    stack.append(&mut scratch);
-                },
-            }
-        }
-
-        true
-    })
+    Ok(!matches!(lp_arena.get(top), IR::Filter { .. }))
 } // 1. This will ensure that all equal caches communicate the amount of columns
-//    they need to project.
-// 2. This will ensure we apply predicate in the subtrees below the caches.
-//    If the predicate above the cache is the same for all matching caches, that filter will be
-//    applied as well.
-//
-// # Example
-// Consider this tree, where `SUB-TREE` is duplicate and can be cached.
-//
-//
-//                         Tree
-//                         |
-//                         |
-//    |--------------------|-------------------|
-//    |                                        |
-//    SUB-TREE                                 SUB-TREE
-//
-// STEPS:
-// - 1. CSE will run and will insert cache nodes
-//
-//                         Tree
-//                         |
-//                         |
-//    |--------------------|-------------------|
-//    |                                        |
-//    | CACHE 0                                | CACHE 0
-//    |                                        |
-//    SUB-TREE                                 SUB-TREE
-//
-// - 2. predicate and projection pushdown will run and will insert optional FILTER and PROJECTION above the caches
-//
-//                         Tree
-//                         |
-//                         |
-//    |--------------------|-------------------|
-//    | FILTER (optional)                      | FILTER (optional)
-//    | PROJ (optional)                        | PROJ (optional)
-//    |                                        |
-//    | CACHE 0                                | CACHE 0
-//    |                                        |
-//    SUB-TREE                                 SUB-TREE
-//
-// # Projection optimization
-// The union of the projection is determined and the projection will be pushed down.
-//
-//                         Tree
-//                         |
-//                         |
-//    |--------------------|-------------------|
-//    | FILTER (optional)                      | FILTER (optional)
-//    | CACHE 0                                | CACHE 0
-//    |                                        |
-//    SUB-TREE                                 SUB-TREE
-//    UNION PROJ (optional)                    UNION PROJ (optional)
-//
-// # Filter optimization
-// Depending on the predicates the predicate pushdown optimization will run.
-// Possible cases:
-// - NO FILTERS: run predicate pd from the cache nodes -> finish
-// - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
-// - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
-// - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+  //    they need to project.
+  // 2. This will ensure we apply predicate in the subtrees below the caches.
+  //    If the predicate above the cache is the same for all matching caches, that filter will be
+  //    applied as well.
+  //
+  // # Example
+  // Consider this tree, where `SUB-TREE` is duplicate and can be cached.
+  //
+  //
+  //                         Tree
+  //                         |
+  //                         |
+  //    |--------------------|-------------------|
+  //    |                                        |
+  //    SUB-TREE                                 SUB-TREE
+  //
+  // STEPS:
+  // - 1. CSE will run and will insert cache nodes
+  //
+  //                         Tree
+  //                         |
+  //                         |
+  //    |--------------------|-------------------|
+  //    |                                        |
+  //    | CACHE 0                                | CACHE 0
+  //    |                                        |
+  //    SUB-TREE                                 SUB-TREE
+  //
+  // - 2. predicate and projection pushdown will run and will insert optional FILTER and PROJECTION above the caches
+  //
+  //                         Tree
+  //                         |
+  //                         |
+  //    |--------------------|-------------------|
+  //    | FILTER (optional)                      | FILTER (optional)
+  //    | PROJ (optional)                        | PROJ (optional)
+  //    |                                        |
+  //    | CACHE 0                                | CACHE 0
+  //    |                                        |
+  //    SUB-TREE                                 SUB-TREE
+  //
+  // # Projection optimization
+  // The union of the projection is determined and the projection will be pushed down.
+  //
+  //                         Tree
+  //                         |
+  //                         |
+  //    |--------------------|-------------------|
+  //    | FILTER (optional)                      | FILTER (optional)
+  //    | CACHE 0                                | CACHE 0
+  //    |                                        |
+  //    SUB-TREE                                 SUB-TREE
+  //    UNION PROJ (optional)                    UNION PROJ (optional)
+  //
+  // # Filter optimization
+  // Depending on the predicates the predicate pushdown optimization will run.
+  // Possible cases:
+  // - NO FILTERS: run predicate pd from the cache nodes -> finish
+  // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
+  // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
+  // - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
 pub(crate) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<IR>,
@@ -362,12 +316,14 @@ pub(crate) fn set_cache_states(
             // # CHECK IF WE NEED TO REMOVE CACHES
 
             let should_remove_cache = v.predicate_union.len() > 1
-                && should_remove_cache_for_predicates(
+                && predicates_can_pass_subtree(
                     *v.children.first().unwrap(),
                     &v.predicate_union,
                     lp_arena,
                     expr_arena,
-                );
+                    pushdown_maintain_errors,
+                    new_streaming,
+                )?;
             if should_remove_cache {
                 if verbose {
                     eprintln!("cache nodes will be removed because predicates don't match")

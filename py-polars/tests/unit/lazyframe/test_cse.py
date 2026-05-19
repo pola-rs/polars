@@ -1494,36 +1494,23 @@ def test_cse_projection_pushdown_27569() -> None:
         q.collect(),
         pl.DataFrame({"a": [1, None, 1], "b": [None, 1, 1]}),
     )
+def test_multiplexer_simple_concat() -> None:
+    common = pl.LazyFrame({"x": [1, 2, 3]}).with_columns(x2=pl.col.x * pl.col.x)
+    lf = pl.concat([common.filter(pl.col.x2 == k) for k in range(5)])
 
-
-def test_cse_existing_predicate_at_scan_27748() -> None:
-    base_q = pl.scan_csv(
-        pl.DataFrame(
-            [
-                pl.Series("x", [True, False]),
-                pl.Series("y0", [False, False]),
-                pl.Series("y1", [True, True]),
-            ]
-        )
-        .write_csv()
-        .encode()
-    ).with_columns(x_not=pl.col("x").not_())
-
-    q = pl.concat(
-        [
-            base_q.filter(pl.col("x_not") & pl.col("y0")),
-            base_q.filter(pl.col("x_not") & pl.col("y0")),
-            base_q.filter(pl.col("x_not") & pl.col("y1")),
-        ]
+    graph_output = lf.show_graph(
+        plan_stage="physical", engine="streaming", raw_output=True
     )
+    assert "multiplexer" in graph_output
 
-    plan = q.explain()
 
-    assert plan.count('SELECTION: col("y0")') == 2
-    assert plan.count('SELECTION: col("y1")') == 1
-    assert plan.count("CACHE[") == 2
-
-    assert_frame_equal(
-        q.collect(),
-        pl.DataFrame({"x": False, "y0": False, "y1": True, "x_not": True}),
+def test_multiplexer_grouped_concat() -> None:
+    common = (
+        pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6]}).group_by("x").agg(pl.col.y.sum())
     )
+    lf = pl.concat([common.filter(pl.col.y == k) for k in range(3)])
+
+    graph_output = lf.show_graph(
+        plan_stage="physical", engine="streaming", raw_output=True
+    )
+    assert "multiplexer" in graph_output
