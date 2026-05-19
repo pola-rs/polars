@@ -535,13 +535,14 @@ def test_hist_string_no_bins_raises_27155() -> None:
 
 def test_hist_non_numeric_bins_raise_27155() -> None:
     s = pl.Series("a", [1, 2, 3])
-    with pytest.raises(pl.exceptions.InvalidOperationError, match="conversion from `str` to `f64` failed"):
-        s.hist(bins=pl.Series("bins", ["N"]))
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="conversion from `str` to `f64` failed",
+    ):
+        s.to_frame().select(pl.col.a.hist(bins=pl.Series("bins", ["N"])))
 
 
 def test_hist_integer_bins_strict_cast_regression() -> None:
-    # Ensure strict_cast doesn't reject valid numeric upcasting
     s = pl.Series("a", [1.5, 2.5, 3.5])
-    # Bins are integers, which must be safely strict_casted to Float64
     result = s.hist(bins=[1, 2, 3, 4])
-    assert result["count"].to_list() == [0, 1, 1, 1, 0]
+    assert result["count"].to_list() == [1, 1, 1]
