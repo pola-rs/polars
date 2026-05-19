@@ -238,6 +238,20 @@ pub fn finish_infer_field_schema(possibilities: &PlHashSet<DataType>) -> DataTyp
             // we have an integer and double, fall down to double
             DataType::Float64
         },
+        #[cfg(feature = "dtype-i128")]
+        2 if possibilities.contains(&DataType::Int64)
+            && possibilities.contains(&DataType::Int128) =>
+        {
+            // all values fit within i128
+            DataType::Int128
+        },
+        #[cfg(feature = "dtype-i128")]
+        2 if possibilities.contains(&DataType::Int128)
+            && possibilities.contains(&DataType::Float64) =>
+        {
+            // fall down to double for mixed int128 and float
+            DataType::Float64
+        },
         // default to String for conflicting datatypes (e.g bool and int)
         _ => DataType::String,
     }
@@ -282,7 +296,15 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
     {
         DataType::Float64
     } else if INTEGER_RE.is_match(string) {
-        DataType::Int64
+        if string.parse::<i64>().is_ok() {
+            DataType::Int64
+        } else {
+            #[cfg(feature = "dtype-i128")]
+            if string.parse::<i128>().is_ok() {
+                return DataType::Int128;
+            }
+            DataType::String
+        }
     } else if try_parse_dates {
         #[cfg(feature = "polars-time")]
         {
@@ -311,4 +333,35 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
 
 fn column_name(i: usize) -> PlSmallStr {
     format_pl_smallstr!("column_{}", i + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_infer_field_schema_i64_overflow() {
+        // Values within i64 range should infer as Int64.
+        assert_eq!(
+            infer_field_schema("9223372036854775807", false, false),
+            DataType::Int64,
+        );
+
+        // Values exceeding i64::MAX should infer as Int128 when the feature is enabled,
+        // otherwise as String.
+        let large = "12345678901234567890";
+        #[cfg(feature = "dtype-i128")]
+        assert_eq!(infer_field_schema(large, false, false), DataType::Int128,);
+        #[cfg(not(feature = "dtype-i128"))]
+        assert_eq!(infer_field_schema(large, false, false), DataType::String,);
+    }
+
+    #[test]
+    #[cfg(feature = "dtype-i128")]
+    fn test_finish_infer_field_schema_i64_and_i128() {
+        let mut possibilities = PlHashSet::new();
+        possibilities.insert(DataType::Int64);
+        possibilities.insert(DataType::Int128);
+        assert_eq!(finish_infer_field_schema(&possibilities), DataType::Int128);
+    }
 }
