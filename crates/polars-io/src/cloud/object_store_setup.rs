@@ -52,7 +52,9 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
                 config: config.clone(),
                 retry_config: *retry_config,
                 #[cfg(feature = "cloud")]
-                credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
+                // kdn HACK for testing purposes
+                credential_provider: 0
+                // credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
             }
         },
     );
