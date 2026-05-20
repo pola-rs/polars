@@ -130,9 +130,9 @@ pub trait SeriesMethods: SeriesSealed {
         // Logical non-primitive types (e.g. String, Categorical, List, …): take only the contiguous
         // non-null values (`non_null`). For ordinary `Categorical` use `iter_str` (below); otherwise
         // `to_physical_repr`, then
-        // (1) reuse `is_sorted_ca_num` when the physical type is primitive numeric (temporal /
+        // (1) for ordinary [`DataType::Categorical`], compare adjacent **decoded strings** (`iter_str`),
+        // (2) reuse `is_sorted_ca_num` when the physical type is primitive numeric (temporal /
         //     Decimal, Enum-as-integer, …) after `to_physical_repr`;
-        // (2) for ordinary [`DataType::Categorical`], compare adjacent **decoded strings** (`iter_str`),
         // (3) uses a dedicated kernel for boolean values,
         // (4) else scans string / binary values with `TotalOrd`,
         // (5) else fall back to pairwise `Series::lt_eq` / `gt_eq` (nested types, etc.).
@@ -237,28 +237,30 @@ fn is_sorted_adjacent_total_ord<T: TotalOrd>(
     true
 }
 
-/// Ordinary [`DataType::Categorical`] uses **lexical string order** in `Series::lt_eq` / `gt_eq` (decoded
-/// labels via `iter_str`). This scans adjacent decoded strings—same semantics, no pairwise boolean mask.
+/// Ordinary [`DataType::Categorical`]: lexical order via adjacent decoded strings (`iter_str`), same as
+/// `Series::lt_eq` / `gt_eq`, but without a Boolean series. Caller must pass a contiguous **non-null**
+/// slice.
 #[cfg(feature = "dtype-categorical")]
 fn is_sorted_categorical_lexical_adjacent(s: &Series, options: SortOptions) -> PolarsResult<bool> {
-    polars_ensure!(
+    debug_assert!(
         matches!(s.dtype(), DataType::Categorical(_, _)),
-        ComputeError: "internal error: expected Categorical in lexical `is_sorted` path",
+        "expected Categorical in lexical `is_sorted` path"
     );
-    polars_ensure!(
-        s.null_count() == 0,
-        ComputeError: "internal error: lexical categorical `is_sorted` expects no nulls in slice"
+    debug_assert_eq!(
+        s.null_count(),
+        0,
+        "internal error: lexical categorical `is_sorted` expects no nulls in slice"
     );
 
     with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |$C| {
         let ca = s.cat::<$C>()?;
-        polars_ensure!(
-            ca.null_count() == 0,
-            ComputeError: "internal error: categorical physical array unexpectedly contains nulls"
+        debug_assert_eq!(
+            ca.null_count(),
+            0,
+            "internal error: categorical physical array unexpectedly contains nulls"
         );
 
-        // `ca.null_count() == 0` implies each `phys` row decodes via `iter_str` to `Some(..)` (see
-        // [`CategoricalChunked::iter_str`]).
+        // `ca.null_count() == 0` implies each `phys` row decodes via `iter_str` to `Some(..)`
         Ok(is_sorted_adjacent_total_ord(
             ca.iter_str().map(|opt| {
                 opt.expect(
