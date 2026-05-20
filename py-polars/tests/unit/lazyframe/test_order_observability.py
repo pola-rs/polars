@@ -165,6 +165,18 @@ def test_merge_sorted_to_union() -> None:
     assert "UNION" in explain
 
 
+def test_union_drops_maintain_order() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+    lf2 = pl.LazyFrame({"a": [2, 3, 4], "b": [4, 5, 6]})
+
+    lf = pl.concat([lf1, lf2]).group_by("a").agg(pl.col("b").sum())
+    explain = lf.explain(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert "UNION[maintain_order: true]" in explain
+
+    explain = lf.explain()
+    assert "UNION[maintain_order: false]" in explain
+
+
 @pytest.mark.parametrize("n_frames", [4, 5])
 def test_merge_sorted_deep_chain_to_union(n_frames: int) -> None:
     lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(n_frames)]
