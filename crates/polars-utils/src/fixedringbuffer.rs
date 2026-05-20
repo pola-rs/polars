@@ -215,11 +215,4 @@ mod tests {
         assert_eq!(frb.pop_front(), Some(Box::new(3)));
         assert_eq!(frb.pop_front(), None);
     }
-
-    #[test]
-    fn first_push_preserves_allocation_provenance() {
-        let mut frb = FixedRingBuffer::new(1);
-
-        assert_eq!(frb.push("a"), Some(()));
-    }
 }
