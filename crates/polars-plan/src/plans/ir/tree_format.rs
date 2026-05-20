@@ -228,9 +228,12 @@ impl<'a> TreeFmtNode<'a> {
                     wh(
                         h,
                         &(if let Some(slice) = options.slice {
-                            format!("SLICED UNION: {slice:?}")
+                            format!(
+                                "SLICED UNION[maintain_order: {0}]: {slice:?}",
+                                options.maintain_order
+                            )
                         } else {
-                            "UNION".to_string()
+                            format!("UNION[maintain_order: {0}]", options.maintain_order)
                         }),
                     ),
                     inputs
