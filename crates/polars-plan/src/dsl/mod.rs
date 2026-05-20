@@ -1546,6 +1546,11 @@ impl Expr {
         self.map_unary(BooleanFunction::IsEmpty { ignore_nulls })
     }
 
+    /// Returns whether the column contains one or more null values.
+    pub fn has_nulls(self) -> Self {
+        self.map_unary(BooleanFunction::HasNulls)
+    }
+
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).

@@ -16,6 +16,7 @@ pub enum IRBooleanFunction {
     IsEmpty {
         ignore_nulls: bool,
     },
+    HasNulls,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -70,7 +71,7 @@ impl IRBooleanFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRBooleanFunction as B;
         match self {
-            B::Any { .. } | B::All { .. } | B::IsEmpty { .. } => {
+            B::Any { .. } | B::All { .. } | B::IsEmpty { .. } | B::HasNulls => {
                 FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
             },
             B::IsNull | B::IsNotNull => FunctionOptions::elementwise(),
@@ -131,6 +132,7 @@ impl Display for IRBooleanFunction {
                 ignore_nulls: false,
             } => "is_empty",
             IsEmpty { ignore_nulls: true } => "is_empty_ignore_nulls",
+            HasNulls => "has_nulls",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",

@@ -1,6 +1,8 @@
 use std::io::Cursor;
 use std::sync::Arc;
 
+use polars_async::primitives::oneshot_channel;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_core::utils::arrow::io::ipc::read::{
@@ -13,8 +15,6 @@ use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-use crate::async_primitives::oneshot_channel;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::ipc::ROW_COUNT_OVERFLOW_ERR;
 use crate::utils::tokio_handle_ext;
 

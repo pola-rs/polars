@@ -376,7 +376,7 @@ fn test_binary_functions() {
         (col("a") + col("b")).alias("add"),
         (col("a") - col("b")).alias("sub"),
         (col("a") * col("b")).alias("mul"),
-        (col("a") / col("b")).alias("div"),
+        col("a").true_div(col("b")).alias("div"),
         (col("a") % col("b")).alias("rem"),
         col("a").eq(col("b")).not().alias("neq"),
         col("a").eq(col("b")).alias("eq"),

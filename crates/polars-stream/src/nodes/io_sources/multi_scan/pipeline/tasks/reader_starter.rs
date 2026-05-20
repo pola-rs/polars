@@ -4,6 +4,9 @@ use components::bridge::BridgeRecvPort;
 use components::row_deletions::{ExternalFilterMask, RowDeletionsInit};
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::primitives::oneshot_channel;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::config::verbose_print_sensitive;
 use polars_core::prelude::{AnyValue, DataType};
 use polars_core::scalar::Scalar;
@@ -15,9 +18,6 @@ use polars_utils::IdxSize;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::async_primitives::oneshot_channel;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::io_sources::multi_scan::components;
 use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
 use crate::nodes::io_sources::multi_scan::components::errors::missing_column_err;
@@ -337,7 +337,7 @@ impl ReaderStarter {
                 external_filter_mask: external_filter_mask.clone(),
             };
 
-            let reader_start_task_handle = AbortOnDropHandle::new(async_executor::spawn(
+            let reader_start_task_handle = AbortOnDropHandle::new(executor::spawn(
                 TaskPriority::Low,
                 start_reader_impl(constant_args.clone(), start_args_this_file),
             ));
@@ -419,6 +419,7 @@ async fn start_reader_impl(
         forbid_extra_columns,
         num_pipelines,
         disable_morsel_split,
+        last_morsel_pipelines,
         verbose,
     } = constant_args;
 
@@ -616,6 +617,7 @@ async fn start_reader_impl(
         cast_columns_policy: cast_columns_policy.clone(),
         num_pipelines,
         disable_morsel_split,
+        last_morsel_pipelines,
         callbacks,
     };
 

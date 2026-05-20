@@ -15,6 +15,7 @@ use crate::reduce::count::{CountReduce, NullCountReduce};
 use crate::reduce::cov::{new_cov_reduction, new_pearson_corr_reduction};
 use crate::reduce::first_last::{new_first_reduction, new_item_reduction, new_last_reduction};
 use crate::reduce::first_last_nonnull::{new_first_nonnull_reduction, new_last_nonnull_reduction};
+use crate::reduce::has_nulls::HasNullsReduce;
 use crate::reduce::implode::new_unordered_implode_reduction;
 use crate::reduce::is_empty::IsEmptyReduce;
 use crate::reduce::mean::new_mean_reduction;
@@ -165,6 +166,7 @@ pub fn into_reduction(
                     let is_empty = Box::new(IsEmptyReduce::new(*ignore_nulls)) as Box<_>;
                     (is_empty, input)
                 },
+                IRBooleanFunction::HasNulls => (Box::new(HasNullsReduce::new()) as Box<_>, input),
                 _ => unreachable!(),
             }
         },

@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
+use polars_async::executor::{self, JoinHandle, TaskPriority};
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
@@ -27,8 +29,6 @@ use record_batch_decode::RecordBatchDecoder;
 
 use super::multi_scan::reader_interface::BeginReadArgs;
 use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
-use crate::async_executor::{self, JoinHandle, TaskPriority};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::metrics::OptIOMetrics;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::ipc::metadata::read_ipc_metadata_bytes;
@@ -191,6 +191,7 @@ impl FileReader for IpcFileReader {
             cast_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
+            last_morsel_pipelines,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -388,7 +389,7 @@ impl FileReader for IpcFileReader {
                     SplitSlicePosition::Before => continue,
                     SplitSlicePosition::Overlapping(rows_offset, rows_len) => {
                         let record_batch_decoder = record_batch_decoder.clone();
-                        let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                        let decode_fut = executor::spawn(TaskPriority::High, async move {
                             record_batch_decoder
                                 .record_batch_data_to_df(record_batch_data, rows_offset, rows_len)
                                 .await
@@ -407,8 +408,10 @@ impl FileReader for IpcFileReader {
         // Task: Distributor.
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
-        let last_morsel_min_split = num_pipelines;
-        let distribute_task = async_executor::spawn(TaskPriority::High, async move {
+        //
+        // `last_morsel_pipelines` is precomputed at the multi-scan layer so the split budget is
+        // shared across files in the scan.
+        let distribute_task = executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -464,7 +467,7 @@ impl FileReader for IpcFileReader {
                     &df,
                     ideal_morsel_size,
                     next.is_none(),
-                    last_morsel_min_split,
+                    last_morsel_pipelines,
                 ) {
                     if morsel_send
                         .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
@@ -491,7 +494,7 @@ impl FileReader for IpcFileReader {
 
         Ok((
             morsel_recv,
-            async_executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
+            executor::spawn(TaskPriority::Low, async move { handle.await.unwrap() }),
         ))
     }
 }

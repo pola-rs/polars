@@ -1,4 +1,4 @@
-use crate::async_primitives::connector;
+use crate::primitives::connector;
 
 pub fn channel<T>() -> (Sender<T>, Receiver<T>) {
     let (tx, rx) = connector::connector();
