@@ -300,10 +300,13 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
             DataType::Int64
         } else {
             #[cfg(feature = "dtype-i128")]
-            if string.parse::<i128>().is_ok() {
-                return DataType::Int128;
+            {
+                DataType::Int128
             }
-            DataType::String
+            #[cfg(not(feature = "dtype-i128"))]
+            {
+                DataType::Int64
+            }
         }
     } else if try_parse_dates {
         #[cfg(feature = "polars-time")]
@@ -353,7 +356,7 @@ mod tests {
         #[cfg(feature = "dtype-i128")]
         assert_eq!(infer_field_schema(large, false, false), DataType::Int128,);
         #[cfg(not(feature = "dtype-i128"))]
-        assert_eq!(infer_field_schema(large, false, false), DataType::String,);
+        assert_eq!(infer_field_schema(large, false, false), DataType::Int64,);
     }
 
     #[test]
