@@ -27,7 +27,7 @@ sqlparser = { workspace = true }
 # to display dataframes in case of test failures
 polars-core = { workspace = true, features = ["fmt"] }
 # required for local runs of the 'iss_23134' test
-polars-lazy = { workspace = true, features = ["new_streaming"] }
+polars-lazy = { workspace = true, features = ["streaming"] }
 
 [features]
 default = []

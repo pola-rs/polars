@@ -2144,10 +2144,7 @@ def test_read_csv_invalid_schema_overrides_length(chunk_override: None) -> None:
     f = io.StringIO(csv)
 
     # streaming dispatches read_csv -> _scan_csv_impl which does not accept a list
-    if (
-        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
-        == "1"
-    ):
+    if os.getenv("POLARS_AUTO_STREAMING", os.getenv("POLARS_FORCE_STREAMING")) == "1":
         err = TypeError
         match = "expected 'schema_overrides' dict, found 'list'"
     else:
