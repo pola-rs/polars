@@ -158,7 +158,7 @@ jobs:
       - name: Run Python tests - streaming
         working-directory: py-polars
         env:
-          POLARS_AUTO_NEW_STREAMING: 1
+          POLARS_AUTO_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
@@ -170,7 +170,7 @@ jobs:
       - name: Run Python tests - streaming with morsel size 4
         working-directory: py-polars
         env:
-          POLARS_AUTO_NEW_STREAMING: 1
+          POLARS_AUTO_STREAMING: 1
           POLARS_IDEAL_MORSEL_SIZE: 4
           POLARS_TIMEOUT_MS: 60000
         run: >
