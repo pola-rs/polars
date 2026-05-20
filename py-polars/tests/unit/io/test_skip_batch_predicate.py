@@ -264,7 +264,7 @@ def test_float_skip_batch_predicate() -> None:
     assert sbp(pl.col("x").is_between(1.0, NaN)) is None  # No skip. NaN right bound.
 
 
-def test_float_geq_nan_skip_batch_predicate_27668() -> None:
+def test_float_geq_nan_skip_batch_predicate() -> None:
     # Regression test: col >= NaN must not incorrectly skip batches that contain NaN.
     #
     # min/max statistics exclude NaN, so a series like [NaN, 0.0] reports max=0.0.
