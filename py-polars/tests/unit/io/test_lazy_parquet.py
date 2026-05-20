@@ -1889,3 +1889,38 @@ def test_sink_parquet_lazy_and_collect() -> None:
     assert q.collect().shape == (0, 0)
 
     assert_frame_equal(pl.scan_parquet(f).collect(), df)
+
+
+def test_gteq_nan_skip_batch_predicate() -> None:
+    """Col >= NaN must not skip batches that contain NaN values.
+
+    Under TotalOrd semantics, NaN >= NaN is True, so a batch with NaN
+    values must not be skipped.  However, min/max stats exclude NaN, so
+    the predicate incorrectly concludes max(col) < NaN => can skip.
+    """
+    NaN = float("nan")
+
+    for dtype in [pl.Float16(), pl.Float32(), pl.Float64()]:
+        s = pl.Series("x", [NaN, None, 0.0, None], dtype=dtype)
+        expr = pl.col("x") >= pl.lit(NaN, dtype)
+
+        sbp = expr._skip_batch_predicate({"x": dtype})
+        if sbp is None:
+            continue  # Already conservative — no issue.
+
+        df = pl.DataFrame(
+            [
+                pl.Series("x_min", [s.min()], dtype),
+                pl.Series("x_max", [s.max()], dtype),
+                pl.Series("x_nc", [s.null_count()], pl.get_index_type()),
+                pl.Series("len", [s.len()], pl.get_index_type()),
+            ]
+        )
+        can_skip = df.select(can_skip=sbp).fill_null(False).to_series()[0]
+
+        # Invariant: if the predicate says can_skip, the filter must return 0 rows.
+        if can_skip:
+            assert s.to_frame().filter(expr).height == 0, (
+                f"dtype={dtype}: skip_batch_predicate said can_skip=True but "
+                f"filter returned {s.to_frame().filter(expr)} rows"
+            )
