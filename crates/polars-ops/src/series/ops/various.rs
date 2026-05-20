@@ -288,15 +288,15 @@ fn is_sorted_ca_bool(ca: &BooleanChunked, descending: bool) -> bool {
         "internal error: `is_sorted_ca_bool` expects a non-null boolean slice"
     );
     if descending {
-        match ca.first_false_idx() {
-            None => true,
-            Some(k) => ca.num_trues() == k,
-        }
+        let Some(idx) = ca.first_false_idx() else {
+            return true;
+        };
+        !ca.slice(idx as i64, ca.len() - idx).any()
     } else {
-        match ca.first_true_idx() {
-            None => true,
-            Some(k) => ca.num_falses() == k,
-        }
+        let Some(idx) = ca.first_true_idx() else {
+            return true;
+        };
+        ca.slice(idx as i64, ca.len() - idx).all()
     }
 }
 

@@ -1,21 +1,6 @@
 use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::utils::{leading_ones, leading_zeros};
-use arrow::bitmap::{Bitmap, binary_fold, quaternary, ternary};
+use arrow::bitmap::{binary_fold, quaternary, ternary};
 use arrow::datatypes::ArrowDataType;
-
-/// Whether the value bitmap contains any `true` (caller must ensure no nulls).
-/// Performs an early exit when the first `true` is found.
-fn any_no_null(bits: &Bitmap) -> bool {
-    let (bytes, offset, len) = bits.as_slice();
-    leading_zeros(bytes, offset, len) < len
-}
-
-/// Whether every bit in the value bitmap is `true` (caller must ensure no nulls).
-/// Performs an early exit when the first `false` is found.
-fn all_no_null(bits: &Bitmap) -> bool {
-    let (bytes, offset, len) = bits.as_slice();
-    leading_ones(bytes, offset, len) == len
-}
 
 /// Returns whether any of the non-null values in the array are `true`.
 ///
@@ -25,7 +10,7 @@ pub fn any(arr: &BooleanArray) -> Option<bool> {
     if null_count == arr.len() {
         None
     } else if null_count == 0 {
-        Some(any_no_null(arr.values()))
+        Some(arr.values().set_bits() > 0)
     } else {
         Some(arr.values().intersects_with(arr.validity().unwrap()))
     }
@@ -39,7 +24,7 @@ pub fn all(arr: &BooleanArray) -> Option<bool> {
     if null_count == arr.len() {
         None
     } else if null_count == 0 {
-        Some(all_no_null(arr.values()))
+        Some(arr.values().unset_bits() == 0)
     } else {
         let false_found = binary_fold(
             arr.values(),
