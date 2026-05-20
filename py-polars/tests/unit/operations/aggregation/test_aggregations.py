@@ -323,13 +323,9 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
     except IndexError:
         np_result = None
     if np_result:
-        # nan check
-        if np_result != np_result:
-            np_result = None
-        assert np.isclose(
-            pl.Series(a).quantile(q, interpolation="linear"),  # type: ignore[arg-type]
-            np_result,  # type: ignore[arg-type]
-        )
+        pl_result = pl.Series(a).quantile(q, interpolation="linear")
+        assert pl_result is not None
+        assert np.isclose(pl_result, np_result)
 
     df = pl.DataFrame({"a": a})
 
@@ -343,10 +339,9 @@ def test_quantile_vs_numpy(tp: type, n: int) -> None:
 
 
 def test_mean_overflow() -> None:
-    assert np.isclose(
-        pl.Series([9_223_372_036_854_775_800, 100]).mean(),  # type: ignore[arg-type]
-        4.611686018427388e18,
-    )
+    mean = pl.Series([9_223_372_036_854_775_800, 100]).mean()
+    assert isinstance(mean, float)
+    assert np.isclose(mean, 4.611686018427388e18)
 
 
 def test_mean_null_simd() -> None:
@@ -1036,6 +1031,8 @@ def test_agg_with_slice_then_cast_23682(
     [
         ("any", pl.all().cast(pl.Boolean).any()),
         ("all", pl.all().cast(pl.Boolean).all()),
+        ("is_empty", pl.all().is_empty()),
+        ("is_empty_ignore_nulls", pl.all().is_empty(ignore_nulls=True)),
         ("arg_max", pl.all().arg_max()),
         ("arg_min", pl.all().arg_min()),
         ("min", pl.all().min()),
@@ -1078,8 +1075,9 @@ def test_agg_with_slice_then_cast_23682(
         pl.DataFrame({"a": [timedelta(seconds=10)]}, schema={"a": pl.Duration}),
     ],
 )
+@pytest.mark.parametrize("grouped", [False, True])
 def test_agg_invalid_same_engines_behavior(
-    op: str, expr: pl.Expr, df: pl.DataFrame
+    op: str, expr: pl.Expr, df: pl.DataFrame, grouped: bool
 ) -> None:
     # If the in-memory engine produces a good result, then the streaming engine
     # should also produce a good result, and then it should match the in-memory result.
@@ -1096,12 +1094,20 @@ def test_agg_invalid_same_engines_behavior(
     streaming_result, streaming_error = None, None
 
     try:
-        inmemory_result = df.select(expr)
+        if grouped:
+            inmemory_result = df.group_by("a").agg(expr)
+        else:
+            inmemory_result = df.select(expr)
     except pl.exceptions.PolarsError as e:
         inmemory_error = e
 
     try:
-        streaming_result = df.lazy().select(expr).collect(engine="streaming")
+        if grouped:
+            streaming_result = (
+                df.lazy().group_by("a").agg(expr).collect(engine="streaming")
+            )
+        else:
+            streaming_result = df.lazy().select(expr).collect(engine="streaming")
     except pl.exceptions.PolarsError as e:
         streaming_error = e
 

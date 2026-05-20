@@ -72,7 +72,7 @@ database = ["polars[adbc,connectorx,sqlalchemy]"]
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 1.0.0"]
+deltalake = ["deltalake >= 1.0.0, != 1.5.*"]
 iceberg = ["pyiceberg >= 0.7.1"]
 
 # Other
@@ -89,6 +89,24 @@ gpu = ["cudf-polars-cu12"]
 # All
 all = [
   "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
+]
+
+[tool.pyrefly]
+project-includes = ["tests"]
+search-path = ["./src", "."]
+ignore-missing-imports = [
+  "_polars_runtime_32.*",
+  "_polars_runtime_64.*",
+  "_polars_runtime_compat.*",
+  "IPython.*",
+  "altair.*",
+  "duckdb.*",
+  "pyiceberg.*",
+]
+# pyrefly equivalent of mypy's `follow_imports = "skip"`
+replace-imports-with-any = [
+  "pyarrow.*",
+  "pyiceberg.*",
 ]
 
 [tool.mypy]

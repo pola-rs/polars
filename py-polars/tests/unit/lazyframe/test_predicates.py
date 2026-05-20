@@ -1372,7 +1372,9 @@ def test_repeated_slice_pushdown_26815() -> None:
     )
 
     plan = q.explain()
-    assert plan.index("SLICED UNION: (3, 5)") > plan.index("SLICE[offset: -3, len: 3]")
+    assert plan.index("SLICED UNION[maintain_order: true]: (3, 5)") > plan.index(
+        "SLICE[offset: -3, len: 3]"
+    )
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [5, 6, 7]}))
 
 

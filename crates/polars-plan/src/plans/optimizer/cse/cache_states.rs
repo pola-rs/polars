@@ -1,14 +1,18 @@
-use std::collections::BTreeMap;
+use std::ops::ControlFlow;
 
 use polars_core::prelude::{PlHashMap, PlHashSet};
 use polars_error::PolarsResult;
+use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
 use crate::plans::deep_copy::deep_copy_ir_delete_caches;
+use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
+use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::{AExpr, IR, PredicatePushDown};
+use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names;
 
 fn get_upper_projections(
@@ -130,7 +134,7 @@ pub(crate) fn set_cache_states(
     scratch: &mut Vec<Node>,
     verbose: bool,
     pushdown_maintain_errors: bool,
-    new_streaming: bool,
+    streaming: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
@@ -150,7 +154,7 @@ pub(crate) fn set_cache_states(
         // Union over predicates.
         predicate_union: PlHashMap<Expr, u32>,
     }
-    let mut cache_schema_and_children = BTreeMap::new();
+    let mut cache_schema_and_children = PlIndexMap::new();
 
     // Stack frame
     #[derive(Default, Clone)]
@@ -158,7 +162,6 @@ pub(crate) fn set_cache_states(
         current: Node,
         cache_id: Option<UniqueId>,
         parent: TwoParents,
-        previous_cache: Option<UniqueId>,
     }
     let init = Frame {
         current: root,
@@ -166,6 +169,30 @@ pub(crate) fn set_cache_states(
     };
 
     stack.push(init);
+
+    // Create the indexmap entries in topological graph order.
+    ir_graph_traversal(
+        root,
+        &mut FnVisitors::new(
+            || (),
+            |key, storage: &mut IRTraversalStorage<'_>, _| {
+                if let IR::Cache { input: _, id } = storage.get(key) {
+                    cache_schema_and_children.insert(*id, Value::default());
+                }
+
+                ControlFlow::Continue(SubtreeVisit::Visit)
+            },
+            |_, _, _| ControlFlow::<()>::Continue(()),
+        ),
+        &mut vec![],
+        &mut vec![],
+        IRTraversalStorage {
+            arena: lp_arena,
+            skip_subtree: |_| false,
+        },
+    )
+    .continue_value()
+    .unwrap();
 
     // # First traversal.
     // Collect the union of columns per cache id.
@@ -175,9 +202,6 @@ pub(crate) fn set_cache_states(
         lp.copy_inputs(scratch);
 
         if let IR::Cache { input, id, .. } = lp {
-            if let Some(cache_id) = frame.cache_id {
-                frame.previous_cache = Some(cache_id)
-            }
             if frame.parent[0].is_some() {
                 // Projection pushdown has already run and blocked on cache nodes
                 // the pushed down columns are projected just above this cache
@@ -186,9 +210,7 @@ pub(crate) fn set_cache_states(
                 // we never want to naively take parents, as a join or aggregate for instance
                 // change the schema
 
-                let v = cache_schema_and_children
-                    .entry(*id)
-                    .or_insert_with(Value::default);
+                let v = cache_schema_and_children.get_mut(id).unwrap();
                 v.children.push(*input);
                 v.parents.push(frame.parent);
                 v.cache_nodes.push(frame.current);
@@ -258,8 +280,10 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming);
-        for (cache_id, v) in cache_schema_and_children {
+        let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, streaming);
+        // rev() the iter to visit/optimize the caches below the current cache before the current cache,
+        // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
+        for v in cache_schema_and_children.into_values().rev() {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
             // want to loose predicate pushdown in favor of scan sharing.
@@ -275,13 +299,6 @@ pub(crate) fn set_cache_states(
                     for p_node in parents.into_iter().flatten() {
                         match lp_arena.get(p_node) {
                             IR::Filter { .. } | IR::SimpleProjection { .. } => true,
-                            IR::Cache { id, .. } => {
-                                if cfg!(debug_assertions) {
-                                    panic!()
-                                }
-
-                                *id == cache_id
-                            },
                             _ => break,
                         };
 
@@ -317,8 +334,8 @@ pub(crate) fn set_cache_states(
                     .expect("expected filter; this is an optimizer bug");
                 let start_lp = lp_arena.take(node);
 
-                let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)
-                    .block_at_cache(1);
+                let mut pred_pd =
+                    PredicatePushDown::new(pushdown_maintain_errors, streaming).block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
 

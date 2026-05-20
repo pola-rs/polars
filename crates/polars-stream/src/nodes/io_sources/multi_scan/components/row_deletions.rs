@@ -5,6 +5,7 @@ use arrow::array::ListArray;
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_buffer::Buffer;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{BooleanChunked, ChunkAgg, DataType, NamedFrom, PlIndexMap};
@@ -12,7 +13,6 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::{PolarsResult, feature_gated, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
-use polars_io::pl_async;
 use polars_plan::dsl::deletion::DeletionFilesList;
 #[cfg(feature = "python")]
 use polars_plan::dsl::deletion::DeltaDeletionVectorProvider;
@@ -23,7 +23,6 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::metrics::IOMetrics;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::{BeginReadArgs, FileReaderCallbacks};
@@ -150,7 +149,7 @@ impl DeletionFilesProvider {
                             )
                         }
 
-                        AbortOnDropHandle::new(async_executor::spawn(
+                        AbortOnDropHandle::new(executor::spawn(
                             TaskPriority::Low,
                             async move {
                                 reader.initialize().await?;
@@ -168,7 +167,7 @@ impl DeletionFilesProvider {
                 //
                 // This does mean deletion file loads are tied to `NUM_READERS_PRE_INIT`, but this
                 // should be fine as the size of the data should not be too big.
-                let handle = AbortOnDropHandle::new(async_executor::spawn(
+                let handle = AbortOnDropHandle::new(executor::spawn(
                     TaskPriority::Low,
                     async move {
                         let handles = file_readers
@@ -184,6 +183,7 @@ impl DeletionFilesProvider {
                                     cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
                                     num_pipelines,
                                     disable_morsel_split: false,
+                                    last_morsel_pipelines: 1,
                                     callbacks: FileReaderCallbacks {
                                         file_schema_tx: None,
                                         n_rows_in_file_tx: None,
@@ -191,7 +191,7 @@ impl DeletionFilesProvider {
                                     },
                                 };
 
-                                AbortOnDropHandle::new(async_executor::spawn(
+                                AbortOnDropHandle::new(executor::spawn(
                                     TaskPriority::Low,
                                     async move {
                                         let mut reader = init_fut.await?;
@@ -293,12 +293,12 @@ impl DeletionFilesProvider {
                 let selected_paths = selected_paths.clone();
 
                 let handle =
-                    AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
+                    AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                         let deletion_vectors = cache
                             .get_or_try_init(|| async {
                                 let provider = provider.clone();
                                 let selected_paths = selected_paths.clone();
-                                pl_async::get_runtime()
+                                polars_core::runtime::ASYNC
                                     .spawn_blocking(move || provider.call(selected_paths))
                                     .await
                                     .unwrap()

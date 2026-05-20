@@ -170,6 +170,24 @@ impl MutableBitmap {
     }
 
     /// Sets the position `index` to the OR of its original value and `value`.
+    #[inline]
+    pub fn or_pos(&mut self, index: usize, value: bool) {
+        assert!(index < self.len());
+        unsafe {
+            self.or_pos_unchecked(index, value);
+        }
+    }
+
+    /// Sets the position `index` to the AND of its original value and `value`.
+    #[inline]
+    pub fn and_pos(&mut self, index: usize, value: bool) {
+        assert!(index < self.len());
+        unsafe {
+            self.and_pos_unchecked(index, value);
+        }
+    }
+
+    /// Sets the position `index` to the OR of its original value and `value`.
     ///
     /// # Safety
     /// It's undefined behavior if index >= self.len().

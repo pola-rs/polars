@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -6,7 +5,7 @@ use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::utils::try_get_supertype;
+use polars_core::utils::{CustomIterTools, try_get_supertype};
 
 use super::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
@@ -294,13 +293,18 @@ pub trait ListNameSpaceImpl: AsList {
             periods.len()
         );
 
-        // Broadcast `self`
-        let mut ca = Cow::Borrowed(ca);
-        if ca.len() == 1 && periods.len() != 1 {
-            // Optimize: Don't broadcast and instead have a special path.
-            ca = Cow::Owned(ca.new_from_index(0, periods.len()));
+        let target_len = periods.len();
+        if ca.len() == 1 && target_len > 1 {
+            let single_list = ca.get_as_series(0);
+            let out = shift_broadcast_list(
+                single_list,
+                periods,
+                target_len,
+                ca.name().clone(),
+                ca.inner_dtype(),
+            );
+            return Ok(self.same_type(out));
         }
-        let ca = ca.as_ref();
 
         let out = match periods.len() {
             1 => {
@@ -846,4 +850,55 @@ fn take_series(s: &Series, idx: Series, null_on_oob: bool) -> PolarsResult<Serie
     let len = s.len();
     let idx = convert_and_bound_index(&idx, len, null_on_oob)?;
     s.take(&idx)
+}
+
+pub fn slice_broadcast_list(
+    single_list: Option<Series>,
+    offsets: &Int64Chunked,
+    lengths: &Int64Chunked,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> ListChunked {
+    debug_assert!(target_len == offsets.len().max(lengths.len()));
+
+    let Some(single_list) = single_list else {
+        return ListChunked::full_null_with_dtype(name, target_len, inner_dtype);
+    };
+
+    let iter = (0..target_len).map(|index| {
+        let opt_offset = offsets.get(if offsets.len() == 1 { 0 } else { index });
+        let opt_length = lengths.get(if lengths.len() == 1 { 0 } else { index });
+        match (opt_offset, opt_length) {
+            (Some(offset), Some(length)) => Some(single_list.slice(offset, length as usize)),
+            _ => None,
+        }
+    });
+
+    let mut out: ListChunked = iter.collect_trusted();
+    out.rename(name);
+    out
+}
+
+fn shift_broadcast_list(
+    single_list: Option<Series>,
+    periods: &Int64Chunked,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> ListChunked {
+    debug_assert!(target_len == periods.len());
+
+    let Some(single_list) = single_list else {
+        return ListChunked::full_null_with_dtype(name, target_len, inner_dtype);
+    };
+
+    let iter = (0..target_len).map(|index| {
+        let opt_period = periods.get(index);
+        opt_period.map(|period| single_list.shift(period))
+    });
+
+    let mut out: ListChunked = iter.collect_trusted();
+    out.rename(name);
+    out
 }

@@ -102,12 +102,16 @@ impl<'a> IRDotDisplay<'a> {
 
         use IR::*;
         match root {
-            Union { inputs, .. } => {
+            Union {
+                inputs, options, ..
+            } => {
                 for input in inputs {
                     recurse!(*input);
                 }
 
-                write_label(f, id, |f| f.write_str("UNION"))?;
+                write_label(f, id, |f| {
+                    write!(f, "UNION[maintain_order: {0}]", options.maintain_order)
+                })?;
             },
             HConcat { inputs, .. } => {
                 for input in inputs {
@@ -341,8 +345,12 @@ impl<'a> IRDotDisplay<'a> {
                     )
                 })?;
             },
-            UnoptimizedDispatch { inputs, operation } => {
-                for input in inputs {
+            UnoptimizedDispatch {
+                inputs,
+                operation,
+                arg_map,
+            } => {
+                for input in arg_map.iter().map(|(i, _c, _n)| &inputs[i]) {
                     recurse!(*input);
                 }
                 write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;

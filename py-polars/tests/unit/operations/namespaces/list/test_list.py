@@ -1112,7 +1112,20 @@ def test_list_shift_unequal_lengths_22018() -> None:
 
 
 def test_list_shift_self_broadcast() -> None:
-    assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3
+    assert_series_equal(
+        pl.Series("a", [[1, 2]]).list.shift(pl.Series([-5, -1, 0, 1, 5, None])),
+        pl.Series(
+            "a",
+            [
+                [None, None],
+                [2, None],
+                [1, 2],
+                [None, 1],
+                [None, None],
+                None,
+            ],
+        ),
+    )
 
 
 def test_list_filter_simple() -> None:
@@ -1384,3 +1397,20 @@ def test_list_eval_exceed_idx_size() -> None:
         "len": [[2147483648], [2147483647], [2147483646]],
         "unique": [[None], [None], [None]],
     }
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (0, pl.lit(pl.Series([1, 2, 3]))),
+        (pl.lit(pl.Series([0, 1, 2])), 2),
+        (pl.lit(pl.Series([0, 1, 2])), pl.lit(pl.Series([3, 2, 1]))),
+    ],
+)
+def test_list_slice_broadcast_27480(offset: Any, length: Any) -> None:
+    result = pl.select(pl.lit([0, 1, 2]).list.slice(offset, length).alias("broadcast"))
+    expected = pl.select(
+        pl.repeat(pl.lit([0, 1, 2]), 3).list.slice(offset, length).alias("broadcast")
+    )
+
+    assert_frame_equal(result, expected)
