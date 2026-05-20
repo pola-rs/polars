@@ -574,6 +574,12 @@ impl IntoAExprBuilder for Node {
     }
 }
 
+impl IntoAExprBuilder for ExprIR {
+    fn into_aexpr_builder(self) -> AExprBuilder {
+        self.node().into_aexpr_builder()
+    }
+}
+
 impl IntoAExprBuilder for AExprBuilder {
     fn into_aexpr_builder(self) -> AExprBuilder {
         self
