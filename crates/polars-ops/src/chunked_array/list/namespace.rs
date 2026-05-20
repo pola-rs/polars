@@ -915,6 +915,7 @@ fn shift_broadcast_list(
     out
 }
 
+#[cfg(feature = "list_sample")]
 #[allow(clippy::too_many_arguments)]
 fn sample_n_broadcast_list(
     single_list: Option<Series>,
@@ -951,6 +952,7 @@ fn sample_n_broadcast_list(
     Ok(out)
 }
 
+#[cfg(feature = "list_sample")]
 #[allow(clippy::too_many_arguments)]
 fn sample_frac_broadcast_list(
     single_list: Option<Series>,
