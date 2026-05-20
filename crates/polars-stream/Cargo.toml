@@ -11,22 +11,17 @@ description = "Private crate for the streaming execution engine for the Polars D
 [dependencies]
 async-channel = { workspace = true }
 async-trait = { workspace = true }
-atomic-waker = { workspace = true }
 bitflags = { workspace = true }
 bytes = { workspace = true }
 chrono-tz = { workspace = true }
 crossbeam-channel = { workspace = true }
-crossbeam-deque = { workspace = true }
 crossbeam-queue = { workspace = true }
-crossbeam-utils = { workspace = true }
 futures = { workspace = true }
-memmap = { workspace = true }
+memchr = { workspace = true }
 num-traits = { workspace = true }
 parking_lot = { workspace = true }
 percent-encoding = { workspace = true }
-pin-project-lite = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-rand = { workspace = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 schemars = { workspace = true, optional = true }
@@ -37,7 +32,7 @@ tokio = { workspace = true, features = ["sync"] }
 uuid = { workspace = true }
 
 arrow = { workspace = true }
-memchr = { workspace = true }
+polars-async = { workspace = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
 polars-config = { workspace = true }

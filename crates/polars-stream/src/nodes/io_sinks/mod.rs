@@ -1,15 +1,15 @@
 use std::sync::Arc;
 
+use polars_async::executor::{self, AbortOnDropHandle};
+use polars_async::primitives::connector;
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::metrics::IOMetrics;
-use polars_io::pl_async;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ComputeNode, PortState};
-use crate::async_executor;
-use crate::async_primitives::connector;
 use crate::execute::StreamingExecutionState;
 use crate::metrics::NodeMetricsRegistrator;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -96,7 +96,7 @@ impl ComputeNode for IOSinkNode {
                         );
                     }
                     drop(phase_channel_tx);
-                    pl_async::get_runtime().block_on(task_handle)?;
+                    ASYNC.block_on(task_handle)?;
                 },
                 IOSinkNodeState::Finished => {},
                 IOSinkNodeState::Uninitialized { .. } => unreachable!(),
@@ -119,11 +119,11 @@ impl ComputeNode for IOSinkNode {
 
     fn spawn<'env, 's>(
         &'env mut self,
-        scope: &'s crate::async_executor::TaskScope<'s, 'env>,
+        scope: &'s executor::TaskScope<'s, 'env>,
         recv_ports: &mut [Option<crate::pipe::RecvPort<'_>>],
         send_ports: &mut [Option<crate::pipe::SendPort<'_>>],
         execution_state: &'s StreamingExecutionState,
-        join_handles: &mut Vec<crate::async_executor::JoinHandle<polars_error::PolarsResult<()>>>,
+        join_handles: &mut Vec<executor::JoinHandle<polars_error::PolarsResult<()>>>,
     ) {
         assert_eq!(recv_ports.len(), 1);
         assert!(send_ports.is_empty());
@@ -185,7 +185,7 @@ enum IOSinkNodeState {
     Initialized {
         phase_channel_tx: connector::Sender<PortReceiver>,
         /// Join handle for all background tasks.
-        task_handle: async_executor::AbortOnDropHandle<PolarsResult<()>>,
+        task_handle: AbortOnDropHandle<PolarsResult<()>>,
         io_metrics: Option<Arc<IOMetrics>>,
     },
 
@@ -221,7 +221,7 @@ impl IOSinkNodeState {
             SourceToken::default(),
         ));
 
-        async_executor::spawn(TaskPriority::High, async move {
+        executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq: u64 = 1;
 
             while let Ok(mut phase_rx) = phase_channel_rx.recv().await {

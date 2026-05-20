@@ -888,6 +888,13 @@ impl PyExpr {
     fn all(&self, ignore_nulls: bool) -> Self {
         self.inner.clone().all(ignore_nulls).into()
     }
+    fn is_empty(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().is_empty(ignore_nulls).into()
+    }
+
+    fn has_nulls(&self) -> Self {
+        self.inner.clone().has_nulls().into()
+    }
 
     fn log(&self, base: PyExpr) -> Self {
         self.inner.clone().log(base.inner).into()

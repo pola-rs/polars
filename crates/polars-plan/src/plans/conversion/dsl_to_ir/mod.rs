@@ -5,9 +5,9 @@ use futures::stream::FuturesUnordered;
 use hive::hive_partitions_from_paths;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::config::verbose;
+use polars_core::runtime::ASYNC;
 use polars_error::feature_gated;
 use polars_io::ExternalCompression;
-use polars_io::pl_async::get_runtime;
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
@@ -151,14 +151,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
     {
         let verbose = ctxt.verbose;
         let cache_file_info = ctxt.cache_file_info.clone();
-        use tokio::runtime::Handle;
-
         let fut = fetch_metadata(&lp, cache_file_info, verbose);
-        if let Ok(_handle) = Handle::try_current() {
-            get_runtime().block_in_place_on(fut)?;
-        } else {
-            get_runtime().block_on(fut)?;
-        }
+        ASYNC.block_in_place_on(fut)?;
     }
 
     let v = match lp {

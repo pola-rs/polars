@@ -161,9 +161,12 @@ impl<'a> IRDisplay<'a> {
             Union { inputs, options } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 let name = if let Some(slice) = options.slice {
-                    format!("SLICED UNION: {slice:?}")
+                    format!(
+                        "SLICED UNION[maintain_order: {0}]: {slice:?}",
+                        options.maintain_order
+                    )
                 } else {
-                    "UNION".to_string()
+                    format!("UNION[maintain_order: {0}]", options.maintain_order)
                 };
 
                 // 3 levels of indentation
@@ -968,9 +971,12 @@ pub fn write_ir_non_recursive(
         IR::MapFunction { input: _, function } => write!(f, "{:indent$}{function}", ""),
         IR::Union { inputs: _, options } => {
             let name = if let Some(slice) = options.slice {
-                format!("SLICED UNION: {slice:?}")
+                format!(
+                    "SLICED UNION[maintain_order: {0}]: {slice:?}",
+                    options.maintain_order
+                )
             } else {
-                "UNION".to_string()
+                format!("UNION[maintain_order: {0}]", options.maintain_order)
             };
             write!(f, "{:indent$}{name}", "")
         },
@@ -1007,6 +1013,7 @@ pub fn write_ir_non_recursive(
         ),
         IR::UnoptimizedDispatch {
             inputs: _,
+            arg_map: _,
             operation,
         } => write!(f, "{:indent$}DISPATCH {operation}", ""),
         IR::Invalid => write!(f, "{:indent$}INVALID", ""),

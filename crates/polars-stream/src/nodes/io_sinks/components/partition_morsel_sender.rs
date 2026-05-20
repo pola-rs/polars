@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use polars_async::executor::{self, TaskPriority};
 use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_plan::dsl::file_provider::FileProviderArgs;
 use polars_utils::IdxSize;
 
-use crate::async_executor::{self, TaskPriority};
 use crate::nodes::io_sinks::components::error_capture::ErrorCapture;
 use crate::nodes::io_sinks::components::file_sink::FileSinkPermit;
 use crate::nodes::io_sinks::components::hstack_columns::HStackColumns;
@@ -110,7 +110,7 @@ impl PartitionMorselSender {
 
                 let file_permit: FileSinkPermit =
                     if let Ok(permit) = self.open_sinks_semaphore.clone().try_acquire_owned() {
-                        async_executor::spawn(
+                        executor::spawn(
                             TaskPriority::Low,
                             self.error_capture.clone().wrap_future(handle),
                         );

@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
 
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::ChunkCompareIneq;
 use polars_ops::frame::_merge_sorted_dfs;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 

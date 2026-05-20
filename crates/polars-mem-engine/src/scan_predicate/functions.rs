@@ -541,7 +541,9 @@ where
             for (out_idx, source_idx) in selected_path_indices.clone().enumerate() {
                 if let Some(v) = deletions.get(&source_idx) {
                     out.get_or_insert_with(|| {
-                        PlIndexMap::with_capacity(selected_path_indices.size_hint().0 - out_idx)
+                        PlIndexMap::with_capacity(
+                            selected_path_indices.size_hint().0.saturating_sub(out_idx),
+                        )
                     })
                     .insert(out_idx, v.clone());
                 }

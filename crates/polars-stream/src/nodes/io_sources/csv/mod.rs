@@ -11,10 +11,14 @@ use async_trait::async_trait;
 use chunk_reader::ChunkReader;
 use futures::FutureExt;
 use line_batch_source::{LineBatch, LineBatchSource};
+use polars_async::executor::{AbortOnDropHandle, spawn};
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::oneshot_channel;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::OptIOMetrics;
-use polars_io::pl_async;
 use polars_io::prelude::_csv_read_internal::CountLines;
 use polars_io::prelude::CsvReadOptions;
 use polars_io::prelude::streaming::read_until_start_and_infer_schema;
@@ -30,10 +34,6 @@ use super::multi_scan::reader_interface::output::FileReaderOutputRecv;
 use super::multi_scan::reader_interface::{BeginReadArgs, FileReader, FileReaderCallbacks};
 use super::shared::chunk_data_fetch::ChunkDataFetcher;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{AbortOnDropHandle, spawn};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::oneshot_channel;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 use crate::nodes::TaskPriority;
 use crate::nodes::compute_node_prelude::*;
@@ -88,7 +88,7 @@ impl FileReader for CsvFileReader {
         let cloud_options = self.cloud_options.clone();
         let io_metrics = self.io_metrics.clone();
 
-        let byte_source = pl_async::get_runtime()
+        let byte_source = ASYNC
             .spawn(async move {
                 scan_source
                     .as_scan_source_ref()
@@ -106,7 +106,7 @@ impl FileReader for CsvFileReader {
         // @TODO: Refactor FileInfo so we can re-use the file_size value from the planning stage.
         let file_size = {
             let byte_source = byte_source.clone();
-            pl_async::get_runtime()
+            ASYNC
                 .spawn(async move { byte_source.get_size().await })
                 .await
                 .unwrap()?
@@ -115,7 +115,7 @@ impl FileReader for CsvFileReader {
         let compression = if file_size >= 4 {
             let byte_source = byte_source.clone();
             let magic_range = 0..4;
-            let magic_bytes = pl_async::get_runtime()
+            let magic_bytes = ASYNC
                 .spawn(async move { byte_source.get_range(magic_range).await })
                 .await
                 .unwrap()?;
@@ -170,6 +170,7 @@ impl FileReader for CsvFileReader {
             cast_columns_policy: _,
             num_pipelines,
             disable_morsel_split: _,
+            last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
@@ -237,15 +238,13 @@ impl FileReader for CsvFileReader {
             // Initiate parallel downloads of raw chunks.
             let byte_source = byte_source.clone();
             let prefetch_task = {
-                let io_runtime = polars_io::pl_async::get_runtime();
-
                 let prefetch_semaphore = Arc::clone(&self.chunk_prefetch_sync.prefetch_semaphore);
                 let prefetch_prev_all_spawned =
                     Option::take(&mut self.chunk_prefetch_sync.prev_all_spawned);
                 let prefetch_current_all_spawned =
                     Option::take(&mut self.chunk_prefetch_sync.current_all_spawned);
 
-                tokio_handle_ext::AbortOnDropHandle(io_runtime.spawn(async move {
+                tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
                     let mut chunk_data_fetcher = ChunkDataFetcher {
                         memory_prefetch_func,
                         byte_source,
@@ -291,8 +290,8 @@ impl FileReader for CsvFileReader {
 
         // Task: Pre-read and infer schema.
         // Because StreamBufReader uses `blocking_recv`, this runs on tokio's elastic blocking pool.
-        let infer_schema_handle = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime().spawn_blocking(move || {
+        let infer_schema_handle =
+            tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
                 let mut reader = ByteSourceReader::try_new(reader_source, compression)?;
                 let result = read_until_start_and_infer_schema(
                     &options,
@@ -312,8 +311,7 @@ impl FileReader for CsvFileReader {
                 });
                 _ = infer_schema_tx.send(result);
                 PolarsResult::Ok(())
-            }),
-        );
+            }));
 
         // Task: Line batch source.
         // Create and send newline-aligned batches. Create chunk_reader for decoder.

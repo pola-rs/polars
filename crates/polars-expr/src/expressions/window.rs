@@ -3,13 +3,14 @@ use std::fmt::Write;
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustMyLength;
+use polars_core::downcast_as_macro_arg_physical;
 use polars_core::error::feature_gated;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::sort::perfect_sort;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
@@ -1090,7 +1091,7 @@ fn set_numeric<T: PolarsNumericType>(
         match groups {
             GroupsType::Idx(groups) => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
-                POOL.install(|| {
+                RAYON.install(|| {
                     agg_vals
                         .par_iter()
                         .zip(groups.all().par_iter())
@@ -1105,7 +1106,7 @@ fn set_numeric<T: PolarsNumericType>(
             },
             GroupsType::Slice { groups, .. } => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
-                POOL.install(|| {
+                RAYON.install(|| {
                     agg_vals
                         .par_iter()
                         .zip(groups.par_iter())
@@ -1132,7 +1133,7 @@ fn set_numeric<T: PolarsNumericType>(
         let validity_ptr = validity.as_mut_ptr();
         let sync_ptr_validity = unsafe { SyncPtr::new(validity_ptr) };
 
-        let n_threads = POOL.current_num_threads();
+        let n_threads = RAYON.current_num_threads();
         let offsets = _split_offsets(ca.len(), n_threads);
 
         match groups {

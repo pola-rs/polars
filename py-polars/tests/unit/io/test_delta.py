@@ -1036,7 +1036,7 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
         pl.DataFrame(
             [
                 pl.Series('len', [2, 2, 2], dtype=pl.Int64),
-                pl.Series('p_nc', [None, None, None], dtype=pl.Int64),
+                pl.Series('p_nc', [None, None, None], dtype=pl.UInt32),
                 pl.Series('p_min', [None, None, None], dtype=pl.Int64),
                 pl.Series('p_max', [None, None, None], dtype=pl.Int64),
                 pl.Series('a_nc', [0, 1, 0], dtype=pl.Int64),
@@ -1076,13 +1076,7 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
     ("expr", "n_cols", "expect_n_files_skipped"),
     [
         (pl.col.a == 2, "0", 0),
-        # inconclusive pending resolution of https://github.com/delta-io/delta-rs/issues/4398
-        pytest.param(
-            pl.col.a == 2,
-            "1",
-            1,
-            marks=pytest.mark.xfail(reason="pending delta-rs #4398"),
-        ),
+        (pl.col.a == 2, "1", 1),
         (pl.col.b == 2, "1", 0),
         (pl.col.a == 2, "2", 1),
     ],

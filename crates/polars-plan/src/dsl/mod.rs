@@ -1538,6 +1538,19 @@ impl Expr {
         self.map_unary(BooleanFunction::All { ignore_nulls })
     }
 
+    /// Returns whether this column is empty.
+    ///
+    /// If `ignore_nulls` is True, the column is also considered empty if it
+    /// only consists of nulls.
+    pub fn is_empty(self, ignore_nulls: bool) -> Self {
+        self.map_unary(BooleanFunction::IsEmpty { ignore_nulls })
+    }
+
+    /// Returns whether the column contains one or more null values.
+    pub fn has_nulls(self) -> Self {
+        self.map_unary(BooleanFunction::HasNulls)
+    }
+
     #[cfg(feature = "dtype-struct")]
     /// Count all unique values and create a struct mapping value to count.
     /// (Note that it is better to turn parallel off in the aggregation context).

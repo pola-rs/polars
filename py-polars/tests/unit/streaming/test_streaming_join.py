@@ -715,3 +715,20 @@ def test_streaming_asof_join(
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
     assert_frame_equal(actual, expected)
+
+
+def test_streaming_merge_join_send_port_done_27547() -> None:
+    left = pl.LazyFrame({"key": [1, 2, 3], "left_payload": ["a", "b", "c"]})
+    right = pl.LazyFrame({"key": [1, 2, 3], "right_payload": ["d", "e", "f"]})
+    q = (
+        left.set_sorted("key")
+        .join(
+            right.set_sorted("key"),
+            on="key",
+            how="inner",
+        )
+        .head(2)
+    )
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected)

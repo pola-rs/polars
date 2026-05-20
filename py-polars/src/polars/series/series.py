@@ -54,7 +54,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_series_item_by_key
-from polars._utils.unstable import unstable
+from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
@@ -125,7 +125,6 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Generator, Mapping
 
     import jax
-    import numpy.typing as npt
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -1574,7 +1573,7 @@ class Series:
 
     def __array__(
         self,
-        dtype: npt.DTypeLike | None = None,
+        dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
@@ -4130,17 +4129,35 @@ class Series:
         """
         return self._s.has_nulls()
 
-    def is_empty(self) -> bool:
+    def is_empty(self, *, ignore_nulls: bool = False) -> bool:
         """
         Check if the Series is empty.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If true a series containing only nulls will also be considered empty.
+            The default is false.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
         >>> s = pl.Series("a", [], dtype=pl.Float32)
         >>> s.is_empty()
         True
+        >>> s = pl.Series("a", [None], dtype=pl.Float32)
+        >>> s.is_empty()
+        False
+        >>> s.is_empty(ignore_nulls=True)
+        True
         """
-        return self.len() == 0
+        if ignore_nulls:
+            msg = "the `ignore_nulls` parameter of `Series.is_empty()` is considered unstable."
+            issue_unstable_warning(msg)
+        return self._s.is_empty(ignore_nulls=ignore_nulls)
 
     def is_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> bool:
         """
@@ -8815,10 +8832,6 @@ class Series:
         replace_strict
         str.replace
 
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
-
         Examples
         --------
         Replace a single value by another value. Values that were not replaced remain
@@ -8914,10 +8927,6 @@ class Series:
         --------
         replace
         str.replace
-
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------

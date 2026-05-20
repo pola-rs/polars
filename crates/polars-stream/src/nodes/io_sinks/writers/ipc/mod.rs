@@ -1,16 +1,16 @@
 use std::sync::Arc;
 
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
 use polars_core::config;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
-use polars_io::pl_async;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 use crate::nodes::io_sinks::components::size::{
     NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
@@ -32,10 +32,7 @@ pub struct IpcWriterStarter {
 }
 
 enum IpcBatch {
-    Record(
-        async_executor::AbortOnDropHandle<EncodedData>,
-        SinkMorselPermit,
-    ),
+    Record(executor::AbortOnDropHandle<EncodedData>, SinkMorselPermit),
     Dictionary(EncodedData),
 }
 
@@ -75,7 +72,7 @@ impl FileWriterStarter for IpcWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
-    ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
+    ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let file_schema = Arc::clone(&self.schema);
         let options = Arc::clone(&self.options);
         let compression = self.options.compression.map(|x| x.into());
@@ -89,7 +86,7 @@ impl FileWriterStarter for IpcWriterStarter {
             )
         }
 
-        let handle = async_executor::spawn(TaskPriority::High, async move {
+        let handle = executor::spawn(TaskPriority::High, async move {
             let (ipc_batch_tx, ipc_batch_rx) =
                 tokio::sync::mpsc::channel::<IpcBatch>(num_pipelines.get());
 
@@ -99,7 +96,7 @@ impl FileWriterStarter for IpcWriterStarter {
             let compat_level = options.compat_level;
 
             let io_handle = tokio_handle_ext::AbortOnDropHandle(
-                pl_async::get_runtime().spawn(
+                ASYNC.spawn(
                     io_writer::IOWriter {
                         file,
                         ipc_batch_rx,
@@ -111,20 +108,19 @@ impl FileWriterStarter for IpcWriterStarter {
                 ),
             );
 
-            let record_batch_encoder_handle =
-                async_executor::AbortOnDropHandle::new(async_executor::spawn(
-                    TaskPriority::High,
-                    record_batch_encoder::RecordBatchEncoder {
-                        morsel_rx,
-                        ipc_batch_tx,
-                        arrow_converters,
-                        compat_level,
-                        dictionary_id_offsets,
-                        write_options: WriteOptions { compression },
-                        write_statistics_flags,
-                    }
-                    .run(),
-                ));
+            let record_batch_encoder_handle = executor::AbortOnDropHandle::new(executor::spawn(
+                TaskPriority::High,
+                record_batch_encoder::RecordBatchEncoder {
+                    morsel_rx,
+                    ipc_batch_tx,
+                    arrow_converters,
+                    compat_level,
+                    dictionary_id_offsets,
+                    write_options: WriteOptions { compression },
+                    write_statistics_flags,
+                }
+                .run(),
+            ));
 
             record_batch_encoder_handle.await?;
             io_handle.await.unwrap()?;

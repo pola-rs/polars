@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 
-use arrow::legacy::utils::CustomIterTools;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
-use polars_core::utils::{_split_offsets, NoNull};
+use polars_core::utils::_split_offsets;
 use polars_ops::prelude::ArgAgg;
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
@@ -12,7 +11,8 @@ use rayon::prelude::*;
 
 use super::*;
 use crate::expressions::AggState::AggregatedScalar;
-use crate::expressions::{AggState, AggregationContext, PhysicalExpr, UpdateGroups};
+use crate::expressions::count::evaluate_count_on_ac;
+use crate::expressions::{AggState, AggregationContext, PhysicalExpr};
 use crate::reduce::GroupedReduction;
 
 #[derive(Debug, Clone, Copy)]
@@ -251,138 +251,8 @@ impl PhysicalExpr for AggregationExpr {
                     AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::Count { include_nulls } => {
-                    let values_have_no_nulls = match ac.agg_state() {
-                        AggState::AggregatedList(s) => {
-                            let list = s.list()?;
-                            list.null_count() == 0
-                                && list
-                                    .downcast_iter()
-                                    .all(|arr| arr.values().null_count() == 0)
-                        },
-                        _ => ac.get_values().null_count() == 0,
-                    };
-
-                    if include_nulls || values_have_no_nulls {
-                        // a few fast paths that prevent materializing new groups
-                        match ac.update_groups {
-                            UpdateGroups::WithSeriesLen => {
-                                let list = ac
-                                    .get_values()
-                                    .list()
-                                    .expect("impl error, should be a list at this point");
-
-                                let mut s = match list.chunks().len() {
-                                    1 => {
-                                        let arr = list.downcast_iter().next().unwrap();
-                                        let offsets = arr.offsets().as_slice();
-
-                                        let mut previous = 0i64;
-                                        let counts: NoNull<IdxCa> = offsets[1..]
-                                            .iter()
-                                            .map(|&o| {
-                                                let len = (o - previous) as IdxSize;
-                                                previous = o;
-                                                len
-                                            })
-                                            .collect_trusted();
-                                        counts.into_inner()
-                                    },
-                                    _ => {
-                                        let counts: NoNull<IdxCa> = list
-                                            .amortized_iter()
-                                            .map(|s| {
-                                                if let Some(s) = s {
-                                                    s.as_ref().len() as IdxSize
-                                                } else {
-                                                    1
-                                                }
-                                            })
-                                            .collect_trusted();
-                                        counts.into_inner()
-                                    },
-                                };
-                                s.rename(keep_name);
-                                AggregatedScalar(s.into_column())
-                            },
-                            UpdateGroups::WithGroupsLen => {
-                                // no need to update the groups
-                                // we can just get the attribute, because we only need the length,
-                                // not the correct order
-                                let mut ca = ac.groups.group_count();
-                                ca.rename(keep_name);
-                                AggregatedScalar(ca.into_column())
-                            },
-                            // materialize groups
-                            _ => {
-                                let mut ca = ac.groups().group_count();
-                                ca.rename(keep_name);
-                                AggregatedScalar(ca.into_column())
-                            },
-                        }
-                    } else {
-                        // TODO: optimize this/and write somewhere else.
-                        match ac.agg_state() {
-                            AggState::LiteralScalar(_) => unreachable!(),
-                            AggState::AggregatedScalar(c) => AggregatedScalar(
-                                c.is_not_null().cast(&IDX_DTYPE).unwrap().into_column(),
-                            ),
-                            AggState::AggregatedList(s) => {
-                                let ca = s.list()?;
-                                let out: IdxCa = ca
-                                    .into_iter()
-                                    .map(|opt_s| {
-                                        opt_s
-                                            .map(|s| s.len() as IdxSize - s.null_count() as IdxSize)
-                                    })
-                                    .collect();
-                                AggregatedScalar(out.into_column().with_name(keep_name))
-                            },
-                            AggState::NotAggregated(s) => {
-                                let s = s.clone();
-                                let groups = ac.groups();
-                                let out: IdxCa = if matches!(s.dtype(), &DataType::Null) {
-                                    IdxCa::full(s.name().clone(), 0, groups.len())
-                                } else {
-                                    match groups.as_ref().as_ref() {
-                                        GroupsType::Idx(idx) => {
-                                            let s = s.rechunk();
-                                            // @scalar-opt
-                                            // @partition-opt
-                                            let array = &s.as_materialized_series().chunks()[0];
-                                            let validity = array.validity().unwrap();
-                                            idx.iter()
-                                                .map(|(_, g)| {
-                                                    let mut count = 0 as IdxSize;
-                                                    // Count valid values
-                                                    g.iter().for_each(|i| {
-                                                        count += validity
-                                                            .get_bit_unchecked(*i as usize)
-                                                            as IdxSize;
-                                                    });
-                                                    count
-                                                })
-                                                .collect_ca_trusted_with_dtype(keep_name, IDX_DTYPE)
-                                        },
-                                        GroupsType::Slice { groups, .. } => {
-                                            // Slice and use computed null count
-                                            groups
-                                                .iter()
-                                                .map(|g| {
-                                                    let start = g[0];
-                                                    let len = g[1];
-                                                    len - s
-                                                        .slice(start as i64, len as usize)
-                                                        .null_count()
-                                                        as IdxSize
-                                                })
-                                                .collect_ca_trusted_with_dtype(keep_name, IDX_DTYPE)
-                                        },
-                                    }
-                                };
-                                AggregatedScalar(out.into_column())
-                            },
-                        }
-                    }
+                    let agg_c = evaluate_count_on_ac(ac, include_nulls)?;
+                    AggregatedScalar(agg_c.with_name(keep_name))
                 },
                 GroupByMethod::First => {
                     let (s, groups) = ac.get_final_aggregation();
@@ -769,14 +639,14 @@ where
 
     if !allow_threading
         || s.len() < thread_boundary
-        || POOL.current_thread_has_pending_tasks().unwrap_or(false)
+        || RAYON.current_thread_has_pending_tasks().unwrap_or(false)
     {
         return f(s);
     }
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let splits = _split_offsets(s.len(), n_threads);
 
-    let chunks = POOL.install(|| {
+    let chunks = RAYON.install(|| {
         splits
             .into_par_iter()
             .map(|(offset, len)| {

@@ -8,7 +8,7 @@ pub(super) fn evaluate_aggs(
     groups: &GroupPositions,
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
-    POOL.install(|| {
+    RAYON.install(|| {
         aggs.par_iter()
             .map(|expr| {
                 let agg = expr.evaluate_on_groups(df, groups, state)?.finalize();
@@ -85,7 +85,7 @@ pub(super) fn group_by_helper(
         groups = sliced_groups.as_ref().unwrap();
     }
 
-    let (mut columns, agg_columns) = POOL.install(|| {
+    let (mut columns, agg_columns) = RAYON.install(|| {
         let get_columns = || gb.keys_sliced(slice);
 
         let get_agg = || evaluate_aggs(&df, aggs, groups, state);
