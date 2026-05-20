@@ -263,4 +263,3 @@ def test_float_skip_batch_predicate() -> None:
     )  # Can skip. Non-NaN bounds.
     assert sbp(pl.col("x").is_between(NaN, 4.0)) is None  # No skip. NaN left bound.
     assert sbp(pl.col("x").is_between(1.0, NaN)) is None  # No skip. NaN right bound.
-
