@@ -242,9 +242,9 @@ fn is_sorted_adjacent_total_ord<T: TotalOrd>(
 /// slice.
 #[cfg(feature = "dtype-categorical")]
 fn is_sorted_categorical_lexical_adjacent(s: &Series, options: SortOptions) -> PolarsResult<bool> {
-    debug_assert!(
+    polars_ensure!(
         matches!(s.dtype(), DataType::Categorical(_, _)),
-        "expected Categorical in lexical `is_sorted` path"
+        ComputeError: "internal error: expected Categorical in lexical `is_sorted` path",
     );
     debug_assert_eq!(
         s.null_count(),
