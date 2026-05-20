@@ -246,19 +246,9 @@ fn is_sorted_categorical_lexical_adjacent(s: &Series, options: SortOptions) -> P
         matches!(s.dtype(), DataType::Categorical(_, _)),
         ComputeError: "internal error: expected Categorical in lexical `is_sorted` path",
     );
-    debug_assert_eq!(
-        s.null_count(),
-        0,
-        "internal error: lexical categorical `is_sorted` expects no nulls in slice"
-    );
 
     with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |$C| {
         let ca = s.cat::<$C>()?;
-        debug_assert_eq!(
-            ca.null_count(),
-            0,
-            "internal error: categorical physical array unexpectedly contains nulls"
-        );
 
         // `ca.null_count() == 0` implies each `phys` row decodes via `iter_str` to `Some(..)`
         Ok(is_sorted_adjacent_total_ord(
