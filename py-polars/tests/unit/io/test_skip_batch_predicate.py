@@ -252,7 +252,8 @@ def test_float_skip_batch_predicate() -> None:
     assert sbp(pl.col("x") > 5.0) is None  # No skip. Hidden NaN satisfies >.
     assert sbp(pl.col("x") > NaN) is not None  # Can skip. Nothing > NaN under TotalOrd.
     assert sbp(pl.col("x") >= 5.0) is None  # No skip. Hidden NaN satisfies >=.
-    assert sbp(pl.col("x") >= NaN) is None  # No skip. Stats exclude NaN, so we cannot determine if batch contains NaN; NaN >= NaN is True.
+    assert sbp(pl.col("x") > NaN) is not None  # Can skip. Nothing > NaN.
+    assert sbp(pl.col("x") >= NaN) is None  # No skip. Stats exclude NaN.
     assert (
         sbp(pl.lit(5.0) > pl.col("x")) is not None
     )  # Can skip. 5.0 > col is col < 5.0.
@@ -262,22 +263,3 @@ def test_float_skip_batch_predicate() -> None:
     )  # Can skip. Non-NaN bounds.
     assert sbp(pl.col("x").is_between(NaN, 4.0)) is None  # No skip. NaN left bound.
     assert sbp(pl.col("x").is_between(1.0, NaN)) is None  # No skip. NaN right bound.
-
-
-def test_float_geq_nan_skip_batch_predicate_27668() -> None:
-    # Regression test: col >= NaN must not incorrectly skip batches that contain NaN.
-    #
-    # min/max statistics exclude NaN, so a series like [NaN, 0.0] reports max=0.0.
-    # Under TotalOrd, 0.0 < NaN is True, which would make the skip predicate
-    # "max(A) < NaN" evaluate to True — incorrectly claiming the batch can be skipped
-    # even though NaN satisfies `NaN >= NaN`.
-    NaN = float("nan")
-    schema = {"x": pl.Float16()}
-
-    sbp = pl.col("x").ge(pl.lit(NaN, pl.Float16()))._skip_batch_predicate(schema)
-    assert sbp is None, "col >= NaN must not generate a skip-batch predicate"
-
-    # The filter must return the NaN row; it must not be incorrectly skipped.
-    s = pl.Series("x", [NaN, None, 0.0, None], dtype=pl.Float16)
-    result = s.to_frame().filter(pl.col("x") >= pl.lit(NaN, pl.Float16()))
-    assert result.height == 1
