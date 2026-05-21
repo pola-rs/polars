@@ -363,7 +363,8 @@ impl Executor {
                         // Important: we check queue again after reducing count.
                         let num_left = self
                             .num_runners_without_identity
-                            .fetch_sub(1, Ordering::AcqRel) - 1;
+                            .fetch_sub(1, Ordering::AcqRel)
+                            - 1;
                         if num_left == 0 && !self.thread_id_recv.is_empty() {
                             self.spawn_runner_without_identity();
                         }
