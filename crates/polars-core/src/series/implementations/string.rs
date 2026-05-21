@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -20,9 +19,6 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
     }
     fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
-    }
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
     }
 
     #[cfg(feature = "zip_with")]
