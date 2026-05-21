@@ -3070,6 +3070,7 @@ dependencies = [
  "crossbeam-utils",
  "parking_lot",
  "pin-project-lite",
+ "polars-config",
  "polars-error",
  "polars-utils",
  "rand 0.9.2",
