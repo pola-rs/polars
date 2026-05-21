@@ -32,7 +32,11 @@ pub struct IpcWriterStarter {
 }
 
 enum IpcBatch {
-    Record(executor::AbortOnDropHandle<EncodedData>, SinkMorselPermit),
+    Record {
+        encoded_data: executor::AbortOnDropHandle<EncodedData>,
+        morsel_permit: SinkMorselPermit,
+        num_rows: IdxSize,
+    },
     Dictionary(EncodedData),
 }
 
@@ -103,6 +107,7 @@ impl FileWriterStarter for IpcWriterStarter {
                         options,
                         schema: file_schema,
                         ipc_fields,
+                        write_custom_pl_metadata: write_statistics_flags,
                     }
                     .run(),
                 ),

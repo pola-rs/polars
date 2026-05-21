@@ -125,9 +125,9 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
         #[cfg(feature = "dtype-array")]
         Array(_, _) => {
             // @Optimize. This is horrendous
+            let fields = std::slice::from_ref(lhs.array().unwrap().ref_field());
             let lhs = lhs.row_encode_unordered()?;
             let rhs = rhs.row_encode_unordered()?;
-            let fields = std::slice::from_ref(lhs.ref_field());
             merge_ca(&lhs, &rhs, merge_indicator)
                 .row_decode_unordered(fields)?
                 .fields_as_series()
@@ -136,9 +136,9 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
         },
         List(_) => {
             // @Optimize. This is horrendous
+            let fields = std::slice::from_ref(lhs.list().unwrap().ref_field());
             let lhs = lhs.row_encode_unordered()?;
             let rhs = rhs.row_encode_unordered()?;
-            let fields = std::slice::from_ref(lhs.ref_field());
             merge_ca(&lhs, &rhs, merge_indicator)
                 .row_decode_unordered(fields)?
                 .fields_as_series()
@@ -260,10 +260,10 @@ where
     let a_len = a_iter.size_hint().0;
     let b_len = b_iter.size_hint().0;
     if a_len == 0 {
-        return vec![true; b_len];
+        return vec![B_INDICATOR; b_len];
     };
     if b_len == 0 {
-        return vec![false; a_len];
+        return vec![A_INDICATOR; a_len];
     }
 
     let mut current_a = T::default();

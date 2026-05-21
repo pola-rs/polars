@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import typing
 from typing import IO, TYPE_CHECKING, Any
 
@@ -380,6 +381,34 @@ def test_sink_scan_ipc_round_trip_statistics() -> None:
     # remain pyarrow compatible
     out = pl.read_ipc(buf, use_pyarrow=True)
     assert_frame_equal(df, out)
+
+
+def test_sink_ipc_custom_metadata() -> None:
+    f = io.BytesIO()
+    pl.LazyFrame({"a": range(37)}).sink_ipc(
+        f,
+        record_batch_size=10,
+        _record_batch_statistics=True,
+    )
+
+    with pyarrow.ipc.open_file(f) as reader:
+        assert [
+            reader.get_record_batch(i).num_rows
+            for i in range(reader.num_record_batches)
+        ] == [10, 10, 10, 7]
+        assert json.loads(reader.metadata.get(b"__POLARS_IPC_METADATA")) == {
+            "record_batch_cum_len": [10, 20, 30, 37]
+        }
+
+    f = io.BytesIO()
+    pl.LazyFrame({"a": [0, 1, 2, 3, 4]}).sink_ipc(
+        f,
+        record_batch_size=3,
+        _record_batch_statistics=False,
+    )
+
+    with pyarrow.ipc.open_file(f) as reader:
+        assert reader.metadata is None
 
 
 @pytest.mark.parametrize(

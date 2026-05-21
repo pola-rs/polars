@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
 
 
@@ -447,3 +448,60 @@ def test_is_sorted_time() -> None:
     s = pl.Series("a", [1, 1]).sort(descending=True).cast(pl.Time)
     assert s.flags["SORTED_DESC"]
     assert not s.flags["SORTED_ASC"]
+
+
+def test_is_sorted_boolean_long_all_false() -> None:
+    s = pl.Series("all_false_monotone", [False] * 137)
+    assert s.is_sorted()
+
+
+def test_is_sorted_boolean_false_true_transition_descending_large() -> None:
+    values = [False, False] + [True] * (137 - 2)
+    assert not pl.Series(values).is_sorted(descending=True)
+
+
+def test_is_sorted_boolean_singleton_short_circuit() -> None:
+    s = pl.Series("b", [True])
+    assert s.len() == 1
+    assert s.dtype == pl.Boolean
+    assert s.is_sorted()
+
+
+def test_is_sorted_boolean_empty_ca_short_circuits() -> None:
+    for descending in False, True:
+        assert pl.Series([], dtype=pl.Boolean).is_sorted(descending=descending)
+    assert pl.Series([False]).is_sorted()
+    assert pl.Series([True]).is_sorted(descending=True)
+
+
+def test_is_sorted_boolean_three_values_orders() -> None:
+    s = pl.Series("boolean_test", [False, True, True])
+    assert s.dtype == pl.Boolean
+    assert s.len() == 3
+    assert s.is_sorted()
+    assert not s.is_sorted(descending=True)
+
+
+def test_is_sorted_binary_asc_desc() -> None:
+    s = pl.Series(
+        "binary_test",
+        [b"\x01", b"\x02\x02", b"\x03\x03\x03"],
+        dtype=pl.Binary,
+    )
+    assert s.dtype == pl.Binary
+    assert s.len() == 3
+    assert s.is_sorted()
+    assert not s.is_sorted(descending=True)
+
+
+def test_is_sorted_list_pairwise_fallback_error() -> None:
+    # List dtype falls through to row-wise comparison; but
+    # `<`/`<=` for lists are unsupported, so this raises an error.
+    s = pl.Series("_", [[1], [2], [3]])
+    assert isinstance(s.dtype, pl.List)
+
+    with pytest.raises(InvalidOperationError) as exc:
+        s.is_sorted()
+    msg = str(exc.value).lower()
+    assert "<=" in msg
+    assert "list" in msg
