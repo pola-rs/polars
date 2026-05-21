@@ -5,7 +5,7 @@ use crate::plans::aexpr::or_factoring;
 /// (`(A∧X) ∨ (A∧Y) → A ∧ (X∨Y)`), so the `MintermIter` walk in
 /// `SplitPredicates::new` can split them into independent `IR::Filter`
 /// nodes for predicate-pushdown to route.
-pub(super) fn canonicalize_predicate(predicate: Node, expr_arena: &mut Arena<AExpr>) {
+pub(super) fn simplify_predicate(predicate: Node, expr_arena: &mut Arena<AExpr>) {
     or_factoring::factor_or_in_aexpr(predicate, expr_arena);
 }
 
@@ -29,9 +29,6 @@ impl SplitPredicates {
     /// through `ExprPushdownGroup`, and bucket into `pushable` / `fallible`.
     /// Returns `None` if any conjunct classifies as `Barrier` (caller falls
     /// back to a single un-split Filter).
-    ///
-    /// Assumes `predicate` has been canonicalized upstream by
-    /// `canonicalize_predicate`. This function only splits.
     pub(super) fn new(
         predicate: Node,
         expr_arena: &mut Arena<AExpr>,

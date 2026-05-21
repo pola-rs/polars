@@ -1,7 +1,7 @@
 //! OR factoring: `(A∧X) ∨ (A∧Y) → A ∧ (X∨Y)`
 //!
 //! Pure AExpr rewrite, in place on `expr_arena`. Called from
-//! `canonicalize_predicate` before `SplitPredicates::new` walks the AND
+//! `simplify_predicate` before `SplitPredicates::new` walks the AND
 //! chain; factored commons become AND-conjuncts at the top, get split
 //! into their own `IR::Filter` nodes, and become visible to
 //! predicate-pushdown.
