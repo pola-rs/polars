@@ -5,7 +5,6 @@ use object_store::ObjectMeta;
 use object_store::path::Path;
 use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
-use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::mmap::MMapSemaphore;
@@ -139,7 +138,7 @@ impl IpcReaderAsync {
     ) -> PolarsResult<DataFrame> {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
-        let file = ASYNC.block_in_place(|| self.cache_entry.try_open_check_latest())?;
+        let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
         let bytes = MMapSemaphore::new_from_file(&file).unwrap();
 
         let projection = match options.projection.as_deref() {
@@ -188,7 +187,7 @@ impl IpcReaderAsync {
     pub async fn count_rows(&self, _metadata: Option<&FileMetadata>) -> PolarsResult<i64> {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
-        let file = ASYNC.block_in_place(|| self.cache_entry.try_open_check_latest())?;
+        let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
         let bytes = MMapSemaphore::new_from_file(&file).unwrap();
         get_row_count(&mut std::io::Cursor::new(bytes.as_ref()))
     }

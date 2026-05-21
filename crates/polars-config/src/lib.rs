@@ -23,13 +23,6 @@ const DEFAULT_WARN_UNKNOWN_CONFIG: bool = false;
 const WARN_UNSTABLE: &str = "POLARS_WARN_UNSTABLE";
 const DEFAULT_WARN_UNSTABLE: bool = true;
 
-const MAX_THREADS: &str = "POLARS_MAX_THREADS";
-fn default_max_threads() -> u64 {
-    std::thread::available_parallelism()
-        .unwrap_or(std::num::NonZeroUsize::new(4).unwrap())
-        .get() as u64
-}
-
 const IDEAL_MORSEL_SIZE: &str = "POLARS_IDEAL_MORSEL_SIZE";
 const STREAMING_CHUNK_SIZE: &str = "POLARS_STREAMING_CHUNK_SIZE"; // Backwards compatibility.
 const DEFAULT_IDEAL_MORSEL_SIZE: u64 = 100_000;
@@ -83,7 +76,6 @@ static KNOWN_OPTIONS: &[&str] = &[
     VERBOSE,
     WARN_UNKNOWN_CONFIG,
     WARN_UNSTABLE,
-    MAX_THREADS,
     IDEAL_MORSEL_SIZE,
     STREAMING_CHUNK_SIZE,
     ENGINE_AFFINITY,
@@ -129,7 +121,6 @@ pub struct Config {
     verbose: AtomicBool,
     warn_unknown_config: AtomicBool,
     warn_unstable: AtomicBool,
-    max_threads: AtomicU64,
     ideal_morsel_size: AtomicU64,
     engine_affinity: AtomicU8,
     parquet_binary_statistics_truncate_length: AtomicU64,
@@ -154,7 +145,6 @@ impl Config {
             verbose: AtomicBool::new(DEFAULT_VERBOSE),
             warn_unknown_config: AtomicBool::new(DEFAULT_WARN_UNKNOWN_CONFIG),
             warn_unstable: AtomicBool::new(DEFAULT_WARN_UNSTABLE),
-            max_threads: AtomicU64::new(default_max_threads()),
             ideal_morsel_size: AtomicU64::new(DEFAULT_IDEAL_MORSEL_SIZE),
             engine_affinity: AtomicU8::new(DEFAULT_ENGINE_AFFINITY as u8),
             parquet_binary_statistics_truncate_length: AtomicU64::new(
@@ -212,11 +202,6 @@ impl Config {
             VERBOSE => self.verbose.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_VERBOSE),
-                Ordering::Relaxed,
-            ),
-            MAX_THREADS => self.max_threads.store(
-                val.and_then(|x| parse::parse_u64(var, x))
-                    .unwrap_or(default_max_threads()),
                 Ordering::Relaxed,
             ),
             IDEAL_MORSEL_SIZE | STREAMING_CHUNK_SIZE => self.ideal_morsel_size.store(
@@ -316,11 +301,6 @@ impl Config {
     /// Whether we should warn when unstable features are used.
     pub fn warn_unstable(&self) -> bool {
         self.warn_unstable.load(Ordering::Relaxed)
-    }
-
-    /// The number of threads Polars should ideally use for CPU-intensive work.
-    pub fn max_threads(&self) -> usize {
-        self.max_threads.load(Ordering::Relaxed).try_into().unwrap()
     }
 
     /// The ideal size of a morsel, in rows.

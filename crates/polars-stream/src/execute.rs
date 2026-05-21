@@ -4,7 +4,7 @@ use crossbeam_channel::Sender;
 use parking_lot::Mutex;
 use polars_async::executor;
 use polars_core::frame::DataFrame;
-use polars_core::runtime::ASYNC;
+use polars_core::runtime::{ASYNC, RAYON};
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;
@@ -302,11 +302,15 @@ pub fn execute_graph(
     graph: &mut Graph,
     metrics: Option<Arc<Mutex<GraphMetrics>>>,
 ) -> PolarsResult<SparseSecondaryMap<GraphNodeKey, DataFrame>> {
+    // Get the number of threads from the rayon thread-pool as that respects our config.
+    let num_pipelines = RAYON.current_num_threads();
+    executor::set_num_threads(num_pipelines);
+
     let (query_tasks_send, query_tasks_recv) = crossbeam_channel::unbounded();
     let (subphase_tasks_send, subphase_tasks_recv) = crossbeam_channel::unbounded();
 
     let state = StreamingExecutionState {
-        num_pipelines: polars_config::config().max_threads(),
+        num_pipelines,
         in_memory_exec_state: ExecutionState::default(),
         query_tasks_send,
         subphase_tasks_send,
