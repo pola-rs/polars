@@ -1042,6 +1042,39 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 1.0 ┆ 1.0 ┆ 2.0 │
         │ 2.0 ┆ 2.5 ┆ 3.0 │
         └─────┴─────┴─────┘
+
+        Use `functools.partial` to bind additional arguments to the callback.
+
+        >>> from functools import partial
+        >>> def cast_to_float_if_selected(
+        ...     lf: pl.LazyFrame, schema: pl.Schema, include: set[str]
+        ... ) -> pl.LazyFrame:
+        ...     required_casts = [
+        ...         pl.col(name).cast(pl.Float64)
+        ...         for name, dtype in schema.items()
+        ...         if name in include and not dtype.is_float()
+        ...     ]
+        ...     return lf.with_columns(required_casts)
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1.0, 2.0],
+        ...         "b": ["1.0", "2.5"],
+        ...         "c": ["3.0", "4.5"],
+        ...     },
+        ...     schema={"a": pl.Float64, "b": pl.String, "c": pl.String},
+        ... )
+        >>> lf.pipe_with_schema(
+        ...     partial(cast_to_float_if_selected, include={"b"})
+        ... ).collect()
+        shape: (2, 3)
+        ┌─────┬─────┬─────┐
+        │ a   ┆ b   ┆ c   │
+        │ --- ┆ --- ┆ --- │
+        │ f64 ┆ f64 ┆ str │
+        ╞═════╪═════╪═════╡
+        │ 1.0 ┆ 1.0 ┆ 3.0 │
+        │ 2.0 ┆ 2.5 ┆ 4.5 │
+        └─────┴─────┴─────┘
         """
 
         def wrapper(lf_and_schema: Any) -> PyLazyFrame:
