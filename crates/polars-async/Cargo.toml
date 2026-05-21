@@ -19,7 +19,6 @@ rand = { workspace = true }
 slotmap = { workspace = true }
 tokio = { workspace = true }
 
-polars-config = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 
