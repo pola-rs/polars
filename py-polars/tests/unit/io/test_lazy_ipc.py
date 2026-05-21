@@ -411,6 +411,160 @@ def test_sink_ipc_custom_metadata() -> None:
         assert reader.metadata is None
 
 
+def test_scan_ipc_slicing_and_count_with_custom_metadata(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame({"a": range(37)})
+
+    f = io.BytesIO()
+    df.lazy().sink_ipc(
+        f,
+        record_batch_size=10,
+        _record_batch_statistics=True,
+    )
+
+    buf = f.getvalue()
+    q = pl.scan_ipc(buf).slice(10, 10)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    assert (
+        "rb_total_count: 4, rb_full_fetch_count: 1, rb_metadata_fetch_count: 0"
+        in capture
+    )
+
+    assert_frame_equal(out, pl.DataFrame({"a": range(10, 20)}))
+
+    footer_header_len = 10
+    footer_md_and_header_len = footer_header_len + int.from_bytes(
+        buf[-10:][:4], byteorder="little"
+    )
+    footer_md_only_buf = buf[-footer_md_and_header_len:]
+
+    # All the following should pass without needing to access record batch data.
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    assert pl.scan_ipc(footer_md_only_buf).select(pl.len()).collect().item() == 37
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    # 0 fetches; record batch row counts sourced from custom metadata.
+    assert (
+        "rb_total_count: 4, rb_full_fetch_count: 0, rb_metadata_fetch_count: 0"
+        in capture
+    )
+
+    assert (
+        pl.scan_ipc(3 * [footer_md_only_buf]).select(pl.len()).collect().item() == 111
+    )
+
+    for offset_len in [(0, 0), (-1, 0), (1, 0), (-999, 1), (999, 1)]:
+        assert (
+            pl.scan_ipc([footer_md_only_buf, footer_md_only_buf])
+            .slice(*offset_len)
+            .collect()
+            .height
+            == 0
+        )
+
+    assert (
+        pl.scan_ipc([footer_md_only_buf, footer_md_only_buf])
+        .slice(47, 1)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 1
+    )
+    assert (
+        pl.scan_ipc([footer_md_only_buf, footer_md_only_buf])
+        .slice(47, 999)
+        .select(pl.len())
+        .collect()
+        .item()
+        == 27
+    )
+
+
+def test_scan_ipc_fast_count_does_not_read_row_values(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame({"a": range(3)})
+    f = io.BytesIO()
+    df.lazy().sink_ipc(
+        f,
+        record_batch_size=999,
+        _record_batch_statistics=False,
+    )
+
+    q = pl.scan_ipc(f.getvalue()).select(pl.len())
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    assert (
+        "rb_total_count: 1, rb_full_fetch_count: 0, rb_metadata_fetch_count: 1"
+        in capture
+    )
+    assert out.item() == 3
+
+
+def test_scan_ipc_slicing_and_count(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    df = pl.DataFrame({"a": range(3)})
+    f = io.BytesIO()
+    df.lazy().sink_ipc(
+        f,
+        record_batch_size=1,
+        _record_batch_statistics=False,
+    )
+
+    buf = f.getvalue()
+    q = pl.scan_ipc(buf).select(pl.len())
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    assert (
+        "rb_total_count: 3, rb_full_fetch_count: 0, rb_metadata_fetch_count: 3"
+        in capture
+    )
+    assert out.item() == 3
+
+    q = pl.scan_ipc(buf).slice(1, 1)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = q.collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    # rb_metadata_fetch_count == rb_total_count, we fetched all record batch
+    # metadatas to resolve slice.
+    assert (
+        "rb_total_count: 3, rb_full_fetch_count: 1, rb_metadata_fetch_count: 3"
+        in capture
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"a": 1}),
+    )
+
+
 @pytest.mark.parametrize(
     "selection",
     [["b"], ["a", "b", "c", "d"], ["d", "c", "a", "b"], ["d", "a", "b"]],
