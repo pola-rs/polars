@@ -3120,6 +3120,8 @@ def test_group_by_sort_flag_27672() -> None:
         }
     )
 
-    out = df.sort("z").group_by("s", maintain_order=True).max().sort("z", descending=True)
+    out = (
+        df.sort("z").group_by("s", maintain_order=True).max().sort("z", descending=True)
+    )
     expected = pl.DataFrame({"s": ["b", "a"], "z": [2, 1]})
     assert_frame_equal(out, expected)
