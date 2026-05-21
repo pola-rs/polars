@@ -6380,6 +6380,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - One-to-many. Checks if join keys are unique in left dataset.
                * - **m:1**
                  - Many-to-one. Check if join keys are unique in right dataset.
+
+            .. note::
+                Using this parameter will result in higher memory usage, as it
+                will disable streaming for the join.
         nulls_equal
             Join on null values. By default null values will never produce matches.
         coalesce
