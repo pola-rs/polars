@@ -23,17 +23,17 @@ pub struct PredicatePushDown {
     // Normally this is 0. Only needed for CSPE.
     caches_pass_allowance: u32,
     nodes_scratch: ScratchUnitVec<Node>,
-    new_streaming: bool,
+    streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
+    pub fn new(maintain_errors: bool, streaming: bool) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
-            new_streaming,
+            streaming,
             maintain_errors,
         }
     }
@@ -453,7 +453,7 @@ impl PredicatePushDown {
                 schema,
                 options,
                 acc_predicates,
-                self.new_streaming,
+                self.streaming,
             ),
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {

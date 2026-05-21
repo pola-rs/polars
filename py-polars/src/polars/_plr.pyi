@@ -2526,8 +2526,6 @@ def _unregister_extension_type(name: str) -> None: ...
 # cloud_client
 def prepare_cloud_plan(
     lf: PyLazyFrame,
-    *,
-    allow_local_scans: bool,
 ) -> bytes: ...
 
 # cloud_server

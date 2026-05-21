@@ -212,9 +212,7 @@ def _to_sink_target(
 def _gpu_engine_callback(
     engine: EngineType,
     *,
-    streaming: bool,
     background: bool,
-    new_streaming: bool,
     _eager: bool,
 ) -> Callable[[Any, int | None], None] | None:
     is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
@@ -223,10 +221,9 @@ def _gpu_engine_callback(
     ):
         msg = f"Invalid engine argument {engine=}"
         raise ValueError(msg)
-    if (streaming or background or new_streaming) and is_gpu:
+    if background and is_gpu:
         issue_warning(
-            "GPU engine does not support streaming or background collection, "
-            "disabling GPU engine.",
+            "GPU engine does not support background collection, disabling GPU engine.",
             category=UserWarning,
         )
         is_gpu = False
@@ -2209,9 +2206,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         callback = _gpu_engine_callback(
             engine,
-            streaming=False,
             background=False,
-            new_streaming=False,
             _eager=False,
         )
         if _kwargs.get("post_opt_callback") is not None:
@@ -2604,7 +2599,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         for k in _kwargs:
             if k not in (  # except "private" kwargs
-                "new_streaming",
                 "post_opt_callback",
             ):
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
@@ -2612,18 +2606,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         engine = _select_engine(engine)
 
-        new_streaming = (
-            _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"
-        )
-
-        if new_streaming:
-            engine = "streaming"
-
         callback = _gpu_engine_callback(
             engine,
-            streaming=False,
             background=background,
-            new_streaming=new_streaming,
             _eager=optimizations._pyoptflags.eager,
         )
 
