@@ -591,3 +591,22 @@ def test_sink_scan_ipc_round_trip_statistics_projection(
     out = pl.scan_ipc(buf, _record_batch_statistics=True).select(selection).collect()
     assert_frame_equal(df, out)
     assert_frame_equal(df._to_metadata(), out._to_metadata())
+
+
+def test_scan_ipc_slice_empty_file() -> None:
+    dfs = [
+        pl.DataFrame({"a": range(0)}),
+        pl.DataFrame({"a": range(100)}),
+        pl.DataFrame({"a": range(0)}),
+        pl.DataFrame({"a": range(100, 200)}),
+    ]
+
+    bufs: list[IO[bytes]] = [io.BytesIO() for _ in range(len(dfs))]
+
+    for i in range(len(dfs)):
+        dfs[i].write_ipc(bufs[i])
+
+    expected = pl.concat(dfs).slice(50, 100)
+    actual = pl.scan_ipc(bufs).slice(50, 100).collect()
+
+    assert_frame_equal(expected, actual)
