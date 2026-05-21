@@ -114,6 +114,11 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
             &[options.nulls_last],
             false,
         )?;
+        let options = SortOptions {
+            descending: false,
+            nulls_last: false,
+            ..options
+        };
         return is_sorted_impl(&encoded.into_series(), options);
     }
 
