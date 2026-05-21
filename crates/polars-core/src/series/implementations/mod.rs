@@ -36,7 +36,6 @@ use polars_utils::aliases::PlSeedableRandomStateQuality;
 
 use super::*;
 use crate::chunked_array::AsSinglePtr;
-use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };

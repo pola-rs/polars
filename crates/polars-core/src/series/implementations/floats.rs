@@ -2,7 +2,6 @@ use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;

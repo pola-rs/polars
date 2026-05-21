@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};

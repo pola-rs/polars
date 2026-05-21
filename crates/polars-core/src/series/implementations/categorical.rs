@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 use crate::prelude::*;
 
 unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
