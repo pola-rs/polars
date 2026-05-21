@@ -1,7 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-use polars_core::datatypes::{DataType, Field};
+use polars_core::datatypes::Field;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "ir_serde")]
