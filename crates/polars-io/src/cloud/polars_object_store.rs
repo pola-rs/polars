@@ -81,6 +81,9 @@ mod inner {
     struct Inner {
         store: tokio::sync::RwLock<Arc<dyn ObjectStore>>,
         builder: PolarsObjectStoreBuilder,
+        /// Used for interior mutability. Doesn't need to be shared with other threads so it's not
+        /// inside `Arc<>`.
+        rebuilt: RelaxedCell<bool>,
     }
 
     /// Polars wrapper around [`ObjectStore`] functionality. This struct is cheaply cloneable.
@@ -89,9 +92,6 @@ mod inner {
         inner: Arc<Inner>,
         /// Avoid contending the Mutex `lock()` until the first re-build.
         initial_store: std::sync::Arc<dyn ObjectStore>,
-        /// Used for interior mutability. Doesn't need to be shared with other threads so it's not
-        /// inside `Arc<>`.
-        rebuilt: RelaxedCell<bool>,
         io_metrics: OptIOMetrics,
     }
 
@@ -105,9 +105,9 @@ mod inner {
                 inner: Arc::new(Inner {
                     store: tokio::sync::RwLock::new(store),
                     builder,
+                    rebuilt: RelaxedCell::from(false),
                 }),
                 initial_store,
-                rebuilt: RelaxedCell::from(false),
                 io_metrics: OptIOMetrics(None),
             }
         }
@@ -123,7 +123,7 @@ mod inner {
 
         /// Gets the underlying [`ObjectStore`] implementation.
         pub async fn to_dyn_object_store(&self) -> Cow<'_, Arc<dyn ObjectStore>> {
-            if !self.rebuilt.load() {
+            if !self.inner.rebuilt.load() {
                 Cow::Borrowed(&self.initial_store)
             } else {
                 Cow::Owned(self.inner.store.read().await.clone())
@@ -149,7 +149,7 @@ mod inner {
                         })?;
             }
 
-            self.rebuilt.store(true);
+            self.inner.rebuilt.store(true);
 
             Ok((*current_store).clone())
         }
