@@ -134,7 +134,7 @@ pub(crate) fn set_cache_states(
     scratch: &mut Vec<Node>,
     verbose: bool,
     pushdown_maintain_errors: bool,
-    new_streaming: bool,
+    streaming: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
@@ -280,7 +280,7 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming);
+        let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, streaming);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
@@ -334,8 +334,8 @@ pub(crate) fn set_cache_states(
                     .expect("expected filter; this is an optimizer bug");
                 let start_lp = lp_arena.take(node);
 
-                let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, new_streaming)
-                    .block_at_cache(1);
+                let mut pred_pd =
+                    PredicatePushDown::new(pushdown_maintain_errors, streaming).block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
 

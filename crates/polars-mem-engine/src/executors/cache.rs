@@ -9,7 +9,7 @@ pub struct CachePrefill {
     id: UniqueId,
     hit_count: u32,
     /// Signals that this is a scan executed async in the streaming engine and needs extra handling
-    is_new_streaming_scan: bool,
+    is_streaming_scan: bool,
 }
 
 impl CachePrefill {
@@ -18,7 +18,7 @@ impl CachePrefill {
             input,
             id,
             hit_count: 0,
-            is_new_streaming_scan: false,
+            is_streaming_scan: false,
         }
     }
 
@@ -99,7 +99,7 @@ impl Executor for CachePrefiller {
             state.branch_idx += 1;
 
             #[cfg(feature = "async")]
-            if prefill.is_new_streaming_scan {
+            if prefill.is_streaming_scan {
                 let parallel_scan_exec_limit = parallel_scan_exec_limit.clone();
 
                 scan_handles.push(ASYNC.spawn(async move {

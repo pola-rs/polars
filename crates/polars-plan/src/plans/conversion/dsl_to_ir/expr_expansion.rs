@@ -60,7 +60,7 @@ pub fn rewrite_projections(
 }
 
 fn toggle_cse_for_structs(opt_flags: &mut OptFlags) {
-    if opt_flags.contains(OptFlags::EAGER) && !opt_flags.contains(OptFlags::NEW_STREAMING) {
+    if opt_flags.contains(OptFlags::EAGER) && !opt_flags.contains(OptFlags::STREAMING) {
         use polars_core::config::verbose;
         if verbose() {
             eprintln!("CSE turned on because of struct expansion")

@@ -252,7 +252,6 @@ def test_float_skip_batch_predicate() -> None:
     assert sbp(pl.col("x") > 5.0) is None  # No skip. Hidden NaN satisfies >.
     assert sbp(pl.col("x") > NaN) is not None  # Can skip. Nothing > NaN under TotalOrd.
     assert sbp(pl.col("x") >= 5.0) is None  # No skip. Hidden NaN satisfies >=.
-    assert sbp(pl.col("x") > NaN) is not None  # Can skip. Nothing > NaN.
     assert sbp(pl.col("x") >= NaN) is None  # No skip. Stats exclude NaN.
     assert (
         sbp(pl.lit(5.0) > pl.col("x")) is not None
