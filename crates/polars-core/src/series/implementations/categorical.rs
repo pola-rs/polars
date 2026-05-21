@@ -57,10 +57,6 @@ macro_rules! impl_cat_series {
                 self.0.set_flags(flags)
             }
 
-            unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-                self.0.physical().equal_element(idx_self, idx_other, other)
-            }
-
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
                 polars_ensure!(self.dtype() == other.dtype(), SchemaMismatch: "expected '{}' found '{}'", self.dtype(), other.dtype());

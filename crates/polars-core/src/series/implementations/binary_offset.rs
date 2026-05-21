@@ -22,10 +22,6 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
         self.0.set_flags(flags)
     }
 
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
-    }
-
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         (&self.0).into_total_eq_inner()
     }

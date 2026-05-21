@@ -88,15 +88,6 @@ macro_rules! impl_dyn_series {
                 self.0.set_flags(flags)
             }
 
-            unsafe fn equal_element(
-                &self,
-                idx_self: usize,
-                idx_other: usize,
-                other: &Series,
-            ) -> bool {
-                self.0.equal_element(idx_self, idx_other, other)
-            }
-
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(
                 &self,

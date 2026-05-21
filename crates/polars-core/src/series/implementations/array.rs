@@ -35,10 +35,6 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
         self.0.set_flags(flags)
     }
 
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
-    }
-
     fn vec_hash(
         &self,
         build_hasher: PlSeedableRandomStateQuality,
