@@ -49,7 +49,7 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNoNulls<T, Out>> Rolli
         self.0.slice_len()
     }
 
-    fn is_valid(&self, min_periods: usize) -> bool {
+    fn is_valid(&self, _min_periods: usize) -> bool {
         true
     }
 }
