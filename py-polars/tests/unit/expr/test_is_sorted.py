@@ -107,3 +107,41 @@ def test_is_sorted_nulls_interleaved() -> None:
     result = df.select(pl.col("a").is_sorted(descending=None, nulls_last=None))
     expected = pl.DataFrame({"a": [False]})
     assert_frame_equal(result, expected)
+
+
+def test_is_sorted_streaming_nulls_after_null_free_chunk() -> None:
+    # Regression: in the streaming path, a null-free first chunk caused
+    # `nulls_last` to be committed to an arbitrary default, then a later
+    # chunk containing nulls was incorrectly rejected at the boundary.
+    s = pl.concat(
+        [pl.Series("a", [3, 2, 1]), pl.Series("a", [None, None], dtype=pl.Int64)],
+        rechunk=False,
+    )
+    assert s.n_chunks() == 2
+    result = (
+        pl.LazyFrame({"a": s})
+        .select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+        .collect(engine="streaming")
+    )
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_streaming_interleaved_across_chunks() -> None:
+    # Cross-chunk interleaving: values, then null, then value is not sortable.
+    s = pl.concat(
+        [
+            pl.Series("a", [3, 2, 1]),
+            pl.Series("a", [None], dtype=pl.Int64),
+            pl.Series("a", [0]),
+        ],
+        rechunk=False,
+    )
+    assert s.n_chunks() == 3
+    result = (
+        pl.LazyFrame({"a": s})
+        .select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+        .collect(engine="streaming")
+    )
+    expected = pl.DataFrame({"a": [False]})
+    assert_frame_equal(result, expected)

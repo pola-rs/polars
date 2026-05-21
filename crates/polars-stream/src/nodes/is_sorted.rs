@@ -12,6 +12,11 @@ enum IsSortedState {
     Sink {
         is_sorted: bool,
         opts: Option<SortOptions>,
+        // True once `opts.nulls_last` reflects either the user's hint or an
+        // observed null. False means it's a placeholder picked by
+        // `resolve_sort_options` for a null-free first morsel, and must be
+        // re-anchored when nulls eventually appear.
+        nulls_last_anchored: bool,
         last_value: Option<AnyValue<'static>>,
         last_was_null: bool,
         seen_null: bool,
@@ -39,6 +44,7 @@ impl IsSortedNode {
             state: IsSortedState::Sink {
                 is_sorted: true,
                 opts: None,
+                nulls_last_anchored: false,
                 last_value: None,
                 last_was_null: false,
                 seen_null: false,
@@ -55,6 +61,7 @@ impl IsSortedNode {
     fn spawn_sink<'env, 's>(
         is_sorted: &'env mut bool,
         opts: &'env mut Option<SortOptions>,
+        nulls_last_anchored: &'env mut bool,
         last_value: &'env mut Option<AnyValue<'static>>,
         last_was_null: &'env mut bool,
         seen_null: &'env mut bool,
@@ -85,11 +92,12 @@ impl IsSortedNode {
                     if let Some(o) = resolve_sort_options(series, descending_hint, nulls_last_hint)?
                     {
                         *opts = Some(o);
+                        *nulls_last_anchored = nulls_last_hint.is_some() || series.null_count() > 0;
                     }
                 }
 
-                if opts.is_none()
-                    && !scan_unresolved(
+                if opts.is_none() {
+                    if !scan_unresolved(
                         series,
                         last_value,
                         *last_was_null,
@@ -99,10 +107,27 @@ impl IsSortedNode {
                         descending_hint,
                         nulls_last_hint,
                         opts,
-                    )?
-                {
-                    *is_sorted = false;
-                    return Ok(());
+                    )? {
+                        *is_sorted = false;
+                        return Ok(());
+                    }
+                    // `scan_unresolved` only sets `opts` once a null has been seen or a hint
+                    // was given, so any opts coming out of it are nulls-last-anchored.
+                    if opts.is_some() {
+                        *nulls_last_anchored = true;
+                    }
+                }
+
+                // The first commit can come from `resolve_sort_options` on a null-free
+                // morsel, in which case `opts.nulls_last` is an arbitrary default. Once
+                // a morsel actually contains nulls, re-anchor it (or fail if the null
+                // positions are inconsistent with a single sort order).
+                if opts.is_some() && !*nulls_last_anchored && series.null_count() > 0 {
+                    if !reanchor_nulls_last(series, opts.as_mut().unwrap()) {
+                        *is_sorted = false;
+                        return Ok(());
+                    }
+                    *nulls_last_anchored = true;
                 }
 
                 if let Some(resolved) = *opts {
@@ -147,6 +172,36 @@ fn update_last(
     let last = series.get(series.len() - 1).unwrap();
     *last_was_null = last.is_null();
     *last_value = Some(last.into_static());
+}
+
+/// Anchors `opts.nulls_last` from a morsel known to contain at least one null,
+/// when the previously-committed opts came from a null-free first morsel (so the
+/// last observed value is non-null). Returns `false` if the null positions in
+/// this morsel are inconsistent with a single sort order.
+fn reanchor_nulls_last(series: &Series, opts: &mut SortOptions) -> bool {
+    let null_count = series.null_count();
+    let s_len = series.len();
+    debug_assert!(null_count > 0);
+
+    // All-null morsel: nulls came after the prior non-null tail, so nulls_last=true.
+    if null_count == s_len {
+        opts.nulls_last = true;
+        return true;
+    }
+
+    let tail_all_null = series
+        .slice((s_len - null_count) as i64, null_count)
+        .null_count()
+        == null_count;
+    if tail_all_null {
+        opts.nulls_last = true;
+        return true;
+    }
+
+    // Nulls elsewhere in this morsel — but the previous morsel ended with a
+    // non-null value, so the global pattern is values → null → ..., which can't
+    // be a single sort order.
+    false
 }
 
 fn boundary_ok(
@@ -318,6 +373,7 @@ impl ComputeNode for IsSortedNode {
             IsSortedState::Sink {
                 is_sorted,
                 opts,
+                nulls_last_anchored,
                 last_value,
                 last_was_null,
                 seen_null,
@@ -329,6 +385,7 @@ impl ComputeNode for IsSortedNode {
                 Self::spawn_sink(
                     is_sorted,
                     opts,
+                    nulls_last_anchored,
                     last_value,
                     last_was_null,
                     seen_null,
