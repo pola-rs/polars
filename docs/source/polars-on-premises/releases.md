@@ -1,24 +1,4 @@
-After obtaining a license for Polars On-Prem by
-[signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv) you will receive an access key for
-our private Docker registry as well as a JSON-formatted license for running Polars On-Prem.
-
-## Binary
-
-To pull the binary, run the following command:
-
-```sh
-$ curl -L 'https://get.onprem.pola.rs?version=<TAG>' --data @license.json --output polars-on-premises
-```
-
-## Docker Image
-
-To pull the docker image:
-
-```sh
-$ docker pull polarscloud/polars-on-premise:<TAG>
-```
-
-### 0.3.1 (latest)
+## 0.3.1 (latest)
 
 - `polars` [1.40.1](https://github.com/pola-rs/polars/releases/tag/py-1.40.1)
 - `polars-cloud` [0.6.1](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.1)
@@ -31,7 +11,7 @@ $ docker pull polarscloud/polars-on-premise:<TAG>
 - OpenLineage support
 - Track shuffle outputs on the scheduler; This will later enable partial stage recovery.
 
-### 0.2.4
+## 0.2.4
 
 - `polars` [1.39.3](https://github.com/pola-rs/polars/releases/tag/py-1.39.3)
 - `polars-cloud` [0.6.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.0)
@@ -43,7 +23,7 @@ $ docker pull polarscloud/polars-on-premise:<TAG>
 - Distributed slice
 - Improved stage graph
 
-### 0.2.3
+## 0.2.3
 
 - `polars` [1.39.3](https://github.com/pola-rs/polars/releases/tag/py-1.39.3)
 - `polars-cloud` [0.6.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.0)
@@ -57,7 +37,7 @@ $ docker pull polarscloud/polars-on-premise:<TAG>
 - Fix multi-partition bugs in the observatory (still one remaining for IO time)
 - Add data skew and worker time information
 
-### 0.1.1
+## 0.1.1
 
 - `polars` [1.38.1](https://github.com/pola-rs/polars/releases/tag/py-1.38.1)
 - `polars-cloud` [0.5.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.5.0)
@@ -73,7 +53,9 @@ $ docker pull polarscloud/polars-on-premise:<TAG>
 - Pre-aggregate more aggregations: std, var, first, last
 - Streaming ASOF joins
 
-## Helm chart
+## Access the released artifacts
+
+### Helm chart
 
 Helm chart releases are announced and documented on our
 [chart repo](https://github.com/polars-inc/helm-charts/releases) directly. The version of the
@@ -87,3 +69,16 @@ helm search repo polars-inc --versions
 The container images are hosted on
 [Dockerhub](https://hub.docker.com/r/polarscloud/polars-on-premises) and are tagged after the
 versions listed above.
+
+### Bare-metal binaries
+
+After obtaining an offline license for Polars On-Prem you will received a JSON-formatted license
+for running Polars On-Prem.
+
+To pull the binary, run the following command:
+
+```sh
+$ curl -L 'https://get.onprem.pola.rs?version=<TAG>' --data @license.json --output polars-on-premises
+```
+
+The versions follow the tags listed above.
