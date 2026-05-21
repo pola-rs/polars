@@ -47,6 +47,9 @@ impl_reverse!(BinaryOffsetType, BinaryOffsetChunked);
 
 impl ChunkReverse for ListChunked {
     fn reverse(&self) -> Self {
+        if self.is_empty() {
+            return self.clone();
+        };
         let ca: Self = self.series_iter().rev().collect_trusted();
         ca.with_name(self.name().clone())
     }
