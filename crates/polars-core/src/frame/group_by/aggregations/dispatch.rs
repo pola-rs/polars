@@ -86,7 +86,7 @@ impl Series {
                 s.take_unchecked(&indices)
             },
         };
-        if groups.is_sorted_flag() {
+        if groups.is_sorted_by_first_idx() {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)
@@ -143,7 +143,7 @@ impl Series {
         };
         // SAFETY: groups are always in bounds.
         let mut out = s.take_unchecked(&indices);
-        if groups.is_sorted_flag() {
+        if matches!(groups, GroupsType::Slice { .. }) && !groups.is_overlapping() {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)
@@ -598,7 +598,7 @@ impl Series {
         };
         // SAFETY: groups are always in bounds.
         let mut out = s.take_unchecked(&indices);
-        if groups.is_sorted_flag() {
+        if groups.is_monotonic() {
             out.set_sorted_flag(s.is_sorted_flag())
         }
         s.restore_logical(out)

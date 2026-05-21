@@ -478,7 +478,7 @@ impl PhysicalExpr for WindowExpr {
         // the groups, so that the cached groups and join keys
         // are consistent among all windows
         if sort_groups || state.cache_window() {
-            groups.sort();
+            groups.sort_by_first_idx();
             state
                 .window_cache
                 .insert_groups(cache_key.clone(), groups.clone());
