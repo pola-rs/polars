@@ -69,15 +69,18 @@ The arguments of this function are predefined and this function must accept:
 
 - `with_columns`
 
-  Columns that are projected. The reader must project these columns if applied
+  Columns projected in the final output. If `predicate` is also provided, apply the predicate before
+  this projection, as the predicate may depend on columns that are not part of `with_columns`.
 
 - `predicate`
 
-  Polars expression. The reader must filter their rows accordingly.
+  Polars expression. If provided, the reader must filter its rows accordingly before applying the
+  final projection.
 
 - `n_rows`
 
-  Materialize only n rows from the source. The reader can stop when `n_rows` are read.
+  Maximum number of source rows to materialize when slice pushdown is applicable. This is an
+  early-stop hint for the source, not a guarantee about the number of rows after filtering.
 
 - `batch_size`
 
@@ -127,15 +130,16 @@ def my_scan_csv(csv_str: str) -> pl.LazyFrame:
             df = pl.from_records(rows, schema=schema, orient="row")
             n_rows -= df.height
 
+            # If the source supports predicate pushdown, the expression can be parsed
+            # to skip rows/groups. Apply it before the final projection, as it may
+            # reference columns that are not included in `with_columns`.
+            if predicate is not None:
+                df = df.filter(predicate)
+
             # If we would make a performant reader, we would not read these
             # columns at all.
             if with_columns is not None:
                 df = df.select(with_columns)
-
-            # If the source supports predicate pushdown, the expression can be parsed
-            # to skip rows/groups.
-            if predicate is not None:
-                df = df.filter(predicate)
 
             yield df
 

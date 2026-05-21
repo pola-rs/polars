@@ -41,14 +41,16 @@ def register_io_source(
     io_source
         Function that accepts the following arguments:
             with_columns
-                Columns that are projected. The reader must
-                project these columns if applied
+                Columns projected in the final output. If a predicate is also
+                provided, the predicate must be applied before this projection,
+                as it may depend on columns that are not part of `with_columns`.
             predicate
-                Polars expression. The reader must filter
-                their rows accordingly.
+                Polars expression. If provided, the reader must filter its rows
+                accordingly before applying the final projection.
             n_rows
-                Materialize only n rows from the source.
-                The reader can stop when `n_rows` are read.
+                Maximum number of source rows to materialize when slice pushdown is
+                applicable. This is an early-stop hint for the source, not a
+                guarantee about the number of rows after filtering.
             batch_size
                 A hint of the ideal batch size the reader's
                 generator must produce.
