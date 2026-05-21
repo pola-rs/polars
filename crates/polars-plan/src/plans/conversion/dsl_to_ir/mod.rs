@@ -295,11 +295,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ),
             )?;
 
-            // Intentionally outside the pushdown opt-flag gate. The rewrites
-            // produce a structurally smaller predicate (fewer binary ops,
-            // fewer duplicated subexpressions), so per-row evaluation is
-            // cheaper even when pushdown is off.
-            simplify_predicate(predicate_ae.node(), ctxt.expr_arena);
+            // Gated on `simplify_expr` so the rewrite can be disabled for
+            // differential testing and debugging.
+            if ctxt.opt_flags.simplify_expr() {
+                simplify_predicate(predicate_ae.node(), ctxt.expr_arena);
+            }
 
             if ctxt.opt_flags.predicate_pushdown() {
                 ctxt.nodes_scratch.clear();
