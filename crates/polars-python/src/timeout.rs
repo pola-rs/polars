@@ -35,7 +35,7 @@ pub fn is_timeout_enabled() -> bool {
     }
 
     let var = std::env::var("POLARS_TIMEOUT_MS").ok();
-    if var.is_some_and(|v| !v.is_empty()) {
+    if var.is_none_or(|v| v.is_empty()) {
         TIMEOUT_DISABLED.store(true);
         return false;
     }

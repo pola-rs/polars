@@ -139,6 +139,7 @@ impl EnterPolarsExt for Python<'_> {
         E: Ungil + Send + Into<PyPolarsErr>,
     {
         let timeout = if is_timeout_enabled() {
+            std::hint::cold_path();
             schedule_polars_timeout(get_traceback(self).ok())
         } else {
             None
