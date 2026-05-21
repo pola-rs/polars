@@ -176,21 +176,21 @@ pub trait SeriesMethods: SeriesSealed {
             DataType::String => {
                 let ca = s_phys.str()?;
                 Ok(is_sorted_adjacent_total_ord(
-                    ca.into_no_null_iter(),
+                    ca.no_null_iter(),
                     options.descending,
                 ))
             },
             DataType::Binary => {
                 let ca = s_phys.binary()?;
                 Ok(is_sorted_adjacent_total_ord(
-                    ca.into_no_null_iter(),
+                    ca.no_null_iter(),
                     options.descending,
                 ))
             },
             DataType::BinaryOffset => {
                 let ca = s_phys.binary_offset()?;
                 Ok(is_sorted_adjacent_total_ord(
-                    ca.into_no_null_iter(),
+                    ca.no_null_iter(),
                     options.descending,
                 ))
             },

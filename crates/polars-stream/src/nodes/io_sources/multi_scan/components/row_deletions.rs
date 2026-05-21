@@ -248,7 +248,12 @@ impl DeletionFilesProvider {
                         let mut filter_mask = MutableBitmap::from_len_set(filter_mask_len);
 
                         for c in position_columns {
-                            for idx in c.as_materialized_series_maintain_scalar().i64().unwrap() {
+                            for idx in c
+                                .as_materialized_series_maintain_scalar()
+                                .i64()
+                                .unwrap()
+                                .iter()
+                            {
                                 let idx = usize::try_from(idx.unwrap()).unwrap();
                                 filter_mask.set(idx, false);
                             }
