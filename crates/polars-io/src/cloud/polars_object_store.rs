@@ -81,8 +81,6 @@ mod inner {
     struct Inner {
         store: tokio::sync::RwLock<Arc<dyn ObjectStore>>,
         builder: PolarsObjectStoreBuilder,
-        /// Used for interior mutability. Doesn't need to be shared with other threads so it's not
-        /// inside `Arc<>`.
         rebuilt: RelaxedCell<bool>,
     }
 
