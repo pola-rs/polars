@@ -8,9 +8,9 @@ use super::*;
 /// user UDFs, FFI plugins, runtime-injected predicates.
 ///
 /// Returns `false` for non-determinism polars permits by policy
-/// (`Expr.unique()` output order, `sum` over floats drifting by an ulp
-/// across parallel reductions). Optimizer rewrites may freely factor
-/// those out.
+/// (`Expr.unique()` output order, `sum` over floats not being
+/// bitwise-reproducible across parallel reductions). Optimizer rewrites
+/// may freely factor those out.
 ///
 /// Used as a correctness gate by rewrites that change the per-row
 /// evaluation count of a subexpression, for example OR factoring
@@ -141,13 +141,15 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::ArgSort { .. } => false,
         F::MinBy | F::MaxBy => false,
         F::Product => false,
-        // `Rank { method: RankMethod::Random, .. }` uses a random tie-breaker.
-        // Bail true unconditionally. The `Random` variant of `RankMethod` is
-        // gated on `polars-ops/random`, which polars-plan does not forward,
-        // so a feature-conditional check is unreliable. Rank in a per-row
-        // predicate is rare enough that losing optimisation here is fine.
-        #[cfg(feature = "rank")]
-        F::Rank { .. } => true,
+        // Only the `Random` tie-breaker is inherently non-deterministic.
+        // The other `RankMethod` variants (Average, Min, Max, Dense,
+        // Ordinal) are deterministic.
+        #[cfg(all(feature = "rank", feature = "random"))]
+        F::Rank { options, .. } => {
+            matches!(options.method, polars_ops::series::RankMethod::Random)
+        },
+        #[cfg(all(feature = "rank", not(feature = "random")))]
+        F::Rank { .. } => false,
         F::Repeat => false,
         #[cfg(feature = "round_series")]
         F::Clip { .. } => false,
