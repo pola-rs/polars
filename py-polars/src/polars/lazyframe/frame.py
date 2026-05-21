@@ -988,7 +988,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     @unstable()
     def pipe_with_schema(
         self,
-        function: Callable[[LazyFrame, Schema], LazyFrame],
+        function: Callable[Concatenate[LazyFrame, Schema, P], LazyFrame],
+        *args: P.args,
+        **kwargs: P.kwargs,
     ) -> LazyFrame:
         """
         Allows to alter the lazy frame during the plan stage with the resolved schema.
@@ -1005,8 +1007,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         function
-            Callable; will receive the frame as the first parameter and the resolved
-            schema as the second parameter.
+            Callable; will receive the frame as the first parameter, the resolved
+            schema as the second parameter, followed by any given args/kwargs.
+        *args
+            Arguments to pass to the UDF.
+        **kwargs
+            Keyword arguments to pass to the UDF.
 
         See Also
         --------
@@ -1045,6 +1051,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             return function(
                 self._from_pyldf(lf_and_schema[0][0]),
                 lf_and_schema[1][0],
+                *args,
+                **kwargs,
             )._ldf
 
         return self._from_pyldf(self._ldf.pipe_with_schema(wrapper))

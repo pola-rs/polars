@@ -28,3 +28,36 @@ def test_pipe_with_schema_rewrite() -> None:
 
     assert result.schema == {"x": pl.Int64}
     assert result.height == 3
+
+
+def test_pipe_with_schema_args_kwargs() -> None:
+    def cast_columns(
+        lf: pl.LazyFrame,
+        schema: pl.Schema,
+        target_dtype: pl.DataType,
+        *,
+        only_non_float: bool,
+    ) -> pl.LazyFrame:
+        required_casts = [
+            pl.col(name).cast(target_dtype)
+            for name, dtype in schema.items()
+            if not only_non_float or not dtype.is_float()
+        ]
+        return lf.with_columns(required_casts)
+
+    lf = pl.LazyFrame(
+        {"a": [1.0, 2.0], "b": ["1.0", "2.5"], "c": [2.0, 3.0]},
+        schema={"a": pl.Float64, "b": pl.String, "c": pl.Float32},
+    )
+
+    result = lf.pipe_with_schema(
+        cast_columns,
+        pl.Float64(),
+        only_non_float=True,
+    ).collect()
+
+    assert result.schema == {
+        "a": pl.Float64,
+        "b": pl.Float64,
+        "c": pl.Float32,
+    }
