@@ -430,8 +430,7 @@ def test_merge_sorted_deep_chain_with_sort_collect(n_frames: int) -> None:
     assert_frame_equal(result, expected)
 
 
-def test_merge_sorted_with_list() -> None:
-    # See: https://github.com/pola-rs/polars/issues/27563
+def test_merge_sorted_with_list_27563() -> None:
     df1 = pl.DataFrame({"key": ["a", "c"], "list": [[1, 2], [5, 6]]})
     df2 = pl.DataFrame({"key": ["b", "d"], "list": [[3, 4], [7, 8]]})
 
