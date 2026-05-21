@@ -939,4 +939,4 @@ def test_rolling_by_temporal_null_min_samples_27661() -> None:
             min_samples=2,
         ),
     )
-    assert_series_equal(df["avg_power_2s"], df["avg_power_2i"])
+    assert_series_equal(df["avg_power_2s"].alias("avg_power_2i"), df["avg_power_2i"])
