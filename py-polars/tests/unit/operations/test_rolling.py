@@ -914,3 +914,29 @@ def test_rolling_positive_offset_window_26717(period: int, offset: int) -> None:
     )
 
     assert_frame_equal(out_base, out_over)
+
+
+def test_rolling_by_temporal_null_min_samples_27661() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                datetime(year=2026, month=1, day=9, hour=5, minute=23, second=37),
+                datetime(year=2026, month=1, day=9, hour=5, minute=23, second=39),
+                interval="1s",
+                time_unit="ms",
+                eager=True,
+            ),
+            "power": [303, 498, None],
+        },
+    ).with_columns(
+        avg_power_2s=pl.col("power").rolling_mean_by(
+            "timestamp",
+            window_size="2s",
+            min_samples=2,
+        ),
+        avg_power_2i=pl.col("power").rolling_mean(
+            window_size=2,
+            min_samples=2,
+        ),
+    )
+    assert_series_equal(df["avg_power_2s"], df["avg_power_2i"])
