@@ -1,4 +1,5 @@
 mod builder;
+mod determinism;
 mod equality;
 mod evaluate;
 mod function_expr;
@@ -12,6 +13,7 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
+pub use determinism::is_deterministic;
 pub use function_expr::*;
 pub(crate) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
