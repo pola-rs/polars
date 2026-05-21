@@ -1,6 +1,9 @@
 use std::cmp::Ordering;
 use std::ops::RangeBounds;
 
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::distributor_channel::{self, distributor_channel};
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
@@ -11,9 +14,6 @@ use polars_utils::sort::reorder_cmp;
 use rayon::slice::ParallelSliceMut;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel::{self, distributor_channel};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};

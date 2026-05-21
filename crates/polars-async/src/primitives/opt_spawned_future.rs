@@ -1,7 +1,7 @@
 use pin_project_lite::pin_project;
 use polars_utils::{UnitVec, unitvec};
 
-use crate::async_executor::{AbortOnDropHandle, TaskPriority, spawn};
+use crate::executor::{AbortOnDropHandle, TaskPriority, spawn};
 
 pin_project! {
     /// Represents a future that may either be local or spawned.

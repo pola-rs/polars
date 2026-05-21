@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use arrow::legacy::time_zone::Tz;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, GroupsType, Int64Chunked, IntoColumn, TimeUnit};
 use polars_core::schema::Schema;
@@ -14,9 +17,6 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::ComputeNode;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::expression::StreamExpr;
 use crate::graph::PortState;

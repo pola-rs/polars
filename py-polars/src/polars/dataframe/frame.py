@@ -133,7 +133,6 @@ if TYPE_CHECKING:
 
     import deltalake
     import jax
-    import numpy.typing as npt
     import pyiceberg
     from great_tables import GT
     from xlsxwriter import Workbook
@@ -222,6 +221,11 @@ class DataFrame:
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        The order of the schema determines the column order of the frame.
+        When passing a dict, its insertion order is respected. To override specific
+        column data types by name without changing column order, use
+        ``schema_overrides`` instead.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
@@ -992,7 +996,7 @@ class DataFrame:
 
     def __array__(
         self,
-        dtype: npt.DTypeLike | None = None,
+        dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
@@ -8083,7 +8087,7 @@ class DataFrame:
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
 
-        They `by` argument allows joining on another column first, before the asof join.
+        The `by` argument allows joining on another column first, before the asof join.
         In this example we join by `country` first, then asof join by date, as above.
 
         >>> gdp_dates = pl.date_range(  # fmt: skip

@@ -1,6 +1,7 @@
 use std::io::Write;
 use std::sync::Arc;
 
+use arrow_format::ipc::KeyValue;
 use arrow_format::ipc::planus::Builder;
 use bytes::Bytes;
 use polars_error::PolarsResult;
@@ -143,6 +144,7 @@ pub fn push_footer(
     ipc_fields: &[IpcField],
     dictionary_blocks: Vec<arrow_format::ipc::Block>,
     record_blocks: Vec<arrow_format::ipc::Block>,
+    custom_metadata: Option<Vec<(String, String)>>,
     // Placeholder, inherited from FileWriter for future use.
     custom_schema_metadata: Option<Arc<Metadata>>,
 ) -> usize {
@@ -157,7 +159,15 @@ pub fn push_footer(
         schema: Some(Box::new(schema)),
         dictionaries: Some(dictionary_blocks),
         record_batches: Some(record_blocks),
-        custom_metadata: None,
+        custom_metadata: custom_metadata.map(|kv_vec| {
+            kv_vec
+                .into_iter()
+                .map(|(k, v)| KeyValue {
+                    key: Some(k),
+                    value: Some(v),
+                })
+                .collect()
+        }),
     };
     let mut builder = Builder::new();
     let footer_data = builder.finish(&root, None);

@@ -1,4 +1,5 @@
 use arrow::array::builder::ShareStrategy;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     AnyValue, DataType, Field, IDX_DTYPE, IntoColumn, NamedFrom, StructChunked,
@@ -12,7 +13,6 @@ use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};

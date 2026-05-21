@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::schema::Schema;
 
 use super::compute_node_prelude::*;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 pub enum RepeatNode {

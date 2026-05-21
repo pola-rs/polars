@@ -3756,7 +3756,7 @@ class Expr:
         │ true ┆ true ┆ false │
         └──────┴──────┴───────┘
         """
-        return self.null_count() > 0
+        return wrap_expr(self._pyexpr.has_nulls())
 
     def arg_unique(self) -> Expr:
         """

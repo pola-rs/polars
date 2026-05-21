@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -20,10 +19,6 @@ impl private::PrivateSeries for SeriesWrap<BinaryOffsetChunked> {
     }
     fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
-    }
-
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
     }
 
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {

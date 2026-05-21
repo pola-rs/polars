@@ -185,8 +185,8 @@ def test_distinct() -> None:
         """,
     )
     assert res2.to_dict(as_series=False) == {
-        "two_a": [2, 2, 4, 6],
-        "half_b": [1, 0, 2, 3],
+        "two_a": [2, 2, 2, 4, 4, 6],
+        "half_b": [1.5, 1.0, 0.5, 2.5, 2.0, 3.0],
     }
 
     # test unregistration

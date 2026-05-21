@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::functions::concat_df_horizontal;
 use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
@@ -11,7 +12,6 @@ use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
-use crate::async_primitives::wait_group::WaitToken;
 use crate::morsel::SourceToken;
 use crate::physical_plan::ZipBehavior;
 
