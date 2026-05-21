@@ -319,10 +319,13 @@ async fn distribute_work_task(
         }
 
         prune_right_side(&left_df, right_buffer, params, 0)?;
-        distributor
+        if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
             .await
-            .unwrap();
+            .is_err()
+        {
+            return Ok(());
+        }
         *output_seq = output_seq.successor();
         prune_right_side(
             &left_df,
