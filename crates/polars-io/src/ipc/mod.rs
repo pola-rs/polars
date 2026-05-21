@@ -11,6 +11,8 @@ mod write;
 pub use ipc_file::{IpcReader, IpcScanOptions};
 #[cfg(feature = "cloud")]
 pub use ipc_reader_async::*;
+#[cfg(feature = "ipc")]
+pub mod pl_ipc_metadata;
 #[cfg(feature = "ipc_streaming")]
 pub use ipc_stream::*;
 pub use write::{BatchedWriter, IpcCompression, IpcWriter, IpcWriterOptions};

@@ -13,7 +13,7 @@ fn map_enum_cats(
     let out_name = PlSmallStr::from_static("category");
 
     let s2 = s.cast(&DataType::Float64)?;
-    let s_iter = s2.f64()?.into_iter();
+    let s_iter = s2.f64()?.iter();
 
     let op: fn(&f64, &f64) -> bool = if left_closed {
         PartialOrd::ge
@@ -77,7 +77,7 @@ fn map_categorical_cats(
 
     let s2 = s.cast(&DataType::Float64)?;
     // It would be nice to parallelize this
-    let s_iter = s2.f64()?.into_iter();
+    let s_iter = s2.f64()?.iter();
 
     let op: fn(&f64, &f64) -> bool = if left_closed {
         PartialOrd::ge

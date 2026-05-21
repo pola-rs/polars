@@ -18,7 +18,12 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.exceptions import DuplicateError
-from polars.selectors import _expand_selector_dicts, _expand_selectors, numeric
+from polars.selectors import (
+    _expand_selector_dicts,
+    _expand_selector_dicts_tuple_keys,
+    _expand_selectors,
+    numeric,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -120,27 +125,26 @@ def _xl_apply_conditional_formats(
     """Take all conditional formatting options and apply them to the table/range."""
     from xlsxwriter.format import Format
 
-    for cols, formats in _expand_selector_dicts(
-        df, conditional_formats, expand_keys=True, expand_values=False, tuple_keys=True
+    for cols, formats in _expand_selector_dicts_tuple_keys(
+        df, conditional_formats, expand_keys=True, expand_values=False
     ).items():
-        if not isinstance(cols, str) and len(cols) == 1:
-            cols = next(iter(cols))
+        _cols = next(iter(cols)) if len(cols) == 1 else cols
         if isinstance(formats, (str, dict)):
             formats = [formats]
 
         for fmt in formats:
             if not isinstance(fmt, dict):
                 fmt = {"type": fmt}
-            if isinstance(cols, str):
+            if isinstance(_cols, str):
                 col_range = _xl_column_range(
-                    df, table_start, cols, include_header=include_header
+                    df, table_start, _cols, include_header=include_header
                 )
             else:
                 col_range = _xl_column_multi_range(
-                    df, table_start, cols, include_header=include_header
+                    df, table_start, _cols, include_header=include_header
                 )
                 if " " in col_range:
-                    col = next(iter(cols))
+                    col = next(iter(_cols))
                     fmt["multi_range"] = col_range
                     col_range = _xl_column_range(
                         df, table_start, col, include_header=include_header
@@ -365,8 +369,8 @@ def _xl_setup_table_columns(
 
     # expand/normalise column formats
     column_formats = _unpack_multi_column_dict(  # type: ignore[assignment]
-        _expand_selector_dicts(
-            df, column_formats, expand_keys=True, expand_values=False, tuple_keys=True
+        _expand_selector_dicts_tuple_keys(
+            df, column_formats, expand_keys=True, expand_values=False
         )
     )
 

@@ -101,7 +101,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// let mask = s.equal(1).unwrap();
 /// let valid = [true, false, false].iter();
 /// assert!(mask
-///     .into_iter()
+///     .iter()
 ///     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
 ///     .zip(valid)
 ///     .all(|(a, b)| a == *b))
@@ -123,7 +123,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// let s = Series::new("angle".into(), [2f32 * pi, pi, 1.5 * pi].as_ref());
 /// let s_cos: Series = s.f32()
 ///                     .expect("series was not an f32 dtype")
-///                     .into_iter()
+///                     .iter()
 ///                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
 ///                     .collect();
 /// ```

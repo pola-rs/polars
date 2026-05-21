@@ -898,6 +898,10 @@ impl PyExpr {
         self.inner.clone().is_empty(ignore_nulls).into()
     }
 
+    fn has_nulls(&self) -> Self {
+        self.inner.clone().has_nulls().into()
+    }
+
     fn log(&self, base: PyExpr) -> Self {
         self.inner.clone().log(base.inner).into()
     }

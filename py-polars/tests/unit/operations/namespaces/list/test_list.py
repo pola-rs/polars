@@ -1116,7 +1116,20 @@ def test_list_shift_unequal_lengths_22018() -> None:
 
 
 def test_list_shift_self_broadcast() -> None:
-    assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3
+    assert_series_equal(
+        pl.Series("a", [[1, 2]]).list.shift(pl.Series([-5, -1, 0, 1, 5, None])),
+        pl.Series(
+            "a",
+            [
+                [None, None],
+                [2, None],
+                [1, 2],
+                [None, 1],
+                [None, None],
+                None,
+            ],
+        ),
+    )
 
 
 def test_list_filter_simple() -> None:

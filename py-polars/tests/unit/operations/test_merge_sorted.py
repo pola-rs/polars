@@ -428,3 +428,18 @@ def test_merge_sorted_deep_chain_with_sort_collect(n_frames: int) -> None:
     result = chained.sort("n", "foo").collect()
 
     assert_frame_equal(result, expected)
+
+
+def test_merge_sorted_with_list_27563() -> None:
+    df1 = pl.DataFrame({"key": ["a", "c"], "list": [[1, 2], [5, 6]]})
+    df2 = pl.DataFrame({"key": ["b", "d"], "list": [[3, 4], [7, 8]]})
+
+    result = df1.merge_sorted(df2, key="key")
+
+    expected = pl.DataFrame(
+        {
+            "key": ["a", "b", "c", "d"],
+            "list": [[1, 2], [3, 4], [5, 6], [7, 8]],
+        }
+    )
+    assert_frame_equal(result, expected)

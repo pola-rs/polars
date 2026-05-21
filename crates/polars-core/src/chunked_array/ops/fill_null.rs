@@ -136,16 +136,14 @@ impl Series {
     }
 }
 
-fn fill_forward_numeric<'a, T, I>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
+fn fill_forward_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
-    I: TrustedLen + Iterator<Item = Option<T::Physical<'a>>>,
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
     let values: Vec<T::ZeroablePhysical<'a>> = ca
-        .into_iter()
+        .iter()
         .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
             *prev = v.map(|v| v.into()).unwrap_or(*prev);
             Some(*prev)
@@ -166,16 +164,14 @@ where
     )
 }
 
-fn fill_backward_numeric<'a, T, I>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
+fn fill_backward_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
-    I: TrustedLen + Iterator<Item = Option<T::Physical<'a>>> + DoubleEndedIterator,
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
     let values: Vec<T::ZeroablePhysical<'a>> = ca
-        .into_iter()
+        .iter()
         .rev()
         .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
             *prev = v.map(|v| v.into()).unwrap_or(*prev);
