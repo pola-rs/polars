@@ -110,9 +110,6 @@ def test_is_sorted_nulls_interleaved() -> None:
 
 
 def test_is_sorted_streaming_nulls_after_null_free_chunk() -> None:
-    # Regression: in the streaming path, a null-free first chunk caused
-    # `nulls_last` to be committed to an arbitrary default, then a later
-    # chunk containing nulls was incorrectly rejected at the boundary.
     s = pl.concat(
         [pl.Series("a", [3, 2, 1]), pl.Series("a", [None, None], dtype=pl.Int64)],
         rechunk=False,
@@ -128,7 +125,6 @@ def test_is_sorted_streaming_nulls_after_null_free_chunk() -> None:
 
 
 def test_is_sorted_streaming_interleaved_across_chunks() -> None:
-    # Cross-chunk interleaving: values, then null, then value is not sortable.
     s = pl.concat(
         [
             pl.Series("a", [3, 2, 1]),
