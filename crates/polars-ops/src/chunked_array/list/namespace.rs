@@ -134,7 +134,7 @@ pub trait ListNameSpaceImpl: AsList {
         let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
         {
             ca.amortized_iter()
-                .zip(separator)
+                .zip(separator.iter())
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
                     Some(separator) => {
                         let opt_val = opt_s.and_then(|s| {
@@ -487,7 +487,7 @@ pub trait ListNameSpaceImpl: AsList {
                         keep_nulls: true,
                     })?;
                     idx_ca
-                        .into_iter()
+                        .series_iter()
                         .map(|opt_idx| {
                             opt_idx
                                 .map(|idx| take_series(&s, idx, null_on_oob))
@@ -542,7 +542,7 @@ pub trait ListNameSpaceImpl: AsList {
                 let mut out = {
                     list_ca
                         .amortized_iter()
-                        .zip(idx_ca)
+                        .zip(idx_ca.series_iter())
                         .map(|(opt_s, opt_idx)| {
                             {
                                 match (opt_s, opt_idx) {
@@ -759,7 +759,7 @@ pub trait ListNameSpaceImpl: AsList {
                 length,
                 ca.name().clone(),
             );
-            ca.into_iter().for_each(|opt_s| {
+            ca.series_iter().for_each(|opt_s| {
                 let opt_s = opt_s.map(|mut s| {
                     for append in &to_append {
                         s.append(append).unwrap();
@@ -789,7 +789,7 @@ pub trait ListNameSpaceImpl: AsList {
             for s in other.iter_mut() {
                 iters.push(s.list()?.amortized_iter())
             }
-            let mut first_iter: Box<dyn PolarsIterator<Item = Option<Series>>> = ca.into_iter();
+            let mut first_iter = ca.series_iter();
             let mut builder = get_list_builder(
                 &inner_super_type,
                 ca.get_values_size() + vals_size_other + 1,

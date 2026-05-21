@@ -88,7 +88,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 |s| {
                     Ok(s.duration()?
                         .physical()
-                        .into_iter()
+                        .iter()
                         .map(|d| d.map(|v| v / 1000 / 24 / 60 / 60))
                         .collect::<Int64Chunked>()
                         .into_column())

@@ -161,7 +161,7 @@ impl WindowExpr {
         if flattened.len() != df.height() {
             let ca = out_column.list().unwrap();
             let non_matching_group =
-                ca.into_iter()
+                ca.series_iter()
                     .zip(ac.groups().iter())
                     .find(|(output, group)| {
                         if let Some(output) = output {
@@ -984,7 +984,7 @@ impl PhysicalExpr for WindowExpr {
                     GroupsType::Idx(idx) => idx
                         .all()
                         .iter()
-                        .zip(&lengths)
+                        .zip(lengths.iter())
                         .any(|(i, l)| i.len() as IdxSize != l.unwrap()),
                     GroupsType::Slice {
                         groups,
@@ -992,7 +992,7 @@ impl PhysicalExpr for WindowExpr {
                         monotonic: _,
                     } => groups
                         .iter()
-                        .zip(&lengths)
+                        .zip(lengths.iter())
                         .any(|([_, i], l)| *i != l.unwrap()),
                 };
 

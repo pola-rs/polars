@@ -13,7 +13,7 @@ where
             let ca: NoNull<ChunkedArray<T>> = slice.iter().rev().copied().collect_trusted();
             ca.into_inner()
         } else {
-            self.into_iter().rev().collect_trusted()
+            self.iter().rev().collect_trusted()
         };
         out.rename(self.name().clone());
 
@@ -34,7 +34,7 @@ macro_rules! impl_reverse {
                 if self.is_empty() {
                     return self.clone();
                 };
-                let mut ca: Self = self.into_iter().rev().collect_trusted();
+                let mut ca: Self = self.iter().rev().collect_trusted();
                 ca.rename(self.name().clone());
                 ca
             }
@@ -44,7 +44,13 @@ macro_rules! impl_reverse {
 
 impl_reverse!(BooleanType, BooleanChunked);
 impl_reverse!(BinaryOffsetType, BinaryOffsetChunked);
-impl_reverse!(ListType, ListChunked);
+
+impl ChunkReverse for ListChunked {
+    fn reverse(&self) -> Self {
+        let ca: Self = self.series_iter().rev().collect_trusted();
+        ca.with_name(self.name().clone())
+    }
+}
 
 impl ChunkReverse for BinaryChunked {
     fn reverse(&self) -> Self {
