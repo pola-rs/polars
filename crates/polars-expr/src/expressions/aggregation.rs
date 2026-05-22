@@ -1,8 +1,5 @@
 use std::borrow::Cow;
 
-use arrow::legacy::utils::CustomIterTools;
-use polars_compute::rolling::QuantileMethod;
-use polars_core::POOL;
 use polars_core::frame::group_by::aggregations::{_use_rolling_kernels, rolling_numeric_minmax_by};
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
