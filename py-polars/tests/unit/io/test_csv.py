@@ -2144,10 +2144,7 @@ def test_read_csv_invalid_schema_overrides_length(chunk_override: None) -> None:
     f = io.StringIO(csv)
 
     # streaming dispatches read_csv -> _scan_csv_impl which does not accept a list
-    if (
-        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
-        == "1"
-    ):
+    if os.getenv("POLARS_AUTO_STREAMING", os.getenv("POLARS_FORCE_STREAMING")) == "1":
         err = TypeError
         match = "expected 'schema_overrides' dict, found 'list'"
     else:
@@ -3185,3 +3182,28 @@ def test_read_csv_use_pyarrow_int_columns_27389(tmp_path: Path) -> None:
         pl.read_csv(path, columns=[0], use_pyarrow=True),
         expected,
     )
+
+
+def test_read_csv_i64_overflow_infers_i128_27654(chunk_override: None) -> None:
+    # Values exceeding i64::MAX should be inferred as i128, not i64.
+    csv_data = b"value,name\n12345678901234567890,abc\n99999999999999999999,abc"
+    df = pl.read_csv(csv_data)
+    assert df.schema["value"] == pl.Int128
+    assert df["value"].to_list() == [12345678901234567890, 99999999999999999999]
+
+
+def test_read_csv_mixed_i64_i128_infers_i128_27654(chunk_override: None) -> None:
+    # When a column contains both i64-range and i128-range values,
+    # the column should be inferred as i128.
+    csv_data = b"value\n100\n12345678901234567890"
+    df = pl.read_csv(csv_data)
+    assert df.schema["value"] == pl.Int128
+    assert df["value"].to_list() == [100, 12345678901234567890]
+
+
+def test_read_csv_mixed_i128_float_infers_float64_27654(chunk_override: None) -> None:
+    # When a column contains an i128-range integer and a float,
+    # the column should fall back to float64.
+    csv_data = b"value\n12345678901234567890\n1.5"
+    df = pl.read_csv(csv_data)
+    assert df.schema["value"] == pl.Float64

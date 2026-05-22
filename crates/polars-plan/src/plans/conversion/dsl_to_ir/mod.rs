@@ -13,7 +13,7 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::unique_id::UniqueId;
 
-use super::convert_utils::SplitPredicates;
+use super::convert_utils::{SplitPredicates, simplify_predicate};
 use super::stack_opt::ConversionOptimizer;
 use super::*;
 use crate::constants::get_pl_element_name;
@@ -294,6 +294,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     ctxt.opt_flags,
                 ),
             )?;
+
+            // Gated on `simplify_expr` so the rewrite can be disabled for
+            // differential testing and debugging.
+            if ctxt.opt_flags.simplify_expr() {
+                simplify_predicate(predicate_ae.node(), ctxt.expr_arena);
+            }
 
             if ctxt.opt_flags.predicate_pushdown() {
                 ctxt.nodes_scratch.clear();

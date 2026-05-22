@@ -573,7 +573,7 @@ def test_group_by_select_alias(query: str) -> None:
             "value": [10, 20, 30, 40, 50],
         }
     )
-    assert_sql_matches(df, query=query, compare_with="sqlite")
+    assert_sql_matches(df, query=query, compare_with="duckdb")
 
 
 def test_group_by_empty_or_scalar_key_exprs_23397() -> None:

@@ -485,7 +485,7 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -563,7 +563,7 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -668,7 +668,7 @@ where
 
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -744,7 +744,7 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);
