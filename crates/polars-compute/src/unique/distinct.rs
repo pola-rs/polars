@@ -4,10 +4,26 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::prelude::LargeBinaryArray;
 use arrow::types::{NativeType, PrimitiveType};
-use polars_utils::aliases::PlHashSet;
+use polars_utils::aliases::{InitHashMaps, PlHashSet};
 use polars_utils::float16::pf16;
 use polars_utils::total_ord::{TotalEq, TotalHash, TotalOrdWrap};
 use polars_utils::{IdxSize, UnitVec};
+
+// Rebuild the amortized hashset when capacity exceeds `needed` by this
+// factor and is above `REBUILD_MIN_CAPACITY`. `.clear()` is O(capacity);
+// rebuilding bounds worst-case clear cost under heavy group-size skew.
+// See polars#27655.
+const REBUILD_CAPACITY_RATIO: usize = 4;
+const REBUILD_MIN_CAPACITY: usize = 1024;
+
+#[inline]
+fn reset_amortized<T>(set: &mut PlHashSet<T>, needed: usize) {
+    if set.capacity() > REBUILD_CAPACITY_RATIO * needed && set.capacity() > REBUILD_MIN_CAPACITY {
+        *set = PlHashSet::with_capacity(needed);
+    } else {
+        set.clear();
+    }
+}
 
 pub trait AmortizedUnique: Send + Sync + 'static {
     fn new_empty(&self) -> Box<dyn AmortizedUnique>;
@@ -339,7 +355,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
         let values = values.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
         if values.has_nulls() {
-            self.1.clear();
+            reset_amortized(&mut self.1, idxs.len());
             idxs.retain(|i| {
                 // SAFETY: function invariant.
                 let value = unsafe { values.get_unchecked(i as usize) };
@@ -347,7 +363,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
                 self.1.insert(value)
             });
         } else {
-            self.0.clear();
+            reset_amortized(&mut self.0, idxs.len());
             let values = values.values().as_slice();
             idxs.retain(|i| {
                 // SAFETY: function invariant.
@@ -376,7 +392,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
         assert!(start.saturating_add(length) as usize <= values.len());
 
         if values.has_nulls() {
-            self.1.clear();
+            reset_amortized(&mut self.1, length as usize);
             idxs.extend((start..start + length).filter(|i| {
                 // SAFETY: asserted before.
                 let value = unsafe { values.get_unchecked(*i as usize) };
@@ -384,7 +400,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
                 self.1.insert(value)
             }));
         } else {
-            self.0.clear();
+            reset_amortized(&mut self.0, length as usize);
             let values = values.values().as_slice();
             idxs.extend(
                 values[start as usize..][..length as usize]
@@ -406,7 +422,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
         let values = values.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
         if values.has_nulls() {
-            self.1.clear();
+            reset_amortized(&mut self.1, idxs.len());
             self.1.extend(idxs.iter().map(|&i| {
                 // SAFETY: function invariant.
                 let value = unsafe { values.get_unchecked(i as usize) };
@@ -415,7 +431,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
             self.1.len() as IdxSize
         } else {
             let values = values.values();
-            self.0.clear();
+            reset_amortized(&mut self.0, idxs.len());
             self.0.extend(idxs.iter().map(|&i| {
                 // SAFETY: function invariant.
                 let value = *unsafe { values.get_unchecked(i as usize) };
@@ -434,7 +450,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
         assert!(start.saturating_add(length) as usize <= values.len());
 
         if values.has_nulls() {
-            self.1.clear();
+            reset_amortized(&mut self.1, length as usize);
             self.1.extend((start..start + length).map(|i| {
                 // SAFETY: asserted before.
                 let value = unsafe { values.get_unchecked(i as usize) };
@@ -443,7 +459,7 @@ impl<T: NativeType + TotalHash + TotalEq> AmortizedUnique for PrimitiveArgUnique
             self.1.len() as IdxSize
         } else {
             let values = values.values();
-            self.0.clear();
+            reset_amortized(&mut self.0, length as usize);
             self.0.extend(
                 values[start as usize..][..length as usize]
                     .iter()
@@ -486,7 +502,7 @@ impl AmortizedUnique for BinaryViewUnique {
                     value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) });
                 self.1.insert(value)
             }));
-            self.1.clear();
+            reset_amortized(&mut self.1, length as usize);
         } else {
             self.0.reserve(length as usize);
             if values.total_buffer_len() == 0 {
@@ -515,7 +531,7 @@ impl AmortizedUnique for BinaryViewUnique {
                     self.0.insert(value)
                 }));
             }
-            self.0.clear();
+            reset_amortized(&mut self.0, length as usize);
         }
     }
 
@@ -535,7 +551,7 @@ impl AmortizedUnique for BinaryViewUnique {
                     value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) });
                 self.1.insert(value)
             });
-            self.1.clear();
+            reset_amortized(&mut self.1, idxs.len());
         } else {
             self.0.reserve(idxs.len());
             if values.total_buffer_len() == 0 {
@@ -559,7 +575,7 @@ impl AmortizedUnique for BinaryViewUnique {
                     self.0.insert(value)
                 });
             }
-            self.0.clear();
+            reset_amortized(&mut self.0, idxs.len());
         }
     }
 
@@ -579,7 +595,7 @@ impl AmortizedUnique for BinaryViewUnique {
                 value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) })
             }));
             let out = self.1.len() as IdxSize;
-            self.1.clear();
+            reset_amortized(&mut self.1, idxs.len());
             out
         } else {
             self.0.reserve(idxs.len());
@@ -603,7 +619,7 @@ impl AmortizedUnique for BinaryViewUnique {
                 }));
             }
             let out = self.0.len() as IdxSize;
-            self.0.clear();
+            reset_amortized(&mut self.0, idxs.len());
             out
         }
     }
@@ -625,7 +641,7 @@ impl AmortizedUnique for BinaryViewUnique {
                 value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) })
             }));
             let out = self.1.len() as IdxSize;
-            self.1.clear();
+            reset_amortized(&mut self.1, length as usize);
             out
         } else {
             self.0.reserve(length as usize);
@@ -652,7 +668,7 @@ impl AmortizedUnique for BinaryViewUnique {
                 }));
             }
             let out = self.0.len() as IdxSize;
-            self.0.clear();
+            reset_amortized(&mut self.0, length as usize);
             out
         }
     }
@@ -690,7 +706,7 @@ impl AmortizedUnique for BinaryUnique {
                     value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) });
                 self.1.insert(value)
             }));
-            self.1.clear();
+            reset_amortized(&mut self.1, length as usize);
         } else {
             self.0.reserve(length as usize);
             idxs.extend((start..start + length).filter(|i| {
@@ -699,7 +715,7 @@ impl AmortizedUnique for BinaryUnique {
                 let value = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(value) };
                 self.0.insert(value)
             }));
-            self.0.clear();
+            reset_amortized(&mut self.0, length as usize);
         }
     }
 
@@ -720,7 +736,7 @@ impl AmortizedUnique for BinaryUnique {
                     value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) });
                 self.1.insert(value)
             });
-            self.1.clear();
+            reset_amortized(&mut self.1, idxs.len());
         } else {
             self.0.reserve(idxs.len());
             idxs.retain(|i| {
@@ -729,7 +745,7 @@ impl AmortizedUnique for BinaryUnique {
                 let value = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(value) };
                 self.0.insert(value)
             });
-            self.0.clear();
+            reset_amortized(&mut self.0, idxs.len());
         }
     }
 
@@ -749,7 +765,7 @@ impl AmortizedUnique for BinaryUnique {
                 value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) })
             }));
             let out = self.1.len() as IdxSize;
-            self.1.clear();
+            reset_amortized(&mut self.1, idxs.len());
             out
         } else {
             self.0.reserve(idxs.len());
@@ -760,7 +776,7 @@ impl AmortizedUnique for BinaryUnique {
                 unsafe { std::mem::transmute::<&[u8], &'static [u8]>(value) }
             }));
             let out = self.0.len() as IdxSize;
-            self.0.clear();
+            reset_amortized(&mut self.0, idxs.len());
             out
         }
     }
@@ -782,7 +798,7 @@ impl AmortizedUnique for BinaryUnique {
                 value.map(|v| unsafe { std::mem::transmute::<&[u8], &'static [u8]>(v) })
             }));
             let out = self.1.len() as IdxSize;
-            self.1.clear();
+            reset_amortized(&mut self.1, length as usize);
             out
         } else {
             self.0.reserve(length as usize);
@@ -793,7 +809,7 @@ impl AmortizedUnique for BinaryUnique {
                 unsafe { std::mem::transmute::<&[u8], &'static [u8]>(value) }
             }));
             let out = self.0.len() as IdxSize;
-            self.0.clear();
+            reset_amortized(&mut self.0, length as usize);
             out
         }
     }

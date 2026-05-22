@@ -4,6 +4,13 @@ use polars_compute::unique::{AmortizedUnique, amortized_unique_from_dtype};
 use super::*;
 use crate::prelude::row_encode::encode_rows_unordered;
 
+// Groups larger than this route to `Series::n_unique` (radix sort + scan
+// for primitives, hashset for binary) instead of the amortized
+// `AmortizedUnique` hashset: sort wins on cost, and keeping big groups
+// out of the amortized hashset bounds its capacity, which avoids the
+// O(capacity) `.clear()` storm of polars#27655.
+const N_UNIQUE_SORT_FALLBACK_THRESHOLD: usize = 16384;
+
 // implemented on the series because we don't need types
 impl Series {
     unsafe fn restore_logical(&self, out: Series) -> Series {
@@ -290,6 +297,9 @@ impl Series {
             values.into_owned().into_column()
         };
 
+        // Keep the Column for the sort-fallback path. Big groups go through
+        // `Series::n_unique`, bypassing the amortized hashset.
+        let col = values.clone();
         let values = values.rechunk_to_arrow(CompatLevel::newest());
         let values = values.as_ref();
         let state = amortized_unique_from_dtype(values.dtype());
@@ -301,13 +311,22 @@ impl Series {
             }
         }
 
+        // SAFETY for the `.unwrap()` on `Series::n_unique()` below: we've
+        // already filtered out dtypes that can fail (objects panic above;
+        // nested types are row-encoded to binary). All remaining dtypes
+        // have a `ChunkUnique` impl that infallibly returns `Ok(_)`.
         RAYON
             .install(|| match groups {
                 GroupsType::Idx(idx) => idx
                     .all()
                     .into_par_iter()
                     .map_with(CloneWrapper(state), |state, idxs| unsafe {
-                        state.0.n_unique_idx(values, idxs.as_slice())
+                        let idxs = idxs.as_slice();
+                        if idxs.len() > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
+                            col.take_slice_unchecked(idxs).n_unique().unwrap() as IdxSize
+                        } else {
+                            state.0.n_unique_idx(values, idxs)
+                        }
                     })
                     .collect::<NoNull<IdxCa>>(),
                 GroupsType::Slice {
@@ -316,8 +335,13 @@ impl Series {
                     monotonic: _,
                 } => groups
                     .into_par_iter()
-                    .map_with(CloneWrapper(state), |state, [start, len]| {
-                        state.0.n_unique_slice(values, *start, *len)
+                    .map_with(CloneWrapper(state), |state, &[start, len]| unsafe {
+                        let len_us = len as usize;
+                        if len_us > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
+                            col.slice(start as i64, len_us).n_unique().unwrap() as IdxSize
+                        } else {
+                            state.0.n_unique_slice(values, start, len)
+                        }
                     })
                     .collect::<NoNull<IdxCa>>(),
             })
