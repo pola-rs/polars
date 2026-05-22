@@ -175,7 +175,7 @@ pub fn optimize(
     // This allows columns only needed for filters to be dropped early.
     if opt_flags.predicate_pushdown() {
         let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.streaming());
         let ir = ir_arena.take(root);
         let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
         ir_arena.replace(root, ir);
@@ -190,7 +190,7 @@ pub fn optimize(
             scratch,
             verbose,
             pushdown_maintain_errors,
-            opt_flags.new_streaming(),
+            opt_flags.streaming(),
         )?;
     }
 
@@ -248,7 +248,7 @@ pub fn optimize(
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
         let mut optimizer = CommonSubExprOptimizer::new(
-            opt_flags.contains(OptFlags::NEW_STREAMING) | opt_flags.contains(OptFlags::GPU),
+            opt_flags.contains(OptFlags::STREAMING) | opt_flags.contains(OptFlags::GPU),
         );
         let ir_node = IRNode::new_mutate(root);
 

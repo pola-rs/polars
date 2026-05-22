@@ -40,7 +40,7 @@ impl RecordBatchDecoder {
         let pl_schema = self.pl_schema.clone();
         let projection_info = self.projection_info.as_ref().clone();
         let bytes = record_batch_data.fetched_bytes;
-        let block_index = record_batch_data.block_index;
+        let block_index = record_batch_data.record_batch_idx;
 
         let mut reader = BlockReader::new(Cursor::new(bytes.as_ref()));
         let dictionaries = self.dictionaries.as_ref().as_ref().unwrap();

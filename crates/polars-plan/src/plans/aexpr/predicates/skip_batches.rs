@@ -37,6 +37,7 @@ pub fn aexpr_to_skip_batch_predicate(
 /// Rejects nested, null, and categorical types. For floats, Parquet stats exclude NaN
 /// but data may contain it. Since NaN is largest under TotalOrd, `col < x` is safe
 /// (NaN never matches) but `col > x` is not (NaN always matches).
+/// col >= NaN matches NaN == NaN, but stats exclude NaN so max < NaN can't detect them -> unsafe
 fn can_use_min_max_stats(
     dtype: &DataType,
     op: Option<&Operator>,
@@ -56,7 +57,7 @@ fn can_use_min_max_stats(
     match op {
         Some(O::Lt | O::LtEq) => true,
         None | Some(O::Eq | O::EqValidity) => !lv_is_nan && lv.is_some(),
-        Some(O::Gt | O::GtEq) => lv_is_nan,
+        Some(O::Gt) => lv_is_nan,
         _ => false,
     }
 }

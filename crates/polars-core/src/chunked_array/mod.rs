@@ -757,12 +757,13 @@ impl ArrayChunked {
         }
         let mut total_len = 0;
         let chunks = chunks
-            .into_iter()
+            .iter()
             .map(|chunk| {
                 debug_assert_eq!(chunk.len() % width, 0);
                 let chunk_len = chunk.len() / width;
                 total_len += chunk_len;
-                FixedSizeListArray::new(arrow_dtype.clone(), chunk_len, chunk, None).into_boxed()
+                FixedSizeListArray::new(arrow_dtype.clone(), chunk_len, chunk.clone(), None)
+                    .into_boxed()
             })
             .collect();
         debug_assert_eq!(total_len, length);
@@ -1072,13 +1073,13 @@ pub(crate) mod test {
         let a = Int32Chunked::new(PlSmallStr::from_static("a"), &[1, 9, 3, 2]);
         let b = a
             .sort(false)
-            .into_iter()
+            .iter()
             .map(|opt| opt.unwrap())
             .collect::<Vec<_>>();
         assert_eq!(b, [1, 2, 3, 9]);
         let a = StringChunked::new(PlSmallStr::from_static("a"), &["b", "a", "c"]);
         let a = a.sort(false);
-        let b = a.into_iter().collect::<Vec<_>>();
+        let b = a.iter().collect::<Vec<_>>();
         assert_eq!(b, [Some("a"), Some("b"), Some("c")]);
         assert!(a.is_sorted_ascending_flag());
     }
@@ -1100,7 +1101,7 @@ pub(crate) mod test {
     fn iter() {
         let s1 = get_chunked_array();
         // sum
-        assert_eq!(s1.into_iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
+        assert_eq!(s1.iter().fold(0, |acc, val| { acc + val.unwrap() }), 6)
     }
 
     #[test]
@@ -1121,7 +1122,7 @@ pub(crate) mod test {
             ))
             .unwrap();
         assert_eq!(b.len(), 1);
-        assert_eq!(b.into_iter().next(), Some(Some(1)));
+        assert_eq!(b.iter().next(), Some(Some(1)));
     }
 
     #[test]
@@ -1183,18 +1184,18 @@ pub(crate) mod test {
         let s: StringChunked = ["b", "a", "z"].iter().collect();
         let sorted = s.sort(false);
         assert_eq!(
-            sorted.into_iter().collect::<Vec<_>>(),
+            sorted.iter().collect::<Vec<_>>(),
             &[Some("a"), Some("b"), Some("z")]
         );
         let sorted = s.sort(true);
         assert_eq!(
-            sorted.into_iter().collect::<Vec<_>>(),
+            sorted.iter().collect::<Vec<_>>(),
             &[Some("z"), Some("b"), Some("a")]
         );
         let s: StringChunked = [Some("b"), None, Some("z")].iter().copied().collect();
         let sorted = s.sort(false);
         assert_eq!(
-            sorted.into_iter().collect::<Vec<_>>(),
+            sorted.iter().collect::<Vec<_>>(),
             &[None, Some("b"), Some("z")]
         );
     }
@@ -1231,7 +1232,7 @@ pub(crate) mod test {
         );
         let ca = ca.cast(&DataType::from_categories(cats)).unwrap();
         let ca = ca.cat32().unwrap();
-        let v: Vec<_> = ca.physical().into_iter().collect();
+        let v: Vec<_> = ca.physical().iter().collect();
         assert_eq!(v, &[Some(0), None, Some(1), Some(2)]);
     }
 

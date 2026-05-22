@@ -337,7 +337,11 @@ pub struct Union {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: Option<(i64, usize)>,
+    slice: Option<(i64, usize)>,
+    #[pyo3(get)]
+    rows: (Option<usize>, usize),
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 #[pyclass(frozen)]
 /// Horizontal concatenation of multiple plans
@@ -722,8 +726,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            // TODO: rest of options
-            options: options.slice,
+            // Remaining options are implementation detail, not logical
+            slice: options.slice,
+            rows: options.rows,
+            maintain_order: options.maintain_order,
         }
         .into_py_any(py),
         IR::HConcat {

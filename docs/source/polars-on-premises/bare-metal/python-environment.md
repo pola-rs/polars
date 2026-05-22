@@ -15,6 +15,7 @@ $ uv venv && source .venv/bin/activate
 $ uv pip install --extra-index-url=https://get.onprem.pola.rs/pypi/simple polars-on-premises==0.1.0
 ```
 
+This should automatically install the right Polars version and the cloudpickle package.
 `polars-on-premises` is then available within your virtual environment and ready to get going.
 
 ```shell
@@ -32,6 +33,8 @@ version).
 !!! info "Version pinning" Each release of `polars-on-premises` is pinned to a single `polars`
 release, which can be found in the release announcement and in `polars-on-premises --version`
 `shell export PINNED_VERSION=1.38.1 # for instance`
+
+Note that the cloudpickle package is required for the binary to start.
 
 #### System-wide installation
 

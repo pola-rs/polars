@@ -6,7 +6,7 @@ use crate::utils::align_chunks_binary;
 
 macro_rules! impl_scatter_with {
     ($self:ident, $builder:ident, $idx:ident, $f:ident) => {{
-        let mut ca_iter = $self.into_iter().enumerate();
+        let mut ca_iter = $self.iter().enumerate();
 
         for current_idx in $idx.into_iter().map(|i| i as usize) {
             polars_ensure!(current_idx < $self.len(), oob = current_idx, $self.len());
@@ -195,7 +195,7 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
         Self: Sized,
     {
         let idx_iter = idx.into_iter();
-        let mut ca_iter = self.into_iter().enumerate();
+        let mut ca_iter = self.iter().enumerate();
         let mut builder = StringChunkedBuilder::new(self.name().clone(), self.len());
 
         for current_idx in idx_iter.into_iter().map(|i| i as usize) {
@@ -237,8 +237,8 @@ impl<'a> ChunkSet<'a, &'a str, String> for StringChunked {
     {
         check_bounds!(self, mask);
         let ca = mask
-            .into_iter()
-            .zip(self)
+            .iter()
+            .zip(self.iter())
             .map(|(mask_val, opt_val)| match mask_val {
                 Some(true) => value,
                 _ => opt_val,
@@ -258,7 +258,7 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
     where
         Self: Sized,
     {
-        let mut ca_iter = self.into_iter().enumerate();
+        let mut ca_iter = self.iter().enumerate();
         let mut builder = BinaryChunkedBuilder::new(self.name().clone(), self.len());
 
         for current_idx in idx.into_iter().map(|i| i as usize) {
@@ -300,8 +300,8 @@ impl<'a> ChunkSet<'a, &'a [u8], Vec<u8>> for BinaryChunked {
     {
         check_bounds!(self, mask);
         let ca = mask
-            .into_iter()
-            .zip(self)
+            .iter()
+            .zip(self.iter())
             .map(|(mask_val, opt_val)| match mask_val {
                 Some(true) => value,
                 _ => opt_val,

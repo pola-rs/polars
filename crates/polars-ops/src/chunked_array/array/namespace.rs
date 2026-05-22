@@ -75,34 +75,10 @@ pub trait ArrayNameSpace: AsArray {
         dispersion::var_with_nulls(ca, ddof)
     }
 
-    fn array_unique(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_array();
-        ca.try_apply_amortized_to_list(|s| s.as_ref().unique())
-    }
-
-    fn array_unique_stable(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_array();
-        ca.try_apply_amortized_to_list(|s| s.as_ref().unique_stable())
-    }
-
-    fn array_n_unique(&self) -> PolarsResult<IdxCa> {
-        let ca = self.as_array();
-        ca.try_apply_amortized_generic(|opt_s| {
-            let opt_v = opt_s.map(|s| s.as_ref().n_unique()).transpose()?;
-            Ok(opt_v.map(|idx| idx as IdxSize))
-        })
-    }
-
     fn array_sort(&self, options: SortOptions) -> PolarsResult<ArrayChunked> {
         let ca = self.as_array();
         // SAFETY: Sort only changes the order of the elements in each subarray.
         unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().sort_with(options)) }
-    }
-
-    fn array_reverse(&self) -> ArrayChunked {
-        let ca = self.as_array();
-        // SAFETY: Reverse only changes the order of the elements in each subarray
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
     }
 
     fn array_arg_min(&self) -> IdxCa {

@@ -261,7 +261,7 @@ mod test {
 
         let out = rank(&s, RankMethod::Average, false, None)
             .f64()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
 
         assert_eq!(
@@ -291,7 +291,7 @@ mod test {
         );
         let out = rank(&s, RankMethod::Max, false, None)
             .idx()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(
             out,
@@ -315,12 +315,12 @@ mod test {
         let s = UInt32Chunked::new("".into(), &[None, None, None]).into_series();
         let out = rank(&s, RankMethod::Average, false, None)
             .f64()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None]);
         let out = rank(&s, RankMethod::Dense, false, None)
             .idx()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None]);
         Ok(())
@@ -340,7 +340,7 @@ mod test {
         let s = Series::new("".into(), &[None, Some(1), Some(1), Some(5), None]);
         let out = rank(&s, RankMethod::Dense, true, None)
             .idx()?
-            .into_iter()
+            .iter()
             .collect::<Vec<_>>();
         assert_eq!(out, &[None, Some(2 as IdxSize), Some(2), Some(1), None]);
 
