@@ -429,14 +429,16 @@ def test_credential_provider_python_builder_cache(
         with pytest.raises(OSError):
             get_q().collect()
 
-        # Note: Increments by 2 due to Rust-side object store rebuilding.
+        # Note: Increments by 1
+        # +0 due to Rust-side object store cache-hit on build
+        # +1 due to Rust-side object store rebuilding on error
 
-        assert provider_init.call_count == 4
+        assert provider_init.call_count == 3
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert provider_init.call_count == 6
+        assert provider_init.call_count == 4
 
     with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
@@ -793,11 +795,13 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
+    # 1x build (Rust object_store cache_miss) + 1x rebuild on error
     assert user_provider.call_count == 2
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
+    # 0x build (Rust object_store cache_hit) + 1x rebuild on error
     assert user_provider.call_count == 3
 
     plmonkeypatch.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
@@ -805,7 +809,8 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
-    assert user_provider.call_count == 5
+    # 0x build (Rust object_store cache_hit) + 1x rebuild on error
+    assert user_provider.call_count == 4
 
 
 @pytest.mark.slow
@@ -882,3 +887,37 @@ def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
+
+
+class _CountingProvider:
+    call_count = 0  # class-level so it survives pickle
+
+    def __call__(self) -> tuple[dict[str, str], None]:
+        _CountingProvider.call_count += 1
+        return (
+            {"aws_access_key_id": "...", "aws_secret_access_key": "..."},
+            None,
+        )
+
+
+@pytest.mark.slow
+def test_cache_user_credential_provider_pickle(plmonkeypatch: PlMonkeyPatch) -> None:
+
+    _CountingProvider.call_count = 0
+    user_provider = _CountingProvider()
+
+    q = pl.scan_parquet(
+        "s3://.../...",
+        storage_options={"aws_endpoint_url": "http://localhost:333"},
+        credential_provider=user_provider,
+    )
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        q.collect()
+    assert _CountingProvider.call_count == 2
+
+    q = pickle.loads(pickle.dumps(q))
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        q.collect()
+    assert _CountingProvider.call_count == 3
