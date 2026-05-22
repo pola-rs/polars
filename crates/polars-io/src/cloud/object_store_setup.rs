@@ -34,30 +34,41 @@ fn err_missing_feature(
 }
 
 /// Get the key of a url for object store registration.
-fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u8> {
+fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> PolarsResult<Vec<u8>> {
     // We include credentials as they can expire, so users will send new credentials for the same url.
-    let cloud_options = options.map(
-        |CloudOptions {
-             // Destructure to ensure this breaks if anything changes.
-             #[cfg(feature = "file_cache")]
-             file_cache_ttl,
-             config,
-             retry_config,
-             #[cfg(feature = "cloud")]
-             credential_provider,
-         }| {
-            CloudOptionsKey {
-                #[cfg(feature = "file_cache")]
-                file_cache_ttl: *file_cache_ttl,
-                config: config.clone(),
-                retry_config: *retry_config,
-                #[cfg(feature = "cloud")]
-                // kdn HACK for testing purposes
-                credential_provider: 0
-                // credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
-            }
-        },
+
+    #[cfg(feature = "cloud")]
+    let credential_cache_key = CacheKeyBytes(
+        options
+            .and_then(|o| o.credential_provider.as_ref())
+            .map(|x| x.stable_cache_key())
+            .transpose()?
+            .unwrap_or_default(),
     );
+
+    let cloud_options = options
+        .map(
+            |CloudOptions {
+                 // Destructure to ensure this breaks if anything changes.
+                 #[cfg(feature = "file_cache")]
+                 file_cache_ttl,
+                 config,
+                 retry_config,
+                 #[cfg(feature = "cloud")]
+                     credential_provider: _,
+             }|
+             -> PolarsResult<CloudOptionsKey> {
+                Ok(CloudOptionsKey {
+                    #[cfg(feature = "file_cache")]
+                    file_cache_ttl: *file_cache_ttl,
+                    config: config.clone(),
+                    retry_config: *retry_config,
+                    #[cfg(feature = "cloud")]
+                    credential_provider: credential_cache_key,
+                })
+            },
+        )
+        .transpose()?;
 
     let cache_key = CacheKey {
         url_base: format_pl_smallstr!("{}", &path.as_str()[..path.authority_end_position()]),
@@ -71,13 +82,26 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
         )
     });
 
-    return pl_serialize::serialize_to_bytes::<_, false>(&cache_key).unwrap();
+    return pl_serialize::serialize_to_bytes::<_, false>(&cache_key);
 
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     struct CacheKey {
         url_base: PlSmallStr,
         cloud_options: Option<CloudOptionsKey>,
+    }
+
+    #[derive(Clone, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct CacheKeyBytes(Vec<u8>);
+
+    impl std::fmt::Debug for CacheKeyBytes {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for b in &self.0 {
+                write!(f, "{:02x}", b)?;
+            }
+            Ok(())
+        }
     }
 
     /// Variant of CloudOptions for serializing to a cache key. The credential
@@ -90,7 +114,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Vec<u
         config: Option<CloudConfig>,
         retry_config: CloudRetryConfig,
         #[cfg(feature = "cloud")]
-        credential_provider: usize,
+        credential_provider: CacheKeyBytes,
     }
 }
 
@@ -189,7 +213,7 @@ impl PolarsObjectStoreBuilder {
     pub(super) async fn build(self) -> PolarsResult<PolarsObjectStore> {
         let opt_cache_key = match &self.cloud_type {
             CloudType::Aws | CloudType::Gcp | CloudType::Azure => {
-                Some(path_and_creds_to_key(&self.path, self.options.as_ref()))
+                Some(path_and_creds_to_key(&self.path, self.options.as_ref())?)
             },
             CloudType::File | CloudType::Http | CloudType::Hf => None,
         };
