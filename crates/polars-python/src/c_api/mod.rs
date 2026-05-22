@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.40.1";
+pub static PYPOLARS_VERSION: &str = "1.41.0";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -32,9 +32,9 @@ use crate::cloud_client;
 use crate::cloud_server;
 use crate::conversion::PyCategories;
 use crate::dataframe::PyDataFrame;
-use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
+use crate::expr::PyExpr;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
