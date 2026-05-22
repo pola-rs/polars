@@ -32,9 +32,9 @@ use crate::cloud_client;
 use crate::cloud_server;
 use crate::conversion::PyCategories;
 use crate::dataframe::PyDataFrame;
+use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
-use crate::expr::PyExpr;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
