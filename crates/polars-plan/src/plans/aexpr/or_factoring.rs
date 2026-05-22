@@ -74,8 +74,11 @@ fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> 
     use std::hash::{BuildHasher, Hasher};
 
     use polars_utils::aliases::{InitHashMaps, PlFixedStateQuality, PlHashMap};
+    use polars_utils::scratch_vec::ScratchVec;
 
-    use crate::plans::aexpr::{MintermIter, traverse_and_hash_aexpr};
+    use crate::plans::aexpr::{
+        MintermIter, is_inherently_nondeterministic, traverse_and_hash_aexpr,
+    };
 
     let mut branches = Vec::new();
     collect_or_branches(or_node, expr_arena, &mut branches);
@@ -119,33 +122,43 @@ fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> 
     let mut common = Vec::new();
     let mut taken: Vec<_> = branch_terms.iter().map(|t| vec![false; t.len()]).collect();
     let (mut l_stack, mut r_stack) = (Vec::new(), Vec::new());
+    let mut other_matches: ScratchVec<usize> = ScratchVec::default();
 
     for (cand_idx, &cand) in branch_terms[0].iter().enumerate() {
+        // Skip inherently non-deterministic candidates: factoring them out of
+        // `(A ∧ X) ∨ (A ∧ Y) → A ∧ (X ∨ Y)` would evaluate `A` once instead of
+        // twice per row, which is unsound when the two evaluations could disagree.
+        if is_inherently_nondeterministic(cand, expr_arena) {
+            continue;
+        }
         let cand_expr = expr_arena.get(cand);
         let cand_hash = hash_of(cand, expr_arena);
 
-        let Some(other_matches): Option<Vec<usize>> = (1..branch_terms.len())
-            .map(|b_idx| {
-                buckets[b_idx].get(&cand_hash).and_then(|ixs| {
-                    ixs.iter().copied().find(|&i| {
-                        !taken[b_idx][i]
-                            && cand_expr.is_expr_equal_to_amortized(
-                                expr_arena.get(branch_terms[b_idx][i]),
-                                expr_arena,
-                                &mut l_stack,
-                                &mut r_stack,
-                            )
-                    })
+        let other_matches = other_matches.get();
+        let all_matched = (1..branch_terms.len()).all(|b_idx| {
+            let Some(m) = buckets[b_idx].get(&cand_hash).and_then(|ixs| {
+                ixs.iter().copied().find(|&i| {
+                    !taken[b_idx][i]
+                        && cand_expr.is_expr_equal_to_amortized(
+                            expr_arena.get(branch_terms[b_idx][i]),
+                            expr_arena,
+                            &mut l_stack,
+                            &mut r_stack,
+                        )
                 })
-            })
-            .collect()
-        else {
+            }) else {
+                return false;
+            };
+            other_matches.push(m);
+            true
+        });
+        if !all_matched {
             continue;
-        };
+        }
 
         common.push(cand);
         taken[0][cand_idx] = true;
-        for (offset, m) in other_matches.into_iter().enumerate() {
+        for (offset, &m) in other_matches.iter().enumerate() {
             taken[offset + 1][m] = true;
         }
     }
