@@ -250,14 +250,11 @@ fn is_inherently_nondeterministic_array_fn(f: &IRArrayFunction) -> bool {
         | A::Max
         | A::Sum
         | A::ToList
-        | A::Unique(_)
-        | A::NUnique
         | A::Std(_)
         | A::Var(_)
         | A::Mean
         | A::Median
         | A::Sort(_)
-        | A::Reverse
         | A::ArgMin
         | A::ArgMax
         | A::Get(_)
@@ -316,9 +313,6 @@ fn is_inherently_nondeterministic_list_fn(f: &IRListFunction) -> bool {
         | L::ArgMin
         | L::ArgMax
         | L::Sort(_)
-        | L::Reverse
-        | L::Unique(_)
-        | L::NUnique
         | L::Join(_) => false,
         #[cfg(feature = "is_in")]
         L::Contains { .. } => false,

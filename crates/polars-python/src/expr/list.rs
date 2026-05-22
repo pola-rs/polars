@@ -96,10 +96,6 @@ impl PyExpr {
         self.inner.clone().list().min().into()
     }
 
-    fn list_reverse(&self) -> Self {
-        self.inner.clone().list().reverse().into()
-    }
-
     fn list_shift(&self, periods: PyExpr) -> Self {
         self.inner.clone().list().shift(periods.inner).into()
     }
@@ -205,20 +201,6 @@ impl PyExpr {
                     .collect::<PyResult<Arc<[_]>>>()?,
             )
             .into())
-    }
-
-    fn list_n_unique(&self) -> Self {
-        self.inner.clone().list().n_unique().into()
-    }
-
-    fn list_unique(&self, maintain_order: bool) -> Self {
-        let e = self.inner.clone();
-
-        if maintain_order {
-            e.list().unique_stable().into()
-        } else {
-            e.list().unique().into()
-        }
     }
 
     #[cfg(feature = "list_sets")]
