@@ -12,6 +12,7 @@ use polars_utils::{format_pl_smallstr, unitvec};
 
 #[cfg(feature = "python")]
 use crate::dsl::DatasetPredicate;
+#[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
 use crate::plans::{AExpr, IR};
