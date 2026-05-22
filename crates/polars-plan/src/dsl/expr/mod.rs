@@ -6,7 +6,6 @@ use std::hash::{Hash, Hasher};
 pub use anonymous::*;
 use bytes::Bytes;
 pub use datatype_fn::*;
-use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
