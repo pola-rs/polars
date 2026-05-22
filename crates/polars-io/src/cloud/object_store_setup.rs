@@ -97,10 +97,14 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
 
     impl std::fmt::Debug for CacheKeyBytes {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            for b in &self.0 {
-                write!(f, "{:02x}", b)?;
+            if self.0.is_empty() {
+                write!(f, "None")
+            } else {
+                for b in &self.0 {
+                    write!(f, "{:02x}", b)?;
+                }
+                Ok(())
             }
-            Ok(())
         }
     }
 
