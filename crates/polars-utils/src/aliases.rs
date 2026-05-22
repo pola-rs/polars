@@ -34,6 +34,28 @@ impl<K> ScratchHashSet<K> {
     }
 }
 
+#[derive(Default)]
+pub struct ScratchIndexSet<K>(PlIndexSet<K>);
+
+impl<K> ScratchIndexSet<K> {
+    /// Clear the IndexSet and return a mutable reference to it.
+    pub fn get(&mut self) -> &mut PlIndexSet<K> {
+        self.0.clear();
+        &mut self.0
+    }
+}
+
+#[derive(Default)]
+pub struct ScratchIndexMap<K, V>(PlIndexMap<K, V>);
+
+impl<K, V> ScratchIndexMap<K, V> {
+    /// Clear the IndexMap and return a mutable reference to it.
+    pub fn get(&mut self) -> &mut PlIndexMap<K, V> {
+        self.0.clear();
+        &mut self.0
+    }
+}
+
 pub trait SeedableFromU64SeedExt {
     fn seed_from_u64(seed: u64) -> Self;
 }

@@ -273,6 +273,17 @@ pub struct Join {
 }
 
 #[pyclass(frozen)]
+/// Join operation
+pub struct Gather {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    idxs: usize,
+    #[pyo3(get)]
+    null_on_oob: bool,
+}
+
+#[pyclass(frozen)]
 /// Merge sorted operation
 pub struct MergeSorted {
     #[pyo3(get)]
@@ -326,7 +337,11 @@ pub struct Union {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: Option<(i64, usize)>,
+    slice: Option<(i64, usize)>,
+    #[pyo3(get)]
+    rows: (Option<usize>, usize),
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 #[pyclass(frozen)]
 /// Horizontal concatenation of multiple plans
@@ -583,6 +598,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             },
         }
         .into_py_any(py),
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => Gather {
+            input: input.0,
+            idxs: idxs.0,
+            null_on_oob: *null_on_oob,
+        }
+        .into_py_any(py),
         IR::HStack {
             input,
             exprs,
@@ -701,8 +726,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            // TODO: rest of options
-            options: options.slice,
+            // Remaining options are implementation detail, not logical
+            slice: options.slice,
+            rows: options.rows,
+            maintain_order: options.maintain_order,
         }
         .into_py_any(py),
         IR::HConcat {
@@ -754,6 +781,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             maintain_order: *maintain_order,
         }
         .into_py_any(py),
+        IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a UnoptimizedDispatch node",
+        )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

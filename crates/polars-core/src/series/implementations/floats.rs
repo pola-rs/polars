@@ -2,7 +2,6 @@ use num_traits::AsPrimitive;
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -26,15 +25,6 @@ macro_rules! impl_dyn_series {
             fn _get_flags(&self) -> StatisticsFlags {
                 self.0.get_flags()
             }
-            unsafe fn equal_element(
-                &self,
-                idx_self: usize,
-                idx_other: usize,
-                other: &Series,
-            ) -> bool {
-                self.0.equal_element(idx_self, idx_other, other)
-            }
-
             #[cfg(feature = "zip_with")]
             fn zip_with_same_type(
                 &self,
@@ -257,6 +247,10 @@ macro_rules! impl_dyn_series {
 
             fn rechunk(&self) -> Series {
                 self.0.rechunk().into_owned().into_series()
+            }
+
+            fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+                self.0.clone().with_validity(validity).into_series()
             }
 
             fn new_from_index(&self, index: usize, length: usize) -> Series {

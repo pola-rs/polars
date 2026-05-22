@@ -36,6 +36,7 @@ chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
 futures = { workspace = true }
 hashbrown = { workspace = true }
+indexmap = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
 percent-encoding = { workspace = true }
@@ -172,7 +173,7 @@ diff = ["polars-ops/diff"]
 pct_change = ["polars-ops/pct_change"]
 moment = ["polars-ops/moment"]
 abs = ["polars-ops/abs"]
-random = ["polars-core/random"]
+random = ["polars-core/random", "polars-ops/random"]
 dynamic_group_by = ["polars-core/dynamic_group_by", "dtype-date", "dtype-datetime"]
 ewma = ["polars-ops/ewma"]
 ewma_by = ["polars-ops/ewma_by"]

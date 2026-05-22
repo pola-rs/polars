@@ -2143,13 +2143,25 @@ def collect_all(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query, optional.
-        At the moment, if set to `"auto"` (default), the query
-        is run using the polars in-memory engine. Polars will also
-        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-        environment variable. If it cannot run the query using the
-        selected engine, the query is run using the polars in-memory
-        engine.
+        Select the engine used to process the query (default ``"auto"``):
+
+        * ``"auto"``: use the engine set by
+          :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+          or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+          back to ``"in-memory"`` if unset (this default may change in
+          a future release).
+        * ``"in-memory"``: use the in-memory engine, this is the default engine.
+        * ``"streaming"``: use the streaming engine, which processes
+          queries in batches, reducing memory pressure and often
+          outperforming the in-memory engine. This will soon become
+          the default engine of Polars.
+        * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+          ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+          fine-grained control (e.g. device selection on multi-GPU
+          systems).
+
+        If the selected engine cannot run the query, Polars falls back to
+        the in-memory engine.
 
         .. note::
            The GPU engine does not support async, or running in the
@@ -2246,13 +2258,25 @@ def collect_all_async(
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
     engine
-        Select the engine used to process the query, optional.
-        At the moment, if set to `"auto"` (default), the query
-        is run using the polars in-memory engine. Polars will also
-        attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
-        environment variable. If it cannot run the query using the
-        selected engine, the query is run using the polars in-memory
-        engine.
+        Select the engine used to process the query (default ``"auto"``):
+
+        * ``"auto"``: use the engine set by
+          :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
+          or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
+          back to ``"in-memory"`` if unset (this default may change in
+          a future release).
+        * ``"in-memory"``: use the in-memory engine, this is the default engine.
+        * ``"streaming"``: use the streaming engine, which processes
+          queries in batches, reducing memory pressure and often
+          outperforming the in-memory engine. This will soon become
+          the default engine of Polars.
+        * ``"gpu"``: use the CUDA GPU engine (requires an Nvidia GPU and
+          ``cudf-polars``). Pass a :class:`~.GPUEngine` object for
+          fine-grained control (e.g. device selection on multi-GPU
+          systems).
+
+        If the selected engine cannot run the query, Polars falls back to
+        the in-memory engine.
 
         .. note::
            The GPU engine does not support async, or running in the
@@ -2275,9 +2299,6 @@ def collect_all_async(
     If `gevent=True` then returns wrapper that has
     `.get(block=True, timeout=None)` method.
     """
-    if engine == "streaming":
-        issue_unstable_warning("streaming mode is considered unstable.")
-
     result: (
         _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
     ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()

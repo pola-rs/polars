@@ -32,7 +32,6 @@ use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::create_extension;
@@ -40,6 +39,7 @@ use crate::chunked_array::{arg_max_numeric, arg_min_numeric};
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::series::IsSorted;
 use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
@@ -151,7 +151,7 @@ where
     F: Fn((IdxSize, &IdxVec)) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: ChunkedArray<T> = RAYON.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -161,7 +161,7 @@ where
     F: Fn((IdxSize, &IdxVec)) -> T::Native + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: NoNull<ChunkedArray<T>> = RAYON.install(|| groups.into_par_iter().map(f).collect());
     ca.into_inner().into_series()
 }
 
@@ -172,7 +172,7 @@ where
     F: Fn(&IdxVec) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.all().into_par_iter().map(f).collect());
+    let ca: ChunkedArray<T> = RAYON.install(|| groups.all().into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -181,7 +181,7 @@ where
     F: Fn([IdxSize; 2]) -> Option<T::Native> + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: ChunkedArray<T> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: ChunkedArray<T> = RAYON.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
@@ -189,7 +189,7 @@ pub fn _agg_helper_idx_idx<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &'a IdxVec)) -> Option<IdxSize> + Send + Sync,
 {
-    let ca: IdxCa = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: IdxCa = RAYON.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -197,7 +197,7 @@ pub fn _agg_helper_slice_idx<F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<IdxSize> + Send + Sync,
 {
-    let ca: IdxCa = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: IdxCa = RAYON.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
@@ -206,7 +206,7 @@ where
     F: Fn([IdxSize; 2]) -> T::Native + Send + Sync,
     T: PolarsNumericType,
 {
-    let ca: NoNull<ChunkedArray<T>> = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: NoNull<ChunkedArray<T>> = RAYON.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_inner().into_series()
 }
 
@@ -450,7 +450,7 @@ where
 {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -528,7 +528,7 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -633,7 +633,7 @@ where
 
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -709,7 +709,7 @@ where
     where
         for<'b> &'b [T::Native]: ArgMinMax,
     {
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);

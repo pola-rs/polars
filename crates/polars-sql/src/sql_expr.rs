@@ -641,7 +641,7 @@ impl SQLExprVisitor<'_> {
             // ----
             // Mathematical operators
             // ----
-            SQLBinaryOperator::Divide => lhs / rhs,  // "x / y"
+            SQLBinaryOperator::Divide => lhs.true_div(rhs),  // "x / y"
             SQLBinaryOperator::DuckIntegerDivide => lhs.floor_div(rhs).cast(DataType::Int64),  // "x // y"
             SQLBinaryOperator::Minus => lhs - rhs,  // "x - y"
             SQLBinaryOperator::Modulo => lhs % rhs,  // "x % y"
@@ -807,6 +807,7 @@ impl SQLExprVisitor<'_> {
             func: function,
             ctx: self.ctx,
             active_schema: self.active_schema,
+            filter: None,
         };
         visitor.visit_function()
     }

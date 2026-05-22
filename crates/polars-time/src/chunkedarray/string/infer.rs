@@ -488,7 +488,7 @@ pub fn to_datetime(
         Some(idx) => {
             let subset = ca.slice(idx as i64, ca.len());
             let pattern = subset
-                .into_iter()
+                .iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
@@ -556,7 +556,7 @@ pub(crate) fn to_date(ca: &StringChunked) -> PolarsResult<DateChunked> {
         Some(idx) => {
             let subset = ca.slice(idx as i64, ca.len());
             let pattern = subset
-                .into_iter()
+                .iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_date_single))
                 .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
             let mut infer = DatetimeInfer::<Int32Type>::try_from_with_unit(pattern, None).unwrap();

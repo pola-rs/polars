@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use polars_async::primitives::wait_group::WaitGroup;
+
 use super::compute_node_prelude::*;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{MorselSeq, SourceToken, get_ideal_morsel_size};
 
 #[derive(Debug)]

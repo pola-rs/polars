@@ -84,7 +84,7 @@ def test_is_not_null_followed_by_any() -> None:
         pl.col("val").is_not_null().any()
     )
 
-    assert r'[[(col("val").null_count()) < (col("val").len())]]' in result_lf.explain()
+    assert ".is_empty_ignore_nulls().not()" in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -95,7 +95,7 @@ def test_is_not_null_followed_by_any() -> None:
         .explain()
     )
     assert "null_count" not in non_optimized_result_plan
-    assert "is_not_null" in non_optimized_result_plan
+    assert "is_empty_ignore_nulls().not()" in non_optimized_result_plan
 
     # edge case of empty series
     lf = pl.LazyFrame({"val": []}, schema={"val": pl.Int32})
@@ -909,3 +909,115 @@ def test_slice_pushdown_expr_height_rules() -> None:
     assert ".slice(" not in plan
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}))
+
+
+def test_slice_pushdown_joins_27199() -> None:
+    lhs = pl.LazyFrame({"a": [0, 0]})
+    rhs = pl.LazyFrame({"a": [0, 0]})
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    # Left join, push to left
+    q = lhs.join(rhs, on="a", how="left").head(1)
+    plan = q.explain()
+
+    assert plan.index("SLICE") > plan.index("LEFT PLAN")
+    assert q.collect().height == 1
+
+    # Right join, push to right
+    q = rhs.join(lhs, on="a", how="right").head(1)
+    plan = q.explain()
+
+    assert plan.index("SLICE") > plan.index("RIGHT PLAN")
+    assert q.collect().height == 1
+
+    # Full join, push to both
+    q = lhs.join(rhs, on="a", how="full").head(1)
+    plan = q.explain()
+
+    i = plan.index("RIGHT PLAN ON")
+    assert plan[:i].index("SLICE") > plan[:i].index("LEFT PLAN")
+    assert plan[i:].index("SLICE") > plan[i:].index("RIGHT PLAN")
+
+    assert q.collect().height == 1
+
+
+def test_slice_pushdown_joins_nonzero_offset_27199() -> None:
+    lhs = pl.LazyFrame({"a": [0, 1]}).with_row_index()
+    rhs = pl.LazyFrame({"a": [0, 0, 1, 1]}).with_row_index()
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left").slice(1, 2)
+    plan = q.explain()
+
+    assert "SLICE: Positive { offset: 0, len: 3 }" in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index", [0, 1], dtype=pl.Int64),
+                pl.Series("a", [0, 1], dtype=pl.Int64),
+                pl.Series("index_right", [1, 2], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left").slice(-3, 2)
+    plan = q.explain()
+
+    assert "SLICE: Negative { offset_from_end: 3, len: 3 }" in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index", [0, 1], dtype=pl.Int64),
+                pl.Series("a", [0, 1], dtype=pl.Int64),
+                pl.Series("index_right", [1, 2], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_slice_pushdown_from_expr_to_join_26553() -> None:
+    lhs = pl.LazyFrame({"a": [0, 0]})
+    rhs = pl.LazyFrame({"a": [0, 0]})
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    # Left join, push to left
+    q = lhs.join(rhs, on="a", how="left").select(pl.last("*"))
+
+    plan = q.explain()
+    assert plan.index("SLICE") > plan.index("LEFT PLAN")
+
+    assert q.collect().height == 1
+
+
+def test_forbid_flatten_sliced_union_27455() -> None:
+    df = pl.DataFrame({"a": [0, 0, 0, 0, 0]})
+    q1 = pl.concat([(df + 1).lazy(), (df + 10).lazy()])
+    q2 = pl.concat([(df + 100).lazy(), (df + 1000).lazy()])
+    q = pl.concat([q1.head(1), q2.head(1)])
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 100]}))
+
+
+def test_lazyframe_gather_select_len() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4], "b": True})
+
+    q = lf.gather([1, None, 99], null_on_oob=True).select(pl.len())
+    plan = q.explain()
+
+    assert "GATHER" not in plan
+    assert q.collect().item() == 3
+
+    q = lf.gather([1, None, 99], null_on_oob=False).select(pl.len())
+
+    with pytest.raises(pl.exceptions.OutOfBoundsError):
+        q.collect()

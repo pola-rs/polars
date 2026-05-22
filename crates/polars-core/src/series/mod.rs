@@ -43,8 +43,8 @@ use polars_error::feature_gated;
 use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
-use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
+use crate::runtime::RAYON;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
@@ -101,7 +101,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// let mask = s.equal(1).unwrap();
 /// let valid = [true, false, false].iter();
 /// assert!(mask
-///     .into_iter()
+///     .iter()
 ///     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
 ///     .zip(valid)
 ///     .all(|(a, b)| a == *b))
@@ -123,7 +123,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// let s = Series::new("angle".into(), [2f32 * pi, pi, 1.5 * pi].as_ref());
 /// let s_cos: Series = s.f32()
 ///                     .expect("series was not an f32 dtype")
-///                     .into_iter()
+///                     .iter()
 ///                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
 ///                     .collect();
 /// ```
@@ -160,15 +160,11 @@ impl Eq for Wrap<Series> {}
 
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let rs = PlSeedableRandomStateQuality::fixed();
-        let mut h = vec![];
-        if self.0.vec_hash(rs, &mut h).is_ok() {
-            let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
-            h.hash(state)
-        } else {
-            self.len().hash(state);
-            self.null_count().hash(state);
-            self.dtype().hash(state);
+        self.dtype().hash(state);
+        self.len().hash(state);
+
+        for av in self.iter() {
+            av.hash(state);
         }
     }
 }

@@ -75,7 +75,7 @@ def assert_series_equal(
         Absolute tolerance for inexact checking.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
-        compare columns that do not share the same string cache.
+        compare columns that do not share the same categories.
 
     See Also
     --------
@@ -180,7 +180,7 @@ def assert_series_not_equal(
         Absolute tolerance for inexact checking.
     categorical_as_str
         Cast categorical columns to string before comparing. Enabling this helps
-        compare columns that do not share the same string cache.
+        compare columns that do not share the same categories.
 
     See Also
     --------

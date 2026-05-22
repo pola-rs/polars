@@ -91,8 +91,9 @@ def test_cat_to_pandas(dtype: pl.DataType) -> None:
     assert isinstance(pd_out["a"].dtype, pd.CategoricalDtype)
 
     pd_pa_out = df.to_pandas(use_pyarrow_extension_array=True)
+    ordered = isinstance(dtype, pl.Enum)
     assert pd_pa_out["a"].dtype == pd.ArrowDtype(
-        pa.dictionary(pa.int64(), pa.large_string())
+        pa.dictionary(pa.int64(), pa.large_string(), ordered=ordered)
     )
 
     assert pl.Series(dtype=pl.Enum(["A"])).to_pandas().dtype.categories.tolist() == [  # type: ignore[union-attr]
@@ -216,3 +217,16 @@ def test_filter_with_pandas_timedelta_26620() -> None:
     )
 
     assert_frame_equal(actual, expected)
+
+
+def test_to_pandas_no_deadlock_multithreaded_27396() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    df = pl.DataFrame({"a": [1] * 100000})
+
+    def to_pandas() -> None:
+        df.to_pandas()
+
+    with ThreadPoolExecutor(10) as e:
+        fs = [e.submit(to_pandas) for _ in range(100)]
+        [f.result(timeout=10) for f in fs]

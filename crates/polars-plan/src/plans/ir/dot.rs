@@ -102,12 +102,16 @@ impl<'a> IRDotDisplay<'a> {
 
         use IR::*;
         match root {
-            Union { inputs, .. } => {
+            Union {
+                inputs, options, ..
+            } => {
                 for input in inputs {
                     recurse!(*input);
                 }
 
-                write_label(f, id, |f| f.write_str("UNION"))?;
+                write_label(f, id, |f| {
+                    write!(f, "UNION[maintain_order: {0}]", options.maintain_order)
+                })?;
             },
             HConcat { inputs, .. } => {
                 for input in inputs {
@@ -276,6 +280,15 @@ impl<'a> IRDotDisplay<'a> {
                     Ok(())
                 })?;
             },
+            Gather {
+                input,
+                idxs,
+                null_on_oob,
+            } => {
+                recurse!(*input);
+                recurse!(*idxs);
+                write_label(f, id, |f| write!(f, "GATHER[null_on_oob: {null_on_oob}]"))?;
+            },
             MapFunction {
                 input, function, ..
             } => {
@@ -331,6 +344,16 @@ impl<'a> IRDotDisplay<'a> {
                         "MERGE_SORTED[maintain_order: {maintain_order}] ON '{key}'",
                     )
                 })?;
+            },
+            UnoptimizedDispatch {
+                inputs,
+                operation,
+                arg_map,
+            } => {
+                for input in arg_map.iter().map(|(i, _c, _n)| &inputs[i]) {
+                    recurse!(*input);
+                }
+                write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }

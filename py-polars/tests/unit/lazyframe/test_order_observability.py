@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 from typing import Any
 
 import pytest
@@ -162,6 +163,52 @@ def test_merge_sorted_to_union() -> None:
     explain = lf.explain()
     assert "MERGE_SORTED" not in explain
     assert "UNION" in explain
+
+
+def test_union_drops_maintain_order() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 4, 5]})
+    lf2 = pl.LazyFrame({"a": [2, 3, 4], "b": [4, 5, 6]})
+
+    lf = pl.concat([lf1, lf2]).group_by("a").agg(pl.col("b").sum())
+    explain = lf.explain(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert "UNION[maintain_order: true]" in explain
+
+    explain = lf.explain()
+    assert "UNION[maintain_order: false]" in explain
+
+
+@pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_to_union(n_frames: int) -> None:
+    lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(n_frames)]
+    lf = functools.reduce(
+        lambda left, right: left.merge_sorted(right, "a"), lfs
+    ).unique()
+
+    explain = lf.explain(optimizations=pl.QueryOptFlags(check_order_observe=False))
+    assert "MERGE_SORTED" in explain
+    assert "UNION" not in explain
+
+    explain = lf.explain()
+    assert "MERGE_SORTED" not in explain
+    assert "UNION" in explain
+
+
+@pytest.mark.parametrize("n_frames", [4, 5, 6])
+def test_merge_sorted_deep_chain_explain_matches_balanced(n_frames: int) -> None:
+    lfs = [pl.LazyFrame({"a": [i], "b": [i]}) for i in range(n_frames)]
+
+    chained = functools.reduce(lambda left, right: left.merge_sorted(right, "a"), lfs)
+    balanced = pl.merge_sorted(lfs, key="a")
+
+    assert chained.sort("a").explain() == balanced.sort("a").explain()
+
+    opts = pl.QueryOptFlags(check_order_observe=False)
+    chained_explain = chained.explain(optimizations=opts)
+    balanced_explain = balanced.explain(optimizations=opts)
+
+    assert chained_explain == balanced_explain
+    assert "MERGE_SORTED" in chained_explain
+    assert "UNION" not in chained_explain
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,5 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_expr::state::ExecutionState;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::sink::CallbackSinkType;
@@ -111,9 +111,9 @@ impl MultiplePhysicalPlans {
             cache_prefiller.execute(&mut state)?;
         }
         // Chunked iter to avoid rayon stack overflow.
-        let out = POOL.install(|| {
+        let out = RAYON.install(|| {
             self.physical_plans
-                .chunks_mut(POOL.current_num_threads() * 3)
+                .chunks_mut(RAYON.current_num_threads() * 3)
                 .map(|chunk| {
                     chunk
                         .into_par_iter()
@@ -494,7 +494,8 @@ fn create_physical_plan_impl(
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
-            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
+            let mut state =
+                ExpressionConversionState::new(RAYON.current_num_threads() > expr.len());
             let phys_expr =
                 create_physical_expressions_from_irs(&expr, expr_arena, &input_schema, &mut state)?;
 
@@ -745,6 +746,19 @@ fn create_physical_plan_impl(
                 join_type_options,
             )))
         },
+        Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => {
+            let input = recurse!(input, state)?;
+            let idxs = recurse!(idxs, state)?;
+            Ok(Box::new(executors::GatherExec::new(
+                input,
+                idxs,
+                null_on_oob,
+            )))
+        },
         HStack {
             input,
             exprs,
@@ -760,7 +774,7 @@ fn create_physical_plan_impl(
                     .all(|e| is_elementwise_rec(e.node(), expr_arena));
 
             let mut state =
-                ExpressionConversionState::new(POOL.current_num_threads() > exprs.len());
+                ExpressionConversionState::new(RAYON.current_num_threads() > exprs.len());
 
             let phys_exprs = create_physical_expressions_from_irs(
                 &exprs,
@@ -823,6 +837,7 @@ fn create_physical_plan_impl(
             };
             Ok(Box::new(exec))
         },
+        UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
         Invalid => unreachable!(),
     }
 }

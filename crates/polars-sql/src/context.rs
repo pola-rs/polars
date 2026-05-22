@@ -2051,6 +2051,7 @@ impl SQLContext {
                         Expr::Agg(_) | Expr::Len | Expr::Over { .. } => true,
                         #[cfg(feature = "dynamic_group_by")]
                         Expr::Rolling { .. } => true,
+                        Expr::AnonymousFunction { options, .. } => options.returns_scalar(),
                         Expr::Function { function: func, .. }
                             if !matches!(func, FunctionExpr::StructExpr(_)) =>
                         {

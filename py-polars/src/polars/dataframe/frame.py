@@ -133,7 +133,6 @@ if TYPE_CHECKING:
 
     import deltalake
     import jax
-    import numpy.typing as npt
     import pyiceberg
     from great_tables import GT
     from xlsxwriter import Workbook
@@ -222,6 +221,11 @@ class DataFrame:
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        The order of the schema determines the column order of the frame.
+        When passing a dict, its insertion order is respected. To override specific
+        column data types by name without changing column order, use
+        ``schema_overrides`` instead.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
@@ -992,7 +996,7 @@ class DataFrame:
 
     def __array__(
         self,
-        dtype: npt.DTypeLike | None = None,
+        dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
@@ -1437,9 +1441,7 @@ class DataFrame:
         return get_df_item_by_key(self, key)
 
     def __setitem__(
-        self,
-        key: str | Sequence[int] | Sequence[str] | tuple[Any, str | int],
-        value: Any,
+        self, key: str | Sequence[str] | tuple[Any, str | int], value: Any
     ) -> None:  # pragma: no cover
         """
         Modify DataFrame elements in place, using assignment syntax.
@@ -4516,7 +4518,7 @@ class DataFrame:
                     raise ModuleUpgradeRequiredError(msg)
                 mode = "replace"
             elif if_table_exists == "append":
-                mode = "append"
+                mode = "append" if driver_manager_version < (0, 7) else "create_append"
             else:
                 msg = (
                     f"unexpected value for `if_table_exists`: {if_table_exists!r}"
@@ -8085,7 +8087,7 @@ class DataFrame:
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
 
-        They `by` argument allows joining on another column first, before the asof join.
+        The `by` argument allows joining on another column first, before the asof join.
         In this example we join by `country` first, then asof join by date, as above.
 
         >>> gdp_dates = pl.date_range(  # fmt: skip
@@ -8244,15 +8246,16 @@ class DataFrame:
                  - Returns all rows from the right table, and the matched rows from
                    the left table.
                * - **full**
-                 - Returns all rows when there is a match in either left or right.
+                 - Returns all rows from both tables, joining matching rows and
+                   filling non-matches with null values.
                * - **cross**
                  - Returns the Cartesian product of rows from both tables
                * - **semi**
                  - Returns rows from the left table that have a match in the right
-                   table.
+                   table. Does not return columns from the right table.
                * - **anti**
                  - Returns rows from the left table that have no match in the right
-                   table.
+                   table. Does not return columns from the right table.
 
         left_on
             Name(s) of the left join column(s).
@@ -8424,10 +8427,6 @@ class DataFrame:
         │ 3   ┆ 8.0 ┆ c   ┆ y     ┆ b         │
         │ 3   ┆ 8.0 ┆ c   ┆ z     ┆ d         │
         └─────┴─────┴─────┴───────┴───────────┘
-
-        Notes
-        -----
-        For joining on columns with categorical data, see :class:`polars.StringCache`.
         """
         require_same_type(self, other)
 
@@ -8551,6 +8550,64 @@ class DataFrame:
                 *predicates,
                 suffix=suffix,
             )
+            .collect(optimizations=QueryOptFlags._eager())
+        )
+
+    @unstable()
+    def gather(
+        self,
+        indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
+    ) -> DataFrame:
+        """
+        Selects rows from this DataFrame at the given indices.
+
+        .. warning::
+            This functionality is experimental. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        indices
+            The indices of the rows to select.
+
+        null_on_oob
+            If true when an index is out-of-bounds a null row will be generated
+            instead of raising an error.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [2, 1, 0], "s": ["foo", "bar", "baz"]})
+        >>> df.gather([2, 0, 0])
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ x   ┆ s   │
+        │ --- ┆ --- │
+        │ i64 ┆ str │
+        ╞═════╪═════╡
+        │ 0   ┆ baz │
+        │ 2   ┆ foo │
+        │ 2   ┆ foo │
+        └─────┴─────┘
+
+        >>> df.gather([0, 10, 1], null_on_oob=True)
+        shape: (3, 2)
+        ┌──────┬──────┐
+        │ x    ┆ s    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ str  │
+        ╞══════╪══════╡
+        │ 2    ┆ foo  │
+        │ null ┆ null │
+        │ 1    ┆ bar  │
+        └──────┴──────┘
+        """
+        from polars.lazyframe.opt_flags import QueryOptFlags
+
+        return (
+            self.lazy()
+            .gather(indices, null_on_oob=null_on_oob)
             .collect(optimizations=QueryOptFlags._eager())
         )
 

@@ -1,12 +1,12 @@
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use polars_utils::arena::Arena;
+use polars_utils::arena::{Arena, Node};
 
 use super::*;
 #[cfg(feature = "python")]
 use crate::plans::PythonOptions;
-use crate::plans::{AExpr, IR};
+use crate::plans::{AExpr, IR, UnoptimizedOperation};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::{ExprIR, PlanCallback};
 
@@ -17,7 +17,7 @@ impl IRNode {
         expr_arena: &'a Arena<AExpr>,
     ) -> IRHashWrap<'a> {
         IRHashWrap {
-            node: *self,
+            node: self.node(),
             lp_arena,
             expr_arena,
             hash_as_equality: false,
@@ -26,16 +26,25 @@ impl IRNode {
 }
 
 pub(crate) struct IRHashWrap<'a> {
-    node: IRNode,
+    node: Node,
     lp_arena: &'a Arena<IR>,
     expr_arena: &'a Arena<AExpr>,
     hash_as_equality: bool,
 }
 
-impl IRHashWrap<'_> {
-    pub fn hash_as_equality(mut self) -> Self {
-        self.hash_as_equality = true;
-        self
+impl<'a> IRHashWrap<'a> {
+    pub(crate) fn new(
+        node: Node,
+        lp_arena: &'a Arena<IR>,
+        expr_arena: &'a Arena<AExpr>,
+        hash_as_equality: bool,
+    ) -> Self {
+        Self {
+            node,
+            lp_arena,
+            expr_arena,
+            hash_as_equality,
+        }
     }
 }
 
@@ -71,7 +80,7 @@ fn hash_python_predicate<H: Hasher>(
 impl Hash for IRHashWrap<'_> {
     // This hashes the variant, not the whole plan
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let alp = self.node.to_alp(self.lp_arena);
+        let alp = self.lp_arena.get(self.node);
         std::mem::discriminant(alp).hash(state);
         match alp {
             #[cfg(feature = "python")]
@@ -217,6 +226,13 @@ impl Hash for IRHashWrap<'_> {
                 hash_exprs(right_on, self.expr_arena, state);
                 options.hash(state);
             },
+            IR::Gather {
+                input: _,
+                idxs: _,
+                null_on_oob,
+            } => {
+                null_on_oob.hash(state);
+            },
             IR::HStack {
                 input: _,
                 exprs,
@@ -265,6 +281,37 @@ impl Hash for IRHashWrap<'_> {
             } => {
                 key.hash(state);
                 maintain_order.hash(state);
+            },
+            IR::UnoptimizedDispatch {
+                inputs: _,
+                arg_map: _,
+                operation,
+            } => match operation {
+                UnoptimizedOperation::ColumnarFunction {
+                    function,
+                    options,
+                    output_name,
+                } => {
+                    function.hash(state);
+                    options.hash(state);
+                    output_name.hash(state);
+                },
+
+                UnoptimizedOperation::AnonymousColumnsUdf {
+                    function,
+                    options,
+                    output_name,
+                    fmt_str: _,
+                    ctx_schema: _,
+                } => {
+                    function.hash(state);
+                    options.hash(state);
+                    output_name.hash(state);
+                },
+
+                UnoptimizedOperation::DynamicSlice { output_name } => {
+                    output_name.hash(state);
+                },
             },
             IR::Invalid => unreachable!(),
         }

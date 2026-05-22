@@ -5,7 +5,7 @@ use polars_core::prelude::{
     ChunkExpandAtIndex, Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions,
 };
 use polars_core::utils::CustomIterTools;
-use polars_ops::prelude::ListNameSpaceImpl;
+use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
 use polars_plan::plans::IRListFunction;
 use polars_utils::pl_str::PlSmallStr;
@@ -139,6 +139,24 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
     let offset_s = &args[1];
     let length_s = &args[2];
 
+    let target_len = offset_s.len().max(length_s.len());
+    if list_ca.len() == 1 && target_len > 1 {
+        let single_list = list_ca.get_as_series(0);
+        let length_ca = length_s.cast(&DataType::Int64)?;
+        let length_ca = length_ca.i64().unwrap();
+        let offset_ca = offset_s.cast(&DataType::Int64)?;
+        let offset_ca = offset_ca.i64().unwrap();
+        let out = slice_broadcast_list(
+            single_list,
+            offset_ca,
+            length_ca,
+            target_len,
+            s.name().clone(),
+            list_ca.inner_dtype(),
+        );
+        return Ok(out.into_column());
+    }
+
     let mut out: ListChunked = match (offset_s.len(), length_s.len()) {
         (1, 1) => {
             let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
@@ -159,7 +177,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 
             list_ca
                 .amortized_iter()
-                .zip(length_ca)
+                .zip(length_ca.iter())
                 .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
                     (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
                     _ => None,
@@ -177,7 +195,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
             let offset_ca = offset_ca.i64().unwrap();
             list_ca
                 .amortized_iter()
-                .zip(offset_ca)
+                .zip(offset_ca.iter())
                 .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
                     (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
                     _ => None,
@@ -196,8 +214,8 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 
             list_ca
                 .amortized_iter()
-                .zip(offset_ca)
-                .zip(length_ca)
+                .zip(offset_ca.iter())
+                .zip(length_ca.iter())
                 .map(
                     |((opt_s, opt_offset), opt_length)| match (opt_s, opt_offset, opt_length) {
                         (Some(s), Some(offset), Some(length)) => {

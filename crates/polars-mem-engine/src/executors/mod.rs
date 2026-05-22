@@ -2,6 +2,7 @@ mod cache;
 mod executor;
 mod ext_context;
 mod filter;
+mod gather;
 mod group_by;
 mod group_by_dynamic;
 pub(super) mod group_by_rolling;
@@ -25,7 +26,7 @@ use std::borrow::Cow;
 
 pub use executor::*;
 pub use filter::column_to_mask;
-use polars_core::POOL;
+use polars_core::runtime::RAYON;
 use polars_plan::utils::*;
 use projection_utils::*;
 use rayon::prelude::*;
@@ -33,6 +34,7 @@ use rayon::prelude::*;
 pub(super) use self::cache::*;
 pub(super) use self::ext_context::*;
 pub(super) use self::filter::*;
+pub(super) use self::gather::*;
 pub(super) use self::group_by::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(super) use self::group_by_dynamic::*;

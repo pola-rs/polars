@@ -49,6 +49,7 @@ pub enum AggExpr {
         input: Arc<Expr>,
         include_nulls: bool,
     },
+    // TODO: remove on next DSL break, deprecated in favor of FunctionExpr::Quantile.
     Quantile {
         expr: Arc<Expr>,
         quantile: Arc<Expr>,
@@ -58,31 +59,6 @@ pub enum AggExpr {
     AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
-}
-
-impl AsRef<Expr> for AggExpr {
-    fn as_ref(&self) -> &Expr {
-        use AggExpr::*;
-        match self {
-            Min { input, .. } => input,
-            Max { input, .. } => input,
-            Median(e) => e,
-            NUnique(e) => e,
-            First(e) => e,
-            FirstNonNull(e) => e,
-            Last(e) => e,
-            LastNonNull(e) => e,
-            Item { input, .. } => input,
-            Mean(e) => e,
-            Implode { input, .. } => input,
-            Count { input, .. } => input,
-            Quantile { expr, .. } => expr,
-            Sum(e) => e,
-            AggGroups(e) => e,
-            Std(e, _) => e,
-            Var(e, _) => e,
-        }
-    }
 }
 
 /// Expressions that can be used in various contexts.

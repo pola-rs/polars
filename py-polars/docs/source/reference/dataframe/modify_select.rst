@@ -21,6 +21,7 @@ Manipulation/selection
     DataFrame.fill_nan
     DataFrame.fill_null
     DataFrame.filter
+    DataFrame.gather
     DataFrame.gather_every
     DataFrame.get_column
     DataFrame.get_column_index

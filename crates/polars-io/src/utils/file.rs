@@ -50,10 +50,11 @@ impl Writeable {
     ) -> PolarsResult<Self> {
         Ok(if path.has_scheme() {
             feature_gated!("cloud", {
-                use crate::cloud::cloud_writer::CloudWriterIoTraitWrap;
-                use crate::pl_async::get_runtime;
+                use polars_core::runtime::ASYNC;
 
-                let writer = get_runtime().block_in_place_on(new_cloud_writer(
+                use crate::cloud::cloud_writer::CloudWriterIoTraitWrap;
+
+                let writer = ASYNC.block_in_place_on(new_cloud_writer(
                     path,
                     cloud_options,
                     cloud_upload_chunk_size,
@@ -74,10 +75,11 @@ impl Writeable {
                 let path = path.to_str().ok_or_else(|| polars_err!(non_utf8_path))?;
                 let path = format_file_uri(path);
 
-                use crate::cloud::cloud_writer::CloudWriterIoTraitWrap;
-                use crate::pl_async::get_runtime;
+                use polars_core::runtime::ASYNC;
 
-                let writer = get_runtime().block_in_place_on(new_cloud_writer(
+                use crate::cloud::cloud_writer::CloudWriterIoTraitWrap;
+
+                let writer = ASYNC.block_in_place_on(new_cloud_writer(
                     path,
                     cloud_options,
                     cloud_upload_chunk_size,

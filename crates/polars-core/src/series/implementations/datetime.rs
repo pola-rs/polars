@@ -292,6 +292,15 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             .into_series()
     }
 
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0
+            .physical()
+            .clone()
+            .with_validity(validity)
+            .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
+            .into_series()
+    }
+
     fn new_from_index(&self, index: usize, length: usize) -> Series {
         self.0
             .physical()

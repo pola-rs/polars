@@ -4,13 +4,15 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use arrow::array::builder::ShareStrategy;
+use polars_async::executor;
+use polars_async::primitives::wait_group::WaitGroup;
+use polars_core::config;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
+use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::{Schema, SchemaExt};
-use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::idx_table::{IdxTable, new_idx_table};
-use polars_io::pl_async::get_runtime;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_ops::frame::{JoinArgs, JoinBuildSide, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
@@ -25,8 +27,6 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
 use super::{BufferedStream, LOPSIDED_SAMPLE_FACTOR};
-use crate::async_executor;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
@@ -226,9 +226,8 @@ fn estimate_cardinality(
     let last_morsel_idx = to_process_end - 1;
     let last_morsel_len = morsels[last_morsel_idx].df().height();
     let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
-    let runtime = get_runtime();
 
-    POOL.install(|| {
+    RAYON.install(|| {
         let sample_cardinality = morsels[..to_process_end]
             .par_iter()
             .enumerate()
@@ -243,7 +242,7 @@ fn estimate_cardinality(
                         morsel.df()
                     };
                     let hash_keys =
-                        runtime.block_on(select_keys(df, key_selectors, params, state))?;
+                        ASYNC.block_on(select_keys(df, key_selectors, params, state))?;
                     hash_keys.sketch_cardinality(&mut sketch);
                     PolarsResult::Ok(sketch)
                 },
@@ -399,7 +398,7 @@ impl SampleState {
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
-            crate::async_executor::task_scope(|scope| {
+            executor::task_scope(|scope| {
                 let mut join_handles = Vec::new();
                 let receivers = sampled_build_morsels
                     .reinsert(state.num_pipelines, None, scope, &mut join_handles)
@@ -419,7 +418,7 @@ impl SampleState {
                     ));
                 }
 
-                polars_io::pl_async::get_runtime().block_on(async move {
+                ASYNC.block_on(async move {
                     for handle in join_handles {
                         handle.await?;
                     }
@@ -532,7 +531,7 @@ impl BuildState {
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        POOL.scope(|s| {
+        RAYON.scope(|s| {
             for p in 0..num_partitions {
                 let probe_tables = &probe_tables;
                 s.spawn(move |_| {
@@ -642,7 +641,7 @@ impl BuildState {
         let local_builders = &self.local_builders;
         let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        async_executor::task_scope(|s| {
+        executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);
@@ -739,7 +738,7 @@ impl BuildState {
             drop(arc_morsels_per_local_builder);
             drop(morsel_drop_q_send);
 
-            polars_io::pl_async::get_runtime().block_on(async move {
+            ASYNC.block_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }
@@ -1100,7 +1099,7 @@ impl ProbeState {
 
 impl Drop for ProbeState {
     fn drop(&mut self) {
-        POOL.install(|| {
+        RAYON.install(|| {
             // Parallel drop as the state might be quite big.
             self.table_per_partition.par_drain(..).for_each(drop);
         })

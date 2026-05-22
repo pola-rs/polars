@@ -9,7 +9,6 @@ use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit
 use arrow::types::{days_ms, i256};
 use ethnum::I256;
 use num_traits::{AsPrimitive, FromBytes};
-use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
@@ -45,14 +44,6 @@ pub struct ColumnStatistics {
 
     /// Statistics of the leaf array of the column
     statistics: ParquetStatistics,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ColumnPathSegment {
-    List { is_large: bool },
-    FixedSizeList { width: usize },
-    Dictionary { key: IntegerType, is_sorted: bool },
-    Struct { column_idx: usize },
 }
 
 /// Arrow-deserialized parquet statistics of a leaf-column
@@ -301,7 +292,7 @@ pub fn deserialize_all(
     field: &Field,
     row_groups: &[RowGroupMetadata],
     field_idx: usize,
-    footer_buf: &Buffer<u8>,
+    footer_buf: &[u8],
 ) -> ParquetResult<Option<ArrowColumnStatisticsArrays>> {
     assert!(!row_groups.is_empty());
     use ArrowDataType as D;
@@ -561,14 +552,14 @@ pub fn deserialize_all(
 pub fn deserialize<'a>(
     field: &Field,
     columns: &mut impl ExactSizeIterator<Item = &'a ColumnChunkMetadata>,
-    footer_buf: &Buffer<u8>,
+    footer_buf: &[u8],
 ) -> ParquetResult<Option<Statistics>> {
     use ArrowDataType as D;
     match field.dtype() {
         D::List(field) | D::LargeList(field) => Ok(Some(Statistics::List(
             deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
         ))),
-        D::Dictionary(key, dtype, is_sorted) => Ok(Some(Statistics::Dictionary(
+        D::Dictionary(key, dtype, ordered) => Ok(Some(Statistics::Dictionary(
             *key,
             deserialize(
                 &Field::new(PlSmallStr::EMPTY, dtype.as_ref().clone(), true),
@@ -576,7 +567,7 @@ pub fn deserialize<'a>(
                 footer_buf,
             )?
             .map(Box::new),
-            *is_sorted,
+            *ordered,
         ))),
         D::FixedSizeList(field, width) => Ok(Some(Statistics::FixedSizeList(
             deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),

@@ -540,22 +540,20 @@ where
 
     /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
     /// evaluates to true.
-    pub fn filter<F: Fn(usize, &Field) -> bool>(self, predicate: F) -> Self {
-        let metadata = self.metadata().clone();
-        let fields = self
-            .fields
-            .into_iter()
-            .enumerate()
-            .filter_map(|(index, (name, d))| {
-                if (predicate)(index, &d) {
-                    Some((name, d))
-                } else {
-                    None
-                }
-            })
-            .collect();
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&PlSmallStr, &Field) -> bool,
+    {
+        self.retain_mut(|k, v| f(k, v))
+    }
 
-        Self { fields, metadata }
+    /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
+    /// evaluates to true.
+    pub fn retain_mut<F>(&mut self, f: F)
+    where
+        F: FnMut(&mut PlSmallStr, &mut Field) -> bool,
+    {
+        self.fields.retain2(f);
     }
 }
 

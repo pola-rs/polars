@@ -2,6 +2,9 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use AsofStrategy::*;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::distributor_channel as dc;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
@@ -15,9 +18,6 @@ use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::sort::reorder_cmp;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel as dc;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -86,9 +86,10 @@ pub struct AsOfJoinNode {
     /// We may need to stash a morsel on the left side whenever we do not
     /// have enough data on the right side, but the right side is empty.
     /// In these cases, we stash that morsel here.
-    left_buffer: VecDeque<(DataFrame, MorselSeq)>,
+    left_buffer: VecDeque<DataFrame>,
     /// Buffer of the live range of right AsOf join rows.
     right_buffer: DataFrameSearchBuffer,
+    output_seq: MorselSeq,
 }
 
 impl AsOfJoinNode {
@@ -145,6 +146,7 @@ impl AsOfJoinNode {
             state: AsOfJoinState::default(),
             left_buffer: Default::default(),
             right_buffer: DataFrameSearchBuffer::empty_with_schema(right_input_schema),
+            output_seq: Default::default(),
         }
     }
 }
@@ -238,6 +240,7 @@ impl ComputeNode for AsOfJoinNode {
                     dc::distributor_channel(send.len(), *DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
                 let left_buffer = &mut self.left_buffer;
                 let right_buffer = &mut self.right_buffer;
+                let output_seq = &mut self.output_seq;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     distribute_work_task(
                         recv_left,
@@ -245,6 +248,7 @@ impl ComputeNode for AsOfJoinNode {
                         distributor,
                         left_buffer,
                         right_buffer,
+                        output_seq,
                         params,
                     )
                     .await
@@ -267,8 +271,9 @@ async fn distribute_work_task(
     mut recv_left: Option<PortReceiver>,
     mut recv_right: Option<PortReceiver>,
     mut distributor: dc::Sender<(DataFrame, DataFrameSearchBuffer, MorselSeq, SourceToken)>,
-    left_buffer: &mut VecDeque<(DataFrame, MorselSeq)>,
+    left_buffer: &mut VecDeque<DataFrame>,
     right_buffer: &mut DataFrameSearchBuffer,
+    output_seq: &mut MorselSeq,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
@@ -276,29 +281,23 @@ async fn distribute_work_task(
 
     loop {
         if source_token.stop_requested() {
-            stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df, seq| {
-                left_buffer.push_back((df, seq))
-            })
-            .await;
-            stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df, _| {
-                right_buffer.push_df(df)
-            })
-            .await;
+            stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df| left_buffer.push_back(df))
+                .await;
+            stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df| right_buffer.push_df(df))
+                .await;
             return Ok(());
         }
 
-        let (left_df, seq, st) = if let Some((df, seq)) = left_buffer.pop_front() {
-            (df, seq, source_token.clone())
+        let (left_df, st) = if let Some(df) = left_buffer.pop_front() {
+            (df, source_token.clone())
         } else if let Some(ref mut recv) = recv_left
             && let Ok(m) = recv.recv().await
         {
-            let (df, seq, st, _) = m.into_inner();
-            (df, seq, st)
+            let (df, _, st, _) = m.into_inner();
+            (df, st)
         } else {
-            stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df, _| {
-                right_buffer.push_df(df)
-            })
-            .await;
+            stop_and_buffer_pipe_contents(recv_right.as_mut(), &mut |df| right_buffer.push_df(df))
+                .await;
             return Ok(());
         };
 
@@ -310,9 +309,9 @@ async fn distribute_work_task(
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
-                left_buffer.push_back((left_df, seq));
-                stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df, seq| {
-                    left_buffer.push_back((df, seq))
+                left_buffer.push_front(left_df);
+                stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df| {
+                    left_buffer.push_back(df)
                 })
                 .await;
                 return Ok(());
@@ -320,10 +319,14 @@ async fn distribute_work_task(
         }
 
         prune_right_side(&left_df, right_buffer, params, 0)?;
-        distributor
-            .send((left_df.clone(), right_buffer.clone(), seq, st))
+        if distributor
+            .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
             .await
-            .unwrap();
+            .is_err()
+        {
+            return Ok(());
+        }
+        *output_seq = output_seq.successor();
         prune_right_side(
             &left_df,
             right_buffer,

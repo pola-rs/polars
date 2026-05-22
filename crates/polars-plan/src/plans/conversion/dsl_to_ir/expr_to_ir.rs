@@ -327,16 +327,17 @@ pub(super) fn to_aexpr_impl(
                     quantile,
                     method,
                 } => {
-                    let (expr, output_name) = to_aexpr_mat_lit_arc!(expr)?;
-                    let (quantile, _) = to_aexpr_mat_lit_arc!(quantile)?;
-                    (
-                        IRAggExpr::Quantile {
-                            expr,
-                            quantile,
-                            method,
-                        },
-                        output_name,
-                    )
+                    // Quantile was moved out from IRAggExpr as it is multi-input.
+                    let expr = to_expr_ir(owned(expr), ctx)?;
+                    let quantile = to_expr_ir(owned(quantile), ctx)?;
+                    let output_name = quantile.output_name().clone();
+                    let function = IRFunctionExpr::Quantile { method };
+                    let aexpr = AExpr::Function {
+                        input: vec![expr, quantile],
+                        options: function.function_options(),
+                        function,
+                    };
+                    return Ok((ctx.arena.add(aexpr), output_name));
                 },
                 AggExpr::Sum(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
@@ -448,15 +449,10 @@ pub(super) fn to_aexpr_impl(
                 None
             };
 
-            // Convert partition_by expressions and check for duplicate names
-            let mut partition_nodes = Vec::with_capacity(partition_by.len());
-            let mut seen_names = PlHashSet::with_capacity(partition_by.len());
-
-            for expr in partition_by {
-                let (node, name) = to_aexpr_impl_materialized_lit(expr, ctx)?;
-                polars_ensure!(seen_names.insert(name.clone()), duplicate = name);
-                partition_nodes.push(node);
-            }
+            let partition_nodes = partition_by
+                .into_iter()
+                .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
+                .collect::<PolarsResult<_>>()?;
 
             (
                 AExpr::Over {

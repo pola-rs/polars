@@ -45,6 +45,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy with all features enabled
@@ -65,6 +66,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Run cargo clippy
