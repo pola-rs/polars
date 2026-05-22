@@ -1,12 +1,14 @@
 use polars_buffer::Buffer;
 use polars_parquet_format::ColumnOrder as TColumnOrder;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use super::RowGroupMetadata;
 use super::column_order::ColumnOrder;
-use super::compact::CompactFileMetaData;
+use super::compact::{CompactColumnChunk, CompactFileMetaData, CompactRowGroup};
 use super::schema_descriptor::SchemaDescriptor;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::get_sort_order;
+use crate::parquet::schema::types::ParquetType;
 pub use crate::parquet::thrift_format::KeyValue;
 
 /// Metadata for a Parquet file.
@@ -107,18 +109,13 @@ impl FileMetadata {
         // Column name → keep-stats flag. Names not in the map are pruned
         // entirely. O(1) lookup per chunk keeps this scalable to
         // wide-column workloads (10k+ columns × many row groups).
-        use polars_utils::aliases::{InitHashMaps, PlHashMap};
         let mut keep: PlHashMap<&str, bool> = PlHashMap::with_capacity(keep_top_level_names.len());
-        for name in keep_top_level_names {
-            keep.insert(name.as_str(), false);
-        }
-        for name in predicate_top_level_names {
-            // Promotes from false to true if already present.
-            keep.insert(name.as_str(), true);
-        }
+        keep.extend(keep_top_level_names.iter().map(|n| (n.as_str(), false)));
+        // Promotes from false to true if already present.
+        keep.extend(predicate_top_level_names.iter().map(|n| (n.as_str(), true)));
 
         // 1. Filter top-level fields, preserving order from the source schema.
-        let pruned_fields: Vec<crate::parquet::schema::types::ParquetType> = self
+        let pruned_fields: Vec<ParquetType> = self
             .schema_descr
             .fields()
             .iter()
@@ -136,7 +133,7 @@ impl FileMetadata {
             .row_groups
             .iter()
             .map(|rg| {
-                let kept_chunks: Vec<crate::parquet::metadata::compact::CompactColumnChunk> = rg
+                let kept_chunks: Vec<CompactColumnChunk> = rg
                     .parquet_columns()
                     .iter()
                     .filter_map(|c| {
@@ -149,7 +146,7 @@ impl FileMetadata {
                     })
                     .collect();
 
-                let compact_rg = crate::parquet::metadata::compact::CompactRowGroup {
+                let compact_rg = CompactRowGroup {
                     columns: kept_chunks,
                     total_byte_size: rg.total_byte_size() as i64,
                     num_rows: rg.num_rows() as i64,
@@ -184,9 +181,33 @@ impl FileMetadata {
     /// [`crate::parquet::read::deserialize_metadata`] which combines the
     /// hand-written decoder with this constructor.
     pub(crate) fn from_compact(compact: CompactFileMetaData) -> ParquetResult<Self> {
+        let schema_descr = SchemaDescriptor::try_from_thrift(&compact.schema)?;
+        Self::build_with_schema(compact, schema_descr)
+    }
+
+    /// Like [`Self::from_compact`] but reuses a pre-built [`SchemaDescriptor`],
+    /// for multi-file scans where all sources share the first file's schema
+    /// (paired with `decode_file_metadata_skip_schema`).
+    pub(crate) fn from_compact_with_schema_descr(
+        compact: CompactFileMetaData,
+        schema_descr: SchemaDescriptor,
+    ) -> ParquetResult<Self> {
+        debug_assert!(
+            compact.schema.is_empty(),
+            "from_compact_with_schema_descr called with a non-empty schema list; \
+             use from_compact instead"
+        );
+        Self::build_with_schema(compact, schema_descr)
+    }
+
+    /// Shared body of the two `from_compact*` constructors.
+    fn build_with_schema(
+        compact: CompactFileMetaData,
+        schema_descr: SchemaDescriptor,
+    ) -> ParquetResult<Self> {
         let CompactFileMetaData {
             version,
-            schema,
+            schema: _, // resolved by the caller
             num_rows,
             row_groups,
             key_value_metadata,
@@ -194,8 +215,6 @@ impl FileMetadata {
             column_orders,
             footer_buf,
         } = compact;
-
-        let schema_descr = SchemaDescriptor::try_from_thrift(&schema)?;
 
         let mut max_row_group_height = 0;
         let row_groups = row_groups
@@ -207,7 +226,7 @@ impl FileMetadata {
             })
             .collect::<ParquetResult<_>>()?;
 
-        let column_orders = column_orders.map(|orders| parse_column_orders(&orders, &schema_descr));
+        let column_orders = column_orders.map(|o| parse_column_orders(&o, &schema_descr));
 
         Ok(FileMetadata {
             version,

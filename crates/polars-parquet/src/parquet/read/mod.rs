@@ -10,7 +10,10 @@ use std::io::{Cursor, Seek, SeekFrom};
 
 pub use column::*;
 pub use compression::{BasicDecompressor, decompress};
-pub use metadata::{deserialize_metadata, read_metadata, read_metadata_with_size};
+pub use metadata::{
+    deserialize_metadata, deserialize_metadata_with_shared_schema, deserialize_num_rows,
+    read_metadata, read_metadata_with_shared_schema, read_metadata_with_size, read_num_rows,
+};
 pub use page::{PageIterator, PageMetaData, PageReader};
 #[cfg(feature = "async")]
 pub use page::{get_page_stream, get_page_stream_from_column_start};

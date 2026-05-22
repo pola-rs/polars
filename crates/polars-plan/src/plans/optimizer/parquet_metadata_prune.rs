@@ -1,14 +1,23 @@
-//! Prune `FileScanIR::Parquet::metadata` to projected + predicate columns.
+//! Prune `FileScanIR::Parquet`'s pre-decoded metadata (`first_metadata`
+//! and `metadata_per_source`) to projected + predicate columns.
 //!
 //! Runs at the end of the optimizer pipeline, after projection and predicate
 //! pushdown have resolved each scan's projection / predicate. Walks the IR
-//! arena and replaces each parquet scan's metadata via
-//! `FileMetadata::pruned`.
+//! arena and replaces each entry via `FileMetadata::pruned`.
 //!
 //! Gated on `POLARS_PRUNE_PARQUET_METADATA=1` (default off; single-node
 //! execution gets no benefit since metadata never crosses a wire).
 
+#[cfg(feature = "parquet")]
+use std::sync::Arc;
+
+#[cfg(feature = "parquet")]
+use polars_io::parquet::metadata::FileMetadataRef;
+#[cfg(feature = "parquet")]
+use polars_utils::aliases::{InitHashMaps, PlHashSet};
 use polars_utils::arena::{Arena, Node};
+#[cfg(feature = "parquet")]
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unitvec;
 
 #[cfg(feature = "parquet")]
@@ -45,42 +54,65 @@ pub(super) fn prune_parquet_metadata(
             continue;
         };
 
-        let Some(projection) = unified_scan_args.projection.clone() else {
-            continue;
-        };
-
-        // Extract predicate column names. Filter to those also in the
-        // projection (post-pushdown predicate cols are typically ⊆
-        // projection, but be defensive).
-        let predicate_cols: Vec<polars_utils::pl_str::PlSmallStr> = predicate
-            .as_ref()
-            .map(|pred_ir| {
-                aexpr_to_leaf_names_iter(pred_ir.node(), expr_arena)
-                    .filter(|name| projection.iter().any(|p| p == name.as_str()))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-
+        // Variant check first: skip the projection/predicate work entirely
+        // for non-Parquet scans (CSV, IPC, NDJson, Python, Anonymous).
         let FileScanIR::Parquet {
-            metadata: Some(meta_arc),
+            first_metadata,
+            metadata_per_source,
             ..
         } = scan_type.as_mut()
         else {
             continue;
         };
 
-        // Pruning failure (chunks-vs-leaves desync inside `from_compact`)
-        // is recoverable; fall back to unpruned metadata so the query still
-        // runs. The wire form just stays larger for this scan.
-        let Ok(pruned) = meta_arc.pruned(&projection, &predicate_cols) else {
+        let Some(projection) = unified_scan_args.projection.clone() else {
             continue;
         };
 
-        // Only swap if the pruned form is actually smaller (number of leaves).
-        // Avoids allocating a new Arc when nothing changed.
-        if pruned.schema_descr.columns().len() < meta_arc.schema_descr.columns().len() {
-            *meta_arc = std::sync::Arc::new(pruned);
+        // O(1) membership lookup; avoids O(|predicate_leaves| × |projection|)
+        // when projection is wide (10k+ cols).
+        let projection_set: PlHashSet<&str> =
+            PlHashSet::from_iter(projection.iter().map(|s| s.as_str()));
+
+        // Filter predicate cols to those in the projection. `pruned()` would
+        // otherwise keep a predicate-only column the projection dropped (its
+        // `keep` map unions both name lists).
+        let predicate_cols: Vec<PlSmallStr> = predicate
+            .as_ref()
+            .map(|pred_ir| {
+                aexpr_to_leaf_names_iter(pred_ir.node(), expr_arena)
+                    .filter(|name| projection_set.contains(name.as_str()))
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Pruning failure (chunks-vs-leaves desync inside `from_compact`) is
+        // recoverable; fall back to unpruned metadata so the query still runs.
+        // The wire form just stays larger for this entry. Swap-only-if-smaller
+        // (leaf count) avoids allocating a new inner Arc when nothing changed.
+        let prune_one = |meta_arc: &mut FileMetadataRef| {
+            if let Ok(pruned) = meta_arc.pruned(&projection, &predicate_cols)
+                && pruned.schema_descr.columns().len() < meta_arc.schema_descr.columns().len()
+            {
+                *meta_arc = Arc::new(pruned);
+            }
+        };
+
+        if let Some(meta) = first_metadata {
+            prune_one(meta);
+        }
+
+        // `Arc<[T]>` has no `make_mut` (slices aren't `Clone`); rebuild instead.
+        if let Some(slice) = metadata_per_source {
+            *slice = slice
+                .iter()
+                .cloned()
+                .map(|mut m| {
+                    prune_one(&mut m);
+                    m
+                })
+                .collect();
         }
     }
 }

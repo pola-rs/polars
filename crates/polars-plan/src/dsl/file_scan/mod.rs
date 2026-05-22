@@ -112,9 +112,16 @@ pub enum FileScanIR {
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
-        // `dsl-schema` only: `FileMetadata` has no `JsonSchema` impl.
+        /// Pre-decoded first-file metadata. Consumed by the streaming
+        /// `ParquetReaderBuilder` as its initial hint.
         #[cfg_attr(feature = "dsl-schema", serde(skip))]
-        metadata: Option<FileMetadataRef>,
+        first_metadata: Option<FileMetadataRef>,
+        /// Per-source metadata for the distributed scheduler. `Some(s)`
+        /// only in `Full` resolve mode, with `s[i]` for `sources[i]`.
+        /// `s[0] == first_metadata` so callers iterate uniformly
+        /// without special-casing the first source.
+        #[cfg_attr(feature = "dsl-schema", serde(skip))]
+        metadata_per_source: Option<Arc<[FileMetadataRef]>>,
     },
 
     #[cfg(feature = "ipc")]
@@ -174,6 +181,45 @@ impl FileScanIR {
             Self::NDJson { .. } => false,
             #[allow(unreachable_patterns)]
             _ => false,
+        }
+    }
+
+    /// Re-index pre-decoded per-source state after a source-list filter.
+    ///
+    /// `surviving_indices` yields ascending indices into the pre-filter list.
+    pub fn gather_after_filter<I>(&mut self, first_file_dropped: bool, surviving_indices: I)
+    where
+        I: Iterator<Item = usize>,
+    {
+        // Parquet: clear `first_metadata` if file 0 dropped; gather
+        // `metadata_per_source` by surviving indices so slice[i] still
+        // matches sources[i]. We re-index instead of clearing because
+        // the surviving footers are already decoded; tossing them would
+        // force the scheduler to refetch and re-decode the same bytes.
+        // Ipc / PythonDataset: file-0-keyed state cleared when file 0 dropped.
+        match self {
+            #[cfg(feature = "parquet")]
+            Self::Parquet {
+                first_metadata,
+                metadata_per_source,
+                ..
+            } => {
+                if first_file_dropped {
+                    *first_metadata = None;
+                }
+                if let Some(slice) = metadata_per_source {
+                    let gathered: Arc<[FileMetadataRef]> =
+                        surviving_indices.map(|i| slice[i].clone()).collect();
+                    *slice = gathered;
+                }
+            },
+            #[cfg(feature = "ipc")]
+            Self::Ipc { metadata, .. } if first_file_dropped => *metadata = None,
+            #[cfg(feature = "python")]
+            Self::PythonDataset { cached_ir, .. } if first_file_dropped => {
+                *cached_ir.lock().unwrap() = None;
+            },
+            _ => {},
         }
     }
 }
@@ -415,7 +461,8 @@ mod _file_scan_eq_hash {
         #[cfg(feature = "parquet")]
         Parquet {
             options: &'a polars_io::prelude::ParquetOptions,
-            metadata: Option<usize>,
+            first_metadata: Option<usize>,
+            metadata_per_source: Option<usize>,
         },
 
         #[cfg(feature = "ipc")]
@@ -459,9 +506,14 @@ mod _file_scan_eq_hash {
                 FileScanIR::NDJson { options } => FileScanEqHashWrap::NDJson { options },
 
                 #[cfg(feature = "parquet")]
-                FileScanIR::Parquet { options, metadata } => FileScanEqHashWrap::Parquet {
+                FileScanIR::Parquet {
                     options,
-                    metadata: metadata.as_ref().map(arc_as_ptr),
+                    first_metadata,
+                    metadata_per_source,
+                } => FileScanEqHashWrap::Parquet {
+                    options,
+                    first_metadata: first_metadata.as_ref().map(arc_as_ptr),
+                    metadata_per_source: metadata_per_source.as_ref().map(arc_as_ptr),
                 },
 
                 #[cfg(feature = "ipc")]
