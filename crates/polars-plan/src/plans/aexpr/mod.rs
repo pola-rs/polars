@@ -13,7 +13,7 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
-pub use determinism::is_inherently_nondeterministic;
+pub use determinism::{is_inherently_nondeterministic, is_inherently_nondeterministic_top_level};
 pub use function_expr::*;
 pub(crate) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;

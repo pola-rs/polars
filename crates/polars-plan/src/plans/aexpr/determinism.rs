@@ -3,6 +3,49 @@ use polars_utils::unitvec;
 
 use super::*;
 
+/// Returns `true` iff `ae` is itself inherently non-deterministic, looking
+/// only at this node and not at its children.
+///
+/// "Inherently non-deterministic" means the expression may produce different
+/// values across calls for a fundamental reason: random draws, opaque user
+/// UDFs, FFI plugins, runtime-injected predicates. Non-determinism polars
+/// permits by policy (`Expr.unique()` output order, `sum` over floats not
+/// being bitwise-reproducible across parallel reductions) returns `false`
+/// because optimizer rewrites may freely factor those out.
+pub fn is_inherently_nondeterministic_top_level(ae: &AExpr) -> bool {
+    match ae {
+        // Opaque user code: cannot inspect, assume non-deterministic.
+        AExpr::AnonymousFunction { .. } | AExpr::AnonymousAgg { .. } => true,
+
+        // Per-function classification, then fall through to recurse into inputs.
+        AExpr::Function { function, .. } => is_inherently_nondeterministic_fn(function),
+
+        // No inherent non-determinism in the variant itself; children may add it.
+        AExpr::Column(_)
+        | AExpr::Literal(_)
+        | AExpr::Len
+        | AExpr::Element
+        | AExpr::BinaryExpr { .. }
+        | AExpr::Cast { .. }
+        | AExpr::Ternary { .. }
+        | AExpr::Sort { .. }
+        | AExpr::SortBy { .. }
+        | AExpr::Filter { .. }
+        | AExpr::Gather { .. }
+        | AExpr::Slice { .. }
+        | AExpr::Explode { .. }
+        | AExpr::Agg(_)
+        | AExpr::Over { .. }
+        | AExpr::Eval { .. } => false,
+
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructField(_) | AExpr::StructEval { .. } => false,
+
+        #[cfg(feature = "dynamic_group_by")]
+        AExpr::Rolling { .. } => false,
+    }
+}
+
 /// Returns `true` if evaluating `root`'s subtree may produce different
 /// values across calls for a fundamental reason: random draws, opaque
 /// user UDFs, FFI plugins, runtime-injected predicates.
@@ -23,42 +66,8 @@ pub fn is_inherently_nondeterministic(root: Node, arena: &Arena<AExpr>) -> bool 
     let mut stack: UnitVec<Node> = unitvec![];
     let mut ae = arena.get(root);
     loop {
-        // Exhaustive match: a newly added `AExpr` variant must trigger a
-        // compile error here so its classification gets a fresh decision.
-        match ae {
-            // Opaque user code: cannot inspect, assume non-deterministic.
-            AExpr::AnonymousFunction { .. } | AExpr::AnonymousAgg { .. } => return true,
-
-            // Per-function classification, then fall through to recurse into inputs.
-            AExpr::Function { function, .. } => {
-                if is_inherently_nondeterministic_fn(function) {
-                    return true;
-                }
-            },
-
-            // Fall through to `inputs_rev` to recurse into children.
-            AExpr::Column(_)
-            | AExpr::Literal(_)
-            | AExpr::Len
-            | AExpr::Element
-            | AExpr::BinaryExpr { .. }
-            | AExpr::Cast { .. }
-            | AExpr::Ternary { .. }
-            | AExpr::Sort { .. }
-            | AExpr::SortBy { .. }
-            | AExpr::Filter { .. }
-            | AExpr::Gather { .. }
-            | AExpr::Slice { .. }
-            | AExpr::Explode { .. }
-            | AExpr::Agg(_)
-            | AExpr::Over { .. }
-            | AExpr::Eval { .. } => {},
-
-            #[cfg(feature = "dtype-struct")]
-            AExpr::StructField(_) | AExpr::StructEval { .. } => {},
-
-            #[cfg(feature = "dynamic_group_by")]
-            AExpr::Rolling { .. } => {},
+        if is_inherently_nondeterministic_top_level(ae) {
+            return true;
         }
         ae.inputs_rev(&mut stack);
         let Some(node) = stack.pop() else {
