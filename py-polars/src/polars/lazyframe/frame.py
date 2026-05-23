@@ -9158,6 +9158,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         row order when the key is equal between the both dataframes.
 
         The key must be sorted in ascending order.
+
+        Null values are treated as the smallest values. Therefore, input frames
+        with null values in the key column must be sorted with nulls first.
+        Input frames sorted with nulls last do not satisfy this requirement.
         """
         require_same_type(self, other)
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order))
