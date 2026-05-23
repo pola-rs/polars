@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 use crate::prelude::*;
 
 unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
@@ -55,10 +54,6 @@ macro_rules! impl_cat_series {
             }
             fn _set_flags(&mut self, flags: StatisticsFlags) {
                 self.0.set_flags(flags)
-            }
-
-            unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-                self.0.physical().equal_element(idx_self, idx_other, other)
             }
 
             #[cfg(feature = "zip_with")]

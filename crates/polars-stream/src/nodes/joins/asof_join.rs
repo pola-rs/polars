@@ -309,7 +309,7 @@ async fn distribute_work_task(
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
-                left_buffer.push_back(left_df);
+                left_buffer.push_front(left_df);
                 stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df| {
                     left_buffer.push_back(df)
                 })
@@ -319,10 +319,13 @@ async fn distribute_work_task(
         }
 
         prune_right_side(&left_df, right_buffer, params, 0)?;
-        distributor
+        if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
             .await
-            .unwrap();
+            .is_err()
+        {
+            return Ok(());
+        }
         *output_seq = output_seq.successor();
         prune_right_side(
             &left_df,

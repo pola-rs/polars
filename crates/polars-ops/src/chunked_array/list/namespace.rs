@@ -134,7 +134,7 @@ pub trait ListNameSpaceImpl: AsList {
         let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
         {
             ca.amortized_iter()
-                .zip(separator)
+                .zip(separator.iter())
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
                     Some(separator) => {
                         let opt_val = opt_s.and_then(|s| {
@@ -229,35 +229,6 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         // SAFETY: `sort_with`` doesn't change the dtype
         let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().sort_with(options))? };
-        Ok(self.same_type(out))
-    }
-
-    #[must_use]
-    fn lst_reverse(&self) -> ListChunked {
-        let ca = self.as_list();
-        // SAFETY: `reverse` doesn't change the dtype
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
-    }
-
-    fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
-        let ca = self.as_list();
-        ca.try_apply_amortized_generic(|s| {
-            let opt_v = s.map(|s| s.as_ref().n_unique()).transpose()?;
-            Ok(opt_v.map(|idx| idx as IdxSize))
-        })
-    }
-
-    fn lst_unique(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        // SAFETY: `unique` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique())? };
-        Ok(self.same_type(out))
-    }
-
-    fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        // SAFETY: `unique_stable` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique_stable())? };
         Ok(self.same_type(out))
     }
 
@@ -487,7 +458,7 @@ pub trait ListNameSpaceImpl: AsList {
                         keep_nulls: true,
                     })?;
                     idx_ca
-                        .into_iter()
+                        .series_iter()
                         .map(|opt_idx| {
                             opt_idx
                                 .map(|idx| take_series(&s, idx, null_on_oob))
@@ -542,7 +513,7 @@ pub trait ListNameSpaceImpl: AsList {
                 let mut out = {
                     list_ca
                         .amortized_iter()
-                        .zip(idx_ca)
+                        .zip(idx_ca.series_iter())
                         .map(|(opt_s, opt_idx)| {
                             {
                                 match (opt_s, opt_idx) {
@@ -759,7 +730,7 @@ pub trait ListNameSpaceImpl: AsList {
                 length,
                 ca.name().clone(),
             );
-            ca.into_iter().for_each(|opt_s| {
+            ca.series_iter().for_each(|opt_s| {
                 let opt_s = opt_s.map(|mut s| {
                     for append in &to_append {
                         s.append(append).unwrap();
@@ -789,7 +760,7 @@ pub trait ListNameSpaceImpl: AsList {
             for s in other.iter_mut() {
                 iters.push(s.list()?.amortized_iter())
             }
-            let mut first_iter: Box<dyn PolarsIterator<Item = Option<Series>>> = ca.into_iter();
+            let mut first_iter = ca.series_iter();
             let mut builder = get_list_builder(
                 &inner_super_type,
                 ca.get_values_size() + vals_size_other + 1,

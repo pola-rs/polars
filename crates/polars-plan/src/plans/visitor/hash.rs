@@ -308,6 +308,10 @@ impl Hash for IRHashWrap<'_> {
                     options.hash(state);
                     output_name.hash(state);
                 },
+
+                UnoptimizedOperation::DynamicSlice { output_name } => {
+                    output_name.hash(state);
+                },
             },
             IR::Invalid => unreachable!(),
         }

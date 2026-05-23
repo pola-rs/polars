@@ -115,23 +115,23 @@ fn scatter_impl(
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &mut ChunkedArray<$T> = mutable_s.as_mut();
                 let values: &ChunkedArray<$T> = values.as_ref().as_ref();
-                ca.scatter(idx, values)
+                ca.scatter(idx, values.iter())
             })
         },
         DataType::Boolean => {
             let ca: &mut ChunkedArray<BooleanType> = mutable_s.as_mut();
             let values = values.bool()?;
-            ca.scatter(idx, values)
+            ca.scatter(idx, values.iter())
         },
         DataType::Binary => {
             let ca: &mut ChunkedArray<BinaryType> = mutable_s.as_mut();
             let values = values.binary()?;
-            ca.scatter(idx, values)
+            ca.scatter(idx, values.iter())
         },
         DataType::String => {
             let ca: &mut ChunkedArray<StringType> = mutable_s.as_mut();
             let values = values.str()?;
-            ca.scatter(idx, values)
+            ca.scatter(idx, values.iter())
         },
         _ => Err(PolarsError::ComputeError(
             format!("not yet implemented for dtype: {logical_dtype}").into(),
