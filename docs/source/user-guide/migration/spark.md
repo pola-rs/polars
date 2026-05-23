@@ -167,9 +167,9 @@ Output:
 
 ## Expression Composability
 
-Polars allows you to compose expressions quite liberally. For example, if you want to find the rolling
-mean of a lagged variable, you can compose `shift` and `rolling_mean` and evaluate them in a single
-`over` expression:
+Polars allows you to compose expressions quite liberally. For example, if you want to find the
+rolling mean of a lagged variable, you can compose `shift` and `rolling_mean` and evaluate them in a
+single `over` expression:
 
 ```python
 df.with_columns(
