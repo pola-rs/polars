@@ -983,3 +983,36 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
         pl.Series("a", [81], dtype=dtype).log(b),
         pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
     )
+
+
+@pytest.mark.parametrize(
+    ("op", "lhs", "rhs", "expected"),
+    [
+        (
+            operator.and_,
+            pl.Series([True, False]),
+            pl.Series([1, 1]),
+            pl.Series([1, 0], dtype=pl.Int64),
+        ),
+        (
+            operator.or_,
+            pl.Series([True, False]),
+            pl.Series([0, 1]),
+            pl.Series([1, 1], dtype=pl.Int64),
+        ),
+        (
+            operator.xor,
+            pl.Series([True, False]),
+            pl.Series([1, 1]),
+            pl.Series([0, 1], dtype=pl.Int64),
+        ),
+    ],
+)
+def test_series_bitwise_bool_int_rhs_22132(
+    op: Callable[[pl.Series, pl.Series], pl.Series],
+    lhs: pl.Series,
+    rhs: pl.Series,
+    expected: pl.Series,
+) -> None:
+    result = op(lhs, rhs)
+    assert_series_equal(result, expected)

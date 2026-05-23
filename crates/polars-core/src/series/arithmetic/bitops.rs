@@ -13,6 +13,10 @@ macro_rules! impl_bitop {
             fn $f(self, rhs: Self) -> Self::Output {
                 use DataType as DT;
                 match self.dtype() {
+                    DT::Boolean if rhs.dtype().is_integer() => {
+                        let lhs = self.cast(rhs.dtype())?;
+                        <&Series as std::ops::$trait>::$f(&lhs, rhs)
+                    },
                     DT::Boolean => {
                         let lhs: &BooleanChunked = self.as_ref().as_ref().as_ref();
                         let rhs = lhs.unpack_series_matching_type(rhs)?;
