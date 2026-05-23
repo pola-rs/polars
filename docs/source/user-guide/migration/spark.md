@@ -107,7 +107,7 @@ df.select(
 Output:
 
 ```
-shape: (3, 2)
+shape: (2, 2)
 ┌─────┬─────┐
 │ foo ┆ bar │
 │ --- ┆ --- │
@@ -127,7 +127,7 @@ enables you to join the values in this way.
 
 ```python
 from pyspark.sql import Window
-from pyspark.sql.functions import row_number
+from pyspark.sql.functions import col, row_number
 
 foo_dfs = (
     dfs
@@ -165,9 +165,9 @@ Output:
 +---+---+
 ```
 
-### Example 3: Composing expressions
+## Expression Composability
 
-Polars allows you compose expressions quite liberally. For example, if you want to find the rolling
+Polars allows you to compose expressions quite liberally. For example, if you want to find the rolling
 mean of a lagged variable, you can compose `shift` and `rolling_mean` and evaluate them in a single
 `over` expression:
 
@@ -179,7 +179,7 @@ df.with_columns(
 
 In PySpark however this is not allowed. They allow composing expressions such as
 `F.mean(F.abs("price")).over(window)` because `F.abs` is an elementwise function, but not
-`F.mean(F.lag("price", 1)).over(window)` because `F.lag` is a window function. To produce the same
+`F.mean(F.lag("price", 7)).over(window)` because `F.lag` is a window function. To produce the same
 result, both `F.lag` and `F.mean` need their own window.
 
 ```python
@@ -189,7 +189,9 @@ from pyspark.sql import functions as F
 window = Window().partitionBy("store").orderBy("date")
 rolling_window = window.rowsBetween(-6, 0)
 (
-    df.withColumn("lagged_price", F.lag("price", 7).over(window)).withColumn(
+    df
+    .withColumn("lagged_price", F.lag("price", 7).over(window))
+    .withColumn(
         "feature",
         F.when(
             F.count("lagged_price").over(rolling_window) >= 7,
