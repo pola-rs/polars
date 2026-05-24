@@ -3,7 +3,7 @@ use std::ops::{AddAssign, Mul};
 use arity::unary_elementwise_values;
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use num_traits::{Bounded, One, Zero};
+use num_traits::{AsPrimitive, Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
@@ -45,6 +45,20 @@ where
         Some(v) => {
             *state += v;
             Some(Some(*state))
+        },
+        None => Some(None),
+    }
+}
+
+fn det_sum_to_f64<T>(state: &mut f64, v: Option<T>) -> Option<Option<T>>
+where
+    T: Copy + AddAssign + Copy + 'static,
+    f64: AsPrimitive<T> + From<T>,
+{
+    match v {
+        Some(v) => {
+            *state += <T as Into<f64>>::into(v);
+            Some(Some(<f64 as AsPrimitive<T>>::as_(*state)))
         },
         None => Some(None),
     }
@@ -214,6 +228,28 @@ where
     cum_scan_numeric(ca, reverse, init, det_sum)
 }
 
+fn cum_sum_numeric_cast<T>(
+    ca: &ChunkedArray<T>,
+    reverse: bool,
+    init: Option<f64>,
+) -> ChunkedArray<T>
+where
+    T: PolarsNumericType + 'static,
+    ChunkedArray<T>: FromIterator<Option<T::Native>>,
+    f64: AsPrimitive<T::Native> + From<T::Native>,
+{
+    let init_f64 = init.unwrap_or(0.0) as f64;
+    let out: ChunkedArray<T> = match reverse {
+        false => ca.iter().scan(init_f64, det_sum_to_f64).collect_trusted(),
+        true => ca
+            .iter()
+            .rev()
+            .scan(init_f64, det_sum_to_f64)
+            .collect_reversed(),
+    };
+    out.with_name(ca.name().clone())
+}
+
 #[cfg(feature = "dtype-decimal")]
 fn cum_sum_decimal(
     ca: &Int128Chunked,
@@ -311,8 +347,8 @@ pub fn cum_sum_with_init(
         #[cfg(feature = "dtype-i128")]
         Int128 => cum_sum_numeric(s.i128()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-f16")]
-        Float16 => cum_sum_numeric(s.f16()?, reverse, init.extract()).into_series(),
-        Float32 => cum_sum_numeric(s.f32()?, reverse, init.extract()).into_series(),
+        Float16 => cum_sum_numeric_cast(s.f16()?, reverse, init.extract()).into_series(),
+        Float32 => cum_sum_numeric_cast(s.f32()?, reverse, init.extract()).into_series(),
         Float64 => cum_sum_numeric(s.f64()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-decimal")]
         Decimal(_precision, scale) => {
