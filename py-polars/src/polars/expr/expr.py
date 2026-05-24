@@ -1631,7 +1631,7 @@ class Expr:
         │ 3   ┆ 2.0      ┆ 3.5              │
         │ 4   ┆ 2.5      ┆ 4.0              │
         └─────┴──────────┴──────────────────┘
-        
+
         Null values are excluded, but can also be filled by calling
         `fill_null(strategy="forward")`.
 
