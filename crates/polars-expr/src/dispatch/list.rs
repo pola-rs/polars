@@ -53,14 +53,11 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "diff")]
         Diff { n, null_behavior } => map!(diff, n, null_behavior),
         Sort(options) => map!(sort, options),
-        Reverse => map!(reverse),
-        Unique(is_stable) => map!(unique, is_stable),
         #[cfg(feature = "list_sets")]
         SetOperation(s) => map_as_slice!(set_operation, s),
         Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
         #[cfg(feature = "dtype-array")]
         ToArray(width) => map!(to_array, width),
-        NUnique => map!(n_unique),
         #[cfg(feature = "list_to_struct")]
         ToStruct(names) => map!(to_struct, &names),
     }
@@ -363,18 +360,6 @@ pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
     Ok(s.list()?.lst_sort(options)?.into_column())
 }
 
-pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
-    Ok(s.list()?.lst_reverse().into_column())
-}
-
-pub(super) fn unique(s: &Column, is_stable: bool) -> PolarsResult<Column> {
-    if is_stable {
-        Ok(s.list()?.lst_unique_stable()?.into_column())
-    } else {
-        Ok(s.list()?.lst_unique()?.into_column())
-    }
-}
-
 #[cfg(feature = "list_sets")]
 pub(super) fn set_operation(
     s: &[Column],
@@ -430,8 +415,4 @@ pub(super) fn to_struct(s: &Column, names: &Arc<[PlSmallStr]>) -> PolarsResult<C
 
     let args = polars_ops::prelude::ListToStructArgs::FixedWidth(names.clone());
     Ok(s.list()?.to_struct(&args)?.into_column())
-}
-
-pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
-    Ok(s.list()?.lst_n_unique()?.into_column())
 }

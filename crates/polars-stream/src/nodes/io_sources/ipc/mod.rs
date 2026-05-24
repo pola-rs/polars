@@ -415,7 +415,7 @@ impl FileReader for IpcFileReader {
             };
 
             if let Some(record_batch_cum_len) = record_batch_cum_len.as_deref() {
-                let n_rows_in_file = *record_batch_cum_len.last().unwrap();
+                let n_rows_in_file = record_batch_cum_len.last().copied().unwrap_or(0);
 
                 if let Some(n_rows_in_file_tx) = n_rows_in_file_tx.take() {
                     _ = n_rows_in_file_tx.send(n_rows_in_file);
