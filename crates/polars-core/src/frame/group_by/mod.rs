@@ -8,8 +8,8 @@ use polars_utils::hashing::DirtyHash;
 use rayon::prelude::*;
 
 use self::hashing::*;
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::utils::{_set_partition_size, accumulate_dataframes_vertical};
 
 pub mod aggregations;
@@ -253,7 +253,7 @@ impl<'a> GroupBy<'a> {
         } else {
             &self.groups
         };
-        POOL.install(|| {
+        RAYON.install(|| {
             self.selected_keys
                 .par_iter()
                 .map(Column::as_materialized_series)
@@ -262,7 +262,7 @@ impl<'a> GroupBy<'a> {
                         GroupsType::Idx(groups) => {
                             // SAFETY: groups are always in bounds.
                             let mut out = unsafe { s.take_slice_unchecked(groups.first()) };
-                            if groups.sorted {
+                            if groups.sorted_by_first_idx {
                                 out.set_sorted_flag(s.is_sorted_flag());
                             };
                             out

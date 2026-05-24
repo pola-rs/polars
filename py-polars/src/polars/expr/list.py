@@ -33,15 +33,47 @@ class ExprListNameSpace:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: int) -> Expr:
+        """
+        Get the value by index in the sublists.
+
+        This is syntactic sugar for :meth:`Expr.list.get`.
+
+        Parameters
+        ----------
+        item
+            Index to return per sublist. Index ``0`` returns the first item, and
+            index ``-1`` returns the last item.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[3, 2, 1], [4, 5, 6]]})
+        >>> df.with_columns(get=pl.col("a").list[0])
+        shape: (2, 2)
+        ┌───────────┬─────┐
+        │ a         ┆ get │
+        │ ---       ┆ --- │
+        │ list[i64] ┆ i64 │
+        ╞═══════════╪═════╡
+        │ [3, 2, 1] ┆ 3   │
+        │ [4, 5, 6] ┆ 4   │
+        └───────────┴─────┘
+        """
         return self.get(item)
 
-    def all(self) -> Expr:
+    def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether all boolean values in a list are true.
 
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `True`.
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -63,15 +95,22 @@ class ExprListNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.list_all())
+        return self.agg(F.element().all(ignore_nulls=ignore_nulls))
 
-    def any(self) -> Expr:
+    def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value in a list is true.
 
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `False`.
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -93,7 +132,7 @@ class ExprListNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.list_any())
+        return self.agg(F.element().any(ignore_nulls=ignore_nulls))
 
     def len(self) -> Expr:
         """
@@ -426,7 +465,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [2, 1, 9] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_reverse())
+        return self.eval(F.element().reverse())
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
@@ -454,7 +493,7 @@ class ExprListNameSpace:
         │ [1, 1, 2] ┆ [1, 2]    │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_unique(maintain_order))
+        return self.eval(F.element().unique(maintain_order=maintain_order))
 
     def n_unique(self) -> Expr:
         """
@@ -478,7 +517,7 @@ class ExprListNameSpace:
         │ [2, 3, 4] ┆ 3        │
         └───────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.list_n_unique())
+        return self.agg(F.element().n_unique())
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """

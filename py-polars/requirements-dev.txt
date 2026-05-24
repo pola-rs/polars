@@ -45,7 +45,7 @@ openpyxl
 xlsx2csv
 xlsxwriter>=3.2.9
 # Other I/O
-deltalake>=1.4.2
+deltalake>=1.6.0
 # Csv
 zstandard
 # Plotting
@@ -66,10 +66,9 @@ orjson
 # -------
 
 tomlkit
-pytest==8.3.2
-pytest-codspeed==3.2.0
-pytest-cov==6.0.0
-pytest-xdist==3.6.1
+pytest==9.0.3
+pytest-cov==7.1.0
+pytest-xdist==3.8.0
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
 moto[s3]==5.0.9

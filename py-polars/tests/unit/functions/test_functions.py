@@ -361,7 +361,7 @@ def test_align_frames() -> None:
     with pytest.raises(TypeError):
         pl.align_frames(  # type: ignore[type-var]
             pl.from_pandas(pdf1.reset_index()).lazy(),
-            pl.from_pandas(pdf2.reset_index()),
+            pl.from_pandas(pdf2.reset_index()),  # pyrefly: ignore[bad-argument-type]
             on="date",
         )
 

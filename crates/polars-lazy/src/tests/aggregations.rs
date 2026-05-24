@@ -466,7 +466,7 @@ fn take_aggregations() -> PolarsResult<()> {
         .agg([
             // keep the head as it test slice correctness
             col("book")
-                .gather(col("count").arg_sort(true, false).head(Some(2)))
+                .gather(col("count").arg_sort(true, false).head(Some(2)), false)
                 .alias("ordered"),
         ])
         .sort(["user"], Default::default())
@@ -477,7 +477,7 @@ fn take_aggregations() -> PolarsResult<()> {
         keep_nulls: true,
     })?;
     let flat = flat.str()?;
-    let vals = flat.into_no_null_iter().collect::<Vec<_>>();
+    let vals = flat.no_null_iter().collect::<Vec<_>>();
     assert_eq!(vals, ["a", "b", "c", "a", "a"]);
 
     let out = df
@@ -489,7 +489,7 @@ fn take_aggregations() -> PolarsResult<()> {
 
     let taken = out.column("take_lit")?;
     let taken = taken.str()?;
-    let vals = taken.into_no_null_iter().collect::<Vec<_>>();
+    let vals = taken.no_null_iter().collect::<Vec<_>>();
     assert_eq!(vals, ["b", "c", "a"]);
 
     Ok(())

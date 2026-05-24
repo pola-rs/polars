@@ -410,6 +410,16 @@ impl DslBuilder {
         }
         .into()
     }
+
+    pub fn gather(self, idxs: DslPlan, null_on_oob: bool) -> Self {
+        DslPlan::Gather {
+            input: Arc::new(self.0),
+            idxs: Arc::new(idxs),
+            null_on_oob,
+        }
+        .into()
+    }
+
     pub fn map_private(self, function: DslFunction) -> Self {
         DslPlan::MapFunction {
             input: Arc::new(self.0),
@@ -433,7 +443,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 validate_output,
             }),
         }
@@ -459,7 +469,7 @@ impl DslBuilder {
                 schema,
                 predicate_pd: optimizations.contains(OptFlags::PREDICATE_PUSHDOWN),
                 projection_pd: optimizations.contains(OptFlags::PROJECTION_PUSHDOWN),
-                streamable: optimizations.contains(OptFlags::NEW_STREAMING),
+                streamable: optimizations.contains(OptFlags::STREAMING),
                 fmt_str: name,
             }),
         }

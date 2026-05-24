@@ -1,6 +1,7 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
 use polars_ops::chunked_array::UnicodeForm;
@@ -190,6 +191,8 @@ impl PyStringFunction {
 pub enum PyBooleanFunction {
     Any,
     All,
+    IsEmpty,
+    HasNulls,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -747,15 +750,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: maintain_order.into_py_any(py)?,
             },
-            IRAggExpr::Quantile {
-                expr,
-                quantile,
-                method: interpol,
-            } => Agg {
-                name: "quantile".into_py_any(py)?,
-                arguments: vec![expr.0, quantile.0],
-                options: Into::<&str>::into(interpol).into_py_any(py)?,
-            },
             IRAggExpr::Sum(n) => Agg {
                 name: "sum".into_py_any(py)?,
                 arguments: vec![n.0],
@@ -1126,6 +1120,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRBooleanFunction::All { ignore_nulls } => {
                         (PyBooleanFunction::All, *ignore_nulls).into_py_any(py)
                     },
+                    IRBooleanFunction::IsEmpty { ignore_nulls } => {
+                        (PyBooleanFunction::IsEmpty, *ignore_nulls).into_py_any(py)
+                    },
+                    IRBooleanFunction::HasNulls => (PyBooleanFunction::HasNulls,).into_py_any(py),
                     IRBooleanFunction::IsNull => (PyBooleanFunction::IsNull,).into_py_any(py),
                     IRBooleanFunction::IsNotNull => (PyBooleanFunction::IsNotNull,).into_py_any(py),
                     IRBooleanFunction::IsFinite => (PyBooleanFunction::IsFinite,).into_py_any(py),
@@ -1258,6 +1256,17 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Shift => ("shift",).into_py_any(py),
                 IRFunctionExpr::DropNans => ("drop_nans",).into_py_any(py),
                 IRFunctionExpr::DropNulls => ("drop_nulls",).into_py_any(py),
+                IRFunctionExpr::Quantile { method } => {
+                    let method = match method {
+                        QuantileMethod::Nearest => "nearest",
+                        QuantileMethod::Lower => "lower",
+                        QuantileMethod::Higher => "higher",
+                        QuantileMethod::Midpoint => "midpoint",
+                        QuantileMethod::Linear => "linear",
+                        QuantileMethod::Equiprobable => "equiprobable",
+                    };
+                    ("quantile", method).into_py_any(py)
+                },
                 IRFunctionExpr::Mode { maintain_order } => {
                     ("mode", *maintain_order).into_py_any(py)
                 },

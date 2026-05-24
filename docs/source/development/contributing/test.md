@@ -118,9 +118,6 @@ The `benchmark` folder contains code for running various benchmark tests. The ai
 the test suite is to spot performance regressions in the code, and to verify that Polars
 functionality works as expected when run on a release build or at a larger scale.
 
-Polars uses [CodSpeed](https://codspeed.io/pola-rs/polars) for tracking the performance of the
-benchmark tests.
-
 ### Generating data
 
 For most tests, a relatively large dataset must be generated first. This is done as part of the

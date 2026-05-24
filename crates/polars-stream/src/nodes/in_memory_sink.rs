@@ -3,15 +3,16 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_ooc::AccessPattern::NoPattern;
+use polars_ooc::{LeastRecentSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
 
 #[derive(Debug)]
 pub struct InMemorySinkNode {
-    morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, Token)>>>,
+    morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, SpillFrame)>>>,
     schema: Arc<Schema>,
+    spill_ctx: Arc<LeastRecentSpillContext>,
 }
 
 impl InMemorySinkNode {
@@ -19,6 +20,7 @@ impl InMemorySinkNode {
         Self {
             morsels_per_pipe: Mutex::default(),
             schema,
+            spill_ctx: LeastRecentSpillContext::new(),
         }
     }
 }
@@ -66,7 +68,9 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
-                    morsels.push(morsel.store_into_token_and_seq(NoPattern).await);
+                    let seq = morsel.seq();
+                    let sf = SpillFrame::new(morsel.into_df(), &*slf.spill_ctx).await;
+                    morsels.push((seq, sf));
                 }
 
                 slf.morsels_per_pipe.lock().push(morsels);
@@ -77,12 +81,14 @@ impl ComputeNode for InMemorySinkNode {
 
     fn get_output(&mut self) -> PolarsResult<Option<DataFrame>> {
         let morsels_per_pipe = core::mem::take(&mut *self.morsels_per_pipe.get_mut());
-        let tokens = linearize(morsels_per_pipe);
-        if tokens.is_empty() {
+        let spillframes = linearize(morsels_per_pipe);
+        if spillframes.is_empty() {
             Ok(Some(DataFrame::empty_with_schema(&self.schema)))
         } else {
-            let mm = polars_ooc::mm();
-            let dfs: Vec<_> = tokens.into_iter().map(|t| mm.df_blocking(&t)).collect();
+            let dfs: Vec<_> = spillframes
+                .into_iter()
+                .map(|sf| sf.into_df_blocking())
+                .collect();
             Ok(Some(accumulate_dataframes_vertical_unchecked(dfs)))
         }
     }

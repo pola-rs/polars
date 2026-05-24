@@ -457,7 +457,7 @@ def test_dataclasses_initvar_typing() -> None:
     class ABC:
         x: date
         y: float
-        z: dataclasses.InitVar[list[str]] = None
+        z: dataclasses.InitVar[list[str]] | None = None
 
     # should be able to parse the initvar typing...
     abc = ABC(x=date(1999, 12, 31), y=100.0)
@@ -1020,7 +1020,11 @@ def test_init_errors() -> None:
 
     # Unmatched input
     with pytest.raises(TypeError):
-        pl.DataFrame(0)
+        # Note: the `type: ignore` is correct here, as `0` is
+        # an invalid type. If you make a PR which removes this
+        # `type: ignore`, you may have inadvertently introduced
+        # an `Any` type in the `DataFrame.__init__` signature.
+        pl.DataFrame(0)  # type: ignore[arg-type]
 
 
 def test_init_records() -> None:

@@ -15,7 +15,7 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
 
         let mut vals = self
             .physical()
-            .into_iter()
+            .iter()
             .zip(self.iter_str())
             .collect_trusted::<Vec<_>>();
 
@@ -124,7 +124,7 @@ mod test {
     fn assert_order(ca: &Categorical8Chunked, cmp: &[&str]) {
         let s = ca.cast(&DataType::String).unwrap();
         let ca = s.str().unwrap();
-        assert_eq!(ca.into_no_null_iter().collect::<Vec<_>>(), cmp);
+        assert_eq!(ca.no_null_iter().collect::<Vec<_>>(), cmp);
     }
 
     #[test]

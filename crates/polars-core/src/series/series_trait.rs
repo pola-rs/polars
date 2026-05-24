@@ -73,14 +73,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: StatisticsFlags);
 
-        unsafe fn equal_element(
-            &self,
-            _idx_self: usize,
-            _idx_other: usize,
-            _other: &Series,
-        ) -> bool {
-            invalid_operation_panic!(equal_element, self)
-        }
         #[expect(clippy::wrong_self_convention)]
         fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
         #[expect(clippy::wrong_self_convention)]
@@ -319,9 +311,15 @@ pub trait SeriesTrait:
         self.len() == 0
     }
 
+    /// Check if Series only consists of nulls.
+    fn is_full_null(&self) -> bool {
+        self.len() == self.null_count()
+    }
+
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
+    /// Returns the validity of this series as a single bitmap.
     fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks().len() == 1 {
             return self.chunks()[0].validity().cloned();
@@ -341,6 +339,9 @@ pub trait SeriesTrait:
         }
         bm.into_opt_validity()
     }
+
+    /// Sets the validity mask of this Series to the given bitmap.
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series;
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {

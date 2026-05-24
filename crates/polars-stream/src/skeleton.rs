@@ -3,9 +3,9 @@ use std::cmp::Reverse;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
+use polars_core::runtime::RAYON;
 use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_plan::plans::{IR, IRPlan, IRPlanSorted};
 use polars_plan::prelude::AExpr;
@@ -127,7 +127,7 @@ impl StreamingQuery {
         let metrics = if std::env::var("POLARS_TRACK_METRICS").as_deref() == Ok("1")
             || std::env::var("POLARS_LOG_METRICS").as_deref() == Ok("1")
         {
-            crate::async_executor::track_task_metrics(true);
+            polars_async::executor::track_task_metrics(true);
             Some(Arc::default())
         } else {
             None

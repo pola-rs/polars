@@ -7,6 +7,7 @@ use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::flags::StatisticsFlags;
+use crate::chunked_array::iterator::PolarsIterator;
 use crate::chunked_array::ops::ChunkFullNull;
 use crate::hashing::get_null_hash_value;
 use crate::prelude::*;
@@ -207,8 +208,11 @@ impl<T: PolarsCategoricalType> CategoricalChunked<T> {
             .get_mapping()
             .to_arrow(compat_level.uses_binview_types());
         let values_dtype = Box::new(values.dtype().clone());
-        let dtype =
-            ArrowDataType::Dictionary(<T::Native as DictionaryKey>::KEY_TYPE, values_dtype, false);
+        let dtype = ArrowDataType::Dictionary(
+            <T::Native as DictionaryKey>::KEY_TYPE,
+            values_dtype,
+            self.is_enum(),
+        );
         unsafe { DictionaryArray::try_new_unchecked(dtype, keys.clone(), values).unwrap() }
     }
 }
@@ -252,7 +256,7 @@ impl<T: PolarsCategoricalType> LogicalType for CategoricalChunked<T> {
                         builder.append_value(to_str(cat_id.as_cat()));
                     }
                 } else {
-                    for opt_cat_id in self.phys.into_iter() {
+                    for opt_cat_id in self.phys.iter() {
                         let opt_cat_id: Option<_> = opt_cat_id;
                         builder.append_option(opt_cat_id.map(|c| to_str(c.as_cat())));
                     }

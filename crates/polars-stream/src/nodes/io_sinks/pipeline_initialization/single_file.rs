@@ -1,16 +1,16 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
-use polars_io::pl_async;
 use polars_plan::dsl::sink::SinkedPathInfo;
 use polars_plan::dsl::{SinkTarget, UnifiedSinkArgs};
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
 use crate::execute::StreamingExecutionState;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks::components::morsel_resize_pipeline::MorselResizePipeline;
@@ -28,7 +28,7 @@ pub fn start_single_file_sink_pipeline(
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
-) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
+) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
 
     let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
@@ -74,7 +74,7 @@ pub fn start_single_file_sink_pipeline(
 
     let file_open_task = {
         let io_metrics = io_metrics.clone();
-        tokio_handle_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
+        tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
             target
                 .open_into_writeable_async(
                     cloud_options.as_deref(),
@@ -128,14 +128,13 @@ pub fn start_single_file_sink_pipeline(
         morsel_tx: writer_tx,
     };
 
-    let resize_pipeline_handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
+    let resize_pipeline_handle = executor::AbortOnDropHandle::new(executor::spawn(
         TaskPriority::High,
         resize_pipeline.run(),
     ));
 
-    let handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
-        TaskPriority::High,
-        async move {
+    let handle =
+        executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
             writer_handle.await?;
             let sent_size = resize_pipeline_handle.await?;
 
@@ -153,8 +152,7 @@ pub fn start_single_file_sink_pipeline(
             }
 
             Ok(())
-        },
-    ));
+        }));
 
     Ok(handle)
 }

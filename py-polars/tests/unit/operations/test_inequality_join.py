@@ -772,7 +772,7 @@ def test_range_join_single_parametric(
     ],
 )
 def test_range_join_dtypes(
-    s: pl.DataType,
+    s: pl.Series,
     lower_op: str | None,
     upper_op: str | None,
 ) -> None:
@@ -864,7 +864,7 @@ def test_cross_join_validity_bitmap_offset_26925(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_MAX_THREADS", "2")
-    plmonkeypatch.setenv("POLARS_AUTO_NEW_STREAMING", "1")
+    plmonkeypatch.setenv("POLARS_AUTO_STREAMING", "1")
 
     left = pl.DataFrame({"id": [0, 1], "x": pl.Series([0, 0], dtype=pl.Int64)})
     right = pl.DataFrame(

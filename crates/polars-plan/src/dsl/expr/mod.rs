@@ -6,7 +6,6 @@ use std::hash::{Hash, Hasher};
 pub use anonymous::*;
 use bytes::Bytes;
 pub use datatype_fn::*;
-use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
@@ -49,40 +48,10 @@ pub enum AggExpr {
         input: Arc<Expr>,
         include_nulls: bool,
     },
-    Quantile {
-        expr: Arc<Expr>,
-        quantile: Arc<Expr>,
-        method: QuantileMethod,
-    },
     Sum(Arc<Expr>),
     AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
-}
-
-impl AsRef<Expr> for AggExpr {
-    fn as_ref(&self) -> &Expr {
-        use AggExpr::*;
-        match self {
-            Min { input, .. } => input,
-            Max { input, .. } => input,
-            Median(e) => e,
-            NUnique(e) => e,
-            First(e) => e,
-            FirstNonNull(e) => e,
-            Last(e) => e,
-            LastNonNull(e) => e,
-            Item { input, .. } => input,
-            Mean(e) => e,
-            Implode { input, .. } => input,
-            Count { input, .. } => input,
-            Quantile { expr, .. } => expr,
-            Sum(e) => e,
-            AggGroups(e) => e,
-            Std(e, _) => e,
-            Var(e, _) => e,
-        }
-    }
 }
 
 /// Expressions that can be used in various contexts.
@@ -635,6 +604,13 @@ impl EvalVariant {
             (Self::List | Self::ListAgg, DataType::List(inner)) => Ok(inner.as_ref()),
             #[cfg(feature = "dtype-array")]
             (Self::Array { .. } | Self::ArrayAgg, DataType::Array(inner, _)) => Ok(inner.as_ref()),
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg { .. }, dtype) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "expected Array datatype for array operation, got: {dtype:?}"
+                );
+            },
             (Self::Cumulative { min_samples: _ }, dt) => Ok(dt),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -672,6 +648,13 @@ impl EvalVariant {
                     Ok(DataType::List(Box::new(output_element_dtype)))
                 }
             },
+            #[cfg(feature = "dtype-array")]
+            (Self::Array { .. } | Self::ArrayAgg, dtype) => {
+                polars_bail!(
+                    InvalidOperation:
+                    "expected Array datatype for array operation, got: {dtype:?}"
+                );
+            },
             (Self::Cumulative { min_samples: _ }, _) => Ok(output_element_dtype),
             _ => polars_bail!(op = self.to_name(), dtype),
         }
@@ -690,16 +673,6 @@ impl EvalVariant {
             EvalVariant::List | EvalVariant::ListAgg => true,
             EvalVariant::Array { .. } | EvalVariant::ArrayAgg => true,
             EvalVariant::Cumulative { min_samples: _ } => false,
-        }
-    }
-
-    pub fn is_length_preserving(&self) -> bool {
-        match self {
-            EvalVariant::List
-            | EvalVariant::ListAgg
-            | EvalVariant::Array { .. }
-            | EvalVariant::ArrayAgg
-            | EvalVariant::Cumulative { .. } => true,
         }
     }
 }

@@ -57,7 +57,6 @@ workspace = true
 features = [
   "abs",
   "approx_unique",
-  "array_any_all",
   "arg_where",
   "bitwise",
   "business",
@@ -148,6 +147,7 @@ json = [
   "polars/json",
   "polars-utils/serde",
   "polars-mem-engine/json",
+  "polars-parquet?/serde",
 ]
 scan_lines = ["polars/scan_lines", "polars-mem-engine/scan_lines"]
 trigonometry = ["polars/trigonometry"]
@@ -180,8 +180,6 @@ list_count = ["polars/list_count"]
 array_count = ["polars/array_count", "polars/dtype-array"]
 binary_encoding = ["polars/binary_encoding"]
 list_sets = ["polars-lazy/list_sets"]
-list_any_all = ["polars/list_any_all"]
-array_any_all = ["polars/array_any_all", "polars/dtype-array"]
 list_drop_nulls = ["polars/list_drop_nulls"]
 list_sample = ["polars/list_sample"]
 cutqcut = ["polars/cutqcut"]
@@ -192,7 +190,7 @@ cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/htt
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
-new_streaming = ["polars-lazy/new_streaming"]
+streaming = ["polars-lazy/streaming"]
 bitwise = ["polars/bitwise"]
 approx_unique = ["polars/approx_unique"]
 string_normalize = ["polars/string_normalize"]
@@ -221,7 +219,6 @@ dtypes = [
 
 operations = [
   "approx_unique",
-  "array_any_all",
   "array_count",
   "bitwise",
   "is_in",
@@ -233,7 +230,6 @@ operations = [
   "list_filter",
   "list_count",
   "list_sets",
-  "list_any_all",
   "list_drop_nulls",
   "list_sample",
   "cutqcut",
@@ -298,7 +294,7 @@ full_functionality = [
   "binary_encoding",
   "ffi_plugin",
   "polars_cloud_client",
-  "new_streaming",
+  "streaming",
 ]
 
 full = ["full_functionality", "fast_alloc"]

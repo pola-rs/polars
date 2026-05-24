@@ -466,6 +466,39 @@ def test_predicate_reduction() -> None:
         )
 
 
+def test_or_factoring_hoists_shared_conjunct() -> None:
+    # `(a > 1 AND b > 4) OR (a > 1 AND c > 7)` shares `a > 1` across both OR
+    # branches. `simplify_predicate` factors it out so the predicate becomes
+    # `a > 1 AND (b > 4 OR c > 7)`.
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    query = lf.filter(
+        ((pl.col("a") > 1) & (pl.col("b") > 4))
+        | ((pl.col("a") > 1) & (pl.col("c") > 7))
+    )
+    plan = query.explain()
+    # Shared conjunct hoisted out (appears once, not twice).
+    assert plan.count('(col("a")) > (1)') == 1, plan
+    # Both residual branches survive the rewrite.
+    assert '(col("b")) > (4)' in plan, plan
+    assert '(col("c")) > (7)' in plan, plan
+
+    expected = pl.DataFrame({"a": [2, 3], "b": [5, 6], "c": [8, 9]})
+    assert_frame_equal(query.collect(), expected)
+
+
+def test_cse_skips_inherently_nondeterministic_subexpressions() -> None:
+    # Two `list.sample` calls are independent random draws and must not be
+    # folded by CSE into a single shared alias.
+    lf = pl.LazyFrame({"x": [[1, 2, 3]]})
+    query = lf.select(
+        a=pl.col("x").list.sample(1, seed=None),
+        b=pl.col("x").list.sample(1, seed=None),
+    )
+    plan = query.explain()
+    assert plan.count("list.sample") == 2, plan
+    assert "__POLARS_CSER_" not in plan, plan
+
+
 def test_all_any_cleanup_at_single_predicate_case() -> None:
     plan = pl.LazyFrame({"a": [1], "b": [2]}).select(["a"]).drop_nulls().explain()
     assert "horizontal" not in plan
@@ -1372,7 +1405,9 @@ def test_repeated_slice_pushdown_26815() -> None:
     )
 
     plan = q.explain()
-    assert plan.index("SLICED UNION: (3, 5)") > plan.index("SLICE[offset: -3, len: 3]")
+    assert plan.index("SLICED UNION[maintain_order: true]: (3, 5)") > plan.index(
+        "SLICE[offset: -3, len: 3]"
+    )
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [5, 6, 7]}))
 
 

@@ -36,18 +36,11 @@ pub(super) fn convert_functions(
                 A::Max => IA::Max,
                 A::Sum => IA::Sum,
                 A::ToList => IA::ToList,
-                A::Unique(stable) => IA::Unique(stable),
-                A::NUnique => IA::NUnique,
                 A::Std(v) => IA::Std(v),
                 A::Var(v) => IA::Var(v),
                 A::Mean => IA::Mean,
                 A::Median => IA::Median,
-                #[cfg(feature = "array_any_all")]
-                A::Any => IA::Any,
-                #[cfg(feature = "array_any_all")]
-                A::All => IA::All,
                 A::Sort(sort_options) => IA::Sort(sort_options),
-                A::Reverse => IA::Reverse,
                 A::ArgMin => IA::ArgMin,
                 A::ArgMax => IA::ArgMax,
                 A::Get(v) => IA::Get(v),
@@ -177,15 +170,8 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "diff")]
                 L::Diff { n, null_behavior } => IL::Diff { n, null_behavior },
                 L::Sort(sort_options) => IL::Sort(sort_options),
-                L::Reverse => IL::Reverse,
-                L::Unique(v) => IL::Unique(v),
-                L::NUnique => IL::NUnique,
                 #[cfg(feature = "list_sets")]
                 L::SetOperation(set_operation) => IL::SetOperation(set_operation),
-                #[cfg(feature = "list_any_all")]
-                L::Any => IL::Any,
-                #[cfg(feature = "list_any_all")]
-                L::All => IL::All,
                 L::Join(v) => IL::Join(v),
                 #[cfg(feature = "dtype-array")]
                 L::ToArray(v) => IL::ToArray(v),
@@ -452,6 +438,8 @@ pub(super) fn convert_functions(
             I::Boolean(match boolean_function {
                 B::Any { ignore_nulls } => IB::Any { ignore_nulls },
                 B::All { ignore_nulls } => IB::All { ignore_nulls },
+                B::IsEmpty { ignore_nulls } => IB::IsEmpty { ignore_nulls },
+                B::HasNulls => IB::HasNulls,
                 B::IsNull => IB::IsNull,
                 B::IsNotNull => IB::IsNotNull,
                 B::IsFinite => IB::IsFinite,
@@ -784,7 +772,6 @@ pub(super) fn convert_functions(
                     e[1].dtype(ctx.schema, ctx.arena)?.clone(),
                 ];
                 let supertype = try_get_supertype(&dtypes[0], &dtypes[1])?;
-
                 for i in 0..2 {
                     if dtypes[i] != supertype {
                         let node = ctx.arena.add(AExpr::Cast {
@@ -794,6 +781,12 @@ pub(super) fn convert_functions(
                         });
                         e[i] = ExprIR::new(node, e[i].output_name_inner().clone());
                     }
+                }
+            } else {
+                let lhs = e[0].dtype(ctx.schema, ctx.arena)?;
+                let rhs = e[1].dtype(ctx.schema, ctx.arena)?;
+                if lhs != rhs {
+                    polars_bail!(SchemaMismatch: "type {} is incompatible with expected type {}", rhs, lhs);
                 }
             }
             I::ConcatExpr { rechunk: false }
@@ -809,6 +802,7 @@ pub(super) fn convert_functions(
         },
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
+        F::Quantile { method } => I::Quantile { method },
         #[cfg(feature = "mode")]
         F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]

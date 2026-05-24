@@ -39,7 +39,7 @@ impl GroupByDynamicExec {
         };
 
         let (mut time_key, bounds, groups) = df.group_by_dynamic(group_by, &self.options)?;
-        POOL.install(|| {
+        RAYON.install(|| {
             keys.iter_mut().for_each(|key| {
                 unsafe { *key = key.agg_first(&groups) };
             })

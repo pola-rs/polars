@@ -10,8 +10,6 @@ use super::*;
 use crate::chunked_array::array::count::array_count_matches;
 use crate::chunked_array::array::count::count_boolean_bits;
 use crate::chunked_array::array::sum_mean::sum_with_nulls;
-#[cfg(feature = "array_any_all")]
-use crate::prelude::array::any_all::{array_all, array_any};
 use crate::prelude::array::get::array_get;
 use crate::prelude::array::join::array_join;
 use crate::prelude::array::sum_mean::sum_array_numerical;
@@ -77,46 +75,10 @@ pub trait ArrayNameSpace: AsArray {
         dispersion::var_with_nulls(ca, ddof)
     }
 
-    fn array_unique(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_array();
-        ca.try_apply_amortized_to_list(|s| s.as_ref().unique())
-    }
-
-    fn array_unique_stable(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_array();
-        ca.try_apply_amortized_to_list(|s| s.as_ref().unique_stable())
-    }
-
-    fn array_n_unique(&self) -> PolarsResult<IdxCa> {
-        let ca = self.as_array();
-        ca.try_apply_amortized_generic(|opt_s| {
-            let opt_v = opt_s.map(|s| s.as_ref().n_unique()).transpose()?;
-            Ok(opt_v.map(|idx| idx as IdxSize))
-        })
-    }
-
-    #[cfg(feature = "array_any_all")]
-    fn array_any(&self) -> PolarsResult<Series> {
-        let ca = self.as_array();
-        array_any(ca)
-    }
-
-    #[cfg(feature = "array_any_all")]
-    fn array_all(&self) -> PolarsResult<Series> {
-        let ca = self.as_array();
-        array_all(ca)
-    }
-
     fn array_sort(&self, options: SortOptions) -> PolarsResult<ArrayChunked> {
         let ca = self.as_array();
         // SAFETY: Sort only changes the order of the elements in each subarray.
         unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().sort_with(options)) }
-    }
-
-    fn array_reverse(&self) -> ArrayChunked {
-        let ca = self.as_array();
-        // SAFETY: Reverse only changes the order of the elements in each subarray
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
     }
 
     fn array_arg_min(&self) -> IdxCa {

@@ -1682,7 +1682,7 @@ def test_cast_datetime_to_time(unit: TimeUnit) -> None:
 
 
 def test_init_categorical() -> None:
-    for values in [[None], ["foo", "bar"], [None, "foo", "bar"]]:
+    for values in ([None], ["foo", "bar"], [None, "foo", "bar"]):
         expected = pl.Series("a", values, dtype=pl.String).cast(pl.Categorical)
         a = pl.Series("a", values, dtype=pl.Categorical)
         assert_series_equal(a, expected)
@@ -2492,3 +2492,28 @@ def test_full_null_cast_to_empty_struct_23276() -> None:
 
     s = pl.Series([None, None, None])
     assert s.cast(pl.Struct({})).to_list() == [None, None, None]
+
+
+def test_is_sorted_struct_27613() -> None:
+    s = pl.Series([{"x": 1, "y": 1}, {"x": 1, "y": 2}, {"x": 2, "y": 0}])
+    assert s.is_sorted()
+    assert not s.is_sorted(descending=True)
+
+    s = pl.Series([{"x": 2, "y": 0}, {"x": 1, "y": 2}, {"x": 1, "y": 1}])
+    assert s.is_sorted(descending=True)
+    assert not s.is_sorted()
+
+    # nulls first, ascending
+    s = pl.Series([None, {"x": 1}, {"x": 2}])
+    assert s.is_sorted(nulls_last=False)
+    assert not s.is_sorted(nulls_last=True)
+
+    # nulls last, ascending
+    s = pl.Series([{"x": 1}, {"x": 2}, None])
+    assert s.is_sorted(nulls_last=True)
+    assert not s.is_sorted(nulls_last=False)
+
+    # nulls last, descending
+    s = pl.Series([{"x": 2}, {"x": 1}, None])
+    assert s.is_sorted(descending=True, nulls_last=True)
+    assert not s.is_sorted(descending=True, nulls_last=False)

@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.39.3";
+pub static PYPOLARS_VERSION: &str = "1.41.0";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -35,7 +35,6 @@ use crate::dataframe::PyDataFrame;
 use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
-use crate::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -118,7 +117,6 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyExpr>().unwrap();
     m.add_class::<PyDataTypeExpr>().unwrap();
     m.add_class::<PySelector>().unwrap();
-    m.add_class::<PyStringCacheHolder>().unwrap();
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
@@ -278,6 +276,14 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "parquet")]
     m.add_wrapped(wrap_pyfunction!(functions::read_parquet_metadata))
         .unwrap();
+    #[cfg(all(feature = "parquet", feature = "json"))]
+    m.add_wrapped(wrap_pyfunction!(
+        functions::_bench_parquet_metadata_bincode_size
+    ))
+    .unwrap();
+    #[cfg(all(feature = "parquet", feature = "json"))]
+    m.add_wrapped(wrap_pyfunction!(functions::_parquet_metadata_pruned_json))
+        .unwrap();
     #[cfg(feature = "clipboard")]
     m.add_wrapped(wrap_pyfunction!(functions::read_clipboard_string))
         .unwrap();
@@ -291,12 +297,6 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::thread_pool_size))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::enable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::disable_string_cache))
-        .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::using_string_cache))
         .unwrap();
 
     // Numeric formatting

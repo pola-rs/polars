@@ -1,26 +1,26 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
+use polars_async::executor;
 use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
+use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::hot_groups::{HotGrouper, new_hash_hot_grouper};
 use polars_expr::reduce::GroupedReduction;
-use polars_ooc::AccessPattern::NoPattern;
-use polars_ooc::mm;
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::reuse_vec::reuse_vec;
 use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{IdxSize, UnitVec};
 use rayon::prelude::*;
 use tokio::sync::mpsc::{Receiver, channel};
 
 use super::compute_node_prelude::*;
-use crate::async_executor;
 use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -47,7 +47,7 @@ struct LocalGroupBySinkState {
     // for partition p, where start, stop are:
     // let start = morsel_idxs_offsets[i * num_partitions + p];
     // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
-    cold_morsels: Vec<(usize, u64, HashKeys, Token)>,
+    cold_morsels: Vec<(usize, u64, HashKeys, SpillFrame)>,
     morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
     morsel_idxs_offsets_per_p: Vec<usize>,
 
@@ -143,6 +143,7 @@ impl GroupBySinkState {
         receivers: Vec<Receiver<(usize, Morsel)>>,
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+        spill_ctx: &'env MostRecentSpillContext,
     ) {
         for (mut recv, local) in receivers.into_iter().zip(&mut self.locals) {
             let key_selectors_per_input = &self.key_selectors_per_input;
@@ -229,8 +230,8 @@ impl GroupBySinkState {
                             local
                                 .morsel_idxs_offsets_per_p
                                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
-                            let token = mm().store(cold_df, NoPattern).await;
-                            local.cold_morsels.push((input_idx, seq, cold_keys, token));
+                            let sf = SpillFrame::new(cold_df, spill_ctx).await;
+                            local.cold_morsels.push((input_idx, seq, cold_keys, sf));
                         }
                     }
 
@@ -250,7 +251,7 @@ impl GroupBySinkState {
 
     fn combine_locals(&mut self) -> PolarsResult<Vec<GroupByPartition>> {
         // Finalize pre-aggregations.
-        POOL.install(|| {
+        RAYON.install(|| {
             self.locals
                 .as_mut_slice()
                 .into_par_iter()
@@ -305,7 +306,7 @@ impl GroupBySinkState {
         let grouped_reductions_template = &self.grouped_reductions;
         let grouped_reduction_cols = &self.grouped_reduction_cols;
 
-        async_executor::task_scope(|s| {
+        executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local = Arc::new(morsels_per_local);
@@ -352,8 +353,8 @@ impl GroupBySinkState {
                         }
 
                         for (i, morsel) in l_morsels.iter().enumerate() {
-                            let (input_idx, seq_id, keys, token) = morsel;
-                            let morsel_df = mm().df(token).await;
+                            let (input_idx, seq_id, keys, sf) = morsel;
+                            let morsel_df = sf.get().await;
                             unsafe {
                                 let p_morsel_idxs_start =
                                     l.morsel_idxs_offsets_per_p[i * num_partitions + p];
@@ -382,11 +383,11 @@ impl GroupBySinkState {
                                         &group_idxs,
                                         *seq_id,
                                     )?;
-                                    in_cols.clear();
+                                    in_cols = reuse_vec(in_cols);
                                 }
                             }
-                            in_cols = in_cols.into_iter().map(|_| unreachable!()).collect();
                         }
+                        in_cols = reuse_vec(in_cols);
 
                         if let Some(l) = Arc::into_inner(l_morsels) {
                             // If we're the last thread to process this set of morsels we're probably
@@ -474,7 +475,7 @@ impl GroupBySinkState {
             drop(arc_pre_aggs_per_local);
             drop(drop_q_send);
 
-            polars_io::pl_async::get_runtime().block_on(async move {
+            ASYNC.block_on(async move {
                 for handle in join_handles {
                     handle.await?;
                 }
@@ -484,7 +485,7 @@ impl GroupBySinkState {
         })?;
 
         // Drop remaining local state in parallel.
-        POOL.install(|| {
+        RAYON.install(|| {
             core::mem::take(&mut self.locals)
                 .into_par_iter()
                 .with_max_len(1)
@@ -525,6 +526,7 @@ pub struct GroupByNode {
     num_inputs: usize,
     num_pipelines: usize,
     output_schema: Arc<Schema>,
+    spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl GroupByNode {
@@ -590,6 +592,7 @@ impl GroupByNode {
             num_inputs,
             num_pipelines,
             output_schema,
+            spill_ctx: MostRecentSpillContext::new(),
         }
     }
 }
@@ -621,7 +624,7 @@ impl ComputeNode for GroupByNode {
                     unreachable!()
                 };
                 let partitions = sink.combine_locals()?;
-                let dfs = POOL.install(|| {
+                let dfs = RAYON.install(|| {
                     partitions
                         .into_par_iter()
                         .map(|p| p.into_df(&self.key_schema, &self.output_schema))
@@ -698,7 +701,7 @@ impl ComputeNode for GroupByNode {
                         }
                     }
                 }
-                sink.spawn(scope, receivers, state, join_handles)
+                sink.spawn(scope, receivers, state, join_handles, &self.spill_ctx)
             },
             GroupByState::Source(source) => {
                 assert!(recv_ports[0].is_none());

@@ -191,9 +191,9 @@ impl LazyFrame {
         self
     }
 
-    #[cfg(feature = "new_streaming")]
-    pub fn with_new_streaming(mut self, toggle: bool) -> Self {
-        self.opt_state.set(OptFlags::NEW_STREAMING, toggle);
+    #[cfg(feature = "streaming")]
+    pub fn with_streaming(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::STREAMING, toggle);
         self
     }
 
@@ -624,17 +624,15 @@ impl LazyFrame {
     pub fn collect_with_engine(mut self, engine: Engine) -> PolarsResult<QueryResult> {
         let engine = match engine {
             Engine::Streaming => Engine::Streaming,
-            _ if std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1") => {
-                Engine::Streaming
-            },
+            _ if std::env::var("POLARS_FORCE_STREAMING").as_deref() == Ok("1") => Engine::Streaming,
             Engine::Auto => Engine::InMemory,
             v => v,
         };
 
         if engine != Engine::Streaming
-            && std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1")
+            && std::env::var("POLARS_AUTO_STREAMING").as_deref() == Ok("1")
         {
-            feature_gated!("new_streaming", {
+            feature_gated!("streaming", {
                 if let Some(r) = self.clone()._collect_with_streaming_suppress_todo_panic() {
                     return r;
                 }
@@ -642,7 +640,7 @@ impl LazyFrame {
         }
         match engine {
             Engine::Streaming => {
-                feature_gated!("new_streaming", self = self.with_new_streaming(true))
+                feature_gated!("streaming", self = self.with_streaming(true))
             },
             Engine::Gpu => self = self.with_gpu(true),
             _ => (),
@@ -653,7 +651,7 @@ impl LazyFrame {
         ir_plan.ensure_root_node_is_sink();
 
         match engine {
-            Engine::Streaming => feature_gated!("new_streaming", {
+            Engine::Streaming => feature_gated!("streaming", {
                 polars_stream::run_query(
                     ir_plan.lp_top,
                     &mut ir_plan.lp_arena,
@@ -769,7 +767,8 @@ impl LazyFrame {
         let runner = move || {
             // We use a tokio spawn_blocking here as it has a high blocking
             // thread pool limit.
-            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+
+            polars_core::runtime::ASYNC.spawn_blocking(move || {
                 if let Err(e) = ldf.collect_with_engine(engine) {
                     runner_send.send(Err(e)).ok();
                 }
@@ -843,11 +842,11 @@ impl LazyFrame {
     }
 
     /// Collect with the streaming engine. Returns `None` if the streaming engine panics with a todo!.
-    #[cfg(feature = "new_streaming")]
+    #[cfg(feature = "streaming")]
     fn _collect_with_streaming_suppress_todo_panic(
         mut self,
     ) -> Option<PolarsResult<polars_core::query_result::QueryResult>> {
-        self.opt_state |= OptFlags::NEW_STREAMING;
+        self.opt_state |= OptFlags::STREAMING;
         let mut ir_plan = match self.to_alp_optimized() {
             Ok(v) => v,
             Err(e) => return Some(Err(e)),
@@ -867,7 +866,7 @@ impl LazyFrame {
             Ok(v) => Some(v),
             Err(e) => {
                 // Fallback to normal engine if error is due to not being implemented
-                // and auto_new_streaming is set, otherwise propagate error.
+                // and auto_streaming is set, otherwise propagate error.
                 if e.downcast_ref::<&str>()
                     .is_some_and(|s| s.starts_with("not yet implemented"))
                 {
@@ -1416,6 +1415,18 @@ impl LazyFrame {
         JoinBuilder::new(self)
     }
 
+    /// Gathers rows from this DataFrame based on the indices in idxs.
+    ///
+    /// idxs must only have a single column of indices.
+    pub fn gather(self, idxs: LazyFrame, null_on_oob: bool) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self
+            .get_plan_builder()
+            .gather(idxs.logical_plan, null_on_oob)
+            .build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
     /// Add or replace a column, given as an expression, to a DataFrame.
     ///
     /// # Example
@@ -1942,7 +1953,12 @@ impl LazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    pub fn merge_sorted<S>(self, other: LazyFrame, key: S) -> PolarsResult<LazyFrame>
+    pub fn merge_sorted<S>(
+        self,
+        other: LazyFrame,
+        key: S,
+        maintain_order: bool,
+    ) -> PolarsResult<LazyFrame>
     where
         S: Into<PlSmallStr>,
     {
@@ -1952,6 +1968,7 @@ impl LazyFrame {
             input_left: Arc::new(self.logical_plan),
             input_right: Arc::new(other.logical_plan),
             key,
+            maintain_order,
         };
         Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
@@ -2377,11 +2394,11 @@ impl JoinBuilder {
 }
 
 pub const BUILD_STREAMING_EXECUTOR: Option<polars_mem_engine::StreamingExecutorBuilder> = {
-    #[cfg(not(feature = "new_streaming"))]
+    #[cfg(not(feature = "streaming"))]
     {
         None
     }
-    #[cfg(feature = "new_streaming")]
+    #[cfg(feature = "streaming")]
     {
         Some(polars_stream::build_streaming_query_executor)
     }

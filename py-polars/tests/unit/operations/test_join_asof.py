@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import io
 import itertools
 import math
 import random
@@ -8,6 +9,7 @@ import warnings
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
+import hypothesis.strategies as st
 import numpy as np
 import pytest
 from hypothesis import given
@@ -1670,6 +1672,60 @@ def test_join_asof_nans(strategy: AsofJoinStrategy) -> None:
     assert_frame_equal(actual, expected)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Sortedness of columns cannot be checked when 'by' groups provided"
+)
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+@pytest.mark.parametrize("allow_exact_matches", [False, True])
+@given(
+    df_left=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int32]),
+    df_right=dataframes(min_cols=1, max_cols=1, allowed_dtypes=[pl.Int32]),
+    data=st.data(),
+)
+def test_join_asof_group_matches_nogroup(
+    df_left: pl.DataFrame,
+    df_right: pl.DataFrame,
+    strategy: AsofJoinStrategy,
+    allow_exact_matches: bool,
+    data: st.DataObject,
+) -> None:
+    def groups(n: int) -> st.SearchStrategy[list[int | None]]:
+        return st.lists(st.sampled_from([None, 0]), min_size=n, max_size=n)
+
+    df_left = df_left.rename({"col0": "key"}).sort("key")
+    groups_left = pl.Series(data.draw(groups(len(df_left))), dtype=pl.Int32)
+    df_left = df_left.with_columns(group=groups_left).with_row_index()
+    df_right = df_right.rename({"col0": "key"}).sort("key")
+    groups_right = pl.Series(data.draw(groups(len(df_right))), dtype=pl.Int32)
+    df_right = df_right.with_columns(group=groups_right).with_row_index()
+
+    q_grouped = df_left.lazy().join_asof(
+        df_right.lazy(),
+        on="key",
+        by="group",
+        strategy=strategy,
+        allow_exact_matches=allow_exact_matches,
+    )
+    q_ungrouped = (
+        df_left.join_asof(
+            df_right.filter(pl.col("group").is_not_null()),
+            on="key",
+            strategy=strategy,
+            allow_exact_matches=allow_exact_matches,
+        )
+        .drop("group_right")
+        .with_columns(
+            pl.when(pl.col("group").is_not_null())
+            .then(pl.col("index_right"))
+            .alias("index_right")
+        )
+    )
+
+    grouped = q_grouped.collect()
+    ungrouped = q_ungrouped
+    assert_frame_equal(grouped, ungrouped)
+
+
 def test_join_asof_by_nulls_27165() -> None:
     dataframe = functools.partial(
         pl.DataFrame,
@@ -1686,3 +1742,97 @@ def test_join_asof_by_nulls_27165() -> None:
         {"index": 0, "key": [1.0], "group": [0], "index_right": [None]}
     )
     assert_frame_equal(actual, expected)
+
+
+def test_join_asof_by_nulls_27165_2() -> None:
+    dataframe = functools.partial(
+        pl.DataFrame,
+        schema_overrides={
+            "group": pl.Int32,
+            "index": pl.get_index_type(),
+            "index_right": pl.get_index_type(),
+        },
+    )
+    left = dataframe({"index": [0, 1], "key": [None, 0.0], "group": [None, 0]})
+    right = dataframe(
+        {
+            "index": [0, 1, 2, 3],
+            "key": [None, None, None, 1.0],
+            "group": [None, None, None, 0],
+        }
+    )
+
+    actual = (
+        left.lazy()
+        .join_asof(
+            right.lazy(),
+            on="key",
+            by="group",
+            strategy="nearest",
+            allow_exact_matches=False,
+        )
+        .collect()
+    )
+    expected = (
+        left.lazy()
+        .join_asof(
+            right.lazy(), on="key", strategy="nearest", allow_exact_matches=False
+        )
+        .collect()
+        .drop("group_right")
+    )
+    assert_frame_equal(actual, expected)
+
+
+def test_join_asof_maintain_order_left_27526() -> None:
+    N_IDS = 20
+    N_TS = 100_000
+    data = io.BytesIO()
+    metadata = io.BytesIO()
+
+    pl.DataFrame(
+        {
+            "id": [i for i in range(N_IDS) for _ in range(N_TS)],
+            "ts": [j for _ in range(N_IDS) for j in range(N_TS)],
+        }
+    ).sort("id", "ts").write_parquet(data)
+    pl.DataFrame(
+        {
+            "id": range(N_IDS),
+            "name": [f"name_{i}" for i in range(N_IDS)],
+        }
+    ).write_parquet(metadata)
+
+    joined = pl.scan_parquet(data.getvalue()).join(
+        pl.scan_parquet(metadata.getvalue()),
+        on="id",
+        how="left",
+        maintain_order="left_right",
+    )
+    q = joined.set_sorted("id", "ts").join_asof(
+        pl.scan_parquet(data.getvalue()).set_sorted("id", "ts"),
+        on="ts",
+        by="id",
+        check_sortedness=False,
+    )
+    assert q.collect(engine="streaming")["id"].is_sorted(), (
+        "expected asof_join to maintain left ordering"
+    )
+
+
+def test_join_asof_buffer_ordering_27619() -> None:
+    n = 10
+    for n_dataframes in range(1, 20):
+        linspace = pl.select(pl.linear_space(0, 1, n).alias("a"))
+        left_dfs = pl.concat(
+            [linspace.lazy()]
+            + [linspace.slice(0, 0).lazy() for _ in range(n_dataframes - 1)]
+        )
+        left_lazy = left_dfs.set_sorted("a")
+        right_lazy = left_dfs.select(pl.col("a") - 0.5).set_sorted("a")
+        q = left_lazy.join_asof(
+            right_lazy,
+            on="a",
+            check_sortedness=False,
+        )
+        assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

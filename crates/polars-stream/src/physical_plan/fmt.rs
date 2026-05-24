@@ -31,7 +31,9 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } | K::InMemoryJoin { .. } => Self::InMemoryFallback,
+            K::InMemoryMap { .. } | K::InMemoryJoin { .. } | K::ColumnarFunction { .. } => {
+                Self::InMemoryFallback
+            },
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -40,7 +42,9 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::Multiplexer { .. } => Self::MemoryIntensive,
+            | K::CrossJoin { .. }
+            | K::Multiplexer { .. }
+            | K::Gather { .. } => Self::MemoryIntensive,
             #[cfg(feature = "iejoin")]
             K::RangeJoin { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
@@ -358,6 +362,23 @@ fn visualize_plan_rec(
             }
             (label, from_ref(input))
         },
+        PhysNodeKind::ColumnarFunction {
+            inputs,
+            func: _,
+            arg_map: _,
+            output_name,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("columnar-function");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                write!(f, "{output_name} = {format_str}(...)").unwrap();
+            }
+            (label, &inputs[..])
+        },
         PhysNodeKind::SortedGroupBy {
             input,
             key,
@@ -454,6 +475,10 @@ fn visualize_plan_rec(
             },
             &[*input][..],
         ),
+        #[cfg(feature = "interpolate")]
+        PhysNodeKind::Interpolate { input, method } => {
+            (format!("interpolate\\nmethod: {method:?}"), &[*input][..])
+        },
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
         PhysNodeKind::SortedUnique { input, keys } => {
@@ -805,7 +830,9 @@ fn visualize_plan_rec(
         PhysNodeKind::MergeSorted {
             input_left,
             input_right,
+            ..
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::Gather { input, idxs, .. } => ("gather".to_string(), &[*input, *idxs][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]

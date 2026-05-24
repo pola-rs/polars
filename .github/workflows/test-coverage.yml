@@ -25,6 +25,10 @@ defaults:
 env:
   RUSTFLAGS: '-C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target'
   RUST_BACKTRACE: 1
+  # Coverage data comes from instrumentation, not DWARF symbols.
+  # Keep macOS test binaries smaller to avoid linker/disk exhaustion.
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
   LLVM_PROFILE_FILE: ${{ github.workspace }}/target/polars-%p-%3m.profraw
   CARGO_LLVM_COV: 1
   CARGO_LLVM_COV_SHOW_ENV: 1
@@ -49,6 +53,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Prepare coverage
@@ -126,6 +131,7 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
+          env-vars: ImageVersion
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Prepare coverage
@@ -152,7 +158,7 @@ jobs:
       - name: Run Python tests - streaming
         working-directory: py-polars
         env:
-          POLARS_AUTO_NEW_STREAMING: 1
+          POLARS_AUTO_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
         run: >
           pytest
@@ -164,7 +170,7 @@ jobs:
       - name: Run Python tests - streaming with morsel size 4
         working-directory: py-polars
         env:
-          POLARS_AUTO_NEW_STREAMING: 1
+          POLARS_AUTO_STREAMING: 1
           POLARS_IDEAL_MORSEL_SIZE: 4
           POLARS_TIMEOUT_MS: 60000
         run: >

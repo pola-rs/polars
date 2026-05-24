@@ -30,18 +30,25 @@ class ListNameSpace:
     def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
-    def all(self) -> Series:
+    def all(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether all boolean values in a list are true.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `True`.
 
         Examples
         --------
@@ -62,18 +69,25 @@ class ListNameSpace:
         ]
         """
 
-    def any(self) -> Series:
+    def any(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether any boolean value in a list is true.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------

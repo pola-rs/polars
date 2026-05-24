@@ -5,11 +5,7 @@ use polars_core::utils::materialize_dyn_int;
 use super::*;
 
 impl IRFunctionExpr {
-    pub(crate) fn get_field(
-        &self,
-        _input_schema: &Schema,
-        fields: &[Field],
-    ) -> PolarsResult<Field> {
+    pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
 
         let mapper = FieldsMapper { fields };
@@ -135,6 +131,7 @@ impl IRFunctionExpr {
                 has_min: _,
                 has_max: _,
             } => mapper.with_same_dtype(),
+            Quantile { method: _ } => mapper.moment_dtype(),
             #[cfg(feature = "mode")]
             Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]

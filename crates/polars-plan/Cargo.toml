@@ -36,6 +36,7 @@ chrono-tz = { workspace = true, optional = true }
 either = { workspace = true }
 futures = { workspace = true }
 hashbrown = { workspace = true }
+indexmap = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
 percent-encoding = { workspace = true }
@@ -172,7 +173,7 @@ diff = ["polars-ops/diff"]
 pct_change = ["polars-ops/pct_change"]
 moment = ["polars-ops/moment"]
 abs = ["polars-ops/abs"]
-random = ["polars-core/random"]
+random = ["polars-core/random", "polars-ops/random"]
 dynamic_group_by = ["polars-core/dynamic_group_by", "dtype-date", "dtype-datetime"]
 ewma = ["polars-ops/ewma"]
 ewma_by = ["polars-ops/ewma_by"]
@@ -200,9 +201,7 @@ cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = ["polars-ops/fused"]
-array_any_all = ["polars-ops/array_any_all", "dtype-array"]
 list_sets = ["polars-ops/list_sets"]
-list_any_all = ["polars-ops/list_any_all"]
 list_drop_nulls = ["polars-ops/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample"]
 cutqcut = ["polars-ops/cutqcut"]
@@ -243,7 +242,6 @@ features = [
   "dtype-array",
   "is_last_distinct",
   "dtype-time",
-  "array_any_all",
   "month_start",
   "month_end",
   "offset_by",
@@ -254,7 +252,6 @@ features = [
   "python",
   "cloud",
   "string_to_integer",
-  "list_any_all",
   "pct_change",
   "list_gather",
   "list_filter",

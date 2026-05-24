@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "json")]
@@ -9,7 +10,6 @@ use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
 use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::{DynByteSourceBuilder, FileReader, NDJsonFileReader};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
 use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::ReaderCapabilities;
 use crate::nodes::io_sources::ndjson::chunk_reader::ChunkReaderBuilder;

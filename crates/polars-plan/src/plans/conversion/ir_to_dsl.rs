@@ -155,20 +155,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 }
                 .into()
             },
-            IRAggExpr::Quantile {
-                expr,
-                quantile,
-                method,
-            } => {
-                let expr = node_to_expr(expr, expr_arena);
-                let quantile = node_to_expr(quantile, expr_arena);
-                AggExpr::Quantile {
-                    expr: Arc::new(expr),
-                    quantile: Arc::new(quantile),
-                    method,
-                }
-                .into()
-            },
             IRAggExpr::Sum(expr) => {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Sum(Arc::new(exp)).into()
@@ -324,18 +310,11 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Max => A::Max,
                 IA::Sum => A::Sum,
                 IA::ToList => A::ToList,
-                IA::Unique(v) => A::Unique(v),
-                IA::NUnique => A::NUnique,
                 IA::Std(v) => A::Std(v),
                 IA::Var(v) => A::Var(v),
                 IA::Mean => A::Mean,
                 IA::Median => A::Median,
-                #[cfg(feature = "array_any_all")]
-                IA::Any => A::Any,
-                #[cfg(feature = "array_any_all")]
-                IA::All => A::All,
                 IA::Sort(v) => A::Sort(v),
-                IA::Reverse => A::Reverse,
                 IA::ArgMin => A::ArgMin,
                 IA::ArgMax => A::ArgMax,
                 IA::Get(v) => A::Get(v),
@@ -445,15 +424,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "diff")]
                 IL::Diff { n, null_behavior } => L::Diff { n, null_behavior },
                 IL::Sort(sort_options) => L::Sort(sort_options),
-                IL::Reverse => L::Reverse,
-                IL::Unique(v) => L::Unique(v),
-                IL::NUnique => L::NUnique,
                 #[cfg(feature = "list_sets")]
                 IL::SetOperation(set_operation) => L::SetOperation(set_operation),
-                #[cfg(feature = "list_any_all")]
-                IL::Any => L::Any,
-                #[cfg(feature = "list_any_all")]
-                IL::All => L::All,
                 IL::Join(v) => L::Join(v),
                 #[cfg(feature = "dtype-array")]
                 IL::ToArray(v) => L::ToArray(v),
@@ -696,6 +668,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             F::Boolean(match f {
                 IB::Any { ignore_nulls } => B::Any { ignore_nulls },
                 IB::All { ignore_nulls } => B::All { ignore_nulls },
+                IB::IsEmpty { ignore_nulls } => B::IsEmpty { ignore_nulls },
+                IB::HasNulls => B::HasNulls,
                 IB::IsNull => B::IsNull,
                 IB::IsNotNull => B::IsNotNull,
                 IB::IsFinite => B::IsFinite,
@@ -929,6 +903,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Shift => F::Shift,
         IF::DropNans => F::DropNans,
         IF::DropNulls => F::DropNulls,
+        IF::Quantile { method } => F::Quantile { method },
         #[cfg(feature = "mode")]
         IF::Mode { maintain_order } => F::Mode { maintain_order },
         #[cfg(feature = "moment")]

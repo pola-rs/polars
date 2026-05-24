@@ -1,5 +1,5 @@
 #[cfg(feature = "async")]
-use polars_io::pl_async;
+use polars_core::runtime::ASYNC;
 use polars_utils::unique_id::UniqueId;
 
 use super::*;
@@ -9,7 +9,7 @@ pub struct CachePrefill {
     id: UniqueId,
     hit_count: u32,
     /// Signals that this is a scan executed async in the streaming engine and needs extra handling
-    is_new_streaming_scan: bool,
+    is_streaming_scan: bool,
 }
 
 impl CachePrefill {
@@ -18,7 +18,7 @@ impl CachePrefill {
             input,
             id,
             hit_count: 0,
-            is_new_streaming_scan: false,
+            is_streaming_scan: false,
         }
     }
 
@@ -71,7 +71,7 @@ impl Executor for CachePrefiller {
         let parallel_scan_exec_limit = {
             // Note, this needs to be less than the size of the tokio blocking threadpool (which
             // defaults to 512).
-            let parallel_scan_exec_limit = POOL.current_num_threads().min(128);
+            let parallel_scan_exec_limit = RAYON.current_num_threads().min(128);
 
             if state.verbose() {
                 eprintln!(
@@ -99,10 +99,10 @@ impl Executor for CachePrefiller {
             state.branch_idx += 1;
 
             #[cfg(feature = "async")]
-            if prefill.is_new_streaming_scan {
+            if prefill.is_streaming_scan {
                 let parallel_scan_exec_limit = parallel_scan_exec_limit.clone();
 
-                scan_handles.push(pl_async::get_runtime().spawn(async move {
+                scan_handles.push(ASYNC.spawn(async move {
                     let _permit = parallel_scan_exec_limit.acquire().await.unwrap();
 
                     tokio::task::spawn_blocking(move || {
@@ -130,7 +130,7 @@ impl Executor for CachePrefiller {
 
             #[cfg(feature = "async")]
             for handle in scan_handles.drain(..) {
-                pl_async::get_runtime().block_on(handle).unwrap()?;
+                ASYNC.block_on(handle).unwrap()?;
             }
 
             let _df = prefill.execute(&mut state)?;
@@ -146,7 +146,7 @@ impl Executor for CachePrefiller {
 
         #[cfg(feature = "async")]
         for handle in scan_handles {
-            pl_async::get_runtime().block_on(handle).unwrap()?;
+            ASYNC.block_on(handle).unwrap()?;
         }
 
         if state.verbose() {

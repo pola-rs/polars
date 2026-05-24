@@ -14,7 +14,6 @@ from typing import (
     ClassVar,
     Literal,
     NoReturn,
-    Union,
     overload,
 )
 
@@ -55,7 +54,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_series_item_by_key
-from polars._utils.unstable import unstable
+from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
@@ -126,12 +125,10 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Generator, Mapping
 
     import jax
-    import numpy.typing as npt
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
-        ArrowArrayExportable,
-        ArrowStreamExportable,
+        ArrayLike,
         BufferInfo,
         ClosedInterval,
         ComparisonOperator,
@@ -171,18 +168,6 @@ elif BUILDING_SPHINX_DOCS:
     # (ref: https://github.com/davidhalter/jedi/issues/2057)
     current_module = sys.modules[__name__]
     current_module.property = sphinx_accessor
-
-ArrayLike = Union[
-    Sequence[Any],
-    "Series",
-    "pa.Array",
-    "pa.ChunkedArray",
-    "np.ndarray[Any, Any]",
-    "pd.Series[Any]",
-    "pd.DatetimeIndex",
-    "ArrowArrayExportable",
-    "ArrowStreamExportable",
-]
 
 
 @expr_dispatch
@@ -904,7 +889,7 @@ class Series:
 
         elif isinstance(other, timedelta) and self.dtype == Duration:
             time_unit = self.dtype.time_unit  # type: ignore[attr-defined]
-            td = timedelta_to_int(other, time_unit)  # type: ignore[arg-type]
+            td = timedelta_to_int(other, time_unit)
             f = get_ffi_func(op + "_<>", Int64, self._s)
             assert f is not None
             return self._from_pyseries(f(td))
@@ -1588,7 +1573,7 @@ class Series:
 
     def __array__(
         self,
-        dtype: npt.DTypeLike | None = None,
+        dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
@@ -1733,9 +1718,9 @@ class Series:
 
             # We're using a regular ufunc, that operates value by value. That
             # means we allowed missing data in the input, so filter it out:
-            validity_mask = self.is_not_null()
+            validity_mask = self.is_not_null() if self.has_nulls() else F.lit(True)
             for arg in inputs:
-                if isinstance(arg, Series):
+                if isinstance(arg, Series) and arg.has_nulls():
                     validity_mask &= arg.is_not_null()
             return (
                 result.to_frame()
@@ -4077,6 +4062,8 @@ class Series:
         """
         Get unique elements in series.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Parameters
         ----------
         maintain_order
@@ -4096,7 +4083,10 @@ class Series:
         """
 
     def gather(
-        self, indices: int | list_[int] | Expr | Series | np.ndarray[Any, Any]
+        self,
+        indices: int | list_[int] | Expr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
     ) -> Series:
         """
         Take values by index.
@@ -4105,6 +4095,11 @@ class Series:
         ----------
         indices
             Index location used for selection.
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            - True  -> set the result to null
+            - False -> raise an error
 
         Examples
         --------
@@ -4115,6 +4110,16 @@ class Series:
         [
             2
             4
+        ]
+
+        Use `null_on_oob=True` to return null for out-of-bounds indices.
+
+        >>> s.gather([1, 10], null_on_oob=True)
+        shape: (2,)
+        Series: 'a' [i64]
+        [
+            2
+            null
         ]
         """
 
@@ -4157,17 +4162,35 @@ class Series:
         """
         return self._s.has_nulls()
 
-    def is_empty(self) -> bool:
+    def is_empty(self, *, ignore_nulls: bool = False) -> bool:
         """
         Check if the Series is empty.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If true a series containing only nulls will also be considered empty.
+            The default is false.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
         >>> s = pl.Series("a", [], dtype=pl.Float32)
         >>> s.is_empty()
         True
+        >>> s = pl.Series("a", [None], dtype=pl.Float32)
+        >>> s.is_empty()
+        False
+        >>> s.is_empty(ignore_nulls=True)
+        True
         """
-        return self.len() == 0
+        if ignore_nulls:
+            msg = "the `ignore_nulls` parameter of `Series.is_empty()` is considered unstable."
+            issue_unstable_warning(msg)
+        return self._s.is_empty(ignore_nulls=ignore_nulls)
 
     def is_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> bool:
         """
@@ -8247,9 +8270,11 @@ class Series:
         """
         Count the number of unique values in this Series.
 
+        `null` is considered to be a unique value for the purposes of this operation.
+
         Examples
         --------
-        >>> s = pl.Series("a", [1, 2, 2, 3])
+        >>> s = pl.Series("a", [1, 2, 2, None])
         >>> s.n_unique()
         3
         """
@@ -8840,10 +8865,6 @@ class Series:
         replace_strict
         str.replace
 
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
-
         Examples
         --------
         Replace a single value by another value. Values that were not replaced remain
@@ -8939,10 +8960,6 @@ class Series:
         --------
         replace
         str.replace
-
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------

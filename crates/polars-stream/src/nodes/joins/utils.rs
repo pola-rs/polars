@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
+use std::ops::{Range, RangeBounds};
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
 use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
+use polars_utils::range::check_range;
 
-use crate::morsel::MorselSeq;
 use crate::pipe::PortReceiver;
 
 #[derive(Clone, Debug)]
@@ -32,7 +33,15 @@ impl DataFrameSearchBuffer {
         self.total_rows
     }
 
-    /// Get the `row_index`th value from the `column` bypassing its validity bitmap.
+    /// Get the `row_index`th value from the `column`.
+    ///
+    /// SAFETY: Caller must ensure that `row_index` is within bounds.
+    pub(super) unsafe fn get_unchecked(&self, column: &str, row_index: usize) -> AnyValue<'_> {
+        unsafe { self.get_bypass_validity(column, row_index, false) }
+    }
+
+    /// Get the `row_index`th value from the `column` potentially bypassing its
+    /// validity bitmap.
     ///
     /// SAFETY: Caller must ensure that `row_index` is within bounds.
     pub(super) unsafe fn get_bypass_validity(
@@ -92,13 +101,11 @@ impl DataFrameSearchBuffer {
     }
 
     fn gc(&mut self) {
-        while let Some((_, df)) = self.dfs_at_offsets.first_key_value() {
-            if self.skip_rows > df.height() {
-                let (_, df) = self.dfs_at_offsets.pop_first().unwrap();
-                self.skip_rows -= df.height();
-            } else {
-                break;
-            }
+        while let Some((_, df)) = self.dfs_at_offsets.first_key_value()
+            && self.skip_rows > df.height()
+        {
+            let (_, gc_df) = self.dfs_at_offsets.pop_first().unwrap();
+            self.skip_rows -= gc_df.height();
         }
     }
 
@@ -108,17 +115,31 @@ impl DataFrameSearchBuffer {
 
     /// Find the index of the first item in the buffer that satisfies `predicate`,
     /// assuming it is first always false and then always true.
-    pub(super) fn binary_search<P>(
+    pub(super) fn binary_search<P, R>(&self, predicate: P, key_col_name: &str, range: R) -> usize
+    where
+        P: Fn(&AnyValue<'_>) -> bool,
+        R: RangeBounds<usize>,
+    {
+        self.binary_search_binary_offset_bypass_validity(predicate, key_col_name, range, false)
+    }
+
+    /// Find the index of the first item in the buffer that satisfies `predicate`,
+    /// assuming it is first always false and then always true.
+    pub(super) fn binary_search_binary_offset_bypass_validity<P, R>(
         &self,
         predicate: P,
         key_col_name: &str,
+        range: R,
         binary_offset_bypass_validity: bool,
     ) -> usize
     where
         P: Fn(&AnyValue<'_>) -> bool,
+        R: RangeBounds<usize>,
     {
-        let mut lower = 0;
-        let mut upper = self.height();
+        let Range {
+            start: mut lower,
+            end: mut upper,
+        } = check_range(range, ..self.height());
         while lower < upper {
             let mid = (lower + upper) / 2;
             let mid_val = unsafe {
@@ -134,7 +155,7 @@ impl DataFrameSearchBuffer {
     }
 
     pub(super) async fn stop_and_buffer_from_pipe(&mut self, port: Option<&mut PortReceiver>) {
-        stop_and_buffer_pipe_contents(port, &mut |df, _| self.push_df(df)).await
+        stop_and_buffer_pipe_contents(port, &mut |df| self.push_df(df)).await
     }
 }
 
@@ -143,7 +164,7 @@ pub(super) async fn stop_and_buffer_pipe_contents<F>(
     port: Option<&mut PortReceiver>,
     buffer_morsel: &mut F,
 ) where
-    F: FnMut(DataFrame, MorselSeq),
+    F: FnMut(DataFrame),
 {
     let Some(port) = port else {
         return;
@@ -151,8 +172,8 @@ pub(super) async fn stop_and_buffer_pipe_contents<F>(
 
     while let Ok(morsel) = port.recv().await {
         morsel.source_token().stop();
-        let (df, seq, _, _) = morsel.into_inner();
-        buffer_morsel(df, seq);
+        let (df, _, _, _) = morsel.into_inner();
+        buffer_morsel(df);
     }
 }
 

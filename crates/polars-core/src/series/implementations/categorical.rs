@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 use crate::prelude::*;
 
 unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
@@ -16,7 +15,7 @@ unsafe impl<T: PolarsCategoricalType> IntoSeries for CategoricalChunked<T> {
 impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
     unsafe fn apply_on_phys<F>(&self, apply: F) -> CategoricalChunked<T>
     where
-        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
+        F: FnOnce(&ChunkedArray<T::PolarsPhysical>) -> ChunkedArray<T::PolarsPhysical>,
     {
         let cats = apply(self.0.physical());
         unsafe { CategoricalChunked::from_cats_and_dtype_unchecked(cats, self.0.dtype().clone()) }
@@ -24,7 +23,9 @@ impl<T: PolarsCategoricalType> SeriesWrap<CategoricalChunked<T>> {
 
     unsafe fn try_apply_on_phys<F>(&self, apply: F) -> PolarsResult<CategoricalChunked<T>>
     where
-        F: Fn(&ChunkedArray<T::PolarsPhysical>) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
+        F: FnOnce(
+            &ChunkedArray<T::PolarsPhysical>,
+        ) -> PolarsResult<ChunkedArray<T::PolarsPhysical>>,
     {
         let cats = apply(self.0.physical())?;
         unsafe {
@@ -53,10 +54,6 @@ macro_rules! impl_cat_series {
             }
             fn _set_flags(&mut self, flags: StatisticsFlags) {
                 self.0.set_flags(flags)
-            }
-
-            unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-                self.0.physical().equal_element(idx_self, idx_other, other)
             }
 
             #[cfg(feature = "zip_with")]
@@ -250,6 +247,10 @@ macro_rules! impl_cat_series {
 
             fn rechunk(&self) -> Series {
                 unsafe { self.apply_on_phys(|cats| cats.rechunk().into_owned()).into_series() }
+            }
+
+            fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+                unsafe { self.apply_on_phys(move |cats| cats.clone().with_validity(validity)).into_series() }
             }
 
             fn new_from_index(&self, index: usize, length: usize) -> Series {

@@ -11,18 +11,11 @@ pub enum IRArrayFunction {
     Max,
     Sum,
     ToList,
-    Unique(bool),
-    NUnique,
     Std(u8),
     Var(u8),
     Mean,
     Median,
-    #[cfg(feature = "array_any_all")]
-    Any,
-    #[cfg(feature = "array_any_all")]
-    All,
     Sort(SortOptions),
-    Reverse,
     ArgMin,
     ArgMax,
     Get(bool),
@@ -76,18 +69,11 @@ impl IRArrayFunction {
             ToList => mapper
                 .ensure_is_array()?
                 .try_map_dtype(map_array_dtype_to_list_dtype),
-            Unique(_) => mapper
-                .ensure_is_array()?
-                .try_map_dtype(map_array_dtype_to_list_dtype),
-            NUnique => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
             Std(_) => mapper.ensure_is_array()?.moment_dtype(),
             Var(_) => mapper.ensure_is_array()?.var_dtype(),
             Mean => mapper.ensure_is_array()?.moment_dtype(),
             Median => mapper.ensure_is_array()?.moment_dtype(),
-            #[cfg(feature = "array_any_all")]
-            Any | All => mapper.ensure_is_array()?.with_dtype(DataType::Boolean),
             Sort(_) => mapper.ensure_is_array()?.with_same_dtype(),
-            Reverse => mapper.ensure_is_array()?.with_same_dtype(),
             ArgMin | ArgMax => mapper.ensure_is_array()?.with_dtype(IDX_DTYPE),
             Get(_) => mapper
                 .ensure_is_array()?
@@ -125,8 +111,6 @@ impl IRArrayFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRArrayFunction as A;
         match self {
-            #[cfg(feature = "array_any_all")]
-            A::Any | A::All => FunctionOptions::elementwise(),
             #[cfg(feature = "is_in")]
             A::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "array_count")]
@@ -138,14 +122,11 @@ impl IRArrayFunction {
             | A::Max
             | A::Sum
             | A::ToList
-            | A::Unique(_)
-            | A::NUnique
             | A::Std(_)
             | A::Var(_)
             | A::Mean
             | A::Median
             | A::Sort(_)
-            | A::Reverse
             | A::ArgMin
             | A::ArgMax
             | A::Get(_)
@@ -198,18 +179,11 @@ impl Display for IRArrayFunction {
             Max => "max",
             Sum => "sum",
             ToList => "to_list",
-            Unique(_) => "unique",
-            NUnique => "n_unique",
             Std(_) => "std",
             Var(_) => "var",
             Mean => "mean",
             Median => "median",
-            #[cfg(feature = "array_any_all")]
-            Any => "any",
-            #[cfg(feature = "array_any_all")]
-            All => "all",
             Sort(_) => "sort",
-            Reverse => "reverse",
             ArgMin => "arg_min",
             ArgMax => "arg_max",
             Get(_) => "get",

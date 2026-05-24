@@ -31,6 +31,7 @@ use super::datetime::{
 };
 use super::{ObjectValue, Wrap, struct_dict};
 use crate::error::PyPolarsErr;
+use crate::interned;
 use crate::py_modules::{pl_series, pl_utils};
 use crate::series::PySeries;
 
@@ -126,7 +127,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Binary(v) => PyBytes::new(py, v).into_bound_py_any(py),
         AnyValue::BinaryOwned(v) => PyBytes::new(py, &v).into_bound_py_any(py),
         AnyValue::Decimal(v, prec, scale) => {
-            let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
+            let convert = utils.getattr(interned::TO_PY_DECIMAL.get(py))?;
             let mut buf = DecimalFmtBuffer::new();
             let s = buf.format_dec128(v, scale, false, false);
             convert.call1((prec, s))
