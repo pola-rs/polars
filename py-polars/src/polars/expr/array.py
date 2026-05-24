@@ -380,7 +380,9 @@ class ExprArrayNameSpace:
         │ [1, 2]    │
         └───────────┘
         """
-        return wrap_expr(self._pyexpr.arr_unique(maintain_order))
+        return self.eval(
+            F.element().unique(maintain_order=maintain_order), as_list=True
+        )
 
     def n_unique(self) -> Expr:
         """
@@ -405,7 +407,7 @@ class ExprArrayNameSpace:
         │ [2, 3, 4]     ┆ 3        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.arr_n_unique())
+        return self.agg(F.element().n_unique())
 
     def to_list(self) -> Expr:
         """
@@ -590,7 +592,7 @@ class ExprArrayNameSpace:
         │ [9, 1, 2]     ┆ [2, 1, 9]     │
         └───────────────┴───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_reverse())
+        return self.eval(F.element().reverse())
 
     def arg_min(self) -> Expr:
         """
