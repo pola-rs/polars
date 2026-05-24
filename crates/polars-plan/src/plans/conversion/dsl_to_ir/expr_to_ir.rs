@@ -322,23 +322,6 @@ pub(super) fn to_aexpr_impl(
                         output_name,
                     )
                 },
-                AggExpr::Quantile {
-                    expr,
-                    quantile,
-                    method,
-                } => {
-                    // Quantile was moved out from IRAggExpr as it is multi-input.
-                    let expr = to_expr_ir(owned(expr), ctx)?;
-                    let quantile = to_expr_ir(owned(quantile), ctx)?;
-                    let output_name = quantile.output_name().clone();
-                    let function = IRFunctionExpr::Quantile { method };
-                    let aexpr = AExpr::Function {
-                        input: vec![expr, quantile],
-                        options: function.function_options(),
-                        function,
-                    };
-                    return Ok((ctx.arena.add(aexpr), output_name));
-                },
                 AggExpr::Sum(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Sum(input), output_name)
