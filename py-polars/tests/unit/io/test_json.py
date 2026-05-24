@@ -512,10 +512,25 @@ def test_json_normalize() -> None:
 
 def test_json_normalize_schema_overrides() -> None:
     data = [{"id": 1, "score": 95}, {"id": 2, "score": 88}]
+
+    # Override an inferred dtype on real data.
     result = pl.json_normalize(data, schema_overrides={"score": pl.Float64})
     assert result.schema == pl.Schema({"id": pl.Int64, "score": pl.Float64})
 
-    result = pl.json_normalize([], schema_overrides={"score": pl.Float64})
+    # schema_overrides wins over an explicit schema for the same column.
+    result = pl.json_normalize(
+        data,
+        schema=pl.Schema({"id": pl.Int32, "score": pl.Int32}),
+        schema_overrides={"score": pl.Float64},
+    )
+    assert result.schema == pl.Schema({"id": pl.Int32, "score": pl.Float64})
+
+    # Empty-data path: schema_overrides is plumbed through to DataFrame().
+    result = pl.json_normalize(
+        [],
+        schema=pl.Schema({"score": pl.Int32}),
+        schema_overrides={"score": pl.Float64},
+    )
     assert result.schema == pl.Schema({"score": pl.Float64})
 
 
