@@ -238,13 +238,13 @@ where
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
     f64: AsPrimitive<T::Native> + From<T::Native>,
 {
-    let init_f64 = init.unwrap_or(0.0) as f64;
+    let init = init.unwrap_or(0.0);
     let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init_f64, det_sum_to_f64).collect_trusted(),
+        false => ca.iter().scan(init, det_sum_to_f64).collect_trusted(),
         true => ca
             .iter()
             .rev()
-            .scan(init_f64, det_sum_to_f64)
+            .scan(init, det_sum_to_f64)
             .collect_reversed(),
     };
     out.with_name(ca.name().clone())
