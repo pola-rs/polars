@@ -510,6 +510,15 @@ def test_json_normalize() -> None:
     }
 
 
+def test_json_normalize_schema_overrides() -> None:
+    data = [{"id": 1, "score": 95}, {"id": 2, "score": 88}]
+    result = pl.json_normalize(data, schema_overrides={"score": pl.Float64})
+    assert result.schema == pl.Schema({"id": pl.Int64, "score": pl.Float64})
+
+    result = pl.json_normalize([], schema_overrides={"score": pl.Float64})
+    assert result.schema == pl.Schema({"score": pl.Float64})
+
+
 def test_empty_json() -> None:
     df = pl.read_json(io.StringIO("{}"))
     assert df.shape == (0, 0)
