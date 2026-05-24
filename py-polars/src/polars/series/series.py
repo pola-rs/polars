@@ -3197,10 +3197,12 @@ class Series:
     def cum_mean(self, *, reverse: bool = False) -> Series:
         """
         Get an array with the cumulative mean computed at every element.
+
         Parameters
         ----------
         reverse
             Reverse the operation.
+
         Examples
         --------
         >>> s = pl.Series("a", [0, 1, 8, 32, 384])

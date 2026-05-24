@@ -3,15 +3,15 @@ use std::ops::{AddAssign, Mul};
 use arity::unary_elementwise_values;
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use num_traits::cast::NumCast;
 use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
-use polars_utils::min_max::MinMax;
-use num_traits::cast::NumCast;
 use polars_utils::kahan_sum::KahanSum;
+use polars_utils::min_max::MinMax;
 
 #[derive(Debug, Clone, Default)]
 pub struct CumMeanState {
@@ -350,10 +350,7 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_sum_with_init(s, reverse, &AnyValue::Null)
 }
 
-fn cum_mean_update<T>(
-    state: &mut CumMeanState,
-    opt_v: Option<T::Native>,
-) -> Option<Option<f64>>
+fn cum_mean_update<T>(state: &mut CumMeanState, opt_v: Option<T::Native>) -> Option<Option<f64>>
 where
     T: PolarsNumericType,
     T::Native: NumCast,
@@ -365,7 +362,7 @@ where
             state.count += 1;
             let mean = state.sum.sum() / state.count as f64;
             Some(Some(mean))
-        }
+        },
         None => Some(None),
     }
 }
@@ -380,9 +377,14 @@ where
     T::Native: NumCast,
 {
     let out: Float64Chunked = if reverse {
-        ca.iter().rev().scan(state, |s, v| cum_mean_update::<T>(s, v)).collect_reversed()
+        ca.iter()
+            .rev()
+            .scan(state, |s, v| cum_mean_update::<T>(s, v))
+            .collect_reversed()
     } else {
-        ca.iter().scan(state, |s, v| cum_mean_update::<T>(s, v)).collect_trusted()
+        ca.iter()
+            .scan(state, |s, v| cum_mean_update::<T>(s, v))
+            .collect_trusted()
     };
     out.with_name(ca.name().clone())
 }
@@ -404,8 +406,14 @@ pub fn cum_mean_with_init(
                         || polars_err!(ComputeError: "overflow in decimal addition in cum_mean"),
                     )?;
                     state.count += 1;
-                    let mean = dec128_div(state.sum_decimal, state.count as i128, DEC128_MAX_PREC, 0).ok_or_else(
-                    || polars_err!(ComputeError: "overflow in decimal division in cum_mean"),
+                    let mean = dec128_div(
+                        state.sum_decimal,
+                        state.count as i128,
+                        DEC128_MAX_PREC,
+                        0,
+                    )
+                    .ok_or_else(
+                        || polars_err!(ComputeError: "overflow in decimal division in cum_mean"),
                     )?;
                     Ok(Some(mean))
                 } else {
@@ -413,37 +421,40 @@ pub fn cum_mean_with_init(
                 }
             };
             let out = if reverse {
-                ca.iter().rev().map(update).try_collect_ca_trusted_like(ca)?
+                ca.iter()
+                    .rev()
+                    .map(update)
+                    .try_collect_ca_trusted_like(ca)?
             } else {
                 ca.iter().map(update).try_collect_ca_trusted_like(ca)?
             };
-            Ok(out.into_decimal_unchecked(DEC128_MAX_PREC, *scale).into_series())
-        }
+            Ok(out
+                .into_decimal_unchecked(DEC128_MAX_PREC, *scale)
+                .into_series())
+        },
         #[cfg(feature = "dtype-duration")]
         Duration(_tu) => {
             let phys = s.to_physical_repr();
             let out = cum_mean_scan_numeric::<Int64Type>(phys.i64()?, reverse, state);
             out.into_series().cast(s.dtype())
-        }
+        },
         #[cfg(feature = "dtype-datetime")]
         Datetime(_tu, _tz) => {
             let phys = s.to_physical_repr();
             let out = cum_mean_scan_numeric::<Int64Type>(phys.i64()?, reverse, state);
             out.into_series().cast(s.dtype())
-        }
+        },
         #[cfg(feature = "dtype-date")]
         Date => {
             let phys = s.to_physical_repr();
             let out = cum_mean_scan_numeric::<Int32Type>(phys.i32()?, reverse, state);
             out.into_series().cast(s.dtype())
-        }
-        Float64 => {
-            Ok(cum_mean_scan_numeric::<Float64Type>(s.f64()?, reverse, state).into_series())
-        }
+        },
+        Float64 => Ok(cum_mean_scan_numeric::<Float64Type>(s.f64()?, reverse, state).into_series()),
         _ => {
             let ca = s.cast(&Float64)?;
             Ok(cum_mean_scan_numeric::<Float64Type>(ca.f64()?, reverse, state).into_series())
-        }
+        },
     }
 }
 

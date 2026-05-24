@@ -304,6 +304,11 @@ def sum(*names: str) -> Expr:
 def cum_mean(*names: str) -> Expr:
     """
     Cumulatively avg all values.
+
+    Parameters
+    ----------
+    *names
+        Name(s) of the columns to use in the aggregation.
     """
     return F.col(*names).cum_mean()
 

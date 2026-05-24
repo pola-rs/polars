@@ -1607,10 +1607,12 @@ class Expr:
     def cum_mean(self, *, reverse: bool = False) -> Expr:
         """
         Get an array with the cumulative mean computed at every element.
+
         Parameters
         ----------
         reverse
             Reverse the operation.
+
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
@@ -1629,8 +1631,10 @@ class Expr:
         │ 3   ┆ 2.0      ┆ 3.5              │
         │ 4   ┆ 2.5      ┆ 4.0              │
         └─────┴──────────┴──────────────────┘
+        
         Null values are excluded, but can also be filled by calling
         `fill_null(strategy="forward")`.
+
         >>> df = pl.DataFrame({"values": [None, 10, None, 8, 9, None, 16, None]})
         >>> df.with_columns(
         ...     pl.col("values").cum_mean().alias("cum_mean"),

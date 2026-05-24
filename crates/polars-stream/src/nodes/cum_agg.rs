@@ -2,9 +2,9 @@ use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::prelude::{AnyValue, IntoColumn};
 use polars_core::utils::last_non_null;
 use polars_error::{PolarsResult, polars_bail};
-use polars_ops::series::{CumMeanState,
-    cum_count_with_init, cum_max_with_init, cum_min_with_init, cum_prod_with_init,
-    cum_sum_with_init, cum_mean_with_init,
+use polars_ops::series::{
+    CumMeanState, cum_count_with_init, cum_max_with_init, cum_mean_with_init, cum_min_with_init,
+    cum_prod_with_init, cum_sum_with_init,
 };
 
 use super::ComputeNode;
@@ -40,12 +40,8 @@ impl CumAggState {
             | CumAggKind::Min
             | CumAggKind::Max
             | CumAggKind::Count
-            | CumAggKind::Prod => {
-                Self::Scalar(AnyValue::Null)
-            }
-            CumAggKind::Mean => {
-                Self::MeanState(CumMeanState::default())
-            }
+            | CumAggKind::Prod => Self::Scalar(AnyValue::Null),
+            CumAggKind::Mean => Self::MeanState(CumMeanState::default()),
         }
     }
 }
@@ -106,19 +102,29 @@ impl ComputeNode for CumAggNode {
 
                 let s = m.df()[0].as_materialized_series();
                 let out = match (&self.kind, &mut self.state) {
-                    (CumAggKind::Min, CumAggState::Scalar(state)) => cum_min_with_init(s, false, state),
-                    (CumAggKind::Max, CumAggState::Scalar(state)) => cum_max_with_init(s, false, state),
-                    (CumAggKind::Mean, CumAggState::MeanState(state)) => cum_mean_with_init(s, false, state),
-                    (CumAggKind::Sum, CumAggState::Scalar(state)) => cum_sum_with_init(s, false, state),
+                    (CumAggKind::Min, CumAggState::Scalar(state)) => {
+                        cum_min_with_init(s, false, state)
+                    },
+                    (CumAggKind::Max, CumAggState::Scalar(state)) => {
+                        cum_max_with_init(s, false, state)
+                    },
+                    (CumAggKind::Mean, CumAggState::MeanState(state)) => {
+                        cum_mean_with_init(s, false, state)
+                    },
+                    (CumAggKind::Sum, CumAggState::Scalar(state)) => {
+                        cum_sum_with_init(s, false, state)
+                    },
                     (CumAggKind::Count, CumAggState::Scalar(state)) => {
                         cum_count_with_init(s, false, state.extract().unwrap_or_default())
                     },
-                    (CumAggKind::Prod, CumAggState::Scalar(state)) => cum_prod_with_init(s, false, state),
+                    (CumAggKind::Prod, CumAggState::Scalar(state)) => {
+                        cum_prod_with_init(s, false, state)
+                    },
                     _ => {
                         polars_bail!(
                             ComputeError: "invalid state {:?} for kind {:?}", self.state, self.kind
                         )
-                    }
+                    },
                 }?;
 
                 // Find the last non-null value and set that as the state.
