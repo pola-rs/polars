@@ -164,6 +164,11 @@ result = df.select((cs.contains("_") - cs.string()) / eur_usd_rate)
 print(result)
 # --8<-- [end:selectors-expressions]
 
+# --8<-- [start:selectors-filter]
+result = df.filter(pl.any_horizontal(cs.ends_with("_high") > 200))
+print(result)
+# --8<-- [end:selectors-filter]
+
 # --8<-- [start:selector-ambiguity]
 people = pl.DataFrame(
     {

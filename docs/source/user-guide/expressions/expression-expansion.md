@@ -319,6 +319,19 @@ The correct solution uses `as_expr`:
 --8<-- "python/user-guide/expressions/expression-expansion.py:as_expr"
 ```
 
+### Selectors in filters
+
+Selectors can also be used in filter predicates. Because a selector may expand to multiple boolean
+expressions, combine the expanded predicates explicitly with a horizontal function such as
+`any_horizontal` or `all_horizontal`:
+
+{{code_block('user-guide/expressions/expression-expansion', 'selectors-filter', [],
+['selectors'], [])}}
+
+```python exec="on" result="text" session="expressions/expression-expansion"
+--8<-- "python/user-guide/expressions/expression-expansion.py:selectors-filter"
+```
+
 ### Debugging selectors
 
 When you are not sure whether you have a Polars selector at hand or not, you can use the function

@@ -41,7 +41,9 @@ class PartitionBy:
     base_path
         Base path to write to.
     file_path_provider
-        Callable for custom file output paths.
+        Callable for custom file output paths. The callable must return a
+        unique path for each pair of `partition_keys` and `index_in_partition`.
+        Otherwise, multiple output files may be written to the same location.
     key
         Expressions to partition by.
     include_key
@@ -142,10 +144,20 @@ class FileProviderArgs:
     .. warning::
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
+
+    Notes
+    -----
+    A custom `file_path_provider` must return a unique path for every
+    combination of `partition_keys` and `index_in_partition`. Polars may write
+    multiple files for a single partition, even when `max_rows_per_file` and
+    `approximate_bytes_per_file` are not set, so paths based only on
+    `partition_keys` can overwrite earlier files.
     """
 
     index_in_partition: int
+    """Zero-based index of the file within this partition."""
     partition_keys: DataFrame
+    """The partition key values for this file."""
 
 
 @dataclass(kw_only=True)
