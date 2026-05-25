@@ -897,7 +897,7 @@ def test_cache_user_credential_provider_pickle(
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    prefix = {uuid.uuid4()}
+    prefix = uuid.uuid4()
 
     q = pl.scan_parquet(
         f"s3://{prefix}/...",
