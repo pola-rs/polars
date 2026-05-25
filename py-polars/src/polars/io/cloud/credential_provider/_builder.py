@@ -214,10 +214,14 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         import hashlib
         import pickle
 
+        verbose = polars._utils.logging.verbose()
         try:
             return hashlib.sha256(pickle.dumps(self.credential_provider)).digest()[:16]
-        except Exception:
-            # if we cannot pickle anyway, a locally stable cache key is sufficient
+        except Exception as e:
+            if verbose:
+                print(f"CredentialProvider stable_cache_key() failed: {e = }")
+            # If we cannot pickle, there is no need for the cache key to be
+            # globally stable. Instead, a locally stable cache key is sufficient.
             return id(self.credential_provider).to_bytes(8, byteorder="little")
 
     @property

@@ -1,6 +1,7 @@
 import io
 import pickle
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -889,35 +890,32 @@ def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None
         get_q().collect()
 
 
-class _CountingProvider:
-    call_count = 0  # class-level so it survives pickle
-
-    def __call__(self) -> tuple[dict[str, str], None]:
-        _CountingProvider.call_count += 1
-        return (
-            {"aws_access_key_id": "...", "aws_secret_access_key": "..."},
-            None,
-        )
-
-
 @pytest.mark.slow
-def test_cache_user_credential_provider_pickle(plmonkeypatch: PlMonkeyPatch) -> None:
+def test_cache_user_credential_provider_pickle(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
-    _CountingProvider.call_count = 0
-    user_provider = _CountingProvider()
+    prefix = {uuid.uuid4()}
 
     q = pl.scan_parquet(
-        "s3://.../...",
+        f"s3://{prefix}/...",
         storage_options={"aws_endpoint_url": "http://localhost:333"},
-        credential_provider=user_provider,
+        credential_provider="auto",
     )
+
+    capfd.readouterr()
 
     with pytest.raises(OSError, match="http://localhost:333"):
         q.collect()
-    assert _CountingProvider.call_count == 2
+    capture = capfd.readouterr().err
+    assert capture.count("build object-store") == 2  # build + rebuild
 
     q = pickle.loads(pickle.dumps(q))
 
+    capfd.readouterr()
     with pytest.raises(OSError, match="http://localhost:333"):
         q.collect()
-    assert _CountingProvider.call_count == 3
+    capture = capfd.readouterr().err
+    assert capture.count("build object-store") == 1  # rebuild only
