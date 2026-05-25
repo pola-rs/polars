@@ -897,11 +897,17 @@ def test_cache_user_credential_provider_pickle(
 ) -> None:
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")
 
+    plmonkeypatch.setenv("AWS_ACCESS_KEY_ID", "...")
+    plmonkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "...")
+    plmonkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+
     prefix = uuid.uuid4()
 
     q = pl.scan_parquet(
         f"s3://{prefix}/...",
-        storage_options={"aws_endpoint_url": "http://localhost:333"},
+        storage_options={
+            "aws_endpoint_url": "http://localhost:333",
+        },
         credential_provider="auto",
     )
 
