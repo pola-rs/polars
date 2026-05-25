@@ -491,12 +491,12 @@ def read_csv(
     schema_overrides_is_list = isinstance(schema_overrides, Sequence)
     encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
 
-    new_streaming = (
-        os.getenv("POLARS_FORCE_NEW_STREAMING") == "1"
-        or os.getenv("POLARS_AUTO_NEW_STREAMING") == "1"
+    streaming = (
+        os.getenv("POLARS_FORCE_STREAMING") == "1"
+        or os.getenv("POLARS_AUTO_STREAMING") == "1"
     )
 
-    if new_streaming or (
+    if streaming or (
         # Check that it is not a BytesIO object
         isinstance(v := source, (str, Path))
         and (
@@ -523,7 +523,7 @@ def read_csv(
                 for source in source
             ]
 
-        if not new_streaming:
+        if not streaming:
             if schema_overrides_is_list:
                 msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
                 raise ValueError(msg)

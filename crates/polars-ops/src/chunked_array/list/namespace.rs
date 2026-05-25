@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -135,7 +134,7 @@ pub trait ListNameSpaceImpl: AsList {
         let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
         {
             ca.amortized_iter()
-                .zip(separator)
+                .zip(separator.iter())
                 .for_each(|(opt_s, opt_sep)| match opt_sep {
                     Some(separator) => {
                         let opt_val = opt_s.and_then(|s| {
@@ -233,35 +232,6 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(self.same_type(out))
     }
 
-    #[must_use]
-    fn lst_reverse(&self) -> ListChunked {
-        let ca = self.as_list();
-        // SAFETY: `reverse` doesn't change the dtype
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
-    }
-
-    fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
-        let ca = self.as_list();
-        ca.try_apply_amortized_generic(|s| {
-            let opt_v = s.map(|s| s.as_ref().n_unique()).transpose()?;
-            Ok(opt_v.map(|idx| idx as IdxSize))
-        })
-    }
-
-    fn lst_unique(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        // SAFETY: `unique` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique())? };
-        Ok(self.same_type(out))
-    }
-
-    fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        // SAFETY: `unique_stable` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique_stable())? };
-        Ok(self.same_type(out))
-    }
-
     fn lst_arg_min(&self) -> IdxCa {
         let ca = self.as_list();
         ca.apply_amortized_generic(|opt_s| {
@@ -294,13 +264,18 @@ pub trait ListNameSpaceImpl: AsList {
             periods.len()
         );
 
-        // Broadcast `self`
-        let mut ca = Cow::Borrowed(ca);
-        if ca.len() == 1 && periods.len() != 1 {
-            // Optimize: Don't broadcast and instead have a special path.
-            ca = Cow::Owned(ca.new_from_index(0, periods.len()));
+        let target_len = periods.len();
+        if ca.len() == 1 && target_len > 1 {
+            let single_list = ca.get_as_series(0);
+            let out = shift_broadcast_list(
+                single_list,
+                periods,
+                target_len,
+                ca.name().clone(),
+                ca.inner_dtype(),
+            );
+            return Ok(self.same_type(out));
         }
-        let ca = ca.as_ref();
 
         let out = match periods.len() {
             1 => {
@@ -483,7 +458,7 @@ pub trait ListNameSpaceImpl: AsList {
                         keep_nulls: true,
                     })?;
                     idx_ca
-                        .into_iter()
+                        .series_iter()
                         .map(|opt_idx| {
                             opt_idx
                                 .map(|idx| take_series(&s, idx, null_on_oob))
@@ -538,7 +513,7 @@ pub trait ListNameSpaceImpl: AsList {
                 let mut out = {
                     list_ca
                         .amortized_iter()
-                        .zip(idx_ca)
+                        .zip(idx_ca.series_iter())
                         .map(|(opt_s, opt_idx)| {
                             {
                                 match (opt_s, opt_idx) {
@@ -755,7 +730,7 @@ pub trait ListNameSpaceImpl: AsList {
                 length,
                 ca.name().clone(),
             );
-            ca.into_iter().for_each(|opt_s| {
+            ca.series_iter().for_each(|opt_s| {
                 let opt_s = opt_s.map(|mut s| {
                     for append in &to_append {
                         s.append(append).unwrap();
@@ -785,7 +760,7 @@ pub trait ListNameSpaceImpl: AsList {
             for s in other.iter_mut() {
                 iters.push(s.list()?.amortized_iter())
             }
-            let mut first_iter: Box<dyn PolarsIterator<Item = Option<Series>>> = ca.into_iter();
+            let mut first_iter = ca.series_iter();
             let mut builder = get_list_builder(
                 &inner_super_type,
                 ca.get_values_size() + vals_size_other + 1,
@@ -869,6 +844,29 @@ pub fn slice_broadcast_list(
             (Some(offset), Some(length)) => Some(single_list.slice(offset, length as usize)),
             _ => None,
         }
+    });
+
+    let mut out: ListChunked = iter.collect_trusted();
+    out.rename(name);
+    out
+}
+
+fn shift_broadcast_list(
+    single_list: Option<Series>,
+    periods: &Int64Chunked,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> ListChunked {
+    debug_assert!(target_len == periods.len());
+
+    let Some(single_list) = single_list else {
+        return ListChunked::full_null_with_dtype(name, target_len, inner_dtype);
+    };
+
+    let iter = (0..target_len).map(|index| {
+        let opt_period = periods.get(index);
+        opt_period.map(|period| single_list.shift(period))
     });
 
     let mut out: ListChunked = iter.collect_trusted();

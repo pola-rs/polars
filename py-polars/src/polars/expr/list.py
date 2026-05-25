@@ -33,6 +33,31 @@ class ExprListNameSpace:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: int) -> Expr:
+        """
+        Get the value by index in the sublists.
+
+        This is syntactic sugar for :meth:`Expr.list.get`.
+
+        Parameters
+        ----------
+        item
+            Index to return per sublist. Index ``0`` returns the first item, and
+            index ``-1`` returns the last item.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[3, 2, 1], [4, 5, 6]]})
+        >>> df.with_columns(get=pl.col("a").list[0])
+        shape: (2, 2)
+        ┌───────────┬─────┐
+        │ a         ┆ get │
+        │ ---       ┆ --- │
+        │ list[i64] ┆ i64 │
+        ╞═══════════╪═════╡
+        │ [3, 2, 1] ┆ 3   │
+        │ [4, 5, 6] ┆ 4   │
+        └───────────┴─────┘
+        """
         return self.get(item)
 
     def all(self, *, ignore_nulls: bool = True) -> Expr:
@@ -440,7 +465,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [2, 1, 9] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_reverse())
+        return self.eval(F.element().reverse())
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
@@ -468,7 +493,7 @@ class ExprListNameSpace:
         │ [1, 1, 2] ┆ [1, 2]    │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_unique(maintain_order))
+        return self.eval(F.element().unique(maintain_order=maintain_order))
 
     def n_unique(self) -> Expr:
         """
@@ -492,7 +517,7 @@ class ExprListNameSpace:
         │ [2, 3, 4] ┆ 3        │
         └───────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.list_n_unique())
+        return self.agg(F.element().n_unique())
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """

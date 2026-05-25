@@ -1719,7 +1719,7 @@ impl DataFrame {
     /// fn str_to_len(str_val: &Column) -> Column {
     ///     str_val.str()
     ///         .unwrap()
-    ///         .into_iter()
+    ///         .iter()
     ///         .map(|opt_name: Option<&str>| {
     ///             opt_name.map(|name: &str| name.len() as u32)
     ///          })

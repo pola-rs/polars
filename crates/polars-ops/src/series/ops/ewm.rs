@@ -21,7 +21,7 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
 
             let xs = s.f16().unwrap();
             let result = kernel_ewm_mean(
-                xs,
+                xs.iter(),
                 options.alpha.as_(),
                 options.adjust,
                 options.min_periods,
@@ -32,7 +32,7 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         DataType::Float32 => {
             let xs = s.f32().unwrap();
             let result = kernel_ewm_mean(
-                xs,
+                xs.iter(),
                 options.alpha as f32,
                 options.adjust,
                 options.min_periods,
@@ -43,7 +43,7 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         DataType::Float64 => {
             let xs = s.f64().unwrap();
             let result = kernel_ewm_mean(
-                xs,
+                xs.iter(),
                 options.alpha,
                 options.adjust,
                 options.min_periods,
@@ -65,7 +65,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
 
             let xs = s.f16().unwrap();
             let result = kernel_ewm_std(
-                xs,
+                xs.iter(),
                 options.alpha.as_(),
                 options.adjust,
                 options.bias,
@@ -77,7 +77,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         DataType::Float32 => {
             let xs = s.f32().unwrap();
             let result = kernel_ewm_std(
-                xs,
+                xs.iter(),
                 options.alpha as f32,
                 options.adjust,
                 options.bias,
@@ -89,7 +89,7 @@ pub fn ewm_std(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         DataType::Float64 => {
             let xs = s.f64().unwrap();
             let result = kernel_ewm_std(
-                xs,
+                xs.iter(),
                 options.alpha,
                 options.adjust,
                 options.bias,
@@ -111,7 +111,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
 
             let xs = s.f16().unwrap();
             let result = kernel_ewm_var(
-                xs,
+                xs.iter(),
                 options.alpha.as_(),
                 options.adjust,
                 options.bias,
@@ -123,7 +123,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         DataType::Float32 => {
             let xs = s.f32().unwrap();
             let result = kernel_ewm_var(
-                xs,
+                xs.iter(),
                 options.alpha as f32,
                 options.adjust,
                 options.bias,
@@ -135,7 +135,7 @@ pub fn ewm_var(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         DataType::Float64 => {
             let xs = s.f64().unwrap();
             let result = kernel_ewm_var(
-                xs,
+                xs.iter(),
                 options.alpha,
                 options.adjust,
                 options.bias,

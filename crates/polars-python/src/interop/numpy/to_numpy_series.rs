@@ -319,7 +319,7 @@ where
 fn boolean_series_to_numpy(py: Python<'_>, s: &Series) -> Py<PyAny> {
     let ca = s.bool().unwrap();
     if s.null_count() == 0 {
-        let values = ca.into_no_null_iter();
+        let values = ca.no_null_iter();
         PyArray1::<bool>::from_iter(py, values)
             .into_py_any(py)
             .unwrap()
