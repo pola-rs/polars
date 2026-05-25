@@ -8,7 +8,6 @@ use object_store::client::{HttpClient, HttpConnector};
 use rand::prelude::SliceRandom;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use tokio::sync::RwLock;
-use tokio::task::JoinSet;
 
 type DynErr = Box<dyn std::error::Error + Send + Sync>;
 
@@ -58,38 +57,10 @@ impl HttpConnector for ReqwestDNSCachingConnector {
     }
 }
 
-/// Non-caching shuffle resolver as used by object_store.
-#[derive(Debug)]
-#[allow(unused)]
-pub(crate) struct ShuffleResolver;
-
-impl Resolve for ShuffleResolver {
-    fn resolve(&self, name: Name) -> Resolving {
-        Box::pin(async move {
-            // use `JoinSet` to propagate cancelation to tasks that haven't started running yet.
-            let mut tasks = JoinSet::new();
-            tasks.spawn_blocking(move || {
-                let it = (name.as_str(), 0).to_socket_addrs()?;
-                let mut addrs = it.collect::<Vec<_>>();
-
-                addrs.shuffle(&mut rand::rng());
-
-                Ok(Box::new(addrs.into_iter()) as Addrs)
-            });
-
-            tasks
-                .join_next()
-                .await
-                .expect("spawned on task")
-                .map_err(|err| Box::new(err) as DynErr)?
-        })
-    }
-}
-
 #[derive(Debug)]
 struct CachedAddrs {
     addrs: Arc<Vec<SocketAddr>>,
-    expires_at: Instant,
+    fetched_at: Instant,
 }
 
 /// Shuffle resolver with basic DNS cache. TTL is fixed and set by the calling site.
@@ -121,7 +92,7 @@ impl Resolve for CachingResolver {
                 let read_guard = cache.read().await;
 
                 if let Some(entry) = read_guard.get(&key) {
-                    if entry.expires_at > Instant::now() {
+                    if entry.fetched_at.elapsed() < ttl {
                         let mut addrs = (*entry.addrs).clone();
                         addrs.shuffle(&mut rand::rng());
                         return Ok(Box::new(addrs.into_iter()) as Addrs);
@@ -135,7 +106,7 @@ impl Resolve for CachingResolver {
 
             // Re-check in case the cache has been populated in the meanwhile
             if let Some(entry) = write_guard.get(&key) {
-                if entry.expires_at > Instant::now() {
+                if entry.fetched_at.elapsed() < ttl {
                     let mut addrs = (*entry.addrs).clone();
                     addrs.shuffle(&mut rand::rng());
                     return Ok(Box::new(addrs.into_iter()) as Addrs);
@@ -156,7 +127,7 @@ impl Resolve for CachingResolver {
                 key,
                 CachedAddrs {
                     addrs: addrs.clone(),
-                    expires_at: Instant::now() + ttl,
+                    fetched_at: Instant::now(),
                 },
             );
             drop(write_guard);

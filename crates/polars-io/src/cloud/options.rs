@@ -365,11 +365,6 @@ impl CloudOptions {
             .with_http_connector(connector)
             .with_url(url.clone().to_string());
 
-        // // kdn TODO RM
-        // let mut builder = AmazonS3Builder::from_env()
-        //     .with_client_options(get_client_options())
-        //     .with_url(url.clone().to_string());
-
         if let Some(credential_provider) = &opt_credential_provider {
             let storage_update_options = parse_untyped_config::<AmazonS3ConfigKey, _>(
                 credential_provider
