@@ -77,16 +77,16 @@ where
     }
 }
 
-fn cum_scan_numeric<T, F>(
+fn cum_scan_numeric<T, S, F>(
     ca: &ChunkedArray<T>,
     reverse: bool,
-    init: T::Native,
+    init: S,
     update: F,
 ) -> ChunkedArray<T>
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
-    F: Fn(&mut T::Native, Option<T::Native>) -> Option<Option<T::Native>>,
+    F: Fn(&mut S, Option<T::Native>) -> Option<Option<T::Native>>,
 {
     let out: ChunkedArray<T> = match reverse {
         false => ca.iter().scan(init, update).collect_trusted(),
@@ -228,7 +228,7 @@ where
     cum_scan_numeric(ca, reverse, init, det_sum)
 }
 
-fn cum_sum_numeric_cast<T>(
+fn cum_sum_numeric_upcast<T>(
     ca: &ChunkedArray<T>,
     reverse: bool,
     init: Option<f64>,
@@ -239,15 +239,7 @@ where
     f64: AsPrimitive<T::Native> + From<T::Native>,
 {
     let init = init.unwrap_or(0.0);
-    let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, det_sum_to_f64).collect_trusted(),
-        true => ca
-            .iter()
-            .rev()
-            .scan(init, det_sum_to_f64)
-            .collect_reversed(),
-    };
-    out.with_name(ca.name().clone())
+    cum_scan_numeric(ca, reverse, init, det_sum_to_f64)
 }
 
 #[cfg(feature = "dtype-decimal")]
@@ -347,8 +339,8 @@ pub fn cum_sum_with_init(
         #[cfg(feature = "dtype-i128")]
         Int128 => cum_sum_numeric(s.i128()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-f16")]
-        Float16 => cum_sum_numeric_cast(s.f16()?, reverse, init.extract()).into_series(),
-        Float32 => cum_sum_numeric_cast(s.f32()?, reverse, init.extract()).into_series(),
+        Float16 => cum_sum_numeric_upcast(s.f16()?, reverse, init.extract()).into_series(),
+        Float32 => cum_sum_numeric_upcast(s.f32()?, reverse, init.extract()).into_series(),
         Float64 => cum_sum_numeric(s.f64()?, reverse, init.extract()).into_series(),
         #[cfg(feature = "dtype-decimal")]
         Decimal(_precision, scale) => {
