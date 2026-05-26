@@ -166,5 +166,9 @@ gather = []
 replace = ["is_in"]
 allow_unused = []
 
+[package.metadata.docs.rs]
+features = ["is_in"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [lints]
 workspace = true
