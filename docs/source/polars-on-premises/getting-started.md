@@ -12,7 +12,9 @@ pip install polars polars_cloud
 
 ### 1. Create an account and workspace
 
-Creating an account and workspace can be done through the [cloud portal](https://cloud.pola.rs/api/redirects/register) by selecing **Kubernetes** as the deployment method upon workspace creation. Alternatively use the CLI:
+Creating an account and workspace can be done through the
+[cloud portal](https://cloud.pola.rs/api/redirects/register) by selecing **Kubernetes** as the
+deployment method upon workspace creation. Alternatively use the CLI:
 
 ```bash
 pc login
@@ -21,16 +23,18 @@ pc setup --workspace-type kubernetes
 
 ### 2. Create a service account
 
-In the workspace settings page, create a service account. Copy the **client ID** and **client secret**, they are not stored and cannot be retrieved later. Alternatively, you can use the `polars-cloud` CLI to create a service account.
+In the workspace settings page, create a service account. Copy the **client ID** and **client
+secret**, they are not stored and cannot be retrieved later. Alternatively, you can use the
+`polars-cloud` CLI to create a service account.
 
 ```bash
 polars-cloud service-account create --workspace-name <WORKSPACE NAME> --name ServiceAccount
 ```
 
-
 ### 3. Deploy with Helm
 
-The example below will deploy a Polars cluster with 2 worker nodes each with 4Gi of memory and a temporary storage bucket. Replace Workspace ID and Service Account credentials with your own.
+The example below will deploy a Polars cluster with 2 worker nodes each with 4Gi of memory and a
+temporary storage bucket. Replace Workspace ID and Service Account credentials with your own.
 
 !!! info "Workspace ID"
 
@@ -53,8 +57,8 @@ helm upgrade --install polars polars-inc/polars \
   --set anonymousResults.temporaryStorage.enabled=true
 ```
 
-!!! warning "Not for production use"
-    This configuration is for a quickstart only. See the [Kubernetes deployment guide](./kubernetes/getting-started.md) for production configuration.
+!!! warning "Not for production use" This configuration is for a quickstart only. See the
+[Kubernetes deployment guide](./kubernetes/getting-started.md) for production configuration.
 
 Verify all pods are running before continuing:
 
@@ -102,4 +106,5 @@ result = (
 print(result.head())
 ```
 
-Your cluster is ready. For a full walkthrough of deployed resources, networking, and production configuration, see the [Kubernetes deployment guide](./kubernetes/getting-started.md).
+Your cluster is ready. For a full walkthrough of deployed resources, networking, and production
+configuration, see the [Kubernetes deployment guide](./kubernetes/getting-started.md).

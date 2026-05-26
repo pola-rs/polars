@@ -65,7 +65,6 @@ ctx = pc.ClusterContext(compute_address="")
 
 pdsh_q3(customer_sf100, lineitem_sf100, orders_sf100).remote(ctx).distributed().show()
 # --8<-- [end:context-run_on_prem]
-"""
 
 # --8<-- [start:context-run]
 ctx = pc.ComputeContext(workspace="your-workspace", cpus=4, memory=4, cluster_size=5)

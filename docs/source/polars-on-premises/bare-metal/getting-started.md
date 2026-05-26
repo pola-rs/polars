@@ -1,5 +1,5 @@
-!!! note "Enterprise only"
-    Bare-metal deployment requires a Polars On-Prem Enterprise license. [Sign up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv) to obtain one.
+!!! note "Enterprise only" Bare-metal deployment requires a Polars On-Prem Enterprise license.
+[Sign up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv) to obtain one.
 
 ## Downloading Polars On-Prem
 

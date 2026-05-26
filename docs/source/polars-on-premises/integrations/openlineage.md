@@ -7,7 +7,6 @@ Polars acts as an OpenLineage **producer** — it emits `RunEvent` and optionall
 a query executes. Job identity (`JobEvent`) must be provided by the caller, typically an
 orchestrator such as Airflow or Dagster.
 
-
 ## Setup
 
 At a minimum, three components are required:

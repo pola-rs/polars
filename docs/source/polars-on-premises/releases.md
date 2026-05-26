@@ -72,8 +72,8 @@ versions listed above.
 
 ### Bare-metal binaries
 
-After obtaining an offline license for Polars On-Prem you will receive a JSON-formatted license
-for running Polars On-Prem.
+After obtaining an offline license for Polars On-Prem you will receive a JSON-formatted license for
+running Polars On-Prem.
 
 To pull the binary, run the following command:
 

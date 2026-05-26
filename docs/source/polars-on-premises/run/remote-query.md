@@ -1,8 +1,8 @@
 # Execute remote query
 
-Polars On Prem enables you to execute existing Polars queries on a cluster with minimal
-code changes. This approach allows you to process datasets that exceed local resources or use
-additional compute resources for faster execution.
+Polars On Prem enables you to execute existing Polars queries on a cluster with minimal code
+changes. This approach allows you to process datasets that exceed local resources or use additional
+compute resources for faster execution.
 
 ## Define your query locally
 
@@ -14,7 +14,8 @@ TPC-H benchmark. Data generation tools and additional queries are available in t
 
 ## Scale to a cluster of nodes
 
-To execute your query in, you need to define a cluster context. The cluster context specifies the address and connection parameters for your cluster.
+To execute your query in, you need to define a cluster context. The cluster context specifies the
+address and connection parameters for your cluster.
 
 {{code_block('polars-cloud/remote-query','cluster_context',['ClusterContext'])}}
 
@@ -29,9 +30,9 @@ the results, each suited to different use cases and workflows.
 
 ### Write to storage
 
-The most straightforward approach for batch processing is to write results directly to network storage
-using `.sink_parquet()`. This method is ideal when you want to store processed data for later use or
-as part of a data pipeline:
+The most straightforward approach for batch processing is to write results directly to network
+storage using `.sink_parquet()`. This method is ideal when you want to store processed data for
+later use or as part of a data pipeline:
 
 {{code_block('polars-cloud/remote-query','sink_parquet',[])}}
 
