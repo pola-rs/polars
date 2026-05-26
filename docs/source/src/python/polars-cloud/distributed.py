@@ -17,6 +17,21 @@ orders_sf100 = pl.scan_parquet(
 )
 # --8<-- [end:setup]
 
+# --8<-- [start:setup_on_prem]
+import polars as pl
+import polars_cloud as pc
+
+lineitem_sf100 = pl.scan_parquet(
+    "s3://.../pdsh/sf100/lineitem/*.parquet",
+)
+customer_sf100 = pl.scan_parquet(
+    "s3://.../pdsh/sf100/customer/*.parquet",
+)
+orders_sf100 = pl.scan_parquet(
+    "s3://.../pdsh/sf100/orders/*.parquet",
+)
+# --8<-- [end:setup_on_prem]
+
 
 # --8<-- [start:query]
 def pdsh_q3(
@@ -45,6 +60,12 @@ def pdsh_q3(
 
 # --8<-- [end:query]
 
+# --8<-- [start:context-run_on_prem]
+ctx = pc.ClusterContext(compute_address="")
+
+pdsh_q3(customer_sf100, lineitem_sf100, orders_sf100).remote(ctx).distributed().show()
+# --8<-- [end:context-run_on_prem]
+"""
 
 # --8<-- [start:context-run]
 ctx = pc.ComputeContext(workspace="your-workspace", cpus=4, memory=4, cluster_size=5)

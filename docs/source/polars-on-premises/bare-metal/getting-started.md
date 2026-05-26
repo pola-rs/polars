@@ -1,6 +1,5 @@
-First of all, make sure to obtain a license for Polars On-Prem by
-[signing up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv). You will receive a JSON-formatted
-license key with which you can download Polars On-Prem.
+!!! note "Enterprise only"
+    Bare-metal deployment requires a Polars On-Prem Enterprise license. [Sign up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv) to obtain one.
 
 ## Downloading Polars On-Prem
 
@@ -22,12 +21,12 @@ The `polars-on-premises` command will then be available within your virtual envi
 #### Downloading the server binary only
 
 You may also download the binary directly using the curl command below. Note that this still
-requires your system to have a Python interpreter available, and Polars to be installed. There are
-also some
+requires your system to have a Python interpreter available and Polars to be installed. See the
+[Python Environments page](/polars-on-premises/bare-metal/python-environment) for setup options.
 
 ```shell
 $ export LICENSE_KEY=$(cat license.json)
-$ curl -L 'https://get.onprem.pola.rs?version=0.1.0' --data $LICENSE_KEY --output polars-on-premises
+$ curl -L 'https://get.onprem.pola.rs?version=0.1.0' --data @license.json --output polars-on-premises
 ```
 
 See the [Python Environments page](/polars-on-premises/bare-metal/python-environment) for more
@@ -51,7 +50,7 @@ $ polars-on-premises service --config-path /etc/polars-cloud/config.toml
 
 However, the service requires quite some configuration to get started. Below you can find an example
 scheduler and worker config, and you can find the full configuration reference
-[here](/polars-on-premises/bare-metal/config-reference).
+[here](/polars-on-premises/bare-metal/configuration/reference).
 
 ## Quick start
 
@@ -98,4 +97,4 @@ scheduler_service.public_addr = "127.0.0.1"
 ## Configuration
 
 The complete configuration reference can be found
-[here](/polars-on-premises/bare-metal/config-reference).
+[here](/polars-on-premises/bare-metal/configuration/reference).
