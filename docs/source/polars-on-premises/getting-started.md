@@ -13,7 +13,7 @@ pip install polars polars_cloud
 ### 1. Create an account and workspace
 
 Creating an account and workspace can be done through the
-[cloud portal](https://cloud.pola.rs/api/redirects/register) by selecing **Kubernetes** as the
+[cloud portal](https://cloud.pola.rs/api/redirects/register) by selecting **Kubernetes** as the
 deployment method upon workspace creation. Alternatively use the CLI:
 
 ```bash

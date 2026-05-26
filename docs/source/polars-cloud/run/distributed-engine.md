@@ -1,6 +1,8 @@
 # Distributed queries
 
-Polars has always been optimized for fast and efficient performance on a single machine. The distributed engine extends this to datasets that are too large to fit on a single node, spreading both computation and memory across a cluster so you can query at any scale.
+Polars has always been optimized for fast and efficient performance on a single machine. The
+distributed engine extends this to datasets that are too large to fit on a single node, spreading
+both computation and memory across a cluster so you can query at any scale.
 
 ## Using distributed engine
 
