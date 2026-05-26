@@ -53,6 +53,7 @@ impl PlCredentialProvider {
         )))
     }
 
+    #[allow(unused)]
     pub(super) fn func_addr(&self) -> usize {
         match self {
             Self::Function(CredentialProviderFunction(v)) => Arc::as_ptr(v) as *const () as usize,
@@ -75,6 +76,17 @@ impl PlCredentialProvider {
             Self::Python(v) => Ok(v
                 .try_into_initialized(clear_cached_credentials)?
                 .map(Self::Python)),
+        }
+    }
+
+    pub fn stable_cache_key(&self) -> PolarsResult<Vec<u8>> {
+        match self {
+            Self::Function(CredentialProviderFunction(v)) => Ok((Arc::as_ptr(v) as *const ()
+                as usize)
+                .to_ne_bytes()
+                .to_vec()),
+            #[cfg(feature = "python")]
+            Self::Python(v) => v.stable_cache_key(),
         }
     }
 }
@@ -498,7 +510,7 @@ mod python_impl {
     use std::hash::Hash;
     use std::sync::Arc;
 
-    use polars_error::{PolarsError, PolarsResult};
+    use polars_error::{PolarsError, PolarsResult, polars_err};
     use polars_utils::pl_str::PlSmallStr;
     use polars_utils::python_function::PythonObject;
     use pyo3::exceptions::PyValueError;
@@ -584,6 +596,21 @@ mod python_impl {
                 Self::Builder(v) => Arc::as_ptr(v),
                 Self::Provider(v) => Arc::as_ptr(v),
             }) as *const () as usize
+        }
+
+        pub fn stable_cache_key(&self) -> PolarsResult<Vec<u8>> {
+            let obj = match self {
+                Self::Builder(obj) | Self::Provider(obj) => obj,
+            };
+            let err = |e| {
+                polars_err!(ComputeError:
+                "failed to extract stable_cache_key: {e}")
+            };
+            Python::attach(|py| {
+                obj.call_method0(py, "stable_cache_key")
+                    .and_then(|r| r.extract::<Vec<u8>>(py))
+            })
+            .map_err(err)
         }
     }
 
