@@ -2779,7 +2779,7 @@ dependencies = [
 [[package]]
 name = "object_store"
 version = "0.13.2"
-source = "git+https://github.com/kdn36/arrow-rs-object-store?branch=feat_pub_client_builder#0ee48e16f6f8f6c1f2611d2305458a0e2b2d18b9"
+source = "git+https://github.com/kdn36/arrow-rs-object-store?branch=feat_with_dns_resolver#f50a6e5c564b2b5933eca15cd20ff9b5614374a1"
 dependencies = [
  "async-trait",
  "base64",

@@ -163,7 +163,7 @@ collapsible_if = "allow"
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
-object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_pub_client_builder" }
+object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_with_dns_resolver" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd" }
 
 [profile.mindebug-dev]

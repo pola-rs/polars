@@ -3,19 +3,11 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hashbrown::HashMap;
-use object_store::ClientOptions;
-use object_store::client::{HttpClient, HttpConnector};
 use rand::prelude::SliceRandom;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use tokio::sync::RwLock;
 
 type DynErr = Box<dyn std::error::Error + Send + Sync>;
-
-/// Custom HttpConnector using a DNS resolver which does caching and shuffling.
-#[derive(Debug)]
-pub struct ReqwestDNSCachingConnector {
-    resolver: CachingResolver,
-}
 
 const DEFAULT_CLOUD_DNS_CACHE_TTL_SECS: u64 = 5;
 
@@ -26,35 +18,6 @@ pub(crate) fn get_cloud_dns_cache_ttl() -> Duration {
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(DEFAULT_CLOUD_DNS_CACHE_TTL_SECS),
     )
-}
-
-impl ReqwestDNSCachingConnector {
-    pub fn new(ttl: Duration) -> Self {
-        ReqwestDNSCachingConnector {
-            resolver: CachingResolver::new(ttl),
-        }
-    }
-}
-
-impl HttpConnector for ReqwestDNSCachingConnector {
-    fn connect(&self, options: &ClientOptions) -> object_store::Result<HttpClient> {
-        let mut builder = options
-            .client_builder()
-            .map_err(|e| object_store::Error::Generic {
-                store: "HTTP client",
-                source: Box::new(e),
-            })?;
-
-        // Override the DNS resolver
-        builder = builder.dns_resolver2(self.resolver.clone());
-
-        let client = builder.build().map_err(|e| object_store::Error::Generic {
-            store: "HTTP client",
-            source: Box::new(e),
-        })?;
-
-        Ok(HttpClient::new(client))
-    }
 }
 
 #[derive(Debug)]
