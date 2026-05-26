@@ -46,7 +46,8 @@ $2^{64}$ (~18 quintillion) by enabling the big index extension:
 ## Legacy CPU
 
 To install Polars for Python on an old CPU without
-[AVX](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions) support, run:
+[AVX2](https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#Advanced_Vector_Extensions_2)
+support, run:
 
 === ":fontawesome-brands-python: Python"
 
