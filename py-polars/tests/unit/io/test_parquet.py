@@ -4261,17 +4261,3 @@ def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
 
     assert_frame_equal(pl.read_parquet(path), expected)
     assert_frame_equal(pl.scan_parquet(path).collect(), expected)
-
-
-def test_read_parquet_fastparquet_empty_kv_metadata_27749(
-    io_files_path: Path,
-) -> None:
-    # fastparquet writes the empty `key_value_metadata` list in the footer
-    # as the bare byte 0x00 (count = 0, element-type nibble left as 0
-    # instead of a real type code). The reader must accept this and treat
-    # it as an empty list rather than raising on the meaningless
-    # element-type nibble.
-    path = io_files_path / "fastparquet_empty_kv_metadata_27749.parquet"
-    expected = pl.DataFrame({"a": [1]})
-    assert_frame_equal(pl.read_parquet(path), expected)
-    assert_frame_equal(pl.scan_parquet(path).collect(), expected)

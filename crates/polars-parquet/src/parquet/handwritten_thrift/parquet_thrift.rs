@@ -1149,4 +1149,13 @@ pub(crate) mod tests {
         let read_val = T::read_thrift(&mut prot).unwrap();
         assert_eq!(val, read_val);
     }
+
+    #[test]
+    fn test_decode_empty_list() {
+        let data = vec![0u8; 1];
+        let mut prot = ThriftSliceInputProtocol::new(&data);
+        let header = prot.read_list_begin().expect("error reading list header");
+        assert_eq!(header.size, 0);
+        assert_eq!(header.element_type, ElementType::Byte);
+    }
 }
