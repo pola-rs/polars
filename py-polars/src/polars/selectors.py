@@ -232,7 +232,7 @@ def _expand_selector_dicts(
     expand_values: bool,
 ) -> dict[str, Any]:
     """Expand dict key/value selectors into their underlying column names."""
-    expanded = {}
+    expanded: dict[str, Any] = {}
     for key, value in (d or {}).items():
         if expand_values and is_selector(value):
             expanded[key] = expand_selector(df, selector=value)

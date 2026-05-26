@@ -245,7 +245,9 @@ class IcebergSinkState:
         )
 
         if verbose:
-            total_elapsed = now - function_start_instant
+            total_elapsed = (
+                now - function_start_instant  # pyrefly: ignore[unbound-name]
+            )
 
             eprint(
                 f"IcebergSinkState[commit]: finished, total elapsed time: {total_elapsed:.3f}s"

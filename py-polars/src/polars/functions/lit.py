@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import enum
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from zoneinfo import ZoneInfo
 
 import polars._reexport as pl
@@ -98,8 +98,11 @@ def lit(
             return wrap_expr(plr.lit(value.date(), allow_object=False, is_scalar=True))
 
         # parse time unit
-        if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
-            time_unit = tu  # type: ignore[assignment]
+        if (
+            dtype is not None
+            and (tu := cast("TimeUnit", getattr(dtype, "time_unit", "us"))) is not None
+        ):
+            time_unit = tu
         else:
             time_unit = "us"
 
@@ -151,7 +154,10 @@ def lit(
 
     elif isinstance(value, timedelta):
         value_s = pl.Series("literal", [value])
-        if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
+        if (
+            dtype is not None
+            and (tu := cast("TimeUnit", getattr(dtype, "time_unit", None))) is not None
+        ):
             value_s = value_s.cast(Duration(tu))
         expr = wrap_expr(plr.lit(value_s._s, allow_object=False, is_scalar=True))
         return expr

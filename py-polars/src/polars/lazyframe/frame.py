@@ -3431,7 +3431,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if delta_write_options is None:
                 delta_write_options = {}
 
-            write_deltalake(
+            write_deltalake(  # pyrefly: ignore[no-matching-overload]
                 table_or_uri=target,
                 data=stream,  # type: ignore[call-overload]
                 mode=mode,
@@ -9405,7 +9405,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # no need to join if *only* join columns are in other (inner/left update only)
         if how != "full" and len(right_schema) == len(right_on):
             if row_index_used:
-                return self.drop(row_index_name)
+                return self.drop(row_index_name)  # pyrefly: ignore[unbound-name]
             return self
 
         # only use non-idx right columns present in left frame
@@ -9447,7 +9447,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .drop(drop_columns)
         )
         if row_index_used:
-            result = result.drop(row_index_name)
+            result = result.drop(row_index_name)  # pyrefly: ignore[unbound-name]
 
         return self._from_pyldf(result._ldf)
 

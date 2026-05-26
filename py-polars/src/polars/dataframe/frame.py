@@ -2501,8 +2501,8 @@ class DataFrame:
             if label is not None:
                 # return a {"label": tensor(s), "features": tensor(s)} dict
                 return {
-                    "label": label_frame.to_torch(),
-                    "features": features_frame.to_torch(),
+                    "label": label_frame.to_torch(),  # pyrefly: ignore[unbound-name]
+                    "features": features_frame.to_torch(),  # pyrefly: ignore[unbound-name]
                 }
             else:
                 # return a {"col": tensor} dict
@@ -2512,7 +2512,11 @@ class DataFrame:
             # return a torch Dataset object
             from polars.ml.torch import PolarsDataset
 
-            pds_label = None if label is None else label_frame.columns
+            pds_label = (
+                None
+                if label is None
+                else label_frame.columns  # pyrefly: ignore[unbound-name]
+            )
             return PolarsDataset(frame, label=pds_label, features=features)
         else:
             valid_torch_types = ", ".join(get_args(TorchExportType))
@@ -3890,7 +3894,7 @@ class DataFrame:
                     ws.set_row_pixels(idx, row_heights)
             elif isinstance(row_heights, dict):
                 for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
-                    ws.set_row_pixels(idx, height)
+                    ws.set_row_pixels(idx, height)  # pyrefly: ignore[bad-argument-type]
 
         if freeze_panes:
             if isinstance(freeze_panes, str):
@@ -9814,9 +9818,9 @@ class DataFrame:
         └─────┴──────────┴───────┘
         """
         on = None if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        index_ = [] if index is None else _expand_selectors(self, index)
 
-        return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
+        return self._from_pydf(self._df.unpivot(on, index_, value_name, variable_name))
 
     def unstack(
         self,

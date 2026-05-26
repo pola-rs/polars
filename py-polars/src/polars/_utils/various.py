@@ -82,11 +82,13 @@ def _process_null_values(
 
 
 def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
+    # Split conditions to work around https://github.com/facebook/pyrefly/issues/3554.
+    if sys.version_info >= (3, 11):
+        if isinstance(val, _reverse_mapping_views):
+            return True
     return (
-        (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
-        or isinstance(val, MappingView)
-        or (sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views))
-    )
+        isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized)
+    ) or isinstance(val, MappingView)
 
 
 def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> bool:
@@ -146,6 +148,11 @@ def is_sequence(
         isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
         and not isinstance(val, str)
     )
+
+
+def is_sequence_of(obj: Sequence[Any], tp: type[T]) -> TypeIs[Sequence[T]]:
+    # Check if an object is a sequence of `tp`, only sniffing the first element.
+    return bool((first := next(iter(obj), None)) is not None and isinstance(first, tp))
 
 
 def is_str_sequence(

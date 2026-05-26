@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, overload
+from typing import IO, TYPE_CHECKING, Any, overload
 
 from polars import functions as F
 from polars._dependencies import json
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, Schema, Series
     from polars._typing import (
         ColumnFormatDict,
+        ColumnNameOrSelector,
         ColumnTotalsDefinition,
         ConditionalFormatDict,
         OneOrMoreDataTypes,
@@ -376,12 +377,12 @@ def _xl_setup_table_columns(
 
     # normalise row totals
     if not row_totals:
-        row_totals_dtype = None
+        row_totals_dtype: dict[str, PolarsDataType] | PolarsDataType | None = None
         row_total_funcs = {}
     else:
         schema = df.schema
         numeric_cols = {col for col, tp in schema.items() if tp.is_numeric()}
-        if not isinstance(row_totals, dict):
+        if not isinstance(row_totals, Mapping):
             row_totals_dtype = (
                 Int64 if _all_integer_cols(numeric_cols, schema) else Float64
             )
@@ -402,7 +403,7 @@ def _xl_setup_table_columns(
             row_totals = _expand_selector_dicts(
                 df, row_totals, expand_keys=False, expand_values=True
             )
-            row_totals_dtype = {  # type: ignore[assignment]
+            row_totals_dtype = {
                 nm: (
                     Int64
                     if _all_integer_cols(numeric_cols if cols is True else cols, schema)
@@ -442,13 +443,20 @@ def _xl_setup_table_columns(
     }
 
     # normalise formats
-    column_formats = dict(column_formats or {})
-    dtype_formats = dict(dtype_formats or {})
+    _column_formats: dict[
+        ColumnNameOrSelector | tuple[ColumnNameOrSelector, ...],
+        str | Mapping[str, str] | Format,
+    ]
+    _column_formats = dict(column_formats or {})
+    _dtype_formats: dict[OneOrMoreDataTypes, str] = dict(dtype_formats or {})
 
-    for tp in list(dtype_formats):
+    for tp in list(_dtype_formats):
         if isinstance(tp, (tuple, frozenset)):
-            dtype_formats.update(dict.fromkeys(tp, dtype_formats.pop(tp)))
-    for fmt in dtype_formats.values():
+            updates: dict[OneOrMoreDataTypes, str] = dict.fromkeys(
+                tp, _dtype_formats.pop(tp)
+            )
+            _dtype_formats.update(updates)
+    for fmt in _dtype_formats.values():
         if not isinstance(fmt, str):
             msg = f"invalid dtype_format value: {fmt!r} (expected format string, got {qualified_type_name(fmt)!r})"
             raise TypeError(msg)
@@ -481,33 +489,35 @@ def _xl_setup_table_columns(
 
     # assign default dtype formats
     for tp, fmt in _XL_DEFAULT_DTYPE_FORMATS_.items():
-        dtype_formats.setdefault(tp, fmt)
+        _dtype_formats.setdefault(tp, fmt)
     for tp in FLOAT_DTYPES:
-        dtype_formats.setdefault(tp, fmt_float)
+        _dtype_formats.setdefault(tp, fmt_float)
 
     # associate formats/functions with specific columns
     for col, tp in df.schema.items():
         base_type = tp.base_type()
-        if base_type in dtype_formats:
-            fmt = dtype_formats.get(tp, dtype_formats[base_type])
-            column_formats.setdefault(col, fmt)
-        if col not in column_formats:
-            column_formats[col] = fmt_default
+        if base_type in _dtype_formats:
+            fmt = _dtype_formats.get(tp, _dtype_formats[base_type])
+            _column_formats.setdefault(col, fmt)
+        if col not in _column_formats:
+            _column_formats[col] = fmt_default
 
     # ensure externally supplied formats are made available
-    for col, fmt in column_formats.items():  # type: ignore[assignment]
+    for col, fmt in _column_formats.items():  # type: ignore[assignment]
         if isinstance(fmt, str):
-            column_formats[col] = format_cache.get(
+            _column_formats[col] = format_cache.get(
                 {"num_format": fmt, "valign": "vcenter"}
             )
         elif isinstance(fmt, dict):
             if "num_format" not in fmt:
-                tp = df.schema.get(col)
-                if tp in dtype_formats:
-                    fmt["num_format"] = dtype_formats[tp]
+                # Argument `Selector | str | tuple[ColumnNameOrSelector, ...]`
+                # is not assignable to parameter `key` with type `str`
+                tp = df.schema.get(col)  # pyrefly: ignore[bad-argument-type]
+                if tp in _dtype_formats:
+                    fmt["num_format"] = _dtype_formats[tp]
             if "valign" not in fmt:
                 fmt["valign"] = "vcenter"
-            column_formats[col] = format_cache.get(fmt)
+            _column_formats[col] = format_cache.get(fmt)
 
     # optional custom header format
     col_header_format = format_cache.get(header_format) if header_format else None
@@ -518,7 +528,7 @@ def _xl_setup_table_columns(
             k: v
             for k, v in {
                 "header": col,
-                "format": column_formats[col],
+                "format": _column_formats[col],
                 "header_format": col_header_format,
                 "total_function": column_total_funcs.get(col),
                 "formula": (
@@ -530,7 +540,7 @@ def _xl_setup_table_columns(
         }
         for col in df.columns
     ]
-    return table_columns, column_formats, df  # type: ignore[return-value]
+    return table_columns, _column_formats, df  # type: ignore[return-value]
 
 
 def _xl_setup_table_options(
@@ -578,7 +588,7 @@ def _xl_worksheet_in_workbook(
 
 
 def _xl_setup_workbook(
-    workbook: Workbook | BytesIO | Path | str | None,
+    workbook: Workbook | IO[bytes] | Path | str | None,
     worksheet: str | Worksheet | None = None,
     *,
     use_zip64: bool = False,
@@ -595,7 +605,11 @@ def _xl_setup_workbook(
                 isinstance(worksheet, Worksheet)
                 and _xl_worksheet_in_workbook(wb, worksheet)
             )
-            else wb.get_worksheet_by_name(name=worksheet)
+            # Argument `Worksheet | str | None` is not assignable to parameter `name`
+            # with type `str`.
+            else wb.get_worksheet_by_name(
+                name=worksheet  # pyrefly: ignore[bad-argument-type]
+            )
         )
     elif isinstance(worksheet, Worksheet):
         msg = f"worksheet object requires the parent workbook object; found workbook={workbook!r}"
@@ -610,6 +624,7 @@ def _xl_setup_workbook(
         if isinstance(workbook, BytesIO):
             wb, ws, can_close = Workbook(workbook, workbook_options), None, True
         else:
+            file: Path | IO[bytes]
             if workbook is None:
                 file = Path("dataframe.xlsx")
             elif isinstance(workbook, str):
