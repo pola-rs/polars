@@ -712,6 +712,10 @@ class Catalog:
 class CatalogCredentialProvider:
     """Retrieves credentials from the Unity catalog temporary credentials API."""
 
+    catalog: Catalog
+    table_id: str
+    write: bool
+
     def __init__(self, catalog: Catalog, table_id: str, *, write: bool) -> None:
         self.catalog = catalog
         self.table_id = table_id
@@ -721,9 +725,7 @@ class CatalogCredentialProvider:
         _, (creds, expiry) = self._credentials_iter()
         return creds, expiry
 
-    def _credentials_iter(
-        self,
-    ) -> Generator[Any]:
+    def _credentials_iter(self) -> Generator[Any]:
         creds, storage_update_options, expiry = self.catalog._get_table_credentials(
             self.table_id, write=self.write
         )
