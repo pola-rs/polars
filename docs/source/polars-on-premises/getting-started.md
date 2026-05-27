@@ -38,7 +38,7 @@ temporary storage bucket. Replace Workspace ID and Service Account credentials w
 
 !!! info "Workspace ID"
 
-    The Workspace ID can be found in the workspace settings page or with `pc workspace list`
+    The Workspace ID can be found in the workspace settings page or with `pc workspace list`.
 
 ```bash
 helm repo add polars-inc https://polars-inc.github.io/helm-charts && helm repo update
@@ -57,8 +57,11 @@ helm upgrade --install polars polars-inc/polars \
   --set anonymousResults.temporaryStorage.enabled=true
 ```
 
-!!! warning "Not for production use" This configuration is for a quickstart only. See the
-[Kubernetes deployment guide](./kubernetes/getting-started.md) for production configuration.
+!!! warning "Not for production use"
+
+    The cluster configuration defined above is for a quickstart only and should not be used in a
+    production environment! See the [Kubernetes deployment guide](./kubernetes/getting-started.md)
+    for more details.
 
 Verify all pods are running before continuing:
 

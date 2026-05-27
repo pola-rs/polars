@@ -21,7 +21,8 @@ address and connection parameters for your cluster.
 
 !!! note "S3 bucket region"
 
-    The example datasets are hosted in the `us-east-2 S3 region`. Query performance may be affected if you're running operations from a distant geographic location due to network latency.
+    The example datasets are hosted in the `us-east-2` S3 region. Query performance may be affected
+    if you are running operations from a distant geographic location due to network latency.
 
 ## Working with remote query results
 

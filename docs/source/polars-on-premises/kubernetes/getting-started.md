@@ -30,7 +30,7 @@ commands to register the repo and install the chart:
 
 !!! info "Workspace ID"
 
-    The Workspace ID can be found in the workspace settings page or with `pc workspace list`
+    The Workspace ID can be found in the workspace settings page or with `pc workspace list`.
 
 ```sh
 helm repo add polars-inc https://polars-inc.github.io/helm-charts
@@ -53,9 +53,11 @@ helm upgrade --install polars polars-inc/polars \
   --set anonymousResults.temporaryStorage.enabled=true
 ```
 
-!!! warning "Not for production use" The cluster configuration defined above is for a quickstart
-only and should not be used in a production environment! See the
-[Production configuration](#production-configuration) section below.
+!!! warning "Not for production use"
+
+    The cluster configuration defined above is for a quickstart only and should not be used in a
+    production environment! See the [Production configuration](#production-configuration) section
+    below.
 
 Key parameters explained:
 
@@ -90,8 +92,8 @@ polars-worker-xxxxxxxxx-xxxxx                1/1     Running   0          1m
 polars-temporary-storage-xxxxxxxxx-xxxxx     1/1     Running   0          1m
 ```
 
-Once all pods show `Running`, the cluster is registered with our control plane and ready to accept
-queries.
+Once all pods show a `Running` status, the cluster is registered with our control plane and ready to
+accept queries.
 
 #### Run your first query
 
@@ -191,7 +193,7 @@ S3-compatible storage, which must be accessible from all worker nodes and the cl
 For a lightweight quickstart we opted for [SeaweedFS](https://github.com/seaweedfs/seaweedfs),
 backed by an `emptyDir`. In a production environment, any S3-compatible technology can be used
 (_i.e._, MinIO, DigitalOcean Spaces, _etc._). Support for Azure Blob Storage (ABS) and Google Cloud
-Storage (GCS) is underway.
+Storage (GCS) is currently being tested (released as beta).
 
 Anonymous results configuration is under the
 [`anonymousResults` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data).
@@ -203,7 +205,7 @@ other nodes needs to be made available to be able to perform next operations; in
 the data is _shuffled_ between worker nodes, according to the bookkeeping done by the scheduler.
 
 By default, `emptyDir` volumes are used on each worker node. You can however decide to use ephemeral
-volumes instead for more configuration flexibility; as an alternative, your own S3- compatible
+volumes instead for more configuration flexibility; as an alternative, your own S3-compatible
 storage can be used.
 
 Using S3-compatible storage might improve fault tolerance, since intermediate results are stored

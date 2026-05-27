@@ -11,12 +11,7 @@ the default mode of execution for remote queries.
 
 ```python
 lf: LazyFrame
-
-result = (
-      lf.remote()
-      .distributed()
-      .execute()
-)
+result = lf.remote().distributed().execute()
 ```
 
 ### Example
@@ -43,7 +38,8 @@ query takes around xx seconds to execute.
 
 !!! tip "Try on SF1000 (approx. 1TB of data)"
 
-    You can also run this example on a higher scale factor. The data is available on the same bucket. You can change the URL from `sf100` to `sf1000`.
+    You can also run this example on a higher scale factor. The data is available on the same
+    bucket. You can change the URL from `sf100` to `sf1000`.
 
 ## How it works
 
