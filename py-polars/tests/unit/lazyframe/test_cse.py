@@ -1411,9 +1411,26 @@ def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
     )
 
 
-@pytest.mark.parametrize("enable_nested_cspe", [False, True])
+@pytest.mark.parametrize(
+    ("enable_nested_cspe", "expected_cache_seq_ids"),
+    [
+        (False, [1, 1]),
+        (
+            True,
+            [
+                2,  # concat(lf2, lf2)
+                1,  # select(a + 1)
+                1,  # select(a + 1)
+                2,  # concat(lf2, lf2)
+                1,  # select(a + 1)
+                1,  # select(a + 1)
+            ],
+        ),
+    ],
+)
 def test_cspe_create_nested_caches(
     enable_nested_cspe: bool,
+    expected_cache_seq_ids: list[int],
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1" if enable_nested_cspe else "0")
@@ -1440,17 +1457,7 @@ def test_cspe_create_nested_caches(
         maintain_order="left",
     )["cache_seq_id"].to_list()
 
-    if enable_nested_cspe:
-        assert cache_seq_ids == [
-            2,  # concat(lf2, lf2)
-            1,  # select(a + 1)
-            1,  # select(a + 1)
-            2,  # concat(lf2, lf2)
-            1,  # select(a + 1)
-            1,  # select(a + 1)
-        ]
-    else:
-        assert cache_seq_ids == [1, 1]
+    assert cache_seq_ids == expected_cache_seq_ids
 
 
 @pytest.mark.parametrize(
