@@ -297,14 +297,20 @@ pub(super) async fn parquet_file_info(
             ResolveMode::RowCounts => {
                 let mut futures = (1..n_sources)
                     .map(|i| async move {
-                        let n = read_parquet_num_rows(sources.at(i), cloud_options).await?;
-                        PolarsResult::Ok(n)
+                        read_parquet_num_rows(sources.at(i), cloud_options).await
                     })
                     .collect::<FuturesUnordered<_>>();
 
+                // Best-effort: a file that fails to decode at plan time (e.g.
+                // an invalid file in a hive partition not yet pruned) simply
+                // contributes 0 to the estimate. If execution needs the file
+                // it will error then; if predicate pushdown prunes it first,
+                // it never matters.
                 let mut total: usize = first_num_rows;
                 while let Some(res) = futures.next().await {
-                    total = total.saturating_add(res? as usize);
+                    if let Ok(n) = res {
+                        total = total.saturating_add(n as usize);
+                    }
                 }
                 (None, Some(total), total)
             },
@@ -317,9 +323,9 @@ pub(super) async fn parquet_file_info(
                     .map(|i| {
                         let shared = shared_schema.clone();
                         async move {
-                            let m =
-                                read_parquet_metadata(sources.at(i), cloud_options, shared).await?;
-                            PolarsResult::Ok((i, m))
+                            let result =
+                                read_parquet_metadata(sources.at(i), cloud_options, shared).await;
+                            (i, result)
                         }
                     })
                     .collect::<FuturesUnordered<_>>();
@@ -327,12 +333,16 @@ pub(super) async fn parquet_file_info(
                 // Pre-fill with `first_metadata`; futures overwrite slots
                 // 1..n as they resolve. Slot 0 stays untouched, satisfying
                 // the `metadata_per_source[0] == first_metadata` invariant.
+                // Best-effort: on error the slot keeps the pre-fill default;
+                // the cloud scheduler re-fetches if it needs accurate
+                // row_groups for that file.
                 let mut per_file: Vec<FileMetadataRef> = vec![first_metadata.clone(); n_sources];
                 let mut total: usize = first_num_rows;
-                while let Some(res) = futures.next().await {
-                    let (i, m) = res?;
-                    total = total.saturating_add(m.num_rows);
-                    per_file[i] = m;
+                while let Some((i, file_result)) = futures.next().await {
+                    if let Ok(m) = file_result {
+                        total = total.saturating_add(m.num_rows);
+                        per_file[i] = m;
+                    }
                 }
                 let dense: Arc<[FileMetadataRef]> = per_file.into();
                 (Some(dense), Some(total), total)
