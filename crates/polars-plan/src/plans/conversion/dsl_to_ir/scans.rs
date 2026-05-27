@@ -295,11 +295,12 @@ pub(super) async fn parquet_file_info(
         match mode {
             ResolveMode::None => (None, None, first_num_rows * n_sources),
             ResolveMode::RowCounts => {
-                let mut futures = (1..n_sources)
-                    .map(|i| async move {
-                        read_parquet_num_rows(sources.at(i), cloud_options).await
-                    })
-                    .collect::<FuturesUnordered<_>>();
+                let mut futures =
+                    (1..n_sources)
+                        .map(|i| async move {
+                            read_parquet_num_rows(sources.at(i), cloud_options).await
+                        })
+                        .collect::<FuturesUnordered<_>>();
 
                 // Best-effort: a file that fails to decode at plan time (e.g.
                 // an invalid file in a hive partition not yet pruned) simply
