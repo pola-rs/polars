@@ -14,10 +14,11 @@ use std::sync::Arc;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::metadata::FileMetadataRef;
 #[cfg(feature = "parquet")]
-use polars_utils::aliases::{InitHashMaps, PlHashSet};
+use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::{Arena, Node};
 #[cfg(feature = "parquet")]
 use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "parquet")]
 use polars_utils::unitvec;
 
 #[cfg(feature = "parquet")]
