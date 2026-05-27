@@ -335,7 +335,7 @@ impl Series {
                     monotonic: _,
                 } => groups
                     .into_par_iter()
-                    .map_with(CloneWrapper(state), |state, &[start, len]| unsafe {
+                    .map_with(CloneWrapper(state), |state, &[start, len]| {
                         let len_us = len as usize;
                         if len_us > N_UNIQUE_SORT_FALLBACK_THRESHOLD {
                             col.slice(start as i64, len_us).n_unique().unwrap() as IdxSize
