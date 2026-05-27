@@ -1436,15 +1436,11 @@ def test_cspe_create_nested_caches(
     plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1" if enable_nested_cspe else "0")
 
     lf = pl.LazyFrame({"a": [0, 1, 2]})
-
     lf1 = lf.select(pl.col("a") + 1)
-
     lf2 = pl.concat([lf1, lf1])
-
     lf3 = pl.concat([lf2, lf2, pl.LazyFrame({"a": [0, 1, 2]})])
 
     q = lf3
-
     plan = q.explain()
 
     df = pl.DataFrame({"line": [x.strip() for x in plan.splitlines() if "CACHE" in x]})
