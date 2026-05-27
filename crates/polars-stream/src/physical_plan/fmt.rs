@@ -443,6 +443,7 @@ fn visualize_plan_rec(
                 format!(
                     "cum_{}",
                     match kind {
+                        CumAggKind::Mean => "mean",
                         CumAggKind::Min => "min",
                         CumAggKind::Max => "max",
                         CumAggKind::Sum => "sum",

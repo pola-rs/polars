@@ -10,6 +10,7 @@ from polars.functions.aggregation.horizontal import (
 from polars.functions.aggregation.vertical import (
     all,
     any,
+    cum_mean,
     cum_sum,
     max,
     min,
@@ -21,6 +22,7 @@ __all__ = [
     "all_horizontal",
     "any",
     "any_horizontal",
+    "cum_mean",
     "cum_sum",
     "cum_sum_horizontal",
     "max",

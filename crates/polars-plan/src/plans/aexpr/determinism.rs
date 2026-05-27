@@ -171,6 +171,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         #[cfg(feature = "cum_agg")]
         F::CumCount { .. }
         | F::CumSum { .. }
+        | F::CumMean { .. }
         | F::CumProd { .. }
         | F::CumMin { .. }
         | F::CumMax { .. } => false,

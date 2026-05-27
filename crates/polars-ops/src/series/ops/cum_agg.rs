@@ -3,13 +3,22 @@ use std::ops::{AddAssign, Mul};
 use arity::unary_elementwise_values;
 use arrow::array::{Array, BooleanArray};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use num_traits::cast::NumCast;
 use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{CustomIterTools, NoNull};
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
+use polars_utils::kahan_sum::KahanSum;
 use polars_utils::min_max::MinMax;
+
+#[derive(Debug, Clone, Default)]
+pub struct CumMeanState {
+    pub sum: KahanSum<f64>,
+    pub sum_decimal: i128,
+    pub count: u64,
+}
 
 fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
 where
@@ -339,6 +348,119 @@ pub fn cum_sum_with_init(
 /// first cast to `Int64` to prevent overflow issues.
 pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
     cum_sum_with_init(s, reverse, &AnyValue::Null)
+}
+
+fn cum_mean_update<T>(state: &mut CumMeanState, opt_v: Option<T::Native>) -> Option<Option<f64>>
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+{
+    match opt_v {
+        Some(v) => {
+            let v_f64: f64 = NumCast::from(v)?;
+            state.sum += v_f64;
+            state.count += 1;
+            let mean = state.sum.sum() / state.count as f64;
+            Some(Some(mean))
+        },
+        None => Some(None),
+    }
+}
+
+fn cum_mean_scan_numeric<T>(
+    ca: &ChunkedArray<T>,
+    reverse: bool,
+    state: &mut CumMeanState,
+) -> Float64Chunked
+where
+    T: PolarsNumericType,
+    T::Native: NumCast,
+{
+    let out: Float64Chunked = if reverse {
+        ca.iter()
+            .rev()
+            .scan(state, |s, v| cum_mean_update::<T>(s, v))
+            .collect_reversed()
+    } else {
+        ca.iter()
+            .scan(state, |s, v| cum_mean_update::<T>(s, v))
+            .collect_trusted()
+    };
+    out.with_name(ca.name().clone())
+}
+
+pub fn cum_mean_with_init(
+    s: &Series,
+    reverse: bool,
+    state: &mut CumMeanState,
+) -> PolarsResult<Series> {
+    use DataType::*;
+    match s.dtype() {
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_precision, scale) => {
+            use polars_compute::decimal::{DEC128_MAX_PREC, dec128_add, dec128_div};
+            let ca = s.decimal()?.physical();
+            let update = |opt_v: Option<i128>| -> PolarsResult<Option<i128>> {
+                if let Some(v) = opt_v {
+                    state.sum_decimal = dec128_add(state.sum_decimal, v,  DEC128_MAX_PREC).ok_or_else(
+                        || polars_err!(ComputeError: "overflow in decimal addition in cum_mean"),
+                    )?;
+                    state.count += 1;
+                    let mean = dec128_div(
+                        state.sum_decimal,
+                        state.count as i128,
+                        DEC128_MAX_PREC,
+                        0,
+                    )
+                    .ok_or_else(
+                        || polars_err!(ComputeError: "overflow in decimal division in cum_mean"),
+                    )?;
+                    Ok(Some(mean))
+                } else {
+                    Ok(None)
+                }
+            };
+            let out = if reverse {
+                ca.iter()
+                    .rev()
+                    .map(update)
+                    .try_collect_ca_trusted_like(ca)?
+            } else {
+                ca.iter().map(update).try_collect_ca_trusted_like(ca)?
+            };
+            Ok(out
+                .into_decimal_unchecked(DEC128_MAX_PREC, *scale)
+                .into_series())
+        },
+        #[cfg(feature = "dtype-duration")]
+        Duration(_tu) => {
+            let phys = s.to_physical_repr();
+            let out = cum_mean_scan_numeric::<Int64Type>(phys.i64()?, reverse, state);
+            out.into_series().cast(s.dtype())
+        },
+        #[cfg(feature = "dtype-datetime")]
+        Datetime(_tu, _tz) => {
+            let phys = s.to_physical_repr();
+            let out = cum_mean_scan_numeric::<Int64Type>(phys.i64()?, reverse, state);
+            out.into_series().cast(s.dtype())
+        },
+        #[cfg(feature = "dtype-date")]
+        Date => {
+            let phys = s.to_physical_repr();
+            let out = cum_mean_scan_numeric::<Int32Type>(phys.i32()?, reverse, state);
+            out.into_series().cast(s.dtype())
+        },
+        Float64 => Ok(cum_mean_scan_numeric::<Float64Type>(s.f64()?, reverse, state).into_series()),
+        _ => {
+            let ca = s.cast(&Float64)?;
+            Ok(cum_mean_scan_numeric::<Float64Type>(ca.f64()?, reverse, state).into_series())
+        },
+    }
+}
+
+pub fn cum_mean(s: &Series, reverse: bool) -> PolarsResult<Series> {
+    let mut state = CumMeanState::default();
+    cum_mean_with_init(s, reverse, &mut state)
 }
 
 pub fn cum_min_with_init(

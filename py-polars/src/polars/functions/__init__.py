@@ -3,6 +3,7 @@ from polars.functions.aggregation import (
     all_horizontal,
     any,
     any_horizontal,
+    cum_mean,
     cum_sum,
     cum_sum_horizontal,
     max,
@@ -96,6 +97,7 @@ __all__ = [
     # polars.functions.aggregation
     "all",
     "any",
+    "cum_mean",
     "cum_sum",
     "max",
     "min",

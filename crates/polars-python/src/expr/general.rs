@@ -706,6 +706,9 @@ impl PyExpr {
         self.inner.clone().cbrt().into()
     }
 
+    fn cum_mean(&self, reverse: bool) -> Self {
+        self.inner.clone().cum_mean(reverse).into()
+    }
     fn cum_sum(&self, reverse: bool) -> Self {
         self.inner.clone().cum_sum(reverse).into()
     }

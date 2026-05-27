@@ -1154,6 +1154,7 @@ fn lower_exprs_with_ctx(
                 input: ref inner_exprs,
                 function:
                     ref function @ (IRFunctionExpr::CumMin { reverse }
+                    | IRFunctionExpr::CumMean { reverse }
                     | IRFunctionExpr::CumMax { reverse }
                     | IRFunctionExpr::CumSum { reverse }
                     | IRFunctionExpr::CumCount { reverse }
@@ -1177,6 +1178,7 @@ fn lower_exprs_with_ctx(
                 )?;
                 let kind = match function {
                     IRFunctionExpr::CumMin { .. } => CumAggKind::Min,
+                    IRFunctionExpr::CumMean { .. } => CumAggKind::Mean,
                     IRFunctionExpr::CumMax { .. } => CumAggKind::Max,
                     IRFunctionExpr::CumSum { .. } => CumAggKind::Sum,
                     IRFunctionExpr::CumCount { .. } => CumAggKind::Count,

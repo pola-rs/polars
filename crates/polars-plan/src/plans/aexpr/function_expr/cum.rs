@@ -42,4 +42,18 @@ pub(super) mod dtypes {
             _ => Int64,
         }
     }
+
+    pub fn cum_mean(dt: &DataType) -> DataType {
+        match dt {
+            #[cfg(feature = "dtype-duration")]
+            Duration(tu) => Duration(*tu),
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(tu, tz) => Datetime(*tu, tz.clone()),
+            #[cfg(feature = "dtype-date")]
+            Date => Date,
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => Decimal(*precision, *scale),
+            _ => Float64,
+        }
+    }
 }
