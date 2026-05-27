@@ -3346,7 +3346,6 @@ dependencies = [
  "polars-arrow",
  "polars-buffer",
  "polars-compute",
- "polars-config",
  "polars-core",
  "polars-expr",
  "polars-io",

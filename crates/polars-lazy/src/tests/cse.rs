@@ -38,9 +38,6 @@ fn test_cse_self_joins() -> PolarsResult<()> {
 
 #[test]
 fn test_cse_unions() -> PolarsResult<()> {
-    unsafe { std::env::set_var("POLARS_ALLOW_NESTED_CSPE", "1") };
-    polars_config::config().reload_env_var("POLARS_ALLOW_NESTED_CSPE");
-
     let lf = scan_foods_ipc();
 
     let lf1 = lf.clone().with_column(col("category").str().to_uppercase());
@@ -230,9 +227,6 @@ fn test_cse_joins_4954() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "semi_anti_join")]
 fn test_cache_with_partial_projection() -> PolarsResult<()> {
-    unsafe { std::env::set_var("POLARS_ALLOW_NESTED_CSPE", "1") };
-    polars_config::config().reload_env_var("POLARS_ALLOW_NESTED_CSPE");
-
     let lf1 = df![
         "id" => ["a"],
         "x" => [1],
