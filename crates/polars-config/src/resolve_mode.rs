@@ -4,8 +4,8 @@ use std::str::FromStr;
 #[repr(u8)]
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 pub enum ResolveMode {
-    None = 0,
     #[default]
+    None = 0,
     RowCounts = 1,
     Full = 2,
 }
