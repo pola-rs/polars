@@ -158,7 +158,7 @@ pub fn optimize(
                     root,
                     ir_arena,
                     expr_arena,
-                    polars_config::config().nested_cspe(),
+                    polars_config::config().allow_nested_cspe(),
                 );
             }
         });

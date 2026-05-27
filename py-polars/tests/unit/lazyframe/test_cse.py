@@ -838,7 +838,8 @@ def test_cse_series_collision_16138() -> None:
     )
 
 
-def test_nested_cache_no_panic_16553() -> None:
+def test_nested_cache_no_panic_16553(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1")
     assert pl.LazyFrame().select(a=[[[1]]]).collect(
         optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
     ).to_dict(as_series=False) == {"a": [[[[1]]]]}
@@ -1410,7 +1411,13 @@ def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
     )
 
 
-def test_cspe_create_nested_caches() -> None:
+@pytest.mark.parametrize("enable_nested_cspe", [False, True])
+def test_cspe_create_nested_caches(
+    enable_nested_cspe: bool,
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1" if enable_nested_cspe else "0")
+
     lf = pl.LazyFrame({"a": [0, 1, 2]})
 
     lf1 = lf.select(pl.col("a") + 1)
@@ -1425,7 +1432,7 @@ def test_cspe_create_nested_caches() -> None:
 
     df = pl.DataFrame({"line": [x.strip() for x in plan.splitlines() if "CACHE" in x]})
 
-    assert df.join(
+    seen_nested_caches = df.join(
         df.unique(maintain_order=True).with_columns(
             cache_seq_id=pl.int_range(1, 1 + pl.len()).reverse()
         ),
@@ -1439,6 +1446,8 @@ def test_cspe_create_nested_caches() -> None:
         1,  # select(a + 1)
         1,  # select(a + 1)
     ]
+
+    assert seen_nested_caches == enable_nested_cspe
 
 
 @pytest.mark.parametrize(
