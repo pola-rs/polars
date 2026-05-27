@@ -420,6 +420,8 @@ impl<'a> AggregationContext<'a> {
         self.groups = Cow::Owned(groups);
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
+        // Conservatively set `false`, there's no guarantee `groups` matches the original.
+        self.original_len = false;
         self
     }
 
