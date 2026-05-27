@@ -1432,22 +1432,25 @@ def test_cspe_create_nested_caches(
 
     df = pl.DataFrame({"line": [x.strip() for x in plan.splitlines() if "CACHE" in x]})
 
-    seen_nested_caches = df.join(
+    cache_seq_ids = df.join(
         df.unique(maintain_order=True).with_columns(
             cache_seq_id=pl.int_range(1, 1 + pl.len()).reverse()
         ),
         on="line",
         maintain_order="left",
-    )["cache_seq_id"].to_list() == [
-        2,  # concat(lf2, lf2)
-        1,  # select(a + 1)
-        1,  # select(a + 1)
-        2,  # concat(lf2, lf2)
-        1,  # select(a + 1)
-        1,  # select(a + 1)
-    ]
+    )["cache_seq_id"].to_list()
 
-    assert seen_nested_caches == enable_nested_cspe
+    if enable_nested_cspe:
+        assert cache_seq_ids == [
+            2,  # concat(lf2, lf2)
+            1,  # select(a + 1)
+            1,  # select(a + 1)
+            2,  # concat(lf2, lf2)
+            1,  # select(a + 1)
+            1,  # select(a + 1)
+        ]
+    else:
+        assert cache_seq_ids == [1, 1]
 
 
 @pytest.mark.parametrize(
