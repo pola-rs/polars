@@ -52,7 +52,7 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> IR {
-        if let Some(predicate) = combine_predicates(local_predicates.into_iter(), expr_arena) {
+        if let Some(predicate) = combine_predicates(local_predicates, expr_arena) {
             let input = lp_arena.add(lp);
 
             IR::Filter { input, predicate }
