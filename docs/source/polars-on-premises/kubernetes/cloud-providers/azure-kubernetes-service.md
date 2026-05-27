@@ -28,7 +28,7 @@ q = (
 )
 ```
 
-You may also use Azure Blob Storage as [an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data) b configuring the values as such:
+You may also use Azure Blob Storage as [an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data) by configuring the values as such:
 
 ```yaml
 anonymousResults:
