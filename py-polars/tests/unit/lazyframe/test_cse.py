@@ -1479,3 +1479,36 @@ def test_cse_projection_pushdown_27569() -> None:
         q.collect(),
         pl.DataFrame({"a": [1, None, 1], "b": [None, 1, 1]}),
     )
+
+
+def test_cse_existing_predicate_at_scan_27748() -> None:
+    base_q = pl.scan_csv(
+        pl.DataFrame(
+            [
+                pl.Series("x", [True, False]),
+                pl.Series("y0", [False, False]),
+                pl.Series("y1", [True, True]),
+            ]
+        )
+        .write_csv()
+        .encode()
+    ).with_columns(x_not=pl.col("x").not_())
+
+    q = pl.concat(
+        [
+            base_q.filter(pl.col("x_not") & pl.col("y0")),
+            base_q.filter(pl.col("x_not") & pl.col("y0")),
+            base_q.filter(pl.col("x_not") & pl.col("y1")),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert plan.count('SELECTION: col("y0")') == 2
+    assert plan.count('SELECTION: col("y1")') == 1
+    assert plan.count("CACHE[") == 2
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"x": False, "y0": False, "y1": True, "x_not": True}),
+    )
