@@ -4437,9 +4437,14 @@ class DataFrame:
             Behaviour varies by connection type:
 
             * **ADBC connection object**: fully honoured — Polars commits or not
-              based on this flag.
+              based on this flag. Raises ``ValueError`` if ``commit=False`` is set
+              on a connection with ``autocommit=True``, since the driver commits each
+              statement immediately and deferring the commit is not possible. Pass an
+              instantiated connection with ``autocommit=False`` (the default) instead.
             * **ADBC URI string**: ``commit=False`` emits a ``UserWarning`` because
               Polars owns and closes the connection, so no data will be persisted.
+              To control the transaction yourself, pass an instantiated connection
+              object instead of a URI string.
             * **SQLAlchemy URI string or ``Engine``**: Polars opens a ``Connection``
               internally and commits or not based on this flag.
             * **SQLAlchemy ``Connection`` (no open transaction)**: Polars begins a
@@ -4559,12 +4564,12 @@ class DataFrame:
                 raise ValueError(msg)
 
             if not commit and not getattr(conn, "_commit_supported", True):
-                issue_warning(
-                    "commit=False has no effect because the ADBC connection has "
+                msg = (
+                    "commit=False is not supported when the ADBC connection has "
                     "autocommit enabled (or the driver does not support transactions). "
-                    "Data will be committed automatically.",
-                    UserWarning,
+                    "Either set autocommit=False on the connection or remove commit=False."
                 )
+                raise ValueError(msg)
 
             with (
                 conn if can_close_conn else contextlib.nullcontext(),

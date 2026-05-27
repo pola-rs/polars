@@ -453,14 +453,14 @@ def test_write_database_adbc_no_commit() -> None:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="adbc not available on Windows")
-def test_write_database_adbc_no_commit_warns_on_autocommit() -> None:
-    """Confirm that commit=False warns when the connection has autocommit enabled."""
+def test_write_database_adbc_no_commit_raises_on_autocommit() -> None:
+    """Confirm that commit=False raises when the connection has autocommit enabled."""
     import adbc_driver_sqlite.dbapi as sqlite_dbapi
 
     df = pl.DataFrame({"key": ["a", "b"], "value": [1, 2]})
     conn = sqlite_dbapi.connect(":memory:", autocommit=True)
-    with pytest.warns(UserWarning, match="commit=False has no effect"):
-        df.write_database("test_autocommit_warn", connection=conn, commit=False)
+    with pytest.raises(ValueError, match="commit=False is not supported"):
+        df.write_database("test_autocommit_raise", connection=conn, commit=False)
 
     if hasattr(conn, "close"):
         conn.close()
