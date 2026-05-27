@@ -290,6 +290,7 @@ impl Executor {
             let mut thread_id = TLS_THREAD_ID.get();
             if thread_id == usize::MAX {
                 if let Some(tid) = self.acquire_thread_identity() {
+                    TLS_THREAD_ID.set(tid);
                     thread_id = tid;
                 } else {
                     return;
