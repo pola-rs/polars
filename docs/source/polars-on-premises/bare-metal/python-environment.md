@@ -30,9 +30,14 @@ installed packages. We recommend however setting up a virtual environment
 ([`uv`](https://docs.astral.sh/uv/) makes this very easy, including maintaining a given Python
 version).
 
-!!! info "Version pinning" Each release of `polars-on-premises` is pinned to a single `polars`
-release, which can be found in the release announcement and in `polars-on-premises --version`
-`shell export PINNED_VERSION=1.38.1 # for instance`
+!!! info "Version pinning"
+
+    Each release of `polars-on-premises` is pinned to a single `polars` release, which can be
+    found in the release announcement and in `polars-on-premises --version`.
+
+```shell
+export PINNED_VERSION=1.38.1  # replace with the version from polars-on-premises --version
+```
 
 Note that the cloudpickle package is required for the binary to start.
 
