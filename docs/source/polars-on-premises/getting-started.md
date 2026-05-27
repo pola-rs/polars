@@ -110,4 +110,4 @@ print(result.head())
 ```
 
 Your cluster is ready. For a full walkthrough of deployed resources, networking, and production
-configuration, see the [Kubernetes deployment guide](./kubernetes/index.md).
+configuration, see the [Kubernetes deployment guide](./kubernetes/).

@@ -41,8 +41,8 @@ anonymousResults:
     endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
 ```
 
-To use S3 as [a shuffle
-location]([an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#shuffle-data),
+To use S3 as
+[a shuffle location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#shuffle-data),
 configure the values as such:
 
 ```yaml
