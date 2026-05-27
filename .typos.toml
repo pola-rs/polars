@@ -25,6 +25,9 @@ splitted = "splitted"
 strat = "strat"
 typ = "typ"
 
+[default.extend-identifiers]
+AKS = "AKS"
+
 [type.py.extend-identifiers]
 ba = "ba"
 ody = "ody"

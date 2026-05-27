@@ -11,7 +11,9 @@ This ensures that all queries must have an output location specified.
 
 !!! note "Difference between Anonymous Users and Anonymous Results"
 
-    Note that Anonymous Users and Anonymous Results are different. Anonymous Users refer to queries that are submitted without a username, while Anonymous Results refer to queries without an explicit output sink.
+    Note that Anonymous Users and Anonymous Results are different. Anonymous Users refer to queries
+    that are submitted without a username, while Anonymous Results refer to queries without an
+    explicit output sink.
 
 ## Shared filesystem
 
@@ -31,9 +33,9 @@ Make sure that this exact path is reachable from all worker nodes and the Python
 Python client does not have access to this path, it won't be able to download the anonymous results,
 but it will still be able to receive query status updates.
 
-## S3 compatible storage
+## S3-compatible storage
 
-To store anonymous results in S3 compatible storage, you can configure it as shown below. The
+To store anonymous results in S3-compatible storage, you can configure it as shown below. The
 credentials specified are automatically used in the worker. Once the anonymous results are written,
 the scheduler also creates a presigned URL for the Python client to download the result from the S3
 location.
@@ -46,7 +48,7 @@ anonymous_result_location.s3.aws_secret_access_key = "YOURSECRETKEY"
 anonymous_result_location.s3.aws_access_key_id = "YOURACCESSKEY"
 ```
 
-If you self-host an S3 compatible storage solution, you can override the `aws_endpoint_url`
+If you self-host an S3-compatible storage solution, you can override the `aws_endpoint_url`
 configuration option.
 
 ```toml

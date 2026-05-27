@@ -6899,7 +6899,7 @@ class Series:
         by: IntoExpr,
         window_size: timedelta | str_,
         *,
-        min_samples: int = 1,
+        min_samples: int = 0,
         closed: ClosedInterval = "right",
     ) -> Self:
         """
