@@ -2,7 +2,7 @@
 
 !!! info "Initial configuration"
 
-    This page expects that you've already set up a Polars cluster once through the Polars Cloud onboarding or the [getting started guide](../getting-started.md).
+    This page expects that you've already set up a Polars cluster once through the Polars Cloud onboarding or the [getting started guide](../index.md).
 
 ## Data access using Workload Identity
 

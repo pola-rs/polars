@@ -160,7 +160,7 @@ nav:
     - polars-on-premises/getting-started.md
     - Deployment:
       - Kubernetes:
-        - Getting started: polars-on-premises/kubernetes/getting-started.md
+        - Getting started: polars-on-premises/kubernetes/index.md
         - polars-on-premises/kubernetes/cloud-providers/azure-kubernetes-service.md
         - polars-on-premises/kubernetes/cloud-providers/google-kubernetes-engine.md
       - Bare-metal:
