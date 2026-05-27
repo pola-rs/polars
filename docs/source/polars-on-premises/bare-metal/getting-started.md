@@ -1,11 +1,13 @@
-!!! note "Enterprise only" Bare-metal deployment requires a Polars On-Prem Enterprise license.
-[Sign up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv) to obtain one.
+!!! note "Enterprise only"
+
+    Bare-metal deployment requires a Polars On-Prem Enterprise license.
+    [Sign up here](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv) to obtain one.
 
 ## Downloading Polars On-Prem
 
 #### Using `uv`
 
-The simplest way to get started is to use our private PyPi index. You can log in to the index using
+The simplest way to get started is to use our private PyPI index. You can log in to the index using
 the given license key. This will automatically install the correct Polars version and work well
 within virtual environments.
 
@@ -20,7 +22,7 @@ The `polars-on-premises` command will then be available within your virtual envi
 
 #### Downloading the server binary only
 
-You may also download the binary directly using the curl command below. Note that this still
+You may also download the binary directly using the `curl` command below. Note that this still
 requires your system to have a Python interpreter available and Polars to be installed. See the
 [Python Environments page](/polars-on-premises/bare-metal/python-environment) for setup options.
 
@@ -30,7 +32,7 @@ $ curl -L 'https://get.onprem.pola.rs?version=0.1.0' --data @license.json --outp
 ```
 
 See the [Python Environments page](/polars-on-premises/bare-metal/python-environment) for more
-information about setting up Polars On-Premises in your environment.
+information about setting up Polars On-Prem in your environment.
 
 ## Reading the license
 

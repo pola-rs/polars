@@ -26,14 +26,14 @@ your machines, no Kubernetes installation required.
 Polars On-Prem offers two plans depending on how much connectivity you want between your clusters
 and the Polars Cloud portal.
 
-|                           | Self Serve                            | Enterprise                                       |
+|                           | Self-Serve                            | Enterprise                                       |
 | ------------------------- | ------------------------------------- | ------------------------------------------------ |
 | License                   | Download from Polars Cloud portal     | Contact us                                       |
 | Cluster connectivity      | Reports query history to cloud portal | Fully air-gapped, no inbound or outbound traffic |
 | Query profiling & history | Viewable in Polars Cloud portal       | Managed within your infrastructure               |
 | Pricing                   | Generous free tier, pay as you go     | Contact us                                       |
 
-**Self Serve** is the right choice for teams who want to run clusters on their own infrastructure
+**Self-Serve** is the right choice for teams who want to run clusters on their own infrastructure
 but still benefit from centralized visibility. Clusters connect back to the Polars Cloud portal to
 sync query history and profiling data, giving your team a shared view of usage without any data
 leaving your environment.
@@ -42,13 +42,13 @@ leaving your environment.
 entirely inside your infrastructure with no inbound or outbound connection to the Polars Cloud
 portal.
 
-### Self Serve
+### Self-Serve
 
-Self Serve is the fastest way to get started. Download a license from the Polars Cloud portal,
-deploy into your own infrastructure, and manage clusters and query profiling from there. Generous
-free tier, pay-as-you-go beyond that, no credit card required.
+Self-Serve is the fastest way to get started. Get credentials from the Polars Cloud portal, deploy
+into your own infrastructure, and manage clusters and query profiling from there. Generous free
+tier, pay-as-you-go beyond that, no credit card required.
 
-With Self Serve, query history is automatically synced to the control plane, so you get a persistent
+With Self-Serve, query history is automatically synced to the control plane, so you get a persistent
 historical view of query performance that survives cluster restarts and teardowns.
 
 ### Enterprise
