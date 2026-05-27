@@ -154,8 +154,12 @@ pub fn optimize(
                     eprintln!("found multiple sources; run comm_subplan_elim")
                 }
 
-                run_set_cache_states =
-                    cse::cspe::common_subplan_elimination(root, ir_arena, expr_arena);
+                run_set_cache_states = cse::cspe::common_subplan_elimination(
+                    root,
+                    ir_arena,
+                    expr_arena,
+                    polars_config::config().nested_cspe(),
+                );
             }
         });
     };
