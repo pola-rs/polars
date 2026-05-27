@@ -1158,6 +1158,8 @@ class Series:
             other = pl.Series("", [None])
 
         if isinstance(other, Series):
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(other._s, op_s)(self._s))
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
             return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
@@ -1365,7 +1367,7 @@ class Series:
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
         if self.dtype.is_float():
-            self.__rfloordiv__(other)
+            return self.cast(Float64).__rfloordiv__(other)
         if isinstance(other, (int, float)) and self.dtype.is_decimal():
             return self.to_frame().select(other / F.col(self.name)).to_series()
 
