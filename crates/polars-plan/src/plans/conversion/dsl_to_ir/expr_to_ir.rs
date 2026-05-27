@@ -116,6 +116,7 @@ impl<'a> ExprToIRContext<'a> {
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
+#[recursive]
 pub(super) fn to_aexpr_impl(
     expr: Expr,
     ctx: &mut ExprToIRContext,
