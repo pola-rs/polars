@@ -524,11 +524,16 @@ fn is_sorted_rec(
         IR::Sink { .. } => None,
         IR::SinkMultiple { .. } => None,
         #[cfg(feature = "merge_sorted")]
-        IR::MergeSorted { key, .. } => Some(IRSorted(
+        IR::MergeSorted {
+            key,
+            descending,
+            nulls_last,
+            ..
+        } => Some(IRSorted(
             [Sorted {
                 column: key.clone(),
-                descending: None,
-                nulls_last: None,
+                descending: Some(*descending),
+                nulls_last: Some(*nulls_last),
             }]
             .into(),
         )),
