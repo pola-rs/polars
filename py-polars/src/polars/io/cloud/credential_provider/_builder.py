@@ -149,6 +149,9 @@ class CredentialProviderBuilder:
         """Initialize with an already constructed provider."""
         return cls(InitializedCredentialProvider(credential_provider))
 
+    def stable_cache_key(self) -> bytes:
+        return self.credential_provider_init.stable_cache_key()
+
     def __getstate__(self) -> Any:
         state = self.credential_provider_init
 
@@ -177,6 +180,10 @@ class CredentialProviderBuilderImpl(abc.ABC):
     def provider_repr(self) -> str:
         """Used for logging."""
 
+    @abc.abstractmethod
+    def stable_cache_key(self) -> bytes:
+        """Content-based key that survives pickle round-trips."""
+
     def __repr__(self) -> str:
         provider_repr = self.provider_repr
         builder_name = type(self).__name__
@@ -202,6 +209,20 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
             lambda: id(self.credential_provider),
             lambda: CachedCredentialProvider(self.credential_provider),
         )
+
+    def stable_cache_key(self) -> bytes:
+        import hashlib
+        import pickle
+
+        verbose = polars._utils.logging.verbose()
+        try:
+            return hashlib.sha256(pickle.dumps(self.credential_provider)).digest()[:16]
+        except Exception as e:
+            if verbose:
+                print(f"CredentialProvider stable_cache_key() failed: {e = }")
+            # If we cannot pickle, there is no need for the cache key to be
+            # globally stable. Instead, a locally stable cache key is sufficient.
+            return id(self.credential_provider).to_bytes(8, byteorder="little")
 
     @property
     def provider_repr(self) -> str:
@@ -307,6 +328,9 @@ class AutoInit(CredentialProviderBuilderImpl):
 
         hash = hashlib.sha256(pickle.dumps(self))
         return hash.digest()[:16]
+
+    def stable_cache_key(self) -> bytes:
+        return self.get_or_init_cache_key()
 
     @property
     def provider_repr(self) -> str:
