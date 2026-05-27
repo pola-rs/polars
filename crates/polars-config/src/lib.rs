@@ -71,6 +71,9 @@ const PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: &str =
     "POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS";
 const DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: bool = false;
 
+const ALLOW_NESTED_CSPE: &str = "POLARS_ALLOW_NESTED_CSPE";
+const DEFAULT_ALLOW_NESTED_CSPE: bool = false;
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
@@ -81,6 +84,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     ENGINE_AFFINITY,
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     PRUNE_PARQUET_METADATA,
+    ALLOW_NESTED_CSPE,
     /*
     Not yet supported public options:
 
@@ -125,6 +129,7 @@ pub struct Config {
     engine_affinity: AtomicU8,
     parquet_binary_statistics_truncate_length: AtomicU64,
     prune_parquet_metadata: AtomicBool,
+    allow_nested_cspe: AtomicBool,
 
     // Private.
     verbose_sensitive: AtomicBool,
@@ -166,6 +171,7 @@ impl Config {
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
+            allow_nested_cspe: AtomicBool::new(DEFAULT_ALLOW_NESTED_CSPE),
         };
         cfg.reload_env_vars();
         cfg
@@ -224,6 +230,11 @@ impl Config {
             PRUNE_PARQUET_METADATA => self.prune_parquet_metadata.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_PRUNE_PARQUET_METADATA),
+                Ordering::Relaxed,
+            ),
+            ALLOW_NESTED_CSPE => self.allow_nested_cspe.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_ALLOW_NESTED_CSPE),
                 Ordering::Relaxed,
             ),
 
@@ -323,6 +334,11 @@ impl Config {
     /// before serializing the IR plan. See `parquet_metadata_prune` in `polars-plan`.
     pub fn prune_parquet_metadata(&self) -> bool {
         self.prune_parquet_metadata.load(Ordering::Relaxed)
+    }
+
+    /// Nested common subplan elimination.
+    pub fn allow_nested_cspe(&self) -> bool {
+        self.allow_nested_cspe.load(Ordering::Relaxed)
     }
 
     /// Whether we should do verbose printing on sensitive information.
