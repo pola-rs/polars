@@ -63,6 +63,29 @@ pdsh_q3(customer_sf10, lineitem_sf10, orders_sf10).remote(context=ctx).show()
 
 # --8<-- [end:context]
 
+# --8<-- [start:cluster_context]
+import polars_cloud as pc
+
+ctx = pc.ClusterContext(
+    compute_address="https://...",
+)
+
+# Use a larger dataset available on S3
+lineitem_sf10 = pl.scan_parquet(
+    "s3://.../pdsh/sf10/lineitem.parquet",
+)
+customer_sf10 = pl.scan_parquet(
+    "s3://.../pdsh/sf10/customer.parquet",
+)
+orders_sf10 = pl.scan_parquet(
+    "s3://.../pdsh/sf10/orders.parquet",
+)
+
+# Your query remains the same
+pdsh_q3(customer_sf10, lineitem_sf10, orders_sf10).remote(context=ctx).show()
+
+# --8<-- [end:context]
+
 # --8<-- [start:sink_parquet]
 # Replace the S3 url with your own to run the query successfully
 (

@@ -121,6 +121,7 @@ version_match = re.fullmatch(r"py-(\d+)\.\d+\.\d+.*", git_ref)
 switcher_version = version_match.group(1) if version_match is not None else "dev"
 
 html_js_files = [
+    "js/announcement-dismiss.js",
     (
         "https://plausible.io/js/script.js",
         {"data-domain": "docs.pola.rs,combined.pola.rs", "defer": "defer"},
@@ -168,6 +169,7 @@ html_theme_options = {
         "json_url": f"{web_root}/api/python/dev/_static/version_switcher.json",
         "version_match": switcher_version,
     },
+    "announcement": "Try distributed Polars on Kubernetes or AWS for free. <a href='https://cloud.pola.rs' target='_blank' rel='noopener noreferrer'>Get started now</a>",
     "show_version_warning_banner": False,
     "navbar_end": ["theme-switcher", "version-switcher", "navbar-icon-links"],
     "check_switcher": False,
