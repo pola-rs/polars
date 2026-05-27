@@ -6,7 +6,10 @@
 
 ## Data access using Workload Identity
 
-Through Workload identity, you can securely access private Azure Blob Container data without needing to manage service account keys or credentials. You could use Microsoft Entra Workload ID for this purpose. [See the guide in the official AKS documentation](https://learn.microsoft.com/en-us/azure/aks/workload-identity-deploy-cluster).
+Through Workload identity, you can securely access private Azure Blob Container data without needing
+to manage service account keys or credentials. You could use Microsoft Entra Workload ID for this
+purpose.
+[See the guide in the official AKS documentation](https://learn.microsoft.com/en-us/azure/aks/workload-identity-deploy-cluster).
 
 ```bash
 helm upgrade --install polars polars-inc/polars \
@@ -15,7 +18,9 @@ helm upgrade --install polars polars-inc/polars \
 # ...
 ```
 
-Assuming you have a Blob Container already set up (see quick-start [here](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-quickstart-blobs-portal#create-a-container)), you can then scan or sink directly from the bucket.
+Assuming you have a Blob Container already set up (see quick-start
+[here](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-quickstart-blobs-portal#create-a-container)),
+you can then scan or sink directly from the bucket.
 
 ```python
 path = f"az://YOUR_BLOB_CONTAINER_NAME/PATH/TO/DATA/"
@@ -28,7 +33,9 @@ q = (
 )
 ```
 
-You may also use Azure Blob Storage as [an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data) by configuring the values as such:
+You may also use Azure Blob Storage as
+[an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data)
+by configuring the values as such:
 
 ```yaml
 anonymousResults:
