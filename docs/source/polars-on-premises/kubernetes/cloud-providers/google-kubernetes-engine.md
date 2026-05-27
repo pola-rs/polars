@@ -15,7 +15,7 @@ helm upgrade --install polars polars-inc/polars \
 # ...
 ```
 
-Then, assuming you have a bucket already set up (see quick-start [here](https://docs.cloud.google.com/storage/docs/creating-buckets)), you can then scan or sink directly from the bucket.
+Assuming you have a bucket already set up (see quick-start [here](https://docs.cloud.google.com/storage/docs/creating-buckets)), you can then scan or sink directly from the bucket.
 
 ```python
 path = f"gs://YOUR_BUCKET_NAME/PATH/TO/DATA/"
@@ -28,7 +28,7 @@ q = (
 )
 ```
 
-You may also use Google Cloud Storage as [an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data). By configuring the values as such:
+You may also use Google Cloud Storage as [an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data) by configuring the values as such:
 
 ```yaml
 anonymousResults:
