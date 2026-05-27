@@ -56,6 +56,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             names_set_scratch: &mut ScratchIndexSet::default(),
             names_set_scratch2: &mut ScratchIndexSet::default(),
             names_set_scratch3: &mut ScratchIndexSet::default(),
+            names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
             default_edge: Edge::new(
                 Projection::All,
@@ -90,6 +91,7 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     names_set_scratch: &'a mut ScratchIndexSet<PlSmallStr>,
     names_set_scratch2: &'a mut ScratchIndexSet<PlSmallStr>,
     names_set_scratch3: &'a mut ScratchIndexSet<PlSmallStr>,
+    names_vec_scratch: &'a mut ScratchVec<PlSmallStr>,
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
     default_edge: Edge,
     maintain_errors: bool,
@@ -1335,7 +1337,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 let mut inputs = mem::take(inputs);
                 let projected_names = out_edge.take_names().unwrap();
                 let strict = options.strict;
-                let hconcat_projected_names = self.names_set_scratch.get();
+                let hconcat_projected_names = self.names_vec_scratch.get();
 
                 assert_eq!(num_input_edges, inputs.len());
 
@@ -1376,13 +1378,16 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 break 'set_keep;
                             }
 
-                            hconcat_projected_names.insert(
-                                min_dtype_size_col(input_schema_arc.iter()).unwrap().clone(),
-                            );
+                            hconcat_projected_names
+                                .push(min_dtype_size_col(input_schema_arc.iter()).unwrap().clone());
                         }
 
-                        let names_this_input = &hconcat_projected_names.as_slice()
-                            [base_new_names_len..hconcat_projected_names.len()];
+                        let names_this_input =
+                            &mut hconcat_projected_names.as_mut_slice()[base_new_names_len..];
+
+                        names_this_input.sort_by_key(|name| {
+                            projected_names.get_index_of(name).unwrap_or(usize::MAX)
+                        });
 
                         if names_this_input.len() != input_schema_arc.len() {
                             let mut names = mem::take(self.names_set_scratch2.get());
@@ -1444,7 +1449,15 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 };
                 *inputs = new_inputs;
 
-                Arc::make_mut(schema).retain(|name, _| hconcat_projected_names.contains(name));
+                let new_schema = hconcat_projected_names
+                    .drain(..)
+                    .map(|name| {
+                        let dtype = schema.get(&name).unwrap().clone();
+                        (name, dtype)
+                    })
+                    .collect();
+
+                *schema = Arc::new(new_schema);
 
                 if let Some(projected_schema) =
                     compute_simple_projection_schema(projected_names.as_slice(), schema, false)
