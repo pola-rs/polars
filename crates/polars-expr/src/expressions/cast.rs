@@ -57,7 +57,7 @@ impl PhysicalExpr for CastExpr {
             AggState::NotAggregated(_) => {
                 if match self.options {
                     CastOptions::NonStrict | CastOptions::Overflowing => true,
-                    CastOptions::Strict => ac.original_len,
+                    CastOptions::Strict => ac.original_groups,
                 } {
                     // before we flatten, make sure that groups are updated
                     ac.groups();

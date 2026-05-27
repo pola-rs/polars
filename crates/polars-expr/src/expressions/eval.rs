@@ -210,8 +210,8 @@ impl EvalExpr {
                 output_groups
                     .iter()
                     .zip(offsets.offset_and_length_iter())
-                    .all(|([start, len], (original_start, original_len))| {
-                        (*start == original_start as IdxSize) & (*len == original_len as IdxSize)
+                    .all(|([start, len], (original_start, original_groups))| {
+                        (*start == original_start as IdxSize) & (*len == original_groups as IdxSize)
                     })
             };
 
