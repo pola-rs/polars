@@ -443,3 +443,44 @@ def test_merge_sorted_with_list_27563() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_descending(streaming: bool) -> None:
+    left = pl.LazyFrame({"a": [9, 5, 3], "b": [1, 2, 3]})
+    right = pl.LazyFrame({"a": [8, 6, 1], "b": [4, 5, 6]})
+
+    result = left.merge_sorted(right, key="a", descending=True).collect(
+        engine="streaming" if streaming else "in-memory"
+    )
+
+    expected = pl.DataFrame({"a": [9, 8, 6, 5, 3, 1], "b": [1, 4, 5, 2, 3, 6]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_nulls_last(streaming: bool) -> None:
+    left = pl.LazyFrame({"a": [1, 3, 5, None], "b": [1, 2, 3, 4]})
+    right = pl.LazyFrame({"a": [2, 4, None], "b": [5, 6, 7]})
+
+    result = left.merge_sorted(right, key="a", nulls_last=True).collect(
+        engine="streaming" if streaming else "in-memory"
+    )
+
+    expected = pl.DataFrame(
+        {"a": [1, 2, 3, 4, 5, None, None], "b": [1, 5, 2, 6, 3, 4, 7]}
+    )
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_descending_nulls_last(streaming: bool) -> None:
+    left = pl.LazyFrame({"a": [9, 5, None], "b": [1, 2, 3]})
+    right = pl.LazyFrame({"a": [8, 6, None], "b": [4, 5, 6]})
+
+    result = left.merge_sorted(
+        right, key="a", descending=True, nulls_last=True
+    ).collect(engine="streaming" if streaming else "in-memory")
+
+    expected = pl.DataFrame({"a": [9, 8, 6, 5, None, None], "b": [1, 4, 5, 2, 3, 6]})
+    assert_frame_equal(result, expected)
