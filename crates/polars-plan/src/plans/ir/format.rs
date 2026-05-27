@@ -1006,6 +1006,8 @@ pub fn write_ir_non_recursive(
             input_right: _,
             key,
             maintain_order,
+            descending,
+            nulls_last,
         } => write!(
             f,
             "{:indent$}MERGE SORTED[maintain_order: {}] ON '{key}'",

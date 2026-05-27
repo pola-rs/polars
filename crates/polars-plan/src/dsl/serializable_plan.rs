@@ -152,6 +152,8 @@ pub(crate) enum SerializableDslPlanNode {
         input_right: DslPlanKey,
         key: PlSmallStr,
         maintain_order: bool,
+        descending: bool,
+        nulls_last: bool,
     },
     IR {
         dsl: DslPlanKey,
@@ -376,11 +378,15 @@ fn convert_dsl_plan_to_serializable_plan(
             input_right,
             key,
             maintain_order,
+            descending,
+            nulls_last,
         } => SP::MergeSorted {
             input_left: dsl_plan_key(input_left, arenas),
             input_right: dsl_plan_key(input_right, arenas),
             key: key.clone(),
             maintain_order: *maintain_order,
+            descending: *descending,
+            nulls_last: *nulls_last,
         },
         DP::IR {
             dsl,
@@ -635,11 +641,15 @@ fn try_convert_serializable_plan_to_dsl_plan(
             input_right,
             key,
             maintain_order,
+            descending,
+            nulls_last,
         } => Ok(DP::MergeSorted {
             input_left: get_dsl_plan(*input_left, ser_dsl_plan, arenas)?,
             input_right: get_dsl_plan(*input_right, ser_dsl_plan, arenas)?,
             key: key.clone(),
             maintain_order: *maintain_order,
+            descending: *descending,
+            nulls_last: *nulls_last,
         }),
         SP::IR {
             dsl: dsl_key,

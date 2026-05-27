@@ -779,6 +779,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_right,
             key,
             maintain_order,
+            descending,
+            nulls_last,
         } => MergeSorted {
             input_left: input_left.0,
             input_right: input_right.0,

@@ -9083,6 +9083,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         key: str,
         *,
         maintain_order: bool = False,
+        descending: bool = False,
+        nulls_last: bool = False,
     ) -> LazyFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
@@ -9161,7 +9163,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         The key must be sorted in ascending order.
         """
         require_same_type(self, other)
-        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order))
+        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order, descending, nulls_last))
 
     def set_sorted(
         self,

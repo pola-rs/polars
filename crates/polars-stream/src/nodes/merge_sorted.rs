@@ -18,19 +18,27 @@ pub struct MergeSortedNode {
 
     maintain_order: bool,
 
+    descending: bool,
+
+    nulls_last: bool,
+
     // Not yet merged buffers.
     left_unmerged: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
 }
 
 impl MergeSortedNode {
-    pub fn new(maintain_order: bool) -> Self {
+    pub fn new(maintain_order: bool, descending: bool, nulls_last: bool) -> Self {
         Self {
             seq: MorselSeq::default(),
 
             starting_nulls: false,
 
             maintain_order,
+
+            descending,
+
+            nulls_last,
 
             left_unmerged: VecDeque::new(),
             right_unmerged: VecDeque::new(),
@@ -255,6 +263,8 @@ impl ComputeNode for MergeSortedNode {
         let seq = &mut self.seq;
         let starting_nulls = &mut self.starting_nulls;
         let maintain_order = self.maintain_order;
+        let descending = self.descending;
+        let nulls_last = self.nulls_last;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
 
@@ -497,8 +507,9 @@ impl ComputeNode for MergeSortedNode {
                             remove_key_column(&mut left);
                             remove_key_column(&mut right);
 
-                            let merged =
-                                _merge_sorted_dfs(&left, &right, &left_s, &right_s, false)?;
+                            let merged = _merge_sorted_dfs(
+                                &left, &right, &left_s, &right_s, false, descending, nulls_last,
+                            )?;
 
                             if ideal_morsel_size > 1 && merged.height() > ideal_morsel_size {
                                 // The merged dataframe will have at most doubled in size from the

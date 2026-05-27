@@ -1370,11 +1370,17 @@ fn to_graph_rec<'a>(
             input_left,
             input_right,
             maintain_order,
+            descending,
+            nulls_last,
         } => {
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             ctx.graph.add_node(
-                nodes::merge_sorted::MergeSortedNode::new(*maintain_order),
+                nodes::merge_sorted::MergeSortedNode::new(
+                    *maintain_order,
+                    *descending,
+                    *nulls_last,
+                ),
                 [
                     (left_input_key, input_left.port),
                     (right_input_key, input_right.port),

@@ -284,9 +284,13 @@ impl Hash for IRHashWrap<'_> {
                 input_right: _,
                 key,
                 maintain_order,
+                descending,
+                nulls_last,
             } => {
                 key.hash(state);
                 maintain_order.hash(state);
+                descending.hash(state);
+                nulls_last.hash(state);
             },
             IR::UnoptimizedDispatch {
                 inputs: _,

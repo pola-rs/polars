@@ -12528,6 +12528,8 @@ class DataFrame:
         key: str,
         *,
         maintain_order: bool = False,
+        descending: bool = False,
+        nulls_last: bool = False,
     ) -> DataFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
@@ -12611,7 +12613,7 @@ class DataFrame:
 
         return (
             self.lazy()
-            .merge_sorted(other.lazy(), key, maintain_order=maintain_order)
+            .merge_sorted(other.lazy(), key, maintain_order=maintain_order, descending=descending, nulls_last=nulls_last)
             .collect(optimizations=QueryOptFlags._eager())
         )
 

@@ -166,6 +166,8 @@ pub enum IR {
         input_right: Node,
         key: PlSmallStr,
         maintain_order: bool,
+        descending: bool,
+        nulls_last: bool,
     },
     UnoptimizedDispatch {
         inputs: Vec<Node>,

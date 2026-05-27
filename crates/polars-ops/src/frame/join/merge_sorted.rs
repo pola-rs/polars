@@ -12,6 +12,8 @@ pub fn _merge_sorted_dfs(
     left_s: &Series,
     right_s: &Series,
     check_schema: bool,
+    descending: bool,
+    nulls_last: bool,
 ) -> PolarsResult<DataFrame> {
     if check_schema {
         left.schema_equal(right)?;
