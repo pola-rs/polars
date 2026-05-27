@@ -1021,3 +1021,32 @@ def test_lazyframe_gather_select_len() -> None:
 
     with pytest.raises(pl.exceptions.OutOfBoundsError):
         q.collect()
+
+
+def test_hconcat_reorder_projection_push_to_inputs() -> None:
+    hconcat = pl.concat(
+        [
+            pl.LazyFrame(schema={"a": pl.Null, "b": pl.Null}),
+            pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
+        ],
+        how="horizontal",
+    )
+
+    q = hconcat.select("b", "a", "d", "c")
+    plan = q.explain()
+
+    assert plan.startswith("HCONCAT")
+    assert q.collect().columns == ["b", "a", "d", "c"]
+
+    q = hconcat.select("b", "d", "c")
+    plan = q.explain()
+
+    assert plan.startswith("HCONCAT")
+    assert q.collect().columns == ["b", "d", "c"]
+
+    # Columns are not in input order so we need to project in post.
+    q = hconcat.select("c", "a")
+    plan = q.explain()
+
+    assert plan.startswith("simple π")
+    assert q.collect().columns == ["c", "a"]

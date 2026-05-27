@@ -1332,10 +1332,16 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     return;
                 }
 
-                let (..) = projected_names_subset_or_return!();
+                if out_edge
+                    .compute_projected_names(&current_node_schema)
+                    .is_none()
+                {
+                    return;
+                }
+
+                let projected_names = out_edge.take_names().unwrap();
 
                 let mut inputs = mem::take(inputs);
-                let projected_names = out_edge.take_names().unwrap();
                 let strict = options.strict;
                 let hconcat_projected_names = self.names_vec_scratch.get();
 
@@ -1389,7 +1395,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             projected_names.get_index_of(name).unwrap_or(usize::MAX)
                         });
 
-                        if names_this_input.len() != input_schema_arc.len() {
+                        if !iters_eq(names_this_input.iter(), input_schema_arc.iter_names()) {
                             let mut names = mem::take(self.names_set_scratch2.get());
                             names.extend(names_this_input.iter().cloned());
 
