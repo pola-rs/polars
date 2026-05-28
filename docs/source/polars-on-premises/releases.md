@@ -1,4 +1,16 @@
-## 0.3.1 (latest)
+## 0.4.2 (latest)
+
+- `polars` [1.40.1](https://github.com/pola-rs/polars/releases/tag/py-1.40.1)
+- `polars-cloud` [0.7.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.7.0)
+
+**Highlights**
+
+- Support for custom-provided environment variables
+- Add distributed lowering for `Gather` and `RowIndexScans`
+- Optimize shuffles and handle empty partitions
+- Support GCS and ABS as anonymous result and/or shuffle locations
+
+## 0.3.1
 
 - `polars` [1.40.1](https://github.com/pola-rs/polars/releases/tag/py-1.40.1)
 - `polars-cloud` [0.6.1](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.1)
@@ -9,7 +21,7 @@
 - Distributed row index
 - Implement lowering for row-index scans w/o predicates or pre-slices
 - OpenLineage support
-- Track shuffle outputs on the scheduler; This will later enable partial stage recovery.
+- Track shuffle outputs on the scheduler (this will later enable partial stage recovery)
 
 ## 0.2.4
 
