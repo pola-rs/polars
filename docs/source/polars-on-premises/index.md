@@ -7,6 +7,10 @@ machine and require full control over their infrastructure.
 If you are running on AWS, we recommend [Polars Cloud](/polars-cloud) instead, it handles cluster
 provisioning, scaling, and teardown without any infrastructure setup on your end.
 
+<video autoplay muted loop playsinline style="width:100%;border-radius:8px;margin:1rem 0">
+  <source src="https://pola.rs/query-profiler-video.mp4" type="video/mp4">
+</video>
+
 ## Supported platforms
 
 Polars On-Prem supports two deployment paths:
