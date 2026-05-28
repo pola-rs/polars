@@ -11,7 +11,11 @@ from polars import functions as F
 from polars._typing import ConcatMethod
 from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.unstable import unstable
-from polars._utils.various import is_non_empty_sequence_of, ordered_unique, qualified_type_name
+from polars._utils.various import (
+    is_non_empty_sequence_of,
+    ordered_unique,
+    qualified_type_name,
+)
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
 
@@ -182,7 +186,9 @@ def concat(
         return elems[0]
 
     if how.startswith("align"):
-        if not is_non_empty_sequence_of(elems, pl.DataFrame) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+        if not is_non_empty_sequence_of(
+            elems, pl.DataFrame
+        ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
             elems, pl.LazyFrame
         ):
             msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
@@ -474,7 +480,9 @@ def union(
         return elems[0]
 
     if how.startswith("align"):
-        if not is_non_empty_sequence_of(elems, pl.DataFrame) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+        if not is_non_empty_sequence_of(
+            elems, pl.DataFrame
+        ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
             elems, pl.LazyFrame
         ):
             msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
@@ -678,7 +686,9 @@ def merge_sorted(
     if len(elems) == 1 and isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
         return elems[0]
 
-    if not is_non_empty_sequence_of(elems, pl.DataFrame) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+    if not is_non_empty_sequence_of(
+        elems, pl.DataFrame
+    ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
         elems, pl.LazyFrame
     ):
         msg = f"merge_sorted is not supported for {qualified_type_name(elems[0])!r}"
