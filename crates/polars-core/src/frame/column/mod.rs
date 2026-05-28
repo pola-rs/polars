@@ -588,7 +588,6 @@ impl Column {
     }
 
     pub fn split_at(&self, offset: i64) -> (Column, Column) {
-        // @scalar-opt
         match self {
             Column::Scalar(c) => {
                 let len = c.len();
