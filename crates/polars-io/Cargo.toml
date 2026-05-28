@@ -140,7 +140,7 @@ cloud = [
   "rand",
   "reqwest",
   "http",
-  "fastrand"
+  "fastrand",
 ]
 file_cache = ["async", "dep:blake3", "dep:fs4", "dep:parking_lot", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]
