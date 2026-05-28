@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hashbrown::HashMap;
-use rand::prelude::SliceRandom;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 use tokio::sync::RwLock;
 
@@ -20,7 +19,7 @@ pub(crate) fn get_dns_cache_ttl() -> Duration {
     );
 
     if polars_config::config().verbose() {
-        eprintln!("[dns_cache] ttl {}s", ttl.as_secs());
+        eprintln!("[dns_cache] ttl: {}s", ttl.as_secs());
     }
 
     ttl
@@ -62,9 +61,7 @@ impl Resolve for CachingResolver {
 
                 if let Some(entry) = read_guard.get(&key) {
                     if entry.fetched_at.elapsed() < ttl {
-                        let mut addrs = (*entry.addrs).clone();
-                        addrs.shuffle(&mut rand::rng());
-                        return Ok(Box::new(addrs.into_iter()) as Addrs);
+                        return Ok(shuffle_addrs(&entry.addrs));
                     }
                 }
             }
@@ -76,20 +73,19 @@ impl Resolve for CachingResolver {
             // Re-check in case the cache has been populated in the meanwhile
             if let Some(entry) = write_guard.get(&key) {
                 if entry.fetched_at.elapsed() < ttl {
-                    let mut addrs = (*entry.addrs).clone();
-                    addrs.shuffle(&mut rand::rng());
-                    return Ok(Box::new(addrs.into_iter()) as Addrs);
+                    return Ok(shuffle_addrs(&entry.addrs));
                 }
             }
 
             let addrs = Arc::new(
-                tokio::task::spawn_blocking(move || {
-                    (key_clone.as_str(), 0u16)
-                        .to_socket_addrs()
-                        .map(|it| it.collect::<Vec<_>>())
-                })
-                .await
-                .map_err(DynErr::from)??,
+                polars_core::runtime::ASYNC
+                    .spawn_blocking(move || {
+                        (key_clone.as_str(), 0u16)
+                            .to_socket_addrs()
+                            .map(|it| it.collect::<Vec<_>>())
+                    })
+                    .await
+                    .map_err(DynErr::from)??,
             );
 
             write_guard.insert(
@@ -101,10 +97,14 @@ impl Resolve for CachingResolver {
             );
             drop(write_guard);
 
-            let mut addrs = (*addrs).clone();
-            addrs.shuffle(&mut rand::rng());
-
-            Ok(Box::new(addrs.into_iter()) as Addrs)
+            Ok(shuffle_addrs(&addrs))
         })
     }
+}
+
+fn shuffle_addrs(addrs: &Arc<Vec<SocketAddr>>) -> Addrs {
+    let mut indices: Vec<usize> = (0..addrs.len()).collect();
+    fastrand::shuffle(&mut indices);
+    let addrs = addrs.clone();
+    Box::new(indices.into_iter().map(move |i| addrs[i]))
 }

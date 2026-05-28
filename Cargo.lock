@@ -3273,6 +3273,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "fast-float2",
+ "fastrand",
  "flate2",
  "fs4",
  "futures",
