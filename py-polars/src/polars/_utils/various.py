@@ -151,7 +151,7 @@ def is_sequence(
     )
 
 
-def is_sequence_of(obj: Sequence[Any], tp: type[T]) -> TypeIs[Sequence[T]]:
+def is_non_empty_sequence_of(obj: Sequence[Any], tp: type[T]) -> TypeIs[Sequence[T]]:
     # Check if an object is a sequence of `tp`, only sniffing the first element.
     return bool(
         (first := next(iter(obj), NO_DEFAULT)) is not NO_DEFAULT
