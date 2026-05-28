@@ -1193,13 +1193,13 @@ def _read_spreadsheet_openpyxl(
     header: list[str | None] = []
 
     if table_name and not sheet_name:
-        sheet_name, n_tables = None, 0
+        ws, sheet_name, n_tables = None, None, 0
         for sheet in parser.worksheets:
             n_tables += 1
             if table_name in sheet.tables:
                 ws, sheet_name = sheet, sheet.title
                 break
-        if sheet_name is None:
+        if ws is None:
             msg = (
                 f"table named {table_name!r} not found in sheet {sheet_name!r}"
                 if n_tables
