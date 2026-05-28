@@ -1,4 +1,4 @@
-## 0.4.2 (latest)
+## 0.4.2 (latest) <small>- 27 May 2026</small>
 
 - `polars` [1.40.1](https://github.com/pola-rs/polars/releases/tag/py-1.40.1)
 - `polars-cloud` [0.7.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.7.0)
@@ -10,7 +10,7 @@
 - Optimize shuffles and handle empty partitions
 - Support GCS and ABS as anonymous result and/or shuffle locations
 
-## 0.3.1
+## 0.3.1 <small>- 29 Apr 2026</small>
 
 - `polars` [1.40.1](https://github.com/pola-rs/polars/releases/tag/py-1.40.1)
 - `polars-cloud` [0.6.1](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.1)
@@ -23,7 +23,7 @@
 - OpenLineage support
 - Track shuffle outputs on the scheduler (this will later enable partial stage recovery)
 
-## 0.2.4
+## 0.2.4 <small>- 13 Apr 2026</small>
 
 - `polars` [1.39.3](https://github.com/pola-rs/polars/releases/tag/py-1.39.3)
 - `polars-cloud` [0.6.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.0)
@@ -35,7 +35,7 @@
 - Distributed slice
 - Improved stage graph
 
-## 0.2.3
+## 0.2.3 <small>- 23 Mar 2026</small>
 
 - `polars` [1.39.3](https://github.com/pola-rs/polars/releases/tag/py-1.39.3)
 - `polars-cloud` [0.6.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.6.0)
@@ -49,7 +49,7 @@
 - Fix multi-partition bugs in the observatory (still one remaining for IO time)
 - Add data skew and worker time information
 
-## 0.1.1
+## 0.1.1 <small>- 13 Feb 2026</small>
 
 - `polars` [1.38.1](https://github.com/pola-rs/polars/releases/tag/py-1.38.1)
 - `polars-cloud` [0.5.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.5.0)
