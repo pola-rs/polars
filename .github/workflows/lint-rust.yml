@@ -90,6 +90,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+
       - name: Set up Rust
         run: rustup component add miri
 
