@@ -72,7 +72,13 @@ impl Executor for PythonScanExec {
                 let mut could_serialize_predicate = true;
 
                 let predicate = match &self.options.predicate {
-                    PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
+                    PythonPredicate::PyArrow{predicate, has_residual} => {
+                        if *has_residual {
+                            // This will ensure we apply post-apply-predicate
+                            could_serialize_predicate = false;
+                        }
+
+                        predicate.into_bound_py_any(py).unwrap()},
                     PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
                     PythonPredicate::Polars(_) => {
                         assert!(self.predicate.is_some(), "should be set");

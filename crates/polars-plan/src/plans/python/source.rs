@@ -37,7 +37,10 @@ pub struct PythonOptions {
 pub enum PythonPredicate {
     // A pyarrow predicate python expression
     // can be evaluated with python.eval
-    PyArrow(String),
+    PyArrow {
+        predicate: String,
+        has_residual: bool,
+    },
     Polars(ExprIR),
     #[default]
     None,
