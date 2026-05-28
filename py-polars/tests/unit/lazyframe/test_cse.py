@@ -1496,7 +1496,7 @@ def test_cse_projection_pushdown_27569() -> None:
     )
 
 
-def test_multiplexer_simple_concat() -> None:
+def test_multiplexer_simple_concat_26502() -> None:
     common = pl.LazyFrame({"x": [1, 2, 3]}).with_columns(x2=pl.col.x * pl.col.x)
     lf = pl.concat([common.filter(pl.col.x2 == k) for k in range(5)])
 
@@ -1506,7 +1506,7 @@ def test_multiplexer_simple_concat() -> None:
     assert "multiplexer" in graph_output
 
 
-def test_multiplexer_grouped_concat() -> None:
+def test_multiplexer_grouped_concat_26502() -> None:
     common = (
         pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6]}).group_by("x").agg(pl.col.y.sum())
     )
@@ -1516,3 +1516,42 @@ def test_multiplexer_grouped_concat() -> None:
         plan_stage="physical", engine="streaming", raw_output=True
     )
     assert "multiplexer" in graph_output
+
+
+
+
+def test_multiplexer_deep_climb_streaming_26502() -> None:
+    common = (
+        pl.LazyFrame({"x": [1, 2, 3], "y": [4, 5, 6]})
+        .filter(pl.col("x") > 0)
+        .with_columns(x2=pl.col("x") * 2)
+        .group_by("x2")
+        .agg(pl.col("y").sum())
+    )
+
+    lf = pl.concat([common.filter(pl.col("x2") == k) for k in range(2)])
+
+    graph_output = lf.show_graph(
+        plan_stage="physical", engine="streaming", raw_output=True
+    )
+    assert "multiplexer" in graph_output
+
+    assert lf.collect().shape is not None
+
+
+def test_cse_full_pushdown_cache_removal_26502() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+
+    lf = df.lazy()
+
+    branch_1 = lf.filter(pl.col("a") == 1)
+    branch_2 = lf.filter(pl.col("a") == 2)
+
+    optimized_lf = pl.concat([branch_1, branch_2])
+
+    plan_string = optimized_lf.explain()
+
+    assert "CACHE" not in plan_string
+
+    expected = pl.DataFrame({"a": [1, 2]})
+    assert_frame_equal(optimized_lf.collect(), expected)

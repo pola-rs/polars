@@ -12,7 +12,6 @@ use crate::plans::deep_copy::deep_copy_ir_delete_caches;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::{AExpr, IR, PredicatePushDown};
-use crate::prelude::{ExprToIRContext, to_expr_ir};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names;
 
@@ -66,34 +65,7 @@ fn get_upper_predicates(
 
 type TwoParents = [Option<Node>; 2];
 
-fn predicates_can_pass_subtree(
-    child: Node,
-    predicate_union: &PlHashMap<Expr, u32>,
-    lp_arena: &mut Arena<IR>,
-    expr_arena: &mut Arena<AExpr>,
-    pushdown_maintain_errors: bool,
-    new_streaming: bool,
-) -> PolarsResult<bool> {
-    let child_copy = deep_copy_ir_delete_caches(child, lp_arena, expr_arena);
-
-    let schema = lp_arena.get(child_copy).schema(lp_arena).into_owned();
-
-    let mut top = child_copy;
-    for expr in predicate_union.keys() {
-        let expr_ir = to_expr_ir(expr.clone(), &mut ExprToIRContext::new(expr_arena, &schema))?;
-        top = lp_arena.add(IR::Filter {
-            input: top,
-            predicate: expr_ir,
-        });
-    }
-
-    let mut pred_pd =
-        PredicatePushDown::new(pushdown_maintain_errors, new_streaming).block_at_cache(1);
-    let optimized = pred_pd.optimize(lp_arena.take(top), lp_arena, expr_arena)?;
-    lp_arena.replace(top, optimized);
-
-    Ok(!matches!(lp_arena.get(top), IR::Filter { .. }))
-} // 1. This will ensure that all equal caches communicate the amount of columns
+// 1. This will ensure that all equal caches communicate the amount of columns
 //    they need to project.
 // 2. This will ensure we apply predicate in the subtrees below the caches.
 //    If the predicate above the cache is the same for all matching caches, that filter will be
@@ -313,17 +285,30 @@ pub(crate) fn set_cache_states(
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
             // # CHECK IF WE NEED TO REMOVE CACHES
+            if v.predicate_union.len() > 1 {
+                let mut preserve_cache = false;
 
-            let should_remove_cache = v.predicate_union.len() > 1
-                && predicates_can_pass_subtree(
-                    *v.children.first().unwrap(),
-                    &v.predicate_union,
-                    lp_arena,
-                    expr_arena,
-                    pushdown_maintain_errors,
-                    new_streaming,
-                )?;
-            if should_remove_cache {
+                if let Some(&first_child) = v.children.first() {
+                    match lp_arena.get(first_child) {
+                        IR::Select { .. }
+                        | IR::HStack { .. }
+                        | IR::GroupBy { .. }  => {
+                            preserve_cache = true;
+                        },
+                        _ => {},
+                    }
+                }
+
+                if preserve_cache {
+                    let child = *v.children.first().unwrap();
+                    let child_lp = lp_arena.take(child);
+                    let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
+                    lp_arena.replace(child, lp.clone());
+                    for &child in &v.children[1..] {
+                        lp_arena.replace(child, lp.clone());
+                    }
+                    continue;
+                }
                 if verbose {
                     eprintln!("cache nodes will be removed because predicates don't match")
                 }
