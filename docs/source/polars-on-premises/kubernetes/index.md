@@ -1,4 +1,4 @@
-# Kubernetes
+# Getting started
 
 The following section walks you through the few steps required to deploy a cluster on your own
 Kubernetes infrastructure. We expect the latter to be provisioned, and the few tools to interact
