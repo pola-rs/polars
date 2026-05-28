@@ -9,15 +9,21 @@ use tokio::sync::RwLock;
 
 type DynErr = Box<dyn std::error::Error + Send + Sync>;
 
-const DEFAULT_CLOUD_DNS_CACHE_TTL_SECS: u64 = 5;
+const DEFAULT_DNS_CACHE_TTL_SECS: u64 = 5;
 
-pub(crate) fn get_cloud_dns_cache_ttl() -> Duration {
-    Duration::from_secs(
-        std::env::var("POLARS_CLOUD_DNS_CACHE_TTL_SECS")
+pub(crate) fn get_dns_cache_ttl() -> Duration {
+    let ttl = Duration::from_secs(
+        std::env::var("POLARS_DNS_CACHE_TTL_SECS")
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(DEFAULT_CLOUD_DNS_CACHE_TTL_SECS),
-    )
+            .unwrap_or(DEFAULT_DNS_CACHE_TTL_SECS),
+    );
+
+    if polars_config::config().verbose() {
+        eprintln!("[dns_cache] ttl {}s", ttl.as_secs());
+    }
+
+    ttl
 }
 
 #[derive(Debug)]

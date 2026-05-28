@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "cloud")]
-use super::dns::get_cloud_dns_cache_ttl;
+use super::dns::get_dns_cache_ttl;
 #[cfg(feature = "cloud")]
 use crate::cloud::ObjectStoreErrorContext;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
@@ -288,7 +288,7 @@ pub(super) fn get_client_options() -> ClientOptions {
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
-        .with_dns_resolver(Arc::new(CachingResolver::new(get_cloud_dns_cache_ttl())))
+        .with_dns_resolver(Arc::new(CachingResolver::new(get_dns_cache_ttl())))
 }
 
 #[cfg(feature = "aws")]
