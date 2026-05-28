@@ -204,7 +204,7 @@ fn series_to_merge_indicator(
         with_match_categorical_physical_type!(cat_phys, |$C| {
             let lhs = lhs.cat::<$C>().unwrap();
             let rhs = rhs.cat::<$C>().unwrap();
-            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str(), descending, nulls_last));
+            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str(), false, false));
         })
     }
 
@@ -212,8 +212,8 @@ fn series_to_merge_indicator(
         return Ok(get_merge_indicator(
             lhs.row_encode_ordered(false, false)?.iter(),
             rhs.row_encode_ordered(false, false)?.iter(),
-            descending,
-            nulls_last,
+            false,
+            false,
         ));
     }
 
@@ -259,8 +259,8 @@ fn series_to_merge_indicator(
 // get a boolean values, left: true, right: false
 // that indicate from which side we should take a value
 fn get_merge_indicator<T>(
-    mut a_iter: impl ExactSizeIterator<Item = T>,
-    mut b_iter: impl ExactSizeIterator<Item = T>,
+    mut a_iter: impl ExactSizeIterator<Item = Option<T>>,
+    mut b_iter: impl ExactSizeIterator<Item = Option<T>>,
     descending: bool,
     nulls_last: bool,
 ) -> Vec<bool>
@@ -269,6 +269,19 @@ where
 {
     const A_INDICATOR: bool = true;
     const B_INDICATOR: bool = false;
+
+    let cmp = move |a, b| match (a, b) {
+        (None, None) => true,
+        (Some(_), None) => nulls_last,
+        (None, Some(_)) => !nulls_last,
+        (Some(i), Some(j)) => {
+            if descending {
+                i >= j
+            } else {
+                i <= j
+            }
+        },
+    };
 
     let a_len = a_iter.size_hint().0;
     let b_len = b_iter.size_hint().0;
@@ -279,19 +292,15 @@ where
         return vec![A_INDICATOR; a_len];
     }
 
-    let mut current_a = T::default();
+    let mut current_a = Some(T::default());
     let cap = a_len + b_len;
     let mut out = Vec::with_capacity(cap);
 
     let mut current_b = b_iter.next().unwrap();
-    let cmp = if descending {
-        |a: &T, b: &T| a <= b
-    } else {
-        |a: &T, b: &T| a >= b
-    };
+
     for a in &mut a_iter {
         current_a = a;
-        if cmp(&a, &current_b) {
+        if cmp(a, current_b) {
             out.push(A_INDICATOR);
             continue;
         }
@@ -300,7 +309,7 @@ where
         loop {
             if let Some(b) = b_iter.next() {
                 current_b = b;
-                if cmp(&a, &b) {
+                if cmp(a, b) {
                     out.push(A_INDICATOR);
                     break;
                 }
@@ -313,7 +322,7 @@ where
             return out;
         }
     }
-    if current_a < current_b {
+    if !cmp(current_b, current_a) {
         out.push(B_INDICATOR);
     }
     // check if current value already is added
@@ -330,7 +339,12 @@ where
 #[test]
 fn test_merge_sorted() {
     fn get_merge_indicator_sliced<T: PartialOrd + Default + Copy>(a: &[T], b: &[T]) -> Vec<bool> {
-        get_merge_indicator(a.iter().copied(), b.iter().copied())
+        get_merge_indicator(
+            a.iter().copied().map(Some),
+            b.iter().copied().map(Some),
+            false,
+            false,
+        )
     }
 
     let a = [1, 2, 4, 6, 9];
