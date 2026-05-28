@@ -21,6 +21,10 @@ pub fn _merge_sorted_dfs(
     let dtype_lhs = left_s.dtype();
     let dtype_rhs = right_s.dtype();
 
+    eprintln!(
+        "Descending: {} Nulls_last: {} from _merge_sorted_dfs",
+        descending, nulls_last
+    );
     polars_ensure!(
         dtype_lhs == dtype_rhs,
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
@@ -33,7 +37,7 @@ pub fn _merge_sorted_dfs(
         return Ok(right.clone());
     }
 
-    let merge_indicator = series_to_merge_indicator(left_s, right_s)?;
+    let merge_indicator = series_to_merge_indicator(left_s, right_s, descending, nulls_last)?;
     let new_columns = left
         .columns()
         .iter()
@@ -188,14 +192,19 @@ where
     }
 }
 
-fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
+fn series_to_merge_indicator(
+    lhs: &Series,
+    rhs: &Series,
+    descending: bool,
+    nulls_last: bool,
+) -> PolarsResult<Vec<bool>> {
     #[cfg(feature = "dtype-categorical")]
     if lhs.dtype().is_categorical() || lhs.dtype().is_enum() {
         let cat_phys = lhs.dtype().cat_physical().unwrap();
         with_match_categorical_physical_type!(cat_phys, |$C| {
             let lhs = lhs.cat::<$C>().unwrap();
             let rhs = rhs.cat::<$C>().unwrap();
-            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str()));
+            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str(), descending, nulls_last));
         })
     }
 
@@ -203,6 +212,8 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
         return Ok(get_merge_indicator(
             lhs.row_encode_ordered(false, false)?.iter(),
             rhs.row_encode_ordered(false, false)?.iter(),
+            descending,
+            nulls_last,
         ));
     }
 
@@ -214,29 +225,29 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
         DataType::Boolean => {
             let lhs = lhs_s.bool().unwrap();
             let rhs = rhs_s.bool().unwrap();
-            get_merge_indicator(lhs.iter(), rhs.iter())
+            get_merge_indicator(lhs.iter(), rhs.iter(), descending, nulls_last)
         },
         DataType::Binary => {
             let lhs = lhs_s.binary().unwrap();
             let rhs = rhs_s.binary().unwrap();
-            get_merge_indicator(lhs.iter(), rhs.iter())
+            get_merge_indicator(lhs.iter(), rhs.iter(), descending, nulls_last)
         },
         DataType::String => {
             let lhs = lhs.str().unwrap().as_binary();
             let rhs = rhs.str().unwrap().as_binary();
-            get_merge_indicator(lhs.iter(), rhs.iter())
+            get_merge_indicator(lhs.iter(), rhs.iter(), descending, nulls_last)
         },
         DataType::BinaryOffset => {
             let lhs = lhs_s.binary_offset().unwrap();
             let rhs = rhs_s.binary_offset().unwrap();
-            get_merge_indicator(lhs.iter(), rhs.iter())
+            get_merge_indicator(lhs.iter(), rhs.iter(), descending, nulls_last)
         },
         dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(lhs_s.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs_s.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs_s.as_ref().as_ref().as_ref();
 
-                    get_merge_indicator(lhs.iter(), rhs.iter())
+                    get_merge_indicator(lhs.iter(), rhs.iter(),descending, nulls_last)
 
             })
         },
@@ -250,6 +261,8 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
 fn get_merge_indicator<T>(
     mut a_iter: impl ExactSizeIterator<Item = T>,
     mut b_iter: impl ExactSizeIterator<Item = T>,
+    descending: bool,
+    nulls_last: bool,
 ) -> Vec<bool>
 where
     T: PartialOrd + Default + Copy,
@@ -271,10 +284,14 @@ where
     let mut out = Vec::with_capacity(cap);
 
     let mut current_b = b_iter.next().unwrap();
-
+    let cmp = if descending {
+        |a: &T, b: &T| a <= b
+    } else {
+        |a: &T, b: &T| a >= b
+    };
     for a in &mut a_iter {
         current_a = a;
-        if a <= current_b {
+        if cmp(&a, &current_b) {
             out.push(A_INDICATOR);
             continue;
         }
@@ -283,7 +300,7 @@ where
         loop {
             if let Some(b) = b_iter.next() {
                 current_b = b;
-                if b >= a {
+                if cmp(&a, &b) {
                     out.push(A_INDICATOR);
                     break;
                 }
