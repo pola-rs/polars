@@ -3381,7 +3381,9 @@ def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
         df.transpose()
 
 
-@pytest.mark.parametrize("shuffle", [False, None])
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
 def test_df_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
     df = pl.DataFrame({"x": [1, 2, 3, 4]})
 

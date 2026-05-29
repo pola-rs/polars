@@ -1388,7 +1388,9 @@ def test_list_sample_fraction_with_replacement_27344() -> None:
     assert result["x"][0].to_list() == [1, 1]
 
 
-@pytest.mark.parametrize("shuffle", [False, None])
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
 def test_list_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
     df = pl.DataFrame({"x": [[1, 2, 3, 4]]})
 

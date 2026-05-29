@@ -27,11 +27,10 @@ def test_shuffle_group_by_reseed() -> None:
 def test_sample_expr() -> None:
     a = pl.Series("a", range(20))
     out = pl.select(
-        pl.lit(a).sample(fraction=0.5, with_replacement=False, shuffle=False, seed=1)
+        pl.lit(a).sample(fraction=0.5, with_replacement=False, seed=1)
     ).to_series()
 
     assert out.shape == (10,)
-    assert out.to_list() == out.sort().to_list()
     assert out.unique().shape == (10,)
     assert set(out).issubset(set(a))
 
@@ -44,9 +43,9 @@ def test_sample_expr() -> None:
 
     # pl.set_random_seed should lead to reproducible results.
     pl.set_random_seed(1)
-    result1 = pl.select(pl.lit(a).sample(n=10), shuffle=False).to_series()
+    result1 = pl.select(pl.lit(a).sample(n=10)).to_series()
     pl.set_random_seed(1)
-    result2 = pl.select(pl.lit(a).sample(n=10), shuffle=False).to_series()
+    result2 = pl.select(pl.lit(a).sample(n=10)).to_series()
     assert_series_equal(result1, result2)
 
 
