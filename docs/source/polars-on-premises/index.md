@@ -1,11 +1,19 @@
 # Polars On-Prem
 
 Polars On-Prem lets you run Polars clusters inside your own infrastructure, whether that's a managed
-Kubernetes service or bare metal. It is designed for teams that have data needs beyond a single
-machine and require full control over their infrastructure.
+Kubernetes service or bare metal. It is designed for teams that;
 
-If you are running on AWS, we recommend [Polars Cloud](/polars-cloud) instead, it handles cluster
-provisioning, scaling, and teardown without any infrastructure setup on your end.
+- have data needs beyond a single machine;
+- require full control over their infrastructure;
+- want elaborative query profiling;
+- want lineage support.
+
+If you want immediately start with running Polars On-Prem on kubernetes, follow the
+[getting-started](./getting-started) guide.
+
+<video autoplay muted loop playsinline style="width:100%;border-radius:8px;margin:1rem 0">
+  <source src="https://pola.rs/query-profiler-video.mp4" type="video/mp4">
+</video>
 
 ## Supported platforms
 
