@@ -953,6 +953,7 @@ def test_rolling_by_temporal_null_min_samples_27661() -> None:
         ("rolling_var", [None, None, None]),
         ("rolling_median", [None, None, None]),
         ("rolling_skew", [None, None, None]),
+        ("rolling_kurtosis", [None, None, None]),
     ],
 )
 def test_rolling_window_size_zero_23434(
@@ -963,4 +964,13 @@ def test_rolling_window_size_zero_23434(
     assert_series_equal(
         getattr(s, method)(window_size=0),
         pl.Series(expected, dtype=pl.Float64),
+    )
+
+
+def test_rolling_quantile_window_size_zero_23434() -> None:
+    """rolling_quantile with window_size=0 should return None for every position."""
+    s = pl.Series([1.0, 2.0, 3.0], dtype=pl.Float64)
+    assert_series_equal(
+        s.rolling_quantile(quantile=0.5, window_size=0),
+        pl.Series([None, None, None], dtype=pl.Float64),
     )
