@@ -1,4 +1,4 @@
-# Azure Kubernetes Service (EKS)
+# Amazon Elastic Kubernetes Service (EKS)
 
 !!! info "Initial configuration"
 
@@ -51,3 +51,20 @@ shuffleData:
     enabled: true
     endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
 ```
+
+## Reducing egress costs
+
+!!! warning "Egress charges"
+
+    When Polars workers access S3 over the public internet, AWS charges data transfer (egress) fees
+    that can grow significantly with large or frequent queries.
+
+Creating a **VPC Gateway Endpoint for S3** routes all S3 traffic through the AWS private network at
+no additional cost and requires no changes to your Polars deployment. Once the endpoint is attached
+to your VPC and route tables are updated, traffic is routed privately and automatically.
+
+Note that the S3 bucket must be in the same region as the EKS cluster (cross-region traffic incurs
+charges regardless of the endpoint configuration).
+
+See the related [guide](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html) in
+the official AWS documentation.

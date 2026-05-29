@@ -47,3 +47,21 @@ anonymousResults:
     - name: project
       value: "YOUR_PROJECT_NAME"
 ```
+
+## Reducing egress costs
+
+!!! warning "Egress charges"
+
+    When Polars workers access Google Cloud Storage (GCS) over the public internet, Google charges
+    data transfer (egress) fees that can grow significantly with large or frequent queries.
+
+Enabling **Private Google Access** on your GKE node subnet allows nodes to reach Google APIs and
+services using GCP-internal IP addresses only, without routing through the public internet. No
+changes are required to your Polars deployment. Once Private Google Access is enabled on the subnet,
+traffic is routed privately and automatically.
+
+Note that the GCS bucket must be in the same region as the GKE cluster (cross-region traffic incurs
+charges regardless of whether Private Google Access is enabled).
+
+See the related [guide](https://cloud.google.com/vpc/docs/configure-private-google-access) in the
+official GCP documentation.
