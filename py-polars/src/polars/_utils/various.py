@@ -85,7 +85,10 @@ def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
     return (
         (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
         or isinstance(val, MappingView)
-        or (sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views))
+        or (
+            sys.version_info >= (3, 11)
+            and isinstance(val, _reverse_mapping_views)  # pyrefly: ignore[unknown-name]
+        )
     )
 
 
@@ -145,6 +148,14 @@ def is_sequence(
     return (_check_for_numpy(val) and isinstance(val, np.ndarray)) or (
         isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
         and not isinstance(val, str)
+    )
+
+
+def is_non_empty_sequence_of(obj: Sequence[Any], tp: type[T]) -> TypeIs[Sequence[T]]:
+    # Check if an object is a sequence of `tp`, only sniffing the first element.
+    return bool(
+        (first := next(iter(obj), NO_DEFAULT)) is not NO_DEFAULT
+        and isinstance(first, tp)
     )
 
 

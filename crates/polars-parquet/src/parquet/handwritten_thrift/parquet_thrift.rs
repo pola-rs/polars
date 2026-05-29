@@ -80,7 +80,7 @@ impl From<ThriftProtocolError> for ParquetError {
                 general_err!("Unexpected struct field type {}", value)
             },
             ThriftProtocolError::InvalidElementType(value) => {
-                general_err!("Unexpected list/set element type{}", value)
+                general_err!("Unexpected list/set element type {}", value)
             },
             ThriftProtocolError::FieldDeltaOverflow {
                 field_delta,
@@ -336,9 +336,17 @@ pub(crate) trait ThriftCompactInputProtocol<'a> {
     /// Read the [`ListIdentifier`] for a Thrift encoded list.
     fn read_list_begin(&mut self) -> ThriftProtocolResult<ListIdentifier> {
         let header = self.read_byte()?;
-        let element_type = ElementType::try_from(header & 0x0f)?;
-
         let possible_element_count = (header & 0xF0) >> 4;
+        // fastparquet writes empty optional lists (e.g. an empty
+        // `key_value_metadata`) as the bare byte 0x00: count nibble = 0 with
+        // the element-type nibble left as 0 instead of a real type code. The
+        // type nibble has no meaning when count is 0, so accept it as an
+        // empty list rather than erroring on the meaningless type code.
+        let element_type = match header & 0x0f {
+            0 if possible_element_count == 0 => ElementType::Byte,
+            n => ElementType::try_from(n)?,
+        };
+
         let element_count = if possible_element_count != 15 {
             // high bits set high if count and type encoded separately
             possible_element_count as i32
@@ -1140,5 +1148,14 @@ pub(crate) mod tests {
         let mut prot = ThriftSliceInputProtocol::new(&buf);
         let read_val = T::read_thrift(&mut prot).unwrap();
         assert_eq!(val, read_val);
+    }
+
+    #[test]
+    fn test_decode_empty_list() {
+        let data = vec![0u8; 1];
+        let mut prot = ThriftSliceInputProtocol::new(&data);
+        let header = prot.read_list_begin().expect("error reading list header");
+        assert_eq!(header.size, 0);
+        assert_eq!(header.element_type, ElementType::Byte);
     }
 }
