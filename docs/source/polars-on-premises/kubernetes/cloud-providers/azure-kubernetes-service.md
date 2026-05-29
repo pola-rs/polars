@@ -46,3 +46,22 @@ anonymousResults:
     - name: account_name
       value: "YOUR_STORAGE_ACCOUNT_NAME"
 ```
+
+## Reducing egress costs
+
+!!! warning "Egress charges"
+
+    When Polars workers access Azure Blob Storage (ABS) over the public internet, Azure charges
+    data transfer (egress) fees that can grow significantly with large or frequent queries.
+
+Enabling a **Service Endpoint** for `Microsoft.Storage` on your AKS subnet routes all Blob Storage
+traffic over the Microsoft backbone network at no additional cost and requires no changes to your
+Polars deployment. Once the endpoint is in place and the storage account network rules are updated
+to allow access from your subnet, traffic is routed privately and automatically.
+
+Note that the storage account must be in the same region as the AKS cluster (cross-region traffic
+incurs charges regardless of the endpoint configuration).
+
+See the related
+[guide](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) in the
+official Azure documentation.
