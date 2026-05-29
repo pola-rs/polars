@@ -20,8 +20,31 @@ use polars_error::{PolarsError, PolarsResult, polars_ensure, polars_err};
 
 use crate::prelude::{
     Array, ArrayRef, ArrowDataType, ArrowField, BinaryViewArray, CompatLevel, DataType, ListArray,
-    PlSmallStr, PrimitiveArray, Series,
+    PlSmallStr, PrimitiveArray, Series, Utf8ViewArray, ViewType,
 };
+
+/// The Arrow spec mandates that all integers in binary view layouts (length, buffer index, offset)
+/// are signed. Buffers must not exceed this limit so offsets stay valid as i32.
+const ARROW_BINVIEW_MAX_BUFFER_SIZE: usize = i32::MAX as usize;
+
+/// Ensures a `BinaryViewArrayGeneric` has no data buffer exceeding `i32::MAX` bytes,
+/// as required by the Arrow spec for interoperability with other Arrow implementations.
+/// Returns the array unchanged if already compliant, otherwise rebuilds via gc() which
+/// repacks all values into new buffers capped at 16MB each.
+#[inline]
+fn ensure_binview_spec_compliant<T: ViewType + ?Sized>(
+    array: &arrow::array::BinaryViewArrayGeneric<T>,
+) -> Box<dyn Array> {
+    if array
+        .data_buffers()
+        .iter()
+        .all(|buf| buf.len() <= ARROW_BINVIEW_MAX_BUFFER_SIZE)
+    {
+        return array.to_boxed();
+    }
+
+    array.clone().gc().to_boxed()
+}
 
 fn unhandled_arrow_conversion_dtype_pair_err(
     input_pl_dtype: &DataType,
@@ -331,11 +354,17 @@ impl ToArrowConverter {
 
                 out
             },
-            (DataType::String, ArrowDataType::Utf8View) => array.to_boxed(),
+            (DataType::String, ArrowDataType::Utf8View) => {
+                let arr: &Utf8ViewArray = array.as_any().downcast_ref().unwrap();
+                ensure_binview_spec_compliant(arr)
+            },
             (DataType::String, ArrowDataType::LargeUtf8) => {
                 cast_unchecked(array, &ArrowDataType::LargeUtf8).unwrap()
             },
-            (DataType::Binary, ArrowDataType::BinaryView) => array.to_boxed(),
+            (DataType::Binary, ArrowDataType::BinaryView) => {
+                let arr: &BinaryViewArray = array.as_any().downcast_ref().unwrap();
+                ensure_binview_spec_compliant(arr)
+            },
             (DataType::Binary, ArrowDataType::LargeBinary) => {
                 cast_unchecked(array, &ArrowDataType::LargeBinary).unwrap()
             },
