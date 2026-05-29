@@ -1,4 +1,4 @@
-# Azure Kubernetes Service (EKS)
+# Amazon Elastic Kubernetes Service (EKS)
 
 !!! info "Initial configuration"
 
