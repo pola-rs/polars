@@ -2377,6 +2377,16 @@ def test_year_null_backed_by_out_of_range_15313() -> None:
     assert_series_equal(result, expected)
 
 
+def test_repr_out_of_range_datetime_25742() -> None:
+    # Formatting a datetime whose value falls outside the range representable
+    # as a calendar datetime must not panic; it falls back to the raw value.
+    s = pl.Series([8_210_266_876_800_000]).cast(pl.Datetime("ms"))
+    assert "8210266876800000" in str(s)
+
+    s_neg = pl.Series([-8_334_601_228_800_001]).cast(pl.Datetime("ms"))
+    assert "-8334601228800001" in str(s_neg)
+
+
 @pytest.mark.parametrize(
     "dtype",
     [*TEMPORAL_DTYPES, pl.Datetime("ms", "UTC"), pl.Datetime("ns", "Europe/Amsterdam")],

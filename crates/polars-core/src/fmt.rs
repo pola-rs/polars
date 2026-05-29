@@ -990,10 +990,16 @@ fn fmt_datetime(
     tu: TimeUnit,
     tz: Option<&self::datatypes::TimeZone>,
 ) -> fmt::Result {
+    // Use the non-panicking conversions: a timestamp can be outside the range
+    // that can be represented as a calendar datetime (e.g. far-future values),
+    // and formatting must not panic. Fall back to the raw value in that case.
     let ndt = match tu {
-        TimeUnit::Nanoseconds => timestamp_ns_to_datetime(v),
-        TimeUnit::Microseconds => timestamp_us_to_datetime(v),
-        TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
+        TimeUnit::Nanoseconds => timestamp_ns_to_datetime_opt(v),
+        TimeUnit::Microseconds => timestamp_us_to_datetime_opt(v),
+        TimeUnit::Milliseconds => timestamp_ms_to_datetime_opt(v),
+    };
+    let Some(ndt) = ndt else {
+        return write!(f, "{v}");
     };
     match tz {
         None => std::fmt::Display::fmt(&ndt, f),
