@@ -5,10 +5,7 @@ use object_store::path::Path as ObjectPath;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_parquet::parquet::error::ParquetError;
-use polars_parquet::parquet::metadata::SchemaDescriptor;
-use polars_parquet::parquet::read::{
-    deserialize_metadata, deserialize_metadata_with_shared_schema, deserialize_num_rows,
-};
+use polars_parquet::parquet::read::{deserialize_metadata, deserialize_num_rows};
 use polars_parquet::parquet::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAGIC};
 use polars_parquet::write::FileMetadata;
 use polars_utils::pl_path::PlRefPath;
@@ -68,22 +65,6 @@ impl ParquetObjectStore {
     pub async fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(self.fetch_metadata().await?));
-        }
-        Ok(self.metadata.as_ref().unwrap())
-    }
-
-    /// Like [`Self::get_metadata`] but skips thrift field 2 (schema) and
-    /// reuses the supplied [`SchemaDescriptor`]. Result is memoized.
-    pub async fn get_metadata_with_shared_schema(
-        &mut self,
-        schema_descr: SchemaDescriptor,
-    ) -> PolarsResult<&FileMetadataRef> {
-        if self.metadata.is_none() {
-            let length = self.length().await?;
-            let md =
-                fetch_metadata_with_shared_schema(&self.store, &self.path, length, schema_descr)
-                    .await?;
-            self.metadata = Some(Arc::new(md));
         }
         Ok(self.metadata.as_ref().unwrap())
     }
@@ -191,20 +172,6 @@ pub async fn fetch_metadata(
 ) -> PolarsResult<FileMetadata> {
     let footer = fetch_footer_bytes(store, path, file_byte_length).await?;
     Ok(deserialize_metadata(footer)?)
-}
-
-/// Like [`fetch_metadata`] but skips schema and reuses the supplied descriptor.
-pub async fn fetch_metadata_with_shared_schema(
-    store: &PolarsObjectStore,
-    path: &ObjectPath,
-    file_byte_length: usize,
-    schema_descr: SchemaDescriptor,
-) -> PolarsResult<FileMetadata> {
-    let footer = fetch_footer_bytes(store, path, file_byte_length).await?;
-    Ok(deserialize_metadata_with_shared_schema(
-        footer,
-        schema_descr,
-    )?)
 }
 
 /// Fetch only `FileMetaData.num_rows` from a remote parquet footer.

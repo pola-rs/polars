@@ -246,7 +246,7 @@ pub(super) async fn parquet_file_info(
     Option<FileMetadataRef>,
     Option<Arc<[FileMetadataRef]>>,
 )> {
-    use futures::stream::{FuturesUnordered, StreamExt};
+    use futures::stream::{FuturesOrdered, FuturesUnordered, StreamExt};
     use polars_core::error::feature_gated;
 
     let n_sources = sources.len();
@@ -316,33 +316,27 @@ pub(super) async fn parquet_file_info(
                 (None, Some(total), total)
             },
             ResolveMode::Full => {
-                // Reuse file 0's `SchemaDescriptor` for files 1..N so each
-                // decoder skips thrift field 2 (cheap Arc clone, big win on
-                // wide schemas).
-                let shared_schema = first_metadata.schema_descr.clone();
+                // Each file decoded with its own schema: per-file schemas
+                // may differ in columns, dtypes, or column order.
                 let mut futures = (1..n_sources)
-                    .map(|i| {
-                        let shared = shared_schema.clone();
-                        async move {
-                            let result =
-                                read_parquet_metadata(sources.at(i), cloud_options, shared).await;
-                            (i, result)
-                        }
-                    })
-                    .collect::<FuturesUnordered<_>>();
+                    .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
+                    .collect::<FuturesOrdered<_>>();
 
-                // Pre-fill with `first_metadata`; futures overwrite slots
-                // 1..n as they resolve. Slot 0 stays untouched, satisfying
-                // the `metadata_per_source[0] == first_metadata` invariant.
-                // Best-effort: on error the slot keeps the pre-fill default;
-                // the cloud scheduler re-fetches if it needs accurate
-                // row_groups for that file.
-                let mut per_file: Vec<FileMetadataRef> = vec![first_metadata.clone(); n_sources];
+                // Push slot 0 (satisfying the `metadata_per_source[0] ==
+                // first_metadata` invariant), then push each future result.
+                // Best-effort: on error push `first_metadata.clone()`; the
+                // cloud scheduler re-fetches if it needs accurate row_groups
+                // for that file.
+                let mut per_file: Vec<FileMetadataRef> = Vec::with_capacity(n_sources);
+                per_file.push(first_metadata.clone());
                 let mut total: usize = first_num_rows;
-                while let Some((i, file_result)) = futures.next().await {
-                    if let Ok(m) = file_result {
-                        total = total.saturating_add(m.num_rows);
-                        per_file[i] = m;
+                while let Some(file_result) = futures.next().await {
+                    match file_result {
+                        Ok(m) => {
+                            total = total.saturating_add(m.num_rows);
+                            per_file.push(m);
+                        },
+                        Err(_) => per_file.push(first_metadata.clone()),
                     }
                 }
                 let dense: Arc<[FileMetadataRef]> = per_file.into();
@@ -360,13 +354,12 @@ pub(super) async fn parquet_file_info(
     Ok((file_info, Some(first_metadata), metadata_per_source))
 }
 
-/// Fetch one source's full footer, borrowing the first file's schema.
-/// Used by [`parquet_file_info`] in `Full` resolve mode.
+/// Fetch one source's full footer. Used by [`parquet_file_info`] in
+/// `Full` resolve mode.
 #[cfg(feature = "parquet")]
 async fn read_parquet_metadata(
     source: ScanSourceRef<'_>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-    shared_schema: polars_parquet::parquet::metadata::SchemaDescriptor,
 ) -> PolarsResult<FileMetadataRef> {
     use polars_core::error::feature_gated;
 
@@ -375,18 +368,12 @@ async fn read_parquet_metadata(
         feature_gated!("cloud", {
             let mut reader =
                 ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
-            reader
-                .get_metadata_with_shared_schema(shared_schema)
-                .await
-                .cloned()
+            reader.get_metadata().await.cloned()
         })
     } else {
         let memslice = source.to_memslice()?;
         let mut cursor = Cursor::new(memslice);
-        let md = polars_parquet::parquet::read::read_metadata_with_shared_schema(
-            &mut cursor,
-            shared_schema,
-        )?;
+        let md = polars_parquet::parquet::read::read_metadata(&mut cursor)?;
         Ok(Arc::new(md))
     }
 }

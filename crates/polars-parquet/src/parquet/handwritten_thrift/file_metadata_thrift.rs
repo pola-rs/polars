@@ -101,55 +101,6 @@ pub(crate) fn decode_num_rows(footer: Buffer<u8>) -> ParquetResult<i64> {
     num_rows.require("FileMetaData.num_rows")
 }
 
-/// Decode `FileMetaData` while skipping field 2 (`schema`). Multi-file
-/// scans pair the result with the first file's shared `SchemaDescriptor`
-/// via `FileMetadata::from_compact_with_schema_descr`, avoiding the
-/// `Vec<SchemaElement>` decode cost on wide schemas. Result has
-/// `schema: Vec::new()`.
-pub(crate) fn decode_file_metadata_skip_schema(
-    footer: Buffer<u8>,
-) -> ParquetResult<CompactFileMetaData> {
-    let buf: &[u8] = footer.as_ref();
-    let origin_ptr = buf.as_ptr();
-    let mut prot = ThriftSliceInputProtocol::new(buf);
-    read_file_metadata_skip_schema(&mut prot, origin_ptr, &footer)
-}
-
-fn read_file_metadata_skip_schema(
-    prot: &mut ThriftSliceInputProtocol<'_>,
-    origin_ptr: *const u8,
-    footer: &Buffer<u8>,
-) -> ParquetResult<CompactFileMetaData> {
-    let mut version: Option<i32> = None;
-    let mut num_rows: Option<i64> = None;
-    let mut row_groups: Option<Vec<CompactRowGroup>> = None;
-    let mut key_value_metadata: Option<Vec<KeyValue>> = None;
-    let mut created_by: Option<String> = None;
-    let mut column_orders: Option<Vec<ColumnOrder>> = None;
-
-    // 2 (schema), 8/9 (encryption): fall through to skip.
-    read_struct_fields!(prot, |f| {
-        1 => version = Some(prot.read_i32()?),
-        3 => num_rows = Some(prot.read_i64()?),
-        4 => row_groups = Some(read_list(prot, |p| read_row_group(p, origin_ptr))?),
-        5 => key_value_metadata = Some(read_list(prot, read_key_value)?),
-        6 => created_by = Some(prot.read_string()?.to_owned()),
-        7 => column_orders = Some(read_list(prot, read_column_order)?),
-    });
-
-    Ok(CompactFileMetaData {
-        version: version.require("FileMetaData.version")?,
-        // Empty: caller wires up the shared `SchemaDescriptor` instead.
-        schema: Vec::new(),
-        num_rows: num_rows.require("FileMetaData.num_rows")?,
-        row_groups: row_groups.require("FileMetaData.row_groups")?,
-        key_value_metadata,
-        created_by,
-        column_orders,
-        footer_buf: footer.clone(),
-    })
-}
-
 fn read_file_metadata(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,

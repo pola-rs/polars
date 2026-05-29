@@ -181,33 +181,9 @@ impl FileMetadata {
     /// [`crate::parquet::read::deserialize_metadata`] which combines the
     /// hand-written decoder with this constructor.
     pub(crate) fn from_compact(compact: CompactFileMetaData) -> ParquetResult<Self> {
-        let schema_descr = SchemaDescriptor::try_from_thrift(&compact.schema)?;
-        Self::build_with_schema(compact, schema_descr)
-    }
-
-    /// Like [`Self::from_compact`] but reuses a pre-built [`SchemaDescriptor`],
-    /// for multi-file scans where all sources share the first file's schema
-    /// (paired with `decode_file_metadata_skip_schema`).
-    pub(crate) fn from_compact_with_schema_descr(
-        compact: CompactFileMetaData,
-        schema_descr: SchemaDescriptor,
-    ) -> ParquetResult<Self> {
-        debug_assert!(
-            compact.schema.is_empty(),
-            "from_compact_with_schema_descr called with a non-empty schema list; \
-             use from_compact instead"
-        );
-        Self::build_with_schema(compact, schema_descr)
-    }
-
-    /// Shared body of the two `from_compact*` constructors.
-    fn build_with_schema(
-        compact: CompactFileMetaData,
-        schema_descr: SchemaDescriptor,
-    ) -> ParquetResult<Self> {
         let CompactFileMetaData {
             version,
-            schema: _, // resolved by the caller
+            schema,
             num_rows,
             row_groups,
             key_value_metadata,
@@ -215,6 +191,8 @@ impl FileMetadata {
             column_orders,
             footer_buf,
         } = compact;
+
+        let schema_descr = SchemaDescriptor::try_from_thrift(&schema)?;
 
         let mut max_row_group_height = 0;
         let row_groups = row_groups

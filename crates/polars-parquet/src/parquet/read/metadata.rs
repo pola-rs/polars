@@ -3,12 +3,10 @@ use std::io::{Read, Seek, SeekFrom};
 
 use polars_buffer::Buffer;
 
-use super::super::metadata::{FileMetadata, SchemaDescriptor};
+use super::super::metadata::FileMetadata;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::handwritten_thrift::{
-    decode_file_metadata, decode_file_metadata_skip_schema, decode_num_rows,
-};
+use crate::parquet::handwritten_thrift::{decode_file_metadata, decode_num_rows};
 
 pub(super) fn metadata_len(buffer: &[u8]) -> u32 {
     let len = buffer.len();
@@ -53,39 +51,6 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 pub fn deserialize_metadata(footer: Buffer<u8>) -> ParquetResult<FileMetadata> {
     let compact = decode_file_metadata(footer)?;
     FileMetadata::from_compact(compact)
-}
-
-/// Parse `footer` with thrift field 2 (schema) skipped, reusing
-/// `schema_descr`. See [`deserialize_metadata`] for the buffer-lifetime
-/// contract and [`crate::parquet::handwritten_thrift::decode_file_metadata_skip_schema`]
-/// for the decode rationale.
-pub fn deserialize_metadata_with_shared_schema(
-    footer: Buffer<u8>,
-    schema_descr: SchemaDescriptor,
-) -> ParquetResult<FileMetadata> {
-    let compact = decode_file_metadata_skip_schema(footer)?;
-    FileMetadata::from_compact_with_schema_descr(compact, schema_descr)
-}
-
-/// Sync variant of [`deserialize_metadata_with_shared_schema`] that owns the
-/// reader. Fetches the footer the same way [`read_metadata`] does, then
-/// parses with the schema field skipped.
-pub fn read_metadata_with_shared_schema<R: Read + Seek>(
-    reader: &mut R,
-    schema_descr: SchemaDescriptor,
-) -> ParquetResult<FileMetadata> {
-    let file_size = stream_len(reader)?;
-    read_metadata_with_shared_schema_with_size(reader, file_size, schema_descr)
-}
-
-/// As [`read_metadata_with_shared_schema`] but with a pre-fetched file size.
-pub(crate) fn read_metadata_with_shared_schema_with_size<R: Read + Seek>(
-    reader: &mut R,
-    file_size: u64,
-    schema_descr: SchemaDescriptor,
-) -> ParquetResult<FileMetadata> {
-    let footer = fetch_footer_buf(reader, file_size)?;
-    deserialize_metadata_with_shared_schema(footer, schema_descr)
 }
 
 /// Decode only `FileMetaData.num_rows` (thrift field 3) from `footer`.

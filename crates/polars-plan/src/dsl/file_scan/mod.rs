@@ -200,26 +200,46 @@ impl FileScanIR {
         match self {
             #[cfg(feature = "parquet")]
             Self::Parquet {
+                options: _,
                 first_metadata,
                 metadata_per_source,
-                ..
             } => {
                 if first_file_dropped {
                     *first_metadata = None;
                 }
                 if let Some(slice) = metadata_per_source {
-                    let gathered: Arc<[FileMetadataRef]> =
-                        surviving_indices.map(|i| slice[i].clone()).collect();
-                    *slice = gathered;
+                    *slice = surviving_indices.map(|i| slice[i].clone()).collect();
                 }
             },
             #[cfg(feature = "ipc")]
-            Self::Ipc { metadata, .. } if first_file_dropped => *metadata = None,
-            #[cfg(feature = "python")]
-            Self::PythonDataset { cached_ir, .. } if first_file_dropped => {
-                *cached_ir.lock().unwrap() = None;
+            Self::Ipc {
+                options: _,
+                metadata,
+            } => {
+                if first_file_dropped {
+                    *metadata = None;
+                }
             },
-            _ => {},
+            #[cfg(feature = "csv")]
+            Self::Csv { options: _ } => {},
+            #[cfg(feature = "json")]
+            Self::NDJson { options: _ } => {},
+            #[cfg(feature = "python")]
+            Self::PythonDataset {
+                dataset_object: _,
+                cached_ir,
+            } => {
+                if first_file_dropped {
+                    *cached_ir.lock().unwrap() = None;
+                }
+            },
+            #[cfg(feature = "scan_lines")]
+            Self::Lines { name: _ } => {},
+            Self::ExpandedPaths { name: _ } => {},
+            Self::Anonymous {
+                options: _,
+                function: _,
+            } => {},
         }
     }
 }
