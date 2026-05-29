@@ -940,3 +940,69 @@ def test_rolling_by_temporal_null_min_samples_27661() -> None:
         ),
     )
     assert_series_equal(df["avg_power_2s"].alias("avg_power_2i"), df["avg_power_2i"])
+
+
+def test_rolling_window_size_zero_23434() -> None:
+    """
+    window_size=0 means every position looks at zero elements.
+    Each result must equal the aggregation of an empty series for that dtype.
+    """
+    s_int = pl.Series([1, 2, 3, 4, 5], dtype=pl.Int64)
+    s_float = pl.Series([1.0, 2.0, 3.0, 4.0, 5.0], dtype=pl.Float64)
+    n = len(s_int)
+
+    assert_series_equal(
+        s_int.rolling_sum(window_size=0),
+        pl.Series([0] * n, dtype=pl.Int64),
+    )
+    assert_series_equal(
+        s_float.rolling_sum(window_size=0),
+        pl.Series([0.0] * n, dtype=pl.Float64),
+    )
+    assert_series_equal(
+        s_float.rolling_mean(window_size=0),
+        pl.Series([None] * n, dtype=pl.Float64),
+    )
+    assert_series_equal(
+        s_int.rolling_min(window_size=0),
+        pl.Series([None] * n, dtype=pl.Int64),
+    )
+    assert_series_equal(
+        s_int.rolling_max(window_size=0),
+        pl.Series([None] * n, dtype=pl.Int64),
+    )
+    assert_series_equal(
+        s_float.rolling_std(window_size=0),
+        pl.Series([None] * n, dtype=pl.Float64),
+    )
+    assert_series_equal(
+        s_float.rolling_var(window_size=0),
+        pl.Series([None] * n, dtype=pl.Float64),
+    )
+
+    assert_series_equal(
+        s_int.rolling_sum(window_size=0, center=True),
+        pl.Series([0] * n, dtype=pl.Int64),
+    )
+    assert_series_equal(
+        s_float.rolling_mean(window_size=0, center=True),
+        pl.Series([None] * n, dtype=pl.Float64),
+    )
+
+    assert_series_equal(
+        pl.Series([42], dtype=pl.Int64).rolling_sum(window_size=0),
+        pl.Series([0], dtype=pl.Int64),
+    )
+    assert_series_equal(
+        pl.Series([], dtype=pl.Int64).rolling_sum(window_size=0),
+        pl.Series([], dtype=pl.Int64),
+    )
+
+    result = pl.DataFrame({"a": [1, 2, 3]}).select(
+        pl.col("a").rolling_sum(window_size=0).alias("sum"),
+        pl.col("a").cast(pl.Float64).rolling_mean(window_size=0).alias("mean"),
+    )
+    assert_series_equal(result["sum"], pl.Series("sum", [0, 0, 0], dtype=pl.Int64))
+    assert_series_equal(
+        result["mean"], pl.Series("mean", [None, None, None], dtype=pl.Float64)
+    )
