@@ -1,6 +1,7 @@
 use arrow::array::builder::{ShareStrategy, make_builder};
 use arrow::array::{Array, FixedSizeListArray};
 use arrow::bitmap::BitmapBuilder;
+use polars_core::chunked_array::builder::fixed_size_list::get_fixed_size_list_builder;
 use polars_core::prelude::arity::unary_kernel;
 use polars_core::utils::slice_offsets;
 
@@ -141,26 +142,16 @@ pub trait ArrayNameSpace: AsArray {
                 }
             },
             (1, _) => {
-                if ca.get(0).is_some() {
-                    // Optimize: This does not need to broadcast first.
-                    let ca = ca.new_from_index(0, n.len());
-                    // SAFETY: Shift does not change the dtype and number of elements of sub-array.
-                    unsafe {
-                        ca.zip_and_apply_amortized_same_type(n, |opt_s, opt_periods| {
-                            match (opt_s, opt_periods) {
-                                (Some(s), Some(n)) => Some(s.as_ref().shift(n)),
-                                _ => None,
-                            }
-                        })
-                    }
-                } else {
-                    ArrayChunked::full_null_with_dtype(
-                        ca.name().clone(),
-                        ca.len(),
-                        ca.inner_dtype(),
-                        ca.width(),
-                    )
-                }
+                let target_len = n.len();
+                let single_array = ca.get_as_series(0);
+                shift_broadcast_array(
+                    single_array,
+                    n,
+                    ca.width(),
+                    target_len,
+                    ca.name().clone(),
+                    ca.inner_dtype(),
+                )?
             },
             _ => polars_bail!(length_mismatch = "arr.shift", ca.len(), n.len()),
         };
@@ -215,3 +206,47 @@ pub trait ArrayNameSpace: AsArray {
 }
 
 impl ArrayNameSpace for ArrayChunked {}
+
+fn shift_broadcast_array(
+    single_array: Option<Series>,
+    n: &Int64Chunked,
+    width: usize,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> PolarsResult<ArrayChunked> {
+    debug_assert!(target_len == n.len());
+
+    let Some(single_array) = single_array else {
+        return Ok(ArrayChunked::full_null_with_dtype(
+            name,
+            target_len,
+            inner_dtype,
+            width,
+        ));
+    };
+
+    let mut builder = get_fixed_size_list_builder(inner_dtype, target_len, width, name)?;
+
+    // SAFETY: `arr` is a chunk of a shifted `single_array`, so it has exactly
+    // `width` elements of `inner_dtype`, matching the builder's expectations
+    unsafe {
+        for index in 0..target_len {
+            match n.get(index) {
+                Some(period) => {
+                    let shifted = single_array.shift(period);
+                    let shifted = if shifted.n_chunks() > 1 {
+                        shifted.rechunk()
+                    } else {
+                        shifted
+                    };
+                    let arr = shifted.chunks()[0].as_ref();
+                    builder.push_unchecked(arr, 0);
+                },
+                None => builder.push_null(),
+            }
+        }
+    }
+
+    Ok(builder.finish())
+}
