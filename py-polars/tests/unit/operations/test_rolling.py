@@ -951,6 +951,7 @@ def test_rolling_window_size_zero_23434() -> None:
     s_float = pl.Series([1.0, 2.0, 3.0, 4.0, 5.0], dtype=pl.Float64)
     n = len(s_int)
 
+    # --- core aggregations ---
     assert_series_equal(
         s_int.rolling_sum(window_size=0),
         pl.Series([0] * n, dtype=pl.Int64),
@@ -980,6 +981,21 @@ def test_rolling_window_size_zero_23434() -> None:
         pl.Series([None] * n, dtype=pl.Float64),
     )
 
+    # --- functions with their own aggregation windows ---
+    assert_series_equal(
+        s_float.rolling_median(window_size=0),
+        pl.Series([None] * n, dtype=pl.Float64),
+    )
+    assert_series_equal(
+        s_float.rolling_quantile(quantile=0.5, window_size=0),
+        pl.Series([None] * n, dtype=pl.Float64),
+    )
+    assert_series_equal(
+        s_float.rolling_skew(window_size=0),
+        pl.Series([None] * n, dtype=pl.Float64),
+    )
+
+    # --- center=True uses det_offsets_center, must behave identically ---
     assert_series_equal(
         s_int.rolling_sum(window_size=0, center=True),
         pl.Series([0] * n, dtype=pl.Int64),
@@ -989,6 +1005,7 @@ def test_rolling_window_size_zero_23434() -> None:
         pl.Series([None] * n, dtype=pl.Float64),
     )
 
+    # --- edge cases ---
     assert_series_equal(
         pl.Series([42], dtype=pl.Int64).rolling_sum(window_size=0),
         pl.Series([0], dtype=pl.Int64),
@@ -998,6 +1015,7 @@ def test_rolling_window_size_zero_23434() -> None:
         pl.Series([], dtype=pl.Int64),
     )
 
+    # --- expression API ---
     result = pl.DataFrame({"a": [1, 2, 3]}).select(
         pl.col("a").rolling_sum(window_size=0).alias("sum"),
         pl.col("a").cast(pl.Float64).rolling_mean(window_size=0).alias("mean"),
@@ -1006,3 +1024,7 @@ def test_rolling_window_size_zero_23434() -> None:
     assert_series_equal(
         result["mean"], pl.Series("mean", [None, None, None], dtype=pl.Float64)
     )
+
+    # --- min_periods > window_size is rejected regardless of window_size value ---
+    with pytest.raises(InvalidOperationError):
+        s_int.rolling_sum(window_size=0, min_periods=1)
