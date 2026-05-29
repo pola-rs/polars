@@ -12536,7 +12536,8 @@ class DataFrame:
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by the key, with null
+        are sorted in ascending order by the key, or in desecending order
+        if the  ``descending`` option is set to ``True``, with null
         keys at the end, otherwise the order of the output
         will not make sense.
 
@@ -12552,6 +12553,12 @@ class DataFrame:
             If ``True``, the output is guaranteed to have left-biased ordering
             for equal keys: rows from the left frame appear before rows from
             the right frame when their keys are equal.
+        descending
+            If ``True``, inputs are assumed to be sorted in descending order,
+            and the merged output will also be in descending order.
+        nulls_last
+            If ``True`` null values are assumed to be trailing all non null entries,
+            and will appear at the end of the merged output
 
         Examples
         --------
@@ -12613,7 +12620,13 @@ class DataFrame:
 
         return (
             self.lazy()
-            .merge_sorted(other.lazy(), key, maintain_order=maintain_order, descending=descending, nulls_last=nulls_last)
+            .merge_sorted(
+                other.lazy(),
+                key,
+                maintain_order=maintain_order,
+                descending=descending,
+                nulls_last=nulls_last,
+            )
             .collect(optimizations=QueryOptFlags._eager())
         )
 

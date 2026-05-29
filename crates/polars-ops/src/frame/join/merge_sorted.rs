@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::with_match_categorical_physical_type;
 use polars_core::with_match_physical_numeric_polars_type;
 
-pub fn _make_comperator<T>(
+pub fn _make_comparator<T>(
     descending: bool,
     nulls_last: bool,
 ) -> impl Fn(Option<T>, Option<T>) -> bool
@@ -290,7 +290,7 @@ where
 {
     const A_INDICATOR: bool = true;
     const B_INDICATOR: bool = false;
-    let cmp = _make_comperator(descending, nulls_last);
+    let cmp = _make_comparator(descending, nulls_last);
     let a_len = a_iter.size_hint().0;
     let b_len = b_iter.size_hint().0;
     if a_len == 0 {

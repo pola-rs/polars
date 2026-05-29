@@ -482,7 +482,9 @@ def test_merge_sorted_nulls_first(streaming: bool) -> None:
         right, key="a", nulls_last=False, maintain_order=True
     ).collect(engine="streaming" if streaming else "in-memory")
 
-    expected = pl.DataFrame({"a": [None, None, 1, 2, 3, 4, 5], "b": [1, 5, 2, 6, 3, 7, 4]})
+    expected = pl.DataFrame(
+        {"a": [None, None, 1, 2, 3, 4, 5], "b": [1, 5, 2, 6, 3, 7, 4]}
+    )
     assert_frame_equal(result, expected)
 
 

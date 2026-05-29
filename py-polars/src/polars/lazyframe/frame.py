@@ -9091,9 +9091,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by the key, with null
-        keys at the end, otherwise the order of the output
-        will not make sense.
+        are sorted in ascending order by the key, or in
+        descending order if the ``descending`` option is
+        set to ``True`` with null keys at the end, otherwise
+        the order of the output will not make sense.
 
         The schemas of both LazyFrames must be equal.
 
@@ -9107,6 +9108,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             If ``True``, the output is guaranteed to have left-biased ordering
             for equal keys: rows from the left frame appear before rows from
             the right frame when their keys are equal.
+        descending
+            If ``True``, inputs are assumed to be sorted in descending order,
+            and the merged output will also be in descending order.
+        nulls_last
+            If ``True`` null values are assumed to be trailing all non null entries,
+            and will appear at the end of the merged output
 
         Examples
         --------
@@ -9163,7 +9170,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         The key must be sorted in ascending order.
         """
         require_same_type(self, other)
-        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order, descending, nulls_last))
+        return self._from_pyldf(
+            self._ldf.merge_sorted(
+                other._ldf, key, maintain_order, descending, nulls_last
+            )
+        )
 
     def set_sorted(
         self,
