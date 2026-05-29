@@ -232,35 +232,6 @@ pub trait ListNameSpaceImpl: AsList {
         Ok(self.same_type(out))
     }
 
-    #[must_use]
-    fn lst_reverse(&self) -> ListChunked {
-        let ca = self.as_list();
-        // SAFETY: `reverse` doesn't change the dtype
-        unsafe { ca.apply_amortized_same_type(|s| s.as_ref().reverse()) }
-    }
-
-    fn lst_n_unique(&self) -> PolarsResult<IdxCa> {
-        let ca = self.as_list();
-        ca.try_apply_amortized_generic(|s| {
-            let opt_v = s.map(|s| s.as_ref().n_unique()).transpose()?;
-            Ok(opt_v.map(|idx| idx as IdxSize))
-        })
-    }
-
-    fn lst_unique(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        // SAFETY: `unique` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique())? };
-        Ok(self.same_type(out))
-    }
-
-    fn lst_unique_stable(&self) -> PolarsResult<ListChunked> {
-        let ca = self.as_list();
-        // SAFETY: `unique_stable` doesn't change the dtype
-        let out = unsafe { ca.try_apply_amortized_same_type(|s| s.as_ref().unique_stable())? };
-        Ok(self.same_type(out))
-    }
-
     fn lst_arg_min(&self) -> IdxCa {
         let ca = self.as_list();
         ca.apply_amortized_generic(|opt_s| {
@@ -579,8 +550,6 @@ pub trait ListNameSpaceImpl: AsList {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
-        use std::borrow::Cow;
-
         let ca = self.as_list();
 
         let n_s = n.strict_cast(&IDX_DTYPE)?;
@@ -593,13 +562,21 @@ pub trait ListNameSpaceImpl: AsList {
             n.len()
         );
 
-        // Broadcast `self`
-        let mut ca = Cow::Borrowed(ca);
-        if ca.len() == 1 && n.len() != 1 {
-            // Optimize: Don't broadcast and instead have a special path.
-            ca = Cow::Owned(ca.new_from_index(0, n.len()));
+        let target_len = n.len();
+        if ca.len() == 1 && target_len > 1 {
+            let single_list = ca.get_as_series(0);
+            let out = sample_n_broadcast_list(
+                single_list,
+                n,
+                with_replacement,
+                shuffle,
+                seed,
+                target_len,
+                ca.name().clone(),
+                ca.inner_dtype(),
+            )?;
+            return Ok(self.same_type(out));
         }
-        let ca = ca.as_ref();
 
         let out = match n.len() {
             1 => {
@@ -638,8 +615,6 @@ pub trait ListNameSpaceImpl: AsList {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
-        use std::borrow::Cow;
-
         let ca = self.as_list();
 
         let fraction_s = fraction.cast(&DataType::Float64)?;
@@ -661,13 +636,21 @@ pub trait ListNameSpaceImpl: AsList {
             fraction.len()
         );
 
-        // Broadcast `self`
-        let mut ca = Cow::Borrowed(ca);
-        if ca.len() == 1 && fraction.len() != 1 {
-            // Optimize: Don't broadcast and instead have a special path.
-            ca = Cow::Owned(ca.new_from_index(0, fraction.len()));
+        let target_len = fraction.len();
+        if ca.len() == 1 && target_len > 1 {
+            let single_list = ca.get_as_series(0);
+            let out = sample_frac_broadcast_list(
+                single_list,
+                fraction,
+                with_replacement,
+                shuffle,
+                seed,
+                target_len,
+                ca.name().clone(),
+                ca.inner_dtype(),
+            )?;
+            return Ok(self.same_type(out));
         }
-        let ca = ca.as_ref();
 
         let out = match fraction.len() {
             1 => {
@@ -901,4 +884,78 @@ fn shift_broadcast_list(
     let mut out: ListChunked = iter.collect_trusted();
     out.rename(name);
     out
+}
+
+#[cfg(feature = "list_sample")]
+#[allow(clippy::too_many_arguments)]
+fn sample_n_broadcast_list(
+    single_list: Option<Series>,
+    n: &IdxCa,
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> PolarsResult<ListChunked> {
+    debug_assert!(target_len == n.len());
+
+    let Some(single_list) = single_list else {
+        return Ok(ListChunked::full_null_with_dtype(
+            name,
+            target_len,
+            inner_dtype,
+        ));
+    };
+
+    let mut out: ListChunked = (0..target_len)
+        .map(|index| -> PolarsResult<Option<Series>> {
+            match n.get(index) {
+                Some(n_val) => single_list
+                    .sample_n(n_val as usize, with_replacement, shuffle, seed)
+                    .map(Some),
+                None => Ok(None),
+            }
+        })
+        .collect::<PolarsResult<_>>()?;
+
+    out.rename(name);
+    Ok(out)
+}
+
+#[cfg(feature = "list_sample")]
+#[allow(clippy::too_many_arguments)]
+fn sample_frac_broadcast_list(
+    single_list: Option<Series>,
+    fraction: &Float64Chunked,
+    with_replacement: bool,
+    shuffle: bool,
+    seed: Option<u64>,
+    target_len: usize,
+    name: PlSmallStr,
+    inner_dtype: &DataType,
+) -> PolarsResult<ListChunked> {
+    debug_assert!(target_len == fraction.len());
+
+    let Some(single_list) = single_list else {
+        return Ok(ListChunked::full_null_with_dtype(
+            name,
+            target_len,
+            inner_dtype,
+        ));
+    };
+
+    let mut out: ListChunked = (0..target_len)
+        .map(|index| -> PolarsResult<Option<Series>> {
+            match fraction.get(index) {
+                Some(frac_val) => single_list
+                    .sample_frac(frac_val, with_replacement, shuffle, seed)
+                    .map(Some),
+                None => Ok(None),
+            }
+        })
+        .collect::<PolarsResult<_>>()?;
+
+    out.rename(name);
+    Ok(out)
 }

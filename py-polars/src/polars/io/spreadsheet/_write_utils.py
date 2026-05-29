@@ -484,8 +484,6 @@ def _xl_setup_table_columns(
         dtype_formats.setdefault(tp, fmt)
     for tp in FLOAT_DTYPES:
         dtype_formats.setdefault(tp, fmt_float)
-    for tp, fmt in dtype_formats.items():
-        dtype_formats[tp] = fmt
 
     # associate formats/functions with specific columns
     for col, tp in df.schema.items():

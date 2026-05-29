@@ -486,6 +486,19 @@ def test_or_factoring_hoists_shared_conjunct() -> None:
     assert_frame_equal(query.collect(), expected)
 
 
+def test_cse_skips_inherently_nondeterministic_subexpressions() -> None:
+    # Two `list.sample` calls are independent random draws and must not be
+    # folded by CSE into a single shared alias.
+    lf = pl.LazyFrame({"x": [[1, 2, 3]]})
+    query = lf.select(
+        a=pl.col("x").list.sample(1, seed=None),
+        b=pl.col("x").list.sample(1, seed=None),
+    )
+    plan = query.explain()
+    assert plan.count("list.sample") == 2, plan
+    assert "__POLARS_CSER_" not in plan, plan
+
+
 def test_all_any_cleanup_at_single_predicate_case() -> None:
     plan = pl.LazyFrame({"a": [1], "b": [2]}).select(["a"]).drop_nulls().explain()
     assert "horizontal" not in plan

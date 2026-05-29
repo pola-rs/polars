@@ -23,6 +23,13 @@ const DEFAULT_WARN_UNKNOWN_CONFIG: bool = false;
 const WARN_UNSTABLE: &str = "POLARS_WARN_UNSTABLE";
 const DEFAULT_WARN_UNSTABLE: bool = true;
 
+const MAX_THREADS: &str = "POLARS_MAX_THREADS";
+fn default_max_threads() -> u64 {
+    std::thread::available_parallelism()
+        .unwrap_or(std::num::NonZeroUsize::new(4).unwrap())
+        .get() as u64
+}
+
 const IDEAL_MORSEL_SIZE: &str = "POLARS_IDEAL_MORSEL_SIZE";
 const STREAMING_CHUNK_SIZE: &str = "POLARS_STREAMING_CHUNK_SIZE"; // Backwards compatibility.
 const DEFAULT_IDEAL_MORSEL_SIZE: u64 = 100_000;
@@ -71,16 +78,21 @@ const PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: &str =
     "POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS";
 const DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS: bool = false;
 
+const ALLOW_NESTED_CSPE: &str = "POLARS_ALLOW_NESTED_CSPE";
+const DEFAULT_ALLOW_NESTED_CSPE: bool = false;
+
 static KNOWN_OPTIONS: &[&str] = &[
     // Public.
     VERBOSE,
     WARN_UNKNOWN_CONFIG,
     WARN_UNSTABLE,
+    MAX_THREADS,
     IDEAL_MORSEL_SIZE,
     STREAMING_CHUNK_SIZE,
     ENGINE_AFFINITY,
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     PRUNE_PARQUET_METADATA,
+    ALLOW_NESTED_CSPE,
     /*
     Not yet supported public options:
 
@@ -121,10 +133,12 @@ pub struct Config {
     verbose: AtomicBool,
     warn_unknown_config: AtomicBool,
     warn_unstable: AtomicBool,
+    max_threads: AtomicU64,
     ideal_morsel_size: AtomicU64,
     engine_affinity: AtomicU8,
     parquet_binary_statistics_truncate_length: AtomicU64,
     prune_parquet_metadata: AtomicBool,
+    allow_nested_cspe: AtomicBool,
 
     // Private.
     verbose_sensitive: AtomicBool,
@@ -145,6 +159,7 @@ impl Config {
             verbose: AtomicBool::new(DEFAULT_VERBOSE),
             warn_unknown_config: AtomicBool::new(DEFAULT_WARN_UNKNOWN_CONFIG),
             warn_unstable: AtomicBool::new(DEFAULT_WARN_UNSTABLE),
+            max_threads: AtomicU64::new(default_max_threads()),
             ideal_morsel_size: AtomicU64::new(DEFAULT_IDEAL_MORSEL_SIZE),
             engine_affinity: AtomicU8::new(DEFAULT_ENGINE_AFFINITY as u8),
             parquet_binary_statistics_truncate_length: AtomicU64::new(
@@ -166,6 +181,7 @@ impl Config {
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
             ),
+            allow_nested_cspe: AtomicBool::new(DEFAULT_ALLOW_NESTED_CSPE),
         };
         cfg.reload_env_vars();
         cfg
@@ -204,6 +220,11 @@ impl Config {
                     .unwrap_or(DEFAULT_VERBOSE),
                 Ordering::Relaxed,
             ),
+            MAX_THREADS => self.max_threads.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(default_max_threads()),
+                Ordering::Relaxed,
+            ),
             IDEAL_MORSEL_SIZE | STREAMING_CHUNK_SIZE => self.ideal_morsel_size.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_IDEAL_MORSEL_SIZE),
@@ -224,6 +245,11 @@ impl Config {
             PRUNE_PARQUET_METADATA => self.prune_parquet_metadata.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_PRUNE_PARQUET_METADATA),
+                Ordering::Relaxed,
+            ),
+            ALLOW_NESTED_CSPE => self.allow_nested_cspe.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_ALLOW_NESTED_CSPE),
                 Ordering::Relaxed,
             ),
 
@@ -303,6 +329,11 @@ impl Config {
         self.warn_unstable.load(Ordering::Relaxed)
     }
 
+    /// The number of threads Polars should ideally use for CPU-intensive work.
+    pub fn max_threads(&self) -> usize {
+        self.max_threads.load(Ordering::Relaxed).try_into().unwrap()
+    }
+
     /// The ideal size of a morsel, in rows.
     pub fn ideal_morsel_size(&self) -> u64 {
         self.ideal_morsel_size.load(Ordering::Relaxed)
@@ -323,6 +354,11 @@ impl Config {
     /// before serializing the IR plan. See `parquet_metadata_prune` in `polars-plan`.
     pub fn prune_parquet_metadata(&self) -> bool {
         self.prune_parquet_metadata.load(Ordering::Relaxed)
+    }
+
+    /// Nested common subplan elimination.
+    pub fn allow_nested_cspe(&self) -> bool {
+        self.allow_nested_cspe.load(Ordering::Relaxed)
     }
 
     /// Whether we should do verbose printing on sensitive information.

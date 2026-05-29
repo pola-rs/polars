@@ -465,7 +465,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [2, 1, 9] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_reverse())
+        return self.eval(F.element().reverse())
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
@@ -493,7 +493,7 @@ class ExprListNameSpace:
         │ [1, 1, 2] ┆ [1, 2]    │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_unique(maintain_order))
+        return self.eval(F.element().unique(maintain_order=maintain_order))
 
     def n_unique(self) -> Expr:
         """
@@ -517,7 +517,7 @@ class ExprListNameSpace:
         │ [2, 3, 4] ┆ 3        │
         └───────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.list_n_unique())
+        return self.agg(F.element().n_unique())
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
