@@ -592,6 +592,20 @@ def test_init_ndarray() -> None:
         assert_frame_equal(df, pl.DataFrame(np.asarray(df), schema=names))
 
 
+def test_init_structured_array_unaligned_field() -> None:
+    # A structured-array field can be a non-contiguous / unaligned view (here
+    # `b` is a u2 starting at an odd byte offset). This used to panic with
+    # `AsSliceError` when constructing the DataFrame. See #27794.
+    arr = np.frombuffer(b"012", dtype=[("a", "u1"), ("b", "u2")])
+    df = pl.DataFrame(arr)
+    assert df.to_dict(as_series=False) == {"a": [48], "b": [12849]}
+
+    # The aligned layout already worked and must keep working.
+    arr_aligned = np.frombuffer(b"012", dtype=[("a", "u2"), ("b", "u1")])
+    df_aligned = pl.DataFrame(arr_aligned)
+    assert df_aligned.to_dict(as_series=False) == {"a": [12592], "b": [50]}
+
+
 def test_init_ndarray_errors() -> None:
     # 2D array: orientation conflicts with columns
     with pytest.raises(ValueError):

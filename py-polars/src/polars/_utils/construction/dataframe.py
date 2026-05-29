@@ -1292,7 +1292,11 @@ def numpy_to_pydf(
         data_series = [
             pl.Series(
                 name=series_name,
-                values=data[record_name],
+                # A field of a structured array can be a non-contiguous and/or
+                # unaligned view (e.g. a `u2` field at an odd byte offset). The
+                # Series constructor requires an aligned, contiguous buffer, so
+                # materialize one here (a no-op when the field already is).
+                values=np.require(data[record_name], requirements=["A", "C"]),
                 dtype=schema_overrides.get(record_name),
                 strict=strict,
                 nan_to_null=nan_to_null,
