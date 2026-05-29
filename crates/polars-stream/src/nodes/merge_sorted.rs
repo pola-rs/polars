@@ -2,6 +2,8 @@ use std::collections::VecDeque;
 
 use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_async::primitives::wait_group::WaitGroup;
+use polars_core::datatypes::BooleanChunked;
+use polars_core::frame::column::Column;
 use polars_core::prelude::ChunkCompareIneq;
 use polars_ops::frame::_merge_sorted_dfs;
 
@@ -56,6 +58,7 @@ fn find_mergeable(
     is_first: bool,
     starting_nulls: &mut bool,
     maintain_order: bool,
+    descending: bool,
 ) -> PolarsResult<Option<(DataFrame, DataFrame)>> {
     fn first_non_empty(vd: &mut VecDeque<DataFrame>) -> Option<DataFrame> {
         let mut df = vd.pop_front()?;
@@ -63,6 +66,19 @@ fn find_mergeable(
             df = vd.pop_front()?;
         }
         Some(df)
+    }
+    fn sort_lt(lhs: &Column, rhs: &Column, descending: bool) -> PolarsResult<BooleanChunked> {
+        if descending { lhs.gt(rhs) } else { lhs.lt(rhs) }
+    }
+    fn sort_gt(lhs: &Column, rhs: &Column, descending: bool) -> PolarsResult<BooleanChunked> {
+        if descending { lhs.lt(rhs) } else { lhs.gt(rhs) }
+    }
+    fn sort_gt_eq(lhs: &Column, rhs: &Column, descending: bool) -> PolarsResult<BooleanChunked> {
+        if descending {
+            lhs.lt_eq(rhs)
+        } else {
+            lhs.gt_eq(rhs)
+        }
     }
 
     loop {
@@ -144,28 +160,28 @@ fn find_mergeable(
                     (true, true) => {},
                 }
             }
-        } else if left_key_last.lt(&right_key_last)?.all() {
+        } else if sort_lt(&left_key_last, &right_key_last, descending)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
             if maintain_order {
                 // When maintaining order, hold back right-side rows with keys
                 // equal to left's max, since more left rows with that key may
                 // arrive in later morsels.
-                let gte_mask = right_key.gt_eq(&left_key_last)?;
+                let gte_mask = sort_gt_eq(right_key, &left_key_last, descending)?;
                 right_cutoff = gte_mask.first_true_idx().unwrap_or(gte_mask.len());
             } else {
-                let gt_mask = right_key.gt(&left_key_last)?;
+                let gt_mask = sort_gt(right_key, &left_key_last, descending)?;
                 right_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
             }
-        } else if left_key_last.gt(&right_key_last)?.all() {
+        } else if sort_gt(&left_key_last, &right_key_last, descending)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
-            let gt_mask = left_key.gt(&right_key_last)?;
+            let gt_mask = sort_gt(left_key, &right_key_last, descending)?;
             left_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
         } else if maintain_order {
             // Keys are equal at both maxima. Hold back right-side rows with
             // keys equal to the shared maximum to ensure left-biased ordering.
-            let gte_mask = right_key.gt_eq(&left_key_last)?;
+            let gte_mask = sort_gt_eq(right_key, &left_key_last, descending)?;
             right_cutoff = gte_mask.first_true_idx().unwrap_or(gte_mask.len());
         }
 
@@ -350,6 +366,7 @@ impl ComputeNode for MergeSortedNode {
                             seq.to_u64() == 0,
                             starting_nulls,
                             maintain_order,
+                            descending,
                         )? {
                             let left_mergeable =
                                 Morsel::new(left_mergeable, *seq, source_token.clone());
@@ -411,6 +428,7 @@ impl ComputeNode for MergeSortedNode {
                         seq.to_u64() == 0,
                         starting_nulls,
                         maintain_order,
+                        descending,
                     )? {
                         let left_mergeable =
                             Morsel::new(left_mergeable, *seq, source_token.clone());

@@ -6,6 +6,27 @@ use polars_core::prelude::*;
 use polars_core::with_match_categorical_physical_type;
 use polars_core::with_match_physical_numeric_polars_type;
 
+pub fn _make_comperator<T>(
+    descending: bool,
+    nulls_last: bool,
+) -> impl Fn(Option<T>, Option<T>) -> bool
+where
+    T: PartialOrd + Default + Copy,
+{
+    move |a: Option<T>, b: Option<T>| match (a, b) {
+        (None, None) => true,
+        (Some(_), None) => nulls_last,
+        (None, Some(_)) => !nulls_last,
+        (Some(i), Some(j)) => {
+            if descending {
+                i >= j
+            } else {
+                i <= j
+            }
+        },
+    }
+}
+
 pub fn _merge_sorted_dfs(
     left: &DataFrame,
     right: &DataFrame,
@@ -269,20 +290,7 @@ where
 {
     const A_INDICATOR: bool = true;
     const B_INDICATOR: bool = false;
-
-    let cmp = move |a, b| match (a, b) {
-        (None, None) => true,
-        (Some(_), None) => nulls_last,
-        (None, Some(_)) => !nulls_last,
-        (Some(i), Some(j)) => {
-            if descending {
-                i >= j
-            } else {
-                i <= j
-            }
-        },
-    };
-
+    let cmp = _make_comperator(descending, nulls_last);
     let a_len = a_iter.size_hint().0;
     let b_len = b_iter.size_hint().0;
     if a_len == 0 {
