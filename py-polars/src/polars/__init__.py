@@ -38,7 +38,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # https://github.com/pola-rs/polars/pull/21829.
     import os
 
-    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
+    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:1000"
     if os.environ.get("POLARS_THP") == "1":
         jemalloc_conf += ",thp:always,metadata_thp:always"
     if override := os.environ.get("_RJEM_MALLOC_CONF"):
