@@ -60,7 +60,7 @@ helm upgrade --install polars polars-inc/polars \
 !!! warning "Not for production use"
 
     The cluster configuration defined above is for a quickstart only and should not be used in a
-    production environment! See the [Kubernetes deployment guide](./kubernetes/getting-started.md)
+    production environment! See the [Kubernetes deployment guide](./kubernetes/index.md)
     for more details.
 
 Verify all pods are running before continuing:
@@ -110,4 +110,4 @@ print(result.head())
 ```
 
 Your cluster is ready. For a full walkthrough of deployed resources, networking, and production
-configuration, see the [Kubernetes deployment guide](./kubernetes/getting-started.md).
+configuration, see the [Kubernetes deployment guide](./kubernetes/index.md).
