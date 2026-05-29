@@ -42,10 +42,6 @@ pub fn _merge_sorted_dfs(
     let dtype_lhs = left_s.dtype();
     let dtype_rhs = right_s.dtype();
 
-    eprintln!(
-        "Descending: {} Nulls_last: {} from _merge_sorted_dfs",
-        descending, nulls_last
-    );
     polars_ensure!(
         dtype_lhs == dtype_rhs,
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
@@ -225,7 +221,7 @@ fn series_to_merge_indicator(
         with_match_categorical_physical_type!(cat_phys, |$C| {
             let lhs = lhs.cat::<$C>().unwrap();
             let rhs = rhs.cat::<$C>().unwrap();
-            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str(), false, false));
+            return Ok(get_merge_indicator(lhs.iter_str(), rhs.iter_str(), descending, nulls_last));
         })
     }
 
@@ -233,8 +229,8 @@ fn series_to_merge_indicator(
         return Ok(get_merge_indicator(
             lhs.row_encode_ordered(false, false)?.iter(),
             rhs.row_encode_ordered(false, false)?.iter(),
-            false,
-            false,
+            descending,
+            nulls_last,
         ));
     }
 

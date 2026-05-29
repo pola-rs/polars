@@ -12535,11 +12535,10 @@ class DataFrame:
         Take two sorted DataFrames and merge them by the sorted key.
 
         The output of this operation will also be sorted.
-        It is the callers responsibility that the frames
-        are sorted in ascending order by the key, or in desecending order
-        if the  ``descending`` option is set to ``True``, with null
-        keys at the end, otherwise the order of the output
-        will not make sense.
+        It is the callers responsibility that the frames are sorted by the key,
+        ascending unless ``descending=True``, with null placement matching the
+        ``nulls_last`` parameter, otherwise the order of the output will not
+        make sense.
 
         The schemas of both DataFrames must be equal.
 

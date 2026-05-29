@@ -21,10 +21,6 @@ impl Executor for MergeSorted {
                 eprintln!("run MergeSorted")
             }
         }
-        eprintln!(
-            "MergeSorted options: descending={}, nulls_last={}",
-            self.descending, self.nulls_last
-        );
         let (left, right) = {
             let mut state2 = state.split();
             state2.branch_idx += 1;
