@@ -40,3 +40,25 @@ where
         },
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_rolling_mean_window_size_zero() {
+        let values = &[1.0f64, 2.0, 3.0, 4.0];
+
+        // window_size=0: mean of empty = None
+        let out = rolling_mean(values, 0, 0, false, None, None).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+
+        // center=true should behave the same
+        let out = rolling_mean(values, 0, 0, true, None, None).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+    }
+}

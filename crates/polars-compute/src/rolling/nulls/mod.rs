@@ -270,4 +270,37 @@ mod test {
             &[3, 10, 10, 10, 10, 10, 9, 8, 7, 6, 5, 4, 3]
         );
     }
+
+    #[test]
+    fn test_rolling_window_size_zero_nulls() {
+        // 1, None, 3, 4  (second element is null)
+        let buf = Buffer::from(vec![1.0f64, 0.0, 3.0, 4.0]);
+        let arr = &PrimitiveArray::new(
+            ArrowDataType::Float64,
+            buf,
+            Some(Bitmap::from(&[true, false, true, true])),
+        );
+
+        // sum of empty window = 0 for each position
+        let out = rolling_sum(arr, 0, 0, false, None, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(0.0), Some(0.0), Some(0.0), Some(0.0)]);
+
+        // mean/min/max/var of empty window = None for each position
+        let out = rolling_mean(arr, 0, 0, false, None, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+
+        let out = rolling_min(arr, 0, 0, false, None, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+
+        let out = rolling_max(arr, 0, 0, false, None, None);
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+    }
 }

@@ -117,4 +117,21 @@ mod test {
             )
         );
     }
+
+    #[test]
+    fn test_rolling_sum_window_size_zero() {
+        let values = &[1.0f64, 2.0, 3.0, 4.0];
+
+        // window_size=0: every position looks at zero elements, sum of empty = 0
+        let out = rolling_sum(values, 0, 0, false, None, None).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(0.0), Some(0.0), Some(0.0), Some(0.0)]);
+
+        // center=true should behave the same
+        let out = rolling_sum(values, 0, 0, true, None, None).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[Some(0.0), Some(0.0), Some(0.0), Some(0.0)]);
+    }
 }

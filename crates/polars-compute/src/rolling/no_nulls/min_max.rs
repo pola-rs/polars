@@ -143,4 +143,26 @@ mod test {
             )
         );
     }
+
+    #[test]
+    fn test_rolling_min_max_window_size_zero() {
+        let values = &[1.0f64, 5.0, 3.0, 4.0];
+
+        // window_size=0: min/max of empty = None
+        let out = rolling_min(values, 0, 0, false, None, None).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+
+        let out = rolling_max(values, 0, 0, false, None, None).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+
+        // center=true should behave the same
+        let out = rolling_min(values, 0, 0, true, None, None).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+    }
 }
