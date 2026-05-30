@@ -9,10 +9,10 @@ use polars_core::utils::{CustomIterTools, try_get_supertype};
 
 use super::*;
 use crate::chunked_array::list::min_max::{list_max_function, list_min_function};
-use crate::chunked_array::list::sum_mean::sum_with_nulls;
+use crate::chunked_array::list::sum_mean::{product_with_nulls, sum_with_nulls};
 #[cfg(feature = "diff")]
 use crate::prelude::diff;
-use crate::prelude::list::sum_mean::{mean_list_numerical, sum_list_numerical};
+use crate::prelude::list::sum_mean::{mean_list_numerical, product_list_numerical, sum_list_numerical};
 use crate::series::{ArgAgg, convert_and_bound_index};
 
 pub(super) fn has_inner_nulls(ca: &ListChunked) -> bool {
@@ -184,6 +184,19 @@ pub trait ListNameSpaceImpl: AsList {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
             dt if dt.is_primitive_numeric() => Ok(sum_list_numerical(ca, dt)),
             dt => sum_with_nulls(ca, dt),
+        }
+    }
+
+    fn lst_product(&self) -> PolarsResult<Series> {
+        let ca = self.as_list();
+
+        if has_inner_nulls(ca) {
+            return product_with_nulls(ca, ca.inner_dtype());
+        };
+
+        match ca.inner_dtype() {
+            dt if dt.is_primitive_numeric() => Ok(product_list_numerical(ca, dt)),
+            dt => product_with_nulls(ca, dt),
         }
     }
 
