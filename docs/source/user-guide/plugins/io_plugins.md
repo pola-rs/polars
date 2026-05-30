@@ -85,7 +85,7 @@ The arguments of this function are predefined and this function must accept:
 
 The inner function is the actual implementation of the IO source and can also call into Rust/C++ or
 wherever the IO plugin is written. If you want to see an IO source implemented in Rust, take a look
-at our [plugins repository](https://github.com/pola-rs/pyo3-polars/tree/main/example/io_plugin).
+at our [plugins repository](https://github.com/pola-rs/polars/tree/main/pyo3-polars/example/io_plugin).
 
 ```python
 def my_scan_csv(csv_str: str) -> pl.LazyFrame:
@@ -192,4 +192,4 @@ shape: (2, 2)
 
 ## Further reading
 
-- [Rust example (distribution source)](https://github.com/pola-rs/pyo3-polars/tree/main/example/io_plugin)
+- [Rust example (distribution source)](https://github.com/pola-rs/polars/tree/main/pyo3-polars/example/io_plugin)

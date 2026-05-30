@@ -258,7 +258,7 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
 ```
 
 That's all you need to know to get started. Take a look at
-[this repo](https://github.com/pola-rs/pyo3-polars/tree/main/example/derive_expression) to see how
+[this repo](https://github.com/pola-rs/polars/tree/main/pyo3-polars/example/derive_expression) to see how
 this all fits together, and at
 [this tutorial](https://marcogorelli.github.io/polars-plugins-tutorial/) to gain a more thorough
 understanding.
