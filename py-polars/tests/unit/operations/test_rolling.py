@@ -954,6 +954,7 @@ def test_rolling_by_temporal_null_min_samples_27661() -> None:
         ("rolling_median", [None, None, None]),
         ("rolling_skew", [None, None, None]),
         ("rolling_kurtosis", [None, None, None]),
+        ("rolling_rank", [None, None, None]),
     ],
 )
 def test_rolling_window_size_zero_23434(
