@@ -26,19 +26,17 @@ print(result)
 # --8<-- [start:fallback-setup]
 df = pl.LazyFrame(
     {
-        "key": [1, 1, 1, 2, 3, 3, 2, 2],
-        "value": [1, 2, 3, 4, 5, 6, 7, 8],
+        "values": [1, 2, 3, 4, 5, 6, 7, 8],
     }
 )
 
-q = df.select(pl.col("value").sum().over("key"))
+q = df.select(pl.col("values").map_elements(lambda x: 0 if x > 4 else x + 2))
 
 # --8<-- [end:fallback-setup]
 
 # --8<-- [start:fallback-result]
 print(
-    "PerformanceWarning: Query execution with GPU not supported, reason: \n"
-    "<class 'NotImplementedError'>: Grouped rolling window not implemented"
+    "PerformanceWarning: Query execution with GPU not possible: unsupported operations"
 )
 print("# some details elided")
 print()
