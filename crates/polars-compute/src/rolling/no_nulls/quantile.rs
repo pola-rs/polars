@@ -354,4 +354,26 @@ mod test {
             assert_eq!(out1, out2);
         }
     }
+
+    #[test]
+    fn test_rolling_quantile_window_size_zero() {
+        let values = &[1.0f64, 2.0, 3.0, 4.0];
+        let med_pars = Some(RollingFnParams::Quantile(RollingQuantileParams {
+            prob: 0.5,
+            method: Linear,
+        }));
+
+        // center=false: fast path via quantile_filter is bypassed, falls back to
+        // rolling_apply_agg_window; QuantileWindow returns None for empty window
+        let out = rolling_quantile(values, 0, 0, false, None, med_pars).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+
+        // center=true: goes through rolling_apply_agg_window + det_offsets_center
+        let out = rolling_quantile(values, 0, 0, true, None, med_pars).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+    }
 }
