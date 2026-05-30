@@ -3,7 +3,6 @@ use std::ops::Div;
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
-use arrow::temporal_conversions::MICROSECONDS_IN_DAY as US_IN_DAY;
 use arrow::types::NativeType;
 use num_traits::{NumCast, ToPrimitive};
 use polars_utils::float16::pf16;
@@ -70,57 +69,19 @@ pub(super) fn product_list_numerical(ca: &ListChunked, inner_type: &DataType) ->
 }
 
 pub(super) fn product_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> PolarsResult<Series> {
-    use DataType::*;
-    let mut out = match inner_dtype {
-        Boolean | UInt8 | UInt16 | Int8 | Int16 => {
-            let out: Int64Chunked =
-                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().product().ok()?.try_extract::<i64>().ok()));
-            out.into_series()
-        },
-        UInt32 => {
-            let out: UInt32Chunked =
-                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().product().ok()?.try_extract::<u32>().ok()));
-            out.into_series()
-        },
-        UInt64 => {
-            let out: UInt64Chunked =
-                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().product().ok()?.try_extract::<u64>().ok()));
-            out.into_series()
-        },
-        Int32 => {
-            let out: Int32Chunked =
-                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().product().ok()?.try_extract::<i32>().ok()));
-            out.into_series()
-        },
-        Int64 | Int128 => {
-            let out: Int64Chunked =
-                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().product().ok()?.try_extract::<i64>().ok()));
-            out.into_series()
-        },
-        Float32 => {
-            let out: Float32Chunked =
-                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().product().ok()?.try_extract::<f32>().ok()));
-            out.into_series()
-        },
-        Float64 => {
-            let out: Float64Chunked =
-                ca.apply_amortized_generic(|s| s.map(|s| s.as_ref().product().ok()?.try_extract::<f64>().ok()));
-            out.into_series()
-        },
-        dt => ca
-            .try_apply_amortized_same_type(|s| {
-                s.as_ref()
-                    .product()
-                    .map(|sc| sc.into_series(PlSmallStr::EMPTY))
-            })?
-            .explode(ExplodeOptions {
-                empty_as_null: true,
-                keep_nulls: true,
-            })
-            .unwrap()
-            .into_series()
-            .cast(dt)?,
-    };
+    let mut out = ca
+        .try_apply_amortized_same_type(|s| {
+            s.as_ref()
+                .product()
+                .map(|sc| sc.into_series(PlSmallStr::EMPTY))
+        })?
+        .explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        })
+        .unwrap()
+        .into_series()
+        .cast(inner_dtype)?;
     out.rename(ca.name().clone());
     Ok(out)
 }
