@@ -259,7 +259,7 @@ fn haversine(inputs: &[Series]) -> PolarsResult<Series> {
 
 That's all you need to know to get started.
 
-Take a look at [this repo](../../../../pyo3-polars/example/derive_expression) to
-see how this all fits together.
+Take a look at [this repo](../../../../pyo3-polars/example/derive_expression) to see how
+this all fits together.
 
 For a more thorough overview, see the tutorial.
