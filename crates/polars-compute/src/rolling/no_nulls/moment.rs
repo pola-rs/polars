@@ -163,4 +163,26 @@ mod test {
         let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None]);
     }
+
+    #[test]
+    fn test_rolling_skew_kurtosis_window_size_zero() {
+        let values = &[1.0f64, 5.0, 3.0, 4.0];
+        let skew_pars = Some(RollingFnParams::Skew { bias: true });
+        let kurt_pars = Some(RollingFnParams::Kurtosis {
+            fisher: true,
+            bias: true,
+        });
+
+        // skew of empty window = None
+        let out = rolling_skew(values, 0, 0, false, skew_pars).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+
+        // kurtosis of empty window = None
+        let out = rolling_kurtosis(values, 0, 0, false, kurt_pars).unwrap();
+        let out = out.as_any().downcast_ref::<PrimitiveArray<f64>>().unwrap();
+        let out = out.into_iter().map(|v| v.copied()).collect::<Vec<_>>();
+        assert_eq!(out, &[None, None, None, None]);
+    }
 }
