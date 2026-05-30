@@ -4727,6 +4727,18 @@ class DataFrame:
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
 
+        Examples
+        --------
+        Write a DataFrame to a local Iceberg table.
+
+        >>> from pyiceberg.catalog.sql import SqlCatalog
+        >>> from pyiceberg.schema import NestedField, Schema
+        >>> from pyiceberg.types import LongType
+        >>> catalog = SqlCatalog("default", uri="sqlite:///:memory:", warehouse="file:/tmp/warehouse")  # doctest: +SKIP
+        >>> catalog.create_namespace("foo")  # doctest: +SKIP
+        >>> table = catalog.create_table("foo.bar", schema=Schema(NestedField(1, "a", LongType())))  # doctest: +SKIP
+        >>> pl.DataFrame({"a": [1, 2, 3]}).write_iceberg(table, mode="overwrite")  # doctest: +SKIP
+
         """
         from pyiceberg.catalog import load_catalog
 

@@ -105,9 +105,22 @@ def scan_iceberg(
     Examples
     --------
     Creates a scan for an Iceberg table from local filesystem, or object store.
+    If you need a minimal end-to-end write example first, see
+    `DataFrame.write_iceberg`.
 
     >>> table_path = "file:/path/to/iceberg-table/metadata.json"
     >>> pl.scan_iceberg(table_path).collect()  # doctest: +SKIP
+
+    The same table can then be read back directly.
+
+    >>> from pyiceberg.catalog.sql import SqlCatalog
+    >>> from pyiceberg.schema import NestedField, Schema
+    >>> from pyiceberg.types import LongType
+    >>> catalog = SqlCatalog("default", uri="sqlite:///:memory:", warehouse="file:/tmp/warehouse")  # doctest: +SKIP
+    >>> catalog.create_namespace("foo")  # doctest: +SKIP
+    >>> table = catalog.create_table("foo.bar", schema=Schema(NestedField(1, "a", LongType())))  # doctest: +SKIP
+    >>> pl.DataFrame({"a": [1, 2, 3]}).write_iceberg(table, mode="overwrite")  # doctest: +SKIP
+    >>> pl.scan_iceberg(table).collect()  # doctest: +SKIP
 
     Creates a scan for an Iceberg table from S3.
     See a list of supported storage options for S3 `here
