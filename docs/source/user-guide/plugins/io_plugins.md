@@ -83,8 +83,8 @@ The arguments of this function are predefined and this function must accept:
 
   A hint of the ideal batch size the reader's generator must produce.
 
-The inner function is the actual implementation of the IO source and can also
-call into Rust/C++ or wherever the IO plugin is written.
+The inner function is the actual implementation of the IO source and can also call
+into Rust/C++ or wherever the IO plugin is written.
 
 If you want to see an IO source implemented in Rust, take a look at our
 [plugins repository](../../../../pyo3-polars/example/io_plugin).
