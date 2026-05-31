@@ -71,5 +71,5 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # don't use a given patch (these patches are only active in compute-plane).
 unknown-git = "deny"
 allow-git = [
-  "https://github.com/apache/arrow-rs-object-store",
+  "https://github.com/kdn36/arrow-rs-object-store",
 ]
