@@ -1,7 +1,7 @@
 # GPU Support [Open Beta]
 
-Polars provides an GPU-accelerated execution engine for Python users of the Lazy API on
-NVIDIA GPUs using [RAPIDS cuDF](https://docs.rapids.ai/api/cudf/stable/cudf_polars/). This functionality is
+Polars provides an GPU-accelerated execution engine for Python users of the Lazy API on NVIDIA GPUs
+using [RAPIDS cuDF](https://docs.rapids.ai/api/cudf/stable/cudf_polars/). This functionality is
 available in Open Beta and is undergoing rapid development.
 
 ### System Requirements
@@ -10,7 +10,8 @@ available in Open Beta and is undergoing rapid development.
 - CUDA 12 or CUDA 13
 - Linux or Windows Subsystem for Linux 2 (WSL2)
 
-See the [RAPIDS installation guide](https://docs.rapids.ai/install#system-req) for the most up-to-date details.
+See the [RAPIDS installation guide](https://docs.rapids.ai/install#system-req) for the most
+up-to-date details.
 
 ### Installation
 
@@ -62,9 +63,12 @@ query-runtime configurations can be specified by passing a `GPUEngine` object.
 
 As of cudf-polars version 26.06, 3 `GPUEngine` subclasses are provided by cudf-polars library:
 
-* [`RayEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/usage/#configuring-rayengine): Facilitates multi-GPU execution using [Ray](https://www.ray.io/)
-* [`DaskEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/dask_engine/): Facilitates multi-GPU execution using [Dask](https://www.dask.org/)
-* [`SMPDEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/spmd_engine/): Single program, multiple data model for multi-GPU execution
+- [`RayEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/usage/#configuring-rayengine):
+  Facilitates multi-GPU execution using [Ray](https://www.ray.io/)
+- [`DaskEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/dask_engine/): Facilitates
+  multi-GPU execution using [Dask](https://www.dask.org/)
+- [`SMPDEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/spmd_engine/): Single program,
+  multiple data model for multi-GPU execution
 
 These 3 engines spin up resources that can be torn down by using the engines as context managers.
 
@@ -96,10 +100,9 @@ Both the CPU and GPU engine use the Apache Arrow columnar memory specification, 
 to quickly move data between the CPU and GPU. Additionally, files written by one engine can be read
 by the other engine.
 
-When using GPU mode, your query won't fail if an operation isn't supported. When you run
-pass `engine="gpu"`, the optimized query plan is inspected to see whether it can be executed on
-the GPU. If it can't, it will transparently fall back to the standard Polars engine and run on the
-CPU.
+When using GPU mode, your query won't fail if an operation isn't supported. When you run pass
+`engine="gpu"`, the optimized query plan is inspected to see whether it can be executed on the GPU.
+If it can't, it will transparently fall back to the standard Polars engine and run on the CPU.
 
 GPU execution is only available in the Lazy API, so materialized DataFrames will reside in CPU
 memory when the query execution finishes.
@@ -138,8 +141,8 @@ that are currently supported and not supported.
 
 #### Did my query use the GPU?
 
-The Open Beta GPU engine implies that a significant portion of common, expression APIs are supported, but a
-query containing an unsupported expression API will fallback to the CPU and not
+The Open Beta GPU engine implies that a significant portion of common, expression APIs are
+supported, but a query containing an unsupported expression API will fallback to the CPU and not
 observe any change in the time it takes to execute. There are two ways to get more information on
 whether the query ran on the GPU.
 
@@ -168,8 +171,8 @@ print()
 print(q.collect())
 ```
 
-To disable fallback, and have the GPU engine raise an exception if a query is unsupported,
-pass `raise_on_fail=True` to a `GPUEngine` object:
+To disable fallback, and have the GPU engine raise an exception if a query is unsupported, pass
+`raise_on_fail=True` to a `GPUEngine` object:
 
 {{ code_header("python", [], []) }}
 
