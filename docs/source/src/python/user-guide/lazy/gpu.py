@@ -26,11 +26,11 @@ print(result)
 # --8<-- [start:fallback-setup]
 df = pl.LazyFrame(
     {
-        "values": [1, 2, 3, 4, 5, 6, 7, 8],
+        "value": [1, 2, 3, 4, 5, 6, 7, 8],
     }
 )
 
-q = df.select(pl.col("values").map_elements(lambda x: 0 if x > 4 else x + 2))
+q = df.select(pl.col("value").map_elements(lambda x: 0 if x > 4 else x + 2))
 
 # --8<-- [end:fallback-setup]
 
