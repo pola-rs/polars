@@ -20,14 +20,14 @@ After creating your account, a three-step flow completes the initial setup:
 Two deployment types are available:
 
 - **AWS**: workloads run on AWS-managed services, deployed via a CloudFormation template.
-- **Kubernetes**: workloads run on a Kubernetes cluster (EKS, GKE, AKS, or on-premises),
-  deployed via Helm.
+- **Kubernetes**: workloads run on a Kubernetes cluster (EKS, GKE, AKS, or on-premises), deployed
+  via Helm.
 
 For Kubernetes setup, see the
 [EKS](../polars-on-premises/kubernetes/cloud-providers/amazon-elastic-kubernetes-service.md),
 [GKE](../polars-on-premises/kubernetes/cloud-providers/google-kubernetes-engine.md), or
-[AKS](../polars-on-premises/kubernetes/cloud-providers/azure-kubernetes-service.md) guides. The
-rest of this page covers the AWS path.
+[AKS](../polars-on-premises/kubernetes/cloud-providers/azure-kubernetes-service.md) guides. The rest
+of this page covers the AWS path.
 
 <!-- dprint-ignore-start -->
 
@@ -72,16 +72,14 @@ The **Link your AWS account** step provides three options depending on your AWS 
 <!-- dprint-ignore-end -->
 
 The CloudFormation quick-create page is pre-filled with the template URL and a stack name derived
-from your workspace name. You don't have to change anything. 
+from your workspace name. You don't have to change anything.
 
 ![CloudFormation quick-create page pre-filled with the Polars Cloud template](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/cloudformation-quick-create.png)
 
-Before clicking **Create stack**, scroll to the bottom of the page and check the acknowledgment
-that the template creates IAM resources.
+Before clicking **Create stack**, scroll to the bottom of the page and check the acknowledgment that
+the template creates IAM resources.
 
 ![AWS CloudFormation IAM capabilities acknowledgment before creating the stack](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/cloudformation-iam-capabilities.png)
-
-
 
 For detailed information about the AWS resources and architecture, see
 [the AWS Infrastructure page](providers/aws/infra.md).
@@ -116,8 +114,10 @@ The final setup step provides a sample query to verify your workspace is connect
 
 ![Run your first query step with sample uv code snippet](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/run-first-query.png)
 
-The snippet uses `uv` for a self-contained run. If you don't have it yet, you can follow the provided link on the dashboard to install it. On first execution, a browser window opens to
-authenticate. After connecting your session to Polars Cloud, credentials are cached locally for the duration of your session.
+The snippet uses `uv` for a self-contained run. If you don't have it yet, you can follow the
+provided link on the dashboard to install it. On first execution, a browser window opens to
+authenticate. After connecting your session to Polars Cloud, credentials are cached locally for the
+duration of your session.
 
 Once the query completes successfully, the setup confirms your workspace is fully configured.
 
