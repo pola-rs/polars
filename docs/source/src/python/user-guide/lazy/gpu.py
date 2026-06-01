@@ -38,7 +38,9 @@ q = df.select(pl.col("value").map_elements(lambda x: 0 if x > 4 else x + 2))
 print(
     "PerformanceWarning: Query execution with GPU not possible: unsupported operations"
 )
-print("# some details elided")
+print("The errors were:")
+print("- NotImplementedError: anonymousfunction")
+print("  return wrap_df(ldf.collect(engine, callback))")
 print()
 print(q.collect())
 # --8<- [end:fallback-result]

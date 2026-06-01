@@ -76,9 +76,9 @@ These 3 engines spin up resources that can be torn down by using the engines as 
 
 ```python
 --8<-- "python/user-guide/lazy/gpu.py:engine-setup"
-from cudf_polars.engine.ray import RayEngine
+from cudf_polars.engine.spmd import SPMDEngine
 
-with RayEngine() as engine:
+with SPMDEngine() as engine:
     result = q.collect(engine=engine)
     print(result)
 ```
@@ -179,7 +179,9 @@ print(result)
 print(
     "PerformanceWarning: Query execution with GPU not possible: unsupported operations"
 )
-print("# some details elided")
+print("The errors were:")
+print("- NotImplementedError: anonymousfunction")
+print("  return wrap_df(ldf.collect(engine, callback))")
 print()
 print(q.collect())
 ```
