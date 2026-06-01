@@ -98,10 +98,8 @@ def lit(
             return wrap_expr(plr.lit(value.date(), allow_object=False, is_scalar=True))
 
         # parse time unit
-        if (
-            dtype is not None
-            and (tu := cast("TimeUnit", getattr(dtype, "time_unit", "us"))) is not None
-        ):
+        if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
+            tu = cast("TimeUnit", tu)
             time_unit = tu
         else:
             time_unit = "us"
