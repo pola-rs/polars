@@ -1,6 +1,6 @@
 # GPU Support [Open Beta]
 
-Polars provides an GPU-accelerated execution engine for Python users of the Lazy API on NVIDIA GPUs
+Polars provides a GPU-accelerated execution engine for Python users of the Lazy API on NVIDIA GPUs
 using [RAPIDS cuDF](https://docs.rapids.ai/api/cudf/stable/cudf_polars/). This functionality is
 available in Open Beta and is undergoing rapid development.
 
@@ -78,7 +78,7 @@ These 3 engines spin up resources that can be torn down by using the engines as 
 --8<-- "python/user-guide/lazy/gpu.py:engine-setup"
 from cudf_polars.engine.ray import RayEngine
 
-with RayEngine() as engine
+with RayEngine() as engine:
     result = q.collect(engine=engine)
     print(result)
 ```
@@ -90,7 +90,7 @@ with RayEngine() as engine
 
 !!! note
 
-    To use `RayEngine` or `DaskEngine`, Ray or Dask must be installed respetively. These
+    To use `RayEngine` or `DaskEngine`, Ray or Dask must be installed respectively. These
     dependencies can be installed with the `[ray]` or `[dask]` pip extra of cudf-polars.
 
     For example with CUDA 13:
@@ -113,7 +113,7 @@ Both the CPU and GPU engine use the Apache Arrow columnar memory specification, 
 to quickly move data between the CPU and GPU. Additionally, files written by one engine can be read
 by the other engine.
 
-When using GPU mode, your query won't fail if an operation isn't supported. When you run pass
+When using GPU mode, your query won't fail if an operation isn't supported. When you pass
 `engine="gpu"`, the optimized query plan is inspected to see whether it can be executed on the GPU.
 If it can't, it will transparently fall back to the standard Polars engine and run on the CPU.
 
@@ -215,7 +215,7 @@ of results.
 The GPU engine currently passes 99.2% of the Polars unit tests with CPU fallback enabled. Without
 CPU fallback, the GPU engine passes 88.8% of the Polars unit tests. With fallback, there are
 approximately 100 failing tests: around 40 of these fail due to mismatching debug output; there are
-some cases where the GPU engine produces the a correct result but uses a different data type; the
+some cases where the GPU engine produces a correct result but uses a different data type; the
 remainder are cases where we do not correctly determine that a query is unsupported and therefore
 fail at runtime, instead of falling back.
 
