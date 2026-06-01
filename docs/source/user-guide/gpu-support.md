@@ -55,16 +55,28 @@ print(result)
 --8<-- "python/user-guide/lazy/gpu.py:simple-result"
 ```
 
-For more detailed control over the execution, for example to specify which GPU to use on a multi-GPU
-node, we can provide a `GPUEngine` object. By default, the GPU engine will use a configuration
-applicable to most use cases.
+#### `GPUEngine`s and multiple GPUs
+
+`engine="gpu"` is convenient for running a query on a single GPU. Multi-GPU execution and other
+query-runtime configurations can be specified by passing a `GPUEngine` object.
+
+As of cudf-polars version 26.06, 3 `GPUEngine` subclasses are provided by cudf-polars library:
+
+* [`RayEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/usage/#configuring-rayengine): Facilitates multi-GPU execution using [Ray](https://www.ray.io/)
+* [`DaskEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/dask_engine/): Facilitates multi-GPU execution using [Dask](https://www.dask.org/)
+* [`SMPDEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/spmd_engine/): Single program, multiple data model for multi-GPU execution
+
+These 3 engines spin up resources that can be torn down by using the engines as context managers.
 
 {{ code_header("python", [], []) }}
 
 ```python
 --8<-- "python/user-guide/lazy/gpu.py:engine-setup"
-result = q.collect(engine=pl.GPUEngine(device=1))
-print(result)
+from cudf_polars.engine.ray import RayEngine
+
+with RayEngine() as engine
+    result = q.collect(engine=engine)
+    print(result)
 ```
 
 ```python exec="on" result="text" session="user-guide/lazy"
