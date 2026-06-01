@@ -38,6 +38,7 @@ mod metadata_utils;
 mod projection;
 mod row_group_data_fetch;
 mod row_group_decode;
+mod bloom_filter_prune;
 mod statistics;
 
 pub struct ParquetFileReader {

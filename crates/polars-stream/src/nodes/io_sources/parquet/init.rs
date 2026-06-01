@@ -126,6 +126,7 @@ impl ParquetReadImpl {
                 predicate.as_ref(),
                 &metadata,
                 projected_arrow_fields.clone(),
+                byte_source.clone(),
                 row_index,
                 verbose,
             )
