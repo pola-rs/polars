@@ -21,7 +21,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.various import (
     deduplicate_names,
-    is_sequence_of,
+    is_non_empty_sequence_of,
     normalize_filepath,
     parse_version,
 )
@@ -1017,7 +1017,11 @@ def _reorder_columns(
     if columns:
         from polars.selectors import by_index, by_name
 
-        cols = by_index(*columns) if is_sequence_of(columns, int) else by_name(*columns)
+        cols = (
+            by_index(*columns)
+            if is_non_empty_sequence_of(columns, int)
+            else by_name(*columns)
+        )
         df = df.select(cols)
     return df
 

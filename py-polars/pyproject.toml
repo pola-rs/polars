@@ -92,11 +92,7 @@ all = [
 ]
 
 [tool.pyrefly]
-<<<<<<< HEAD
 project-includes = ["src/polars", "tests"]
-=======
-project-includes = ["src/polars/_utils", "src/polars/functions", "tests"]
->>>>>>> upstream/main
 search-path = ["./src", "."]
 ignore-missing-imports = [
   "_polars_runtime_32.*",
@@ -109,11 +105,8 @@ ignore-missing-imports = [
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
 replace-imports-with-any = [
-<<<<<<< HEAD
   "arrow_odbc.*",
   "jax.*",
-=======
->>>>>>> upstream/main
   "marimo.*",
   "pyarrow.*",
   "pyiceberg.*",
