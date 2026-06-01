@@ -911,6 +911,19 @@ def test_slice_pushdown_expr_height_rules() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}))
 
 
+def test_slice_pushdown_expr_leaf_ae_without_col_input_27820() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    q = lf.select(pl.first("a"), pl.len().cast(pl.Int64))
+    out = q.collect()
+
+    assert_frame_equal(out, pl.DataFrame({"a": 1, "len": 3}))
+
+    q = lf.select(pl.first("a"), pl.lit(pl.Series("s", [-1, -2, -3])).first())
+    out = q.collect()
+
+    assert_frame_equal(out, pl.DataFrame({"a": 1, "s": -1}))
+
+
 def test_slice_pushdown_joins_27199() -> None:
     lhs = pl.LazyFrame({"a": [0, 0]})
     rhs = pl.LazyFrame({"a": [0, 0]})
