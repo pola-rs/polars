@@ -87,8 +87,13 @@ def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
         if isinstance(val, _reverse_mapping_views):
             return True
     return (
-        isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized)
-    ) or isinstance(val, MappingView)
+        (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
+        or isinstance(val, MappingView)
+        or (
+            sys.version_info >= (3, 11)
+            and isinstance(val, _reverse_mapping_views)  # pyrefly: ignore[unknown-name]
+        )
+    )
 
 
 def _is_iterable_of(val: Iterable[object], eltype: type | tuple[type, ...]) -> bool:
@@ -150,9 +155,12 @@ def is_sequence(
     )
 
 
-def is_sequence_of(obj: Sequence[Any], tp: type[T]) -> TypeIs[Sequence[T]]:
+def is_non_empty_sequence_of(obj: Sequence[Any], tp: type[T]) -> TypeIs[Sequence[T]]:
     # Check if an object is a sequence of `tp`, only sniffing the first element.
-    return bool((first := next(iter(obj), None)) is not None and isinstance(first, tp))
+    return bool(
+        (first := next(iter(obj), NO_DEFAULT)) is not NO_DEFAULT
+        and isinstance(first, tp)
+    )
 
 
 def is_str_sequence(

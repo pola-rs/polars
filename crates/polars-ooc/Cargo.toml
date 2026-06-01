@@ -22,10 +22,10 @@ mimalloc = { version = "0.1", default-features = false, optional = true }
 
 # Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
 [target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten")))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"], optional = true }
+tikv-jemallocator = { version = "0.7.0", features = ["disable_initial_exec_tls", "background_threads"], optional = true }
 
 [target.'cfg(all(target_family = "unix", target_os = "macos"))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"], optional = true }
+tikv-jemallocator = { version = "0.7.0", features = ["disable_initial_exec_tls"], optional = true }
 
 [lints]
 workspace = true

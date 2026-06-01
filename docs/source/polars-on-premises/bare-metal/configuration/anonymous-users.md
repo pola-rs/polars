@@ -21,4 +21,6 @@ deny_anonymous_users = true
 
 !!! note "Difference between Anonymous Users and Anonymous Results"
 
-    Note that Anonymous Users and Anonymous Results are different. Anonymous Users refer to queries that are submitted without a username, while Anonymous Results refer to queries without an explicit output sink.
+    Note that Anonymous Users and Anonymous Results are different. Anonymous Users refer to queries
+    that are submitted without a username, while Anonymous Results refer to queries without an
+    explicit output sink.

@@ -24,6 +24,8 @@ pub(crate) trait RollingAggWindow<T: NativeType, Out: NativeType> {
 
     /// Returns the length of the underlying input.
     fn slice_len(&self) -> usize;
+
+    fn is_valid(&self, min_periods: usize) -> bool;
 }
 
 #[repr(transparent)]
@@ -46,6 +48,10 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNoNulls<T, Out>> Rolli
     fn slice_len(&self) -> usize {
         self.0.slice_len()
     }
+
+    fn is_valid(&self, _min_periods: usize) -> bool {
+        true
+    }
 }
 
 impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNulls<T, Out>> RollingAggWindow<T, Out>
@@ -62,6 +68,10 @@ impl<T: NativeType, Out: NativeType, Agg: RollingAggWindowNulls<T, Out>> Rolling
 
     fn slice_len(&self) -> usize {
         self.0.slice_len()
+    }
+
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.0.is_valid(min_periods)
     }
 }
 
@@ -121,7 +131,11 @@ where
                 } else {
                     // SAFETY: we are in bounds
                     unsafe { agg_window.update(start as usize, end as usize) }
-                    agg_window.get_agg(idx)
+                    if agg_window.is_valid(min_periods) {
+                        agg_window.get_agg(idx)
+                    } else {
+                        None
+                    }
                 }
             })
         })
@@ -157,7 +171,11 @@ where
             // SAFETY:
             // we are in bound
             unsafe { agg_window.update(start as usize, end as usize) };
-            let res = agg_window.get_agg(*out_idx as usize);
+            let res = if agg_window.is_valid(min_periods) {
+                agg_window.get_agg(*out_idx as usize)
+            } else {
+                None
+            };
 
             if let Some(res) = res {
                 // SAFETY: `idx` is in bounds because `sorting_indices` was just taken from

@@ -10,7 +10,7 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "1.41.0"
+version = "1.41.2"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
@@ -33,7 +33,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 1.41.0"]
+dependencies = ["polars-runtime-32 == 1.41.2"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -44,8 +44,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 1.41.0"]
-rtcompat = ["polars-runtime-compat == 1.41.0"]
+rt64 = ["polars-runtime-64 == 1.41.2"]
+rtcompat = ["polars-runtime-compat == 1.41.2"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.4.0"]
@@ -92,7 +92,11 @@ all = [
 ]
 
 [tool.pyrefly]
+<<<<<<< HEAD
 project-includes = ["src/polars", "tests"]
+=======
+project-includes = ["src/polars/_utils", "src/polars/functions", "tests"]
+>>>>>>> upstream/main
 search-path = ["./src", "."]
 ignore-missing-imports = [
   "_polars_runtime_32.*",
@@ -105,8 +109,11 @@ ignore-missing-imports = [
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
 replace-imports-with-any = [
+<<<<<<< HEAD
   "arrow_odbc.*",
   "jax.*",
+=======
+>>>>>>> upstream/main
   "marimo.*",
   "pyarrow.*",
   "pyiceberg.*",

@@ -154,10 +154,8 @@ def lit(
 
     elif isinstance(value, timedelta):
         value_s = pl.Series("literal", [value])
-        if (
-            dtype is not None
-            and (tu := cast("TimeUnit", getattr(dtype, "time_unit", None))) is not None
-        ):
+        if dtype is not None and (tu := getattr(dtype, "time_unit", None)) is not None:
+            tu = cast("TimeUnit", tu)
             value_s = value_s.cast(Duration(tu))
         expr = wrap_expr(plr.lit(value_s._s, allow_object=False, is_scalar=True))
         return expr

@@ -11,7 +11,11 @@ from polars import functions as F
 from polars._typing import ConcatMethod
 from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.unstable import unstable
-from polars._utils.various import is_sequence_of, ordered_unique, qualified_type_name
+from polars._utils.various import (
+    is_non_empty_sequence_of,
+    ordered_unique,
+    qualified_type_name,
+)
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
 
@@ -182,11 +186,13 @@ def concat(
         return elems[0]
 
     if how.startswith("align"):
-        # Nest the `if` statements to work around https://github.com/python/mypy/issues/21533.
-        if not is_sequence_of(elems, pl.DataFrame):
-            if not is_sequence_of(elems, pl.LazyFrame):
-                msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
-                raise TypeError(msg)
+        if not is_non_empty_sequence_of(
+            elems, pl.DataFrame
+        ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+            elems, pl.LazyFrame
+        ):
+            msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
+            raise TypeError(msg)
 
         # establish common columns, maintaining the order in which they appear
         all_columns = list(chain.from_iterable(e.collect_schema() for e in elems))
@@ -235,7 +241,7 @@ def concat(
 
     from polars.lazyframe.opt_flags import QueryOptFlags
 
-    if is_sequence_of(elems, pl.DataFrame):
+    if is_non_empty_sequence_of(elems, pl.DataFrame):
         if how == "vertical":
             out = wrap_df(plr.concat_df(elems))
         elif how == "vertical_relaxed":
@@ -268,7 +274,7 @@ def concat(
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
-    elif is_sequence_of(elems, pl.LazyFrame):
+    elif is_non_empty_sequence_of(elems, pl.LazyFrame):
         if how in ("vertical", "vertical_relaxed"):
             return wrap_ldf(
                 plr.concat_lf(
@@ -302,14 +308,14 @@ def concat(
             msg = f"LazyFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
-    elif is_sequence_of(elems, pl.Series):
+    elif is_non_empty_sequence_of(elems, pl.Series):
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
             msg = "Series only supports 'vertical' concat strategy"
             raise ValueError(msg)
 
-    elif is_sequence_of(elems, pl.Expr):
+    elif is_non_empty_sequence_of(elems, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
         msg = f"did not expect type: {qualified_type_name(elems[0])!r} in `concat`"
@@ -474,11 +480,13 @@ def union(
         return elems[0]
 
     if how.startswith("align"):
-        # Nest the `if` statements to work around https://github.com/python/mypy/issues/21533.
-        if not is_sequence_of(elems, pl.DataFrame):
-            if not is_sequence_of(elems, pl.LazyFrame):
-                msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
-                raise TypeError(msg)
+        if not is_non_empty_sequence_of(
+            elems, pl.DataFrame
+        ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+            elems, pl.LazyFrame
+        ):
+            msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
+            raise TypeError(msg)
 
         # establish common columns, maintaining the order in which they appear
         all_columns = list(chain.from_iterable(e.collect_schema() for e in elems))
@@ -527,7 +535,7 @@ def union(
 
     from polars.lazyframe.opt_flags import QueryOptFlags
 
-    if is_sequence_of(elems, pl.DataFrame):
+    if is_non_empty_sequence_of(elems, pl.DataFrame):
         if how in ("vertical", "vertical_relaxed"):
             out = wrap_ldf(
                 plr.concat_lf(
@@ -555,7 +563,7 @@ def union(
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
-    elif is_sequence_of(elems, pl.LazyFrame):
+    elif is_non_empty_sequence_of(elems, pl.LazyFrame):
         if how in ("vertical", "vertical_relaxed"):
             return wrap_ldf(
                 plr.concat_lf(
@@ -589,14 +597,14 @@ def union(
             msg = f"LazyFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
-    elif is_sequence_of(elems, pl.Series):
+    elif is_non_empty_sequence_of(elems, pl.Series):
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
             msg = "Series only supports 'vertical' concat strategy"
             raise ValueError(msg)
 
-    elif is_sequence_of(elems, pl.Expr):
+    elif is_non_empty_sequence_of(elems, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], False))
     else:
         msg = f"did not expect type: {qualified_type_name(elems[0])!r} in `concat`"
@@ -678,11 +686,13 @@ def merge_sorted(
     if len(elems) == 1 and isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
         return elems[0]
 
-    # Nest the `if` statements to work around https://github.com/python/mypy/issues/21533.
-    if not is_sequence_of(elems, pl.DataFrame):
-        if not is_sequence_of(elems, pl.LazyFrame):
-            msg = f"merge_sorted is not supported for {qualified_type_name(elems[0])!r}"
-            raise TypeError(msg)
+    if not is_non_empty_sequence_of(
+        elems, pl.DataFrame
+    ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+        elems, pl.LazyFrame
+    ):
+        msg = f"merge_sorted is not supported for {qualified_type_name(elems[0])!r}"
+        raise TypeError(msg)
 
     lazy_frames = [df.lazy() for df in elems]
 
