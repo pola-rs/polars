@@ -1050,3 +1050,29 @@ def test_hconcat_reorder_projection_push_to_inputs() -> None:
 
     assert plan.startswith("simple π")
     assert q.collect().columns == ["c", "a"]
+
+
+def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame(
+                [{"B": None, "C": None}],
+                {"B": pl.Boolean, "C": pl.Categorical()},
+            ).select("C", "B"),
+            pl.LazyFrame(
+                [{"D": "1"}],
+                {"D": pl.String()},
+            ),
+        ],
+        how="horizontal",
+    ).select("B", "C")
+
+    f = io.BytesIO()
+    q.sink_parquet(f)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).collect(),
+        pl.DataFrame(
+            {"B": None, "C": None}, schema={"B": pl.Boolean, "C": pl.Categorical}
+        ),
+    )
