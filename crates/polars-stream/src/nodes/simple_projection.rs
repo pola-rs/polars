@@ -60,17 +60,20 @@ impl ComputeNode for SimpleProjectionNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok(morsel) = recv.recv().await {
-                    let morsel = morsel.try_map(|df| unsafe {
+                    let morsel = morsel.try_map(|df| {
                         let mut cols = Vec::with_capacity(slf.projection.len());
                         for (idx, name, rename) in &slf.projection {
-                            let mut col = df.columns()[*idx].clone();
+                            let mut col = match df.columns().get(*idx) {
+                                Some(col) if col.name() == name => col.clone(),
+                                _ => df.column(name)?.clone(),
+                            };
                             debug_assert_eq!(col.name(), name);
                             if let Some(name) = rename {
                                 col.rename(name.clone())
                             }
                             cols.push(col)
                         }
-                        PolarsResult::Ok(DataFrame::new_unchecked(df.height(), cols))
+                        PolarsResult::Ok(unsafe { DataFrame::new_unchecked(df.height(), cols) })
                     })?;
 
                     if send.send(morsel).await.is_err() {

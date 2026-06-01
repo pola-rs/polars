@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import time
 from datetime import date
@@ -474,4 +475,33 @@ def test_streaming_hconcat_strict_27372() -> None:
 
     result = lf.collect(engine="streaming")
     expected = lf.collect(engine="in-memory")
+    assert_frame_equal(result, expected)
+
+
+def test_streaming_hconcat_reordered_projection_sink_27818() -> None:
+    df1 = pl.LazyFrame(
+        [{"B": None, "C": None}],
+        {"B": pl.Boolean, "C": pl.Categorical},
+    )
+    df2 = pl.LazyFrame(
+        [{"D": "1"}],
+        {"D": pl.String},
+    )
+    lf = pl.concat(
+        [
+            df1.select("C", "B"),
+            df2,
+        ],
+        how="horizontal",
+    ).select("B", "C")
+
+    with io.BytesIO() as f:
+        lf.sink_parquet(f, engine="streaming")
+        f.seek(0)
+        result = pl.read_parquet(f)
+
+    expected = pl.DataFrame(
+        {"B": [None], "C": [None]},
+        schema={"B": pl.Boolean, "C": pl.Categorical},
+    )
     assert_frame_equal(result, expected)
