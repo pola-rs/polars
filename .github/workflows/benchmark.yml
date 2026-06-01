@@ -89,7 +89,7 @@ jobs:
           echo "LIB_SIZE=$LIB_SIZE" >> $GITHUB_ENV
 
       - name: Comment wheel size
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         if: github.ref_name != 'main'
         with:
           script: |
