@@ -588,9 +588,29 @@ impl Column {
     }
 
     pub fn split_at(&self, offset: i64) -> (Column, Column) {
-        // @scalar-opt
-        let (l, r) = self.as_materialized_series().split_at(offset);
-        (l.into(), r.into())
+        match self {
+            Column::Scalar(c) => {
+                let len = c.len();
+                let offset = if offset < 0 {
+                    let offset_abs = usize::try_from(offset.strict_abs())
+                        .expect("offset exceeds usize limits")
+                        .min(len);
+                    len - offset_abs
+                } else {
+                    usize::try_from(offset)
+                        .expect("offset exceeds usize limits")
+                        .min(len)
+                };
+                (
+                    Column::Scalar(c.resize(offset)),
+                    Column::Scalar(c.resize(len - offset)),
+                )
+            },
+            Column::Series(_) => {
+                let (l, r) = self.as_materialized_series().split_at(offset);
+                (l.into(), r.into())
+            },
+        }
     }
 
     #[inline]

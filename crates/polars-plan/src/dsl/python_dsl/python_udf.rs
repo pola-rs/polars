@@ -13,15 +13,12 @@ use crate::dsl::udf::try_infer_udf_output_dtype;
 use crate::prelude::*;
 
 // Will be overwritten on Python Polars start up.
-#[allow(clippy::type_complexity)]
-pub static mut CALL_COLUMNS_UDF_PYTHON: Option<
-    fn(s: &[Column], output_dtype: Option<DataType>, lambda: &Py<PyAny>) -> PolarsResult<Column>,
-> = None;
+type PythonColumnUdf =
+    fn(s: &[Column], output_dtype: Option<DataType>, lambda: &Py<PyAny>) -> PolarsResult<Column>;
+pub static CALL_PYTHON_COLUMNS_UDF: OnceLock<PythonColumnUdf> = OnceLock::new();
 
-#[allow(clippy::type_complexity)]
-pub static mut CALL_DF_UDF_PYTHON: Option<
-    fn(s: DataFrame, lambda: &Py<PyAny>) -> PolarsResult<DataFrame>,
-> = None;
+type PythonDfUdf = fn(s: DataFrame, lambda: &Py<PyAny>) -> PolarsResult<DataFrame>;
+pub static CALL_PYTHON_DF_UDF: OnceLock<PythonDfUdf> = OnceLock::new();
 
 pub use polars_utils::python_function::PythonFunction;
 #[cfg(feature = "serde")]
@@ -84,7 +81,7 @@ impl PythonUdfExpression {
 
 impl DataFrameUdf for polars_utils::python_function::PythonFunction {
     fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame> {
-        let func = unsafe { CALL_DF_UDF_PYTHON.unwrap() };
+        let func = CALL_PYTHON_DF_UDF.get().unwrap();
         func(df, &self.0)
     }
 
@@ -108,7 +105,7 @@ impl DataFrameUdf for polars_utils::python_function::PythonFunction {
 
 impl ColumnsUdf for PythonUdfExpression {
     fn call_udf(&self, s: &mut [Column]) -> PolarsResult<Column> {
-        let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
+        let func = CALL_PYTHON_COLUMNS_UDF.get().unwrap();
         let field = self
             .materialized_field
             .get()
@@ -175,7 +172,7 @@ impl AnonymousColumnsUdf for PythonUdfExpression {
             None => {
                 let dtype = match self.output_type.as_ref() {
                     None => {
-                        let func = unsafe { CALL_COLUMNS_UDF_PYTHON.unwrap() };
+                        let func = CALL_PYTHON_COLUMNS_UDF.get().unwrap();
                         let f = |s: &[Column]| func(s, None, &self.python_function);
                         try_infer_udf_output_dtype(&f as _, fields)?
                     },

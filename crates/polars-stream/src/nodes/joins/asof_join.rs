@@ -2,6 +2,9 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use AsofStrategy::*;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::distributor_channel as dc;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
@@ -15,9 +18,6 @@ use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::sort::reorder_cmp;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::distributor_channel as dc;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -309,7 +309,7 @@ async fn distribute_work_task(
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
-                left_buffer.push_back(left_df);
+                left_buffer.push_front(left_df);
                 stop_and_buffer_pipe_contents(recv_left.as_mut(), &mut |df| {
                     left_buffer.push_back(df)
                 })
@@ -319,10 +319,13 @@ async fn distribute_work_task(
         }
 
         prune_right_side(&left_df, right_buffer, params, 0)?;
-        distributor
+        if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
             .await
-            .unwrap();
+            .is_err()
+        {
+            return Ok(());
+        }
         *output_seq = output_seq.successor();
         prune_right_side(
             &left_df,

@@ -1,18 +1,16 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::LazyLock;
 use std::sync::mpsc::{TryRecvError, sync_channel};
 
 use polars_utils::with_drop::WithDrop;
 use rayon::{ThreadPool, ThreadPoolBuilder, Yield};
-use tokio::runtime::{Builder, Runtime};
 
 pub struct RAYON;
 
 // Thread locals to allow disabling threading for specific threads.
 #[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
 thread_local! {
-    pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
     static NOOP_POOL: RefCell<ThreadPool> = RefCell::new(
         ThreadPoolBuilder::new()
             .use_current_thread()
@@ -139,7 +137,9 @@ impl RAYON {
         OP: FnOnce(&ThreadPool) -> R + Send,
         R: Send,
     {
-        if ALLOW_RAYON_THREADS.get() || THREAD_POOL.current_thread_index().is_some() {
+        if polars_async::executor::ALLOW_RAYON_THREADS.get()
+            || THREAD_POOL.current_thread_index().is_some()
+        {
             op(&THREAD_POOL)
         } else {
             NOOP_POOL.with(|v| op(&v.borrow()))
@@ -196,15 +196,7 @@ impl RAYON {
 pub static THREAD_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
     ThreadPoolBuilder::new()
-        .num_threads(
-            std::env::var("POLARS_MAX_THREADS")
-                .map(|s| s.parse::<usize>().expect("integer"))
-                .unwrap_or_else(|_| {
-                    std::thread::available_parallelism()
-                        .unwrap_or(std::num::NonZeroUsize::new(1).unwrap())
-                        .get()
-                }),
-        )
+        .num_threads(polars_config::config().max_threads())
         .thread_name(move |i| format!("{thread_name}-{i}"))
         .build()
         .expect("could not spawn threads")
@@ -219,74 +211,4 @@ pub static THREAD_POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
         .expect("could not create pool")
 });
 
-pub struct AsyncRuntime {
-    rt: Runtime,
-}
-
-impl AsyncRuntime {
-    fn new() -> Self {
-        let n_threads = std::env::var("POLARS_ASYNC_THREAD_COUNT")
-            .map(|x| x.parse::<usize>().expect("integer"))
-            .unwrap_or(usize::min(RAYON.current_num_threads(), 32));
-
-        let max_blocking = std::env::var("POLARS_MAX_BLOCKING_THREAD_COUNT")
-            .map(|x| x.parse::<usize>().expect("integer"))
-            .unwrap_or(512);
-
-        if crate::config::verbose() {
-            eprintln!("async thread count: {n_threads}");
-            eprintln!("blocking thread count: {max_blocking}");
-        }
-
-        let rt = Builder::new_multi_thread()
-            .worker_threads(n_threads)
-            .max_blocking_threads(max_blocking)
-            .enable_io()
-            .enable_time()
-            .build()
-            .unwrap();
-
-        Self { rt }
-    }
-
-    /// Forcibly blocks this thread to evaluate the given future. This can be
-    /// dangerous and lead to deadlocks if called re-entrantly on an async
-    /// worker thread as the entire thread pool can end up blocking, leading to
-    /// a deadlock. If you want to prevent this use block_on, which will panic
-    /// if called from an async thread.
-    pub fn block_in_place_on<F>(&self, future: F) -> F::Output
-    where
-        F: Future,
-    {
-        tokio::task::block_in_place(|| self.rt.block_on(future))
-    }
-
-    /// Blocks this thread to evaluate the given future. Panics if the current
-    /// thread is an async runtime worker thread.
-    pub fn block_on<F>(&self, future: F) -> F::Output
-    where
-        F: Future,
-    {
-        self.rt.block_on(future)
-    }
-
-    /// Spawns a future onto the Tokio runtime (see [`tokio::runtime::Runtime::spawn`]).
-    pub fn spawn<F>(&self, future: F) -> tokio::task::JoinHandle<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        self.rt.spawn(future)
-    }
-
-    // See [`tokio::runtime::Runtime::spawn_blocking`].
-    pub fn spawn_blocking<F, R>(&self, f: F) -> tokio::task::JoinHandle<R>
-    where
-        F: FnOnce() -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        self.rt.spawn_blocking(f)
-    }
-}
-
-pub static ASYNC: LazyLock<AsyncRuntime> = LazyLock::new(AsyncRuntime::new);
+pub use polars_async::ASYNC;

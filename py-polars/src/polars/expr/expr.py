@@ -3756,7 +3756,7 @@ class Expr:
         │ true ┆ true ┆ false │
         └──────┴──────┴───────┘
         """
-        return self.null_count() > 0
+        return wrap_expr(self._pyexpr.has_nulls())
 
     def arg_unique(self) -> Expr:
         """
@@ -7369,7 +7369,7 @@ Consider using {self}.implode() instead"""
         by: IntoExpr,
         window_size: timedelta | str_,
         *,
-        min_samples: int = 1,
+        min_samples: int = 0,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """

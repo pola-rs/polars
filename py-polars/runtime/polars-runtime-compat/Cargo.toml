@@ -1,8 +1,8 @@
 [package]
 name = "polars-runtime-compat"
 # example: 1.35.0-beta.1
-version = "1.40.1"
-edition = "2021"
+version = "1.41.2"
+edition = "2024"
 license = "MIT"
 
 [lib]
@@ -73,7 +73,7 @@ cloud = ["polars-python/cloud"]
 peaks = ["polars-python/peaks"]
 hist = ["polars-python/hist"]
 find_many = ["polars-python/find_many"]
-new_streaming = ["polars-python/new_streaming"]
+streaming = ["polars-python/streaming"]
 
 dtype-i8 = ["polars-python/dtype-i8"]
 dtype-i16 = ["polars-python/dtype-i16"]

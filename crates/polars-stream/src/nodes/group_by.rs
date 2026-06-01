@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use polars_async::executor;
 use polars_core::prelude::{IntoColumn, PlHashSet, PlRandomState};
 use polars_core::runtime::{ASYNC, RAYON};
 use polars_core::schema::Schema;
@@ -20,7 +21,6 @@ use rayon::prelude::*;
 use tokio::sync::mpsc::{Receiver, channel};
 
 use super::compute_node_prelude::*;
-use crate::async_executor;
 use crate::expression::StreamExpr;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -306,7 +306,7 @@ impl GroupBySinkState {
         let grouped_reductions_template = &self.grouped_reductions;
         let grouped_reduction_cols = &self.grouped_reduction_cols;
 
-        async_executor::task_scope(|s| {
+        executor::task_scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local = Arc::new(morsels_per_local);

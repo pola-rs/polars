@@ -79,7 +79,7 @@ where
 macro_rules! arg_unique_ca {
     ($ca:expr) => {{
         match $ca.has_nulls() {
-            false => arg_unique($ca.into_no_null_iter(), $ca.len()),
+            false => arg_unique($ca.no_null_iter(), $ca.len()),
             _ => arg_unique($ca.iter(), $ca.len()),
         }
     }};
@@ -387,16 +387,12 @@ mod test {
         let ca =
             ChunkedArray::<Int32Type>::from_slice(PlSmallStr::from_static("a"), &[1, 2, 3, 2, 1]);
         assert_eq!(
-            ca.unique()
-                .unwrap()
-                .sort(false)
-                .into_iter()
-                .collect::<Vec<_>>(),
+            ca.unique().unwrap().sort(false).iter().collect::<Vec<_>>(),
             vec![Some(1), Some(2), Some(3)]
         );
         let ca = BooleanChunked::from_slice(PlSmallStr::from_static("a"), &[true, false, true]);
         assert_eq!(
-            ca.unique().unwrap().into_iter().collect::<Vec<_>>(),
+            ca.unique().unwrap().iter().collect::<Vec<_>>(),
             vec![Some(false), Some(true)]
         );
 
@@ -415,7 +411,7 @@ mod test {
         let ca =
             ChunkedArray::<Int32Type>::from_slice(PlSmallStr::from_static("a"), &[1, 2, 1, 1, 3]);
         assert_eq!(
-            ca.arg_unique().unwrap().into_iter().collect::<Vec<_>>(),
+            ca.arg_unique().unwrap().iter().collect::<Vec<_>>(),
             vec![Some(0), Some(1), Some(4)]
         );
     }

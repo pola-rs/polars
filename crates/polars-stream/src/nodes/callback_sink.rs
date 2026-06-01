@@ -1,11 +1,11 @@
 use std::num::NonZeroUsize;
 
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_plan::prelude::PlanCallback;
 
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::nodes::ComputeNode;

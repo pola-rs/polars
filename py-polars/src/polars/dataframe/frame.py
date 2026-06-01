@@ -133,7 +133,6 @@ if TYPE_CHECKING:
 
     import deltalake
     import jax
-    import numpy.typing as npt
     import pyiceberg
     from great_tables import GT
     from xlsxwriter import Workbook
@@ -222,6 +221,11 @@ class DataFrame:
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        The order of the schema determines the column order of the frame.
+        When passing a dict, its insertion order is respected. To override specific
+        column data types by name without changing column order, use
+        ``schema_overrides`` instead.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
@@ -992,7 +996,7 @@ class DataFrame:
 
     def __array__(
         self,
-        dtype: npt.DTypeLike | None = None,
+        dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
@@ -2482,6 +2486,8 @@ class DataFrame:
             ).cast(to_dtype)  # type: ignore[arg-type]
             frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
+            label_frame = None
+            features_frame = None
             frame = (self.select(features) if features is not None else self).cast(
                 to_dtype  # type: ignore[arg-type]
             )
@@ -2494,7 +2500,7 @@ class DataFrame:
             return torch.from_numpy(arr)
 
         elif return_type == "dict":
-            if label is not None:
+            if label_frame is not None and features_frame is not None:
                 # return a {"label": tensor(s), "features": tensor(s)} dict
                 return {
                     "label": label_frame.to_torch(),
@@ -2508,7 +2514,7 @@ class DataFrame:
             # return a torch Dataset object
             from polars.ml.torch import PolarsDataset
 
-            pds_label = None if label is None else label_frame.columns
+            pds_label = None if label_frame is None else label_frame.columns
             return PolarsDataset(frame, label=pds_label, features=features)
         else:
             valid_torch_types = ", ".join(get_args(TorchExportType))
@@ -8083,7 +8089,7 @@ class DataFrame:
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
 
-        They `by` argument allows joining on another column first, before the asof join.
+        The `by` argument allows joining on another column first, before the asof join.
         In this example we join by `country` first, then asof join by date, as above.
 
         >>> gdp_dates = pl.date_range(  # fmt: skip
@@ -12530,8 +12536,9 @@ class DataFrame:
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by that key otherwise
-        the output will not make sense.
+        are sorted in ascending order by the key, with null
+        keys at the end, otherwise the order of the output
+        will not make sense.
 
         The schemas of both DataFrames must be equal.
 

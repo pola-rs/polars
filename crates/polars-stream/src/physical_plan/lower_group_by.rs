@@ -389,7 +389,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                 IRFunctionExpr::Boolean(
                     IRBooleanFunction::Any { .. }
                     | IRBooleanFunction::All { .. }
-                    | IRBooleanFunction::IsEmpty { .. },
+                    | IRBooleanFunction::IsEmpty { .. }
+                    | IRBooleanFunction::HasNulls,
                 )
                 | IRFunctionExpr::MinBy
                 | IRFunctionExpr::MaxBy

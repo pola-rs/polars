@@ -1,3 +1,5 @@
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
 use polars_core::config;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
@@ -6,8 +8,6 @@ use polars_io::ndjson::NDJsonWriterOptions;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 use crate::nodes::io_sinks::components::size::{
@@ -93,9 +93,9 @@ impl FileWriterStarter for NDJsonWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
-    ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
+    ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let (filled_serializer_tx, filled_serializer_rx) = tokio::sync::mpsc::channel::<(
-            async_executor::AbortOnDropHandle<PolarsResult<morsel_serializer::MorselSerializer>>,
+            executor::AbortOnDropHandle<PolarsResult<morsel_serializer::MorselSerializer>>,
             SinkMorselPermit,
         )>(num_pipelines.get());
 
@@ -117,7 +117,7 @@ impl FileWriterStarter for NDJsonWriterStarter {
 
         let base_allocation_size = self.initialized_state().base_allocation_size;
 
-        let serializer_handle = async_executor::spawn(
+        let serializer_handle = executor::spawn(
             TaskPriority::High,
             morsel_serializer::MorselSerializerPipeline {
                 morsel_rx,
@@ -129,7 +129,7 @@ impl FileWriterStarter for NDJsonWriterStarter {
             .run(),
         );
 
-        Ok(async_executor::spawn(TaskPriority::Low, async move {
+        Ok(executor::spawn(TaskPriority::Low, async move {
             io_handle.await.unwrap()?;
             serializer_handle.await;
             Ok(())

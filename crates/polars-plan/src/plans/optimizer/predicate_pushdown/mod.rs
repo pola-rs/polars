@@ -23,17 +23,17 @@ pub struct PredicatePushDown {
     // Normally this is 0. Only needed for CSPE.
     caches_pass_allowance: u32,
     nodes_scratch: ScratchUnitVec<Node>,
-    new_streaming: bool,
+    streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, new_streaming: bool) -> Self {
+    pub fn new(maintain_errors: bool, streaming: bool) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
-            new_streaming,
+            streaming,
             maintain_errors,
         }
     }
@@ -52,8 +52,7 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> IR {
-        if !local_predicates.is_empty() {
-            let predicate = combine_predicates(local_predicates.into_iter(), expr_arena);
+        if let Some(predicate) = combine_predicates(local_predicates, expr_arena) {
             let input = lp_arena.add(lp);
 
             IR::Filter { input, predicate }
@@ -311,14 +310,15 @@ impl PredicatePushDown {
                 schema,
                 output_schema,
             } => {
-                let selection = predicate_at_scan(acc_predicates, None, expr_arena);
                 let mut lp = DataFrameScan {
                     df,
                     schema,
                     output_schema,
                 };
 
-                if let Some(predicate) = selection {
+                if let Some(predicate) =
+                    combine_predicates(acc_predicates.into_values(), expr_arena)
+                {
                     let input = lp_arena.add(lp);
 
                     lp = IR::Filter { input, predicate }
@@ -350,7 +350,10 @@ impl PredicatePushDown {
                         blocked_names.contains(&name.as_ref())
                     })
                 };
-                let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
+                let predicate = combine_predicates(
+                    Option::into_iter(predicate.clone()).chain(acc_predicates.into_values()),
+                    expr_arena,
+                );
 
                 let do_optimization = predicate.is_some()
                     && match &*scan_type {
@@ -453,7 +456,7 @@ impl PredicatePushDown {
                 schema,
                 options,
                 acc_predicates,
-                self.new_streaming,
+                self.streaming,
             ),
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {
@@ -636,8 +639,9 @@ impl PredicatePushDown {
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
-                let predicate = predicate_at_scan(acc_predicates, None, expr_arena);
-                if let Some(predicate) = predicate {
+                if let Some(predicate) =
+                    combine_predicates(acc_predicates.into_values(), expr_arena)
+                {
                     match ExprPushdownGroup::Pushable.update_with_expr_rec(
                         expr_arena.get(predicate.node()),
                         expr_arena,

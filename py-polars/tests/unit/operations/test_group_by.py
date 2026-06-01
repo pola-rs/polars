@@ -577,6 +577,36 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
+def test_group_by_next_raises_type_error() -> None:
+    # Calling next() directly on a GroupBy (not an iterator) should raise TypeError,
+    # not AttributeError. Regression test for https://github.com/pola-rs/polars/issues/12868
+    gb = pl.DataFrame({"a": [1, 2, 3]}).group_by("a")
+    with pytest.raises(TypeError):
+        next(gb)  # type: ignore[call-overload]
+
+    # iter() then next() must still work correctly, and the iterator is its own __iter__
+    it = iter(
+        pl.DataFrame({"a": [1, 1, 2], "b": [10, 20, 30]}).group_by(
+            "a", maintain_order=True
+        )
+    )
+    assert iter(it) is it  # GroupByIter.__iter__ returns self
+    name, group = next(it)
+    assert name == (1,)
+    assert group.shape == (2, 2)
+
+    # RollingGroupByIter is also its own iterator
+    dates = pl.date_range(date(2020, 1, 1), date(2020, 1, 4), eager=True)
+    df_roll = pl.DataFrame({"dt": dates, "v": [1, 2, 3, 4]})
+    roll_it = iter(df_roll.rolling("dt", period="2d"))
+    assert iter(roll_it) is roll_it  # RollingGroupByIter.__iter__ returns self
+
+    # DynamicGroupByIter is also its own iterator
+    df_dyn = pl.DataFrame({"dt": dates, "v": [1, 2, 3, 4]})
+    dyn_it = iter(df_dyn.group_by_dynamic("dt", every="2d"))
+    assert iter(dyn_it) is dyn_it  # DynamicGroupByIter.__iter__ returns self
+
+
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
@@ -3080,3 +3110,47 @@ def test_group_by_max_by_min_by_string_single_element_27171() -> None:
     result = df.group_by("key", maintain_order=True).agg(pl.col("val").min_by("by"))
     assert result.filter(pl.col("key") == "a")["val"][0] == 10
     assert result.filter(pl.col("key") == "b")["val"][0] == 30
+
+
+def test_group_by_sort_flag_27672() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["a", "b", "b", "b"],
+            "z": [1, 2, 0, None],
+        }
+    )
+
+    out = (
+        df.sort("z").group_by("s", maintain_order=True).max().sort("z", descending=True)
+    )
+    expected = pl.DataFrame({"s": ["b", "a"], "z": [2, 1]})
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_when_then_with_mutated_idxs() -> None:
+    df = pl.DataFrame({"g": ["A", "A"], "v": [10.0, None], "m": [True, True]})
+    out = df.select(
+        ffill=pl.when("m").then(pl.col("v").forward_fill()).otherwise(None).over("g"),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "ffill": [10.0, 10.0],
+            }
+        ),
+    )
+
+    out = df.select(
+        rev=pl.when("m").then(pl.col("v").reverse()).otherwise(None).over("g"),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "rev": [None, 10.0],
+            }
+        ),
+    )

@@ -1818,3 +1818,21 @@ def test_join_asof_maintain_order_left_27526() -> None:
     assert q.collect(engine="streaming")["id"].is_sorted(), (
         "expected asof_join to maintain left ordering"
     )
+
+
+def test_join_asof_buffer_ordering_27619() -> None:
+    n = 10
+    for n_dataframes in range(1, 20):
+        linspace = pl.select(pl.linear_space(0, 1, n).alias("a"))
+        left_dfs = pl.concat(
+            [linspace.lazy()]
+            + [linspace.slice(0, 0).lazy() for _ in range(n_dataframes - 1)]
+        )
+        left_lazy = left_dfs.set_sorted("a")
+        right_lazy = left_dfs.select(pl.col("a") - 0.5).set_sorted("a")
+        q = left_lazy.join_asof(
+            right_lazy,
+            on="a",
+            check_sortedness=False,
+        )
+        assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

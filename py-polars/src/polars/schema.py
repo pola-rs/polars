@@ -123,7 +123,7 @@ class Schema(BaseSchema):
         for v in input:
             name, tp = (
                 polars_schema_field_from_arrow_c_schema(v)
-                if hasattr(v, "__arrow_c_schema__") and not isinstance(v, DataType)
+                if hasattr(v, "__arrow_c_schema__")
                 else v
             )
 

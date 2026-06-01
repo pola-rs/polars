@@ -8,25 +8,34 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, Location};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use crossbeam_channel::{Receiver, Sender};
 use crossbeam_deque::{Injector, Steal, Stealer, Worker as WorkQueue};
 use crossbeam_utils::CachePadded;
 use park_group::ParkGroup;
 use parking_lot::Mutex;
-use polars_core::runtime::ALLOW_RAYON_THREADS;
 use polars_utils::relaxed_cell::RelaxedCell;
+use polars_utils::with_drop::WithDrop;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use slotmap::SlotMap;
 use task::{Cancellable, DynTask, Runnable};
 
-static NUM_EXECUTOR_THREADS: RelaxedCell<usize> = RelaxedCell::new_usize(0);
-pub fn set_num_threads(t: usize) {
-    NUM_EXECUTOR_THREADS.store(t);
+thread_local! {
+    pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
+    pub static THREAD_SPAWNED_BY_POLARS_EXECUTOR: Cell<bool> = const { Cell::new(false) };
+
+    /// Used to store which executor thread this is.
+    static TLS_THREAD_ID: Cell<usize> = const { Cell::new(usize::MAX) };
+}
+
+/// Returns whether this thread is actively used for scheduling tasks.
+pub fn is_scheduling_polars_executor_thread() -> bool {
+    TLS_THREAD_ID.get() != usize::MAX
 }
 
 static TRACK_METRICS: RelaxedCell<bool> = RelaxedCell::new_bool(false);
@@ -36,11 +45,6 @@ pub fn track_task_metrics(should_track: bool) {
 }
 
 static GLOBAL_SCHEDULER: OnceLock<Executor> = OnceLock::new();
-
-thread_local!(
-    /// Used to store which executor thread this is.
-    static TLS_THREAD_ID: Cell<usize> = const { Cell::new(usize::MAX) };
-);
 
 slotmap::new_key_type! {
     struct TaskKey;
@@ -175,6 +179,10 @@ struct Executor {
     thread_task_lists: Vec<CachePadded<ThreadLocalTaskList>>,
     global_high_prio_task_queue: Injector<ReadyTask>,
     global_low_prio_task_queue: Injector<ReadyTask>,
+    thread_id_send: Sender<Arc<AtomicUsize>>,
+    thread_id_recv: Receiver<Arc<AtomicUsize>>,
+    thread_name_idx: AtomicUsize,
+    num_runners_without_identity: AtomicUsize,
 }
 
 impl Executor {
@@ -269,15 +277,27 @@ impl Executor {
         None
     }
 
-    fn runner(&self, thread: usize) {
-        TLS_THREAD_ID.set(thread);
+    fn runner(&self, initial_thread_id: Option<usize>) {
+        TLS_THREAD_ID.set(initial_thread_id.unwrap_or(usize::MAX));
         ALLOW_RAYON_THREADS.set(false);
+        THREAD_SPAWNED_BY_POLARS_EXECUTOR.set(true);
 
         let mut rng = SmallRng::from_rng(&mut rand::rng());
         let mut worker = self.park_group.new_worker();
 
         loop {
-            let ttl = &self.thread_task_lists[thread];
+            // If we're a runner without an assigned thread id, get one.
+            let mut thread_id = TLS_THREAD_ID.get();
+            if thread_id == usize::MAX {
+                if let Some(tid) = self.acquire_thread_identity() {
+                    TLS_THREAD_ID.set(tid);
+                    thread_id = tid;
+                } else {
+                    return;
+                }
+            }
+
+            let ttl = &self.thread_task_lists[thread_id];
             let mut local = true;
             let task = (|| {
                 // Try to get a task from LIFO slot.
@@ -292,13 +312,13 @@ impl Executor {
 
                 // Try to steal a task.
                 local = false;
-                if let Some(task) = self.try_steal_task(thread, &mut rng) {
+                if let Some(task) = self.try_steal_task(thread_id, &mut rng) {
                     return Some(task);
                 }
 
                 // Prepare to park, then try one more steal attempt.
                 let park = worker.prepare_park();
-                if let Some(task) = self.try_steal_task(thread, &mut rng) {
+                if let Some(task) = self.try_steal_task(thread_id, &mut rng) {
                     return Some(task);
                 }
 
@@ -325,20 +345,65 @@ impl Executor {
         }
     }
 
+    fn spawn_runner_without_identity(&self) {
+        self.num_runners_without_identity
+            .fetch_add(1, Ordering::AcqRel);
+        let t = self.thread_name_idx.fetch_add(1, Ordering::Relaxed);
+        std::thread::Builder::new()
+            .name(format!("async-executor-{t}"))
+            .spawn(move || Self::global().runner(None))
+            .unwrap();
+    }
+
+    fn acquire_thread_identity(&self) -> Option<usize> {
+        loop {
+            match self.thread_id_recv.recv_timeout(Duration::from_secs(10)) {
+                Ok(tid_msg) => {
+                    let thread_id = tid_msg.swap(usize::MAX, Ordering::AcqRel);
+                    if thread_id != usize::MAX {
+                        // Important: we check queue again after reducing count.
+                        let num_left = self
+                            .num_runners_without_identity
+                            .fetch_sub(1, Ordering::AcqRel)
+                            - 1;
+                        if num_left == 0 && !self.thread_id_recv.is_empty() {
+                            self.spawn_runner_without_identity();
+                        }
+                        return Some(thread_id);
+                    }
+                },
+                Err(_) => {
+                    // Important: we check queue again after reducing count.
+                    self.num_runners_without_identity
+                        .fetch_sub(1, Ordering::AcqRel);
+                    if self.thread_id_recv.is_empty() {
+                        return None;
+                    }
+                    self.num_runners_without_identity
+                        .fetch_add(1, Ordering::AcqRel);
+                },
+            }
+        }
+    }
+
+    fn ensure_runner_without_identity_exists(&self) {
+        if self
+            .num_runners_without_identity
+            .fetch_add(0, Ordering::AcqRel)
+            == 0
+        {
+            self.spawn_runner_without_identity();
+        }
+    }
+
     fn global() -> &'static Executor {
         GLOBAL_SCHEDULER.get_or_init(|| {
-            let mut n_threads = NUM_EXECUTOR_THREADS.load();
-            if n_threads == 0 {
-                n_threads = std::thread::available_parallelism()
-                    .map(|n| n.get())
-                    .unwrap_or(4);
-            }
-
+            let n_threads = polars_config::config().max_threads();
             let thread_task_lists = (0..n_threads)
                 .map(|t| {
                     std::thread::Builder::new()
                         .name(format!("async-executor-{t}"))
-                        .spawn(move || Self::global().runner(t))
+                        .spawn(move || Self::global().runner(Some(t)))
                         .unwrap();
 
                     let high_prio_tasks = WorkQueue::new_lifo();
@@ -349,11 +414,16 @@ impl Executor {
                     })
                 })
                 .collect();
+            let (thread_id_send, thread_id_recv) = crossbeam_channel::unbounded();
             Self {
                 park_group: ParkGroup::new(),
                 thread_task_lists,
                 global_high_prio_task_queue: Injector::new(),
                 global_low_prio_task_queue: Injector::new(),
+                thread_id_send,
+                thread_id_recv,
+                thread_name_idx: AtomicUsize::new(n_threads),
+                num_runners_without_identity: AtomicUsize::new(0),
             }
         })
     }
@@ -481,6 +551,38 @@ where
     );
     Arc::clone(&dyn_task).schedule();
     JoinHandle(dyn_task)
+}
+
+/// Runs the given function on this thread while allowing another thread to take
+/// over this thread's task execution duties.
+///
+/// Simply directly calls f() if this thread is not an async executor thread.
+pub fn block_in_place<R, F: FnOnce() -> R>(f: F) -> R {
+    let thread_id = TLS_THREAD_ID.replace(usize::MAX);
+    if thread_id == usize::MAX {
+        return f();
+    }
+
+    // Send off our thread id to another runner, we just become an ordinary thread.
+    let executor = Executor::global();
+    let msg = Arc::new(AtomicUsize::new(thread_id));
+    executor.thread_id_send.send(msg.clone()).unwrap();
+    executor.ensure_runner_without_identity_exists(); // Important: *after* sending in channel.
+
+    // Try to steal our thread id back afterwards, even if f panics. If we can't
+    // steal our thread id back we become a runner without identity.
+    let _restore_identity = WithDrop::new(msg, |msg| {
+        let thread_id = msg.swap(usize::MAX, Ordering::AcqRel);
+        if thread_id != usize::MAX {
+            TLS_THREAD_ID.set(thread_id);
+        } else {
+            executor
+                .num_runners_without_identity
+                .fetch_add(1, Ordering::AcqRel);
+        }
+    });
+
+    f()
 }
 
 fn random_permutation<R: Rng>(len: u32, rng: &mut R) -> impl Iterator<Item = u32> {
