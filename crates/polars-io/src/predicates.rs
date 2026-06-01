@@ -4,7 +4,10 @@ use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
-use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
+use polars_parquet::{
+    parquet::bloom_filter::{might_contain_any_scalar_bytes, might_contain_scalar_bytes},
+    read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr},
+};
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -114,6 +117,38 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {
         self.specialized.as_ref()
     }
+}
+
+/// Whether `scalar` might be present in a Parquet split-block bloom filter.
+#[cfg(feature = "parquet")]
+pub fn scalar_might_be_in_bloom_filter_bytes(
+    scalar: &Scalar,
+    bloom_bytes: &[u8],
+    bitset: &mut Vec<u8>,
+) -> polars_error::PolarsResult<bool> {
+    let Some(parquet_scalar) = cast_to_parquet_scalar(scalar.clone()) else {
+        return Ok(true);
+    };
+    might_contain_scalar_bytes(bloom_bytes, &parquet_scalar, bitset).map_err(|e| e.into())
+}
+
+/// Whether any of `scalars` might be present in a Parquet split-block bloom filter.
+///
+/// Parses `bloom_bytes` once, then probes each scalar.
+#[cfg(feature = "parquet")]
+pub fn any_scalar_might_be_in_bloom_filter_bytes(
+    scalars: &[Scalar],
+    bloom_bytes: &[u8],
+    bitset: &mut Vec<u8>,
+) -> polars_error::PolarsResult<bool> {
+    let mut parquet_scalars = Vec::with_capacity(scalars.len());
+    for scalar in scalars {
+        let Some(parquet_scalar) = cast_to_parquet_scalar(scalar.clone()) else {
+            return Ok(true);
+        };
+        parquet_scalars.push(parquet_scalar);
+    }
+    might_contain_any_scalar_bytes(bloom_bytes, &parquet_scalars, bitset).map_err(|e| e.into())
 }
 
 #[cfg(feature = "parquet")]

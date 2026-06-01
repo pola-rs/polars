@@ -403,6 +403,9 @@
 //! * `POLARS_ALLOW_EXTENSION` -> allows for [`ObjectChunked<T>`] to be used in arrow, opening up possibilities like using
 //!   `T` in complex lazy expressions. However this does require `unsafe` code allow this.
 //! * `POLARS_NO_PARQUET_STATISTICS` -> if set, statistics in parquet files are ignored.
+//! * `POLARS_NO_BLOOM_FILTER_PRUNE` -> if set to `1`, row-group pruning via Parquet bloom filters is
+//!   disabled (column statistics pruning is controlled separately by `POLARS_NO_PARQUET_STATISTICS` /
+//!   `scan_parquet(..., use_statistics=...)`).
 //! * `POLARS_PANIC_ON_ERR` -> panic instead of returning an Error.
 //! * `POLARS_BACKTRACE_IN_ERR` -> include a Rust backtrace in Error messages.
 //! * `POLARS_NO_CHUNKED_JOIN` -> force rechunk before joins.
