@@ -88,6 +88,19 @@ with RayEngine() as engine
 --8<-- "python/user-guide/lazy/gpu.py:engine-result"
 ```
 
+!!! note
+
+    To use `RayEngine` or `DaskEngine`, Ray or Dask must be installed respetively. These
+    dependencies can be installed with the `[ray]` or `[dask]` pip extra of cudf-polars.
+
+    For example with CUDA 13:
+
+    === ":fontawesome-brands-python: Python"
+    ```bash
+    pip install cudf-polars-cu13[ray]
+    pip install cudf-polars-cu13[dask]
+    ```
+
 ### How It Works
 
 When you use the GPU-accelerated engine, Polars creates and optimizes a query plan and dispatches to
