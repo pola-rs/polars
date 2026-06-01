@@ -182,6 +182,8 @@ pub struct Scan {
     #[pyo3(get)]
     file_info: Py<PyAny>,
     #[pyo3(get)]
+    hive_parts: Option<PyDataFrame>,
+    #[pyo3(get)]
     predicate: Option<PyExprIR>,
     #[pyo3(get)]
     file_options: PyFileOptions,
@@ -418,15 +420,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         }
         .into_py_any(py),
         IR::Scan {
-            hive_parts: Some(_),
-            ..
-        } => Err(PyNotImplementedError::new_err(
-            "scan with hive partitioning",
-        )),
-        IR::Scan {
             sources,
             file_info: _,
-            hive_parts: _,
+            hive_parts,
             predicate,
             predicate_file_skip_applied,
             output_schema: _,
@@ -451,6 +447,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 },
                 // TODO: file info
                 file_info: py.None(),
+                hive_parts: hive_parts
+                    .as_ref()
+                    .map(|h| PyDataFrame::new(h.df().clone())),
                 predicate: predicate
                     .as_ref()
                     .filter(|_| {
