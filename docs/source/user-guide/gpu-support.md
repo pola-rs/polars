@@ -115,7 +115,8 @@ by the other engine.
 
 When using GPU mode, your query won't fail if an operation isn't supported. When you pass
 `engine="gpu"`, the optimized query plan is inspected to see whether it can be executed on the GPU.
-If it can't, it will transparently fall back to the standard Polars engine and run all query operations on the CPU.
+If it can't, it will transparently fall back to the standard Polars engine and run all query
+operations on the CPU.
 
 GPU execution is only available in the Lazy API, so materialized DataFrames will reside in CPU
 memory when the query execution finishes.
