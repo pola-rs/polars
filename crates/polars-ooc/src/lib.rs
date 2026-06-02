@@ -103,7 +103,7 @@ impl<T: Spillable> SpillTokenInner<T> {
     // Try to pin the value, returning None if it is spilled, locked or dropped.
     fn try_pin(&self) -> Option<PinnedRef<'_, T>> {
         self.state
-            .try_update(Ordering::Relaxed, Ordering::Acquire, |state| {
+            .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
                 if state & (SPILLED_BIT | LOCK_BIT | DROPPED_BIT) != 0 {
                     return None;
                 }
@@ -117,24 +117,24 @@ impl<T: Spillable> SpillTokenInner<T> {
     //
     // If the value is locked this will wait for the lock.
     async fn pin_or_lock(&self) -> Option<PinnedRef<'_, T>> {
-        let mut state = self.state.load(Ordering::Acquire);
+        let mut state = self.state.load(Ordering::Relaxed);
         loop {
             if state & (SPILLED_BIT | LOCK_BIT | DROPPED_BIT) == 0 {
                 match self.state.compare_exchange_weak(
                     state,
                     state + RO_PIN_COUNT_UNIT,
-                    Ordering::Relaxed,
                     Ordering::Acquire,
+                    Ordering::Relaxed,
                 ) {
                     Ok(_) => return Some(PinnedRef { inner: self }),
                     Err(s) => state = s,
                 }
-            } else if state & (LOCK_BIT | DROPPED_BIT) == 0 {
+            } else if state & (LOCK_BIT | RO_PIN_MASK | DROPPED_BIT) == 0 {
                 match self.state.compare_exchange_weak(
                     state,
                     state | LOCK_BIT,
-                    Ordering::Relaxed,
                     Ordering::Acquire,
+                    Ordering::Relaxed,
                 ) {
                     Ok(_) => return None,
                     Err(s) => state = s,
@@ -148,14 +148,14 @@ impl<T: Spillable> SpillTokenInner<T> {
 
     // Locks the (possibly spilled) value, waiting until it's neither pinned or locked.
     async fn lock(&self) {
-        let mut state = self.state.load(Ordering::Acquire);
+        let mut state = self.state.load(Ordering::Relaxed);
         loop {
             if state & (LOCK_BIT | RO_PIN_MASK | DROPPED_BIT) == 0 {
                 match self.state.compare_exchange_weak(
                     state,
                     state | LOCK_BIT,
-                    Ordering::Relaxed,
                     Ordering::Acquire,
+                    Ordering::Relaxed,
                 ) {
                     Ok(_) => return,
                     Err(s) => state = s,
