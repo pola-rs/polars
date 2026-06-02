@@ -72,7 +72,10 @@ fn hash_python_predicate<H: Hasher>(
     std::mem::discriminant(pred).hash(state);
     match pred {
         PythonPredicate::None => {},
-        PythonPredicate::PyArrow(p) => format!("{:?}", p).hash(state),
+        PythonPredicate::PyArrow(p) => {
+            format!("{:?}", p).hash(state);
+            p.has_residual.hash(state);
+        },
         PythonPredicate::Polars(e) => e.traverse_and_hash(expr_arena, state),
     }
 }
@@ -306,6 +309,10 @@ impl Hash for IRHashWrap<'_> {
                 } => {
                     function.hash(state);
                     options.hash(state);
+                    output_name.hash(state);
+                },
+
+                UnoptimizedOperation::DynamicSlice { output_name } => {
                     output_name.hash(state);
                 },
             },

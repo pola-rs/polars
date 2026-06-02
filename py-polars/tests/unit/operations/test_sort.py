@@ -1316,3 +1316,17 @@ def test_sort_maintain_order_all_nulls_27514(
         .collect()
     )
     assert_frame_equal(result, df)
+
+
+def test_sort_by_multiple_length_mismatch_27759() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [0, 0],
+            "b": ["foo", "blah"],
+            "c": [False, True],
+            "d": [0, 0],
+            "e": [0, 0],
+        }
+    )
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.group_by("a").agg(pl.col("b").filter("c").sort_by(["d", "e"]))

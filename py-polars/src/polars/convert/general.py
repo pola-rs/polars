@@ -493,9 +493,13 @@ def from_arrow(
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
 
-        If you supply a list of column names that does not match the names in the
-        underlying data, the names given here will overwrite them. The number
-        of names given in the schema should match the underlying data dimensions.
+        Schema entries are applied positionally, following the order of the
+        Python dictionary. The provided schema takes precedence over the schema
+        of the underlying Arrow data. As such, if the provided schema names do
+        not match the underlying Arrow data, the column names of the Arrow data
+        will be discarded in favor of the names set in this argument.
+        The number of names given in the schema must match the underlying data
+        dimensions.
     schema_overrides : dict, default None
         Support type specification or override of one or more columns; note that
         any dtypes inferred from the schema param will be overridden.

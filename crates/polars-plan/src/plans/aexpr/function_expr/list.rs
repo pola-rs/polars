@@ -44,9 +44,6 @@ pub enum IRListFunction {
         null_behavior: NullBehavior,
     },
     Sort(SortOptions),
-    Reverse,
-    Unique(bool),
-    NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
     Join(bool),
@@ -120,8 +117,6 @@ impl IRListFunction {
                 Ok(DataType::List(Box::new(inner_dt)))
             }),
             Sort(_) => mapper.ensure_is_list()?.with_same_dtype(),
-            Reverse => mapper.ensure_is_list()?.with_same_dtype(),
-            Unique(_) => mapper.ensure_is_list()?.with_same_dtype(),
             Length => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_sets")]
             SetOperation(_) => mapper.ensure_is_list()?.with_same_dtype(),
@@ -141,7 +136,6 @@ impl IRListFunction {
             ToArray(width) => mapper
                 .ensure_is_list()?
                 .try_map_dtype(|dt| map_list_dtype_to_array_dtype(dt, *width)),
-            NUnique => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(names) => mapper.try_map_dtype(|dtype| {
                 let DataType::List(inner_dtype) = dtype else {
@@ -201,10 +195,7 @@ impl IRListFunction {
             | L::ArgMin
             | L::ArgMax
             | L::Sort(_)
-            | L::Reverse
-            | L::Unique(_)
-            | L::Join(_)
-            | L::NUnique => FunctionOptions::elementwise(),
+            | L::Join(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "dtype-array")]
             L::ToArray(_) => FunctionOptions::elementwise(),
             #[cfg(feature = "list_to_struct")]
@@ -262,15 +253,6 @@ impl Display for IRListFunction {
             Diff { .. } => "diff",
             Length => "length",
             Sort(_) => "sort",
-            Reverse => "reverse",
-            Unique(is_stable) => {
-                if *is_stable {
-                    "unique_stable"
-                } else {
-                    "unique"
-                }
-            },
-            NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
             Join(_) => "join",

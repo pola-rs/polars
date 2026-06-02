@@ -3110,3 +3110,47 @@ def test_group_by_max_by_min_by_string_single_element_27171() -> None:
     result = df.group_by("key", maintain_order=True).agg(pl.col("val").min_by("by"))
     assert result.filter(pl.col("key") == "a")["val"][0] == 10
     assert result.filter(pl.col("key") == "b")["val"][0] == 30
+
+
+def test_group_by_sort_flag_27672() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["a", "b", "b", "b"],
+            "z": [1, 2, 0, None],
+        }
+    )
+
+    out = (
+        df.sort("z").group_by("s", maintain_order=True).max().sort("z", descending=True)
+    )
+    expected = pl.DataFrame({"s": ["b", "a"], "z": [2, 1]})
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_when_then_with_mutated_idxs() -> None:
+    df = pl.DataFrame({"g": ["A", "A"], "v": [10.0, None], "m": [True, True]})
+    out = df.select(
+        ffill=pl.when("m").then(pl.col("v").forward_fill()).otherwise(None).over("g"),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "ffill": [10.0, 10.0],
+            }
+        ),
+    )
+
+    out = df.select(
+        rev=pl.when("m").then(pl.col("v").reverse()).otherwise(None).over("g"),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "rev": [None, 10.0],
+            }
+        ),
+    )

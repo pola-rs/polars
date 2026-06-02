@@ -169,7 +169,8 @@ impl EvictionManager {
             loop {
                 let this: &'static mut Self = unsafe { std::mem::transmute(&mut self) };
 
-                let result = tokio::task::spawn_blocking(|| this.update_file_list())
+                let result = ASYNC
+                    .spawn_blocking(|| this.update_file_list())
                     .await
                     .unwrap();
 
@@ -186,7 +187,7 @@ impl EvictionManager {
                                 );
                             }
 
-                            tokio::task::block_in_place(|| self.evict_files(&guard));
+                            ASYNC.block_in_place(|| self.evict_files(&guard));
                             break;
                         }
                         tokio::time::sleep(Duration::from_secs(7)).await;

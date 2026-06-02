@@ -73,14 +73,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: StatisticsFlags);
 
-        unsafe fn equal_element(
-            &self,
-            _idx_self: usize,
-            _idx_other: usize,
-            _other: &Series,
-        ) -> bool {
-            invalid_operation_panic!(equal_element, self)
-        }
         #[expect(clippy::wrong_self_convention)]
         fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
         #[expect(clippy::wrong_self_convention)]

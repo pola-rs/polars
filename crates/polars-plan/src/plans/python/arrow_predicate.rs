@@ -10,10 +10,14 @@ use crate::plans::ExprIR;
 pub struct ArrowPredicate {
     pub predicate: ExprIR,
     pub pyarrow_predicate: PythonObject,
+    /// Set when only some minterms of the original predicate could be converted
+    /// to pyarrow; the engine then post-applies the original predicate after
+    /// the scan.
+    pub has_residual: bool,
 }
 
 impl PartialEq for ArrowPredicate {
     fn eq(&self, other: &Self) -> bool {
-        self.predicate == other.predicate
+        self.predicate == other.predicate && self.has_residual == other.has_residual
     }
 }

@@ -73,44 +73,22 @@ pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<PlSmallStr, ExprIR
     PlSmallStr::from_string(out_key)
 }
 
-pub(super) fn combine_predicates<I>(iter: I, arena: &mut Arena<AExpr>) -> ExprIR
+pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
 where
-    I: Iterator<Item = ExprIR>,
+    I: IntoIterator<Item = ExprIR>,
 {
-    let mut single_pred = None;
-    for e in iter {
-        single_pred = match single_pred {
-            None => Some(e.node()),
-            Some(left) => Some(arena.add(AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right: e.node(),
-            })),
-        };
-    }
-    single_pred
-        .map(|node| ExprIR::from_node(node, arena))
-        .expect("an empty iterator was passed")
-}
+    let mut iter = iter.into_iter();
+    let mut out = iter.next()?.node();
 
-pub(super) fn predicate_at_scan(
-    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
-    predicate: Option<ExprIR>,
-    expr_arena: &mut Arena<AExpr>,
-) -> Option<ExprIR> {
-    if !acc_predicates.is_empty() {
-        let mut new_predicate = combine_predicates(acc_predicates.into_values(), expr_arena);
-        if let Some(pred) = predicate {
-            new_predicate.set_node(combine_by_and(
-                new_predicate.node(),
-                pred.node(),
-                expr_arena,
-            ));
-        }
-        Some(new_predicate)
-    } else {
-        None
+    for e in iter {
+        out = expr_arena.add(AExpr::BinaryExpr {
+            left: out,
+            op: Operator::And,
+            right: e.node(),
+        });
     }
+
+    Some(ExprIR::from_node(out, expr_arena))
 }
 
 /// Evaluates a condition on the column name inputs of every predicate, where if

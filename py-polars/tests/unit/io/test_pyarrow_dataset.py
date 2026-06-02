@@ -679,3 +679,15 @@ def test_pyarrow_dataset_streaming_source() -> None:
     assert "streaming-python-scan" in dataset.select(pl.all()).show_graph(
         engine="streaming", plan_stage="physical", raw_output=True
     )
+
+
+def test_pyarrow_dataset_residual_predicate() -> None:
+    df = pl.DataFrame({"item": ["doo", None, "baz", None], "price": [1, 2, 3, 4]})
+    dataset = pl.scan_pyarrow_dataset(
+        ds.dataset(df.to_arrow(compat_level=pl.CompatLevel.oldest()))
+    )
+
+    # The first expression is not convertible to pyarrow
+    assert dataset.filter(
+        pl.col("item").str.head(2).is_in(["do"]) & (pl.col("price") <= 2)
+    ).collect().to_dict(as_series=False) == {"item": ["doo"], "price": [1]}

@@ -143,7 +143,9 @@ impl<'a> IRDotDisplay<'a> {
             PythonScan { options } => {
                 let predicate = match &options.predicate {
                     PythonPredicate::Polars(e) => format!("{}", self.display_expr(e)),
-                    PythonPredicate::PyArrow(p) => format!("{:?}", p),
+                    PythonPredicate::PyArrow(p) => {
+                        format!("predicate: {:?}, has_residual: {}", p, p.has_residual)
+                    },
                     PythonPredicate::None => "none".to_string(),
                 };
                 let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_ref()));

@@ -22,6 +22,7 @@ use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTyp
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
 use polars_plan::prelude::*;
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -737,7 +738,11 @@ pub fn lower_ir(
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet {
                         options,
-                        metadata: first_metadata,
+                        first_metadata,
+                        // Used at plan time (optimizer passes, cloud
+                        // scheduler). The streaming reader reads per-file
+                        // footers at scan time and only needs `first_metadata`.
+                        metadata_per_source: _,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
@@ -1640,7 +1645,8 @@ pub fn lower_ir(
                 } => {
                     if trans_inputs.len() == 1 {
                         // Single input, can directly dispatch through a select.
-                        let expr_input = arg_map.arg_selectors(&trans_schemas, expr_arena);
+                        let expr_input =
+                            arg_map.arg_selectors(&trans_schemas, expr_arena).collect();
                         let expr = ExprIR::from_node(
                             expr_arena.add(AExpr::Function {
                                 input: expr_input,
@@ -1678,7 +1684,8 @@ pub fn lower_ir(
                             },
                         ));
 
-                        let expr_input = arg_map.arg_selectors(&trans_schemas, expr_arena);
+                        let expr_input =
+                            arg_map.arg_selectors(&trans_schemas, expr_arena).collect();
                         let expr = ExprIR::from_node(
                             expr_arena.add(AExpr::Function {
                                 input: expr_input,
@@ -1729,6 +1736,30 @@ pub fn lower_ir(
                         arg_map: Some(arg_map),
                         output_name,
                         format_str,
+                    }
+                },
+
+                UnoptimizedOperation::DynamicSlice { output_name } => {
+                    let (input_name, dtype) = {
+                        let (input_idx, col_idx, _) = arg_map.iter().next().unwrap();
+                        trans_schemas[input_idx].get_at_index(col_idx).unwrap()
+                    };
+                    let slice = {
+                        let &[input, offset, length] = trans_inputs.as_array().unwrap();
+                        phys_sm.insert(PhysNode::new(
+                            Arc::new(Schema::from_iter([(input_name.clone(), dtype.clone())])),
+                            PhysNodeKind::DynamicSlice {
+                                input,
+                                offset,
+                                length,
+                            },
+                        ))
+                    };
+
+                    // Rename the output
+                    PhysNodeKind::SimpleProjection {
+                        input: PhysStream::first(slice),
+                        columns: PlIndexMap::from_iter([(output_name.clone(), input_name.clone())]),
                     }
                 },
             }

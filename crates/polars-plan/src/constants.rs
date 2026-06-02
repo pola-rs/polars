@@ -2,7 +2,6 @@ use polars_utils::pl_str::PlSmallStr;
 
 pub const CSE_REPLACED: &str = "__POLARS_CSER_";
 pub const POLARS_TMP_PREFIX: &str = "_POLARS_";
-pub const POLARS_PLACEHOLDER: &str = "_POLARS_<>";
 pub const POLARS_ELEMENT: &str = "__PL_ELEMENT";
 pub const POLARS_STRUCTFIELDS: &str = "__PL_STRUCTFIELDS";
 pub const LEN: &str = "len";

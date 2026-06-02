@@ -1,6 +1,7 @@
 import io
 import pickle
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -429,14 +430,16 @@ def test_credential_provider_python_builder_cache(
         with pytest.raises(OSError):
             get_q().collect()
 
-        # Note: Increments by 2 due to Rust-side object store rebuilding.
+        # Note: Increments by 1
+        # +0 due to Rust-side object store cache-hit on build
+        # +1 due to Rust-side object store rebuilding on error
 
-        assert provider_init.call_count == 4
+        assert provider_init.call_count == 3
 
         with pytest.raises(OSError):
             get_q().collect()
 
-        assert provider_init.call_count == 6
+        assert provider_init.call_count == 4
 
     with plmonkeypatch.context() as cx:
         cx.setenv("POLARS_VERBOSE", "1")
@@ -793,11 +796,13 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
+    # 1x build (Rust object_store cache_miss) + 1x rebuild on error
     assert user_provider.call_count == 2
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
+    # 0x build (Rust object_store cache_hit) + 1x rebuild on error
     assert user_provider.call_count == 3
 
     plmonkeypatch.setenv("POLARS_CREDENTIAL_PROVIDER_BUILDER_CACHE_SIZE", "0")
@@ -805,7 +810,8 @@ def test_cache_user_credential_provider(plmonkeypatch: PlMonkeyPatch) -> None:
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
 
-    assert user_provider.call_count == 5
+    # 0x build (Rust object_store cache_hit) + 1x rebuild on error
+    assert user_provider.call_count == 4
 
 
 @pytest.mark.slow
@@ -882,3 +888,40 @@ def test_credential_provider_global_config(plmonkeypatch: PlMonkeyPatch) -> None
 
     with pytest.raises(OSError, match="http://localhost:333"):
         get_q().collect()
+
+
+@pytest.mark.slow
+def test_cache_user_credential_provider_pickle(
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    plmonkeypatch.setenv("AWS_ACCESS_KEY_ID", "...")
+    plmonkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "...")
+    plmonkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+
+    prefix = uuid.uuid4()
+
+    q = pl.scan_parquet(
+        f"s3://{prefix}/...",
+        storage_options={
+            "aws_endpoint_url": "http://localhost:333",
+        },
+        credential_provider="auto",
+    )
+
+    capfd.readouterr()
+
+    with pytest.raises(OSError, match="http://localhost:333"):
+        q.collect()
+    capture = capfd.readouterr().err
+    assert capture.count("build object-store") == 2  # build + rebuild
+
+    q = pickle.loads(pickle.dumps(q))
+
+    capfd.readouterr()
+    with pytest.raises(OSError, match="http://localhost:333"):
+        q.collect()
+    capture = capfd.readouterr().err
+    assert capture.count("build object-store") == 1  # rebuild only

@@ -37,16 +37,6 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.set_flags(flags);
     }
 
-    // TODO! remove this. Very slow. Asof join should use row-encoding.
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let other = other.struct_().unwrap();
-        self.0
-            .fields_as_series()
-            .iter()
-            .zip(other.fields_as_series())
-            .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
-    }
-
     fn vec_hash(
         &self,
         build_hasher: PlSeedableRandomStateQuality,

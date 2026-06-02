@@ -248,9 +248,11 @@ pub fn python_scan_predicate(
                         .unwrap();
                     let predicate_expr_ir = ExprIR::from_node(combined_node, expr_arena);
 
+                    let has_residual = !residual_predicate_nodes.is_empty();
                     options.predicate = PythonPredicate::PyArrow(ArrowPredicate {
                         predicate: predicate_expr_ir,
                         pyarrow_predicate,
+                        has_residual,
                     });
 
                     residual_predicate_nodes

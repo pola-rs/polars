@@ -1,10 +1,11 @@
 mod builder;
+mod determinism;
 mod equality;
 mod evaluate;
 mod function_expr;
-#[cfg(feature = "cse")]
 mod hash;
 mod minterm_iter;
+pub(crate) mod or_factoring;
 pub mod predicates;
 mod scalar;
 mod schema;
@@ -12,9 +13,9 @@ mod traverse;
 
 use std::hash::{Hash, Hasher};
 
+pub use determinism::{is_inherently_nondeterministic, is_inherently_nondeterministic_top_level};
 pub use function_expr::*;
-#[cfg(feature = "cse")]
-pub(super) use hash::traverse_and_hash_aexpr;
+pub(crate) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;

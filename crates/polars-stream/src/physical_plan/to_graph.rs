@@ -1453,6 +1453,10 @@ fn to_graph_rec<'a>(
                             let mut could_serialize_predicate = true;
                             let predicate = match &options.predicate {
                                 PythonPredicate::PyArrow(pred) => {
+                                    if pred.has_residual {
+                                        // Ensure the engine post-applies the residual predicate.
+                                        could_serialize_predicate = false;
+                                    }
                                     pred.pyarrow_predicate.bind(py).clone()
                                 },
                                 PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
