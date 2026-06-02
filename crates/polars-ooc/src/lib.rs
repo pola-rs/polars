@@ -78,6 +78,10 @@ impl<T: Spillable> SpillTokenInner<T> {
         .await
     }
 
+    /// Wakes any waiters.
+    /// 
+    /// Should be called with the state after performing any updates that waiters
+    /// could be waiting for (e.g. the pin count reaches 0 or the lock gets released).
     #[inline(always)]
     fn wake_waiters(&self, state: u64) {
         if state & HAS_WAITERS_BIT != 0 {
@@ -181,7 +185,7 @@ impl<T: Spillable> SpillTokenInner<T> {
         // We now hold the lock, meaning the value was spilled.
         unsafe {
             debug_assert!(
-                self.state.load(Ordering::Relaxed) & (SPILLED_BIT | LOCK_BIT)
+                self.state.load(Ordering::Relaxed) & (SPILLED_BIT | LOCK_BIT | RO_PIN_MASK)
                     == (SPILLED_BIT | LOCK_BIT)
             );
             let lock_guard = WithDrop::new(self, |slf| {
@@ -258,7 +262,7 @@ impl<T: Spillable> SpillTokenInner<T> {
         unsafe {
             // The drop bit prevents new locks/pins from being acquired,
             // allowing us to clean up here.
-            let old_state = self.state.fetch_or(DROPPED_BIT, Ordering::AcqRel);
+            let old_state = self.state.fetch_or(DROPPED_BIT, Ordering::Acquire);
             if old_state & (LOCK_BIT | RO_PIN_MASK) == 0 {
                 self.value.get().replace(None);
                 self.spilled.get().replace(None);
