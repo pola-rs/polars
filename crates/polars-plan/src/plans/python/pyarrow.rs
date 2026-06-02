@@ -1,4 +1,8 @@
+use std::fmt::Write;
+
 use polars_core::datatypes::AnyValue;
+#[cfg(feature = "dtype-datetime")]
+use polars_core::prelude::TimeZone;
 use polars_core::prelude::{DataType, ExplodeOptions, TimeUnit};
 use polars_core::series::Series;
 use polars_utils::pl_str::PlSmallStr;
@@ -66,18 +70,199 @@ pub(crate) fn needle_isin_haystack(lv: &LiteralValue, nulls_equal: bool) -> Opti
     Some(IsInHaystack::Series(haystack_series))
 }
 
-// Convert predicate to a pyarrow expression
-pub fn predicate_to_pa(
+#[derive(Default, Copy, Clone)]
+struct PyarrowArgs {
+    // pyarrow doesn't allow `filter([True, False])`
+    // but does allow `filter(field("a").isin([True, False]))`
+    allow_literal_series: bool,
+}
+
+#[cfg(feature = "dtype-datetime")]
+fn to_py_datetime(v: i64, tu: &TimeUnit, tz: Option<&TimeZone>) -> String {
+    // note: `to_py_datetime` and the `Datetime`
+    // dtype have to be in-scope on the python side
+    match tz {
+        None => format!("to_py_datetime({},'{}')", v, tu.to_ascii()),
+        Some(tz) => format!("to_py_datetime({},'{}','{}')", v, tu.to_ascii(), tz),
+    }
+}
+
+fn sanitize(name: &str) -> Option<&str> {
+    if name.chars().all(|c| match c {
+        ' ' => true,
+        '-' => true,
+        '_' => true,
+        c => c.is_alphanumeric(),
+    }) {
+        Some(name)
+    } else {
+        None
+    }
+}
+
+// Build an eval-able / AST-walker-compatible string predicate (e.g.
+// `pa.compute.field('x') > pa.compute.scalar(1)`). Used by the iceberg and
+// delta paths which feed the string into Python (delta `eval`s it,
+// iceberg walks it via `try_convert_pyarrow_predicate`).
+pub fn predicate_to_pa(predicate: Node, expr_arena: &Arena<AExpr>) -> Option<String> {
+    predicate_to_pa_inner(predicate, expr_arena, PyarrowArgs::default())
+}
+
+fn predicate_to_pa_inner(
     predicate: Node,
     expr_arena: &Arena<AExpr>,
-) -> Option<polars_utils::python_function::PythonObject> {
-    use polars_utils::python_function::PythonObject;
+    args: PyarrowArgs,
+) -> Option<String> {
+    match expr_arena.get(predicate) {
+        AExpr::BinaryExpr { left, right, op } => {
+            if op.is_comparison_or_bitwise() {
+                let left = predicate_to_pa_inner(*left, expr_arena, args)?;
+                let right = predicate_to_pa_inner(*right, expr_arena, args)?;
+                Some(format!("({left} {op} {right})"))
+            } else {
+                None
+            }
+        },
+        AExpr::Column(name) => {
+            let name = sanitize(name)?;
+            Some(format!("pa.compute.field('{name}')"))
+        },
+        AExpr::Literal(LiteralValue::Series(s)) => {
+            if !args.allow_literal_series || s.is_empty() || s.len() > 100 {
+                None
+            } else {
+                let mut list_repr = String::with_capacity(s.len() * 5);
+                list_repr.push('[');
+                for av in s.iter() {
+                    match av {
+                        AnyValue::Boolean(v) => {
+                            let s = if v { "True" } else { "False" };
+                            write!(list_repr, "{s},").unwrap();
+                        },
+                        #[cfg(feature = "dtype-datetime")]
+                        AnyValue::Datetime(v, tu, tz) => {
+                            let dtm = to_py_datetime(v, &tu, tz);
+                            write!(list_repr, "{dtm},").unwrap();
+                        },
+                        #[cfg(feature = "dtype-date")]
+                        AnyValue::Date(v) => {
+                            write!(list_repr, "to_py_date({v}),").unwrap();
+                        },
+                        AnyValue::String(s) => {
+                            let _ = sanitize(s)?;
+                            write!(list_repr, "{av},").unwrap();
+                        },
+                        AnyValue::Binary(_) | AnyValue::List(_) => return None,
+                        #[cfg(feature = "dtype-array")]
+                        AnyValue::Array(_, _) => return None,
+                        #[cfg(feature = "dtype-struct")]
+                        AnyValue::Struct(_, _, _) => return None,
+                        _ => {
+                            write!(list_repr, "{av},").unwrap();
+                        },
+                    }
+                }
+                list_repr.pop();
+                list_repr.push(']');
+                Some(list_repr)
+            }
+        },
+        AExpr::Literal(lv) => {
+            let av = lv.to_any_value()?;
+            let dtype = av.dtype();
+            match av.as_borrowed() {
+                AnyValue::String(s) => {
+                    let s = sanitize(s)?;
+                    Some(format!("'{s}'"))
+                },
+                AnyValue::Boolean(val) => {
+                    if val {
+                        Some("pa.compute.scalar(True)".to_string())
+                    } else {
+                        Some("pa.compute.scalar(False)".to_string())
+                    }
+                },
+                #[cfg(feature = "dtype-date")]
+                AnyValue::Date(v) => Some(format!("to_py_date({v})")),
+                #[cfg(feature = "dtype-datetime")]
+                AnyValue::Datetime(v, tu, tz) => Some(to_py_datetime(v, &tu, tz)),
+                AnyValue::Binary(_) | AnyValue::List(_) => None,
+                #[cfg(feature = "dtype-array")]
+                AnyValue::Array(_, _) => None,
+                #[cfg(feature = "dtype-struct")]
+                AnyValue::Struct(_, _, _) => None,
+                av => {
+                    if dtype.is_float() {
+                        let val = av.extract::<f64>()?;
+                        Some(format!("{val}"))
+                    } else if dtype.is_integer() {
+                        let val = av.extract::<i64>()?;
+                        Some(format!("{val}"))
+                    } else {
+                        None
+                    }
+                },
+            }
+        },
+        #[cfg(feature = "is_in")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
+            input,
+            ..
+        } => {
+            let col = predicate_to_pa_inner(input.first()?.node(), expr_arena, args)?;
+            let mut args = args;
+            args.allow_literal_series = true;
+            let values = predicate_to_pa_inner(input.get(1)?.node(), expr_arena, args)?;
 
-    Python::attach(|py| {
-        let pc = py.import("pyarrow.compute").ok()?;
-        let expr = aexpr_to_pyarrow(py, &pc, predicate, expr_arena)?;
-        Some(PythonObject(expr.unbind()))
-    })
+            Some(format!("({col}).isin({values})"))
+        },
+        #[cfg(feature = "is_between")]
+        AExpr::Function {
+            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
+            input,
+            ..
+        } => {
+            if !matches!(expr_arena.get(input.first()?.node()), AExpr::Column(_)) {
+                None
+            } else {
+                let col = predicate_to_pa_inner(input.first()?.node(), expr_arena, args)?;
+                let left_cmp_op = match closed {
+                    ClosedInterval::None | ClosedInterval::Right => Operator::Gt,
+                    ClosedInterval::Both | ClosedInterval::Left => Operator::GtEq,
+                };
+                let right_cmp_op = match closed {
+                    ClosedInterval::None | ClosedInterval::Left => Operator::Lt,
+                    ClosedInterval::Both | ClosedInterval::Right => Operator::LtEq,
+                };
+
+                let lower = predicate_to_pa_inner(input.get(1)?.node(), expr_arena, args)?;
+                let upper = predicate_to_pa_inner(input.get(2)?.node(), expr_arena, args)?;
+
+                Some(format!(
+                    "(({col} {left_cmp_op} {lower}) & ({col} {right_cmp_op} {upper}))"
+                ))
+            }
+        },
+        AExpr::Function {
+            function, input, ..
+        } => {
+            let input = input.first().unwrap().node();
+            let input = predicate_to_pa_inner(input, expr_arena, args)?;
+
+            match function {
+                IRFunctionExpr::Boolean(IRBooleanFunction::Not) => Some(format!("~({input})")),
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNull) => {
+                    Some(format!("({input}).is_null()"))
+                },
+                IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => {
+                    Some(format!("~({input}).is_null()"))
+                },
+                _ => None,
+            }
+        },
+        _ => None,
+    }
 }
 
 fn binary_op_method(op: &Operator) -> Option<&'static str> {
@@ -259,152 +444,6 @@ pub fn aexpr_to_pyarrow<'py>(
                     .ok(),
                 _ => None,
             }
-        },
-        _ => None,
-    }
-}
-
-fn extract_column_name(node: Node, expr_arena: &Arena<AExpr>) -> Option<&str> {
-    match expr_arena.get(node) {
-        AExpr::Column(name) => Some(name.as_str()),
-        _ => None,
-    }
-}
-
-// Get a literal out of a node w/series guard
-fn _extract_literal_value<'py>(
-    py: Python<'py>,
-    node: Node,
-    expr_arena: &Arena<AExpr>,
-) -> Option<Bound<'py, PyAny>> {
-    if let AExpr::Literal(lv) = expr_arena.get(node) {
-        if matches!(lv, LiteralValue::Series(_)) {
-            return None;
-        }
-        let av = lv.to_any_value()?;
-        anyvalue_to_py(py, av)
-    } else {
-        None
-    }
-}
-
-// Converts AExpr predicate to `pyiceberg.expressions.BooleanExpression``
-// eventually passed to `table.scan(row_filter=...)`
-pub fn aexpr_to_pyiceberg<'py>(
-    py: Python<'py>,
-    pe: &Bound<'py, PyAny>,
-    predicate: Node,
-    expr_arena: &Arena<AExpr>,
-) -> Option<Bound<'py, PyAny>> {
-    match expr_arena.get(predicate) {
-        AExpr::BinaryExpr { left, right, op } => match op {
-            Operator::And | Operator::LogicalAnd => {
-                let l = aexpr_to_pyiceberg(py, pe, *left, expr_arena)?;
-                let r = aexpr_to_pyiceberg(py, pe, *right, expr_arena)?;
-                pe.getattr("And").ok()?.call1((l, r)).ok()
-            },
-            Operator::Or | Operator::LogicalOr => {
-                let l = aexpr_to_pyiceberg(py, pe, *left, expr_arena)?;
-                let r = aexpr_to_pyiceberg(py, pe, *right, expr_arena)?;
-                pe.getattr("Or").ok()?.call1((l, r)).ok()
-            },
-            Operator::Eq
-            | Operator::NotEq
-            | Operator::Lt
-            | Operator::LtEq
-            | Operator::Gt
-            | Operator::GtEq => {
-                // Iceberg seems to only support `column op literal` format.
-                // Have to normalize the expression to figure out which side is the column, and which the literal.
-                let (col_name, lit, op) = if let Some(name) = extract_column_name(*left, expr_arena)
-                {
-                    (name, _extract_literal_value(py, *right, expr_arena)?, *op)
-                } else {
-                    let name = extract_column_name(*right, expr_arena)?;
-                    let lit = _extract_literal_value(py, *left, expr_arena)?;
-                    let mirrored = match op {
-                        Operator::Lt => Operator::Gt,
-                        Operator::LtEq => Operator::GtEq,
-                        Operator::Gt => Operator::Lt,
-                        Operator::GtEq => Operator::LtEq,
-                        other => *other,
-                    };
-                    (name, lit, mirrored)
-                };
-                let class = match op {
-                    Operator::Eq => "EqualTo",
-                    Operator::NotEq => "NotEqualTo",
-                    Operator::Lt => "LessThan",
-                    Operator::LtEq => "LessThanOrEqual",
-                    Operator::Gt => "GreaterThan",
-                    Operator::GtEq => "GreaterThanOrEqual",
-                    _ => return None,
-                };
-                pe.getattr(class).ok()?.call1((col_name, lit)).ok()
-            },
-            _ => None,
-        },
-        // Iceberg doesn't have a way of expressing a column as a mask so we have to convert it to `column ==True`
-        AExpr::Column(name) => pe
-            .getattr("EqualTo")
-            .ok()?
-            .call1((name.as_str(), true))
-            .ok(),
-        #[cfg(feature = "is_in")]
-        AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { nulls_equal }),
-            input,
-            ..
-        } => {
-            let colname = extract_column_name(input.first()?.node(), expr_arena)?;
-            let rhs_node = input.get(1)?.node();
-            let AExpr::Literal(lv) = expr_arena.get(rhs_node) else {
-                return None;
-            };
-            let values_list = match needle_isin_haystack(lv, *nulls_equal)? {
-                IsInHaystack::Empty => return pe.getattr("AlwaysFalse").ok()?.call0().ok(),
-                IsInHaystack::Series(s) => series_to_py_list(py, &s)?,
-            };
-            pe.getattr("In").ok()?.call1((colname, values_list)).ok()
-        },
-        #[cfg(feature = "is_between")]
-        AExpr::Function {
-            function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }),
-            input,
-            ..
-        } => {
-            let colname = extract_column_name(input.first()?.node(), expr_arena)?;
-            let lower = _extract_literal_value(py, input.get(1)?.node(), expr_arena)?;
-            let upper = _extract_literal_value(py, input.get(2)?.node(), expr_arena)?;
-            let left_class = match closed {
-                ClosedInterval::None | ClosedInterval::Right => "GreaterThan",
-                ClosedInterval::Both | ClosedInterval::Left => "GreaterThanOrEqual",
-            };
-            let right_class = match closed {
-                ClosedInterval::None | ClosedInterval::Left => "LessThan",
-                ClosedInterval::Both | ClosedInterval::Right => "LessThanOrEqual",
-            };
-            let l = pe.getattr(left_class).ok()?.call1((colname, lower)).ok()?;
-            let r = pe.getattr(right_class).ok()?.call1((colname, upper)).ok()?;
-            pe.getattr("And").ok()?.call1((l, r)).ok()
-        },
-        AExpr::Function {
-            function, input, ..
-        } => match function {
-            IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
-                let inner = aexpr_to_pyiceberg(py, pe, input.first()?.node(), expr_arena)?;
-                pe.getattr("Not").ok()?.call1((inner,)).ok()
-            },
-            IRFunctionExpr::Boolean(IRBooleanFunction::IsNull) => {
-                let colname = extract_column_name(input.first()?.node(), expr_arena)?;
-                pe.getattr("IsNull").ok()?.call1((colname,)).ok()
-            },
-            IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull) => {
-                let colname = extract_column_name(input.first()?.node(), expr_arena)?;
-                let is_null = pe.getattr("IsNull").ok()?.call1((colname,)).ok()?;
-                pe.getattr("Not").ok()?.call1((is_null,)).ok()
-            },
-            _ => None,
         },
         _ => None,
     }

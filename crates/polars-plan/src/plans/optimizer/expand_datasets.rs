@@ -11,8 +11,6 @@ use polars_utils::slice_enum::Slice;
 use polars_utils::{format_pl_smallstr, unitvec};
 
 #[cfg(feature = "python")]
-use crate::dsl::DatasetPredicate;
-#[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
 use crate::plans::{AExpr, IR};
@@ -120,88 +118,24 @@ pub(super) fn expand_datasets(
                     out
                 });
 
-                // We build pyarrow and pyiceberg expr objects
-                // Delta consumes `pyarrow_predicate`
-                // Iceberg consumes `iceberg_predicate`
-                let (pyarrow_predicate, pyarrow_predicate_key, iceberg_predicate): (
-                    Option<PythonObject>,
-                    Option<String>, // The cache key of the arrow repr
-                    Option<PythonObject>,
-                ) = if !unified_scan_args.has_row_index_or_slice()
+                let pyarrow_predicate: Option<String> = if !unified_scan_args
+                    .has_row_index_or_slice()
                     && let Some(predicate) = &predicate
                 {
-                    use pyo3::prelude::*;
-
                     use crate::plans::aexpr::MintermIter;
-                    use crate::plans::python::pyarrow::{aexpr_to_pyarrow, aexpr_to_pyiceberg};
+                    use crate::plans::python::pyarrow::predicate_to_pa;
 
-                    // Convert minterms independently to allow partial conversion when
-                    // some minterms are unsupported.
-                    Python::attach(
-                        |py| -> (Option<PythonObject>, Option<String>, Option<PythonObject>) {
-                            // If we can't import pyarrow we can't do any pushdown
-                            let Ok(pc) = py.import("pyarrow.compute") else {
-                                return (None, None, None);
-                            };
-
-                            let pe = py.import("pyiceberg.expressions").ok();
-
-                            let mut combined_pa: Option<Bound<'_, PyAny>> = None;
-                            let mut combined_ice: Option<Bound<'_, PyAny>> = None;
-
-                            for node in MintermIter::new(predicate.node(), expr_arena) {
-                                if let Some(pa) = aexpr_to_pyarrow(py, &pc, node, expr_arena) {
-                                    // Combine them all w/and python overload
-                                    combined_pa = Some(match combined_pa {
-                                        None => pa,
-                                        Some(prev) => match prev.call_method1("__and__", (pa,)) {
-                                            Ok(v) => v,
-                                            Err(_) => return (None, None, None),
-                                        },
-                                    });
-                                }
-
-                                // If we have pyiceberg we can try to convert it
-                                if let Some(pe) = pe.as_ref()
-                                    && let Some(ice) = aexpr_to_pyiceberg(py, pe, node, expr_arena)
-                                {
-                                    // Iceberg's and is a function but same idea applies as using the overload for pyarrow
-                                    combined_ice = Some(match combined_ice {
-                                        None => ice,
-                                        Some(prev) => {
-                                            match pe
-                                                .getattr("And")
-                                                .and_then(|c| c.call1((prev, ice)))
-                                            {
-                                                Ok(v) => v,
-                                                Err(_) => return (None, None, None),
-                                            }
-                                        },
-                                    });
-                                }
-                            }
-
-                            // For both pyarrow and pyiceberg we unbind the objs but we get the key from pyarrow
-                            let (pa_obj, key) = match combined_pa {
-                                None => (None, None),
-                                Some(expr) => {
-                                    // Rely on the underlying python repr to get the string key out
-                                    let key = expr
-                                        .call_method0("__str__")
-                                        .ok()
-                                        .and_then(|s| s.extract::<String>().ok());
-                                    (Some(PythonObject(expr.unbind())), key)
-                                },
-                            };
-
-                            let ice_obj: Option<PythonObject> =
-                                combined_ice.map(|e| PythonObject(e.unbind()));
-
-                            (pa_obj, key, ice_obj)
-                        },
-                    )
+                    // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
+                    let parts: Vec<String> = MintermIter::new(predicate.node(), expr_arena)
+                        .filter_map(|node| predicate_to_pa(node, expr_arena))
+                        .collect();
+                    match parts.len() {
+                        0 => None,
+                        1 => Some(parts.into_iter().next().unwrap()),
+                        _ => Some(format!("({})", parts.join(" & "))),
+                    }
                 } else {
-                    (None, None, None)
+                    None
                 };
 
                 let existing_resolved_version_key = match guard.as_ref() {
@@ -211,7 +145,7 @@ pub(super) fn expand_datasets(
                             limit: cached_limit,
                             projection: cached_projection,
                             live_filter_columns: cached_live_filter_columns,
-                            pyarrow_predicate_key: cached_pyarrow_predicate_key,
+                            pyarrow_predicate: cached_pyarrow_predicate,
                             expanded_dsl: _,
                             python_scan: _,
                         } = resolved;
@@ -219,16 +153,11 @@ pub(super) fn expand_datasets(
                         (&limit == cached_limit
                             && &projection == cached_projection
                             && &live_filter_columns == cached_live_filter_columns
-                            && &pyarrow_predicate_key == cached_pyarrow_predicate_key)
+                            && &pyarrow_predicate == cached_pyarrow_predicate)
                             .then_some(version.as_str())
                     },
 
                     None => None,
-                };
-
-                let predicate = DatasetPredicate {
-                    pyarrow: pyarrow_predicate,
-                    iceberg: iceberg_predicate,
                 };
 
                 if let Some((expanded_dsl, version)) = dataset_object.to_dataset_scan(
@@ -236,14 +165,14 @@ pub(super) fn expand_datasets(
                     limit,
                     projection.as_deref(),
                     live_filter_columns.as_deref(),
-                    &predicate,
+                    pyarrow_predicate.as_deref(),
                 )? {
                     *guard = Some(ExpandedDataset {
                         version,
                         limit,
                         projection,
                         live_filter_columns,
-                        pyarrow_predicate_key,
+                        pyarrow_predicate,
                         expanded_dsl,
                         python_scan: None,
                     })
@@ -254,7 +183,7 @@ pub(super) fn expand_datasets(
                     limit: _,
                     projection: _,
                     live_filter_columns: _,
-                    pyarrow_predicate_key: _,
+                    pyarrow_predicate: _,
                     expanded_dsl,
                     python_scan,
                 } = guard.as_mut().unwrap();
@@ -452,8 +381,7 @@ pub struct ExpandedDataset {
     limit: Option<usize>,
     projection: Option<Arc<[PlSmallStr]>>,
     live_filter_columns: Option<Arc<[PlSmallStr]>>,
-    // For determining if a cached expansion can be reused
-    pyarrow_predicate_key: Option<String>,
+    pyarrow_predicate: Option<String>,
     expanded_dsl: DslPlan,
 
     /// Fallback python scan
@@ -485,7 +413,7 @@ impl Debug for ExpandedDataset {
             limit,
             projection,
             live_filter_columns,
-            pyarrow_predicate_key,
+            pyarrow_predicate,
             expanded_dsl,
 
             #[cfg(feature = "python")]
@@ -501,7 +429,7 @@ impl Debug for ExpandedDataset {
                 Ok(v) => v.to_string(),
                 Err(e) => e.to_string(),
             },
-            pyarrow_predicate: if pyarrow_predicate_key.is_some() {
+            pyarrow_predicate: if pyarrow_predicate.is_some() {
                 "Some(<redacted>)"
             } else {
                 "None"

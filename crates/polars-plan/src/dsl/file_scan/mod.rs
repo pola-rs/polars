@@ -30,7 +30,7 @@ pub use python_delta_dv_provider::{DELTA_DV_PROVIDER_VTABLE, DeltaDeletionVector
 #[cfg(feature = "python")]
 pub mod python_dataset;
 #[cfg(feature = "python")]
-pub use python_dataset::{DATASET_PROVIDER_VTABLE, DatasetPredicate, PythonDatasetProviderVTable};
+pub use python_dataset::{DATASET_PROVIDER_VTABLE, PythonDatasetProviderVTable};
 
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -12,12 +12,6 @@ use crate::dsl::DslPlan;
 /// * The impls for converting from Python objects are there.
 pub static DATASET_PROVIDER_VTABLE: OnceLock<PythonDatasetProviderVTable> = OnceLock::new();
 
-#[derive(Default)]
-pub struct DatasetPredicate {
-    pub pyarrow: Option<PythonObject>,
-    pub iceberg: Option<PythonObject>,
-}
-
 pub struct PythonDatasetProviderVTable {
     pub name: fn(dataset_object: &PythonObject) -> PlSmallStr,
 
@@ -30,7 +24,7 @@ pub struct PythonDatasetProviderVTable {
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
         filter_columns: Option<&[PlSmallStr]>,
-        predicate: &DatasetPredicate,
+        pyarrow_predicate: Option<&str>,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>>,
 }
 
@@ -67,7 +61,7 @@ impl PythonDatasetProvider {
         limit: Option<usize>,
         projection: Option<&[PlSmallStr]>,
         filter_columns: Option<&[PlSmallStr]>,
-        predicate: &DatasetPredicate,
+        pyarrow_predicate: Option<&str>,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
         (dataset_provider_vtable().unwrap().to_dataset_scan)(
             &self.dataset_object,
@@ -75,7 +69,7 @@ impl PythonDatasetProvider {
             limit,
             projection,
             filter_columns,
-            predicate,
+            pyarrow_predicate,
         )
     }
 }
