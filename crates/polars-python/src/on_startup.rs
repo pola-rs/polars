@@ -89,6 +89,7 @@ fn python_function_caller_df(df: DataFrame, lambda: &Py<PyAny>) -> PolarsResult<
 fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::attach(|py| {
         let Some(warn_fn) = WARN_FUNCTION.get() else {
+            eprintln!("{msg}");
             return;
         };
 
@@ -108,8 +109,8 @@ static WARN_FUNCTION: OnceLock<Py<PyAny>> = OnceLock::new();
 /// Caller must ensure that no other threads read the objects set by this registration.
 pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_function: Py<PyAny>) {
     // TODO: should we throw an error if we try to initialize while already initialized?
-    let _ = WARN_FUNCTION.set(warn_function);
     POLARS_REGISTRY_INIT_LOCK.get_or_init(|| {
+        WARN_FUNCTION.set(warn_function).unwrap();
         set_polars_allow_extension(true);
 
         // Stack frames can get really large in debug mode.
