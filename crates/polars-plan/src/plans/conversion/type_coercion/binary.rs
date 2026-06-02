@@ -60,7 +60,7 @@ fn process_struct_numeric_arithmetic(
 ) -> PolarsResult<Option<AExpr>> {
     match (&type_left, &type_right) {
         (DataType::Struct(fields), _) => {
-            if let Some(first) = fields.first() {
+            if let Some(_first) = fields.first() {
                 let wide_fields: PolarsResult<Vec<Field>> = fields
                     .iter()
                     .map(|f| {
@@ -88,7 +88,7 @@ fn process_struct_numeric_arithmetic(
             }
         },
         (_, DataType::Struct(fields)) => {
-            if let Some(first) = fields.first() {
+            if let Some(_first) = fields.first() {
                 let wide_fields: PolarsResult<Vec<Field>> = fields
                     .iter()
                     .map(|f| {
