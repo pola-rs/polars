@@ -2672,8 +2672,8 @@ def test_scan_iceberg_partial_and_pushdown(
     capture = capfd.readouterr().err
 
     # Verify: partial predicate was pushed
-    assert "iceberg_table_filter = " in capture
-    assert "GreaterThan(term=Reference(name='a')" in capture
+    assert "pyarrow_predicate = " in capture
+    assert "pa.compute.field('a') > 1" in capture
     # Verify: correctness
     assert len(result) == 2
     assert result["a"].to_list() == [2, 3]

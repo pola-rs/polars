@@ -14,6 +14,7 @@ from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
     _normalize_windows_iceberg_file_uri,
+    try_convert_pyarrow_predicate,
 )
 from polars.io.scan_options.cast_options import ScanCastOptions
 
@@ -212,8 +213,6 @@ class IcebergScanResolver:
     fast_deletion_count: bool
     use_pyiceberg_filter: bool
 
-    _PREDICATE_DIALECT = "iceberg"
-
     #
     # PythonDatasetProvider interface functions
     #
@@ -229,7 +228,7 @@ class IcebergScanResolver:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
-        iceberg_predicate: Any | None = None,
+        pyarrow_predicate: str | None = None,
     ) -> tuple[LazyFrame, str] | None:
         """Construct a LazyFrame scan."""
         if (
@@ -238,7 +237,7 @@ class IcebergScanResolver:
                 limit=limit,
                 projection=projection,
                 filter_columns=filter_columns,
-                iceberg_predicate=iceberg_predicate,
+                pyarrow_predicate=pyarrow_predicate,
             )
         ) is None:
             return None
@@ -252,7 +251,7 @@ class IcebergScanResolver:
         limit: int | None = None,
         projection: list[str] | None = None,
         filter_columns: list[str] | None = None,
-        iceberg_predicate: Any | None = None,
+        pyarrow_predicate: str | None = None,
     ) -> _NativeIcebergScanData | _PyIcebergScanData | None:
         from pyiceberg.io.pyarrow import schema_to_pyarrow
 
@@ -263,13 +262,16 @@ class IcebergScanResolver:
         iceberg_table_filter = None
 
         if (
-            iceberg_predicate is not None
+            pyarrow_predicate is not None
             and self.use_metadata_statistics
             and self.use_pyiceberg_filter
         ):
-            iceberg_table_filter = iceberg_predicate
+            iceberg_table_filter = try_convert_pyarrow_predicate(pyarrow_predicate)
 
         if verbose:
+            pyarrow_predicate_display = (
+                "Some(<redacted>)" if pyarrow_predicate is not None else "None"
+            )
             iceberg_table_filter_display = (
                 "Some(<redacted>)" if iceberg_table_filter is not None else "None"
             )
@@ -280,12 +282,15 @@ class IcebergScanResolver:
                 f"limit: {limit}, "
                 f"projection: {projection}, "
                 f"filter_columns: {filter_columns}, "
+                f"pyarrow_predicate: {pyarrow_predicate_display}, "
                 f"iceberg_table_filter: {iceberg_table_filter_display}, "
                 f"self.use_metadata_statistics: {self.use_metadata_statistics}"
             )
 
         verbose_print_sensitive(
-            lambda: f"IcebergScanResolver: to_dataset_scan(): {iceberg_table_filter = }"
+            lambda: (
+                f"IcebergScanResolver: to_dataset_scan(): {pyarrow_predicate = }, {iceberg_table_filter = }"
+            )
         )
 
         tbl = self.table.get()
