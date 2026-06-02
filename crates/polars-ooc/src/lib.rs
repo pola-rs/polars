@@ -63,7 +63,7 @@ impl<T: Spillable> SpillTokenInner<T> {
             let mut state = self.state.load(Ordering::Acquire);
             if state & mask != 0 {
                 if state & HAS_WAITERS_BIT == 0 {
-                    state = self.state.fetch_add(HAS_WAITERS_BIT, Ordering::Acquire);
+                    state = self.state.fetch_add(HAS_WAITERS_BIT, Ordering::AcqRel);
                     if state & mask == 0 {
                         self.state.fetch_sub(HAS_WAITERS_BIT, Ordering::Relaxed);
                         return Poll::Ready(state);
