@@ -334,7 +334,7 @@ def forward_old_opt_flags() -> IdentityFunction:
             for key in list(kwargs.keys()):
                 cb = OLD_OPT_PARAMETERS_MAPPING.get(key)
                 if cb is not None:
-                    from polars._utils.various import issue_warning
+                    from polars._warnings import issue_warning
 
                     message = f"optimization flag `{key}` is deprecated. Please use `optimizations` parameter\n(Deprecated in version 1.30.0)"
                     issue_warning(message, DeprecationWarning)
