@@ -312,15 +312,14 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
     }
 
     fn try_spill(&self) -> Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>> {
-        // First, we try pinning it while setting the lock bit. If anyone else
-        // has a pin we don't bother.
+        // First, we try setting the lock bit. If anyone else has a pin we don't bother.
         let pin_update = self
             .state
             .try_update(Ordering::Relaxed, Ordering::Acquire, |state| {
                 if state & (SPILLED_BIT | LOCK_BIT | DROPPED_BIT | RO_PIN_MASK) != 0 {
                     return None;
                 }
-                Some(state + RO_PIN_COUNT_UNIT + LOCK_BIT)
+                Some(state | LOCK_BIT)
             });
         if pin_update.is_err() {
             return None;
@@ -328,39 +327,41 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
 
         Some(Box::pin(async {
             let needs_spill = unsafe { (*self.spilled.get()).is_none() };
-            let has_exclusive_pin = if needs_spill {
-                // Drop the lock while spilling such that new pins can come in.
-                // After all, we still have it in memory right now.
-                self.wake_waiters(self.state.fetch_and(!LOCK_BIT, Ordering::AcqRel));
+            let is_exclusive = if needs_spill {
+                // Relax the lock to a pin while spilling such that new pins can
+                // come in. After all, we still have it in memory right now.
+                self.wake_waiters(
+                    self.state
+                        .fetch_add(RO_PIN_COUNT_UNIT - LOCK_BIT, Ordering::AcqRel),
+                );
                 let pin_guard = PinnedRef { inner: self };
                 let spilled = pin_guard.spill().await;
                 core::mem::forget(pin_guard);
                 // We can simply re-acquire the lock here blindly, as we still hold
                 // our pin meaning no one else could've gotten the lock.
-                let state = self.state.fetch_add(LOCK_BIT, Ordering::Acquire);
+                let old_state = self
+                    .state
+                    .fetch_add(LOCK_BIT.wrapping_sub(RO_PIN_COUNT_UNIT), Ordering::Acquire);
                 unsafe {
                     self.spilled.get().write(Some(spilled));
                 }
-                state & RO_PIN_MASK == RO_PIN_COUNT_UNIT
+                old_state & RO_PIN_MASK == RO_PIN_COUNT_UNIT
             } else {
                 true
             };
 
-            let state = if has_exclusive_pin {
+            let state = if is_exclusive {
                 // We are the only pin and hold the lock meaning no one else can
                 // access value or create new pins.
                 unsafe { self.value.get().replace(None) };
-                self.state.fetch_add(
-                    SPILLED_BIT.wrapping_sub(LOCK_BIT + RO_PIN_COUNT_UNIT),
-                    Ordering::AcqRel,
-                )
-            } else {
                 self.state
-                    .fetch_sub(LOCK_BIT + RO_PIN_COUNT_UNIT, Ordering::AcqRel)
+                    .fetch_add(SPILLED_BIT.wrapping_sub(LOCK_BIT), Ordering::AcqRel)
+            } else {
+                self.state.fetch_sub(LOCK_BIT, Ordering::AcqRel)
             };
             self.wake_waiters(state);
 
-            has_exclusive_pin
+            is_exclusive
         }))
     }
 }
