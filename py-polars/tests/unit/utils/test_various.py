@@ -1,6 +1,6 @@
 import pytest
 
-from polars._utils.various import issue_warning
+from polars._warnings import issue_warning
 from polars.exceptions import PerformanceWarning
 
 
