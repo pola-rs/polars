@@ -18,6 +18,22 @@ use crate::nodes::io_sources::parquet::bloom_filter_prune::{
 };
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
+/// Arguments for [`calculate_row_group_pred_pushdown_skip_mask`].
+///
+/// Stored in a struct to avoid tripping clippy's `too_many_arguments` lint on the async function.
+pub(super) struct RowGroupPredPushdownArgs<'a> {
+    pub row_group_slice: Range<usize>,
+    pub use_statistics: bool,
+    pub predicate: Option<&'a ScanIOPredicate>,
+    pub metadata: &'a Arc<FileMetadata>,
+    pub projected_arrow_fields: Arc<[ArrowFieldProjection]>,
+    /// File bytes for bloom filters (not stored in `metadata.footer_buf`).
+    pub byte_source: Arc<DynByteSource>,
+    /// Updated to the position of the first row group.
+    pub row_index: Option<RowIndex>,
+    pub verbose: bool,
+}
+
 struct StatisticsColumns {
     min: Column,
     max: Column,
@@ -84,18 +100,19 @@ impl StatisticsColumns {
 /// - **Statistics** (`skip_batch_predicate` over min/max/null_count from the footer).
 /// - **Bloom filters** (equality / `is_in` literals probed via `byte_source` range reads).
 pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
-    row_group_slice: Range<usize>,
-    use_statistics: bool,
-    predicate: Option<&ScanIOPredicate>,
-    metadata: &Arc<FileMetadata>,
-    projected_arrow_fields: Arc<[ArrowFieldProjection]>,
-    // File bytes for bloom filters (not stored in `metadata.footer_buf`).
-    byte_source: Arc<DynByteSource>,
-    // This is mut so that the offset is updated to the position of the first
-    // row group.
-    mut row_index: Option<RowIndex>,
-    verbose: bool,
+    args: RowGroupPredPushdownArgs<'_>,
 ) -> PolarsResult<Option<Bitmap>> {
+    let RowGroupPredPushdownArgs {
+        row_group_slice,
+        use_statistics,
+        predicate,
+        metadata,
+        projected_arrow_fields,
+        byte_source,
+        mut row_index,
+        verbose,
+    } = args;
+
     let Some(predicate) = predicate else {
         return Ok(None);
     };

@@ -121,14 +121,16 @@ impl ParquetReadImpl {
             }
 
             let row_group_mask = calculate_row_group_pred_pushdown_skip_mask(
-                row_group_slice.clone(),
-                use_statistics,
-                predicate.as_ref(),
-                &metadata,
-                projected_arrow_fields.clone(),
-                byte_source.clone(),
-                row_index,
-                verbose,
+                crate::nodes::io_sources::parquet::statistics::RowGroupPredPushdownArgs {
+                    row_group_slice: row_group_slice.clone(),
+                    use_statistics,
+                    predicate: predicate.as_ref(),
+                    metadata: &metadata,
+                    projected_arrow_fields: projected_arrow_fields.clone(),
+                    byte_source: byte_source.clone(),
+                    row_index,
+                    verbose,
+                },
             )
             .await?;
 
