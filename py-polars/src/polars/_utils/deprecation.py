@@ -27,7 +27,7 @@ else:
             return _deprecate_function(message)
 
 
-from polars._utils.various import issue_warning
+from polars._warnings import issue_warning
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
