@@ -19,6 +19,19 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::projection::ArrowFieldProjection;
 
+/// Maximum number of `is_in` literals to probe against a bloom filter.
+///
+/// Probing blooms is cheap for `col == literal`, but can become expensive for large `is_in` lists
+/// because it scales with `(#row_groups × #values)`. Spark applies a similar threshold for Parquet
+/// `IN` pushdown (`spark.sql.parquet.pushdown.inFilterThreshold`, default 10).
+fn bloom_in_filter_threshold() -> usize {
+    const DEFAULT: usize = 10;
+    std::env::var("POLARS_BLOOM_IN_FILTER_THRESHOLD")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(DEFAULT)
+}
+
 /// On-disk Arrow field name and equality literals to probe.
 type BloomPred = (PlSmallStr, Box<[Scalar]>);
 
@@ -98,7 +111,9 @@ fn collect_bloom_preds(
 fn bloom_pred_values(specialized: &Option<SpecializedColumnPredicate>) -> Option<Box<[Scalar]>> {
     match specialized {
         Some(SpecializedColumnPredicate::Equal(s)) => Some(Box::new([s.clone()])),
-        Some(SpecializedColumnPredicate::EqualOneOf(v)) => Some(v.clone()),
+        Some(SpecializedColumnPredicate::EqualOneOf(v)) => {
+            (v.len() <= bloom_in_filter_threshold()).then(|| v.clone())
+        }
         _ => None,
     }
 }
