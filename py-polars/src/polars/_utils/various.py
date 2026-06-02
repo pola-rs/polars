@@ -83,10 +83,6 @@ def _process_null_values(
 
 
 def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
-    # Split conditions to work around https://github.com/facebook/pyrefly/issues/3554.
-    if sys.version_info >= (3, 11):
-        if isinstance(val, _reverse_mapping_views):
-            return True
     return (
         (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
         or isinstance(val, MappingView)

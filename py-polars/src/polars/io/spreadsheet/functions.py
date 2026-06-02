@@ -1222,7 +1222,7 @@ def _read_spreadsheet_openpyxl(
 
     # prefer detection of actual table objects; otherwise read
     # data in the used worksheet range, dropping null columns
-    if tables := getattr(ws, "tables", None):  # pyrefly: ignore[unbound-name]
+    if tables := getattr(ws, "tables", None):
         table = tables[table_name] if table_name else next(iter(tables.values()))
         rows = list(ws[table.ref])
         if not rows:

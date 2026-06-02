@@ -694,12 +694,12 @@ def merge_sorted(
         msg = f"merge_sorted is not supported for {qualified_type_name(elems[0])!r}"
         raise TypeError(msg)
 
-    lazy_frames = [df.lazy() for df in elems]
+    frames = [df.lazy() for df in elems]
 
     def reduce_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
         return x.merge_sorted(y, key=key, maintain_order=maintain_order)
 
-    lf = reduce_balanced(reduce_fn, lazy_frames)
+    lf = reduce_balanced(reduce_fn, frames)
     eager = isinstance(elems[0], pl.DataFrame)
     return lf.collect() if eager else lf  # type: ignore[return-value]
 

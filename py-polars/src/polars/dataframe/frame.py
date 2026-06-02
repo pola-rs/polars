@@ -2503,8 +2503,8 @@ class DataFrame:
             if label_frame is not None and features_frame is not None:
                 # return a {"label": tensor(s), "features": tensor(s)} dict
                 return {
-                    "label": label_frame.to_torch(),  # pyrefly: ignore[unbound-name]
-                    "features": features_frame.to_torch(),  # pyrefly: ignore[unbound-name]
+                    "label": label_frame.to_torch(),
+                    "features": features_frame.to_torch(),
                 }
             else:
                 # return a {"col": tensor} dict
