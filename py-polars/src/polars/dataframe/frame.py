@@ -9753,9 +9753,15 @@ class DataFrame:
 
     def unpivot(
         self,
-        on: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        on: Expr
+        | ColumnNameOrSelector
+        | Sequence[Expr | ColumnNameOrSelector]
+        | None = None,
         *,
-        index: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
+        index: Expr
+        | ColumnNameOrSelector
+        | Sequence[Expr | ColumnNameOrSelector]
+        | None = None,
         variable_name: str | None = None,
         value_name: str | None = None,
     ) -> DataFrame:
@@ -9815,10 +9821,15 @@ class DataFrame:
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
-        on = None if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        from polars.lazyframe.opt_flags import QueryOptFlags
 
-        return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
+        return (
+            self.lazy()
+            .unpivot(
+                on, index=index, variable_name=variable_name, value_name=value_name
+            )
+            .collect(optimizations=QueryOptFlags._eager())
+        )
 
     def unstack(
         self,
