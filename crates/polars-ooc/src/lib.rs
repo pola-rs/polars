@@ -79,7 +79,7 @@ impl<T: Spillable> SpillTokenInner<T> {
     }
 
     /// Wakes any waiters.
-    /// 
+    ///
     /// Should be called with the state after performing any updates that waiters
     /// could be waiting for (e.g. the pin count reaches 0 or the lock gets released).
     #[inline(always)]
