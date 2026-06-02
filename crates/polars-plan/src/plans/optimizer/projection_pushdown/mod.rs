@@ -436,7 +436,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     let mut truncate_len = projected_names.len();
 
                     // If exprs has any column-height output, at least 1 of them must be projected.
-                    if let Some(column_height_idx) = exprs.iter().position(|e| {
+                    let first_column_height_idx = exprs.iter().position(|e| {
                         matches!(
                             aexpr_projection_height_rec(
                                 e.node(),
@@ -446,14 +446,16 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             ),
                             EH::Column
                         )
-                    }) && column_height_idx >= truncate_len
+                    });
+
+                    if let Some(column_height_idx) = first_column_height_idx
+                        && column_height_idx >= truncate_len
                     {
                         exprs.swap(column_height_idx, projected_names.len());
                         truncate_len += 1;
                     }
 
-                    // Project all unknown heights to catch length mismatch errors.
-                    if self.maintain_errors {
+                    if first_column_height_idx.is_none() || self.maintain_errors {
                         let range = truncate_len..exprs.len();
                         for i in range {
                             match aexpr_projection_height_rec(
