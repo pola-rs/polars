@@ -1,7 +1,8 @@
 use xxhash_rust::xxh64::xxh64;
 
 use crate::arrow::read::expr::ParquetScalar;
-use crate::parquet::bloom_filter::{is_in_set, read::read_from_bytes};
+use crate::parquet::bloom_filter::is_in_set;
+use crate::parquet::bloom_filter::read::read_from_bytes;
 use crate::parquet::error::ParquetResult;
 
 const SEED: u64 = 0;
@@ -34,7 +35,11 @@ fn hash_parquet_scalar(scalar: &ParquetScalar) -> Option<u64> {
 ///
 /// `true` means the value **may** be present (or the probe is inconclusive); `false` means it is
 /// **definitely not** present. Bloom filters only support safe skipping on `false`.
-pub fn might_contain_scalar_bytes(bytes: &[u8], scalar: &ParquetScalar, bitset: &mut Vec<u8>) -> ParquetResult<bool> {
+pub fn might_contain_scalar_bytes(
+    bytes: &[u8],
+    scalar: &ParquetScalar,
+    bitset: &mut Vec<u8>,
+) -> ParquetResult<bool> {
     read_from_bytes(bytes, bitset)?;
     Ok(scalar_might_be_in_prepared_bitset(scalar, bitset))
 }

@@ -38,7 +38,10 @@ type BloomPred = (PlSmallStr, Box<[Scalar]>);
 /// Combine statistics- and bloom-derived skip masks.
 ///
 /// Either path may mark a row group for skipping; we take the union (`|`).
-pub(super) fn merge_row_group_skip_masks(statistics_mask: Bitmap, bloom_mask: Option<Bitmap>) -> Bitmap {
+pub(super) fn merge_row_group_skip_masks(
+    statistics_mask: Bitmap,
+    bloom_mask: Option<Bitmap>,
+) -> Bitmap {
     let Some(bloom_mask) = bloom_mask else {
         return statistics_mask;
     };
@@ -72,9 +75,7 @@ pub(super) async fn calculate_bloom_filter_skip_mask(
     let mut bitset = Vec::new();
 
     for rg in row_groups {
-        skip.push(
-            should_skip_row_group(rg, &bloom_preds, &byte_source, &mut bitset).await?,
-        );
+        skip.push(should_skip_row_group(rg, &bloom_preds, &byte_source, &mut bitset).await?);
     }
 
     Ok(Some(skip.freeze()))
@@ -113,7 +114,7 @@ fn bloom_pred_values(specialized: &Option<SpecializedColumnPredicate>) -> Option
         Some(SpecializedColumnPredicate::Equal(s)) => Some(Box::new([s.clone()])),
         Some(SpecializedColumnPredicate::EqualOneOf(v)) => {
             (v.len() <= bloom_in_filter_threshold()).then(|| v.clone())
-        }
+        },
         _ => None,
     }
 }
@@ -157,8 +158,9 @@ async fn should_skip_row_group(
 
         let bloom_bytes = byte_source.get_range(range).await?;
 
-        let any_might_match = any_scalar_might_be_in_bloom_filter_bytes(values, bloom_bytes.as_ref(), bitset)
-            .unwrap_or(true);
+        let any_might_match =
+            any_scalar_might_be_in_bloom_filter_bytes(values, bloom_bytes.as_ref(), bitset)
+                .unwrap_or(true);
 
         if !any_might_match {
             return Ok(true);

@@ -32,13 +32,13 @@ use crate::nodes::io_sources::parquet::projection::{
 use crate::nodes::{TaskPriority, io_sources};
 use crate::utils::tokio_handle_ext;
 
+mod bloom_filter_prune;
 pub mod builder;
 pub mod init;
 mod metadata_utils;
 mod projection;
 mod row_group_data_fetch;
 mod row_group_decode;
-mod bloom_filter_prune;
 mod statistics;
 
 pub struct ParquetFileReader {
