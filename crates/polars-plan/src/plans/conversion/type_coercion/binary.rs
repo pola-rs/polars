@@ -61,13 +61,25 @@ fn process_struct_numeric_arithmetic(
     match (&type_left, &type_right) {
         (DataType::Struct(fields), _) => {
             if let Some(first) = fields.first() {
+                let wide_fields: PolarsResult<Vec<Field>> = fields
+                    .iter()
+                    .map(|f| {
+                        let st = try_get_supertype(&f.dtype, &type_right)?;
+                        Ok(Field::new(f.name().clone(), st))
+                    })
+                    .collect();
+                let new_node_left = expr_arena.add(AExpr::Cast {
+                    expr: node_left,
+                    dtype: DataType::Struct(wide_fields.clone()?),
+                    options: CastOptions::NonStrict,
+                });
                 let new_node_right = expr_arena.add(AExpr::Cast {
                     expr: node_right,
-                    dtype: DataType::Struct(vec![first.clone()]),
+                    dtype: DataType::Struct(wide_fields.clone()?),
                     options: CastOptions::NonStrict,
                 });
                 Ok(Some(AExpr::BinaryExpr {
-                    left: node_left,
+                    left: new_node_left,
                     op,
                     right: new_node_right,
                 }))
@@ -77,16 +89,28 @@ fn process_struct_numeric_arithmetic(
         },
         (_, DataType::Struct(fields)) => {
             if let Some(first) = fields.first() {
+                let wide_fields: PolarsResult<Vec<Field>> = fields
+                    .iter()
+                    .map(|f| {
+                        let st = try_get_supertype(&f.dtype, &type_left)?;
+                        Ok(Field::new(f.name().clone(), st))
+                    })
+                    .collect();
                 let new_node_left = expr_arena.add(AExpr::Cast {
                     expr: node_left,
-                    dtype: DataType::Struct(vec![first.clone()]),
+                    dtype: DataType::Struct(wide_fields.clone()?),
+                    options: CastOptions::NonStrict,
+                });
+                let new_node_right = expr_arena.add(AExpr::Cast {
+                    expr: node_right,
+                    dtype: DataType::Struct(wide_fields.clone()?),
                     options: CastOptions::NonStrict,
                 });
 
                 Ok(Some(AExpr::BinaryExpr {
                     left: new_node_left,
                     op,
-                    right: node_right,
+                    right: new_node_right,
                 }))
             } else {
                 Ok(None)
