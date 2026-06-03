@@ -11,11 +11,10 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
     NO_DEFAULT,
-    find_stacklevel,
-    issue_warning,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
+from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
 from polars.exceptions import ChronoFormatWarning
 

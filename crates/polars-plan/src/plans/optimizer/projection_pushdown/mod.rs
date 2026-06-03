@@ -436,7 +436,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     let mut truncate_len = projected_names.len();
 
                     // If exprs has any column-height output, at least 1 of them must be projected.
-                    if let Some(column_height_idx) = exprs.iter().position(|e| {
+                    let first_column_height_idx = exprs.iter().position(|e| {
                         matches!(
                             aexpr_projection_height_rec(
                                 e.node(),
@@ -446,14 +446,16 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             ),
                             EH::Column
                         )
-                    }) && column_height_idx >= truncate_len
+                    });
+
+                    if let Some(column_height_idx) = first_column_height_idx
+                        && column_height_idx >= truncate_len
                     {
                         exprs.swap(column_height_idx, projected_names.len());
                         truncate_len += 1;
                     }
 
-                    // Project all unknown heights to catch length mismatch errors.
-                    if self.maintain_errors {
+                    if first_column_height_idx.is_none() || self.maintain_errors {
                         let range = truncate_len..exprs.len();
                         for i in range {
                             match aexpr_projection_height_rec(
@@ -1332,10 +1334,16 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     return;
                 }
 
-                let (..) = projected_names_subset_or_return!();
+                if out_edge
+                    .compute_projected_names(&current_node_schema)
+                    .is_none()
+                {
+                    return;
+                }
+
+                let projected_names = out_edge.take_names().unwrap();
 
                 let mut inputs = mem::take(inputs);
-                let projected_names = out_edge.take_names().unwrap();
                 let strict = options.strict;
                 let hconcat_projected_names = self.names_vec_scratch.get();
 
@@ -1389,7 +1397,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             projected_names.get_index_of(name).unwrap_or(usize::MAX)
                         });
 
-                        if names_this_input.len() != input_schema_arc.len() {
+                        if !iters_eq(names_this_input.iter(), input_schema_arc.iter_names()) {
                             let mut names = mem::take(self.names_set_scratch2.get());
                             names.extend(names_this_input.iter().cloned());
 

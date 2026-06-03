@@ -4261,3 +4261,27 @@ def test_read_parquet_legacy_nested_maps_27159(io_files_path: Path) -> None:
 
     assert_frame_equal(pl.read_parquet(path), expected)
     assert_frame_equal(pl.scan_parquet(path).collect(), expected)
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("mode", "expected_est"),
+    [("none", 6), ("row_counts", 8), ("full", 8)],
+)
+def test_multi_file_resolve_metadata_level(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    expected_est: int,
+) -> None:
+    # Skewed layout: file 0 = 2 rows, files 1-2 = 3 each (true total 8).
+    # `none` extrapolates 2 * 3 = 6; `row_counts`/`full` sum exactly.
+    for i, n in enumerate([2, 3, 3]):
+        pl.DataFrame({"x": range(n)}).write_parquet(tmp_path / f"part_{i}.parquet")
+
+    monkeypatch.setenv("POLARS_RESOLVE_METADATA_LEVEL", mode)
+    pl.Config.reload_env_vars()
+
+    lf = pl.scan_parquet(tmp_path / "part_*.parquet")
+    assert lf.collect().height == 8
+    assert f"ESTIMATED ROWS: {expected_est}" in lf.explain(optimized=True)
