@@ -33,6 +33,12 @@ Here is a curated (non-exhaustive) list of community-implemented plugins.
   the H3 discrete global grid system, so you can index points and geometries to hexagons directly in
   Polars.
 
+### Privacy
+
+- [maskops](https://github.com/fcarvajalbrown/maskops) High-speed PII masking as a Polars plugin —
+  powered by Rust. Detects and masks credit cards, IBANs, emails, phone numbers, and more with
+  optional format-preserving encryption (FF3-1 AES-256).
+
 ## Other material
 
 - [Ritchie Vink - Keynote on Polars Plugins](https://youtu.be/jKW-CBV7NUM)
