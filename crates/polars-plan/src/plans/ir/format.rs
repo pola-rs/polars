@@ -712,7 +712,7 @@ pub fn write_ir_non_recursive(
 
             let predicate = match &options.predicate {
                 PythonPredicate::Polars(e) => Some(e.display(expr_arena)),
-                PythonPredicate::PyArrow(_) => None,
+                PythonPredicate::PyArrow { .. } => None,
                 PythonPredicate::None => None,
             };
 

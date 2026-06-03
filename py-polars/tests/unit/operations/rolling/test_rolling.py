@@ -1442,11 +1442,8 @@ def test_rolling_aggs(
             )
         )
         expected_dict["ts"].append(ts)
-        if window.is_empty():
-            expected_dict["value"].append(None)
-        else:
-            value = getattr(window["value"], aggregation)()
-            expected_dict["value"].append(value)
+        value = getattr(window["value"], aggregation)()
+        expected_dict["value"].append(value)
     expected = pl.DataFrame(expected_dict).select(
         pl.col("ts").cast(pl.Datetime(time_unit)),
         pl.col("value").cast(result["value"].dtype),

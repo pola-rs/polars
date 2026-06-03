@@ -309,7 +309,7 @@ in the Polars repository. Please adhere to the following guidelines:
     - Explicitly state that you yourself have reviewed *all* changes in your pull request, and believe
       that they are relevant and correct.
     - Not try to solve an issue marked as "good first issue".
-    - Adhere to the rest of our [AI policy](/AI_POLICY.md).
+    - Adhere to the rest of our [AI policy](https://github.com/pola-rs/polars/blob/main/AI_POLICY.md).
   If you fail either requirement the maintainer may simply close your pull request.
 <!-- dprint-ignore-end -->
 

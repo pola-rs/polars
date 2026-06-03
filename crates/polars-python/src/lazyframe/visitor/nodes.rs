@@ -230,7 +230,7 @@ pub struct Sort {
     #[pyo3(get)]
     sort_options: (bool, Vec<bool>, Vec<bool>),
     #[pyo3(get)]
-    slice: Option<(i64, usize)>,
+    slice: Option<(i64, usize, Option<u128>)>,
 }
 
 #[pyclass(frozen)]
@@ -397,7 +397,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     python_src,
                     match &options.predicate {
                         PythonPredicate::None => py.None(),
-                        PythonPredicate::PyArrow(s) => ("pyarrow", s).into_py_any(py)?,
+                        PythonPredicate::PyArrow {
+                            predicate,
+                            has_residual,
+                        } => {
+                            ("pyarrow", predicate, "has_residual", has_residual).into_py_any(py)?
+                        },
                         PythonPredicate::Polars(e) => ("polars", e.node().0).into_py_any(py)?,
                     },
                     options
@@ -514,7 +519,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: slice.as_ref().map(|t| (t.0, t.1)),
+            slice: slice
+                .as_ref()
+                .map(|t| (t.0, t.1, t.2.as_ref().map(|p| p.id().as_u128()))),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {

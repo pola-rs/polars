@@ -4,6 +4,7 @@ pub(super) fn optimize_functions(
     input: Vec<ExprIR>,
     function: IRFunctionExpr,
     options: FunctionOptions,
+    ctx: OptimizeExprContext,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
@@ -133,6 +134,30 @@ pub(super) fn optimize_functions(
             } else {
                 None
             }
+        },
+        #[cfg(feature = "is_in")]
+        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) if ctx.in_filter => {
+            let haystack = expr_arena.get(input[1].node());
+            let empty = match haystack {
+                AExpr::Literal(LiteralValue::Series(s)) => s.is_empty(),
+                AExpr::Literal(LiteralValue::Scalar(s)) => match s.value() {
+                    AnyValue::List(inner) => inner.is_empty(),
+                    #[cfg(feature = "dtype-array")]
+                    AnyValue::Array(inner, _) => inner.is_empty(),
+                    _ => false,
+                },
+                AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::List(list))) => match list {
+                    DynListLiteralValue::Str(vs) => vs.is_empty(),
+                    DynListLiteralValue::Int(vs) => vs.is_empty(),
+                    DynListLiteralValue::Float(vs) => vs.is_empty(),
+                    DynListLiteralValue::List(vs) => vs.is_empty(),
+                },
+                _ => false,
+            };
+            if empty {
+                return Ok(Some(AExpr::Literal(Scalar::from(false).into())));
+            }
+            None
         },
         IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
             let y = expr_arena.get(input[0].node());

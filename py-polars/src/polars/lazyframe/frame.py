@@ -56,16 +56,15 @@ from polars._utils.various import (
     _is_generator,
     display_dot_graph,
     extend_bool,
-    find_stacklevel,
     is_bool_sequence,
     is_sequence,
-    issue_warning,
     normalize_filepath,
     parse_percentiles,
     qualified_type_name,
     require_same_type,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
+from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -9089,8 +9088,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by that key otherwise
-        the output will not make sense.
+        are sorted in ascending order by the key, with null
+        keys at the end, otherwise the order of the output
+        will not make sense.
 
         The schemas of both LazyFrames must be equal.
 
@@ -9365,11 +9365,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"`how` must be one of {{'left', 'inner', 'full'}}; found {how!r}"
             raise ValueError(msg)
 
-        row_index_used = False
+        row_index_name = None
         if on is None:
             if left_on is None and right_on is None:
                 # no keys provided--use row index
-                row_index_used = True
                 row_index_name = "__POLARS_ROW_INDEX"
                 self = self.with_row_index(row_index_name)
                 other = other.with_row_index(row_index_name)
@@ -9404,7 +9403,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # no need to join if *only* join columns are in other (inner/left update only)
         if how != "full" and len(right_schema) == len(right_on):
-            if row_index_used:
+            if row_index_name is not None:
                 return self.drop(row_index_name)
             return self
 
@@ -9446,7 +9445,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             .drop(drop_columns)
         )
-        if row_index_used:
+        if row_index_name is not None:
             result = result.drop(row_index_name)
 
         return self._from_pyldf(result._ldf)

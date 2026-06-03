@@ -39,12 +39,12 @@ from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
     extend_bool,
-    find_stacklevel,
     normalize_filepath,
     sphinx_accessor,
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_expr, wrap_s
+from polars._warnings import find_stacklevel
 from polars.datatypes import (
     Decimal as PolarsDecimal,
 )
@@ -7369,7 +7369,7 @@ Consider using {self}.implode() instead"""
         by: IntoExpr,
         window_size: timedelta | str_,
         *,
-        min_samples: int = 1,
+        min_samples: int = 0,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
