@@ -107,7 +107,7 @@ result = (
     .remote(ctx)
     .execute()
 )
-print(result.head())
+print(result.head)
 ```
 
 Your cluster is ready. For a full walkthrough of deployed resources, networking, and production
