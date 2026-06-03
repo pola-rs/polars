@@ -597,7 +597,7 @@ class ConnectionExecutor:
                         df
                         for df in CloseAfterFrameIter(
                             frame,
-                            cursor=self.result,
+                            cursor=self.cursor,
                         )
                     )
                 return frame
