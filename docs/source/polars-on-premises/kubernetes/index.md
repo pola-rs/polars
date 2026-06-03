@@ -43,9 +43,10 @@ helm repo update
 ```sh
 helm upgrade --install polars polars-inc/polars \
   --set clusterId="My First Cluster" \
-  --set workspaceId=<WORKSPACE ID> \
-  --set clientId=<SERVICE ACCOUNT ID> \
-  --set clientSecret=<SERVICE ACCOUNT SECRET> \
+  --set license.onPrem.enabled=true \
+  --set license.onPrem.workspaceId=<WORKSPACE ID> \
+  --set license.onPrem.clientId=<SERVICE ACCOUNT ID> \
+  --set license.onPrem.clientSecret=<SERVICE ACCOUNT SECRET> \
   --set scheduler.deployment.runtimeContainer.resources.requests.memory=1Gi \
   --set worker.deployment.replicaCount=2 \
   --set worker.deployment.runtimeContainer.resources.requests.memory=4Gi \
@@ -127,7 +128,7 @@ result = (
     .remote(ctx)
     .execute()
 )
-print(result.head())
+print(result.head)
 ```
 
 The cluster is now ready to execute your own Polars queries. The following sections give more
@@ -233,4 +234,4 @@ Resource allocation and cluster topology configuration is under the
 
 If you are interested in deploying one or several clusters without any resource limitations nor data
 sharing, on bare-metal machines or in a Kubernetes setup, and in air-gapped environments, please
-[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
+[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide).

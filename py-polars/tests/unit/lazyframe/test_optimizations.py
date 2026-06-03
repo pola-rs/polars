@@ -911,6 +911,19 @@ def test_slice_pushdown_expr_height_rules() -> None:
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}))
 
 
+def test_slice_pushdown_expr_leaf_ae_without_col_input_27820() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    q = lf.select(pl.first("a"), pl.len().cast(pl.Int64))
+    out = q.collect()
+
+    assert_frame_equal(out, pl.DataFrame({"a": 1, "len": 3}))
+
+    q = lf.select(pl.first("a"), pl.lit(pl.Series("s", [-1, -2, -3])).first())
+    out = q.collect()
+
+    assert_frame_equal(out, pl.DataFrame({"a": 1, "s": -1}))
+
+
 def test_slice_pushdown_joins_27199() -> None:
     lhs = pl.LazyFrame({"a": [0, 0]})
     rhs = pl.LazyFrame({"a": [0, 0]})
@@ -1021,3 +1034,58 @@ def test_lazyframe_gather_select_len() -> None:
 
     with pytest.raises(pl.exceptions.OutOfBoundsError):
         q.collect()
+
+
+def test_hconcat_reorder_projection_push_to_inputs() -> None:
+    hconcat = pl.concat(
+        [
+            pl.LazyFrame(schema={"a": pl.Null, "b": pl.Null}),
+            pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
+        ],
+        how="horizontal",
+    )
+
+    q = hconcat.select("b", "a", "d", "c")
+    plan = q.explain()
+
+    assert plan.startswith("HCONCAT")
+    assert q.collect().columns == ["b", "a", "d", "c"]
+
+    q = hconcat.select("b", "d", "c")
+    plan = q.explain()
+
+    assert plan.startswith("HCONCAT")
+    assert q.collect().columns == ["b", "d", "c"]
+
+    # Columns are not in input order so we need to project in post.
+    q = hconcat.select("c", "a")
+    plan = q.explain()
+
+    assert plan.startswith("simple π")
+    assert q.collect().columns == ["c", "a"]
+
+
+def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame(
+                [{"B": None, "C": None}],
+                {"B": pl.Boolean, "C": pl.Categorical()},
+            ).select("C", "B"),
+            pl.LazyFrame(
+                [{"D": "1"}],
+                {"D": pl.String()},
+            ),
+        ],
+        how="horizontal",
+    ).select("B", "C")
+
+    f = io.BytesIO()
+    q.sink_parquet(f)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).collect(),
+        pl.DataFrame(
+            {"B": None, "C": None}, schema={"B": pl.Boolean, "C": pl.Categorical}
+        ),
+    )

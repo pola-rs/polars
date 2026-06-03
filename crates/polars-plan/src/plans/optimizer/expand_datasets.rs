@@ -292,7 +292,9 @@ pub(super) fn expand_datasets(
                             #[cfg(feature = "parquet")]
                             FileScanDsl::Parquet { options } => FileScanIR::Parquet {
                                 options,
-                                metadata: None,
+                                // Metadata is resolved later in `parquet_file_info`.
+                                first_metadata: None,
+                                metadata_per_source: None,
                             },
 
                             #[cfg(feature = "json")]
