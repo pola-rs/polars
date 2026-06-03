@@ -5,7 +5,6 @@ use polars_core::chunked_array::ops::SortOptions;
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::itertools::Itertools;
@@ -46,14 +45,12 @@ impl DataFrameIsSorted for DataFrame {
 
         if let &[ref single_by] = by {
             let col = self.column(single_by)?;
-            if !col.dtype().is_nested() {
-                let options = SortOptions {
-                    descending: descending[0],
-                    nulls_last: nulls_last[0],
-                    ..Default::default()
-                };
-                return SeriesMethods::is_sorted(col.as_materialized_series(), options);
-            }
+            return SeriesMethods::is_sorted(
+                col.as_materialized_series(),
+                SortOptions::new()
+                    .with_order_descending(descending[0])
+                    .with_nulls_last(nulls_last[0]),
+            );
         }
 
         let mut cols: Vec<Column> = Vec::with_capacity(by.len());
@@ -73,7 +70,7 @@ impl DataFrameIsSorted for DataFrame {
                 desc.push(false);
                 nls.push(false);
             } else {
-                cols.push(col);
+                cols.push(col.to_physical_repr());
                 desc.push(descending[idx]);
                 nls.push(nulls_last[idx]);
             }
@@ -86,8 +83,10 @@ impl DataFrameIsSorted for DataFrame {
 
 fn should_row_encode_dtype(dtype: &DataType) -> bool {
     use DataType::*;
-    !(matches!(dtype, Null | Boolean | String | Binary | BinaryOffset)
-        || dtype.to_physical().is_numeric())
+    !(matches!(
+        dtype,
+        Null | Boolean | String | Enum(..) | Binary | BinaryOffset
+    ) || dtype.to_physical().is_numeric())
 }
 
 /// Recursively checks whether `cols` are sorted by `(cols[0], cols[1], ...)`.
@@ -102,19 +101,29 @@ fn is_sorted_cols(
     scratch_pool: &mut [ScratchVec<Column>],
 ) -> PolarsResult<bool> {
     let Some((by, by_more)) = by.split_first() else {
-        return Ok(true);
+        unreachable!()
     };
-
-    let s = by.as_materialized_series().to_physical_repr().into_owned();
+    if by_more.is_empty() {
+        return SeriesMethods::is_sorted(
+            by.as_materialized_series(),
+            SortOptions::new()
+                .with_order_descending(descending[0])
+                .with_nulls_last(nulls_last[0]),
+        );
+    }
+    let s = by.as_materialized_series();
 
     match s.dtype() {
         DataType::Null => {
             is_sorted_cols(&by_more, &descending[1..], &nulls_last[1..], scratch_pool)
         },
-        DataType::Boolean => {
-            let ca: &BooleanChunked = s.as_ref().as_ref().as_ref();
-            is_sorted_ca(ca, by_more, descending, nulls_last, scratch_pool)
-        },
+        DataType::Boolean => is_sorted_ca(
+            s.bool().unwrap(),
+            by_more,
+            descending,
+            nulls_last,
+            scratch_pool,
+        ),
         dt if dt.to_physical().is_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
@@ -122,7 +131,7 @@ fn is_sorted_cols(
             })
         },
         DataType::String => {
-            let ca: &StringChunked = s.as_ref().as_ref().as_ref();
+            let ca: &StringChunked = s.str().unwrap();
             is_sorted_ca(
                 &ca.as_binary(),
                 by_more,
@@ -131,14 +140,28 @@ fn is_sorted_cols(
                 scratch_pool,
             )
         },
-        DataType::Binary => {
-            let ca: &BinaryChunked = s.as_ref().as_ref().as_ref();
-            is_sorted_ca(ca, by_more, descending, nulls_last, scratch_pool)
+        #[cfg(feature = "dtype-categorical")]
+        dt @ DataType::Enum(..) => {
+            with_match_categorical_physical_type!(dt.cat_physical().unwrap(), |$C| {
+                type CA = ChunkedArray<<$C as PolarsCategoricalType>::PolarsPhysical>;
+                let ca = s.as_ref().as_any().downcast_ref::<CA>().unwrap();
+                is_sorted_ca(ca, by_more, descending, nulls_last, scratch_pool)
+            })
         },
-        DataType::BinaryOffset => {
-            let ca: &BinaryOffsetChunked = s.as_ref().as_ref().as_ref();
-            is_sorted_ca(ca, by_more, descending, nulls_last, scratch_pool)
-        },
+        DataType::Binary => is_sorted_ca(
+            s.binary().unwrap(),
+            by_more,
+            descending,
+            nulls_last,
+            scratch_pool,
+        ),
+        DataType::BinaryOffset => is_sorted_ca(
+            s.binary_offset().unwrap(),
+            by_more,
+            descending,
+            nulls_last,
+            scratch_pool,
+        ),
         dt => unreachable!("{dt} data should have been row-encoded"),
     }
 }
