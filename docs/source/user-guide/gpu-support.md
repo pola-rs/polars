@@ -76,9 +76,9 @@ These 3 engines spin up resources that can be torn down by using the engines as 
 
 ```python
 --8<-- "python/user-guide/lazy/gpu.py:engine-setup"
-from cudf_polars.engine.spmd import SPMDEngine
+from cudf_polars.engine.ray import RayEngine
 
-with SPMDEngine() as engine:
+with RayEngine() as engine:
     result = q.collect(engine=engine)
     print(result)
 ```
