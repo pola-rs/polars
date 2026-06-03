@@ -226,8 +226,8 @@ fail at runtime, instead of falling back.
 
 Based on our benchmarking, you're most likely to observe speedups using the GPU engine when your
 workflow's profile is dominated by grouped aggregations and joins. In contrast I/O bound queries
-typically show similar performance on GPU and CPU. Based on our testing, raw
-datasets of 1 TiB fit (depending on the workflow) well with a GPU with 80GiB of memory.
+typically show similar performance on GPU and CPU. Based on our testing, raw datasets of 1 TiB fit
+(depending on the workflow) well with a GPU with 80GiB of memory.
 
 ### Providing feedback
 
