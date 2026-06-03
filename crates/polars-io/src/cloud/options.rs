@@ -288,7 +288,7 @@ pub(super) fn get_client_options() -> ClientOptions {
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
-    // .with_dns_resolver(Arc::new(CachingResolver::new(get_dns_cache_ttl())))
+        .with_dns_resolver(Arc::new(CachingResolver::new(get_dns_cache_ttl())))
 }
 
 #[cfg(feature = "aws")]
@@ -501,7 +501,7 @@ impl CloudOptions {
         };
 
         let out = builder
-            // .with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
+            .with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
             .with_unsigned_payload(true)
             .build()
             .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
