@@ -198,10 +198,24 @@ fn create_physical_expr_inner(
             let order_by = order_by
                 .map(|(node, options)| {
                     order_by_is_elementwise |= is_elementwise_rec(node, expr_arena);
-                    PolarsResult::Ok((
-                        create_physical_expr_inner(node, expr_arena, schema, state)?,
-                        options,
-                    ))
+                    // A multi-column `order_by` is packed into a single `as_struct` upstream.
+                    // Unpack it back into its individual columns so the window sort can apply
+                    // `nulls_last`/`descending` per column (like `sort_by`), instead of sorting
+                    // the struct as a whole. See
+                    // https://github.com/pola-rs/polars/issues/27819.
+                    let by_nodes: Vec<Node> = match expr_arena.get(node) {
+                        AExpr::Function {
+                            input,
+                            function: IRFunctionExpr::AsStruct,
+                            ..
+                        } => input.iter().map(|e| e.node()).collect(),
+                        _ => vec![node],
+                    };
+                    let by = by_nodes
+                        .into_iter()
+                        .map(|n| create_physical_expr_inner(n, expr_arena, schema, state))
+                        .collect::<PolarsResult<Vec<_>>>()?;
+                    PolarsResult::Ok((by, options))
                 })
                 .transpose()?;
 

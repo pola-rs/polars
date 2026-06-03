@@ -183,6 +183,30 @@ def test_nulls_last_over_24989() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_over_multiple_order_by_nulls_last_27819() -> None:
+    # `over(order_by=[...], nulls_last=...)` with MULTIPLE order-by columns must apply
+    # the null placement per order-by column (like `sort_by`), not to the packed struct
+    # as a whole. https://github.com/pola-rs/polars/issues/27819
+    df = pl.DataFrame(
+        {"v": [1, 2, 3, 4], "o1": [None, 2, 1, 2], "o2": [1, None, None, -1]}
+    )
+    col = pl.col("v")
+    order_by = ("o1", "o2")
+
+    result = df.with_columns(
+        nulls_first=col.first().over(order_by=order_by),
+        nulls_last=col.first().over(order_by=order_by, nulls_last=True),
+    )
+    expected = df.with_columns(
+        nulls_first=col.sort_by(order_by).first(),
+        nulls_last=col.sort_by(order_by, nulls_last=True).first(),
+    )
+
+    assert_frame_equal(result, expected)
+    assert result["nulls_first"].to_list() == [1, 1, 1, 1]
+    assert result["nulls_last"].to_list() == [3, 3, 3, 3]
+
+
 def test_over_order_by_descending_nulls_agg_context() -> None:
     df = pl.DataFrame({"g": ["a", "a", "a"], "v": [1, 2, 3], "d": [1, None, 2]})
     expr = pl.col("v").cum_sum().over("g", order_by="d", descending=True)
