@@ -396,6 +396,7 @@ pub trait ChunkUnique {
     /// Get dense ids for each unique value.
     ///
     /// Returns: (n_unique, unique_ids)
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)>;
 }
 

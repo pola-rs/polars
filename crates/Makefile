@@ -109,7 +109,7 @@ doctest:  ## Check that documentation builds
 
 .PHONY: publish
 publish:  ## Publish Polars crates
-	cargo publish --allow-dirty --dry-run -p polars-error \
+	cargo c  -p polars-error \
 	 -p polars-buffer \
 	 -p polars-config \
 	 -p polars-async \
@@ -135,6 +135,33 @@ publish:  ## Publish Polars crates
 	 -p polars-lazy \
 	 -p polars-sql \
 	 -p polars
+
+	cargo publish polars-error 
+	publish polars-buffer
+	publish polars-config
+	publish polars-async
+	publish polars-utils
+	publish polars-schema
+	publish polars-arrow
+	publish polars-compute
+	publish polars-dtype
+	publish polars-row
+	publish polars-json
+	publish polars-core
+	publish polars-ffi
+	publish polars-ops
+	publish polars-testing
+	publish polars-time
+	publish polars-parquet
+	publish polars-io
+	publish polars-ooc
+	publish polars-plan
+	publish polars-expr
+	publish polars-mem-engine
+	publish polars-stream
+	publish polars-lazy
+	publish polars-sql
+	publish polars
 	# This is independent
 	cargo publish --allow-dirty -p polars-python
 
