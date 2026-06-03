@@ -1507,6 +1507,9 @@ def test_filter_contradiction_collapses() -> None:
         pl.LazyFrame({"b": [True, False, True]}).filter(
             pl.col("b") & ~pl.col("b")
         ),  # structural b AND NOT b
+        pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).filter(
+            (pl.col("a") > pl.col("b")) & (pl.col("a") < pl.col("b"))
+        ),  # disjoint comparisons on two columns (a > b AND a < b)
     ]
     for lf in collapsing:
         # The FILTER node is gone from the optimized plan and the result is empty;
@@ -1521,6 +1524,13 @@ def test_filter_contradiction_collapses() -> None:
     lf = a.filter(pl.col("a") >= 1).filter(pl.col("a") >= 3)
     assert "FILTER" in lf.explain()
     assert_frame_equal(lf.collect(), pl.DataFrame({"a": [3]}))
+
+    # `>= AND <=` on the same operands is satisfiable (the equal rows), so it
+    # must not be folded away.
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).filter(
+        (pl.col("a") >= pl.col("b")) & (pl.col("a") <= pl.col("b"))
+    )
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [2], "b": [2]}))
 
 
 def test_filter_contradiction_fallible_error_handling(

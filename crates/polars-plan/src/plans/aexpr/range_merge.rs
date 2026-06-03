@@ -18,9 +18,9 @@ use crate::prelude::ClosedInterval;
 #[derive(Default)]
 struct ColumnConstraints {
     // The bool is whether the bound is inclusive: true for `>=`/`<=`, false for `>`/`<`.
+    // `== x` is stored as an inclusive lower and upper bound, both `x`.
     lower: Option<(Scalar, bool)>,
     upper: Option<(Scalar, bool)>,
-    equality: Option<Scalar>,
     // Once true, stays true.
     unsat: bool,
 }
@@ -64,48 +64,16 @@ impl ColumnConstraints {
         self.check_consistency();
     }
 
-    fn add_equality(&mut self, value: Scalar) {
-        if self.unsat {
-            return;
-        }
-        match self.equality.take() {
-            None => self.equality = Some(value),
-            Some(existing) => match value.as_any_value().partial_cmp(&existing.as_any_value()) {
-                Some(Ordering::Equal) => self.equality = Some(existing),
-                Some(_) => self.unsat = true,
-                // Different types we can't compare; keep the existing value.
-                None => self.equality = Some(existing),
-            },
-        }
-        self.check_consistency();
-    }
-
-    // Marks the column impossible if its bounds now contradict. Run after each add.
+    // Marks the column impossible if the lower bound is now above the upper
+    // bound (an empty range). Run after each add.
     fn check_consistency(&mut self) {
         if self.unsat {
             return;
         }
-        // Lower bound above the upper bound is an empty range.
         if let (Some((lo, lo_inc)), Some((hi, hi_inc))) = (&self.lower, &self.upper) {
             match lo.as_any_value().partial_cmp(&hi.as_any_value()) {
                 Some(Ordering::Greater) => self.unsat = true,
                 Some(Ordering::Equal) if !(*lo_inc && *hi_inc) => self.unsat = true,
-                _ => {},
-            }
-        }
-        // The equal-to value must sit inside the lower bound.
-        if let (Some(eq), Some((lo, lo_inc))) = (&self.equality, &self.lower) {
-            match eq.as_any_value().partial_cmp(&lo.as_any_value()) {
-                Some(Ordering::Less) => self.unsat = true,
-                Some(Ordering::Equal) if !*lo_inc => self.unsat = true,
-                _ => {},
-            }
-        }
-        // The equal-to value must sit inside the upper bound.
-        if let (Some(eq), Some((hi, hi_inc))) = (&self.equality, &self.upper) {
-            match eq.as_any_value().partial_cmp(&hi.as_any_value()) {
-                Some(Ordering::Greater) => self.unsat = true,
-                Some(Ordering::Equal) if !*hi_inc => self.unsat = true,
                 _ => {},
             }
         }
@@ -171,16 +139,19 @@ fn classify_into_constraints(
         } => {
             #[cfg(feature = "is_between")]
             if let IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween { closed }) = function {
-                if input.len() == 3 {
-                    return classify_is_between(
-                        input[0].node(),
-                        input[1].node(),
-                        input[2].node(),
-                        *closed,
-                        expr_arena,
-                        constraints,
-                    );
-                }
+                assert_eq!(
+                    input.len(),
+                    3,
+                    "is_between has 3 inputs: value, lower, upper"
+                );
+                return classify_is_between(
+                    input[0].node(),
+                    input[1].node(),
+                    input[2].node(),
+                    *closed,
+                    expr_arena,
+                    constraints,
+                );
             }
             #[cfg(not(feature = "is_between"))]
             {
@@ -246,7 +217,11 @@ fn classify_comparison(
         Operator::GtEq => cc.add_lower(lit, true),
         Operator::Lt => cc.add_upper(lit, false),
         Operator::LtEq => cc.add_upper(lit, true),
-        Operator::Eq => cc.add_equality(lit),
+        // `== x` is an inclusive lower and upper bound, both `x`.
+        Operator::Eq => {
+            cc.add_lower(lit.clone(), true);
+            cc.add_upper(lit, true);
+        },
         // `!=` would need set math; not handled.
         Operator::NotEq => return false,
         // Null-aware comparisons don't map to a simple range (nulls behave

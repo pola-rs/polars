@@ -59,9 +59,8 @@ pub(super) fn simplify_binary(
                     return Some(AExpr::Literal(Scalar::from(false).into()));
                 }
 
-                // Two opposite comparisons on the same operands are always
-                // false, e.g. `(col > N) AND (col <= N)`. This shows up after an
-                // earlier rewrite turns `NOT(col > N)` into `col <= N`.
+                // Two comparisons on the same operands that can never both hold,
+                // e.g. `(col > N) AND (col <= N)` or `(col > N) AND (col < N)`.
                 if let (
                     AExpr::BinaryExpr {
                         left: l1,
@@ -75,7 +74,7 @@ pub(super) fn simplify_binary(
                     },
                 ) = (left_ae, right_ae)
                 {
-                    if inverse_comparison_op(*op1) == Some(*op2) {
+                    if comparisons_contradict(*op1, *op2) {
                         let l1_ae = expr_arena.get(*l1);
                         let l2_ae = expr_arena.get(*l2);
                         let r1_ae = expr_arena.get(*r1);
@@ -217,20 +216,35 @@ fn is_self_negation(
         && is_safe_to_drop(a, expr_arena, maintain_errors)
 }
 
-// Returns the opposite of a comparison operator: `>`<->`<=`, `<`<->`>=`,
-// `==`<->`!=`. Anything else returns `None`.
-fn inverse_comparison_op(op: Operator) -> Option<Operator> {
+// Bitset positions for the three outcomes of comparing two values.
+const CMP_LT: u8 = 1; // x < y
+const CMP_EQ: u8 = 2; // x == y
+const CMP_GT: u8 = 4; // x > y
+
+// The cases a comparison operator is true in, as a bitset over `<` / `==` / `>`.
+// `None` for non-comparison operators.
+fn comparison_cases(op: Operator) -> Option<u8> {
     use Operator::*;
     Some(match op {
-        Gt => LtEq,
-        LtEq => Gt,
-        Lt => GtEq,
-        GtEq => Lt,
-        Eq => NotEq,
-        NotEq => Eq,
+        Lt => CMP_LT,
+        LtEq => CMP_LT | CMP_EQ,
+        Gt => CMP_GT,
+        GtEq => CMP_GT | CMP_EQ,
+        Eq => CMP_EQ,
+        NotEq => CMP_LT | CMP_GT,
         EqValidity | NotEqValidity | And | Or | Xor | LogicalAnd | LogicalOr | Plus | Minus
         | Multiply | RustDivide | TrueDivide | FloorDivide | Modulus => return None,
     })
+}
+
+// Whether `(x op1 y) AND (x op2 y)` can never both hold: the operators share no
+// case (their true-sets over `<` / `==` / `>` are disjoint). `false` if either
+// is not a comparison.
+fn comparisons_contradict(op1: Operator, op2: Operator) -> bool {
+    match (comparison_cases(op1), comparison_cases(op2)) {
+        (Some(a), Some(b)) => a & b == 0,
+        _ => false,
+    }
 }
 
 // Whether we can drop this expression when collapsing a contradiction to
