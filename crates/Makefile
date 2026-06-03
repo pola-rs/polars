@@ -111,6 +111,7 @@ doctest:  ## Check that documentation builds
 publish:  ## Publish Polars crates
 	cargo publish --allow-dirty --dry-run -p polars-error \
 	 -p polars-buffer \
+	 -p polars-config \
 	 -p polars-utils \
 	 -p polars-schema \
 	 -p polars-arrow \
