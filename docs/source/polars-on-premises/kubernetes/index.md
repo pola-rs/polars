@@ -234,4 +234,4 @@ Resource allocation and cluster topology configuration is under the
 
 If you are interested in deploying one or several clusters without any resource limitations nor data
 sharing, on bare-metal machines or in a Kubernetes setup, and in air-gapped environments, please
-[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
+[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide).
