@@ -56,16 +56,15 @@ from polars._utils.various import (
     _is_generator,
     display_dot_graph,
     extend_bool,
-    find_stacklevel,
     is_bool_sequence,
     is_sequence,
-    issue_warning,
     normalize_filepath,
     parse_percentiles,
     qualified_type_name,
     require_same_type,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
+from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
