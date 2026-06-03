@@ -112,6 +112,7 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty --dry-run -p polars-error \
 	 -p polars-buffer \
 	 -p polars-config \
+	 -p polars-async \
 	 -p polars-utils \
 	 -p polars-schema \
 	 -p polars-arrow \
@@ -126,6 +127,7 @@ publish:  ## Publish Polars crates
 	 -p polars-time \
 	 -p polars-parquet \
 	 -p polars-io \
+	 -p polars-ooc \
 	 -p polars-plan \
 	 -p polars-expr \
 	 -p polars-mem-engine \
