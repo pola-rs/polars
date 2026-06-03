@@ -128,7 +128,7 @@ result = (
     .remote(ctx)
     .execute()
 )
-print(result.head())
+print(result.head)
 ```
 
 The cluster is now ready to execute your own Polars queries. The following sections give more
