@@ -43,9 +43,10 @@ helm repo update
 ```sh
 helm upgrade --install polars polars-inc/polars \
   --set clusterId="My First Cluster" \
-  --set workspaceId=<WORKSPACE ID> \
-  --set clientId=<SERVICE ACCOUNT ID> \
-  --set clientSecret=<SERVICE ACCOUNT SECRET> \
+  --set license.onPrem.enabled=true \
+  --set license.onPrem.workspaceId=<WORKSPACE ID> \
+  --set license.onPrem.clientId=<SERVICE ACCOUNT ID> \
+  --set license.onPrem.clientSecret=<SERVICE ACCOUNT SECRET> \
   --set scheduler.deployment.runtimeContainer.resources.requests.memory=1Gi \
   --set worker.deployment.replicaCount=2 \
   --set worker.deployment.runtimeContainer.resources.requests.memory=4Gi \
