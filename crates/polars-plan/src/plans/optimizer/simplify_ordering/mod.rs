@@ -290,7 +290,7 @@ impl SimplifyIRNodeOrder<'_> {
 
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
-                if !options.maintain_order || out_edge.is_unordered() {
+                if !options.maintain_order || (out_edge.is_unordered() && options.slice.is_none()) {
                     options.maintain_order = false;
                     *out_edge = Edge::Unordered;
                 }

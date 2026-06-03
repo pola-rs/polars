@@ -955,7 +955,7 @@ def _df_many_types() -> pl.DataFrame:
     "expr",
     [
         # Bool (requires deltalake >= 1.5.1)
-        # ~pl.col.bool, ## see github issue #26290
+        ~pl.col.bool,
         pl.col.bool <= False,
         pl.col.bool < True,
         pl.col.bool.is_null(),
