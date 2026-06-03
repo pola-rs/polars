@@ -61,10 +61,10 @@ impl DataFrameIsSorted for DataFrame {
         let mut nls: Vec<bool> = Vec::with_capacity(by.len());
         for (idx, c) in by.iter().enumerate() {
             let col = self.column(c)?.clone();
-            if col.dtype().is_nested() {
+            if should_row_encode_dtype(col.dtype()) {
                 let encoded = _get_rows_encoded_ca(
                     c.clone(),
-                    &[col],
+                    &[col.to_physical_repr()],
                     &[descending[idx]],
                     &[nulls_last[idx]],
                     false,
@@ -82,6 +82,12 @@ impl DataFrameIsSorted for DataFrame {
         let mut scratch_vec_pool = (1..cols.len()).map(|_| ScratchVec::default()).collect_vec();
         is_sorted_cols(&cols, &desc, &nls, &mut scratch_vec_pool)
     }
+}
+
+fn should_row_encode_dtype(dtype: &DataType) -> bool {
+    use DataType::*;
+    !(matches!(dtype, Null | Boolean | String | Binary | BinaryOffset)
+        || dtype.to_physical().is_numeric())
 }
 
 /// Recursively checks whether `cols` are sorted by `(cols[0], cols[1], ...)`.
@@ -102,11 +108,14 @@ fn is_sorted_cols(
     let s = by.as_materialized_series().to_physical_repr().into_owned();
 
     match s.dtype() {
+        DataType::Null => {
+            is_sorted_cols(&by_more, &descending[1..], &nulls_last[1..], scratch_pool)
+        },
         DataType::Boolean => {
             let ca: &BooleanChunked = s.as_ref().as_ref().as_ref();
             is_sorted_ca(ca, by_more, descending, nulls_last, scratch_pool)
         },
-        dt if dt.is_primitive_numeric() => {
+        dt if dt.to_physical().is_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_sorted_ca(ca, by_more, descending, nulls_last, scratch_pool)
@@ -130,11 +139,7 @@ fn is_sorted_cols(
             let ca: &BinaryOffsetChunked = s.as_ref().as_ref().as_ref();
             is_sorted_ca(ca, by_more, descending, nulls_last, scratch_pool)
         },
-        _ => {
-            // TODO: allocates a full boolean series and doesn't propagate ties
-            // to subsequent columns (see SeriesMethods::is_sorted)
-            is_sorted_fallback(by, by_more, descending, nulls_last)
-        },
+        dt => unreachable!("{dt} data should have been row-encoded"),
     }
 }
 
@@ -188,41 +193,4 @@ where
     }
 
     Ok(true)
-}
-
-/// General fallback for dtypes not covered by [`is_sorted_ca`].
-///
-/// Checks that `first` is sorted using adjacent-slice comparison. Does not
-/// propagate tie information to `by_more`.
-///
-/// TODO: allocates a full boolean series and doesn't fail fast
-/// (see [`SeriesMethods::is_sorted`]).
-fn is_sorted_fallback(
-    first: &Column,
-    _by_more: &[Column],
-    descending: &[bool],
-    nulls_last: &[bool],
-) -> PolarsResult<bool> {
-    let s = first.as_materialized_series();
-    let options = SortOptions {
-        descending: descending[0],
-        nulls_last: nulls_last[0],
-        multithreaded: true,
-        maintain_order: false,
-        limit: None,
-    };
-
-    // Fast path via sorted flag.
-    let null_count = s.null_count();
-    if (options.descending
-        && (options.nulls_last || null_count == 0)
-        && matches!(s.is_sorted_flag(), IsSorted::Descending))
-        || (!options.descending
-            && (!options.nulls_last || null_count == 0)
-            && matches!(s.is_sorted_flag(), IsSorted::Ascending))
-    {
-        return Ok(true);
-    }
-
-    SeriesMethods::is_sorted(s, options)
 }
