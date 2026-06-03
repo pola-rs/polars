@@ -1,8 +1,8 @@
 # License
 
 Polars On-Prem requires a license key to run. If you haven't contacted Polars yet,
-[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv). A license key looks like
-this:
+[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide).
+A license key looks like this:
 
 ```json
 { "params": { "expiry": "2026-01-31T23:59:59Z", "name": "Company" }, "signature": "..." }

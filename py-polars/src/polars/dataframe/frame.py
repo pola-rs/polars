@@ -2486,6 +2486,8 @@ class DataFrame:
             ).cast(to_dtype)  # type: ignore[arg-type]
             frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
+            label_frame = None
+            features_frame = None
             frame = (self.select(features) if features is not None else self).cast(
                 to_dtype  # type: ignore[arg-type]
             )
@@ -2498,7 +2500,7 @@ class DataFrame:
             return torch.from_numpy(arr)
 
         elif return_type == "dict":
-            if label is not None:
+            if label_frame is not None and features_frame is not None:
                 # return a {"label": tensor(s), "features": tensor(s)} dict
                 return {
                     "label": label_frame.to_torch(),
@@ -2512,7 +2514,7 @@ class DataFrame:
             # return a torch Dataset object
             from polars.ml.torch import PolarsDataset
 
-            pds_label = None if label is None else label_frame.columns
+            pds_label = None if label_frame is None else label_frame.columns
             return PolarsDataset(frame, label=pds_label, features=features)
         else:
             valid_torch_types = ", ".join(get_args(TorchExportType))
