@@ -55,6 +55,17 @@ static UTF8_VIEW_TYPE: ArrowDataType = ArrowDataType::Utf8View;
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
+/// Per the Arrow variable-size binary view spec, every view's `offset + length`
+/// must fit in a signed `i32`, so each shared data buffer must stay within
+/// `MAX_BUFFER_LEN`. Rows whose own length exceeds this cap are placed into a
+/// dedicated buffer with `offset = 0`, allowing polars to internally support
+/// rows up to [`MAX_ROW_BYTE_LEN`] without breaking spec interop.
+pub(crate) const MAX_BUFFER_LEN: usize = i32::MAX as usize;
+
+/// Per-row length cap. `u32::MAX` itself is reserved (cannot be a valid length),
+/// so the largest representable row is `u32::MAX - 1` bytes.
+pub(crate) const MAX_ROW_BYTE_LEN: usize = (u32::MAX - 1) as usize;
+
 pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
     const IS_UTF8: bool;
     const DATA_TYPE: ArrowDataType;

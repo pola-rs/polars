@@ -67,24 +67,29 @@ pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -
     )
 }
 
-// Different types to test the overflow path.
+// View offsets must fit in `OffsetType` (signed). Rows above that get a
+// dedicated buffer slice at offset 0; rows above `MAX_ROW_LEN` are rejected.
+// Tests shrink both bounds so the cold paths are exercised without GBs of
+// input.
 #[cfg(not(test))]
-type OffsetType = u32;
-
-// To trigger overflow
+type OffsetType = i32;
+#[cfg(not(test))]
+const MAX_ROW_LEN: usize = (u32::MAX - 1) as usize;
 #[cfg(test)]
 type OffsetType = i8;
+#[cfg(test)]
+const MAX_ROW_LEN: usize = (OffsetType::MAX as usize) * 4;
 
-// If we don't do this the GC of binview will trigger. As we will split up buffers into multiple
-// chunks so that we don't overflow the offset u32.
+// Buffers point at slices of the shared underlying allocation; cap each slice
+// at `OffsetType::MAX` so the spec's signed offset limit is never exceeded.
 fn truncate_buffer(buf: &Buffer<u8>) -> Buffer<u8> {
-    // * 2, as it must be able to hold u32::MAX offset + u32::MAX len.
-    let len = std::cmp::min(buf.len(), ((OffsetType::MAX as u64) * 2) as usize);
+    let len = std::cmp::min(buf.len(), OffsetType::MAX as usize);
     buf.clone().sliced(..len)
 }
 
 pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
-    // Ensure we didn't accidentally set wrong type
+    // Defensive: catch accidental changes to `OffsetType` size at release-time.
+    // Skipped in debug (where cfg(test) makes OffsetType = i8).
     #[cfg(not(debug_assertions))]
     let _ = std::mem::transmute::<OffsetType, u32>;
 
@@ -92,21 +97,17 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
     let mut uses_buffer = false;
 
     let mut base_buffer = arr.values().clone();
-    // Offset into the buffer
     let mut base_ptr = base_buffer.as_ptr() as usize;
-
-    // Offset into the binview buffers
     let mut buffer_idx = 0_u32;
 
-    // Binview buffers
-    // Note that the buffer may look far further than u32::MAX, but as we don't clone data
     let mut buffers = vec![truncate_buffer(&base_buffer)];
 
     for bytes in arr.values_iter() {
-        let len: u32 = bytes
-            .len()
-            .try_into()
-            .expect("max string/binary length exceeded");
+        assert!(
+            bytes.len() <= MAX_ROW_LEN,
+            "binary view row length exceeds MAX_ROW_LEN"
+        );
+        let len: u32 = bytes.len() as u32;
 
         let mut payload = [0; 16];
         payload[0..4].copy_from_slice(&len.to_le_bytes());
@@ -123,26 +124,44 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
             let current_bytes_ptr = bytes.as_ptr() as usize;
             let offset = current_bytes_ptr - base_ptr;
 
-            // Here we check the overflow of the buffer offset.
-            if let Ok(offset) = OffsetType::try_from(offset) {
-                #[allow(clippy::unnecessary_cast)]
+            let is_oversize_row = bytes.len() > OffsetType::MAX as usize;
+            let end = offset + bytes.len();
+            let offsets_fit = !is_oversize_row && OffsetType::try_from(end).is_ok();
+
+            if offsets_fit {
                 let offset = offset as u32;
                 payload[12..16].copy_from_slice(&offset.to_le_bytes());
                 payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
             } else {
-                let len = base_buffer.len() - offset;
-
-                // Set new buffer
-                base_buffer = base_buffer.clone().sliced(offset..offset + len);
+                std::hint::cold_path();
+                // Re-anchor the base buffer at this row's start.
+                let remaining = base_buffer.len() - offset;
+                base_buffer = base_buffer.clone().sliced(offset..offset + remaining);
                 base_ptr = base_buffer.as_ptr() as usize;
 
-                // And add the (truncated) one to the buffers
-                buffers.push(truncate_buffer(&base_buffer));
-                buffer_idx = buffer_idx.checked_add(1).expect("max buffers exceeded");
+                if is_oversize_row {
+                    std::hint::cold_path();
+                    // Dedicated, exactly-sized slice for this row.
+                    let oversize_slice = base_buffer.clone().sliced(0..bytes.len());
+                    buffers.push(oversize_slice);
+                    buffer_idx = buffer_idx.checked_add(1).expect("max buffers exceeded");
 
-                let offset = 0u32;
-                payload[12..16].copy_from_slice(&offset.to_le_bytes());
-                payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
+                    payload[12..16].copy_from_slice(&0u32.to_le_bytes());
+                    payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
+
+                    // Start a fresh shared slice for any following rows.
+                    let after = base_buffer.clone().sliced(bytes.len()..remaining);
+                    base_buffer = after;
+                    base_ptr = base_buffer.as_ptr() as usize;
+                    buffers.push(truncate_buffer(&base_buffer));
+                    buffer_idx = buffer_idx.checked_add(1).expect("max buffers exceeded");
+                } else {
+                    buffers.push(truncate_buffer(&base_buffer));
+                    buffer_idx = buffer_idx.checked_add(1).expect("max buffers exceeded");
+
+                    payload[12..16].copy_from_slice(&0u32.to_le_bytes());
+                    payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
+                }
             }
         }
 
@@ -191,10 +210,41 @@ mod test {
         let array = Utf8Array::<i64>::from_slice(values);
 
         let out = utf8_to_utf8view(&array);
-        // Ensure we hit the multiple buffers part.
-        assert_eq!(out.data_buffers().len(), 4);
+        // Under cfg(test) `OffsetType` is `i8` (cap 127), so two consecutive
+        // 74-byte rows already overflow one shared slice and force a rotation,
+        // giving one buffer per non-inline row (8 in total).
+        assert_eq!(out.data_buffers().len(), 8);
         // Ensure we created a valid binview
         let out = out.values_iter().collect::<Vec<_>>();
         assert_eq!(out, values);
+    }
+
+    /// Rows whose own length exceeds `OffsetType::MAX` get a dedicated
+    /// buffer slice where the view's offset is `0`, even though the buffer
+    /// itself is bigger than the spec offset cap. This preserves polars'
+    /// internal capability of representing rows up to `MAX_ROW_LEN` bytes.
+    #[test]
+    fn oversize_row_gets_dedicated_buffer() {
+        // Under cfg(test), `OffsetType = i8` (max 127), so any row > 127
+        // bytes is oversize.
+        let oversize: String = "x".repeat(200);
+        let inline = "abc";
+        let normal = "y".repeat(50);
+        let values = [inline, oversize.as_str(), inline, normal.as_str()];
+        let array = Utf8Array::<i64>::from_slice(values);
+
+        let out = utf8_to_utf8view(&array);
+        let out_vals: Vec<&str> = out.values_iter().collect();
+        assert_eq!(out_vals, values);
+
+        // The oversize row references a buffer of its own at offset 0.
+        let oversize_view = out
+            .views()
+            .iter()
+            .find(|v| v.length as usize == oversize.len())
+            .expect("oversize view present");
+        assert_eq!(oversize_view.offset, 0);
+        let oversize_buf = &out.data_buffers()[oversize_view.buffer_idx as usize];
+        assert_eq!(oversize_buf.len(), oversize.len());
     }
 }

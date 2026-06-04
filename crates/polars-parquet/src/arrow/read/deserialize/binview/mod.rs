@@ -351,13 +351,21 @@ pub fn decode_plain_generic(
     //    - UTF-8 verification might still use len_below_128 trick, but might need to fall back to
     //      slow path.
 
+    // Each shared buffer keeps every view's `offset + length` within
+    // `MAX_BUF_SIZE`. Rows longer than that get a dedicated buffer at
+    // offset 0; pages that would otherwise overflow `i32::MAX` rotate to a
+    // fresh shared buffer mid-page rather than failing.
+    const MAX_BUF_SIZE: usize = i32::MAX as usize;
+
     target.finish_in_progress();
     unsafe { target.views_mut() }.reserve(num_rows);
 
     let start_target_length = target.len();
 
-    let buffer_idx = target.completed_buffers().len() as u32;
-    let mut buffer = Vec::with_capacity(values.len() + 1);
+    let mut buffer_idx = target.completed_buffers().len() as u32;
+    let mut buffer = Vec::with_capacity((values.len() + 1).min(MAX_BUF_SIZE));
+    // Buffers rotated through during this page, flushed after the main loop.
+    let mut extra_buffers: Vec<Vec<u8>> = Vec::new();
     let mut none_starting_with_continuation_byte = true; // Whether the transition from between strings is valid
     // UTF-8
     let mut all_len_below_128 = true; // Whether all the lengths of the values are below 128, this
@@ -400,12 +408,37 @@ pub fn decode_plain_generic(
             continue;
         }
 
-        let offset = buffer.len() as u32;
-
         if value.len() <= View::MAX_INLINE_SIZE as usize {
             unsafe { target.views_mut() }.push(unsafe { View::new_inline_unchecked(value) });
             num_inlined += 1;
+        } else if value.len() > MAX_BUF_SIZE {
+            std::hint::cold_path();
+            // Oversize row: dedicated buffer at offset 0. Flush whatever is
+            // in the active buffer first so its index stays correct.
+            if !buffer.is_empty() {
+                let prev = std::mem::replace(
+                    &mut buffer,
+                    Vec::with_capacity(mvalues.len().min(MAX_BUF_SIZE)),
+                );
+                extra_buffers.push(prev);
+                buffer_idx += 1;
+            }
+            extra_buffers.push(value.to_vec());
+            unsafe { target.views_mut() }
+                .push(unsafe { View::new_noninline_unchecked(value, buffer_idx, 0) });
+            buffer_idx += 1;
         } else {
+            if buffer.len() + value.len() > MAX_BUF_SIZE {
+                std::hint::cold_path();
+                // Active shared buffer would overflow `i32::MAX`; rotate.
+                let prev = std::mem::replace(
+                    &mut buffer,
+                    Vec::with_capacity(mvalues.len().min(MAX_BUF_SIZE)),
+                );
+                extra_buffers.push(prev);
+                buffer_idx += 1;
+            }
+            let offset = buffer.len() as u32;
             buffer.extend_from_slice(value);
             unsafe { target.views_mut() }
                 .push(unsafe { View::new_noninline_unchecked(value, buffer_idx, offset) });
@@ -423,9 +456,17 @@ pub fn decode_plain_generic(
         // UTF-8 verification.
         //
         // This is allowed if none of the strings start with a UTF-8 continuation byte, so we keep
-        // track of that during the decoding.
+        // track of that during the decoding. Each rotated `extra_buffers`
+        // entry has the same property and is verified independently.
+        let extra_buffers_valid_utf8 = || {
+            extra_buffers
+                .iter()
+                .all(|b| simdutf8::basic::from_utf8(b).is_ok())
+        };
         if num_inlined == 0 {
-            if !none_starting_with_continuation_byte || simdutf8::basic::from_utf8(&buffer).is_err()
+            if !none_starting_with_continuation_byte
+                || simdutf8::basic::from_utf8(&buffer).is_err()
+                || !extra_buffers_valid_utf8()
             {
                 return Err(invalid_utf8_err());
             }
@@ -443,7 +484,9 @@ pub fn decode_plain_generic(
             }
         } else {
             // We check all the non-inlined values here.
-            if !none_starting_with_continuation_byte || simdutf8::basic::from_utf8(&buffer).is_err()
+            if !none_starting_with_continuation_byte
+                || simdutf8::basic::from_utf8(&buffer).is_err()
+                || !extra_buffers_valid_utf8()
             {
                 return Err(invalid_utf8_err());
             }
@@ -475,6 +518,9 @@ pub fn decode_plain_generic(
         }
     }
 
+    for extra in extra_buffers {
+        target.push_buffer(extra.into());
+    }
     target.push_buffer(buffer.into());
 
     Ok(())

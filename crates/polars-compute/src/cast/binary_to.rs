@@ -209,9 +209,16 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
             .unwrap();
     }
 
-    const MAX_BYTES_PER_BUFFER: usize = u32::MAX as usize;
+    // Per Arrow spec, view `offset + length` must fit in i32 (signed). Rows
+    // (fixed-size elements) larger than this cap cannot share a buffer with
+    // anything else; route them to the dedicated-buffer slow path.
+    const MAX_BYTES_PER_BUFFER: usize = i32::MAX as usize;
 
     let size = from.size();
+    if size > MAX_BYTES_PER_BUFFER {
+        return fixed_size_binary_to_binview_oversize(from, datatype);
+    }
+
     let num_bytes = from.len() * size;
     let num_buffers = num_bytes.div_ceil(MAX_BYTES_PER_BUFFER);
     assert!(num_buffers < u32::MAX as usize);
@@ -251,6 +258,35 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
     let views = views.into();
 
     BinaryViewArray::try_new(datatype, views, buffers.into(), from.validity().cloned()).unwrap()
+}
+
+/// Slow path: every fixed-size element is itself larger than `i32::MAX`, so
+/// each must occupy its own buffer with `offset = 0`.
+#[cold]
+fn fixed_size_binary_to_binview_oversize(
+    from: &FixedSizeBinaryArray,
+    datatype: ArrowDataType,
+) -> BinaryViewArray {
+    assert!(from.len() < u32::MAX as usize);
+    let size = from.size();
+    let mut buffer = from.values().clone();
+    let mut buffers = Vec::with_capacity(from.len());
+    let mut views = Vec::with_capacity(from.len());
+    for buffer_idx in 0..from.len() {
+        let slice;
+        (slice, buffer) = buffer.split_at(size);
+        // SAFETY: size > i32::MAX > View::MAX_INLINE_SIZE so the view is non-inline.
+        let view = unsafe { View::new_noninline_unchecked(slice.as_ref(), buffer_idx as u32, 0) };
+        views.push(view);
+        buffers.push(slice);
+    }
+    BinaryViewArray::try_new(
+        datatype,
+        views.into(),
+        buffers.into(),
+        from.validity().cloned(),
+    )
+    .unwrap()
 }
 
 /// Conversion of binary
