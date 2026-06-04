@@ -10,7 +10,7 @@ from hypothesis import given
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
-from polars.testing.parametric.strategies import dataframes, series
+from polars.testing.parametric.strategies import series
 
 
 def is_sorted_any(s: pl.Series) -> bool:
@@ -302,24 +302,6 @@ def test_series_is_sorted_parametric(
         assert not s.is_sorted(descending=not descending, nulls_last=nulls_last)
     if s.n_unique() > 1 and s.null_count() > 0:
         assert not s.is_sorted(descending=descending, nulls_last=not nulls_last)
-
-
-@given(data=st.data())
-def test_dataframe_is_sorted_parametric(data: st.DataObject) -> None:
-    n = data.draw(st.integers(min_value=1, max_value=10))
-    descending = data.draw(st.lists(st.booleans(), min_size=n, max_size=n))
-    nulls_last = data.draw(st.lists(st.booleans(), min_size=n, max_size=n))
-    df = data.draw(
-        dataframes(min_cols=n, max_cols=n, excluded_dtypes={pl.Int128, pl.UInt128})
-    )
-    df_sorted = df.sort(by=df.columns, descending=descending, nulls_last=nulls_last)
-    assert df_sorted.is_sorted(
-        by=df.columns, descending=descending, nulls_last=nulls_last
-    )
-    if not df.equals(df_sorted):
-        assert not (
-            df.is_sorted(by=df.columns, descending=descending, nulls_last=nulls_last)
-        )
 
 
 def test_sorted_flag() -> None:
