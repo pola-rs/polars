@@ -599,6 +599,7 @@ mod ext_store_tests {
     async fn test_storage_options_passed_to_builder() {
         use crate::cloud::{CloudConfig, CloudOptions};
 
+        #[allow(clippy::type_complexity)]
         struct CapturingBuilder {
             received_options: Arc<std::sync::Mutex<Option<Vec<(String, String)>>>>,
             store: Arc<dyn ObjectStore + Send + Sync>,
