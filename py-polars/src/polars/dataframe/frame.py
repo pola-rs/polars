@@ -10217,6 +10217,7 @@ class DataFrame:
             .collect(optimizations=QueryOptFlags._eager())
         )
 
+    @unstable()
     def is_sorted(
         self,
         by: str | Iterable[str],
