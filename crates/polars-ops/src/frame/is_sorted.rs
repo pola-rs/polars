@@ -53,6 +53,17 @@ impl DataFrameIsSorted for DataFrame {
             );
         }
 
+        if std::env::var("AMBER_DF_IS_SORTED").unwrap() == "row-encode" {
+            let by_vec = by
+                .iter()
+                .map(|name| self.column(name).cloned())
+                .try_collect_vec()?;
+            let row_encoded =
+                _get_rows_encoded_ca(PlSmallStr::EMPTY, &by_vec, descending, nulls_last, false)?;
+            let s = Series::new(PlSmallStr::EMPTY, row_encoded);
+            return SeriesMethods::is_sorted(&s, SortOptions::new());
+        }
+
         let mut cols: Vec<Column> = Vec::with_capacity(by.len());
         let mut desc: Vec<bool> = Vec::with_capacity(by.len());
         let mut nls: Vec<bool> = Vec::with_capacity(by.len());
