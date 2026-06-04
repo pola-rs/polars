@@ -383,15 +383,18 @@ impl DslPlan {
             fn transform(&mut self, schema: &mut Schema) {
                 // Remove descriptions auto-generated from doc comments
                 schema.remove("description");
-
                 transform_subschemas(self, schema);
             }
         }
 
+        // Wrapper so we get DslPlan in the $defs.
+        #[derive(schemars::JsonSchema)]
+        struct DslPlanWrapper(DslPlan);
+
         let mut schema = SchemaSettings::default()
             .with_transform(MyTransform)
             .into_generator()
-            .into_root_schema_for::<DslPlan>();
+            .into_root_schema_for::<DslPlanWrapper>();
 
         // Add the DSL schema hash as a top level field
         schema.insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());
