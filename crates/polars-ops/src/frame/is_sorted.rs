@@ -33,7 +33,7 @@ impl DataFrameIsSorted for DataFrame {
         descending: &[bool],
         nulls_last: &[bool],
     ) -> PolarsResult<bool> {
-        if by.len() == 0 {
+        if by.is_empty() {
             polars_bail!(InvalidOperation: "by must specify at least one column");
         }
         if descending.len() != by.len() {
@@ -43,7 +43,7 @@ impl DataFrameIsSorted for DataFrame {
             polars_bail!(InvalidOperation: "nulls_last must be of same length as by");
         }
 
-        if let &[ref single_by] = by {
+        if let [single_by] = by {
             let col = self.column(single_by)?;
             return SeriesMethods::is_sorted(
                 col.as_materialized_series(),
