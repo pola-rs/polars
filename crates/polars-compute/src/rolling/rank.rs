@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use polars_utils::IdxSize;
 use polars_utils::order_statistic_tree::OrderStatisticTree;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use super::*;
 
@@ -83,7 +83,7 @@ impl<T: NativeType> RankPolicy<T, IdxSize> for RankPolicyRandom {
         };
         let rng = match seed {
             Some(s) => SmallRng::seed_from_u64(*s),
-            None => SmallRng::from_os_rng(),
+            None => rand::make_rng(),
         };
         Self { rng }
     }
