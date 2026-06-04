@@ -36,7 +36,6 @@ if TYPE_CHECKING:
     from polars import DataFrame, Schema, Series
     from polars._typing import (
         ColumnFormatDict,
-        ColumnNameOrSelector,
         ColumnTotalsDefinition,
         ConditionalFormatDict,
         OneOrMoreDataTypes,
@@ -443,20 +442,16 @@ def _xl_setup_table_columns(
     }
 
     # normalise formats
-    _column_formats: dict[
-        ColumnNameOrSelector | tuple[ColumnNameOrSelector, ...],
-        str | Mapping[str, str] | Format,
-    ]
-    _column_formats = dict(column_formats or {})
-    _dtype_formats: dict[OneOrMoreDataTypes, str] = dict(dtype_formats or {})
+    column_formats = dict(column_formats or {})
+    dtype_formats = dict(dtype_formats or {})
 
-    for tp in list(_dtype_formats):
+    for tp in list(dtype_formats):
         if isinstance(tp, (tuple, frozenset)):
             updates: dict[OneOrMoreDataTypes, str] = dict.fromkeys(
-                tp, _dtype_formats.pop(tp)
+                tp, dtype_formats.pop(tp)
             )
-            _dtype_formats.update(updates)
-    for fmt in _dtype_formats.values():
+            dtype_formats.update(updates)
+    for fmt in dtype_formats.values():
         if not isinstance(fmt, str):
             msg = f"invalid dtype_format value: {fmt!r} (expected format string, got {qualified_type_name(fmt)!r})"
             raise TypeError(msg)
@@ -489,23 +484,23 @@ def _xl_setup_table_columns(
 
     # assign default dtype formats
     for tp, fmt in _XL_DEFAULT_DTYPE_FORMATS_.items():
-        _dtype_formats.setdefault(tp, fmt)
+        dtype_formats.setdefault(tp, fmt)
     for tp in FLOAT_DTYPES:
-        _dtype_formats.setdefault(tp, fmt_float)
+        dtype_formats.setdefault(tp, fmt_float)
 
     # associate formats/functions with specific columns
     for col, tp in df.schema.items():
         base_type = tp.base_type()
-        if base_type in _dtype_formats:
-            fmt = _dtype_formats.get(tp, _dtype_formats[base_type])
-            _column_formats.setdefault(col, fmt)
-        if col not in _column_formats:
-            _column_formats[col] = fmt_default
+        if base_type in dtype_formats:
+            fmt = dtype_formats.get(tp, dtype_formats[base_type])
+            column_formats.setdefault(col, fmt)
+        if col not in column_formats:
+            column_formats[col] = fmt_default
 
     # ensure externally supplied formats are made available
-    for col, fmt in _column_formats.items():  # type: ignore[assignment]
+    for col, fmt in column_formats.items():  # type: ignore[assignment]
         if isinstance(fmt, str):
-            _column_formats[col] = format_cache.get(
+            column_formats[col] = format_cache.get(
                 {"num_format": fmt, "valign": "vcenter"}
             )
         elif isinstance(fmt, dict):
@@ -513,11 +508,11 @@ def _xl_setup_table_columns(
                 # Argument `Selector | str | tuple[ColumnNameOrSelector, ...]`
                 # is not assignable to parameter `key` with type `str`
                 tp = df.schema.get(col)  # pyrefly: ignore[bad-argument-type]
-                if tp in _dtype_formats:
-                    fmt["num_format"] = _dtype_formats[tp]
+                if tp in dtype_formats:
+                    fmt["num_format"] = dtype_formats[tp]
             if "valign" not in fmt:
                 fmt["valign"] = "vcenter"
-            _column_formats[col] = format_cache.get(fmt)
+            column_formats[col] = format_cache.get(fmt)
 
     # optional custom header format
     col_header_format = format_cache.get(header_format) if header_format else None
@@ -528,7 +523,7 @@ def _xl_setup_table_columns(
             k: v
             for k, v in {
                 "header": col,
-                "format": _column_formats[col],
+                "format": column_formats[col],
                 "header_format": col_header_format,
                 "total_function": column_total_funcs.get(col),
                 "formula": (
@@ -540,7 +535,7 @@ def _xl_setup_table_columns(
         }
         for col in df.columns
     ]
-    return table_columns, _column_formats, df  # type: ignore[return-value]
+    return table_columns, column_formats, df  # type: ignore[return-value]
 
 
 def _xl_setup_table_options(
