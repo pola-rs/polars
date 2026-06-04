@@ -5,7 +5,7 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::{
-    parquet::bloom_filter::{might_contain_any_scalar_bytes, might_contain_scalar_bytes},
+    parquet::bloom_filter::{hash_parquet_scalar, might_contain_any_hashes},
     read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr},
 };
 use polars_utils::format_pl_smallstr;
@@ -119,36 +119,27 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     }
 }
 
-/// Whether `scalar` might be present in a Parquet split-block bloom filter.
+/// Bloom hashes for equality literals, computed once per scan predicate column.
+///
+/// Returns `None` if any scalar cannot be hashed (caller should treat as inconclusive).
 #[cfg(feature = "parquet")]
-pub fn scalar_might_be_in_bloom_filter_bytes(
-    scalar: &Scalar,
-    bloom_bytes: &[u8],
-    bitset: &mut Vec<u8>,
-) -> polars_error::PolarsResult<bool> {
-    let Some(parquet_scalar) = cast_to_parquet_scalar(scalar.clone()) else {
-        return Ok(true);
-    };
-    might_contain_scalar_bytes(bloom_bytes, &parquet_scalar, bitset).map_err(|e| e.into())
+pub fn bloom_hashes_for_scalars(scalars: &[Scalar]) -> Option<Box<[u64]>> {
+    let mut hashes = Vec::with_capacity(scalars.len());
+    for scalar in scalars {
+        let parquet_scalar = cast_to_parquet_scalar(scalar.clone())?;
+        hashes.push(hash_parquet_scalar(&parquet_scalar)?);
+    }
+    Some(hashes.into_boxed_slice())
 }
 
-/// Whether any of `scalars` might be present in a Parquet split-block bloom filter.
-///
-/// Parses `bloom_bytes` once, then probes each scalar.
+/// Whether any precomputed bloom hash might be present in a Parquet split-block bloom filter.
 #[cfg(feature = "parquet")]
-pub fn any_scalar_might_be_in_bloom_filter_bytes(
-    scalars: &[Scalar],
+pub fn any_hashes_might_be_in_bloom_filter_bytes(
+    hashes: &[u64],
     bloom_bytes: &[u8],
     bitset: &mut Vec<u8>,
 ) -> polars_error::PolarsResult<bool> {
-    let mut parquet_scalars = Vec::with_capacity(scalars.len());
-    for scalar in scalars {
-        let Some(parquet_scalar) = cast_to_parquet_scalar(scalar.clone()) else {
-            return Ok(true);
-        };
-        parquet_scalars.push(parquet_scalar);
-    }
-    might_contain_any_scalar_bytes(bloom_bytes, &parquet_scalars, bitset).map_err(|e| e.into())
+    might_contain_any_hashes(bloom_bytes, hashes, bitset).map_err(|e| e.into())
 }
 
 #[cfg(feature = "parquet")]

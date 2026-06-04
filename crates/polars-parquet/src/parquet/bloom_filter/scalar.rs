@@ -11,7 +11,8 @@ fn hash_bytes(bytes: &[u8]) -> u64 {
     xxh64(bytes, SEED)
 }
 
-fn hash_parquet_scalar(scalar: &ParquetScalar) -> Option<u64> {
+/// Hash a value for split-block bloom filter membership tests.
+pub fn hash_parquet_scalar(scalar: &ParquetScalar) -> Option<u64> {
     use ParquetScalar as S;
     match scalar {
         S::Null => None,
@@ -31,37 +32,22 @@ fn hash_parquet_scalar(scalar: &ParquetScalar) -> Option<u64> {
     }
 }
 
-/// Returns whether `scalar` might be present in a bloom filter given its serialized bytes.
+/// Returns whether any precomputed bloom hash might be present in a bloom filter.
 ///
-/// `true` means the value **may** be present (or the probe is inconclusive); `false` means it is
-/// **definitely not** present. Bloom filters only support safe skipping on `false`.
-pub fn might_contain_scalar_bytes(
+/// `true` means a value **may** be present (or the probe is inconclusive); `false` means all
+/// hashes are **definitely not** present. Bloom filters only support safe skipping on `false`.
+pub fn might_contain_any_hashes(
     bytes: &[u8],
-    scalar: &ParquetScalar,
+    hashes: &[u64],
     bitset: &mut Vec<u8>,
 ) -> ParquetResult<bool> {
     read_from_bytes(bytes, bitset)?;
-    Ok(scalar_might_be_in_prepared_bitset(scalar, bitset))
+    Ok(any_hash_might_be_in_prepared_bitset(hashes, bitset))
 }
 
-/// Like [`might_contain_scalar_bytes`], but parses `bytes` once and probes every scalar.
-pub fn might_contain_any_scalar_bytes(
-    bytes: &[u8],
-    scalars: &[ParquetScalar],
-    bitset: &mut Vec<u8>,
-) -> ParquetResult<bool> {
-    read_from_bytes(bytes, bitset)?;
-    Ok(scalars
-        .iter()
-        .any(|scalar| scalar_might_be_in_prepared_bitset(scalar, bitset)))
-}
-
-fn scalar_might_be_in_prepared_bitset(scalar: &ParquetScalar, bitset: &[u8]) -> bool {
-    let Some(hash) = hash_parquet_scalar(scalar) else {
-        return true;
-    };
+fn any_hash_might_be_in_prepared_bitset(hashes: &[u64], bitset: &[u8]) -> bool {
     if bitset.is_empty() {
         return true;
     }
-    is_in_set(bitset, hash)
+    hashes.iter().any(|&hash| is_in_set(bitset, hash))
 }
