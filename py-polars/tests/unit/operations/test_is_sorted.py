@@ -296,7 +296,7 @@ def test_series_is_sorted_parametric(
     s: pl.Series, descending: bool, nulls_last: bool
 ) -> None:
     s = s.sort(descending=descending, nulls_last=nulls_last)
-    s = pl.Series(s.to_list())  # Remove the sorted flags
+    s = pl.Series(s.to_list(), dtype=s.dtype)  # Remove the sorted flags
     assert s.is_sorted(descending=descending, nulls_last=nulls_last)
     if s.drop_nulls().n_unique() > 1:
         assert not s.is_sorted(descending=not descending, nulls_last=nulls_last)
