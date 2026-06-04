@@ -12,6 +12,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
+use std::time::Instant;
 
 pub use global_alloc::{Allocator, estimate_memory_usage};
 pub use memory_manager::memory_manager;
@@ -24,6 +25,8 @@ pub use spill_context::{
 };
 pub use spill_frame::SpillFrame;
 
+use crate::spill_context::SpillContextStatistics;
+
 // SpillTokenInner's state
 const SPILLED_BIT: u64 = 1; // Set when value = None and spilled is Some.
 const DROPPED_BIT: u64 = 2; // Set when the token owner has dropped. Forbids creation of new pins / lock.
@@ -32,13 +35,22 @@ const HAS_WAITERS_BIT: u64 = 8; // Only updated while holding waiters lock.
 const RO_PIN_COUNT_UNIT: u64 = 16; // Added to the state for each active pin.
 const RO_PIN_MASK: u64 = u64::MAX << 4;
 
+enum ValueSlot<T> {
+    InMemory(T),
+    Spilled {
+        n_bytes: usize,
+        ctx_stats: Arc<SpillContextStatistics>,
+    },
+    Dropped,
+}
+
 struct SpillTokenInner<T: Spillable> {
     // May be read if holding LOCK_BIT or a pin, may be written while holding
     // LOCK_BIT and no pins exist.
-    value: UnsafeCell<Option<T>>,
+    value_slot: UnsafeCell<ValueSlot<T>>,
 
     // May be read+written while holding LOCK_BIT (irrespective of pins).
-    spilled: UnsafeCell<Option<T::Spilled>>,
+    spilled_value: UnsafeCell<Option<T::Spilled>>,
 
     // Lock should not be held for long, only used to register/wake waiters.
     waiters: Mutex<UnitVec<Waker>>,
@@ -192,9 +204,15 @@ impl<T: Spillable> SpillTokenInner<T> {
                 slf.wake_waiters(slf.state.fetch_and(!LOCK_BIT, Ordering::AcqRel));
             });
             // TODO: re-register unspilled frame?
-            let spilled = (*self.spilled.get()).as_ref().unwrap();
+            let unspill_start = Instant::now();
+            let spilled = (*self.spilled_value.get()).as_ref().unwrap();
             let value = T::unspill(spilled).await;
-            self.value.get().write(Some(value));
+            let ValueSlot::Spilled { n_bytes, ctx_stats } =
+                self.value_slot.get().replace(ValueSlot::InMemory(value))
+            else {
+                unreachable!()
+            };
+            ctx_stats.add_unspill(n_bytes, unspill_start);
 
             WithDrop::dismiss(lock_guard);
             self.wake_waiters(
@@ -222,16 +240,19 @@ impl<T: Spillable> SpillTokenInner<T> {
                 slf.wake_waiters(slf.state.fetch_and(!LOCK_BIT, Ordering::AcqRel));
             });
 
-            let value = &mut *self.value.get();
-            if value.is_none() {
+            let value_slot = &mut *self.value_slot.get();
+            if let ValueSlot::Spilled { n_bytes, ctx_stats } = value_slot {
                 debug_assert!(self.state.load(Ordering::Relaxed) & SPILLED_BIT == SPILLED_BIT);
                 // TODO: re-register unspilled frame?
-                let spilled = (*self.spilled.get()).take().unwrap();
-                *value = Some(T::unspill(&spilled).await);
+                let unspill_start = Instant::now();
+                let spilled = (*self.spilled_value.get()).take().unwrap();
+                let value = T::unspill(&spilled).await;
+                ctx_stats.add_unspill(*n_bytes, unspill_start);
+                *value_slot = ValueSlot::InMemory(value);
                 self.state.fetch_sub(SPILLED_BIT, Ordering::Relaxed);
             } else {
                 // We are about to mutate, making our current spill invalid.
-                *self.spilled.get() = None;
+                *self.spilled_value.get() = None;
             }
 
             WithDrop::dismiss(lock_guard);
@@ -264,8 +285,8 @@ impl<T: Spillable> SpillTokenInner<T> {
             // allowing us to clean up here.
             let old_state = self.state.fetch_or(DROPPED_BIT, Ordering::Acquire);
             if old_state & (LOCK_BIT | RO_PIN_MASK) == 0 {
-                self.value.get().replace(None);
-                self.spilled.get().replace(None);
+                self.value_slot.get().replace(ValueSlot::Dropped);
+                self.spilled_value.get().replace(None);
             }
             self.registration_id.fetch_add(1, Ordering::Relaxed);
         }
@@ -294,7 +315,10 @@ trait DynSpillToken: Send + Sync + 'static {
     /// May return false if the token is already spilled, or is currently pinned.
     /// It may also return None in those cases (to avoid the allocation of the future).
     #[expect(unused)]
-    fn try_spill(&self) -> Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>>;
+    fn try_spill(
+        &self,
+        stats: &Arc<SpillContextStatistics>,
+    ) -> Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>>;
 }
 
 impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
@@ -315,7 +339,10 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         self.try_pin().map(|p| p.estimate_byte_size())
     }
 
-    fn try_spill(&self) -> Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>> {
+    fn try_spill(
+        &self,
+        stats: &Arc<SpillContextStatistics>,
+    ) -> Option<Pin<Box<dyn Future<Output = bool> + Send + '_>>> {
         // First, we try setting the lock bit. If anyone else has a pin we don't bother.
         let pin_update = self
             .state
@@ -329,8 +356,10 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
             return None;
         }
 
-        Some(Box::pin(async {
-            let needs_spill = unsafe { (*self.spilled.get()).is_none() };
+        let stats = Arc::clone(stats);
+        Some(Box::pin(async move {
+            let spill_start = Instant::now();
+            let needs_spill = unsafe { (*self.spilled_value.get()).is_none() };
             let is_exclusive = if needs_spill {
                 // Relax the lock to a pin while spilling such that new pins can
                 // come in. After all, we still have it in memory right now.
@@ -347,7 +376,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                     .state
                     .fetch_add(LOCK_BIT.wrapping_sub(RO_PIN_COUNT_UNIT), Ordering::Acquire);
                 unsafe {
-                    self.spilled.get().write(Some(spilled));
+                    self.spilled_value.get().write(Some(spilled));
                 }
                 old_state & RO_PIN_MASK == RO_PIN_COUNT_UNIT
             } else {
@@ -357,10 +386,21 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
             let state = if is_exclusive {
                 // We are the only pin and hold the lock meaning no one else can
                 // access value or create new pins.
-                unsafe { self.value.get().replace(None) };
+                let n_bytes = match unsafe { &*self.value_slot.get() } {
+                    ValueSlot::InMemory(val) => val.estimate_byte_size(),
+                    _ => unreachable!(),
+                };
+                unsafe {
+                    self.value_slot.get().replace(ValueSlot::Spilled {
+                        n_bytes,
+                        ctx_stats: stats.clone(),
+                    })
+                };
+                stats.add_successful_spill(n_bytes, spill_start);
                 self.state
                     .fetch_add(SPILLED_BIT.wrapping_sub(LOCK_BIT), Ordering::AcqRel)
             } else {
+                stats.add_failed_spill(spill_start);
                 self.state.fetch_sub(LOCK_BIT, Ordering::AcqRel)
             };
             self.wake_waiters(state);
@@ -379,8 +419,8 @@ impl<T: Spillable> SpillToken<T> {
     /// Creates a new SpillToken containing the given value.
     pub fn new(value: T) -> Self {
         let inner = Arc::new(SpillTokenInner {
-            value: UnsafeCell::new(Some(value)),
-            spilled: UnsafeCell::new(None),
+            value_slot: UnsafeCell::new(ValueSlot::InMemory(value)),
+            spilled_value: UnsafeCell::new(None),
             registration_id: AtomicU64::new(0),
             state: AtomicU64::new(0),
             waiters: Mutex::default(),
@@ -416,13 +456,21 @@ impl<T: Spillable> SpillToken<T> {
     /// Consumes this SpillToken, unspilling it if it were spilled.
     pub async fn into_inner(mut self) -> T {
         let pin = self.get_mut().await;
-        unsafe { &mut *pin.inner.value.get() }.take().unwrap()
+        let slot = unsafe { pin.inner.value_slot.get().replace(ValueSlot::Dropped) };
+        let ValueSlot::InMemory(value) = slot else {
+            unreachable!()
+        };
+        value
     }
 
     /// Blocking version of into_inner.
     pub fn into_inner_blocking(mut self) -> T {
         let pin = self.get_mut_blocking();
-        unsafe { &mut *pin.inner.value.get() }.take().unwrap()
+        let slot = unsafe { pin.inner.value_slot.get().replace(ValueSlot::Dropped) };
+        let ValueSlot::InMemory(value) = slot else {
+            unreachable!()
+        };
+        value
     }
 }
 
@@ -440,7 +488,11 @@ impl<'a, T: Spillable> Deref for PinnedRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.inner.value.get() }.as_ref().unwrap()
+        let slot = unsafe { &*self.inner.value_slot.get() };
+        let ValueSlot::InMemory(value) = slot else {
+            unreachable!()
+        };
+        value
     }
 }
 
@@ -458,13 +510,21 @@ impl<'a, T: Spillable> Deref for PinnedMut<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*self.inner.value.get() }.as_ref().unwrap()
+        let slot = unsafe { &*self.inner.value_slot.get() };
+        let ValueSlot::InMemory(value) = slot else {
+            unreachable!()
+        };
+        value
     }
 }
 
 impl<'a, T: Spillable> DerefMut for PinnedMut<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.inner.value.get() }.as_mut().unwrap()
+        let slot = unsafe { &mut *self.inner.value_slot.get() };
+        let ValueSlot::InMemory(value) = slot else {
+            unreachable!()
+        };
+        value
     }
 }
 
