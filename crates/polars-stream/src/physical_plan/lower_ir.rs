@@ -335,11 +335,15 @@ pub fn lower_ir(
             input_right,
             key,
             maintain_order,
+            descending,
+            nulls_last,
         } => {
             let input_left = *input_left;
             let input_right = *input_right;
             let key = key.clone();
             let maintain_order = *maintain_order;
+            let descending = *descending;
+            let nulls_last = *nulls_last;
 
             let mut phys_left = lower_ir!(input_left)?;
             let mut phys_right = lower_ir!(input_right)?;
@@ -362,6 +366,7 @@ pub fn lower_ir(
                     expr = AExprBuilder::row_encode(
                         vec![expr.expr_ir(key_name.clone())],
                         vec![key_dtype],
+                        //need to think about this more
                         RowEncodingVariant::Ordered {
                             descending: None,
                             nulls_last: None,
@@ -385,6 +390,8 @@ pub fn lower_ir(
                 input_left: phys_left,
                 input_right: phys_right,
                 maintain_order,
+                descending,
+                nulls_last,
             }
         },
 

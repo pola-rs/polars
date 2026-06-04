@@ -7,6 +7,8 @@ pub(crate) struct MergeSorted {
     pub(crate) input_left: Box<dyn Executor>,
     pub(crate) input_right: Box<dyn Executor>,
     pub(crate) key: PlSmallStr,
+    pub(crate) descending: bool,
+    pub(crate) nulls_last: bool,
 }
 
 impl Executor for MergeSorted {
@@ -41,6 +43,8 @@ impl Executor for MergeSorted {
                     lhs.as_materialized_series(),
                     rhs.as_materialized_series(),
                     true,
+                    self.descending,
+                    self.nulls_last,
                 )
             },
             profile_name,

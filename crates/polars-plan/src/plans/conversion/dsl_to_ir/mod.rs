@@ -1567,6 +1567,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             input_right,
             key,
             maintain_order,
+            descending,
+            nulls_last,
         } => {
             let input_left = to_alp_impl(owned(input_left), ctxt)
                 .map_err(|e| e.context(failed_here!(merge_sorted)))?;
@@ -1589,6 +1591,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 input_right,
                 key,
                 maintain_order,
+                descending,
+                nulls_last,
             }
         },
         DslPlan::IR { node, dsl, version } => {

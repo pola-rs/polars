@@ -30,12 +30,14 @@ impl OptimizationRule for FlattenMergeSortedRule {
         _expr_arena: &mut Arena<AExpr>,
         node: Node,
     ) -> PolarsResult<Option<IR>> {
-        let (key, maintain_order) = match lp_arena.get(node) {
+        let (key, maintain_order, descending, nulls_last) = match lp_arena.get(node) {
             IR::MergeSorted {
                 key,
                 maintain_order,
+                descending,
+                nulls_last,
                 ..
-            } => (key.clone(), *maintain_order),
+            } => (key.clone(), *maintain_order, *descending, *nulls_last),
             _ => return Ok(None),
         };
         if !self.optimized_nodes.insert(node) {
@@ -60,6 +62,8 @@ impl OptimizationRule for FlattenMergeSortedRule {
             &self.collected_inputs,
             &key,
             maintain_order,
+            descending,
+            nulls_last,
             lp_arena,
             &mut self.optimized_nodes,
         )))
@@ -84,6 +88,8 @@ fn collect_merge_sorted_inputs(
                 input_right,
                 key: merge_key,
                 maintain_order: merge_maintain_order,
+                descending,
+                nulls_last,
             } if merge_key == key && *merge_maintain_order == maintain_order => {
                 traversal_stack.push(*input_right);
                 traversal_stack.push(*input_left);
@@ -97,6 +103,8 @@ fn build_merge_sorted_subtree(
     inputs: &[Node],
     key: &PlSmallStr,
     maintain_order: bool,
+    descending: bool,
+    nulls_last: bool,
     lp_arena: &mut Arena<IR>,
     optimized_nodes: &mut PlHashSet<Node>,
 ) -> IR {
@@ -107,6 +115,8 @@ fn build_merge_sorted_subtree(
         &inputs[..split],
         key,
         maintain_order,
+        descending,
+        nulls_last,
         lp_arena,
         optimized_nodes,
     );
@@ -114,6 +124,8 @@ fn build_merge_sorted_subtree(
         &inputs[split..],
         key,
         maintain_order,
+        descending,
+        nulls_last,
         lp_arena,
         optimized_nodes,
     );
@@ -122,6 +134,8 @@ fn build_merge_sorted_subtree(
         input_right,
         key: key.clone(),
         maintain_order,
+        descending,
+        nulls_last,
     }
 }
 
@@ -129,14 +143,23 @@ fn build_merge_sorted_subtree_node(
     inputs: &[Node],
     key: &PlSmallStr,
     maintain_order: bool,
+    descending: bool,
+    nulls_last: bool,
     lp_arena: &mut Arena<IR>,
     optimized_nodes: &mut PlHashSet<Node>,
 ) -> Node {
     match inputs {
         [node] => *node,
         _ => {
-            let subtree =
-                build_merge_sorted_subtree(inputs, key, maintain_order, lp_arena, optimized_nodes);
+            let subtree = build_merge_sorted_subtree(
+                inputs,
+                key,
+                maintain_order,
+                descending,
+                nulls_last,
+                lp_arena,
+                optimized_nodes,
+            );
             let node = lp_arena.add(subtree);
             optimized_nodes.insert(node);
             node

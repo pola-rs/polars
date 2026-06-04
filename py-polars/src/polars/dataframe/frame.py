@@ -12530,15 +12530,17 @@ class DataFrame:
         key: str,
         *,
         maintain_order: bool = False,
+        descending: bool = False,
+        nulls_last: bool = False,
     ) -> DataFrame:
         """
         Take two sorted DataFrames and merge them by the sorted key.
 
         The output of this operation will also be sorted.
-        It is the callers responsibility that the frames
-        are sorted in ascending order by the key, with null
-        keys at the end, otherwise the order of the output
-        will not make sense.
+        It is the callers responsibility that the frames are sorted by the key,
+        ascending unless ``descending=True``, with null placement matching the
+        ``nulls_last`` parameter, otherwise the order of the output will not
+        make sense.
 
         The schemas of both DataFrames must be equal.
 
@@ -12552,6 +12554,12 @@ class DataFrame:
             If ``True``, the output is guaranteed to have left-biased ordering
             for equal keys: rows from the left frame appear before rows from
             the right frame when their keys are equal.
+        descending
+            If ``True``, inputs are assumed to be sorted in descending order,
+            and the merged output will also be in descending order.
+        nulls_last
+            If ``True`` null values are assumed to be trailing all non null entries,
+            and will appear at the end of the merged output
 
         Examples
         --------
@@ -12613,7 +12621,13 @@ class DataFrame:
 
         return (
             self.lazy()
-            .merge_sorted(other.lazy(), key, maintain_order=maintain_order)
+            .merge_sorted(
+                other.lazy(),
+                key,
+                maintain_order=maintain_order,
+                descending=descending,
+                nulls_last=nulls_last,
+            )
             .collect(optimizations=QueryOptFlags._eager())
         )
 
