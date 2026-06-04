@@ -34,6 +34,7 @@ num-traits = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
+recursive = { workspace = true }
 regex = { workspace = true }
 regex-syntax = { workspace = true }
 schemars = { workspace = true, optional = true }
@@ -42,7 +43,6 @@ serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
 unicode-normalization = { workspace = true, optional = true }
 unicode-reverse = { workspace = true, optional = true }
-recursive = { workspace = true }
 
 [dependencies.jsonpath_lib]
 package = "jsonpath_lib_polars_vendor"

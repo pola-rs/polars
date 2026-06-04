@@ -1,4 +1,3 @@
-import random
 from datetime import date
 from typing import Any
 
@@ -307,15 +306,12 @@ def test_series_is_sorted_parametric(
 
 @given(data=st.data())
 def test_dataframe_is_sorted_parametric(data: st.DataObject) -> None:
-    n = st.integers(min_value=1, max_value=10).do_draw(data)
-    descending = st.lists(st.booleans(), min_size=n, max_size=n).do_draw(data)
-    nulls_last = st.lists(st.booleans(), min_size=n, max_size=n).do_draw(data)
-    df = dataframes(
-        min_cols=n, max_cols=n, excluded_dtypes={pl.Int128, pl.UInt128}
-    ).do_draw(data)
-    by = df.columns
-    random.seed(st.integers().do_draw(data))
-    random.shuffle(by)
+    n = data.draw(st.integers(min_value=1, max_value=10))
+    descending = data.draw(st.lists(st.booleans(), min_size=n, max_size=n))
+    nulls_last = data.draw(st.lists(st.booleans(), min_size=n, max_size=n))
+    df = data.draw(
+        dataframes(min_cols=n, max_cols=n, excluded_dtypes={pl.Int128, pl.UInt128})
+    )
     df_sorted = df.sort(by=df.columns, descending=descending, nulls_last=nulls_last)
     assert df_sorted.is_sorted(
         by=df.columns, descending=descending, nulls_last=nulls_last
