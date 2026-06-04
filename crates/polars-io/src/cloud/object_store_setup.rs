@@ -279,6 +279,13 @@ impl PolarsObjectStoreBuilder {
             CloudType::Ext(scheme) => {
                 let prefix = &self.path.as_str()[..self.path.authority_end_position()];
 
+                verbose_print_sensitive(|| {
+                    format!(
+                        "build external object_store: scheme='{}', prefix='{}', options={:?}",
+                        scheme, prefix, self.options
+                    )
+                });
+
                 let store = EXT_OBJECT_STORE_BUILDER_REGISTRY
                     .read()
                     .await
