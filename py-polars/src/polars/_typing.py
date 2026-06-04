@@ -341,7 +341,7 @@ FrameInitTypes: TypeAlias = Union[
 ColumnFormatDict: TypeAlias = Mapping[
     # dict of colname(s) or selector(s) to format string or dict
     ColumnNameOrSelector | tuple[ColumnNameOrSelector, ...],
-    str | Mapping[str, str] | Format,
+    Union[str, Mapping[str, str], "Format"],
 ]
 ConditionalFormatDict: TypeAlias = Mapping[
     # dict of colname(s) to str, dict, or sequence of str/dict
