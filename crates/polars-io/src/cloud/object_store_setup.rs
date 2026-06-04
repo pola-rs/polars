@@ -3,9 +3,9 @@ use std::sync::{Arc, LazyLock};
 use object_store::ObjectStore;
 use object_store::local::LocalFileSystem;
 use polars_core::config::{self, verbose, verbose_print_sensitive};
-use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::aliases::PlHashMap;
-use polars_utils::pl_path::{PlPath, PlRefPath};
+use polars_utils::pl_path::{CloudScheme, PlPath, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
@@ -19,6 +19,75 @@ use crate::cloud::{CloudConfig, CloudRetryConfig};
 #[allow(clippy::type_complexity)]
 static OBJECT_STORE_CACHE: LazyLock<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
     LazyLock::new(Default::default);
+
+/// Trait for external ObjectStore builder (e.g., for HDFS). Unstable.
+pub trait ExtObjectStoreBuilder {
+    /// Build new object_store.
+    fn build(
+        &self,
+        url: &PlRefPath,
+        options: Option<&CloudOptions>,
+    ) -> PolarsResult<Arc<dyn ObjectStore + Send + Sync>>;
+
+    /// Return a stable cache key for this store.
+    /// Defaults to `None`, which uses the default key (URL authority + serialised CloudOptions).
+    fn stable_cache_key(
+        &self,
+        _url: &PlRefPath,
+        _options: Option<&CloudOptions>,
+    ) -> Option<Vec<u8>> {
+        None
+    }
+}
+
+static EXT_OBJECT_STORE_BUILDER_REGISTRY: LazyLock<
+    RwLock<PlHashMap<String, Arc<dyn ExtObjectStoreBuilder + Send + Sync>>>,
+> = LazyLock::new(Default::default);
+
+/// Register custom object_store builder for a given cloud scheme.
+/// Example: for 'hdfs://', the scheme is "hdfs".
+/// Rejects native cloud schemes (e.g. "s3").
+pub async fn register_object_store_builder(
+    scheme: &str,
+    builder: Arc<dyn ExtObjectStoreBuilder + Send + Sync>,
+) -> PolarsResult<()> {
+
+    // Reject schemes already handled natively.
+    // TODO: allow shadowing of existing schemes.
+    if CloudScheme::is_native_str(scheme) {
+        polars_bail!(
+            InvalidOperation:
+            "cannot register object_store_builder for scheme '{}': \
+             this scheme is handled natively",
+            scheme
+        );
+    }
+
+    if polars_config::config().verbose() {
+        eprintln!(
+            "[ObjectStoreBuilderRegistry]: register object_store_builder for scheme '{scheme}'"
+        )
+    }
+
+    EXT_OBJECT_STORE_BUILDER_REGISTRY
+        .write()
+        .await
+        .insert(scheme.to_string(), builder);
+    Ok(())
+}
+
+pub async fn deregister_object_store_builder(scheme: &str) {
+    if polars_config::config().verbose() {
+        eprintln!(
+            "[ObjectStoreBuilderRegistry]: deregister object_store_builder for scheme '{scheme}'"
+        )
+    }
+
+    EXT_OBJECT_STORE_BUILDER_REGISTRY
+        .write()
+        .await
+        .remove(scheme);
+}
 
 #[allow(dead_code)]
 fn err_missing_feature(
@@ -158,7 +227,7 @@ impl PolarsObjectStoreBuilder {
             )
         }
 
-        let store = match self.cloud_type {
+        let store = match &self.cloud_type {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
@@ -208,6 +277,26 @@ impl PolarsObjectStoreBuilder {
                 return err_missing_feature("http", &cloud_location.scheme);
             },
             CloudType::Hf => panic!("impl error: unresolved hf:// path"),
+            CloudType::Ext(scheme) => {
+                let prefix = &self.path.as_str()[..self.path.authority_end_position()];
+
+                let store = EXT_OBJECT_STORE_BUILDER_REGISTRY
+                    .read()
+                    .await
+                    .get(scheme.as_str())
+                    .ok_or_else(|| {
+                        polars_err!(
+                            ComputeError:
+                            "no object_store_builder registered for prefix: {}; \
+                             call register_object_store_builder() before executing queries \
+                             against the scheme: {}",
+                            prefix, scheme
+                        )
+                    })?
+                    .build(&self.path, self.options.as_ref())?;
+
+                return Ok(store);
+            },
         }?;
 
         Ok(store)
@@ -220,6 +309,25 @@ impl PolarsObjectStoreBuilder {
                 Some(path_and_creds_to_key(&self.path, self.options.as_ref())?)
             },
             CloudType::File | CloudType::Http | CloudType::Hf => None,
+            CloudType::Ext(scheme) => {
+                let registry = EXT_OBJECT_STORE_BUILDER_REGISTRY.read().await;
+                let builder = registry.get(scheme.as_str()).ok_or_else(|| {
+                    polars_err!(
+                        ComputeError:
+                        "no object_store_builder registered for scheme '{}'; \
+                         call register_object_store_builder() before executing queries \
+                         against this scheme",
+                        scheme
+                    )
+                })?;
+
+                let key = match builder.stable_cache_key(&self.path, self.options.as_ref()) {
+                    Some(key) => key,
+                    None => path_and_creds_to_key(&self.path, self.options.as_ref())?,
+                };
+
+                Some(key)
+            },
         };
 
         let opt_cache_write_guard = if let Some(cache_key) = opt_cache_key.as_deref() {
@@ -305,5 +413,247 @@ mod test {
         let out = object_path_from_str(path).unwrap();
 
         assert_eq!(out.as_ref(), path);
+    }
+}
+
+#[cfg(all(test, feature = "cloud"))]
+mod ext_store_tests {
+    use std::sync::Arc;
+
+    use object_store::ObjectStore;
+    use object_store::memory::InMemory;
+    use polars_utils::pl_path::PlRefPath;
+    use polars_utils::relaxed_cell::RelaxedCell;
+
+    use super::*;
+
+    struct TestBuilder {
+        store: Arc<dyn ObjectStore + Send + Sync>,
+        build_count: RelaxedCell<usize>,
+    }
+
+    impl TestBuilder {
+        fn new() -> Arc<Self> {
+            Arc::new(Self {
+                store: Arc::new(InMemory::new()),
+                build_count: RelaxedCell::new_usize(0),
+            })
+        }
+
+        fn build_count(&self) -> usize {
+            self.build_count.load()
+        }
+
+        fn inc_build_count(&self) {
+            self.build_count.fetch_add(1);
+        }
+    }
+
+    impl ExtObjectStoreBuilder for TestBuilder {
+        fn build(
+            &self,
+            _url: &PlRefPath,
+            _options: Option<&CloudOptions>,
+        ) -> PolarsResult<Arc<dyn ObjectStore + Send + Sync>> {
+            self.inc_build_count();
+            Ok(self.store.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_register_and_resolve() {
+        let builder = TestBuilder::new();
+        register_object_store_builder("test-scheme", builder.clone())
+            .await
+            .unwrap();
+
+        let path = PlRefPath::new("test-scheme://host:1234/data/file.parquet");
+        let result = build_object_store(path, None, false).await;
+        assert!(result.is_ok());
+        assert_eq!(builder.build_count(), 1);
+
+        deregister_object_store_builder("test-scheme").await;
+    }
+
+    #[tokio::test]
+    async fn test_cache_hit_after_first_build() {
+        let builder = TestBuilder::new();
+        register_object_store_builder("test-scheme2", builder.clone())
+            .await
+            .unwrap();
+
+        let path = PlRefPath::new("test-scheme2://host:1234/data/file.parquet");
+
+        // First call — cache miss, build_impl called
+        build_object_store(path.clone(), None, false).await.unwrap();
+        assert_eq!(builder.build_count(), 1);
+
+        // Second call — cache hit, build_impl not called
+        build_object_store(path.clone(), None, false).await.unwrap();
+        assert_eq!(builder.build_count(), 1);
+
+        deregister_object_store_builder("test-scheme2").await;
+    }
+
+    #[tokio::test]
+    async fn test_unregistered_scheme_errors() {
+        let path = PlRefPath::new("unknown-scheme://host:1234/data/file.parquet");
+        let result = build_object_store(path, None, false).await;
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("no object_store_builder registered")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_native_scheme_rejected() {
+        let builder = TestBuilder::new();
+        let result = register_object_store_builder("s3", builder).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("handled natively"));
+    }
+
+    #[tokio::test]
+    async fn test_stable_cache_key_override() {
+        #[derive(Clone)]
+        struct AuthorityOnlyBuilder {
+            store: Arc<dyn ObjectStore + Send + Sync>,
+            build_count: Arc<RelaxedCell<usize>>,
+        }
+
+        impl AuthorityOnlyBuilder {
+            fn new() -> Self {
+                Self {
+                    store: Arc::new(InMemory::new()),
+                    build_count: Arc::new(RelaxedCell::new_usize(0)),
+                }
+            }
+
+            fn build_count(&self) -> usize {
+                self.build_count.load()
+            }
+
+            fn inc_build_count(&self) -> usize {
+                self.build_count.fetch_add(1)
+            }
+        }
+
+        impl ExtObjectStoreBuilder for AuthorityOnlyBuilder {
+            fn build(
+                &self,
+                _url: &PlRefPath,
+                _options: Option<&CloudOptions>,
+            ) -> PolarsResult<Arc<dyn ObjectStore + Send + Sync>> {
+                self.inc_build_count();
+                Ok(self.store.clone())
+            }
+
+            fn stable_cache_key(
+                &self,
+                url: &PlRefPath,
+                _options: Option<&CloudOptions>,
+            ) -> Option<Vec<u8>> {
+                let authority = &url.as_str()[..url.authority_end_position()];
+                Some(authority.as_bytes().to_vec())
+            }
+        }
+
+        let builder = AuthorityOnlyBuilder::new();
+        register_object_store_builder("test-scheme3", Arc::new(builder.clone()))
+            .await
+            .unwrap();
+
+        use crate::cloud::{CloudConfig, CloudOptions};
+
+        let options_a = CloudOptions {
+            config: Some(CloudConfig::Ext {
+                options: vec![("user".to_string(), "alice".to_string())],
+            }),
+            ..CloudOptions::default()
+        };
+
+        let options_b = CloudOptions {
+            config: Some(CloudConfig::Ext {
+                options: vec![("user".to_string(), "bob".to_string())],
+            }),
+            ..CloudOptions::default()
+        };
+
+        let path = PlRefPath::new("test-scheme3://host:1234/data/file.parquet");
+
+        build_object_store(path.clone(), Some(&options_a), false)
+            .await
+            .unwrap();
+        build_object_store(path.clone(), Some(&options_b), false)
+            .await
+            .unwrap();
+
+        assert_eq!(builder.build_count(), 1);
+
+        deregister_object_store_builder("test-scheme3").await;
+    }
+
+    #[tokio::test]
+    async fn test_storage_options_passed_to_builder() {
+        use crate::cloud::{CloudConfig, CloudOptions};
+
+        struct CapturingBuilder {
+            received_options: Arc<std::sync::Mutex<Option<Vec<(String, String)>>>>,
+            store: Arc<dyn ObjectStore + Send + Sync>,
+        }
+
+        impl ExtObjectStoreBuilder for CapturingBuilder {
+            fn build(
+                &self,
+                _url: &PlRefPath,
+                options: Option<&CloudOptions>,
+            ) -> PolarsResult<Arc<dyn ObjectStore + Send + Sync>> {
+                let captured = match options {
+                    Some(CloudOptions {
+                        config: Some(CloudConfig::Ext { options }),
+                        ..
+                    }) => Some(options.clone()),
+                    _ => None,
+                };
+                *self.received_options.lock().unwrap() = captured;
+                Ok(self.store.clone())
+            }
+        }
+
+        let received = Arc::new(std::sync::Mutex::new(None));
+
+        let builder = Arc::new(CapturingBuilder {
+            received_options: received.clone(),
+            store: Arc::new(InMemory::new()),
+        });
+
+        register_object_store_builder("test-scheme4", builder)
+            .await
+            .unwrap();
+
+        let options = CloudOptions {
+            config: Some(CloudConfig::Ext {
+                options: vec![
+                    ("user".to_string(), "hadoop".to_string()),
+                    ("token".to_string(), "abc123".to_string()),
+                ],
+            }),
+            ..CloudOptions::default()
+        };
+
+        let path = PlRefPath::new("test-scheme4://host:1234/data/file.parquet");
+        build_object_store(path, Some(&options), false)
+            .await
+            .unwrap();
+
+        let captured = received.lock().unwrap().clone().unwrap();
+        assert_eq!(captured.len(), 2);
+        assert!(captured.iter().any(|(k, v)| k == "user" && v == "hadoop"));
+        assert!(captured.iter().any(|(k, v)| k == "token" && v == "abc123"));
+
+        deregister_object_store_builder("test-scheme4").await;
     }
 }

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use polars_error::{PolarsResult, polars_err};
 
 use crate::format_pl_refstr;
-use crate::pl_str::PlRefStr;
+use crate::pl_str::{PlRefStr, PlSmallStr};
 
 /// Windows paths can be prefixed with this.
 /// <https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry>
@@ -350,27 +350,36 @@ impl From<&str> for PlRefPath {
 
 macro_rules! impl_cloud_scheme {
     ($($t:ident = $n:literal,)+) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
         pub enum CloudScheme {
             $($t,)+
+            Ext(PlSmallStr)
         }
 
         impl CloudScheme {
             /// Note, private function. Users should use [`CloudScheme::from_path`], that will handle e.g.
             /// `file:/` without hostname properly.
             #[expect(unreachable_patterns)]
-            fn from_scheme_str(s: &str) -> Option<Self> {
-                Some(match s {
+            fn from_scheme_str(s: &str) -> Self {
+                match s {
                     $($n => Self::$t,)+
-                    _ => return None,
-                })
+                    _ => Self::Ext(s.into())
+                }
             }
 
-            pub const fn as_str(&self) -> &'static str {
+            pub fn is_native_str(s: &str) -> bool {
+                match Self::from_scheme_str(s) {
+                    Self::Ext(_) => false,
+                    _ => true,
+                }
+            }
+
+            pub fn as_str(&self) -> &str {
                 match self {
                     $(Self::$t => $n,)+
+                    Self::Ext(s) => s.as_str(),
                 }
             }
         }
@@ -404,7 +413,7 @@ impl CloudScheme {
             });
         }
 
-        Self::from_scheme_str(&path[..path.find("://")?])
+        Some(Self::from_scheme_str(&path[..path.find("://")?]))
     }
 
     /// Returns `i` such that `&self.as_str()[i..]` strips the scheme, as well as the `://` if it
@@ -459,13 +468,13 @@ mod tests {
         assert_eq!(
             (
                 p.scheme(),
-                p.scheme().map(|x| x.as_str()),
+                p.scheme().map(|x| x.as_str().to_string()),
                 p.as_str(),
                 p.strip_scheme(),
             ),
             (
                 Some(CloudScheme::File),
-                Some("file"),
+                Some("file".to_string()),
                 "file:///home/user",
                 "/home/user"
             )
@@ -474,14 +483,14 @@ mod tests {
         let p = PlRefPath::new("file:/home/user");
         assert_eq!(
             (
-                p.scheme(),
-                p.scheme().map(|x| x.as_str()),
+                p.scheme().clone(),
+                p.scheme().map(|x| x.as_str().to_string()),
                 p.as_str(),
                 p.strip_scheme(),
             ),
             (
                 Some(CloudScheme::FileNoHostname),
-                Some("file"),
+                Some("file".to_string()),
                 "file:/home/user",
                 "/home/user"
             )

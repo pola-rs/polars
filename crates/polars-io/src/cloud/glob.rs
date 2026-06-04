@@ -94,7 +94,7 @@ pub(crate) fn extract_prefix_expansion(path: &str) -> PolarsResult<(Cow<'_, str>
 #[derive(PartialEq, Debug, Default)]
 pub struct CloudLocation {
     /// The scheme (s3, ...).
-    pub scheme: &'static str,
+    pub scheme: PlSmallStr,
     /// The bucket name.
     pub bucket: PlSmallStr,
     /// The prefix inside the bucket, this will be the full key when wildcards are not used.
@@ -108,7 +108,7 @@ impl CloudLocation {
         if let Some(scheme @ CloudScheme::Http | scheme @ CloudScheme::Https) = path.scheme() {
             // Http/s does not use this
             return Ok(CloudLocation {
-                scheme: scheme.as_str(),
+                scheme: scheme.as_str().into(),
                 ..Default::default()
             });
         }
@@ -162,7 +162,7 @@ impl CloudLocation {
         };
 
         Ok(CloudLocation {
-            scheme: path.scheme().unwrap_or(CloudScheme::File).as_str(),
+            scheme: path.scheme().unwrap_or(CloudScheme::File).as_str().into(),
             bucket: PlSmallStr::from_str(bucket),
             prefix: prefix.into_owned(),
             expansion,
@@ -251,7 +251,7 @@ pub async fn glob(
     locations.sort_unstable();
     Ok(locations
         .into_iter()
-        .map(|l| full_url(scheme, &bucket, l))
+        .map(|l| full_url(scheme.as_str(), &bucket, l))
         .collect::<Vec<_>>())
 }
 
@@ -264,7 +264,7 @@ mod test {
         assert_eq!(
             CloudLocation::new(PlRefPath::new("s3://a/b"), true).unwrap(),
             CloudLocation {
-                scheme: "s3",
+                scheme: "s3".into(),
                 bucket: "a".into(),
                 prefix: "b".into(),
                 expansion: None,
@@ -273,7 +273,7 @@ mod test {
         assert_eq!(
             CloudLocation::new(PlRefPath::new("s3://a/b/*.c"), true).unwrap(),
             CloudLocation {
-                scheme: "s3",
+                scheme: "s3".into(),
                 bucket: "a".into(),
                 prefix: "b/".into(),
                 expansion: Some("^[^/]*\\.c$".into()),
@@ -282,7 +282,7 @@ mod test {
         assert_eq!(
             CloudLocation::new(PlRefPath::new("file:///a/b"), true).unwrap(),
             CloudLocation {
-                scheme: "file",
+                scheme: "file".into(),
                 bucket: "".into(),
                 prefix: "/a/b".into(),
                 expansion: None,
@@ -291,7 +291,7 @@ mod test {
         assert_eq!(
             CloudLocation::new(PlRefPath::new("file:/a/b"), true).unwrap(),
             CloudLocation {
-                scheme: "file",
+                scheme: "file".into(),
                 bucket: "".into(),
                 prefix: "/a/b".into(),
                 expansion: None,
@@ -371,7 +371,7 @@ mod test {
         assert_eq!(
             cloud_location,
             CloudLocation {
-                scheme: "s3",
+                scheme: "s3".into(),
                 bucket: "bucket".into(),
                 prefix: "[*".into(),
                 expansion: None,
@@ -389,7 +389,7 @@ mod test {
         assert_eq!(
             cloud_location,
             CloudLocation {
-                scheme: "s3",
+                scheme: "s3".into(),
                 bucket: "bucket".into(),
                 prefix: "%25".into(),
                 expansion: None,
@@ -402,7 +402,7 @@ mod test {
         assert_eq!(
             cloud_location,
             CloudLocation {
-                scheme: "https",
+                scheme: "https".into(),
                 bucket: "".into(),
                 prefix: "".into(),
                 expansion: None,

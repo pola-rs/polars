@@ -25,6 +25,7 @@ use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::LruCache;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
+use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::TotalOrdWrap;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
@@ -61,7 +62,7 @@ type Configs<T> = Vec<(T, String)>;
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub(crate) enum CloudConfig {
+pub enum CloudConfig {
     #[cfg(feature = "aws")]
     Aws(
         #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
@@ -78,7 +79,12 @@ pub(crate) enum CloudConfig {
         Configs<GoogleConfigKey>,
     ),
     #[cfg(feature = "http")]
-    Http { headers: Vec<(String, String)> },
+    Http {
+        headers: Vec<(String, String)>,
+    },
+    Ext {
+        options: Vec<(String, String)>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
@@ -88,7 +94,7 @@ pub(crate) enum CloudConfig {
 pub struct CloudOptions {
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
-    pub(crate) config: Option<CloudConfig>,
+    pub config: Option<CloudConfig>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub retry_config: CloudRetryConfig,
     #[cfg(feature = "cloud")]
@@ -238,6 +244,8 @@ pub enum CloudType {
     Http,
     /// HuggingFace
     Hf,
+    /// Externally registered scheme (e.g. hdfs:// as "hdfs")
+    Ext(PlSmallStr),
 }
 
 impl CloudType {
@@ -258,6 +266,8 @@ impl CloudType {
             CloudScheme::Http | CloudScheme::Https => Self::Http,
 
             CloudScheme::S3 | CloudScheme::S3a => Self::Aws,
+
+            CloudScheme::Ext(scheme) => Self::Ext(scheme.into()),
         }
     }
 }
@@ -753,6 +763,21 @@ impl CloudOptions {
                 {
                     polars_bail!(ComputeError: "'http' feature is not enabled");
                 }
+            },
+            CloudType::Ext(_) => {
+                let pairs: Vec<(String, String)> = config
+                    .into_iter()
+                    .map(|(k, v)| (k.as_ref().to_string(), v.into()))
+                    .collect();
+
+                Ok(Self {
+                    config: if pairs.is_empty() {
+                        None
+                    } else {
+                        Some(CloudConfig::Ext { options: pairs })
+                    },
+                    ..Self::default()
+                })
             },
         }
     }
