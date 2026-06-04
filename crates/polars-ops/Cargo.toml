@@ -34,7 +34,6 @@ num-traits = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
-recursive = { workspace = true }
 regex = { workspace = true }
 regex-syntax = { workspace = true }
 schemars = { workspace = true, optional = true }

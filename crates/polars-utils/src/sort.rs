@@ -132,22 +132,3 @@ pub fn reorder_cmp<T: PartialOrd + IsNull>(
         ord => ord,
     }
 }
-
-/// Compare two values with support for sort direction and nulls position.
-#[inline]
-pub fn reorder_tot_cmp<T: TotalOrd + IsNull>(
-    lhs: &T,
-    rhs: &T,
-    descending: bool,
-    nulls_last: bool,
-) -> Ordering {
-    match TotalOrd::tot_cmp(lhs, rhs) {
-        Ordering::Equal => Ordering::Equal,
-        _ if lhs.is_null() && nulls_last => Ordering::Greater,
-        _ if rhs.is_null() && nulls_last => Ordering::Less,
-        _ if lhs.is_null() => Ordering::Less,
-        _ if rhs.is_null() => Ordering::Greater,
-        ord if descending => ord.reverse(),
-        ord => ord,
-    }
-}

@@ -51,7 +51,8 @@ mod pct_change;
 mod rank;
 #[cfg(feature = "replace")]
 mod replace;
-pub(crate) mod rle;
+#[cfg(feature = "rle")]
+mod rle;
 #[cfg(feature = "rolling_window")]
 mod rolling;
 #[cfg(feature = "round_series")]

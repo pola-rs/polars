@@ -1,17 +1,15 @@
+use std::hash::Hash;
+
 use polars_core::prelude::*;
-#[cfg(feature = "rle")]
 use polars_core::series::IsSorted;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::select::select_unpredictable;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
-#[cfg(feature = "rle")]
 pub static RLE_VALUE_COLUMN_NAME: &str = "value";
-#[cfg(feature = "rle")]
 pub static RLE_LENGTH_COLUMN_NAME: &str = "len";
 
 /// Get the run-lengths of values.
-#[cfg(feature = "rle")]
 pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
     lengths.clear();
     if s.is_empty() {
@@ -87,6 +85,7 @@ pub fn rle_lengths_helper_ca<'a, T>(ca: &'a ChunkedArray<T>, lengths: &mut Vec<I
 where
     T: PolarsDataType,
     T::Physical<'a>: TotalHash + TotalEq + ToTotalOrd + Copy,
+    <T::Physical<'a> as ToTotalOrd>::TotalOrdItem: Hash + Eq + Copy,
 {
     lengths.clear();
     if ca.is_empty() {
@@ -131,7 +130,6 @@ where
 }
 
 /// Get the lengths of runs of identical values.
-#[cfg(feature = "rle")]
 pub fn rle(s: &Column) -> PolarsResult<Column> {
     let mut lengths = Vec::new();
     rle_lengths(s, &mut lengths)?;
@@ -156,7 +154,6 @@ pub fn rle(s: &Column) -> PolarsResult<Column> {
 }
 
 /// Similar to `rle`, but maps values to run IDs.
-#[cfg(feature = "rle")]
 pub fn rle_id(s: &Column) -> PolarsResult<Column> {
     if s.is_empty() {
         return Ok(Column::new_empty(s.name().clone(), &IDX_DTYPE));

@@ -3436,7 +3436,6 @@ dependencies = [
  "rand 0.9.2",
  "rand_distr",
  "rayon",
- "recursive",
  "regex",
  "regex-syntax",
  "schemars",
