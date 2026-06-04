@@ -51,7 +51,6 @@ pub async fn register_object_store_builder(
     scheme: &str,
     builder: Arc<dyn ExtObjectStoreBuilder + Send + Sync>,
 ) -> PolarsResult<()> {
-
     // Reject schemes already handled natively.
     // TODO: allow shadowing of existing schemes.
     if CloudScheme::is_native_str(scheme) {

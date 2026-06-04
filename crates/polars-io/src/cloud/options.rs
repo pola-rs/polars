@@ -267,7 +267,7 @@ impl CloudType {
 
             CloudScheme::S3 | CloudScheme::S3a => Self::Aws,
 
-            CloudScheme::Ext(scheme) => Self::Ext(scheme.into()),
+            CloudScheme::Ext(scheme) => Self::Ext(scheme),
         }
     }
 }
