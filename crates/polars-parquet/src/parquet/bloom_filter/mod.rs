@@ -6,7 +6,7 @@ mod split_block;
 
 pub use hash::{hash_byte, hash_native};
 pub use read::read;
-pub use scalar::{might_contain_any_scalar_bytes, might_contain_scalar_bytes};
+pub use scalar::{hash_parquet_scalar, might_contain_any_hashes};
 pub use split_block::{insert, is_in_set};
 
 #[cfg(test)]

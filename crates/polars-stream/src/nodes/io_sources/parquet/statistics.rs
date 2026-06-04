@@ -14,7 +14,7 @@ use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_
 use polars_utils::format_pl_smallstr;
 
 use crate::nodes::io_sources::parquet::bloom_filter_prune::{
-    calculate_bloom_filter_skip_mask, has_bloom_eligible_predicates, merge_row_group_skip_masks,
+    calculate_bloom_filter_skip_mask, collect_bloom_preds, merge_row_group_skip_masks,
 };
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
@@ -96,7 +96,7 @@ impl StatisticsColumns {
 
 /// Builds a per–row-group skip mask from predicate pushdown (set bit = skip row group).
 ///
-/// Two independent mechanisms are merged with bitwise OR:
+/// Two mechanisms are merged with bitwise OR (stats first, then blooms on survivors):
 /// - **Statistics** (`skip_batch_predicate` over min/max/null_count from the footer).
 /// - **Bloom filters** (equality / `is_in` literals probed via `byte_source` range reads).
 pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
@@ -120,8 +120,12 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     // `use_statistics` gates Parquet *column statistics* (min/max/null_count) only.
     // Bloom filters are separate footer metadata and are not disabled by this flag.
     let has_skip_batch_predicate = use_statistics && predicate.skip_batch_predicate.is_some();
-    let has_bloom_predicates = std::env::var("POLARS_NO_BLOOM_FILTER_PRUNE").as_deref() != Ok("1")
-        && has_bloom_eligible_predicates(predicate, projected_arrow_fields.as_ref());
+    let bloom_preds = if std::env::var("POLARS_NO_BLOOM_FILTER_PRUNE").as_deref() != Ok("1") {
+        collect_bloom_preds(predicate, projected_arrow_fields.as_ref())
+    } else {
+        None
+    };
+    let has_bloom_predicates = bloom_preds.is_some();
 
     if !has_skip_batch_predicate && !has_bloom_predicates {
         return Ok(None);
@@ -133,7 +137,6 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     let metadata = metadata.clone();
     let live_columns = predicate.live_columns.clone();
     let projected_arrow_fields = projected_arrow_fields.clone();
-    let predicate = predicate.clone();
     // Cloned into the spawned task for bloom `get_range` calls (same `Arc` as row-group fetch).
     let byte_source = byte_source.clone();
 
@@ -204,8 +207,8 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
         let bloom_mask = calculate_bloom_filter_skip_mask(
             row_groups_slice,
             byte_source,
-            &predicate,
-            &projected_arrow_fields,
+            bloom_preds,
+            &statistics_mask,
         )
         .await?;
 
