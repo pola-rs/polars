@@ -1338,7 +1338,7 @@ def test_scan_file_uri_hostname_component() -> None:
     [
         # the reported issue: hive `key=value` directory
         (pl.scan_parquet, pl.DataFrame.write_parquet, "foo=bar", "=", "%3D"),
-        # URI delimiter must stay literal, not truncate the path
+        # the decoded `?` (from `%3F`) must stay literal, not act as a glob wildcard
         pytest.param(
             pl.scan_parquet,
             pl.DataFrame.write_parquet,

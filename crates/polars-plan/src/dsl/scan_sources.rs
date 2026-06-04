@@ -186,7 +186,7 @@ impl ScanSources {
         match self {
             Self::Paths(paths) => {
                 // csv/ndjson/lines decode here; parquet/ipc decode in the hive variant.
-                let paths = decode_file_uri_paths(paths);
+                let paths = decode_file_uri_paths(paths, scan_args.glob);
 
                 Ok(Self::Paths(
                     expand_paths(
@@ -213,7 +213,7 @@ impl ScanSources {
             Self::Paths(paths) => {
                 // Decode up front so expansion, single-directory detection, and hive parsing
                 // all see the same literal path; decoding later misfires hive detection.
-                let paths = decode_file_uri_paths(paths);
+                let paths = decode_file_uri_paths(paths, scan_args.glob);
                 let paths = paths.as_ref();
 
                 let (expanded_paths, hive_start_idx) = expand_paths_hive(

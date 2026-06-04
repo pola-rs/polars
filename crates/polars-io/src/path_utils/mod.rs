@@ -147,9 +147,14 @@ fn is_file_uri_with_escape(path: &PlRefPath) -> bool {
 /// That keeps decoded `?`/`#` as literal filename characters; kept as a URI they'd be read
 /// as a query or fragment and cut the path short.
 ///
+/// When `glob` is set, a percent-encoded path is treated as a literal: every glob
+/// metacharacter in the decoded result is escaped (`?` -> `[?]`), so a decoded `?`/`*`
+/// matches the literal character instead of acting as a wildcard. A path with no `%` is
+/// never decoded (see below), so a plain `file:///x/*.parquet` still globs as usual.
+///
 /// Everything else is returned unchanged: `file://` paths with no `%`, plain paths, and
 /// cloud keys (`s3://`, ...), which are taken literally.
-pub fn decode_file_uri_paths(paths: &[PlRefPath]) -> Cow<'_, [PlRefPath]> {
+pub fn decode_file_uri_paths(paths: &[PlRefPath], glob: bool) -> Cow<'_, [PlRefPath]> {
     // Nothing to decode: borrow the input untouched.
     if !paths.iter().any(is_file_uri_with_escape) {
         return Cow::Borrowed(paths);
@@ -160,10 +165,9 @@ pub fn decode_file_uri_paths(paths: &[PlRefPath]) -> Cow<'_, [PlRefPath]> {
             .iter()
             .map(|path| {
                 if is_file_uri_with_escape(path)
-                    && let Ok(decoded) =
-                        percent_encoding::percent_decode_str(path.strip_scheme()).decode_utf8()
+                    && let Some(decoded) = decode_file_uri_path(path.strip_scheme(), glob)
                 {
-                    PlRefPath::new(decoded.into_owned())
+                    PlRefPath::new(decoded)
                 } else {
                     // Not an encoded file URI, or the escape isn't valid UTF-8: leave the
                     // path literal and let the downstream open surface any not-found error.
@@ -172,6 +176,20 @@ pub fn decode_file_uri_paths(paths: &[PlRefPath]) -> Cow<'_, [PlRefPath]> {
             })
             .collect(),
     )
+}
+
+/// Percent-decode a path component. When `glob` is set the decoded result is glob-escaped
+/// (via `glob::Pattern::escape`), so a decoded `?`/`*`/`[`/`]` matches the literal character
+/// instead of acting as a wildcard. Returns `None` if the decoded bytes are not valid UTF-8.
+fn decode_file_uri_path(path: &str, glob: bool) -> Option<String> {
+    let decoded = percent_encoding::percent_decode_str(path)
+        .decode_utf8()
+        .ok()?;
+    Some(if glob {
+        glob::Pattern::escape(&decoded)
+    } else {
+        decoded.into_owned()
+    })
 }
 
 /// Returns `true` if `expanded_paths` were expanded from a single directory
