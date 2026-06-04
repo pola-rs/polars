@@ -53,7 +53,8 @@ single machine in the cloud.
 
 For data below a TB, single node with Polars processing might be the most optimal choice considering
 speed and complexity. Once you go into multiple TB's, distributed compute is often required.
-Historically this was Sparks area. Nowadays you can also use [Polars Distributed](https://cloud.pola.rs/).
+Historically this was Sparks area. Nowadays you can also use
+[Polars Distributed](https://cloud.pola.rs/).
 
 ### DuckDB
 
