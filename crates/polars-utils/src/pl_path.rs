@@ -407,6 +407,11 @@ impl CloudScheme {
         Self::from_scheme_str(&path[..path.find("://")?])
     }
 
+    /// Local-filesystem scheme (`file://` with an authority, or bare `file:`).
+    pub fn is_file(&self) -> bool {
+        matches!(self, Self::File | Self::FileNoHostname)
+    }
+
     /// Returns `i` such that `&self.as_str()[i..]` strips the scheme, as well as the `://` if it
     /// exists.
     pub fn strip_scheme_index(&self) -> usize {

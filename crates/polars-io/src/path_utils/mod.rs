@@ -135,6 +135,45 @@ fn has_glob(path: &[u8]) -> bool {
     }
 }
 
+/// Returns `true` for a `file://` URI whose path component carries a percent-escape.
+fn is_file_uri_with_escape(path: &PlRefPath) -> bool {
+    path.scheme().is_some_and(|s| s.is_file()) && path.strip_scheme().contains('%')
+}
+
+/// Decode `%` escapes in `file://` paths and return them as plain local paths
+/// (e.g. `file:///x/foo%3Dbar` -> `/x/foo=bar`).
+///
+/// The `file://` is dropped before decoding, so the result is a plain path, not a URI.
+/// That keeps decoded `?`/`#` as literal filename characters; kept as a URI they'd be read
+/// as a query or fragment and cut the path short.
+///
+/// Everything else is returned unchanged: `file://` paths with no `%`, plain paths, and
+/// cloud keys (`s3://`, ...), which are taken literally.
+pub fn decode_file_uri_paths(paths: &[PlRefPath]) -> Cow<'_, [PlRefPath]> {
+    // Nothing to decode: borrow the input untouched.
+    if !paths.iter().any(is_file_uri_with_escape) {
+        return Cow::Borrowed(paths);
+    }
+
+    Cow::Owned(
+        paths
+            .iter()
+            .map(|path| {
+                if is_file_uri_with_escape(path)
+                    && let Ok(decoded) =
+                        percent_encoding::percent_decode_str(path.strip_scheme()).decode_utf8()
+                {
+                    PlRefPath::new(decoded.into_owned())
+                } else {
+                    // Not an encoded file URI, or the escape isn't valid UTF-8: leave the
+                    // path literal and let the downstream open surface any not-found error.
+                    path.clone()
+                }
+            })
+            .collect(),
+    )
+}
+
 /// Returns `true` if `expanded_paths` were expanded from a single directory
 pub fn expanded_from_single_directory(paths: &[PlRefPath], expanded_paths: &[PlRefPath]) -> bool {
     // Single input that isn't a glob

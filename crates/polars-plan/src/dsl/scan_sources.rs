@@ -10,7 +10,9 @@ use polars_io::cloud::CloudOptions;
 use polars_io::file_cache::FileCacheEntry;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
-use polars_io::{expand_paths, expand_paths_hive, expanded_from_single_directory};
+use polars_io::{
+    decode_file_uri_paths, expand_paths, expand_paths_hive, expanded_from_single_directory,
+};
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
@@ -182,15 +184,20 @@ impl Eq for ScanSources {}
 impl ScanSources {
     pub async fn expand_paths(&self, scan_args: &mut UnifiedScanArgs) -> PolarsResult<Self> {
         match self {
-            Self::Paths(paths) => Ok(Self::Paths(
-                expand_paths(
-                    paths,
-                    scan_args.glob,
-                    scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
-                    &mut scan_args.cloud_options,
-                )
-                .await?,
-            )),
+            Self::Paths(paths) => {
+                // csv/ndjson/lines decode here; parquet/ipc decode in the hive variant.
+                let paths = decode_file_uri_paths(paths);
+
+                Ok(Self::Paths(
+                    expand_paths(
+                        paths.as_ref(),
+                        scan_args.glob,
+                        scan_args.hidden_file_prefix.as_deref().unwrap_or_default(),
+                        &mut scan_args.cloud_options,
+                    )
+                    .await?,
+                ))
+            },
             v => Ok(v.clone()),
         }
     }
@@ -204,6 +211,11 @@ impl ScanSources {
     ) -> PolarsResult<Self> {
         match self {
             Self::Paths(paths) => {
+                // Decode up front so expansion, single-directory detection, and hive parsing
+                // all see the same literal path; decoding later misfires hive detection.
+                let paths = decode_file_uri_paths(paths);
+                let paths = paths.as_ref();
+
                 let (expanded_paths, hive_start_idx) = expand_paths_hive(
                     paths,
                     scan_args.glob,
