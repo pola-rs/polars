@@ -141,6 +141,7 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
         self.group_tuples(true, false).map(|g| g.len())
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(&self.0)
     }
