@@ -1,13 +1,17 @@
+import random
 from datetime import date
 from typing import Any
 
+import hypothesis.strategies as st
 import numpy as np
 import pandas as pd
 import pytest
+from hypothesis import given
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_series_equal
+from polars.testing.parametric.strategies import dataframes, series
 
 
 def is_sorted_any(s: pl.Series) -> bool:
@@ -264,7 +268,7 @@ def test_sorted_flag_singletons(value: Any) -> None:
     assert pl.DataFrame({"x": [value]})["x"].flags["SORTED_ASC"] is True
 
 
-def test_is_sorted() -> None:
+def test_series_is_sorted() -> None:
     assert not pl.Series([1, 2, 5, None, 2, None]).is_sorted()
     assert pl.Series([1, 2, 4, None, None]).is_sorted(nulls_last=True)
     assert pl.Series([None, None, 1, 2, 4]).is_sorted(nulls_last=False)
@@ -286,6 +290,40 @@ def test_is_sorted() -> None:
     assert not pl.Series([5, 2, 1, 10, 1, -1, None, None]).is_sorted(
         descending=True, nulls_last=True
     )
+
+
+@given(s=series(), descending=st.booleans(), nulls_last=st.booleans())
+def test_series_is_sorted_parametric(
+    s: pl.Series, descending: bool, nulls_last: bool
+) -> None:
+    s = s.sort(descending=descending, nulls_last=nulls_last)
+    s = pl.Series(s.to_list())  # Remove the sorted flags
+    assert s.is_sorted(descending=descending, nulls_last=nulls_last)
+    if s.drop_nulls().n_unique() > 1:
+        assert not s.is_sorted(descending=not descending, nulls_last=nulls_last)
+    if s.n_unique() > 1 and s.null_count() > 0:
+        assert not s.is_sorted(descending=descending, nulls_last=not nulls_last)
+
+
+@given(data=st.data())
+def test_dataframe_is_sorted_parametric(data: st.DataObject) -> None:
+    n = st.integers(min_value=1, max_value=10).do_draw(data)
+    descending = st.lists(st.booleans(), min_size=n, max_size=n).do_draw(data)
+    nulls_last = st.lists(st.booleans(), min_size=n, max_size=n).do_draw(data)
+    df = dataframes(
+        min_cols=n, max_cols=n, excluded_dtypes={pl.Int128, pl.UInt128}
+    ).do_draw(data)
+    by = df.columns
+    random.seed(st.integers().do_draw(data))
+    random.shuffle(by)
+    df_sorted = df.sort(by=df.columns, descending=descending, nulls_last=nulls_last)
+    assert df_sorted.is_sorted(
+        by=df.columns, descending=descending, nulls_last=nulls_last
+    )
+    if not df.equals(df_sorted):
+        assert not (
+            df.is_sorted(by=df.columns, descending=descending, nulls_last=nulls_last)
+        )
 
 
 def test_sorted_flag() -> None:
