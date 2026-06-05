@@ -12,19 +12,17 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::{PlHashMap, Scalar};
 use polars_error::PolarsResult;
 use polars_io::predicates::{
-    ScanIOPredicate, SpecializedColumnPredicate, any_hashes_might_be_in_bloom_filter_bytes,
-    bloom_hashes_for_scalars,
+    ScanIOPredicate, SpecializedColumnPredicate, bloom_hashes_for_scalars,
 };
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_parquet::parquet::bloom_filter::{
-    BLOCK_SIZE, any_hashes_might_be_in_blocks, bloom_filter_layout, prefer_block_reads,
-    unique_block_indices,
+    BLOCK_SIZE, any_hashes_might_be_in_blocks, bloom_filter_layout, might_contain_any_hashes,
+    prefer_block_reads, unique_block_indices,
 };
 use polars_parquet::read::{ColumnChunkMetadata, RowGroupMetadata};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::projection::ArrowFieldProjection;
-
 
 /// Bloom-eligible column: on-disk Arrow field name and precomputed literal hashes.
 pub(super) struct BloomColumnPred {
@@ -90,10 +88,7 @@ pub(super) async fn bloom_filter_row_group_skip_mask(
     bloom_preds: Option<Vec<BloomColumnPred>>,
     statistics_mask: &Bitmap,
 ) -> PolarsResult<Option<Bitmap>> {
-    let Some(bloom_preds) = bloom_preds
-        .as_deref()
-        .filter(|p| !p.is_empty())
-    else {
+    let Some(bloom_preds) = bloom_preds.as_deref().filter(|p| !p.is_empty()) else {
         return Ok(None);
     };
 
@@ -108,10 +103,7 @@ pub(super) async fn bloom_filter_row_group_skip_mask(
             skip.push(false);
             continue;
         }
-        skip.push(
-            should_skip_row_group(rg, &bloom_preds, &byte_source, &mut bitset)
-                .await?,
-        );
+        skip.push(should_skip_row_group(rg, bloom_preds, &byte_source, &mut bitset).await?);
     }
 
     Ok(Some(skip.freeze()))
@@ -165,14 +157,9 @@ async fn should_skip_row_group(
             continue;
         };
 
-        let any_might_match = probe_bloom_hashes(
-            &pred.hashes,
-            range,
-            byte_source,
-            bitset,
-        )
-        .await
-        .unwrap_or(true);
+        let any_might_match = probe_bloom_hashes(&pred.hashes, range, byte_source, bitset)
+            .await
+            .unwrap_or(true);
 
         if !any_might_match {
             return Ok(true);
@@ -198,9 +185,7 @@ async fn probe_bloom_hashes(
         return Ok(true);
     }
 
-    let prefix = byte_source
-        .get_range(bloom_range.start..header_end)
-        .await?;
+    let prefix = byte_source.get_range(bloom_range.start..header_end).await?;
     let Some(layout) = bloom_filter_layout(prefix.as_ref())? else {
         return Ok(true);
     };
@@ -216,11 +201,7 @@ async fn probe_bloom_hashes(
     let block_indices = unique_block_indices(hashes, layout.bitset_num_bytes);
     if !prefer_block_reads(block_indices.len(), &layout, bloom_range.len()) {
         let bloom_bytes = byte_source.get_range(bloom_range).await?;
-        return any_hashes_might_be_in_bloom_filter_bytes(
-            hashes,
-            bloom_bytes.as_ref(),
-            bitset,
-        );
+        return might_contain_any_hashes(bloom_bytes.as_ref(), hashes, bitset).map_err(Into::into);
     }
 
     let mut block_ranges: Vec<Range<usize>> = block_indices
