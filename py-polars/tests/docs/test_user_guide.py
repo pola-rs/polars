@@ -21,12 +21,16 @@ repo_root = Path(__file__).parent.parent.parent.parent
 python_snippets_dir = repo_root / "docs" / "source" / "src" / "python"
 snippet_paths = list(python_snippets_dir.rglob("*.py"))
 
-# Skip visualization snippets
-snippet_paths = [p for p in snippet_paths if "visualization" not in str(p)]
-
-# Skip UDF section on Python 3.13 as numba does not support it yet
+skip_paths = {
+    python_snippets_dir / "user-guide" / "visualization",  # no plots in CI
+    python_snippets_dir / "user-guide" / "io" / "hugging-face.py",  # rate limited
+    python_snippets_dir / "user-guide" / "expressions" / "aggregation.py",  # rate limited (fetches from HuggingFace)
+}
+# numba does not support Python 3.13 yet
 if sys.version_info >= (3, 13):
-    snippet_paths = [p for p in snippet_paths if "user-defined-functions" not in str(p)]
+    skip_paths.add(python_snippets_dir / "user-guide" / "user-defined-functions")
+
+snippet_paths = [p for p in snippet_paths if not any(p.is_relative_to(s) for s in skip_paths)]
 
 
 @pytest.fixture(scope="module")
