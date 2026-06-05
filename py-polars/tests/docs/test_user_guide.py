@@ -2,7 +2,6 @@
 
 import os
 import runpy
-import sys
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
@@ -29,10 +28,6 @@ skip_paths = {
     / "expressions"
     / "aggregation.py",  # rate limited (fetches from HuggingFace)
 }
-# numba does not support Python 3.13 yet
-if sys.version_info >= (3, 13):
-    skip_paths.add(python_snippets_dir / "user-guide" / "user-defined-functions")
-
 snippet_paths = [
     p for p in snippet_paths if not any(p.is_relative_to(s) for s in skip_paths)
 ]
