@@ -185,11 +185,26 @@ fn decode_file_uri_path(path: &str, glob: bool) -> Option<String> {
     let decoded = percent_encoding::percent_decode_str(path)
         .decode_utf8()
         .ok()?;
+    let path = strip_windows_drive_slash(&decoded);
     Some(if glob {
-        glob::Pattern::escape(&decoded)
+        glob::Pattern::escape(path)
     } else {
-        decoded.into_owned()
+        path.to_owned()
     })
+}
+
+/// `strip_scheme` leaves a Windows `file:///C:/x` URI as `/C:/x`; drop the leading slash before
+/// the drive letter so it is a valid local path (`C:/x`). The inverse of the extra slash
+/// `format_file_uri` adds on Windows. A no-op on other platforms (a leading `/` is the root).
+fn strip_windows_drive_slash(path: &str) -> &str {
+    #[cfg(target_family = "windows")]
+    {
+        let b = path.as_bytes();
+        if b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' {
+            return &path[1..];
+        }
+    }
+    path
 }
 
 /// Returns `true` if `expanded_paths` were expanded from a single directory
