@@ -204,6 +204,7 @@ fn create_physical_expr_inner(
                     // the struct as a whole. See
                     // https://github.com/pola-rs/polars/issues/27819.
                     let by_nodes: Vec<Node> = match expr_arena.get(node) {
+                        #[cfg(feature = "dtype-struct")]
                         AExpr::Function {
                             input,
                             function: IRFunctionExpr::AsStruct,
