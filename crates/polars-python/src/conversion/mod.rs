@@ -912,25 +912,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<StartBy> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ClosedWindow> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "left" => ClosedWindow::Left,
-            "right" => ClosedWindow::Right,
-            "both" => ClosedWindow::Both,
-            "none" => ClosedWindow::None,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`closed` must be one of {{'left', 'right', 'both', 'none'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<RoundMode> {
     type Error = PyErr;
 
