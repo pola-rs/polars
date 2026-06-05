@@ -24,13 +24,18 @@ snippet_paths = list(python_snippets_dir.rglob("*.py"))
 skip_paths = {
     python_snippets_dir / "user-guide" / "visualization",  # no plots in CI
     python_snippets_dir / "user-guide" / "io" / "hugging-face.py",  # rate limited
-    python_snippets_dir / "user-guide" / "expressions" / "aggregation.py",  # rate limited (fetches from HuggingFace)
+    python_snippets_dir
+    / "user-guide"
+    / "expressions"
+    / "aggregation.py",  # rate limited (fetches from HuggingFace)
 }
 # numba does not support Python 3.13 yet
 if sys.version_info >= (3, 13):
     skip_paths.add(python_snippets_dir / "user-guide" / "user-defined-functions")
 
-snippet_paths = [p for p in snippet_paths if not any(p.is_relative_to(s) for s in skip_paths)]
+snippet_paths = [
+    p for p in snippet_paths if not any(p.is_relative_to(s) for s in skip_paths)
+]
 
 
 @pytest.fixture(scope="module")
