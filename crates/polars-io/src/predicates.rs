@@ -5,7 +5,7 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::{
-    parquet::bloom_filter::{hash_parquet_scalar, might_contain_any_hashes},
+    parquet::bloom_filter::hash_parquet_scalar,
     read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr},
 };
 use polars_utils::format_pl_smallstr;
@@ -130,16 +130,6 @@ pub fn bloom_hashes_for_scalars(scalars: &[Scalar]) -> Option<Box<[u64]>> {
         hashes.push(hash_parquet_scalar(&parquet_scalar)?);
     }
     Some(hashes.into_boxed_slice())
-}
-
-/// Whether any precomputed bloom hash might be present in a Parquet split-block bloom filter.
-#[cfg(feature = "parquet")]
-pub fn any_hashes_might_be_in_bloom_filter_bytes(
-    hashes: &[u64],
-    bloom_bytes: &[u8],
-    bitset: &mut Vec<u8>,
-) -> polars_error::PolarsResult<bool> {
-    might_contain_any_hashes(bloom_bytes, hashes, bitset).map_err(|e| e.into())
 }
 
 #[cfg(feature = "parquet")]

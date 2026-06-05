@@ -20,7 +20,7 @@ use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Arguments for [`calculate_row_group_pred_pushdown_skip_mask`].
 ///
-/// Stored in a struct to avoid tripping clippy's `too_many_arguments` lint on the async function.
+/// Stored in a struct to avoid tripping clippy's `too_many_arguments` lint.
 pub(super) struct RowGroupPredPushdownArgs<'a> {
     pub row_group_slice: Range<usize>,
     pub use_statistics: bool,
@@ -131,6 +131,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
         return Ok(None);
     }
 
+    // Clone the skip batch predicate for the spawned task.
     let sbp = predicate.skip_batch_predicate.clone();
 
     let num_row_groups = row_group_slice.len();
@@ -153,8 +154,8 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
             }
         }
 
-        let statistics_mask = if use_statistics {
-            if let Some(sbp) = sbp {
+        let statistics_mask = match sbp {
+            Some(sbp) if has_skip_batch_predicate => {
                 let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
 
                 let lengths: Vec<IdxSize> = row_groups_slice
@@ -196,12 +197,11 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
 
                 let statistics_df = DataFrame::new(num_row_groups, columns)?;
                 sbp.evaluate_with_stat_df(&statistics_df)?
-            } else {
+            },
+            _ => {
+                // Stats disabled or no skip_batch_predicate: do not prune from min/max/null_count.
                 Bitmap::new_with_value(false, num_row_groups)
-            }
-        } else {
-            // `use_statistics=False`: do not prune from min/max/null_count (mask stays all-false).
-            Bitmap::new_with_value(false, num_row_groups)
+            },
         };
 
         let bloom_mask = bloom_filter_row_group_skip_mask(

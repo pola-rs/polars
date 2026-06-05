@@ -87,8 +87,7 @@ def _is_generator(val: object | Iterator[T]) -> TypeIs[Iterator[T]]:
         (isinstance(val, (Generator, Iterable)) and not isinstance(val, Sized))
         or isinstance(val, MappingView)
         or (
-            sys.version_info >= (3, 11)
-            and isinstance(val, _reverse_mapping_views)  # pyrefly: ignore[unknown-name]
+            sys.version_info >= (3, 11) and isinstance(val, _reverse_mapping_views)  # pyrefly: ignore[unknown-name]
         )
     )
 

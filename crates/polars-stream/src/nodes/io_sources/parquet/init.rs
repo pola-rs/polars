@@ -14,7 +14,9 @@ use super::{AsyncTaskData, ParquetReadImpl};
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
-use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_pushdown_skip_mask;
+use crate::nodes::io_sources::parquet::statistics::{
+    RowGroupPredPushdownArgs, calculate_row_group_pred_pushdown_skip_mask,
+};
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 
@@ -120,8 +122,8 @@ impl ParquetReadImpl {
                 }
             }
 
-            let row_group_mask = calculate_row_group_pred_pushdown_skip_mask(
-                crate::nodes::io_sources::parquet::statistics::RowGroupPredPushdownArgs {
+            let row_group_mask =
+                calculate_row_group_pred_pushdown_skip_mask(RowGroupPredPushdownArgs {
                     row_group_slice: row_group_slice.clone(),
                     use_statistics,
                     predicate: predicate.as_ref(),
@@ -130,9 +132,8 @@ impl ParquetReadImpl {
                     byte_source: byte_source.clone(),
                     row_index,
                     verbose,
-                },
-            )
-            .await?;
+                })
+                .await?;
 
             let mut row_group_data_fetcher = RowGroupDataFetcher {
                 projection: projected_arrow_fields.clone(),

@@ -73,5 +73,4 @@ mod tests {
         ];
         assert_eq!(bitset, expected);
     }
-
 }

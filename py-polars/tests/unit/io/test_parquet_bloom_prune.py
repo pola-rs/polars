@@ -30,11 +30,7 @@ def test_int8_bloom_prune_finds_present_value(tmp_path: Path) -> None:
     rg_without_needle = pa.table({"x": pa.array([2, 3, 4], type=pa.int8())})
     _write_bloom_parquet(path, [rg_with_needle, rg_without_needle], "x")
 
-    got = (
-        pl.scan_parquet(path)
-        .filter(pl.col("x") == 42)
-        .collect(engine="streaming")
-    )
+    got = pl.scan_parquet(path).filter(pl.col("x") == 42).collect(engine="streaming")
     assert got.to_dict(as_series=False) == {"x": [42]}
 
 
@@ -45,9 +41,5 @@ def test_int16_bloom_prune_finds_present_value(tmp_path: Path) -> None:
     rg_without_needle = pa.table({"x": pa.array([2, 3, 4], type=pa.int16())})
     _write_bloom_parquet(path, [rg_with_needle, rg_without_needle], "x")
 
-    got = (
-        pl.scan_parquet(path)
-        .filter(pl.col("x") == -100)
-        .collect(engine="streaming")
-    )
+    got = pl.scan_parquet(path).filter(pl.col("x") == -100).collect(engine="streaming")
     assert got.to_dict(as_series=False) == {"x": [-100]}

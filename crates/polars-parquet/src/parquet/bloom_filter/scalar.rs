@@ -95,9 +95,7 @@ pub fn any_hashes_might_be_in_blocks<'a>(
     hashes.iter().any(|&hash| {
         let idx = hash_to_block_index(hash, bitset_num_bytes);
         match block(idx) {
-            Some(bytes) if bytes.len() == BLOCK_SIZE => {
-                is_hash_maybe_in_block(bytes, hash)
-            },
+            Some(bytes) if bytes.len() == BLOCK_SIZE => is_hash_maybe_in_block(bytes, hash),
             _ => true,
         }
     })
