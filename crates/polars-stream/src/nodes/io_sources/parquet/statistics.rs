@@ -99,6 +99,13 @@ impl StatisticsColumns {
 /// Two mechanisms are merged with bitwise OR (stats first, then blooms on survivors):
 /// - **Statistics** (`skip_batch_predicate` over min/max/null_count from the footer).
 /// - **Bloom filters** (equality / `is_in` literals probed via `byte_source` range reads).
+///
+/// **Future — dictionary pruning:** On a fully dictionary-encoded column chunk, the dictionary
+/// page is an exact membership set (no false positives), strictly stronger than a bloom. Prefer
+/// dictionary probing on such chunks and fall back to a bloom filter when one is present.
+/// Probing the dictionary means decoding it and building a lookup set (cost scales with
+/// dictionary size), so dictionary pruning should be cost-based — enabled when the dictionary
+/// is small. Not implemented yet.
 pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     args: RowGroupPredPushdownArgs<'_>,
 ) -> PolarsResult<Option<Bitmap>> {

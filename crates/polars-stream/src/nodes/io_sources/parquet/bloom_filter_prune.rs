@@ -4,6 +4,10 @@
 //!
 //! Statistics (min/max) run first; blooms are probed only on row groups not already
 //! skipped by stats. The bloom mask is OR-merged with the statistics mask (set bit = skip).
+//!
+//! Blooms are probabilistic; a fully dictionary-encoded chunk's dictionary page gives exact
+//! membership and should take precedence once dictionary-based skipping exists (cost-gated by
+//! dictionary size). See the design note on [`super::statistics::calculate_row_group_pred_pushdown_skip_mask`].
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -169,7 +173,7 @@ async fn should_skip_row_group(
     Ok(false)
 }
 
-/// Max bytes to read for the Thrift bloom filter header (compact encoding is small).
+/// Max bytes to read for the Thrift bloom filter header; Apache Arrow seems to think 20 is enough.
 const BLOOM_HEADER_READ_CAP: usize = 64;
 
 /// Probe bloom filter literals, reading only the split-block(s) needed when cheaper than the full slice.
@@ -187,7 +191,8 @@ async fn probe_bloom_hashes(
     }
 
     let prefix = byte_source.get_range(bloom_range.start..header_end).await?;
-    let Some(layout) = bloom_filter_layout(prefix.as_ref())? else {
+    // Unsupported, truncated, or corrupt header: treat as inconclusive (may contain matches).
+    let Some(layout) = bloom_filter_layout(prefix.as_ref()).ok().flatten() else {
         return Ok(true);
     };
 
@@ -202,7 +207,8 @@ async fn probe_bloom_hashes(
     let block_indices = unique_block_indices(hashes, layout.bitset_num_bytes);
     if !prefer_block_reads(block_indices.len(), &layout, bloom_range.len()) {
         let bloom_bytes = byte_source.get_range(bloom_range).await?;
-        return might_contain_any_hashes(bloom_bytes.as_ref(), hashes, bitset).map_err(Into::into);
+        // Corrupt or truncated bloom bytes: inconclusive, do not skip the row group.
+        return Ok(might_contain_any_hashes(bloom_bytes.as_ref(), hashes, bitset).unwrap_or(true));
     }
 
     let mut block_ranges: Vec<Range<usize>> = block_indices

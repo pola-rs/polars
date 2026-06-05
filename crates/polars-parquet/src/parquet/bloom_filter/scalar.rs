@@ -75,7 +75,7 @@ pub fn prefer_block_reads(
     if layout.bitset_num_bytes == 0 || unique_blocks == 0 {
         return false;
     }
-    layout.header_len + unique_blocks * BLOCK_SIZE < bloom_slice_len
+    layout.header_len + unique_blocks * BLOCK_SIZE < bloom_slice_len // This may need further optimization.
 }
 
 /// Probe precomputed hashes against individually loaded blocks.

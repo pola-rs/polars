@@ -37,7 +37,7 @@ fn new_mask(x: u32) -> [u32; 8] {
     a
 }
 
-/// loads a block from the bitset to the stack
+/// Loads a block from the bitset to the stack.
 #[inline]
 fn load_block(bitset: &[u8]) -> [u32; 8] {
     let mut a = [0u32; 8];
@@ -48,7 +48,7 @@ fn load_block(bitset: &[u8]) -> [u32; 8] {
     a
 }
 
-/// assigns a block from the stack to `bitset`
+/// Assigns a block from the stack to `bitset`.
 #[inline]
 fn unload_block(block: [u32; 8], bitset: &mut [u8]) {
     let bitset = bitset.chunks_exact_mut(4).take(8);
