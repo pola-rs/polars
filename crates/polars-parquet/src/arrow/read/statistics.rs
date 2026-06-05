@@ -17,10 +17,7 @@ use super::{ParquetTimeUnit, RowGroupMetadata};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PhysicalType as ParquetPhysicalType;
 use crate::parquet::statistics::Statistics as ParquetStatistics;
-use crate::read::{
-    ColumnChunkMetadata, PrimitiveLogicalType, convert_days_ms, convert_i128, convert_i256,
-    convert_year_month, int96_to_i64_ns,
-};
+use crate::read::{ColumnChunkMetadata, PrimitiveLogicalType, convert_days_ms, convert_i128, convert_i256, convert_year_month, int96_to_i64_ns, convert_u128};
 
 /// Parquet statistics for a nesting level
 #[derive(Debug, PartialEq)]
@@ -530,6 +527,16 @@ pub fn deserialize_all(
                         *width
                     )
                 },
+
+                (D::UInt128, PPT::FixedLenByteArray(16)) => {
+                    rmap!(
+                        expect_fixedlen,
+                        MutablePrimitiveArray::<u128>,
+                        @prim Vec<u8>,
+                        |x| convert_u128(&x)
+                    )
+                }
+
 
                 other => todo!("{:?}", other),
             };
