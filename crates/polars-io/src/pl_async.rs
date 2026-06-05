@@ -26,9 +26,60 @@ static DOWNLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
     v
 });
 
-pub(super) fn get_download_chunk_size() -> usize {
+static RANDOM_ACCESS_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    let v = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE_RANDOM_ACCESS")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(8 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async download_chunk_size_random_access: {v}")
+    }
+
+    v
+});
+
+static STREAMING_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    let v = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE_STREAMING")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(32 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async download_chunk_size_streaming: {v}")
+    }
+
+    v
+});
+
+pub fn get_download_chunk_size() -> usize {
     *DOWNLOAD_CHUNK_SIZE
 }
+
+pub fn get_random_access_chunk_size() -> usize {
+    *RANDOM_ACCESS_CHUNK_SIZE
+}
+pub fn get_streaming_chunk_size() -> usize {
+    *STREAMING_CHUNK_SIZE
+}
+
+static PREFETCH_MEMORY_LIMIT: LazyLock<usize> = LazyLock::new(|| {
+    let v = std::env::var("POLARS_PREFETCH_MEMORY_LIMIT")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(256 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async prefetch_memory_limit: {v}")
+    }
+
+    v
+});
+
+pub fn get_prefetch_memory_limit() -> usize {
+    *PREFETCH_MEMORY_LIMIT
+}
+
 
 pub trait GetSize {
     fn size(&self) -> u64;

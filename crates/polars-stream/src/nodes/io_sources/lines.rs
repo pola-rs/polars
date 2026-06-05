@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
-use polars_io::cloud::CloudOptions;
+use polars_io::cloud::{CloudOptions, FetchConfig};
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::dsl::ScanSource;
@@ -88,7 +88,7 @@ impl FileReaderBuilder for LineReaderBuilder {
 
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
-                DynByteSourceBuilder::ObjectStore
+                DynByteSourceBuilder::ObjectStore(FetchConfig::streaming())
             } else {
                 DynByteSourceBuilder::Mmap
             };

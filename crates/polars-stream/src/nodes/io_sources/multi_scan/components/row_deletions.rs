@@ -70,7 +70,9 @@ impl DeletionFilesProvider {
                         use_statistics: false,
                     }),
                     prefetch_limit: RelaxedCell::new_usize(0),
+                    prefetch_kbytes_limit: RelaxedCell::new_usize(0),
                     prefetch_semaphore: std::sync::OnceLock::new(),
+                    prefetch_kbytes_semaphore: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
                     io_metrics: io_metrics.map(OnceLock::from).unwrap_or_default(),
                 };

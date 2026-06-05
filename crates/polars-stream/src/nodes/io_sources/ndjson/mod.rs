@@ -247,12 +247,16 @@ impl FileReader for NDJsonFileReader {
                 global_slice: {:?}, \
                 row_index: {:?}, \
                 is_negative_slice: {}, \
-                use_async_prefetch: {}",
+                use_async_prefetch: {}, \
+                concurrency_strategy: {:?}, \
+                chunk_size: {:?}",
                 schema.len(),
                 &global_slice,
                 &row_index,
                 is_negative_slice,
-                use_async_prefetch
+                use_async_prefetch,
+                self.byte_source_builder.concurrency_strategy(),
+                self.byte_source_builder.chunk_size()
             );
         }
 
@@ -414,6 +418,7 @@ impl FileReader for NDJsonFileReader {
         // transparent decompression), into one unified reader source.
         let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
+            //kdn TODO fixup default chunk_size
             const DEFAULT_NDJSON_CHUNK_SIZE: usize = 32 * 1024 * 1024;
             let memory_prefetch_func = get_memory_prefetch_func(verbose);
             let chunk_size = std::env::var("POLARS_NDJSON_CHUNK_SIZE")

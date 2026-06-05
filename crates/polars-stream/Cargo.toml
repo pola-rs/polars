@@ -13,6 +13,8 @@ async-channel = { workspace = true }
 async-trait = { workspace = true }
 bitflags = { workspace = true }
 bytes = { workspace = true }
+# kdn TODO RM
+chrono = {workspace = true }
 chrono-tz = { workspace = true }
 crossbeam-channel = { workspace = true }
 crossbeam-queue = { workspace = true }

@@ -11,7 +11,8 @@ use polars_parquet::write::FileMetadata;
 use polars_utils::pl_path::PlRefPath;
 
 use crate::cloud::{
-    CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
+    CloudLocation, CloudOptions, ConcurrencyStrategy, FetchConfig, PolarsObjectStore,
+    build_object_store, object_path_from_str,
 };
 use crate::parquet::metadata::FileMetadataRef;
 
@@ -44,7 +45,12 @@ impl ParquetObjectStore {
     /// Initialize the length property of the object, unless it has already been fetched.
     async fn length(&mut self) -> PolarsResult<usize> {
         if self.length.is_none() {
-            self.length = Some(self.store.head(&self.path).await?.size as usize);
+            self.length = Some(
+                self.store
+                    .head(&self.path, ConcurrencyStrategy::BytesBased)
+                    .await?
+                    .size as usize,
+            );
         }
         Ok(self.length.unwrap())
     }
@@ -123,6 +129,7 @@ async fn fetch_footer_bytes(
                 .checked_sub(prefetch_len)
                 .ok_or_else(|| out_of_spec("not enough bytes to contain parquet footer"))?
                 ..file_byte_length,
+            FetchConfig::random_access(),
         )
         .await?;
 
@@ -159,6 +166,7 @@ async fn fetch_footer_bytes(
                     .checked_sub(footer_len)
                     .ok_or_else(|| out_of_spec("not enough bytes to contain parquet footer"))?
                     ..file_byte_length,
+                FetchConfig::random_access(),
             )
             .await
     }
@@ -183,3 +191,56 @@ pub async fn fetch_num_rows(
     let footer = fetch_footer_bytes(store, path, file_byte_length).await?;
     Ok(deserialize_num_rows(footer)?)
 }
+
+// //kdn TODO REFACTOR
+// {
+//     let footer_header_bytes = store
+//         .get_range(
+//             path,
+//             file_byte_length
+//                 .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize)
+//                 .ok_or_else(|| {
+//                     polars_parquet::parquet::error::ParquetError::OutOfSpec(
+//                         "not enough bytes to contain parquet footer".to_string(),
+//                     )
+//                 })?..file_byte_length,
+//             FetchConfig::random_access(),
+//         )
+//         .await?;
+
+//     let footer_byte_length: usize = {
+//         let reader = &mut footer_header_bytes.as_ref();
+//         let footer_byte_size = read_i32le(reader).unwrap();
+//         let magic = read_n(reader).unwrap();
+//         debug_assert!(reader.is_empty());
+//         if magic != polars_parquet::parquet::PARQUET_MAGIC {
+//             return Err(polars_parquet::parquet::error::ParquetError::OutOfSpec(
+//                 "incorrect magic in parquet footer".to_string(),
+//             )
+//             .into());
+//         }
+//         footer_byte_size.try_into().map_err(|_| {
+//             polars_parquet::parquet::error::ParquetError::OutOfSpec(
+//                 "negative footer byte length".to_string(),
+//             )
+//         })?
+//     };
+
+//     let footer_bytes = store
+//         .get_range(
+//             path,
+//             file_byte_length
+//                 .checked_sub(polars_parquet::parquet::FOOTER_SIZE as usize + footer_byte_length)
+//                 .ok_or_else(|| {
+//                     polars_parquet::parquet::error::ParquetError::OutOfSpec(
+//                         "not enough bytes to contain parquet footer".to_string(),
+//                     )
+//                 })?..file_byte_length,
+//             FetchConfig::random_access(),
+//         )
+//         .await?;
+
+//     Ok(polars_parquet::parquet::read::deserialize_metadata(
+//         footer_bytes,
+//     )?)
+// }

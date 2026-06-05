@@ -93,7 +93,10 @@ impl FileFetcher for CloudFileFetcher {
     }
 
     fn fetch_metadata(&self) -> PolarsResult<RemoteMetadata> {
-        let metadata = ASYNC.block_in_place_on(self.object_store.head(&self.cloud_path))?;
+        let metadata = ASYNC.block_in_place_on(
+            self.object_store
+                .head(&self.cloud_path, crate::cloud::ConcurrencyStrategy::Legacy),
+        )?;
 
         Ok(RemoteMetadata {
             size: metadata.size,

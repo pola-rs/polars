@@ -216,6 +216,7 @@ impl FileReader for CsvFileReader {
         // transparent decompression), into one unified reader source.
         let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
+            //kdn TODO fixup default chunk_size
             const DEFAULT_CSV_CHUNK_SIZE: usize = 32 * 1024 * 1024;
             let memory_prefetch_func = get_memory_prefetch_func(verbose);
             let chunk_size = std::env::var("POLARS_CSV_CHUNK_SIZE")
@@ -278,6 +279,8 @@ impl FileReader for CsvFileReader {
 
         let options = self.options.clone();
         let needs_full_row_count = n_rows_in_file_tx.is_some();
+        let concurrency_strategy = self.byte_source_builder.concurrency_strategy().cloned();
+        let chunk_size = self.byte_source_builder.chunk_size();
 
         // Create all channels.
         let (infer_schema_tx, infer_schema_rx) = oneshot_channel::channel();
@@ -347,11 +350,15 @@ impl FileReader for CsvFileReader {
                     eprintln!(
                         "[CsvFileReader]: project: {} / {}, \
                         slice: {:?}, \
-                        use_async_prefetch: {}",
+                        use_async_prefetch: {}, \
+                        concurrency_strategy: {:?}, \
+                        chunk_size: {:?}",
                         projection.len(),
                         used_schema.len(),
                         &pre_slice,
-                        use_async_prefetch
+                        use_async_prefetch,
+                        concurrency_strategy,
+                        chunk_size
                     )
                 }
 

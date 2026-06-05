@@ -12,9 +12,7 @@ members = [
   "pyo3-polars/pyo3-polars",
   "pyo3-polars/pyo3-polars-derive",
 ]
-default-members = [
-  "crates/*",
-]
+default-members = ["crates/*"]
 
 [workspace.package]
 version = "0.54.4"
@@ -27,7 +25,10 @@ repository = "https://github.com/pola-rs/polars"
 [workspace.dependencies]
 aho-corasick = "1.1"
 arboard = { version = "3.4.0", default-features = false }
-argminmax = { version = "0.6.3", default-features = false, features = ["float", "half"] }
+argminmax = { version = "0.6.3", default-features = false, features = [
+  "float",
+  "half",
+] }
 async-channel = { version = "2.3.1" }
 async-trait = { version = "0.1.59" }
 atoi_simd = "0.18"
@@ -43,7 +44,9 @@ bytemuck = { version = "1.22", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.11" }
 chrono = { version = "0.4.42", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
-color-backtrace = { version = "0.7.2", default-features = false, features = ["use-btparse-crate"] }
+color-backtrace = { version = "0.7.2", default-features = false, features = [
+  "use-btparse-crate",
+] }
 compact_str = { version = "0.9.0", features = ["serde"] }
 crossbeam-channel = "0.5.15"
 crossbeam-deque = "0.8.5"
@@ -74,7 +77,9 @@ num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
 numpy = "0.28"
-object_store = { version = "0.13.1", default-features = false, features = ["fs"] }
+object_store = { version = "0.13.1", default-features = false, features = [
+  "fs",
+] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"

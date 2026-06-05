@@ -5,7 +5,13 @@ use arrow::io::ipc::read::FileMetadata;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
+#[cfg(feature = "ipc")]
+use polars_io::cloud::FetchConfig;
+#[cfg(feature = "ipc")]
+use polars_io::cloud::concurrency::get_request_budget;
 use polars_io::ipc::IpcScanOptions;
+#[cfg(feature = "ipc")]
+use polars_io::pl_async;
 use polars_plan::dsl::ScanSource;
 use polars_utils::relaxed_cell::RelaxedCell;
 
@@ -19,8 +25,12 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 pub struct IpcReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
     pub options: Arc<IpcScanOptions>,
+    // Request_count-based throttling.
     pub prefetch_limit: RelaxedCell<usize>,
     pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
+    // Kbytes-based throttling.
+    pub prefetch_kbytes_limit: RelaxedCell<usize>,
+    pub prefetch_kbytes_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
@@ -31,6 +41,7 @@ impl std::fmt::Debug for IpcReaderBuilder {
             .field("first_metadata", &self.first_metadata)
             .field("options", &self.options)
             .field("prefetch_semaphore", &self.prefetch_semaphore)
+            .field("prefetch_kbytes_semaphore", &self.prefetch_kbytes_semaphore)
             .finish()
     }
 }
@@ -56,21 +67,49 @@ impl FileReaderBuilder for IpcReaderBuilder {
                     })
                     .get()
             })
-            .unwrap_or(execution_state.num_pipelines.saturating_mul(2))
+            .unwrap_or(
+                // Similar to Parquet.
+                std::cmp::max(
+                    execution_state
+                        .num_pipelines
+                        .saturating_mul(2)
+                        .clamp(8, 512),
+                    get_request_budget() as usize,
+                ),
+            )
             .max(1);
 
         self.prefetch_limit.store(prefetch_limit);
 
+        let prefetch_kbytes_limit = std::env::var("POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET")
+            .map(|x| {
+                x.parse::<NonZeroUsize>()
+                    .unwrap_or_else(|_| {
+                        panic!("invalid value for POLARS_RECORD_BATCH_PREFETCH_KBYTES_BUDGET: {x}")
+                    })
+                    .get()
+            })
+            .unwrap_or(256 * 1024)
+            // Avoid deadlock.
+            .max(pl_async::get_download_chunk_size().div_ceil(1024));
+
+        self.prefetch_kbytes_limit.store(prefetch_kbytes_limit);
+
         if config::verbose() {
             eprintln!(
-                "[IpcReaderBuilder]: prefetch_limit: {}",
-                self.prefetch_limit.load()
+                "[IpcReaderBuilder]: prefetch_limit: {}, prefetch_kbytes_limit: {}",
+                self.prefetch_limit.load(),
+                self.prefetch_kbytes_limit.load()
             );
         }
 
         self.prefetch_semaphore
             .set(Arc::new(tokio::sync::Semaphore::new(prefetch_limit)))
-            .unwrap()
+            .unwrap();
+
+        self.prefetch_kbytes_semaphore
+            .set(Arc::new(tokio::sync::Semaphore::new(prefetch_kbytes_limit)))
+            .unwrap();
     }
 
     fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
@@ -98,7 +137,7 @@ impl FileReaderBuilder for IpcReaderBuilder {
 
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
-                DynByteSourceBuilder::ObjectStore
+                DynByteSourceBuilder::ObjectStore(FetchConfig::random_access())
             } else {
                 DynByteSourceBuilder::Mmap
             };
@@ -112,6 +151,9 @@ impl FileReaderBuilder for IpcReaderBuilder {
             record_batch_prefetch_sync: RecordBatchPrefetchSync {
                 prefetch_limit: self.prefetch_limit.load(),
                 prefetch_semaphore: Arc::clone(self.prefetch_semaphore.get().unwrap()),
+                prefetch_kbytes_semaphore: Arc::clone(
+                    self.prefetch_kbytes_semaphore.get().unwrap(),
+                ),
                 shared_prefetch_wait_group_slot: Arc::clone(&self.shared_prefetch_wait_group_slot),
                 prev_all_spawned: None,
                 current_all_spawned: None,

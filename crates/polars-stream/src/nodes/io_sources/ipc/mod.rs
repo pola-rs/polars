@@ -71,6 +71,7 @@ struct IpcFileReader {
 struct RecordBatchPrefetchSync {
     prefetch_limit: usize,
     prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    prefetch_kbytes_semaphore: Arc<tokio::sync::Semaphore>,
     shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
 
     /// Waits for the previous reader to finish spawning prefetches.
@@ -335,6 +336,8 @@ impl FileReader for IpcFileReader {
         let (mut morsel_send, morsel_recv) = FileReaderOutputSend::new_serial();
 
         let rb_prefetch_semaphore = Arc::clone(&self.record_batch_prefetch_sync.prefetch_semaphore);
+        let rb_prefetch_kbytes_semaphore =
+            Arc::clone(&self.record_batch_prefetch_sync.prefetch_kbytes_semaphore);
         let rb_prefetch_prev_all_spawned =
             Option::take(&mut self.record_batch_prefetch_sync.prev_all_spawned);
         let rb_prefetch_current_all_spawned =
@@ -443,6 +446,7 @@ impl FileReader for IpcFileReader {
                 base_rb_metadata_fetch_count,
 
                 rb_prefetch_semaphore,
+                rb_prefetch_kbytes_semaphore,
                 rb_prefetch_current_all_spawned,
             };
 

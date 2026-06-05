@@ -58,6 +58,7 @@ pub struct ParquetFileReader {
 struct RowGroupPrefetchSync {
     prefetch_limit: usize,
     prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    prefetch_kbytes_semaphore: Arc<tokio::sync::Semaphore>,
     shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
 
     /// Waits for the previous reader to finish spawning prefetches.
@@ -344,7 +345,11 @@ impl FileReader for ParquetFileReader {
             verbose,
             memory_prefetch_func,
             row_index,
+
             rg_prefetch_semaphore: Arc::clone(&self.row_group_prefetch_sync.prefetch_semaphore),
+            rg_prefetch_kbytes_semaphore: Arc::clone(
+                &self.row_group_prefetch_sync.prefetch_kbytes_semaphore,
+            ),
             rg_prefetch_prev_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.prev_all_spawned,
             ),
@@ -438,6 +443,7 @@ struct ParquetReadImpl {
     row_index: Option<RowIndex>,
 
     rg_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    rg_prefetch_kbytes_semaphore: Arc<tokio::sync::Semaphore>,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
     disable_morsel_split: bool,

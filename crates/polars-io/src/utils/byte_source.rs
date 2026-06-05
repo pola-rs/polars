@@ -12,7 +12,8 @@ use polars_utils::pl_path::PlRefPath;
 use crate::cloud::options::CloudOptions;
 #[cfg(feature = "cloud")]
 use crate::cloud::{
-    CloudLocation, ObjectStorePath, PolarsObjectStore, build_object_store, object_path_from_str,
+    CloudLocation, ConcurrencyStrategy, FetchConfig, ObjectStorePath, PolarsObjectStore,
+    build_object_store, object_path_from_str,
 };
 use crate::metrics::IOMetrics;
 
@@ -76,6 +77,7 @@ impl ByteSource for BufferByteSource {
 pub struct ObjectStoreByteSource {
     store: PolarsObjectStore,
     path: ObjectStorePath,
+    config: FetchConfig,
 }
 
 #[cfg(feature = "cloud")]
@@ -84,6 +86,7 @@ impl ObjectStoreByteSource {
         path: PlRefPath,
         cloud_options: Option<&CloudOptions>,
         io_metrics: Option<Arc<IOMetrics>>,
+        config: FetchConfig,
     ) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, mut store) =
             build_object_store(path, cloud_options, false).await?;
@@ -91,25 +94,43 @@ impl ObjectStoreByteSource {
 
         store.set_io_metrics(io_metrics);
 
-        Ok(Self { store, path })
+        Ok(Self {
+            store,
+            path,
+            config,
+        })
+    }
+
+    fn chunk_size(&self) -> usize {
+        self.config.chunk_size
+    }
+
+    fn concurrency_strategy(&self) -> ConcurrencyStrategy {
+        self.config.strategy
     }
 }
 
 #[cfg(feature = "cloud")]
 impl ByteSource for ObjectStoreByteSource {
     async fn get_size(&self) -> PolarsResult<usize> {
-        Ok(self.store.head(&self.path).await?.size as usize)
+        Ok(self
+            .store
+            .head(&self.path, ConcurrencyStrategy::Legacy)
+            .await?
+            .size as usize)
     }
 
     async fn get_range(&self, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
-        self.store.get_range(&self.path, range).await
+        self.store.get_range(&self.path, range, self.config).await
     }
 
     async fn get_ranges(
         &self,
         ranges: &mut [Range<usize>],
     ) -> PolarsResult<PlHashMap<usize, Buffer<u8>>> {
-        self.store.get_ranges_sort(&self.path, ranges).await
+        self.store
+            .get_ranges_sort(&self.path, ranges, self.config)
+            .await
     }
 }
 
@@ -126,6 +147,30 @@ impl DynByteSource {
             Self::Buffer(_) => "Buffer",
             #[cfg(feature = "cloud")]
             Self::Cloud(_) => "Cloud",
+        }
+    }
+
+    pub fn is_cloud(&self) -> bool {
+        match self {
+            Self::Buffer(_) => false,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(_) => true,
+        }
+    }
+
+    pub fn chunk_size(&self) -> Option<usize> {
+        match self {
+            Self::Buffer(_) => None,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(source) => Some(source.config.chunk_size),
+        }
+    }
+
+    pub fn concurrency_strategy(&self) -> Option<ConcurrencyStrategy> {
+        match self {
+            Self::Buffer(_) => None,
+            #[cfg(feature = "cloud")]
+            Self::Cloud(source) => Some(source.concurrency_strategy()),
         }
     }
 }
@@ -188,7 +233,7 @@ impl From<Buffer<u8>> for DynByteSource {
 pub enum DynByteSourceBuilder {
     Mmap,
     /// Supports both cloud and local files, requires cloud feature.
-    ObjectStore,
+    ObjectStore(FetchConfig),
 }
 
 impl DynByteSourceBuilder {
@@ -199,16 +244,37 @@ impl DynByteSourceBuilder {
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<DynByteSource> {
         Ok(match self {
-            Self::Mmap => {
+            &Self::Mmap => {
                 BufferByteSource::try_new_mmap_from_path(path.as_std_path(), cloud_options)
                     .await?
                     .into()
             },
-            Self::ObjectStore => feature_gated!("cloud", {
-                ObjectStoreByteSource::try_new_from_path(path, cloud_options, io_metrics)
-                    .await?
-                    .into()
+            &Self::ObjectStore(fetch_config) => feature_gated!("cloud", {
+                ObjectStoreByteSource::try_new_from_path(
+                    path,
+                    cloud_options,
+                    io_metrics,
+                    fetch_config,
+                )
+                .await?
+                .into()
             }),
         })
+    }
+
+    pub fn chunk_size(&self) -> Option<usize> {
+        match self {
+            Self::Mmap => None,
+            #[cfg(feature = "cloud")]
+            Self::ObjectStore(fetch_config) => Some(fetch_config.chunk_size),
+        }
+    }
+
+    pub fn concurrency_strategy(&self) -> Option<&ConcurrencyStrategy> {
+        match self {
+            Self::Mmap => None,
+            #[cfg(feature = "cloud")]
+            Self::ObjectStore(fetch_config) => Some(&fetch_config.strategy),
+        }
     }
 }
