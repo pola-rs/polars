@@ -14,7 +14,7 @@ use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_
 use polars_utils::format_pl_smallstr;
 
 use crate::nodes::io_sources::parquet::bloom_filter_prune::{
-    calculate_bloom_filter_skip_mask, collect_bloom_preds, merge_row_group_skip_masks,
+    bloom_filter_row_group_skip_mask, collect_bloom_preds, merge_row_group_skip_masks,
 };
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
@@ -120,7 +120,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     // `use_statistics` gates Parquet *column statistics* (min/max/null_count) only.
     // Bloom filters are separate footer metadata and are not disabled by this flag.
     let has_skip_batch_predicate = use_statistics && predicate.skip_batch_predicate.is_some();
-    let bloom_preds = if std::env::var("POLARS_NO_BLOOM_FILTER_PRUNE").as_deref() != Ok("1") {
+    let bloom_preds = if polars_config::config().bloom_filter_prune() {
         collect_bloom_preds(predicate, projected_arrow_fields.as_ref())
     } else {
         None
@@ -204,7 +204,7 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
             Bitmap::new_with_value(false, num_row_groups)
         };
 
-        let bloom_mask = calculate_bloom_filter_skip_mask(
+        let bloom_mask = bloom_filter_row_group_skip_mask(
             row_groups_slice,
             byte_source,
             bloom_preds,
