@@ -287,7 +287,9 @@ impl ConcurrencyController {
                 }
 
                 // 4. Log snapshot
-                if model_updated || std::env::var("POLARS_LOG_CONCURRENCY").is_ok() {
+                if (polars_config::config().verbose() && model_updated)
+                    || std::env::var("POLARS_LOG_CONCURRENCY").is_ok()
+                {
                     let model = model.lock().unwrap();
                     let stats = admission.stats();
                     eprintln!(
