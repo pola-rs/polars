@@ -10,8 +10,8 @@ use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
 use polars_plan::plans::{
-    DynLiteralValue, IRBooleanFunction, IRFunctionExpr, IRPowFunction, IRRollingFunction,
-    IRRollingFunctionBy, IRStringFunction, IRStructFunction, IRTemporalFunction,
+    DynLiteralValue, FusedOperator, IRBooleanFunction, IRFunctionExpr, IRPowFunction,
+    IRRollingFunction, IRRollingFunctionBy, IRStringFunction, IRStructFunction, IRTemporalFunction,
 };
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping,
@@ -1422,7 +1422,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Truncate { decimals } => ("truncate", decimals).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
                 IRFunctionExpr::Ceil => ("ceil",).into_py_any(py),
-                IRFunctionExpr::Fused(_) => return Err(PyNotImplementedError::new_err("fused")),
+                IRFunctionExpr::Fused(op) => {
+                    let op_name = match op {
+                        FusedOperator::MultiplyAdd => "fma",
+                        FusedOperator::SubMultiply => "fsm",
+                        FusedOperator::MultiplySub => "fms",
+                    };
+                    ("fused", op_name).into_py_any(py)
+                },
                 IRFunctionExpr::ConcatExpr { .. } => {
                     return Err(PyNotImplementedError::new_err("concat expr"));
                 },
