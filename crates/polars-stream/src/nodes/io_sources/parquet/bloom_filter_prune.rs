@@ -16,23 +16,15 @@ use polars_io::predicates::{
     bloom_hashes_for_scalars,
 };
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
+use polars_parquet::parquet::bloom_filter::{
+    BLOCK_SIZE, any_hashes_might_be_in_blocks, bloom_filter_layout, prefer_block_reads,
+    unique_block_indices,
+};
 use polars_parquet::read::{ColumnChunkMetadata, RowGroupMetadata};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::projection::ArrowFieldProjection;
 
-/// Maximum number of `is_in` literals to probe against a bloom filter.
-///
-/// Probing blooms is cheap for `col == literal`, but can become expensive for large `is_in` lists
-/// because it scales with `(#row_groups × #values)`. Spark applies a similar threshold for Parquet
-/// `IN` pushdown (`spark.sql.parquet.pushdown.inFilterThreshold`, default 10).
-fn bloom_in_filter_threshold() -> usize {
-    const DEFAULT: usize = 10;
-    std::env::var("POLARS_BLOOM_IN_FILTER_THRESHOLD")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(DEFAULT)
-}
 
 /// Bloom-eligible column: on-disk Arrow field name and precomputed literal hashes.
 pub(super) struct BloomColumnPred {
@@ -92,7 +84,7 @@ pub(super) fn collect_bloom_preds(
 ///
 /// Returns `None` if there are no bloom predicates. Otherwise returns a bitmap of length
 /// `row_groups.len()` where `true` means skip (value cannot be in bloom).
-pub(super) async fn calculate_bloom_filter_skip_mask(
+pub(super) async fn bloom_filter_row_group_skip_mask(
     row_groups: &[RowGroupMetadata],
     byte_source: Arc<DynByteSource>,
     bloom_preds: Option<Vec<BloomColumnPred>>,
@@ -130,7 +122,7 @@ fn bloom_pred_values(specialized: &Option<SpecializedColumnPredicate>) -> Option
     match specialized {
         Some(SpecializedColumnPredicate::Equal(s)) => Some(std::slice::from_ref(s)),
         Some(SpecializedColumnPredicate::EqualOneOf(v)) => {
-            (v.len() <= bloom_in_filter_threshold()).then_some(v.as_ref())
+            (v.len() <= polars_config::config().bloom_in_filter_threshold()).then_some(v.as_ref())
         },
         _ => None,
     }
@@ -173,15 +165,79 @@ async fn should_skip_row_group(
             continue;
         };
 
-        let bloom_bytes = byte_source.get_range(range).await?;
-
-        let any_might_match =
-            any_hashes_might_be_in_bloom_filter_bytes(&pred.hashes, bloom_bytes.as_ref(), bitset)
-                .unwrap_or(true);
+        let any_might_match = probe_bloom_hashes(
+            &pred.hashes,
+            range,
+            byte_source,
+            bitset,
+        )
+        .await
+        .unwrap_or(true);
 
         if !any_might_match {
             return Ok(true);
         }
     }
     Ok(false)
+}
+
+/// Max bytes to read for the Thrift bloom filter header (compact encoding is small).
+const BLOOM_HEADER_READ_CAP: usize = 64;
+
+/// Probe bloom filter literals, reading only the split-block(s) needed when cheaper than the full slice.
+async fn probe_bloom_hashes(
+    hashes: &[u64],
+    bloom_range: Range<usize>,
+    byte_source: &DynByteSource,
+    bitset: &mut Vec<u8>,
+) -> PolarsResult<bool> {
+    let header_end = bloom_range
+        .end
+        .min(bloom_range.start.saturating_add(BLOOM_HEADER_READ_CAP));
+    if header_end <= bloom_range.start {
+        return Ok(true);
+    }
+
+    let prefix = byte_source
+        .get_range(bloom_range.start..header_end)
+        .await?;
+    let Some(layout) = bloom_filter_layout(prefix.as_ref())? else {
+        return Ok(true);
+    };
+
+    let bitset_start = bloom_range.start + layout.header_len;
+    let bitset_end = bitset_start
+        .checked_add(layout.bitset_num_bytes)
+        .filter(|&end| end <= bloom_range.end);
+    if bitset_end.is_none() {
+        return Ok(true);
+    }
+
+    let block_indices = unique_block_indices(hashes, layout.bitset_num_bytes);
+    if !prefer_block_reads(block_indices.len(), &layout, bloom_range.len()) {
+        let bloom_bytes = byte_source.get_range(bloom_range).await?;
+        return any_hashes_might_be_in_bloom_filter_bytes(
+            hashes,
+            bloom_bytes.as_ref(),
+            bitset,
+        );
+    }
+
+    let mut block_ranges: Vec<Range<usize>> = block_indices
+        .iter()
+        .map(|&idx| {
+            let start = bitset_start + idx * BLOCK_SIZE;
+            start..start + BLOCK_SIZE
+        })
+        .collect();
+    let blocks_by_offset = byte_source.get_ranges(&mut block_ranges).await?;
+
+    Ok(any_hashes_might_be_in_blocks(
+        hashes,
+        layout.bitset_num_bytes,
+        |idx| {
+            let start = bitset_start + idx * BLOCK_SIZE;
+            blocks_by_offset.get(&start).map(|b| b.as_ref())
+        },
+    ))
 }

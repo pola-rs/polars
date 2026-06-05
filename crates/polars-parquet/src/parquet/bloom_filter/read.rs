@@ -9,18 +9,52 @@ use polars_parquet_format::{
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::ColumnChunkMetadata;
 
+/// Returns the bitset length if the header is supported, otherwise `None`.
+fn supported_bitset_num_bytes(header: &BloomFilterHeader) -> ParquetResult<Option<usize>> {
+    if header.algorithm != BloomFilterAlgorithm::BLOCK(SplitBlockAlgorithm {})
+        || header.compression != BloomFilterCompression::UNCOMPRESSED(Uncompressed {})
+    {
+        return Ok(None);
+    }
+    Ok(Some(header.num_bytes.try_into()?))
+}
+
+/// Parsed split-block bloom filter header (Thrift) prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BloomFilterLayout {
+    /// Uncompressed bitset size in bytes (multiple of 32).
+    pub bitset_num_bytes: usize,
+    /// Byte length of the serialized Thrift header preceding the bitset.
+    pub header_len: usize,
+}
+
+/// Parse a bloom filter layout from a byte slice starting at the filter offset.
+///
+/// `bytes` may be a prefix of the on-disk filter; only the header is consumed.
+pub fn bloom_filter_layout(bytes: &[u8]) -> ParquetResult<Option<BloomFilterLayout>> {
+    let mut reader = std::io::Cursor::new(bytes);
+    let mut prot = TCompactInputProtocol::new(&mut reader, usize::MAX);
+    let header = BloomFilterHeader::read_from_in_protocol(&mut prot)?;
+    let Some(bitset_num_bytes) = supported_bitset_num_bytes(&header)? else {
+        return Ok(None);
+    };
+    let header_len = reader.position() as usize;
+    Ok(Some(BloomFilterLayout {
+        bitset_num_bytes,
+        header_len,
+    }))
+}
+
 /// Returns the bitset length if the header is supported, otherwise clears `bitset` and returns `None`.
 fn supported_bitset_length(
     header: &BloomFilterHeader,
     bitset: &mut Vec<u8>,
 ) -> ParquetResult<Option<usize>> {
-    if header.algorithm != BloomFilterAlgorithm::BLOCK(SplitBlockAlgorithm {})
-        || header.compression != BloomFilterCompression::UNCOMPRESSED(Uncompressed {})
-    {
+    let Some(length) = supported_bitset_num_bytes(header)? else {
         bitset.clear();
         return Ok(None);
-    }
-    Ok(Some(header.num_bytes.try_into()?))
+    };
+    Ok(Some(length))
 }
 
 fn prepare_bitset(bitset: &mut Vec<u8>, length: usize) -> ParquetResult<()> {

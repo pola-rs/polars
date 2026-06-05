@@ -5,9 +5,12 @@ mod scalar;
 mod split_block;
 
 pub use hash::{hash_byte, hash_native};
-pub use read::read;
-pub use scalar::{hash_parquet_scalar, might_contain_any_hashes};
-pub use split_block::{insert, is_in_set};
+pub use read::{BloomFilterLayout, bloom_filter_layout, read};
+pub use scalar::{
+    any_hashes_might_be_in_blocks, hash_parquet_scalar, might_contain_any_hashes,
+    prefer_block_reads, unique_block_indices,
+};
+pub use split_block::{BLOCK_SIZE, hash_to_block_index, insert, is_hash_maybe_in_block, is_in_set};
 
 #[cfg(test)]
 mod tests {
@@ -70,4 +73,5 @@ mod tests {
         ];
         assert_eq!(bitset, expected);
     }
+
 }
