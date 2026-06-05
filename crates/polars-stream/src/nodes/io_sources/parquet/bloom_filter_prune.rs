@@ -24,7 +24,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::projection::ArrowFieldProjection;
 
-/// Bloom-eligible column: on-disk Arrow field name and precomputed literal hashes.
+/// Column to probe with a bloom: on-disk Arrow field name and precomputed literal hashes.
 pub(super) struct BloomColumnPred {
     pub(super) arrow_field_name: PlSmallStr,
     pub(super) hashes: Box<[u64]>,
@@ -49,8 +49,8 @@ pub(super) fn collect_bloom_preds(
     predicate: &ScanIOPredicate,
     projected_arrow_fields: &[ArrowFieldProjection],
 ) -> Option<Vec<BloomColumnPred>> {
-    // Scan projection name → Arrow field name (bloom offsets live in chunk metadata by Arrow name).
-    let projection_by_output: PlHashMap<_, _> = projected_arrow_fields
+    // Name translation table from what the filter uses to what Parquet stores on disk (bloom offsets live in chunk metadata by Arrow name).
+    let output_to_arrow_name: PlHashMap<_, _> = projected_arrow_fields
         .iter()
         .map(|p| (p.output_name().clone(), p.arrow_field().name.clone()))
         .collect();
@@ -66,7 +66,7 @@ pub(super) fn collect_bloom_preds(
         let Some(hashes) = bloom_hashes_for_scalars(values) else {
             continue;
         };
-        let Some(arrow_field_name) = projection_by_output.get(output_name) else {
+        let Some(arrow_field_name) = output_to_arrow_name.get(output_name) else {
             continue;
         };
         bloom_preds.push(BloomColumnPred {
@@ -99,7 +99,8 @@ pub(super) async fn bloom_filter_row_group_skip_mask(
 
     for (i, rg) in row_groups.iter().enumerate() {
         if statistics_mask.get_bit(i) {
-            // Already skipped by min/max; bloom probe would not change the merged mask.
+            // Already skipped by min/max; bloom probe would not change the merged mask
+            // so this value is irrelevant.
             skip.push(false);
             continue;
         }
