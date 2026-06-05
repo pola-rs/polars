@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.testing import assert_frame_equal
-from tests.conftest import PlMonkeyPatch
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _write_bloom_parquet(path: Path, row_groups: list[pa.Table], column: str) -> None:
