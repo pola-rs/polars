@@ -141,9 +141,41 @@ macro_rules! eval_binary_cmp_same_type {
     }}
 }
 
-pub struct SimplifyBooleanRule {}
+pub struct SimplifyBooleanRule {
+    pub maintain_errors: bool,
+}
 
 impl OptimizationRule for SimplifyBooleanRule {
+    fn optimize_plan(
+        &mut self,
+        lp_arena: &mut Arena<IR>,
+        expr_arena: &mut Arena<AExpr>,
+        node: Node,
+    ) -> PolarsResult<Option<IR>> {
+        let (input_node, predicate_node) = match lp_arena.get(node) {
+            IR::Filter { input, predicate } => (*input, predicate.node()),
+            _ => return Ok(None),
+        };
+
+        let lv = match expr_arena.get(predicate_node) {
+            AExpr::Literal(lv) => lv,
+            _ => return Ok(None),
+        };
+
+        match lv.bool() {
+            Some(false) => {
+                let schema = lp_arena.get(input_node).schema(lp_arena).into_owned();
+                Ok(Some(IR::DataFrameScan {
+                    df: Arc::new(DataFrame::empty_with_schema(&schema)),
+                    schema,
+                    output_schema: None,
+                }))
+            },
+            Some(true) => Ok(Some(lp_arena.get(input_node).clone())),
+            _ => Ok(None),
+        }
+    }
+
     fn optimize_expr(
         &mut self,
         expr_arena: &mut Arena<AExpr>,
@@ -156,7 +188,14 @@ impl OptimizationRule for SimplifyBooleanRule {
         let out = match expr {
             // true AND x => x
             AExpr::BinaryExpr { left, op, right } => {
-                return Ok(arity::simplify_binary(*left, *op, *right, ctx, expr_arena));
+                return Ok(arity::simplify_binary(
+                    *left,
+                    *op,
+                    *right,
+                    ctx,
+                    self.maintain_errors,
+                    expr_arena,
+                ));
             },
             AExpr::Ternary {
                 predicate,
@@ -371,7 +410,7 @@ impl OptimizationRule for SimplifyExprRule {
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
         schema: &Schema,
-        _ctx: OptimizeExprContext,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
         let expr = expr_arena.get(expr_node);
 
@@ -745,7 +784,13 @@ impl OptimizationRule for SimplifyExprRule {
                 options,
                 ..
             } => {
-                return optimize_functions(input.clone(), function.clone(), *options, expr_arena);
+                return optimize_functions(
+                    input.clone(),
+                    function.clone(),
+                    *options,
+                    ctx,
+                    expr_arena,
+                );
             },
             _ => None,
         };

@@ -20,7 +20,7 @@ macro_rules! impl_parse {
     ($primitive_type:ident) => {
         impl Parse for $primitive_type {
             fn parse(val: &[u8]) -> Option<Self> {
-                atoi_simd::parse_skipped(val).ok()
+                atoi_simd::parse::<_, true, true>(val).ok()
             }
         }
     };
