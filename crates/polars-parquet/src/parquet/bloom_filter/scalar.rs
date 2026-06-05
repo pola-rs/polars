@@ -1,9 +1,9 @@
 use crate::arrow::read::expr::ParquetScalar;
 use crate::parquet::bloom_filter::hash::{hash_byte, hash_native};
-use crate::parquet::bloom_filter::is_in_set;
+use crate::parquet::bloom_filter::is_maybe_in_bitset;
 use crate::parquet::bloom_filter::read::{BloomFilterLayout, read_from_bytes};
 use crate::parquet::bloom_filter::split_block::{
-    BLOCK_SIZE, hash_to_block_index, is_hash_maybe_in_block,
+    BLOCK_SIZE, hash_to_block_index, is_maybe_in_block,
 };
 use crate::parquet::error::ParquetResult;
 
@@ -45,14 +45,11 @@ pub fn might_contain_any_hashes(
     bitset: &mut Vec<u8>,
 ) -> ParquetResult<bool> {
     read_from_bytes(bytes, bitset)?;
-    Ok(any_hash_might_be_in_prepared_bitset(hashes, bitset))
-}
-
-fn any_hash_might_be_in_prepared_bitset(hashes: &[u64], bitset: &[u8]) -> bool {
-    if bitset.is_empty() {
-        return true;
-    }
-    hashes.iter().any(|&hash| is_in_set(bitset, hash))
+    Ok(if bitset.is_empty() {
+        true
+    } else {
+        hashes.iter().any(|&hash| is_maybe_in_bitset(bitset, hash))
+    })
 }
 
 /// Sorted unique block indices touched by `hashes`.
@@ -95,7 +92,7 @@ pub fn any_hashes_might_be_in_blocks<'a>(
     hashes.iter().any(|&hash| {
         let idx = hash_to_block_index(hash, bitset_num_bytes);
         match block(idx) {
-            Some(bytes) if bytes.len() == BLOCK_SIZE => is_hash_maybe_in_block(bytes, hash),
+            Some(bytes) if bytes.len() == BLOCK_SIZE => is_maybe_in_block(bytes, hash),
             _ => true,
         }
     })
