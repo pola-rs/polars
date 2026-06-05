@@ -22,7 +22,7 @@ python_snippets_dir = repo_root / "docs" / "source" / "src" / "python"
 snippet_paths = list(python_snippets_dir.rglob("*.py"))
 
 skip_paths = {
-    python_snippets_dir / "user-guide" / "misc" / "visualization",  # no plots in CI
+    python_snippets_dir / "user-guide" / "misc" / "visualization.py",  # no plots in CI
     python_snippets_dir / "user-guide" / "io" / "hugging-face.py",  # rate limited
     python_snippets_dir
     / "user-guide"
