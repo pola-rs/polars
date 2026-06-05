@@ -3892,7 +3892,7 @@ class DataFrame:
                     ws.set_row_pixels(idx, row_heights)
             elif isinstance(row_heights, dict):
                 for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
-                    ws.set_row_pixels(idx, height)
+                    ws.set_row_pixels(idx, height)  # pyrefly: ignore[bad-argument-type]
 
         if freeze_panes:
             if isinstance(freeze_panes, str):
@@ -9816,9 +9816,11 @@ class DataFrame:
         └─────┴──────────┴───────┘
         """
         on = None if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        index_expanded = [] if index is None else _expand_selectors(self, index)
 
-        return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
+        return self._from_pydf(
+            self._df.unpivot(on, index_expanded, value_name, variable_name)
+        )
 
     def unstack(
         self,
