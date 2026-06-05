@@ -531,12 +531,12 @@ pub fn deserialize_all(
                     )
                 },
 
-                (D::UInt128, PPT::FixedLenByteArray(16)) => {
+                (D::UInt128, PPT::FixedLenByteArray(n)) => {
                     rmap!(
                         expect_fixedlen,
                         MutablePrimitiveArray::<u128>,
                         @prim Vec<u8>,
-                        |x| convert_u128(&x)
+                        |x| convert_u128(&x, *n)
                     )
                 },
 
