@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 
 inf = float("inf")
@@ -519,3 +519,22 @@ def test_hist_ulp_edge_22234() -> None:
     # Manual path
     result = s.hist(bins=[-1, 0, 1])
     assert result["count"].to_list() == [1, 3]
+
+
+@pytest.mark.parametrize(
+    "bins",
+    [
+        pl.Series(["N"]),
+        pl.Series(["1.0", "not_a_number", "3.0"]),
+    ],
+)
+def test_hist_non_castable_string_bins_27155(bins: pl.Series) -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0]})
+    with pytest.raises(InvalidOperationError, match="Float64"):
+        df.select(pl.col("a").hist(bins=bins))
+
+
+def test_hist_string_data_raises_27155() -> None:
+    df = pl.DataFrame({"a": ["A", "G", "Y", "Z"]})
+    with pytest.raises(InvalidOperationError, match="numeric"):
+        df.select(pl.col("a").hist(bins=pl.Series([1.0, 2.0])))
