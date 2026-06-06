@@ -5,6 +5,7 @@ use arrow::offset::Offsets;
 use arrow::pushable::Pushable;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use polars_error::constants::LENGTH_LIMIT_MSG;
 
 type LargeListArray = ListArray<i64>;
 
@@ -254,6 +255,15 @@ fn repeat_by_generic_inner<T: PolarsDataType>(ca: &ChunkedArray<T>, by: &IdxCa) 
 }
 
 pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
+    let total = by
+        .iter()
+        .flatten()
+        .try_fold(IdxSize::MIN, |acc, x| acc.checked_add(x));
+    polars_ensure!(
+        total.is_some_and(|t| t < IdxSize::MAX),
+        ComputeError: "{}", LENGTH_LIMIT_MSG
+    );
+
     let s_phys = s.to_physical_repr();
     use DataType as D;
     let out = match s_phys.dtype() {

@@ -455,3 +455,8 @@ def test_repeat_by_null() -> None:
         pl.Series([None, None], dtype=pl.Null).repeat_by(2),
         pl.Series([[None, None], [None, None]], dtype=pl.List(pl.Null)),
     )
+
+
+def test_repeat_by_length_limit_raises_24330() -> None:
+    with pytest.raises(ComputeError):
+        pl.select(pl.lit(None).repeat_by(2147483648 - pl.Series([0, 0])))
