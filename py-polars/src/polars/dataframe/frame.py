@@ -3892,7 +3892,7 @@ class DataFrame:
                     ws.set_row_pixels(idx, row_heights)
             elif isinstance(row_heights, dict):
                 for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
-                    ws.set_row_pixels(idx, height)
+                    ws.set_row_pixels(idx, height)  # pyrefly: ignore[bad-argument-type]
 
         if freeze_panes:
             if isinstance(freeze_panes, str):
@@ -9816,9 +9816,11 @@ class DataFrame:
         └─────┴──────────┴───────┘
         """
         on = None if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        index_expanded = [] if index is None else _expand_selectors(self, index)
 
-        return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
+        return self._from_pydf(
+            self._df.unpivot(on, index_expanded, value_name, variable_name)
+        )
 
     def unstack(
         self,
@@ -10216,6 +10218,52 @@ class DataFrame:
             .shift(n, fill_value=fill_value)
             .collect(optimizations=QueryOptFlags._eager())
         )
+
+    @unstable()
+    def is_sorted(
+        self,
+        by: str | Iterable[str],
+        *more_by: str,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool | Sequence[bool] = False,
+    ) -> bool:
+        """
+        Check whether the DataFrame is sorted by the given columns.
+
+        Parameters
+        ----------
+        by
+            Column name(s) to check.
+        *more_by
+            Additional column names.
+        descending
+            Sort in descending order. When sorting by multiple columns, can be
+            specified per column by passing a sequence of booleans.
+        nulls_last
+            Place null values last. When sorting by multiple columns, can be
+            specified per column by passing a sequence of booleans.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [5, 4, 3]})
+        >>> df.is_sorted("a")
+        True
+        >>> df.is_sorted("b", descending=True)
+        True
+        >>> df.is_sorted("a", "b")
+        True
+        """
+        if isinstance(by, str):
+            by = [by]
+        else:
+            by = list(by)
+        by.extend(more_by)
+        n = len(by)
+        if isinstance(descending, bool):
+            descending = [descending] * n
+        if isinstance(nulls_last, bool):
+            nulls_last = [nulls_last] * n
+        return self._df.is_sorted(by, descending, nulls_last)
 
     def is_duplicated(self) -> Series:
         """
