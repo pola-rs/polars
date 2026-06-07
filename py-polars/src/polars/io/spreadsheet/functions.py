@@ -19,7 +19,12 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.various import deduplicate_names, normalize_filepath, parse_version
+from polars._utils.various import (
+    deduplicate_names,
+    is_non_empty_sequence_of,
+    normalize_filepath,
+    parse_version,
+)
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -921,7 +926,9 @@ def _csv_buffer_to_frame(
                 version="0.20.31",
             )
 
-        csv_schema_overrides = read_options.get("schema_overrides", csv_dtypes)
+        csv_schema_overrides = cast(
+            "SchemaDict", read_options.get("schema_overrides", csv_dtypes)
+        )
         if set(csv_schema_overrides).intersection(schema_overrides):
             msg = "cannot specify columns in both `schema_overrides` and `read_options['dtypes']`"
             raise ParameterCollisionError(msg)
@@ -1010,7 +1017,11 @@ def _reorder_columns(
     if columns:
         from polars.selectors import by_index, by_name
 
-        cols = by_index(*columns) if isinstance(columns[0], int) else by_name(*columns)
+        cols = (
+            by_index(*columns)
+            if is_non_empty_sequence_of(columns, int)
+            else by_name(*columns)
+        )
         df = df.select(cols)
     return df
 
