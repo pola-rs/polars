@@ -594,6 +594,35 @@ def test_read_csv_eol_char_with_non_utf8_encoding(
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+@pytest.mark.write_disk
+def test_read_csv_eol_char_non_utf8_encoding_without_fsspec(
+    chunk_override: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r"""Companion to #27408 covering the non-fsspec fallback open site.
+
+    A string path with a non-utf8 encoding takes the fsspec local-file branch
+    when fsspec is installed, but falls through to a second text-mode open in
+    `prepare_file_arg` when it is not. That site needs `newline=""` too, or the
+    universal-newlines mode rewrites the literal `\r` eol and collapses the
+    frame to one row. Force the fallback by disabling fsspec.
+    """
+    monkeypatch.setattr("polars.io._utils._FSSPEC_AVAILABLE", False)
+
+    tmp_path.mkdir(exist_ok=True)
+
+    bts = b"a,b,c\r1,2,3\r4,5,6"
+    file_path = tmp_path / "cr_eol_no_fsspec.csv"
+    file_path.write_bytes(bts)
+
+    expected = pl.DataFrame({"a": [1, 4], "b": [2, 5], "c": [3, 6]})
+
+    out = pl.read_csv(str(file_path), eol_char="\r", encoding="latin-1")
+    assert out.shape == (2, 3)
+    assert out.columns == ["a", "b", "c"]
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_column_rename_and_schema_overrides(chunk_override: None) -> None:
     csv = textwrap.dedent(
         """\
