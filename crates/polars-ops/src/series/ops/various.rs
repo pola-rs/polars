@@ -326,7 +326,7 @@ fn is_sorted_ca_bool(ca: &BooleanChunked, descending: bool) -> bool {
 /// - `descending` is `None` when there are fewer than two distinct non-null values, so no direction
 ///   is implied.
 /// - `nulls_last` is `None` when `s` has no nulls, is entirely null, or the nulls are interleaved
-///   (the last of which is not sorted under any placement and is rejected by [`is_sorted_impl`]).
+///   (the last of which is not sorted under any placement and is rejected by the `is_sorted` check).
 ///
 /// The two axes are independent, so callers can use whichever was determined even when the other
 /// could not be.
@@ -350,7 +350,7 @@ pub fn resolve_sort_options(
 
 /// Infers null placement from `s`: `Some(true)` if all nulls sit at the tail, `Some(false)` if all
 /// sit at the head, and `None` if there are no nulls, `s` is entirely null, or the nulls are
-/// interleaved (the latter is not sorted under any placement; [`is_sorted_impl`] rejects it).
+/// interleaved (the latter is not sorted under any placement; the `is_sorted` check rejects it).
 fn infer_nulls_last(s: &Series) -> Option<bool> {
     let null_count = s.null_count();
     let s_len = s.len();
