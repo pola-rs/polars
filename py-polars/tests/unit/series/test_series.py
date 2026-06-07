@@ -2503,8 +2503,8 @@ def test_full_null_cast_to_empty_struct_23276() -> None:
 def test_replace_with_expr_raises_22591(old: list[Any], new: list[Any]) -> None:
     s = pl.Series([1])
     with pytest.raises(
-        TypeError,
-        match="passing Expr objects in a list to `replace` is not supported",
+        InvalidOperationError,
+        match="`replace` does not support `old`/`new` values of object dtype",
     ):
         s.replace(old, new)
 

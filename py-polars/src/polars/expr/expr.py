@@ -11522,20 +11522,8 @@ Consider using {self}.implode() instead"""
             old = list(old.keys())
         else:
             if isinstance(old, Sequence) and not isinstance(old, (str, pl.Series)):
-                if any(isinstance(v, pl.Expr) for v in old):
-                    msg = (
-                        "passing Expr objects in a list to `replace` is not supported, "
-                        "pass the expression directly instead"
-                    )
-                    raise TypeError(msg)
                 old = pl.Series(old)
             if isinstance(new, Sequence) and not isinstance(new, (str, pl.Series)):
-                if any(isinstance(v, pl.Expr) for v in new):
-                    msg = (
-                        "passing Expr objects in a list to `replace` is not supported, "
-                        "pass the expression directly instead"
-                    )
-                    raise TypeError(msg)
                 new = pl.Series(new)
 
         old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]

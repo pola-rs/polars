@@ -1025,6 +1025,11 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
                 let (_, type_new) =
                     unpack!(get_aexpr_and_type(expr_arena, input[2].node(), schema));
 
+                polars_ensure!(
+                    !type_old.contains_objects() && !type_new.contains_objects(),
+                    InvalidOperation: "`replace` does not support `old`/`new` values of object dtype"
+                );
+
                 let (DataType::List(_), DataType::List(_)) = (&type_old, &type_new) else {
                     let function = function.clone();
                     let mut input = input.clone();
