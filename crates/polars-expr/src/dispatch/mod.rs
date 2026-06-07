@@ -291,6 +291,10 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "moment")]
         F::Kurtosis(fisher, bias) => map!(misc::kurtosis, fisher, bias),
         F::ArgUnique => map!(misc::arg_unique),
+        F::UniqueId {
+            maintain_order,
+            dense,
+        } => map!(misc::unique_id, maintain_order, dense),
         F::ArgMin => map!(misc::arg_min),
         F::ArgMax => map!(misc::arg_max),
         F::ArgSort {

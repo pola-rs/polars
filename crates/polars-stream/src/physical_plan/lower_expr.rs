@@ -1391,6 +1391,38 @@ fn lower_exprs_with_ctx(
 
             AExpr::Function {
                 input: ref inner_exprs,
+                function:
+                    IRFunctionExpr::UniqueId {
+                        maintain_order,
+                        dense,
+                    },
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let value_key = unique_column_name();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::UniqueId {
+                    input,
+                    maintain_order,
+                    dense,
+                };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), IDX_DTYPE)]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
+            AExpr::Function {
+                input: ref inner_exprs,
                 function: IRFunctionExpr::GatherEvery { n, offset },
                 options: _,
             } => {

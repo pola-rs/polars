@@ -715,6 +715,17 @@ fn to_graph_rec<'a>(
                 [(input_key, input.port)],
             )
         },
+        UniqueId {
+            input,
+            maintain_order,
+            dense,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::unique_id::UniqueIdNode::new(*maintain_order, *dense),
+                [(input_key, input.port)],
+            )
+        },
 
         ForwardFill { input, limit } => {
             let input_key = to_graph_rec(input.node, ctx)?;

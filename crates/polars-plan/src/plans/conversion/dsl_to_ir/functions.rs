@@ -814,6 +814,13 @@ pub(super) fn convert_functions(
         #[cfg(feature = "repeat_by")]
         F::RepeatBy => I::RepeatBy,
         F::ArgUnique => I::ArgUnique,
+        F::UniqueId {
+            maintain_order,
+            dense,
+        } => I::UniqueId {
+            maintain_order,
+            dense,
+        },
         F::ArgMin => I::ArgMin,
         F::ArgMax => I::ArgMax,
         F::ArgSort {

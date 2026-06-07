@@ -271,6 +271,18 @@ impl Expr {
         self.map_unary(FunctionExpr::ArgUnique)
     }
 
+    /// Assign a unique ID to each unique value.
+    ///
+    /// If `dense` is true, IDs are guaranteed to be in range 0..n_unique.
+    /// If false, IDs are arbitrary but consistent (same value → same ID),
+    /// which allows for more parallelism in streaming.
+    pub fn unique_id(self, maintain_order: bool, dense: bool) -> Self {
+        self.map_unary(FunctionExpr::UniqueId {
+            maintain_order,
+            dense,
+        })
+    }
+
     /// Get the index value that has the minimum value.
     pub fn arg_min(self) -> Self {
         self.map_unary(FunctionExpr::ArgMin)

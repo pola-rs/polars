@@ -344,6 +344,11 @@ pub enum PhysNodeKind {
         input: PhysStream,
         keys: Vec<PlSmallStr>,
     },
+    UniqueId {
+        input: PhysStream,
+        maintain_order: bool,
+        dense: bool,
+    },
     PeakMinMax {
         input: PhysStream,
         is_peak_max: bool,
@@ -586,6 +591,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::SortedUnique { input, .. }
+            | PhysNodeKind::UniqueId { input, .. }
             | PhysNodeKind::PeakMinMax { input, .. } => {
                 rec!(input.node);
                 visit(input);
