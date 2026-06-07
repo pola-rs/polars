@@ -1066,9 +1066,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 polars_ensure!(is_uniq, duplicate = name);
             }
 
-            IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
+            let lp = IRBuilder::new(input, ctxt.expr_arena, ctxt.lp_arena)
                 .group_by(keys, aggs, None, maintain_order, Default::default())?
-                .build()
+                .build();
+            if let IR::GroupBy {
+                ref keys, ref aggs, ..
+            } = lp
+            {
+                ctxt.conversion_optimizer
+                    .fill_scratch(keys, ctxt.expr_arena);
+                ctxt.conversion_optimizer
+                    .fill_scratch(aggs, ctxt.expr_arena);
+            }
+            return run_conversion(lp, ctxt, "pivot");
         },
         DslPlan::Distinct { input, options } => {
             let input =
