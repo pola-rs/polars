@@ -1,9 +1,8 @@
 use polars_buffer::Buffer;
-use polars_parquet_format::ColumnOrder as TColumnOrder;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use super::RowGroupMetadata;
-use super::column_order::ColumnOrder;
+use super::column_order::{ColumnOrder, ColumnOrderTag};
 use super::compact::{CompactColumnChunk, CompactFileMetaData, CompactRowGroup};
 use super::schema_descriptor::SchemaDescriptor;
 use crate::parquet::error::ParquetResult;
@@ -222,7 +221,7 @@ impl FileMetadata {
 
 /// Parses [`ColumnOrder`] from Thrift definition.
 fn parse_column_orders(
-    orders: &[TColumnOrder],
+    orders: &[ColumnOrderTag],
     schema_descr: &SchemaDescriptor,
 ) -> Vec<ColumnOrder> {
     schema_descr
@@ -230,7 +229,7 @@ fn parse_column_orders(
         .iter()
         .zip(orders.iter())
         .map(|(column, order)| match order {
-            TColumnOrder::TYPEORDER(_) => {
+            ColumnOrderTag::TypeDefined => {
                 let sort_order = get_sort_order(
                     &column.descriptor.primitive_type.logical_type,
                     &column.descriptor.primitive_type.converted_type,
@@ -238,6 +237,7 @@ fn parse_column_orders(
                 );
                 ColumnOrder::TypeDefinedOrder(sort_order)
             },
+            ColumnOrderTag::IEEE754TotalOrder => ColumnOrder::IEEE754TotalOrder,
         })
         .collect()
 }

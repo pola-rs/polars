@@ -12,14 +12,14 @@
 //!   See <https://github.com/apache/parquet-format/blob/96edf77704b60b6f3ca2232c218c64eff6c874d3/src/main/thrift/parquet.thrift> for spec
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{ColumnOrder, KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{KeyValue, SchemaElement, SortingColumn};
 
 use super::parquet_thrift::{FieldType, ThriftCompactInputProtocol, ThriftSliceInputProtocol};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{
-    ByteRange, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData, CompactRowGroup,
-    CompactStatistics,
+    ByteRange, ColumnOrderTag, CompactColumnChunk, CompactColumnMetaData, CompactFileMetaData,
+    CompactRowGroup, CompactStatistics,
 };
 
 trait RequireField<T> {
@@ -112,7 +112,7 @@ fn read_file_metadata(
     let mut row_groups: Option<Vec<CompactRowGroup>> = None;
     let mut key_value_metadata: Option<Vec<KeyValue>> = None;
     let mut created_by: Option<String> = None;
-    let mut column_orders: Option<Vec<ColumnOrder>> = None;
+    let mut column_orders: Option<Vec<ColumnOrderTag>> = None;
 
     // 8/9 (encryption): polars has no encryption support; skip via fallthrough.
     read_struct_fields!(prot, |f| {
@@ -396,17 +396,18 @@ fn read_sorting_column(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult
     })
 }
 
-/// Decode a `ColumnOrder` union (kept as format-crate type).
-///
-/// Thrift definition: `union ColumnOrder { 1: TypeDefinedOrder TYPE_ORDER }`.
-fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<ColumnOrder> {
-    use polars_parquet_format::TypeDefinedOrder;
-
-    let mut ret: Option<ColumnOrder> = None;
+/// Decode a `ColumnOrder` union tag. Both variants wrap an empty struct, so
+/// only the union id matters: 1 = `TypeDefinedOrder`, 2 = `IEEE754TotalOrder`.
+fn read_column_order(prot: &mut ThriftSliceInputProtocol<'_>) -> ParquetResult<ColumnOrderTag> {
+    let mut ret: Option<ColumnOrderTag> = None;
     read_struct_fields!(prot, |f| {
         1 => {
             read_empty_struct(prot)?;
-            ret.get_or_insert(ColumnOrder::TYPEORDER(TypeDefinedOrder {}));
+            ret.get_or_insert(ColumnOrderTag::TypeDefined);
+        },
+        2 => {
+            read_empty_struct(prot)?;
+            ret.get_or_insert(ColumnOrderTag::IEEE754TotalOrder);
         },
     });
     ret.ok_or_else(|| ParquetError::oos("ColumnOrder union has no variant set"))
