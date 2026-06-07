@@ -12,6 +12,8 @@ use polars_utils::total_ord::TotalOrd;
 use crate::series::ops::SeriesSealed;
 
 pub trait SeriesMethods: SeriesSealed {
+    /// Create a [`DataFrame`] with the unique `values` of this [`Series`] and a column `"counts"`
+    /// with dtype [`IdxType`]
     fn value_counts(
         &self,
         sort: bool,
@@ -85,10 +87,15 @@ pub trait SeriesMethods: SeriesSealed {
         nulls_last: Option<bool>,
     ) -> PolarsResult<bool> {
         let s = self.as_series();
-        match resolve_sort_options(s, descending, nulls_last)? {
-            None => Ok(true),
-            Some(opts) => is_sorted_impl(s, opts),
-        }
+        let (descending, nulls_last) = resolve_sort_options(s, descending, nulls_last)?;
+        // When an option could not be inferred the series is trivially sorted along that axis
+        // (e.g. all non-null values equal, or no nulls), so any value works; default to `false`.
+        let options = SortOptions {
+            descending: descending.unwrap_or(false),
+            nulls_last: nulls_last.unwrap_or(false),
+            ..Default::default()
+        };
+        is_sorted_impl(s, options)
     }
 }
 
@@ -124,8 +131,10 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
 
     let s_len = s.len();
     if null_count == s_len {
+        // All nulls are equal.
         return Ok(true);
     }
+    // Check if nulls are in the right location.
     if null_count > 0 {
         if options.nulls_last {
             if s.slice((s_len - null_count) as i64, null_count)
@@ -146,33 +155,211 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
         })
     }
 
-    let cmp_len = s_len - null_count - 1;
-    let offset = !options.nulls_last as i64 * null_count as i64;
-    let (s1, s2) = (s.slice(offset, cmp_len), s.slice(offset + 1, cmp_len));
-    let cmp_op = if options.descending {
-        Series::gt_eq
-    } else {
-        Series::lt_eq
-    };
-    Ok(cmp_op(&s1, &s2)?.all())
+    // Logical non-primitive types (e.g. String, Categorical, List, …): take only the contiguous
+    // non-null values (`non_null`). For ordinary `Categorical` use `iter_str` (below); otherwise
+    // `to_physical_repr`, then
+    // (1) for ordinary [`DataType::Categorical`], compare adjacent **decoded strings** (`iter_str`),
+    // (2) reuse `is_sorted_ca_num` when the physical type is primitive numeric (temporal /
+    //     Decimal, Enum-as-integer, …) after `to_physical_repr`;
+    // (3) uses a dedicated kernel for boolean values,
+    // (4) else scans string / binary values with `TotalOrd`,
+    // (5) else fall back to pairwise `Series::lt_eq` / `gt_eq` (nested types, etc.).
+    let non_null_len = s_len - null_count;
+    if non_null_len <= 1 {
+        return Ok(true);
+    }
+
+    let offset = (!options.nulls_last as i64) * (null_count as i64);
+    let non_null = s.slice(offset, non_null_len);
+    debug_assert_eq!(
+        non_null.null_count(),
+        0,
+        "internal error: `is_sorted` non-null slice contains nulls"
+    );
+
+    #[cfg(feature = "dtype-categorical")]
+    if matches!(non_null.dtype(), DataType::Categorical(_, _)) {
+        return is_sorted_categorical_lexical_adjacent(&non_null, options);
+    }
+
+    let phys = non_null.to_physical_repr();
+    let s_phys = phys.as_ref();
+    if s_phys.dtype().is_primitive_numeric() {
+        with_match_physical_numeric_polars_type!(s_phys.dtype(), |$T| {
+            let ca: &ChunkedArray<$T> = s_phys.as_ref().as_ref().as_ref();
+            return Ok(is_sorted_ca_num::<$T>(ca, options))
+        })
+    }
+
+    match s_phys.dtype() {
+        DataType::Boolean => {
+            let ca = s_phys.bool()?;
+            Ok(is_sorted_ca_bool(ca, options.descending))
+        },
+        DataType::String => {
+            let ca = s_phys.str()?;
+            Ok(is_sorted_adjacent_total_ord(
+                ca.no_null_iter(),
+                options.descending,
+            ))
+        },
+        DataType::Binary => {
+            let ca = s_phys.binary()?;
+            Ok(is_sorted_adjacent_total_ord(
+                ca.no_null_iter(),
+                options.descending,
+            ))
+        },
+        DataType::BinaryOffset => {
+            let ca = s_phys.binary_offset()?;
+            Ok(is_sorted_adjacent_total_ord(
+                ca.no_null_iter(),
+                options.descending,
+            ))
+        },
+        _ => {
+            // `non_null` excludes nulls already; compare `non_null[..-1]` with `non_null[1..]`.
+            let cmp_len = non_null_len - 1;
+            let s1 = non_null.slice(0, cmp_len);
+            let s2 = non_null.slice(1, cmp_len);
+            let cmp_op = if options.descending {
+                Series::gt_eq
+            } else {
+                Series::lt_eq
+            };
+            Ok(cmp_op(&s1, &s2)?.all())
+        },
+    }
 }
 
+/// Returns whether iterator elements are non-decreasing (`descending == false`) or non-increasing
+/// (`descending == true`) under [`TotalOrd`].
+///
+/// Assumes the iterator `it` yields **only** the non-null values in row order (one item per row). An empty
+/// iterator is considered sorted. Stops at the first pair that violates the ordering.
+fn is_sorted_adjacent_total_ord<T: TotalOrd>(
+    it: impl Iterator<Item = T>,
+    descending: bool,
+) -> bool {
+    let mut it = it;
+    // Sliding window: `prev` is always the previous element; seed with the first value.
+    let Some(mut prev) = it.next() else {
+        return true;
+    };
+    if descending {
+        for v in it {
+            if !prev.tot_ge(&v) {
+                return false;
+            }
+            prev = v;
+        }
+    } else {
+        for v in it {
+            if !prev.tot_le(&v) {
+                return false;
+            }
+            prev = v;
+        }
+    }
+    true
+}
+
+/// Ordinary [`DataType::Categorical`]: lexical order via adjacent decoded strings (`iter_str`), same as
+/// `Series::lt_eq` / `gt_eq`, but without a Boolean series. Caller must pass a contiguous **non-null**
+/// slice.
+#[cfg(feature = "dtype-categorical")]
+fn is_sorted_categorical_lexical_adjacent(s: &Series, options: SortOptions) -> PolarsResult<bool> {
+    polars_ensure!(
+        matches!(s.dtype(), DataType::Categorical(_, _)),
+        ComputeError: "internal error: expected Categorical in lexical `is_sorted` path",
+    );
+
+    with_match_categorical_physical_type!(s.dtype().cat_physical().unwrap(), |$C| {
+        let ca = s.cat::<$C>()?;
+
+        // `ca.null_count() == 0` implies each `phys` row decodes via `iter_str` to `Some(..)`
+        Ok(is_sorted_adjacent_total_ord(
+            ca.iter_str().map(|opt| {
+                opt.expect(
+                    "`iter_str` produced None while categorical null_count reported 0 (`is_sorted`)"
+                )
+            }),
+            options.descending,
+        ))
+    })
+}
+
+/// Booleans ordered as [`false`] < [`true`] (same as inequality comparisons on [`BooleanChunked`]).
+///
+/// Monotone order is equivalent to at most one plateau change: ascending is `F…FT…T`, descending is
+/// `T…TF…F`. Implemented with `first_true_idx` / `first_false_idx` plus a global false/true count
+/// check.
+///
+/// Caller must ensure **`ca` has no nulls** on the flattened series (see `non_null` slice above).
+fn is_sorted_ca_bool(ca: &BooleanChunked, descending: bool) -> bool {
+    let len = ca.len();
+    if len <= 1 {
+        return true;
+    }
+    debug_assert_eq!(
+        ca.null_count(),
+        0,
+        "internal error: `is_sorted_ca_bool` expects a non-null boolean slice"
+    );
+    if descending {
+        let Some(idx) = ca.first_false_idx() else {
+            return true;
+        };
+        !ca.slice(idx as i64, ca.len() - idx).any()
+    } else {
+        let Some(idx) = ca.first_true_idx() else {
+            return true;
+        };
+        ca.slice(idx as i64, ca.len() - idx).all()
+    }
+}
+
+/// Infers the `(descending, nulls_last)` sort options for `s`, honoring any provided hints.
+///
+/// Each returned value is `Some` when known — taken from the corresponding hint when given,
+/// otherwise inferred from the data — and `None` when it cannot be inferred from `s` alone:
+/// - `descending` is `None` when there are fewer than two distinct non-null values, so no direction
+///   is implied.
+/// - `nulls_last` is `None` when `s` has no nulls, is entirely null, or the nulls are interleaved
+///   (the last of which is not sorted under any placement and is rejected by [`is_sorted_impl`]).
+///
+/// The two axes are independent, so callers can use whichever was determined even when the other
+/// could not be.
 pub fn resolve_sort_options(
     s: &Series,
     descending: Option<bool>,
     nulls_last: Option<bool>,
-) -> PolarsResult<Option<SortOptions>> {
+) -> PolarsResult<(Option<bool>, Option<bool>)> {
+    let nulls_last = match nulls_last {
+        Some(n) => Some(n),
+        None => infer_nulls_last(s),
+    };
+
+    let descending = match descending {
+        Some(d) => Some(d),
+        None => infer_descending(s, nulls_last.unwrap_or(false))?,
+    };
+
+    Ok((descending, nulls_last))
+}
+
+/// Infers null placement from `s`: `Some(true)` if all nulls sit at the tail, `Some(false)` if all
+/// sit at the head, and `None` if there are no nulls, `s` is entirely null, or the nulls are
+/// interleaved (the latter is not sorted under any placement; [`is_sorted_impl`] rejects it).
+fn infer_nulls_last(s: &Series) -> Option<bool> {
     let null_count = s.null_count();
     let s_len = s.len();
 
-    if null_count == s_len {
-        return Ok(None);
+    if null_count == 0 || null_count == s_len {
+        return None;
     }
 
-    let nulls_actually_last: Option<bool> = if null_count == 0 {
-        None
-    } else if s
-        .slice((s_len - null_count) as i64, null_count)
+    if s.slice((s_len - null_count) as i64, null_count)
         .null_count()
         == null_count
     {
@@ -180,28 +367,8 @@ pub fn resolve_sort_options(
     } else if s.slice(0, null_count).null_count() == null_count {
         Some(false)
     } else {
-        return Ok(Some(SortOptions {
-            descending: descending.unwrap_or(false),
-            nulls_last: false,
-            ..Default::default()
-        }));
-    };
-
-    let nulls_last = nulls_last.or(nulls_actually_last).unwrap_or(false);
-
-    let descending = match descending {
-        Some(d) => d,
-        None => match infer_descending(s, nulls_last)? {
-            Some(d) => d,
-            None => return Ok(None),
-        },
-    };
-
-    Ok(Some(SortOptions {
-        descending,
-        nulls_last,
-        ..Default::default()
-    }))
+        None
+    }
 }
 
 fn infer_descending(s: &Series, nulls_last: bool) -> PolarsResult<Option<bool>> {

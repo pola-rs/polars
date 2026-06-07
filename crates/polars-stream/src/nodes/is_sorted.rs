@@ -1,32 +1,32 @@
+use std::sync::Arc;
+
 use polars_core::datatypes::AnyValue;
-use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, PlSmallStr, Series, SortOptions};
 use polars_ops::prelude::SeriesMethods;
 use polars_ops::series::resolve_sort_options;
+use polars_utils::sort::reorder_cmp;
 
 use super::compute_node_prelude::*;
-use crate::morsel::SourceToken;
+use super::in_memory_source::InMemorySourceNode;
 use crate::nodes::ComputeNode;
 
 enum IsSortedState {
     Sink {
         is_sorted: bool,
-        opts: Option<SortOptions>,
-        nulls_last_anchored: bool,
-        last_value: Option<AnyValue<'static>>,
-        last_was_null: bool,
-        seen_null: bool,
-        seen_value_after_null: bool,
+        /// Sort direction, once known: seeded from the hint, then fixed by the first distinct pair.
         committed_descending: Option<bool>,
+        /// Null placement, once known: seeded from the hint, then fixed by the first null/non-null
+        /// transition.
+        committed_nulls_last: Option<bool>,
+        /// Last value of the previous morsel, for the cross-morsel boundary check.
+        last_value: Option<AnyValue<'static>>,
     },
-    Source(Option<DataFrame>),
+    Source(InMemorySourceNode),
     Done,
 }
 
 pub struct IsSortedNode {
     state: IsSortedState,
-    descending_hint: Option<bool>,
-    nulls_last_hint: Option<bool>,
     output_name: PlSmallStr,
 }
 
@@ -39,16 +39,10 @@ impl IsSortedNode {
         Self {
             state: IsSortedState::Sink {
                 is_sorted: true,
-                opts: None,
-                nulls_last_anchored: false,
+                committed_descending: descending,
+                committed_nulls_last: nulls_last,
                 last_value: None,
-                last_was_null: false,
-                seen_null: false,
-                seen_value_after_null: false,
-                committed_descending: None,
             },
-            descending_hint: descending,
-            nulls_last_hint: nulls_last,
             output_name,
         }
     }
@@ -56,15 +50,9 @@ impl IsSortedNode {
     #[allow(clippy::too_many_arguments)]
     fn spawn_sink<'env, 's>(
         is_sorted: &'env mut bool,
-        opts: &'env mut Option<SortOptions>,
-        nulls_last_anchored: &'env mut bool,
-        last_value: &'env mut Option<AnyValue<'static>>,
-        last_was_null: &'env mut bool,
-        seen_null: &'env mut bool,
-        seen_value_after_null: &'env mut bool,
         committed_descending: &'env mut Option<bool>,
-        descending_hint: Option<bool>,
-        nulls_last_hint: Option<bool>,
+        committed_nulls_last: &'env mut Option<bool>,
+        last_value: &'env mut Option<AnyValue<'static>>,
         scope: &'s TaskScope<'s, 'env>,
         recv: RecvPort<'_>,
         _state: &'s StreamingExecutionState,
@@ -84,211 +72,95 @@ impl IsSortedNode {
                 assert_eq!(df.width(), 1);
                 let series = df[0].as_materialized_series();
 
-                if opts.is_none() {
-                    if let Some(o) = resolve_sort_options(series, descending_hint, nulls_last_hint)?
-                    {
-                        *opts = Some(o);
-                        *nulls_last_anchored = nulls_last_hint.is_some() || series.null_count() > 0;
-                    }
+                if !process_morsel(
+                    series,
+                    committed_descending,
+                    committed_nulls_last,
+                    last_value,
+                )? {
+                    *is_sorted = false;
+                    return Ok(());
                 }
-
-                if opts.is_none() {
-                    if !scan_unresolved(
-                        series,
-                        last_value,
-                        *last_was_null,
-                        seen_null,
-                        seen_value_after_null,
-                        committed_descending,
-                        descending_hint,
-                        nulls_last_hint,
-                        opts,
-                    )? {
-                        *is_sorted = false;
-                        return Ok(());
-                    }
-                    if opts.is_some() {
-                        *nulls_last_anchored = true;
-                    }
-                }
-
-                if opts.is_some() && !*nulls_last_anchored && series.null_count() > 0 {
-                    if !reanchor_nulls_last(series, opts.as_mut().unwrap()) {
-                        *is_sorted = false;
-                        return Ok(());
-                    }
-                    *nulls_last_anchored = true;
-                }
-
-                if let Some(resolved) = *opts {
-                    if !series.is_sorted(resolved)? {
-                        *is_sorted = false;
-                        return Ok(());
-                    }
-
-                    let first = series.get(0).unwrap();
-                    if !boundary_ok(last_value.as_ref(), *last_was_null, &first, resolved) {
-                        *is_sorted = false;
-                        return Ok(());
-                    }
-                }
-
-                update_last(series, last_value, last_was_null);
             }
             Ok(())
         }))
     }
+}
 
-    fn spawn_source<'env, 's>(
-        df: &'env mut Option<DataFrame>,
-        scope: &'s TaskScope<'s, 'env>,
-        send: SendPort<'_>,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        let mut send = send.serial();
-        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
-            let _ = send.send(morsel).await;
-            Ok(())
-        }));
+/// Commits a newly observed value for an option axis. If the axis is not yet known it is fixed to
+/// `value`; if it is already known, a mismatch means the input is not sorted (returns `false`).
+fn observe(committed: &mut Option<bool>, value: bool) -> bool {
+    match committed {
+        None => {
+            *committed = Some(value);
+            true
+        },
+        Some(c) => *c == value,
     }
 }
 
-fn update_last(
+/// Folds one morsel into the running sortedness check. Returns `false` as soon as the input is known
+/// to be unsorted. Inference is done with vectorized series operations; only the two morsel
+/// endpoints are inspected scalar-wise, so this stays `O(1)` per morsel in element lookups.
+fn process_morsel(
     series: &Series,
+    committed_descending: &mut Option<bool>,
+    committed_nulls_last: &mut Option<bool>,
     last_value: &mut Option<AnyValue<'static>>,
-    last_was_null: &mut bool,
-) {
-    let last = series.get(series.len() - 1).unwrap();
-    *last_was_null = last.is_null();
-    *last_value = Some(last.into_static());
-}
+) -> PolarsResult<bool> {
+    let first = series.get(0).unwrap();
 
-fn reanchor_nulls_last(series: &Series, opts: &mut SortOptions) -> bool {
-    let null_count = series.null_count();
-    let s_len = series.len();
-    debug_assert!(null_count > 0);
-
-    // All-null morsel: nulls came after the prior non-null tail, so nulls_last=true.
-    if null_count == s_len {
-        opts.nulls_last = true;
-        return true;
+    // Reconcile the boundary with the previous morsel before inferring from this one.
+    if let Some(prev) = last_value.as_ref() {
+        match (prev.is_null(), first.is_null()) {
+            // A non-null followed by a null fixes nulls-last; a null followed by a non-null fixes
+            // nulls-first. A contradiction means the nulls are not all on one side.
+            (false, true) if !observe(committed_nulls_last, true) => return Ok(false),
+            (true, false) if !observe(committed_nulls_last, false) => return Ok(false),
+            _ => {},
+        }
+        // The first distinct non-null pair fixes the direction, even across a boundary.
+        if committed_descending.is_none() && !prev.is_null() && !first.is_null() && &first != prev {
+            *committed_descending = Some(&first < prev);
+        }
     }
 
-    let tail_all_null = series
-        .slice((s_len - null_count) as i64, null_count)
-        .null_count()
-        == null_count;
-    if tail_all_null {
-        opts.nulls_last = true;
-        return true;
+    // Infer whatever this morsel reveals about the still-unknown axes (vectorized).
+    let (morsel_descending, morsel_nulls_last) =
+        resolve_sort_options(series, *committed_descending, *committed_nulls_last)?;
+    if committed_descending.is_none() {
+        *committed_descending = morsel_descending;
+    }
+    if committed_nulls_last.is_none() {
+        *committed_nulls_last = morsel_nulls_last;
     }
 
-    false
-}
-
-fn boundary_ok(
-    prev: Option<&AnyValue<'static>>,
-    prev_was_null: bool,
-    first: &AnyValue<'_>,
-    opts: SortOptions,
-) -> bool {
-    let Some(prev) = prev else {
-        return true;
+    // Unknown axes are trivially sorted along that axis, so default them to `false`. Any genuine
+    // violation (wrong direction, misplaced nulls) is caught by `is_sorted` / `boundary_ok`.
+    let opts = SortOptions {
+        descending: committed_descending.unwrap_or(false),
+        nulls_last: committed_nulls_last.unwrap_or(false),
+        ..Default::default()
     };
 
-    match (prev_was_null, first.is_null()) {
-        (true, true) => true,
-        (true, false) => !opts.nulls_last,
-        (false, true) => opts.nulls_last,
-        (false, false) => {
-            if opts.descending {
-                prev >= first
-            } else {
-                prev <= first
-            }
-        },
+    if !series.is_sorted(opts)? {
+        return Ok(false);
     }
+    if !boundary_ok(last_value.as_ref(), &first, opts) {
+        return Ok(false);
+    }
+
+    *last_value = Some(series.get(series.len() - 1).unwrap().into_static());
+    Ok(true)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn scan_unresolved(
-    series: &Series,
-    last_value: &Option<AnyValue<'static>>,
-    prev_last_was_null: bool,
-    seen_null: &mut bool,
-    seen_value_after_null: &mut bool,
-    committed_descending: &mut Option<bool>,
-    descending_hint: Option<bool>,
-    nulls_last_hint: Option<bool>,
-    opts: &mut Option<SortOptions>,
-) -> PolarsResult<bool> {
-    let len = series.len();
-    if len == 0 {
-        return Ok(true);
+fn boundary_ok(prev: Option<&AnyValue<'static>>, first: &AnyValue<'_>, opts: SortOptions) -> bool {
+    match prev {
+        None => true,
+        // The boundary is sorted iff `prev` orders before-or-equal to `first` under the resolved
+        // options. `reorder_cmp` handles both null placement and sort direction.
+        Some(prev) => reorder_cmp(prev, first, opts.descending, opts.nulls_last).is_le(),
     }
-
-    if prev_last_was_null {
-        *seen_null = true;
-    }
-
-    let mut prev_non_null = last_value.clone().filter(|_| !prev_last_was_null);
-
-    for i in 0..len {
-        let v = series.get(i).unwrap();
-
-        if v.is_null() {
-            if *seen_value_after_null {
-                return Ok(false);
-            }
-            *seen_null = true;
-            continue;
-        }
-
-        if *seen_null {
-            *seen_value_after_null = true;
-        }
-
-        if let Some(prev) = prev_non_null.as_ref() {
-            if &v != prev {
-                let step_descending = &v < prev;
-
-                match *committed_descending {
-                    None => {
-                        if let Some(d) = descending_hint {
-                            if d != step_descending {
-                                return Ok(false);
-                            }
-                        }
-                        *committed_descending = Some(step_descending);
-                    },
-                    Some(d) => {
-                        if d != step_descending {
-                            return Ok(false);
-                        }
-                    },
-                }
-            }
-        }
-
-        prev_non_null = Some(v.into_static());
-    }
-
-    if let Some(d) = *committed_descending {
-        if *seen_null || nulls_last_hint.is_some() {
-            let nulls_last = match nulls_last_hint {
-                Some(n) => n,
-                None => !*seen_value_after_null,
-            };
-            *opts = Some(SortOptions {
-                descending: d,
-                nulls_last,
-                ..Default::default()
-            });
-        }
-    }
-
-    Ok(true)
 }
 
 impl ComputeNode for IsSortedNode {
@@ -300,38 +172,34 @@ impl ComputeNode for IsSortedNode {
         &mut self,
         recv: &mut [PortState],
         send: &mut [PortState],
-        _state: &StreamingExecutionState,
+        state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
-        match &mut self.state {
-            _ if send[0] == PortState::Done => {
-                self.state = IsSortedState::Done;
-            },
-            IsSortedState::Sink { is_sorted, .. } if !*is_sorted => {
-                let column = Column::new(self.output_name.clone(), &[false]);
-                let out = unsafe { DataFrame::new_unchecked(1, vec![column]) };
-                self.state = IsSortedState::Source(Some(out));
-            },
-            IsSortedState::Sink { is_sorted, .. } if matches!(recv[0], PortState::Done) => {
-                let column = Column::new(self.output_name.clone(), &[*is_sorted]);
-                let out = unsafe { DataFrame::new_unchecked(1, vec![column]) };
-                self.state = IsSortedState::Source(Some(out));
-            },
-            IsSortedState::Source(df) if df.is_none() => {
-                self.state = IsSortedState::Done;
-            },
-            IsSortedState::Done | IsSortedState::Sink { .. } | IsSortedState::Source(_) => {},
+        // If the output doesn't want any more data, transition to being done.
+        if send[0] == PortState::Done && !matches!(self.state, IsSortedState::Done) {
+            self.state = IsSortedState::Done;
         }
 
-        match &self.state {
+        // Once we know the answer (early `false`, or the input is exhausted),
+        // transition to emitting the single-row result.
+        if let IsSortedState::Sink { is_sorted, .. } = &self.state {
+            if !*is_sorted || recv[0] == PortState::Done {
+                let column = Column::new(self.output_name.clone(), &[*is_sorted]);
+                let df = unsafe { DataFrame::new_unchecked(1, vec![column]) };
+                let source = InMemorySourceNode::new(Arc::new(df), MorselSeq::default());
+                self.state = IsSortedState::Source(source);
+            }
+        }
+
+        match &mut self.state {
             IsSortedState::Sink { .. } => {
                 send[0] = PortState::Blocked;
                 recv[0] = PortState::Ready;
             },
-            IsSortedState::Source(..) => {
+            IsSortedState::Source(source) => {
                 recv[0] = PortState::Done;
-                send[0] = PortState::Ready;
+                source.update_state(&mut [], send, state)?;
             },
             IsSortedState::Done => {
                 recv[0] = PortState::Done;
@@ -355,37 +223,26 @@ impl ComputeNode for IsSortedNode {
         match &mut self.state {
             IsSortedState::Sink {
                 is_sorted,
-                opts,
-                nulls_last_anchored,
-                last_value,
-                last_was_null,
-                seen_null,
-                seen_value_after_null,
                 committed_descending,
+                committed_nulls_last,
+                last_value,
             } => {
                 assert!(send_ports[0].is_none());
                 let recv = recv_ports[0].take().unwrap();
                 Self::spawn_sink(
                     is_sorted,
-                    opts,
-                    nulls_last_anchored,
-                    last_value,
-                    last_was_null,
-                    seen_null,
-                    seen_value_after_null,
                     committed_descending,
-                    self.descending_hint,
-                    self.nulls_last_hint,
+                    committed_nulls_last,
+                    last_value,
                     scope,
                     recv,
                     state,
                     join_handles,
                 );
             },
-            IsSortedState::Source(df) => {
+            IsSortedState::Source(source) => {
                 assert!(recv_ports[0].is_none());
-                let send = send_ports[0].take().unwrap();
-                Self::spawn_source(df, scope, send, join_handles);
+                source.spawn(scope, &mut [], send_ports, state, join_handles);
             },
             IsSortedState::Done => unreachable!(),
         }
