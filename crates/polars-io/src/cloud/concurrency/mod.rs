@@ -139,8 +139,8 @@ fn get_floor_byte_budget(max_chunk_size: u64) -> u64 {
 }
 
 pub fn get_request_budget() -> u32 {
-    // Maximum number of concurrent in-flight requests. 
-    // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the 
+    // Maximum number of concurrent in-flight requests.
+    // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
     // max concurrent TCP sessions to S3 for the pipeline.
     // Consider the tokio max_thread count, OS limitations, and object_store back-end limitations
     // when modifying this value.
@@ -259,15 +259,18 @@ impl ConcurrencyController {
                 };
 
                 // 2. Step regime through its state machine
-                let (observed_bdp, gain, state, state_label) = {
+                let (observed_bdp, gain, state, state_label, queuing_ratio) = {
                     let model = model.lock().unwrap();
                     let mut regime = regime.lock().unwrap();
                     regime.step(&model, now);
+                    let queuing_ratio =
+                        model.ttfb_avg().as_secs_f64() / model.ttfb_min().as_secs_f64();
                     (
                         model.bdp_bytes(),
                         regime.gain_factor(),
                         regime.state().clone(),
                         regime.state_label(),
+                        queuing_ratio,
                     )
                 };
 
@@ -290,6 +293,15 @@ impl ConcurrencyController {
                     config.budget_resize_threshold,
                 ) {
                     //kdn TODO - what if this takes longer than a tick
+
+                    // kdn HACK
+
+                    let target_budget = if queuing_ratio > 5.0 {
+                        current_byte_budget // hold — we're causing the queuing
+                    } else {
+                        (base_budget as f64 * gain) as u64
+                    };
+
                     admission.resize_byte_budget(target_budget).await;
                 }
 
