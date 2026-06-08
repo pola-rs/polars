@@ -178,10 +178,15 @@ impl Model {
         }
     }
 
+    // pub fn rtt_for_bdp(&self) -> Duration {
+    //     self.ttfb_ema
+    //         .map(Duration::from_secs_f64)
+    //         .unwrap_or(self.ttfb_min_default)
+    // }
+
     pub fn rtt_for_bdp(&self) -> Duration {
-        self.ttfb_ema
-            .map(Duration::from_secs_f64)
-            .unwrap_or(self.ttfb_min_default)
+        //kdn TOGGLE HERE
+        self.ttfb_avg.unwrap_or(self.ttfb_min_default)
     }
 
     pub fn bdp_bytes(&self) -> u64 {
