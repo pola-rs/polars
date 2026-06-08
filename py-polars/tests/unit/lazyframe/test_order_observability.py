@@ -142,7 +142,7 @@ def test_remove_sorts_on_unordered() -> None:
         .sort("a")
         .join(pl.LazyFrame({"b": [1, 2, 3]}), on=pl.lit(1))
     )
-    explain = lf.explain()
+    explain = lf.explain(engine="streaming")
     assert explain.count("SORT") == 0
 
     lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").unique()

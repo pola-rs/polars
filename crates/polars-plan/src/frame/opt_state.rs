@@ -39,6 +39,9 @@ bitflags! {
         const CHECK_ORDER_OBSERVE = 1 << 15;
         /// Collapse consecutive sort nodes and pull them up through selecting nodes.
         const SORT_COLLAPSE = 1 << 16;
+        /// The streaming engine was selected automatically. Used in DSl->IR conversion to maintain
+        /// behavior of in-memory engine (e.g. forcing joins to maintain order).
+        const AUTO_SELECTED_STREAMING = 1 << 17;
     }
 }
 

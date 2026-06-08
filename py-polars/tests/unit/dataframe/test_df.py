@@ -1833,7 +1833,6 @@ def test_hash_collision_multiple_columns_equal_values_15390(e: pl.Expr) -> None:
         assert max_bucket_size == 1
 
 
-@pytest.mark.may_fail_auto_streaming  # Python objects not yet supported in row encoding
 @pytest.mark.may_fail_cloud
 def test_hashing_on_python_objects() -> None:
     # see if we can do a group_by, drop_duplicates on a DataFrame with objects.

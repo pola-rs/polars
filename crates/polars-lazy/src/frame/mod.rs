@@ -625,13 +625,22 @@ impl LazyFrame {
         let engine = match engine {
             Engine::Streaming => Engine::Streaming,
             _ if std::env::var("POLARS_FORCE_STREAMING").as_deref() == Ok("1") => Engine::Streaming,
-            Engine::Auto => Engine::InMemory,
+            Engine::Auto => {
+                if self.opt_state.eager() {
+                    Engine::InMemory
+                } else {
+                    self.opt_state |= OptFlags::AUTO_SELECTED_STREAMING;
+                    Engine::Streaming
+                }
+            },
             v => v,
         };
 
         if engine != Engine::Streaming
             && std::env::var("POLARS_AUTO_STREAMING").as_deref() == Ok("1")
         {
+            self.opt_state |= OptFlags::AUTO_SELECTED_STREAMING;
+
             feature_gated!("streaming", {
                 if let Some(r) = self.clone()._collect_with_streaming_suppress_todo_panic() {
                     return r;

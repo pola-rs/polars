@@ -191,6 +191,23 @@ pub fn lower_ir(
 
     let ir_node = ir_arena.get(node);
     let output_schema = IR::schema_with_cache(node, ir_arena, schema_cache);
+
+    // IR::ExtContext fallback. This must dispatch the IR node directly on top of the ExtContext
+    // into the in-memory engine, as that performs the selection of columns.
+    if ir_node
+        .inputs()
+        .any(|node| matches!(ir_arena.get(node), IR::ExtContext { .. }))
+    {
+        return lower_subtree_to_inmem_engine(
+            node,
+            output_schema,
+            ir_arena,
+            expr_arena,
+            phys_sm,
+            ctx,
+        );
+    }
+
     let node_kind = match ir_node {
         IR::SimpleProjection { input, columns } => {
             disable_morsel_split.get_or_insert(true);
@@ -816,7 +833,16 @@ pub fn lower_ir(
 
                     FileScanIR::ExpandedPaths { name: _ } => unreachable!(),
 
-                    FileScanIR::Anonymous { .. } => todo!("unimplemented: AnonymousScan"),
+                    FileScanIR::Anonymous { .. } => {
+                        return lower_subtree_to_inmem_engine(
+                            node,
+                            output_schema,
+                            ir_arena,
+                            expr_arena,
+                            phys_sm,
+                            ctx,
+                        );
+                    },
                 };
 
                 {
@@ -1619,7 +1645,8 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
-        IR::ExtContext { .. } => todo!(),
+        // Cannot execute IR::ExtContext as the root node.
+        IR::ExtContext { .. } => panic!(),
         IR::UnoptimizedDispatch {
             inputs,
             arg_map,
@@ -1854,4 +1881,57 @@ fn append_sorted_key_column(
         (phys_input, None)
     };
     Ok((phys_output, key_exprs, key_col_name))
+}
+
+/// Lowers the IR tree rooted at `ir_node` to the in-memory engine.
+fn lower_subtree_to_inmem_engine(
+    ir_node: Node,
+    ir_node_output_schema: Arc<Schema>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    ctx: StreamingLowerIRContext<'_>,
+) -> PolarsResult<PhysStream> {
+    let mem_engine_executor = create_physical_plan(
+        ir_node,
+        ir_arena,
+        expr_arena,
+        Some(crate::dispatch::build_streaming_query_executor),
+    )?;
+
+    let input = phys_sm.insert(PhysNode::new(
+        Arc::new(Default::default()),
+        PhysNodeKind::InMemorySource {
+            df: Arc::new(DataFrame::empty_with_height(1)),
+            disable_morsel_split: true,
+        },
+    ));
+
+    let format_str = ctx.prepare_visualization.then(|| {
+        format!(
+            "{}",
+            IRPlanRef {
+                lp_top: ir_node,
+                lp_arena: ir_arena,
+                expr_arena,
+            }
+            .display()
+        )
+    });
+
+    let exec = parking_lot::Mutex::new(Some(mem_engine_executor));
+
+    Ok(PhysStream::first(phys_sm.insert(PhysNode::new(
+        ir_node_output_schema,
+        PhysNodeKind::InMemoryMap {
+            input: PhysStream::first(input),
+            map: Arc::new(move |_| {
+                exec.lock()
+                    .take()
+                    .unwrap()
+                    .execute(&mut ExecutionState::new())
+            }),
+            format_str,
+        },
+    ))))
 }
