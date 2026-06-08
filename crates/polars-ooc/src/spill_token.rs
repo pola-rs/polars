@@ -206,9 +206,11 @@ impl<T: Spillable> SpillTokenInner<T> {
             };
 
             spill_ctx_stats.add_unspill(n_bytes, unspill_start);
-            if let Some(ctx) = reinsert_ctx.upgrade() {
-                let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                ctx.reinsert(&dyn_slf, reinsert_id);
+            if reinsert_id == slf.registration_id.load(Ordering::Relaxed) {
+                if let Some(ctx) = reinsert_ctx.upgrade() {
+                    let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
+                    ctx.reinsert(&dyn_slf, reinsert_id);
+                }
             }
 
             WithDrop::dismiss(lock_guard);
@@ -252,9 +254,11 @@ impl<T: Spillable> SpillTokenInner<T> {
                 let value = T::unspill(&spilled).await;
 
                 spill_ctx_stats.add_unspill(*n_bytes, unspill_start);
-                if let Some(ctx) = reinsert_ctx.upgrade() {
-                    let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                    ctx.reinsert(&dyn_slf, *reinsert_id);
+                if *reinsert_id == slf.registration_id.load(Ordering::Relaxed) {
+                    if let Some(ctx) = reinsert_ctx.upgrade() {
+                        let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
+                        ctx.reinsert(&dyn_slf, *reinsert_id);
+                    }
                 }
 
                 *value_slot = ValueSlot::InMemory(value);
