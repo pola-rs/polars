@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use polars_error::PolarsResult;
-use polars_ops::frame::MaintainOrderJoin;
+use polars_ops::frame::{JoinType, MaintainOrderJoin};
 
 use crate::plans::{IR, OptimizationRule};
 
@@ -19,7 +19,10 @@ impl OptimizationRule for ForceMaintainOrderJoin {
         };
 
         let maintain_order = match options.args.maintain_order {
-            MaintainOrderJoin::None => MaintainOrderJoin::LeftRight,
+            MaintainOrderJoin::None => match options.args.how {
+                JoinType::Full => MaintainOrderJoin::RightLeft,
+                _ => MaintainOrderJoin::LeftRight,
+            },
             MaintainOrderJoin::Left => MaintainOrderJoin::LeftRight,
             MaintainOrderJoin::Right => MaintainOrderJoin::RightLeft,
             MaintainOrderJoin::LeftRight | MaintainOrderJoin::RightLeft => return Ok(None),
