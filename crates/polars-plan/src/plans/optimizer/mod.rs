@@ -309,6 +309,12 @@ pub fn optimize(
 
     prune_parquet_metadata(root, ir_arena, expr_arena);
 
+    if opt_flags.contains(OptFlags::AUTO_SELECTED_STREAMING)
+        && get_or_init_members!().has_rechunk_scan
+    {
+        opt_flags.remove(OptFlags::STREAMING | OptFlags::AUTO_SELECTED_STREAMING)
+    }
+
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     {
