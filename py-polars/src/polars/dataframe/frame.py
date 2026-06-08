@@ -8356,8 +8356,8 @@ class DataFrame:
         ╞══════╪══════╪══════╪═══════╪═══════════╡
         │ 1    ┆ 6.0  ┆ a    ┆ x     ┆ a         │
         │ 2    ┆ 7.0  ┆ b    ┆ y     ┆ b         │
-        │ null ┆ null ┆ null ┆ z     ┆ d         │
         │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
+        │ null ┆ null ┆ null ┆ z     ┆ d         │
         └──────┴──────┴──────┴───────┴───────────┘
 
         >>> df.join(other_df, on="ham", how="full", coalesce=True)
@@ -8369,8 +8369,8 @@ class DataFrame:
         ╞══════╪══════╪═════╪═══════╡
         │ 1    ┆ 6.0  ┆ a   ┆ x     │
         │ 2    ┆ 7.0  ┆ b   ┆ y     │
-        │ null ┆ null ┆ d   ┆ z     │
         │ 3    ┆ 8.0  ┆ c   ┆ null  │
+        │ null ┆ null ┆ d   ┆ z     │
         └──────┴──────┴─────┴───────┘
 
         >>> df.join(other_df, on="ham", how="left")
