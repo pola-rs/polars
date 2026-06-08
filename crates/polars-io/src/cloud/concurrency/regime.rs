@@ -37,8 +37,8 @@ impl Regime {
             startup_growth_threshold: 1.05, //kdn ESTIMATE
             startup_exit_rounds: 3,
             // Interval between ProbeUp spikes
-            probe_interval: Duration::from_millis(2000),
-            probe_duration: Duration::from_millis(500),
+            probe_interval: Duration::from_millis(3000), //kdn TBD
+            probe_duration: Duration::from_millis(1000), //kdn TBD
         }
     }
 
@@ -112,7 +112,7 @@ impl Regime {
             RegimeState::Init => 1.0,
             RegimeState::RampUp { .. } => 2.0,
             RegimeState::Stable => 2.0,
-            RegimeState::ProbeUp { .. } => 2.5,
+            RegimeState::ProbeUp { .. } => 3.0,
         }
     }
 

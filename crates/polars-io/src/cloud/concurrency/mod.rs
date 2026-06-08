@@ -32,6 +32,8 @@ use crate::pl_async::get_random_access_chunk_size;
 #[derive(Clone, Copy, Debug)]
 pub struct IoSample {
     pub nbytes: u64,
+    // Time-to-first-byte
+    pub ttfb: Duration,
     // Time-to-last-byte
     pub ttlb: Duration,
     pub completion_time: Instant,
@@ -105,6 +107,7 @@ fn get_init_byte_budget(max_chunk_size: u64) -> u64 {
                 })
                 .get()
         })
+        //kdn TODO INIT probably 2* ??
         .unwrap_or(4 * max_chunk_size)
         .max(1);
 
@@ -250,7 +253,7 @@ impl ConcurrencyController {
 
                 // 1. Recompute estimates
                 // Update bw_max, rtt_min, bw_last
-                let (model_updated, bw_last, ttfb_min_last) = {
+                let (model_updated, bw_last, ttfb_min_last, ttfb_avg_last) = {
                     let mut model = model.lock().unwrap();
                     model.recompute(now)
                 };
@@ -273,7 +276,8 @@ impl ConcurrencyController {
                     RegimeState::Init => config.init_byte_budget,
                     RegimeState::RampUp { .. } => observed_bdp.max(config.init_byte_budget),
                     RegimeState::Stable | RegimeState::ProbeUp { .. } => {
-                        observed_bdp.max(config.floor_byte_budget)
+                        //kdn TEST - hold on to init
+                        observed_bdp.max(config.init_byte_budget)
                     },
                 };
 
@@ -300,7 +304,8 @@ impl ConcurrencyController {
                         bw_max={:.1} MB/s, \
                         bw_last={:.1} MB/s, \
                         rtt_min={:.1} ms, \
-                        rtt_min_last={:.1} ms, \
+                        rtt_avg={:.1} ms, \
+                        rtt_ema={:.1} ms, \
                         bdp_obs={:.1} MB, \
                         budget={:.1} MB, \
                         in_use={:.1} MB, \
@@ -313,7 +318,8 @@ impl ConcurrencyController {
                         model.bw_max_bps() / 1e6,
                         bw_last.unwrap_or(0.0) / 1e6,
                         model.ttfb_min().as_millis(),
-                        ttfb_min_last.unwrap_or_default().as_millis(),
+                        model.ttfb_avg().as_millis(),
+                        model.ttfb_ema_as_millis(),
                         model.bdp_bytes() as f64 / 1e6,
                         stats.byte_budget as f64 / 1e6,
                         stats.bytes_in_use as f64 / 1e6,

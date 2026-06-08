@@ -342,20 +342,47 @@ impl PolarsObjectStore {
                 };
                 let t0 = Instant::now();
 
-                let out = self
+                // kdn HACK
+                let (out, ttfb) = self
                     .io_metrics()
                     .record_io_read(
                         bytes_req,
                         self.exec_with_rebuild_retry_on_err(|s| async move {
-                            s.get_range(path, range.start as u64..range.end as u64)
+                            let t0 = Instant::now();
+                            let response = s
+                                .get_opts(
+                                    path,
+                                    object_store::GetOptions {
+                                        range: Some((range.start as u64..range.end as u64).into()),
+                                        ..Default::default()
+                                    },
+                                )
                                 .await
+                                .expect("unable to fetch get_opts");
+                            let t1 = t0.elapsed();
+                            let out = response.bytes().await?;
+
+                            Ok((out, t1))
                         }),
                     )
                     .await?;
 
+                // kdn TODO RM
+                // let out = self
+                //     .io_metrics()
+                //     .record_io_read(
+                //         bytes_req,
+                //         self.exec_with_rebuild_retry_on_err(|s| async move {
+                //             s.get_range(path, range.start as u64..range.end as u64)
+                //                 .await
+                //         }),
+                //     )
+                //     .await?;
+
                 if let Some(controller) = &controller {
                     controller.record_io(IoSample {
                         nbytes: out.len() as u64,
+                        ttfb,
                         ttlb: t0.elapsed(),
                         completion_time: Instant::now(),
                     });
@@ -962,8 +989,11 @@ mod tests {
 
         // Overlapping range, merge
         assert_eq!(
-            merge_ranges(&[0..80 * 1024 * 1024, 10 * 1024 * 1024..70 * 1024 * 1024], None)
-                .collect::<Vec<_>>(),
+            merge_ranges(
+                &[0..80 * 1024 * 1024, 10 * 1024 * 1024..70 * 1024 * 1024],
+                None
+            )
+            .collect::<Vec<_>>(),
             [(0..80 * 1024 * 1024, 2)]
         );
     }
