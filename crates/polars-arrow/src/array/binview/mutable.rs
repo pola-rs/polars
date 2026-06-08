@@ -10,8 +10,8 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_views_utf8_only;
 use crate::array::binview::{
-    BinaryViewArrayGeneric, DEFAULT_BLOCK_SIZE, MAX_BUFFER_LEN, MAX_EXP_BLOCK_SIZE,
-    MAX_ROW_BYTE_LEN, ViewType,
+    BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE,
+    ViewType,
 };
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
@@ -299,64 +299,41 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
 
     /// Get a [`View`] for a specific set of bytes.
     pub fn push_value_into_buffer(&mut self, bytes: &[u8]) -> View {
-        assert!(bytes.len() <= MAX_ROW_BYTE_LEN);
+        assert!(bytes.len() <= BinaryViewArrayGenericBuilder::<T>::MAX_ROW_BYTE_LEN);
 
         if bytes.len() <= View::MAX_INLINE_SIZE as usize {
-            return View::new_inline(bytes);
-        }
+            View::new_inline(bytes)
+        } else {
+            self.total_buffer_len += bytes.len();
 
-        self.total_buffer_len += bytes.len();
+            // We want to make sure that we never have to memcopy between buffers. So if the
+            // current buffer is not large enough, create a new buffer that is large enough and try
+            // to anticipate the larger size.
+            let required_capacity = self.in_progress_buffer.len() + bytes.len();
+            let does_not_fit_in_buffer = self.in_progress_buffer.capacity() < required_capacity;
+            // Overflow-safe: `bytes.len()` may exceed `MAX_BUFFER_LEN`.
+            let max_buffer_len = BinaryViewArrayGenericBuilder::<T>::MAX_BUFFER_LEN;
+            let offset_will_not_fit = bytes.len() > max_buffer_len - self.in_progress_buffer.len();
 
-        // Per Arrow spec, a view's `offset + length` must be representable as
-        // a signed i32 (i.e. fit in `MAX_BUFFER_LEN`). A single row that
-        // already exceeds that cap cannot share a buffer with anything; place
-        // it into a dedicated buffer with `offset = 0` so the offset itself
-        // remains in-range while still allowing rows up to `MAX_ROW_BYTE_LEN`.
-        if bytes.len() > MAX_BUFFER_LEN {
-            return self.push_value_into_dedicated_buffer(bytes);
-        }
-
-        // Normal path: ensure `offset + length <= MAX_BUFFER_LEN` within the
-        // active buffer. Start a new buffer either when the row would not fit
-        // in the existing capacity (avoid intra-buffer memcopy) or when
-        // appending it would push the end past the spec cap.
-        let required_capacity = self.in_progress_buffer.len() + bytes.len();
-        let does_not_fit_in_buffer = self.in_progress_buffer.capacity() < required_capacity;
-        let offset_will_not_fit = required_capacity > MAX_BUFFER_LEN;
-
-        if does_not_fit_in_buffer || offset_will_not_fit {
-            let new_capacity = (self.in_progress_buffer.capacity() * 2)
-                .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
-                .max(bytes.len());
-            let in_progress = Vec::with_capacity(new_capacity);
-            let flushed = std::mem::replace(&mut self.in_progress_buffer, in_progress);
-            if !flushed.is_empty() {
-                self.completed_buffers.push(flushed.into())
+            if does_not_fit_in_buffer || offset_will_not_fit {
+                // Allocate a new buffer and flush the old buffer.
+                let new_capacity = (self.in_progress_buffer.capacity() * 2)
+                    .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
+                    .max(bytes.len());
+                let in_progress = Vec::with_capacity(new_capacity);
+                let flushed = std::mem::replace(&mut self.in_progress_buffer, in_progress);
+                if !flushed.is_empty() {
+                    self.completed_buffers.push(flushed.into())
+                }
             }
+
+            let offset = self.in_progress_buffer.len() as u32;
+            self.in_progress_buffer.extend_from_slice(bytes);
+
+            let buffer_idx = u32::try_from(self.completed_buffers.len()).unwrap();
+
+            View::new_from_bytes(bytes, buffer_idx, offset)
         }
-
-        let offset = self.in_progress_buffer.len() as u32;
-        self.in_progress_buffer.extend_from_slice(bytes);
-
-        let buffer_idx = u32::try_from(self.completed_buffers.len()).unwrap();
-
-        View::new_from_bytes(bytes, buffer_idx, offset)
-    }
-
-    /// Cold path for a row whose length exceeds `MAX_BUFFER_LEN`: flush the
-    /// in-progress buffer (if any), allocate a dedicated buffer for this row,
-    /// and return a view pointing at offset 0 of that buffer.
-    #[cold]
-    fn push_value_into_dedicated_buffer(&mut self, bytes: &[u8]) -> View {
-        debug_assert!(bytes.len() > View::MAX_INLINE_SIZE as usize);
-        if !self.in_progress_buffer.is_empty() {
-            self.completed_buffers
-                .push(std::mem::take(&mut self.in_progress_buffer).into());
-        }
-        let buffer_idx = u32::try_from(self.completed_buffers.len()).unwrap();
-        self.completed_buffers.push(bytes.to_vec().into());
-        // SAFETY: caller ensured bytes is non-inline.
-        unsafe { View::new_noninline_unchecked(bytes, buffer_idx, 0) }
     }
 
     pub fn extend_null(&mut self, additional: usize) {
@@ -706,11 +683,9 @@ impl MutableBinaryViewArray<[u8]> {
         assert!(sum_length <= buffer.len());
 
         let mut buffer_offset = 0;
-        // `sum_length + in_progress.len() <= MAX_BUFFER_LEN` already implies
-        // `max_length <= MAX_BUFFER_LEN`, since each row's length is bounded
-        // by `sum_length`.
         if min_length > View::MAX_INLINE_SIZE as usize
-            && sum_length + self.in_progress_buffer.len() <= MAX_BUFFER_LEN
+            && sum_length + self.in_progress_buffer.len()
+                <= BinaryViewArrayGenericBuilder::<[u8]>::MAX_BUFFER_LEN
         {
             let buffer_idx = self.completed_buffers().len() as u32;
             let in_progress_buffer_offset = self.in_progress_buffer.len();
@@ -924,19 +899,12 @@ mod tests {
         ]));
     }
 
-    /// Simulates the control flow of an oversize-row insertion (the actual
-    /// `push_value_into_dedicated_buffer` cold path) without allocating an
-    /// `i32::MAX`-sized buffer: we mimic it by manually pushing a synthetic
-    /// "oversize" buffer + view and then verify that subsequent normal pushes
-    /// keep all `data_buffers()` non-empty (no obsolete buffer left behind).
     #[test]
     fn small_oversize_small_no_obsolete_buffer() {
         let mut bv = MutableBinaryViewArray::<[u8]>::with_capacity(0);
         bv.push_value_ignore_validity(b"first non-inline string here");
 
-        // Stand in for an oversize row: a dedicated buffer pushed via the
-        // public `push_buffer` API, and a synthetic non-inline view pointing
-        // at offset 0 of that buffer.
+        // Stand in for an oversize row without allocating one.
         let oversize: Vec<u8> = vec![b'y'; 100];
         let buffer_idx = bv.push_buffer(oversize.clone().into());
         let oversize_view = unsafe { View::new_noninline_unchecked(&oversize, buffer_idx, 0) };
@@ -956,10 +924,6 @@ mod tests {
         assert_eq!(arr.value(2), b"trailing non-inline string here");
     }
 
-    /// `push_buffer` happens to share the cold-path control flow used by
-    /// oversize rows (flush in-progress if non-empty, then push the
-    /// dedicated buffer). Calling it followed by a regular non-inline push
-    /// must not leak a stale empty buffer into the result.
     #[test]
     fn oversize_then_small_no_obsolete_buffer() {
         let mut bv = MutableBinaryViewArray::<[u8]>::with_capacity(0);

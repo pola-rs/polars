@@ -257,10 +257,8 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
 
     let mut all_views_inline = true;
 
-    // Each shared buffer keeps every view's `offset + length` within
-    // `MAX_BUF_SIZE` (i32 spec cap). Rows above that get a dedicated buffer
-    // at offset 0; rows above `MAX_ROW_LEN` (u32::MAX - 1) are rejected.
-    // Tests shrink both bounds to exercise the cold paths cheaply.
+    // i32 spec cap on `offset + length` (`MAX_BUF_SIZE`); per-row cap (`MAX_ROW_LEN`).
+    // Tests shrink both to exercise the cold paths cheaply.
     #[cfg(not(test))]
     const MAX_BUF_SIZE: usize = i32::MAX as usize;
     #[cfg(not(test))]
@@ -309,9 +307,7 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
 
         if length > MAX_BUF_SIZE {
             std::hint::cold_path();
-            // Oversize row: dedicated buffer at offset 0. Slice the active
-            // buffer into [pre-row | row | rest] so the dedicated buffer is
-            // exactly the row, and rest becomes the new active buffer.
+            // Slice [pre-row | row | rest]; the row owns its own buffer at offset 0.
             let cur_buf_consumed = start - previous_buf_lengths;
             let last_buf = cloned_buffers.pop().unwrap();
             let (current, rest) = last_buf.split_at(cur_buf_consumed);
@@ -327,8 +323,7 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             buf_index += 1;
             previous_buf_lengths = end;
 
-            // SAFETY: length > MAX_BUF_SIZE >= View::MAX_INLINE_SIZE so the
-            // view is non-inline.
+            // SAFETY: length > MAX_BUF_SIZE > View::MAX_INLINE_SIZE.
             let view =
                 unsafe { View::new_noninline_unchecked(&slice[start..end], oversize_idx, 0) };
             all_views_inline = false;
@@ -338,8 +333,6 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
 
         if end - previous_buf_lengths > MAX_BUF_SIZE {
             std::hint::cold_path();
-            // Next row's end-offset would overflow `MAX_BUF_SIZE`; rotate to
-            // a fresh slice of the underlying allocation.
             buf_index += 1;
             let (previous, next) = cloned_buffers
                 .last()
@@ -1220,14 +1213,12 @@ mod tests {
         );
     }
 
-    /// Rows whose length exceeds `MAX_BUF_SIZE` (i32 offset cap) but stays
-    /// within `MAX_ROW_LEN` (u32::MAX-1) are placed in a dedicated buffer at
-    /// `offset = 0`. Under cfg(test) MAX_BUF_SIZE = 15 and MAX_ROW_LEN = 30,
-    /// so a 20-byte row exercises the dedicated-buffer cold path.
+    // Under cfg(test): MAX_BUF_SIZE = 15, MAX_ROW_LEN = 30. A 20-byte row
+    // is oversize (> MAX_BUF_SIZE) but valid (≤ MAX_ROW_LEN).
     #[test]
     fn cast_list_uint8_to_binary_oversize_row_gets_dedicated_buffer() {
         let mut data: Vec<u8> = (0..20).collect();
-        data.extend(20..40); // two oversize rows of 20 bytes each
+        data.extend(20..40);
         let values = PrimitiveArray::from_slice(data).boxed();
         let dtype =
             ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
@@ -1253,13 +1244,11 @@ mod tests {
                 (20u8..40).collect::<Vec<_>>()
             ],
         );
-        // Both views reference offset 0 in their own dedicated buffers.
         for view in arr.views().iter() {
             assert_eq!(view.offset, 0);
         }
     }
 
-    /// Rows whose length exceeds `MAX_ROW_LEN` are rejected outright.
     #[test]
     fn cast_list_uint8_to_binary_errors_row_above_max_row_len() {
         let values = PrimitiveArray::from_slice(vec![0u8; 31]);

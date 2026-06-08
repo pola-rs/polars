@@ -209,9 +209,7 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
             .unwrap();
     }
 
-    // Per Arrow spec, view `offset + length` must fit in i32 (signed). Rows
-    // (fixed-size elements) larger than this cap cannot share a buffer with
-    // anything else; route them to the dedicated-buffer slow path.
+    // Each view's `offset + length` must fit in i32 per Arrow spec.
     const MAX_BYTES_PER_BUFFER: usize = i32::MAX as usize;
 
     let size = from.size();
@@ -260,8 +258,7 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
     BinaryViewArray::try_new(datatype, views, buffers.into(), from.validity().cloned()).unwrap()
 }
 
-/// Slow path: every fixed-size element is itself larger than `i32::MAX`, so
-/// each must occupy its own buffer with `offset = 0`.
+/// One element per buffer at offset 0 when `size > i32::MAX`.
 #[cold]
 fn fixed_size_binary_to_binview_oversize(
     from: &FixedSizeBinaryArray,

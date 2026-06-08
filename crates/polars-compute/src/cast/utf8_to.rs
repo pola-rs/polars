@@ -67,10 +67,8 @@ pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -
     )
 }
 
-// View offsets must fit in `OffsetType` (signed). Rows above that get a
-// dedicated buffer slice at offset 0; rows above `MAX_ROW_LEN` are rejected.
-// Tests shrink both bounds so the cold paths are exercised without GBs of
-// input.
+// View offsets must fit in `OffsetType` (signed). Tests shrink it to exercise
+// the rotation/oversize paths cheaply.
 #[cfg(not(test))]
 type OffsetType = i32;
 #[cfg(not(test))]
@@ -80,16 +78,13 @@ type OffsetType = i8;
 #[cfg(test)]
 const MAX_ROW_LEN: usize = (OffsetType::MAX as usize) * 4;
 
-// Buffers point at slices of the shared underlying allocation; cap each slice
-// at `OffsetType::MAX` so the spec's signed offset limit is never exceeded.
 fn truncate_buffer(buf: &Buffer<u8>) -> Buffer<u8> {
     let len = std::cmp::min(buf.len(), OffsetType::MAX as usize);
     buf.clone().sliced(..len)
 }
 
 pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
-    // Defensive: catch accidental changes to `OffsetType` size at release-time.
-    // Skipped in debug (where cfg(test) makes OffsetType = i8).
+    // Compile-time guard against accidentally changing OffsetType's size.
     #[cfg(not(debug_assertions))]
     let _ = std::mem::transmute::<OffsetType, u32>;
 
@@ -141,17 +136,14 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
 
                 if is_oversize_row {
                     std::hint::cold_path();
-                    // Dedicated, exactly-sized slice for this row.
-                    let oversize_slice = base_buffer.clone().sliced(0..bytes.len());
-                    buffers.push(oversize_slice);
+                    // Row owns an exactly-sized slice; rest becomes the new shared slice.
+                    buffers.push(base_buffer.clone().sliced(0..bytes.len()));
                     buffer_idx = buffer_idx.checked_add(1).expect("max buffers exceeded");
 
                     payload[12..16].copy_from_slice(&0u32.to_le_bytes());
                     payload[8..12].copy_from_slice(&buffer_idx.to_le_bytes());
 
-                    // Start a fresh shared slice for any following rows.
-                    let after = base_buffer.clone().sliced(bytes.len()..remaining);
-                    base_buffer = after;
+                    base_buffer = base_buffer.clone().sliced(bytes.len()..remaining);
                     base_ptr = base_buffer.as_ptr() as usize;
                     buffers.push(truncate_buffer(&base_buffer));
                     buffer_idx = buffer_idx.checked_add(1).expect("max buffers exceeded");
@@ -210,23 +202,15 @@ mod test {
         let array = Utf8Array::<i64>::from_slice(values);
 
         let out = utf8_to_utf8view(&array);
-        // Under cfg(test) `OffsetType` is `i8` (cap 127), so two consecutive
-        // 74-byte rows already overflow one shared slice and force a rotation,
-        // giving one buffer per non-inline row (8 in total).
+        // cfg(test) caps OffsetType at i8::MAX = 127; each 74-byte row rotates.
         assert_eq!(out.data_buffers().len(), 8);
-        // Ensure we created a valid binview
         let out = out.values_iter().collect::<Vec<_>>();
         assert_eq!(out, values);
     }
 
-    /// Rows whose own length exceeds `OffsetType::MAX` get a dedicated
-    /// buffer slice where the view's offset is `0`, even though the buffer
-    /// itself is bigger than the spec offset cap. This preserves polars'
-    /// internal capability of representing rows up to `MAX_ROW_LEN` bytes.
     #[test]
     fn oversize_row_gets_dedicated_buffer() {
-        // Under cfg(test), `OffsetType = i8` (max 127), so any row > 127
-        // bytes is oversize.
+        // cfg(test) caps OffsetType at i8::MAX = 127; rows > 127 are oversize.
         let oversize: String = "x".repeat(200);
         let inline = "abc";
         let normal = "y".repeat(50);
@@ -237,7 +221,6 @@ mod test {
         let out_vals: Vec<&str> = out.values_iter().collect();
         assert_eq!(out_vals, values);
 
-        // The oversize row references a buffer of its own at offset 0.
         let oversize_view = out
             .views()
             .iter()

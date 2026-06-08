@@ -293,9 +293,7 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
                 .sum::<usize>();
         }
 
-        // Each shared buffer keeps every view's `offset + length` within
-        // `MAX_BUF_SIZE`. Rows longer than that get a dedicated buffer where
-        // the view's offset is `0`.
+        // Each view's `offset + length` must fit in i32 per Arrow spec.
         const MAX_BUF_SIZE: usize = i32::MAX as usize;
 
         let mut unprocessed_buffer_len = total_buffer_len;
@@ -310,57 +308,27 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
                     if view.length > 12 {
                         let view_len = view.length as usize;
                         let bytes = view.get_slice_unchecked(buffers);
-                        if view_len > MAX_BUF_SIZE {
+                        if new_buffers.last().unwrap_unchecked().len() + view_len > MAX_BUF_SIZE {
                             std::hint::cold_path();
-                            // Oversize row: own buffer at offset 0. Reuse the
-                            // current empty active buffer if possible to
-                            // avoid leaving a hole; otherwise push a new
-                            // dedicated buffer after the active one.
+                            // Drop the empty seed buffer if the first non-inline row is oversize.
                             if new_buffers.last().unwrap_unchecked().is_empty() {
-                                let current = new_buffers.last_mut().unwrap_unchecked();
-                                current.reserve_exact(view_len);
-                                current.extend_from_slice(bytes);
-                            } else {
-                                let mut oversize = Vec::with_capacity(view_len);
-                                oversize.extend_from_slice(bytes);
-                                new_buffers.push(oversize);
+                                new_buffers.pop();
                             }
-                            view.offset = 0;
-                            view.buffer_idx = new_buffers.len() as u32 - 1;
-                            // Start a fresh active buffer for any following
-                            // normal-sized rows.
+                            // `.max(view_len)` puts oversize rows in a dedicated buffer at offset 0.
                             new_buffers.push(Vec::with_capacity(
-                                unprocessed_buffer_len
-                                    .saturating_sub(view_len)
-                                    .min(MAX_BUF_SIZE),
+                                unprocessed_buffer_len.min(MAX_BUF_SIZE).max(view_len),
                             ));
-                        } else {
-                            if new_buffers.last().unwrap_unchecked().len() + view_len > MAX_BUF_SIZE
-                            {
-                                std::hint::cold_path();
-                                new_buffers.push(Vec::with_capacity(
-                                    unprocessed_buffer_len.min(MAX_BUF_SIZE),
-                                ));
-                            }
-                            let last = new_buffers.last_mut().unwrap_unchecked();
-                            let new_offset = last.len() as u32;
-                            last.extend_from_slice(bytes);
-                            view.offset = new_offset;
-                            view.buffer_idx = new_buffers.len() as u32 - 1;
                         }
+                        let last = new_buffers.last_mut().unwrap_unchecked();
+                        let new_offset = last.len() as u32;
+                        last.extend_from_slice(bytes);
+                        view.offset = new_offset;
+                        view.buffer_idx = new_buffers.len() as u32 - 1;
                         unprocessed_buffer_len = unprocessed_buffer_len.saturating_sub(view_len);
                     }
                     views.push_unchecked(view);
                 }
             }
-        }
-
-        // Drop any trailing empty active buffer left over after a final
-        // oversize-row rotation (keep at least one buffer when the result
-        // has any non-inline rows; an entirely empty trailing buffer behind
-        // a dedicated row is not referenced by any view).
-        if new_buffers.len() > 1 && new_buffers.last().is_some_and(|b| b.is_empty()) {
-            new_buffers.pop();
         }
 
         new_buffers.into_iter().map(Buffer::from).collect()
