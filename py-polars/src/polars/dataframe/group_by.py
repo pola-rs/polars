@@ -123,6 +123,12 @@ class DynamicGroupByIter:
 class GroupBy:
     """Starts a new GroupBy operation."""
 
+    df: DataFrame
+    by: tuple[IntoExpr | Iterable[IntoExpr], ...]
+    named_by: dict[str, IntoExpr]
+    maintain_order: bool
+    predicates: Iterable[Any] | None
+
     def __init__(
         self,
         df: DataFrame,
@@ -939,6 +945,14 @@ class RollingGroupBy:
     group by context.
     """
 
+    df: DataFrame
+    time_column: IntoExpr
+    period: str
+    offset: str | None
+    closed: ClosedInterval
+    group_by: IntoExpr | Iterable[IntoExpr] | None
+    predicates: Iterable[Any] | None
+
     def __init__(
         self,
         df: DataFrame,
@@ -1105,6 +1119,18 @@ class DynamicGroupBy:
     This has an `.agg` method which allows you to run all polars expressions in a
     group by context.
     """
+
+    df: DataFrame
+    time_column: IntoExpr
+    every: str
+    period: str | None
+    offset: str | None
+    label: Label
+    include_boundaries: bool
+    closed: ClosedInterval
+    group_by: IntoExpr | Iterable[IntoExpr] | None
+    start_by: StartBy
+    predicates: Iterable[Any] | None
 
     def __init__(
         self,
