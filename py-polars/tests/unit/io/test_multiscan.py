@@ -951,7 +951,7 @@ def test_hive_predicate_filtering_edge_case_25630(
 
 @pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
 def test_warn_on_scan_with_requested_rechunk(
-    scan: Callable[..., pl.LazyFrame], write: Callable[[pl.DataFrame, Path], Any]
+    scan: Callable[..., pl.LazyFrame], write: Callable[[pl.DataFrame, Any], Any]
 ) -> None:
     f = io.BytesIO()
     write(pl.DataFrame({"x": 1}), f)
