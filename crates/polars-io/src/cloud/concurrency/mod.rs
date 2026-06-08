@@ -136,15 +136,18 @@ fn get_floor_byte_budget(max_chunk_size: u64) -> u64 {
 }
 
 pub fn get_request_budget() -> u32 {
-    // Maximum number of concurrent in-flight requests
+    // Maximum number of concurrent in-flight requests. 
+    // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the 
+    // max concurrent TCP sessions to S3 for the pipeline.
+    // Consider the tokio max_thread count, OS limitations, and object_store back-end limitations
+    // when modifying this value.
     let request_budget = std::env::var("POLARS_INFLIGHT_REQUEST_BUDGET")
         .map(|x| {
             x.parse::<NonZeroU32>()
                 .unwrap_or_else(|_| panic!("invalid value for POLARS_INFLIGHT_REQUEST_BUDGET: {x}"))
                 .get()
         })
-        //kdn TODO TUNE: doe we want this derived from the OS (vCPU or network).
-        .unwrap_or(1024)
+        .unwrap_or(512)
         .max(1);
     request_budget
 }
@@ -233,8 +236,8 @@ impl ConcurrencyController {
     ) -> tokio::task::JoinHandle<()> {
         if polars_config::config().verbose() {
             eprintln!(
-                "[InFlightConcurrency]: spawn control loop: control_interval: {}s",
-                config.control_interval.as_secs(),
+                "[InFlightConcurrency]: spawn control loop: control_interval: {}ms",
+                config.control_interval.as_millis()
             );
         }
         tokio::spawn(async move {
@@ -247,7 +250,7 @@ impl ConcurrencyController {
 
                 // 1. Recompute estimates
                 // Update bw_max, rtt_min, bw_last
-                let (model_updated, bw_last) = {
+                let (model_updated, bw_last, ttfb_min_last) = {
                     let mut model = model.lock().unwrap();
                     model.recompute(now)
                 };
@@ -297,6 +300,7 @@ impl ConcurrencyController {
                         bw_max={:.1} MB/s, \
                         bw_last={:.1} MB/s, \
                         rtt_min={:.1} ms, \
+                        rtt_min_last={:.1} ms, \
                         bdp_obs={:.1} MB, \
                         budget={:.1} MB, \
                         in_use={:.1} MB, \
@@ -309,6 +313,7 @@ impl ConcurrencyController {
                         model.bw_max_bps() / 1e6,
                         bw_last.unwrap_or(0.0) / 1e6,
                         model.ttfb_min().as_millis(),
+                        ttfb_min_last.unwrap_or_default().as_millis(),
                         model.bdp_bytes() as f64 / 1e6,
                         stats.byte_budget as f64 / 1e6,
                         stats.bytes_in_use as f64 / 1e6,

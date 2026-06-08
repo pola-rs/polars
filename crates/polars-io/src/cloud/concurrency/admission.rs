@@ -157,7 +157,10 @@ impl InFlightBudget {
     }
 
     pub async fn acquire(self: &Arc<Self>, bytes: u64) -> InFlightPermit {
-        // Acquire request permit first (usually instant)
+        // Byte budget (may wait)
+        self.byte_budget.acquire(bytes).await;
+
+        // Request permit (usually instant)
         let req_permit = self
             .request_budget
             .semaphore
@@ -165,9 +168,6 @@ impl InFlightBudget {
             .acquire_owned()
             .await
             .expect("semaphore closed");
-
-        // Then byte budget (may wait)
-        self.byte_budget.acquire(bytes).await;
 
         InFlightPermit {
             admission: self.clone(),

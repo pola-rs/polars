@@ -72,15 +72,15 @@ impl Model {
     /// Recompute estimates from current samples.
     /// Returns true if the BW_max estimate changed upward.
     // kdn TODO TUNE: add app-limited state (see BBR paper)
-    pub fn recompute(&mut self, now: Instant) -> (bool, Option<f64>) {
+    pub fn recompute(&mut self, now: Instant) -> (bool, Option<f64>, Option<Duration>) {
 
         // Aggregate bytes within the measurement window
         let window_start = now - self.window;
         let bytes = self.sum_bytes_in_window(window_start, now);
-        let ttfb_min = self.ttfb_min_in_window(window_start, now);
+        let ttfb_min_last = self.ttfb_min_in_window(window_start, now);
 
         if bytes == 0 {
-            return (false, None);
+            return (false, None, None);
         }
 
         // Rate computed against fixed window duration.
@@ -97,7 +97,7 @@ impl Model {
             false
         };
 
-        let ttfb_changed = match (ttfb_min, self.ttfb_min) {
+        let ttfb_changed = match (ttfb_min_last, self.ttfb_min) {
             (Some(new), Some(old)) if new < old => {
                 self.ttfb_min = Some(new);
                 true
@@ -110,7 +110,7 @@ impl Model {
         };
 
         let changed = bw_changed || ttfb_changed;
-        (changed, Some(rate))
+        (changed, Some(rate), ttfb_min_last)
     }
 
     pub fn bw_max_bps(&self) -> f64 {
