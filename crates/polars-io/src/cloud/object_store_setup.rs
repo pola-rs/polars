@@ -41,13 +41,13 @@ pub trait ExtObjectStoreBuilder {
 }
 
 static EXT_OBJECT_STORE_BUILDER_REGISTRY: LazyLock<
-    RwLock<PlHashMap<String, Arc<dyn ExtObjectStoreBuilder + Send + Sync>>>,
+    std::sync::RwLock<PlHashMap<PlSmallStr, Arc<dyn ExtObjectStoreBuilder + Send + Sync>>>,
 > = LazyLock::new(Default::default);
 
 /// Register custom object_store builder for a given cloud scheme.
 /// Example: for 'hdfs://', the scheme is "hdfs".
 /// Rejects native cloud schemes (e.g. "s3").
-pub async fn register_object_store_builder(
+pub fn register_object_store_builder(
     scheme: &str,
     builder: Arc<dyn ExtObjectStoreBuilder + Send + Sync>,
 ) -> PolarsResult<()> {
@@ -70,12 +70,12 @@ pub async fn register_object_store_builder(
 
     EXT_OBJECT_STORE_BUILDER_REGISTRY
         .write()
-        .await
-        .insert(scheme.to_string(), builder);
+        .unwrap()
+        .insert(scheme.into(), builder);
     Ok(())
 }
 
-pub async fn deregister_object_store_builder(scheme: &str) {
+pub fn deregister_object_store_builder(scheme: &str) {
     if polars_config::config().verbose() {
         eprintln!(
             "[ObjectStoreBuilderRegistry]: deregister object_store_builder for scheme '{scheme}'"
@@ -84,7 +84,7 @@ pub async fn deregister_object_store_builder(scheme: &str) {
 
     EXT_OBJECT_STORE_BUILDER_REGISTRY
         .write()
-        .await
+        .unwrap()
         .remove(scheme);
 }
 
@@ -288,7 +288,7 @@ impl PolarsObjectStoreBuilder {
 
                 let store = EXT_OBJECT_STORE_BUILDER_REGISTRY
                     .read()
-                    .await
+                    .unwrap()
                     .get(scheme.as_str())
                     .ok_or_else(|| {
                         polars_err!(
@@ -316,7 +316,7 @@ impl PolarsObjectStoreBuilder {
             },
             CloudType::File | CloudType::Http | CloudType::Hf => None,
             CloudType::Ext(scheme) => {
-                let registry = EXT_OBJECT_STORE_BUILDER_REGISTRY.read().await;
+                let registry = EXT_OBJECT_STORE_BUILDER_REGISTRY.read().unwrap();
                 let builder = registry.get(scheme.as_str()).ok_or_else(|| {
                     polars_err!(
                         ComputeError:
@@ -469,24 +469,20 @@ mod ext_store_tests {
     #[tokio::test]
     async fn test_register_and_resolve() {
         let builder = TestBuilder::new();
-        register_object_store_builder("test-scheme", builder.clone())
-            .await
-            .unwrap();
+        register_object_store_builder("test-scheme", builder.clone()).unwrap();
 
         let path = PlRefPath::new("test-scheme://host:1234/data/file.parquet");
         let result = build_object_store(path, None, false).await;
         assert!(result.is_ok());
         assert_eq!(builder.build_count(), 1);
 
-        deregister_object_store_builder("test-scheme").await;
+        deregister_object_store_builder("test-scheme");
     }
 
     #[tokio::test]
     async fn test_cache_hit_after_first_build() {
         let builder = TestBuilder::new();
-        register_object_store_builder("test-scheme2", builder.clone())
-            .await
-            .unwrap();
+        register_object_store_builder("test-scheme2", builder.clone()).unwrap();
 
         let path = PlRefPath::new("test-scheme2://host:1234/data/file.parquet");
 
@@ -498,7 +494,7 @@ mod ext_store_tests {
         build_object_store(path.clone(), None, false).await.unwrap();
         assert_eq!(builder.build_count(), 1);
 
-        deregister_object_store_builder("test-scheme2").await;
+        deregister_object_store_builder("test-scheme2");
     }
 
     #[tokio::test]
@@ -514,10 +510,10 @@ mod ext_store_tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_native_scheme_rejected() {
+    #[test]
+    fn test_native_scheme_rejected() {
         let builder = TestBuilder::new();
-        let result = register_object_store_builder("s3", builder).await;
+        let result = register_object_store_builder("s3", builder);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("handled natively"));
     }
@@ -568,9 +564,7 @@ mod ext_store_tests {
         }
 
         let builder = AuthorityOnlyBuilder::new();
-        register_object_store_builder("test-scheme3", Arc::new(builder.clone()))
-            .await
-            .unwrap();
+        register_object_store_builder("test-scheme3", Arc::new(builder.clone())).unwrap();
 
         use crate::cloud::{CloudConfig, CloudOptions};
 
@@ -599,7 +593,7 @@ mod ext_store_tests {
 
         assert_eq!(builder.build_count(), 1);
 
-        deregister_object_store_builder("test-scheme3").await;
+        deregister_object_store_builder("test-scheme3");
     }
 
     #[tokio::test]
@@ -637,9 +631,7 @@ mod ext_store_tests {
             store: Arc::new(InMemory::new()),
         });
 
-        register_object_store_builder("test-scheme4", builder)
-            .await
-            .unwrap();
+        register_object_store_builder("test-scheme4", builder).unwrap();
 
         let options = CloudOptions {
             config: Some(CloudConfig::Ext {
@@ -661,6 +653,6 @@ mod ext_store_tests {
         assert!(captured.iter().any(|(k, v)| k == "user" && v == "hadoop"));
         assert!(captured.iter().any(|(k, v)| k == "token" && v == "abc123"));
 
-        deregister_object_store_builder("test-scheme4").await;
+        deregister_object_store_builder("test-scheme4");
     }
 }

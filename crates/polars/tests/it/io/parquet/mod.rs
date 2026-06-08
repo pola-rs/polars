@@ -256,17 +256,14 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
         options: vec![("user".to_string(), "hadoop".to_string())],
     });
 
-    ASYNC.block_in_place_on(async {
-        register_object_store_builder(
-            "mem",
-            Arc::new(MemoryBuilder {
-                store: store.clone(),
-                received_options: received_options.clone(),
-            }),
-        )
-        .await
-        .unwrap();
-    });
+    register_object_store_builder(
+        "mem",
+        Arc::new(MemoryBuilder {
+            store: store.clone(),
+            received_options: received_options.clone(),
+        }),
+    )
+    .unwrap();
 
     let (cloud_location, polars_store) = ASYNC.block_in_place_on(async {
         build_object_store(PlRefPath::new(output_path), Some(&storage_options), false)
@@ -308,9 +305,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
         vec![Some("x"), Some("y"), Some("z")]
     );
 
-    ASYNC.block_in_place_on(async {
-        deregister_object_store_builder("mem").await;
-    });
+    deregister_object_store_builder("mem");
 
     Ok(())
 }
