@@ -50,7 +50,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 
 if TYPE_CHECKING:
-    from typing import TypeGuard
+    from typing import Final, TypeGuard
 
     from polars._typing import PolarsDataType, PythonDataType, TimeUnit
 
@@ -247,7 +247,7 @@ class _DataTypeMappings:
 
 
 # Initialize once (poor man's singleton :)
-DataTypeMappings = _DataTypeMappings()
+DataTypeMappings: Final[_DataTypeMappings] = _DataTypeMappings()
 
 
 def dtype_to_ffiname(dtype: PolarsDataType) -> str:
