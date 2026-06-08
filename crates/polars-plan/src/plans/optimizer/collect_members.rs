@@ -35,7 +35,6 @@ pub(super) struct MemberCollector {
     pub(crate) has_group_by: bool,
     pub(crate) has_hint: bool,
     pub(crate) with_columns_count: u32,
-    pub(crate) has_rechunk_scan: bool,
     #[cfg(feature = "cse")]
     scans: UniqueScans,
 }
@@ -53,7 +52,6 @@ impl MemberCollector {
             has_group_by: false,
             has_hint: false,
             with_columns_count: 0,
-            has_rechunk_scan: false,
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
         }
@@ -79,10 +77,7 @@ impl MemberCollector {
                 Cache { .. } => self.has_cache = true,
                 ExtContext { .. } => self.has_ext_context = true,
                 #[cfg(feature = "cse")]
-                Scan {
-                    unified_scan_args, ..
-                } => {
-                    self.has_rechunk_scan |= unified_scan_args.rechunk;
+                Scan { .. } => {
                     self.scans.insert(_node, lp_arena, _expr_arena);
                 },
                 HStack { .. } => {
