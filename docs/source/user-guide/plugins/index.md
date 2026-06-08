@@ -16,6 +16,10 @@ Here is a curated (non-exhaustive) list of community-implemented plugins.
 - [polars-hash](https://github.com/ion-elgreco/polars-hash) Stable non-cryptographic and
   cryptographic hashing functions for Polars
 
+### Security
+
+- [maskops](https://github.com/fcarvajalbrown/maskops) Native Polars expression plugin for high-speed PII masking and detection, powered by Rust, with asterisk masking, HMAC-SHA256 pseudonymization, and FF3-1 format-preserving encryption
+
 ### Data science
 
 - [polars-distance](https://github.com/ion-elgreco/polars-distance) Polars plugin for pairwise
