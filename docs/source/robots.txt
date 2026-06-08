@@ -1,5 +1,6 @@
 User-agent: *
 Disallow: /api/python/version/
+Disallow: /api/python/dev/
 
 Sitemap: https://docs.pola.rs/sitemap.xml
 Sitemap: https://docs.pola.rs/api/python/stable/sitemap.xml
