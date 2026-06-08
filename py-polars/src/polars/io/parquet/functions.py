@@ -18,6 +18,7 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_ldf
+from polars._warnings import issue_warning
 from polars.convert import from_arrow
 from polars.io._utils import (
     get_sources,
@@ -671,6 +672,14 @@ def scan_parquet(
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
+    if rechunk:
+        issue_warning(
+            "rechunk=True no longer has effect on scan_parquet(). "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            category=UserWarning,
+        )
+
     if schema is not None:
         msg = "the `schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)

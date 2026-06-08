@@ -17,6 +17,7 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
+from polars._warnings import issue_warning
 from polars.io._utils import (
     get_sources,
     is_glob_pattern,
@@ -489,6 +490,14 @@ def scan_ipc(
     """
     # Memory Mapping is now a no-op
     _ = memory_map
+
+    if rechunk:
+        issue_warning(
+            "rechunk=True no longer has effect on scan_ipc(). "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            category=UserWarning,
+        )
 
     sources = get_sources(source)
 

@@ -946,3 +946,17 @@ def test_hive_predicate_filtering_edge_case_25630(
         schema={"index": pl.get_index_type()},
     )
     assert_frame_equal(res, expected)
+
+
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_warn_on_scan_with_requested_rechunk(
+    scan: Callable[..., pl.LazyFrame], write: Callable[[pl.DataFrame, Path], Any]
+) -> None:
+    f = io.BytesIO()
+    write(pl.DataFrame({"x": 1}), f)
+
+    with pytest.raises(
+        UserWarning,
+        match=f"rechunk=True no longer has effect.*{scan.__name__}",
+    ):
+        scan(f, rechunk=True)
