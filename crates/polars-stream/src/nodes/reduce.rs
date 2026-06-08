@@ -5,6 +5,7 @@ use polars_core::prelude::Column;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_expr::reduce::GroupedReduction;
 use polars_utils::itertools::Itertools;
+use polars_utils::relaxed_cell::RelaxedCell;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
@@ -22,6 +23,10 @@ enum ReduceState {
 pub struct ReduceNode {
     state: ReduceState,
     output_schema: Arc<Schema>,
+    /// Set by a sink task once every reduction has settled (e.g. `any` has seen
+    /// a true) so it can no longer change. When set, the node finalizes early
+    /// and signals `recv = Done` to stop the source. See `is_group_done`.
+    short_circuit: Arc<RelaxedCell<bool>>,
 }
 
 impl ReduceNode {
@@ -36,6 +41,7 @@ impl ReduceNode {
                 reductions,
             },
             output_schema,
+            short_circuit: Arc::default(),
         }
     }
 
@@ -46,6 +52,7 @@ impl ReduceNode {
         recv: RecvPort<'_>,
         state: &'s StreamingExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+        short_circuit: Arc<RelaxedCell<bool>>,
     ) {
         let parallel_tasks: Vec<_> = recv
             .parallel()
@@ -59,6 +66,7 @@ impl ReduceNode {
                         r
                     })
                     .collect();
+                let short_circuit = short_circuit.clone();
 
                 scope.spawn_task(TaskPriority::High, async move {
                     let mut in_columns = Vec::new();
@@ -79,6 +87,17 @@ impl ReduceNode {
                             in_column_refs =
                                 in_column_refs.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
                             in_columns.clear();
+                        }
+
+                        // Short-circuit: once every reduction's group can no
+                        // longer change (e.g. `any` has seen a true), ask the
+                        // source to stop and finish this pipeline early.
+                        if !local_reducers.is_empty()
+                            && local_reducers.iter().all(|r| r.is_group_done(0))
+                        {
+                            morsel.source_token().stop();
+                            short_circuit.store(true);
+                            break;
                         }
                     }
 
@@ -130,6 +149,8 @@ impl ComputeNode for ReduceNode {
     ) -> PolarsResult<()> {
         assert!(recv.len() == 1 && send.len() == 1);
 
+        let short_circuit = self.short_circuit.load();
+
         // State transitions.
         match &mut self.state {
             // If the output doesn't want any more data, transition to being done.
@@ -137,7 +158,11 @@ impl ComputeNode for ReduceNode {
                 self.state = ReduceState::Done;
             },
             // Input is done, transition to being a source.
-            ReduceState::Sink { reductions, .. } if matches!(recv[0], PortState::Done) => {
+            // Input is done, or every reduction has short-circuited; either way
+            // transition to being a source that emits the finalized result.
+            ReduceState::Sink { reductions, .. }
+                if matches!(recv[0], PortState::Done) || short_circuit =>
+            {
                 let columns = reductions
                     .iter_mut()
                     .zip(self.output_schema.iter_fields())
@@ -195,7 +220,15 @@ impl ComputeNode for ReduceNode {
             } => {
                 assert!(send_ports[0].is_none());
                 let recv_port = recv_ports[0].take().unwrap();
-                Self::spawn_sink(selectors, reductions, scope, recv_port, state, join_handles)
+                Self::spawn_sink(
+                    selectors,
+                    reductions,
+                    scope,
+                    recv_port,
+                    state,
+                    join_handles,
+                    self.short_circuit.clone(),
+                )
             },
             ReduceState::Source(df) => {
                 assert!(recv_ports[0].is_none());
