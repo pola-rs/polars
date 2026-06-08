@@ -245,8 +245,12 @@ impl Model {
             }
         }
 
+        if n_samples == 0 {
+            return None;
+        }
+
         Some(Duration::from_secs_f64(
-            total_duration.as_secs_f64() / (n_samples as f64),
+            total_duration.as_secs_f64() / n_samples as f64,
         ))
     }
 
