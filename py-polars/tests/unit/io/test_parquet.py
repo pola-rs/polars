@@ -3503,6 +3503,88 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
 
 
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
+@pytest.mark.parametrize(
+    ("df", "predicate"),
+    [
+        # Per-field pruning: `s.field("a")` uses field a's own min/max, so rg0 (a == 0)
+        # and rg2 (a == 2) are skipped even though sibling b varies within every group.
+        pytest.param(
+            pl.DataFrame(
+                {
+                    "s": [
+                        {"a": 0, "b": 100},
+                        {"a": 0, "b": 200},
+                        {"a": 1, "b": 300},
+                        {"a": 1, "b": 400},
+                        {"a": 2, "b": 500},
+                        {"a": 2, "b": 600},
+                    ]
+                }
+            ),
+            pl.col("s").struct.field("a") == 1,
+            id="field",
+        ),
+        # Whole-struct is_null via per-field null counts: a struct is null only where
+        # every field is null, so groups with no null struct are skipped (#26239).
+        pytest.param(
+            pl.DataFrame(
+                {
+                    "s": [
+                        None,
+                        None,
+                        {"x": 1, "y": 1},
+                        {"x": 2, "y": 2},
+                        {"x": 3, "y": 3},
+                        {"x": 4, "y": 4},
+                    ]
+                }
+            ),
+            pl.col("s").is_null(),
+            id="is_null_26239",
+        ),
+        # is_null only needs *one* never-null field to rule out a null struct (a null
+        # struct nulls every field). rg0 has a field-null but no null struct, so a
+        # single null-free field must still prune it; rg2 is fully non-null.
+        pytest.param(
+            pl.DataFrame(
+                {
+                    "s": [
+                        {"x": 1, "y": None},
+                        {"x": 2, "y": 20},
+                        None,
+                        None,
+                        {"x": 3, "y": 30},
+                        {"x": 4, "y": 40},
+                    ]
+                }
+            ),
+            pl.col("s").is_null(),
+            id="is_null_field_null_pruned",
+        ),
+    ],
+)
+def test_scan_parquet_skip_row_groups_struct(
+    df: pl.DataFrame,
+    predicate: pl.Expr,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Struct statistics prune parquet row groups: with three groups of two rows, only
+    # the one group that can match the predicate is read; the other two are skipped
+    # using the struct's per-field min/max/null-count statistics.
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2, statistics="full")
+    f.seek(0)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_parquet(f).filter(predicate).collect()
+
+    assert_frame_equal(out, df.filter(predicate))
+    assert "Predicate pushdown: reading 1 / 3 row groups" in capfd.readouterr().err
+
+
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
 def test_is_in_string_pushdown_27416(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
