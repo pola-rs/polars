@@ -274,6 +274,7 @@ impl ComputeNode for AsOfJoinNode {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn distribute_work_task(
     mut recv_left: Option<PortReceiver>,
     mut recv_right: Option<PortReceiver>,
