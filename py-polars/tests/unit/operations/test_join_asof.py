@@ -1413,11 +1413,18 @@ def test_join_asof_not_sorted() -> None:
         assert len(w) == 0  # no warnings caught
 
 
-def test_join_asof_not_sorted_streaming_27457(plmonkeypatch: PlMonkeyPatch) -> None:
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_asof_not_sorted_streaming_27457(
+    swap: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
-    df = pl.DataFrame({"b": [1, 2, 3, 1, 2, 3]})
-    with pytest.raises(InvalidOperationError, match="is not sorted"):
-        df.lazy().join_asof(df.lazy(), on="b").collect(engine="streaming")
+    for n in range(1, 5):
+        df = pl.DataFrame({"a": [1, 2, 3] * n})
+        df2 = df.sort("a")
+        if swap:
+            (df, df2) = df2, df
+        with pytest.raises(InvalidOperationError, match="is not sorted"):
+            df.lazy().join_asof(df2.lazy(), on="a").collect(engine="streaming")
 
 
 @pytest.mark.parametrize(
