@@ -569,7 +569,7 @@ def test_asof_join_nearest_reference(allow_exact_matches: bool) -> None:
         return result
 
     test_dfs = []
-    rng = random.Random()
+    rng = random.Random(0)
     for n_a, n_b, n_c, n_d in itertools.product([0, 1, 2], repeat=4):
         a = rng.randint(0, 10)
         b = rng.randint(0, 10)

@@ -8,6 +8,7 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::row_encode::_get_rows_encoded_ca;
 use polars_core::prelude::*;
 use polars_core::utils::{Container, accumulate_dataframes_vertical_unchecked};
+use polars_ops::frame::is_sorted::DataFrameIsSorted;
 use polars_ops::frame::{
     _check_asof_columns, _finish_join, _join_asof_dispatch, AsOfOptions, AsofStrategy, JoinArgs,
     JoinType,
@@ -79,12 +80,6 @@ enum AsOfJoinState {
     Done,
 }
 
-#[derive(Debug, Default)]
-struct Row {
-    by: Vec<AnyValue<'static>>,
-    on: AnyValue<'static>,
-}
-
 #[derive(Debug)]
 pub struct AsOfJoinNode {
     params: AsOfJoinParams,
@@ -98,7 +93,7 @@ pub struct AsOfJoinNode {
     output_seq: MorselSeq,
     // Slot to store the last row of the previous left morsel. Used to check
     // that the left side is sorted across morsel boundaries.
-    left_continuity: Option<Row>,
+    last_seen_row_left: Option<DataFrame>,
 }
 
 impl AsOfJoinNode {
@@ -156,7 +151,7 @@ impl AsOfJoinNode {
             left_buffer: Default::default(),
             right_buffer: DataFrameSearchBuffer::empty_with_schema(right_input_schema),
             output_seq: Default::default(),
-            left_continuity: Default::default(),
+            last_seen_row_left: None,
         }
     }
 }
@@ -251,7 +246,7 @@ impl ComputeNode for AsOfJoinNode {
                 let left_buffer = &mut self.left_buffer;
                 let right_buffer = &mut self.right_buffer;
                 let output_seq = &mut self.output_seq;
-                let left_continuity = &mut self.left_continuity;
+                let left_continuity = &mut self.last_seen_row_left;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     distribute_work_task(
                         recv_left,
@@ -286,12 +281,11 @@ async fn distribute_work_task(
     left_buffer: &mut VecDeque<DataFrame>,
     right_buffer: &mut DataFrameSearchBuffer,
     output_seq: &mut MorselSeq,
-    left_continuity: &mut Option<Row>,
+    last_seen_row_left: &mut Option<DataFrame>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
     let right_done = recv_right.is_none();
-    let mut scratch_vecs = Default::default();
 
     loop {
         if source_token.stop_requested() {
@@ -319,11 +313,7 @@ async fn distribute_work_task(
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
             {
-                let old_height = right_buffer.height();
                 right_buffer.push_df(morsel_right.into_df());
-                if params.as_of_options().check_sortedness {
-                    check_right_continuity(right_buffer, old_height, params, &mut scratch_vecs)?;
-                }
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.
@@ -337,9 +327,8 @@ async fn distribute_work_task(
         }
 
         if params.as_of_options().check_sortedness {
-            check_left_continuity(left_continuity, &left_df, params)?;
+            check_left_continuity(last_seen_row_left, &left_df, params)?;
         }
-        prune_right_side(&left_df, right_buffer, 0, params, &mut scratch_vecs)?;
         if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
             .await
@@ -348,20 +337,18 @@ async fn distribute_work_task(
             return Ok(());
         }
         *output_seq = output_seq.successor();
-
         prune_right_side(
             &left_df,
             right_buffer,
             left_df.height().saturating_sub(1),
             params,
-            &mut scratch_vecs,
         )?;
     }
 }
 
-/// Check that the first row of the DataFrame is in order wrt the value in prev_row.
+/// Check that the first row of the DataFrame is in order with respect to the value in prev_row.
 fn check_left_continuity(
-    prev_row: &mut Option<Row>,
+    prev_row: &mut Option<DataFrame>,
     df: &DataFrame,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
@@ -369,76 +356,44 @@ fn check_left_continuity(
         return Ok(());
     }
 
-    let get_cell = |col, idx| df.column(col).unwrap().get(idx).unwrap();
-    if let Some(prev) = prev_row.as_ref() {
-        let next_by = params
-            .left_by()
-            .iter()
-            .map(|col_name| get_cell(col_name, 0))
-            .collect_vec();
-        let next_on = df.column(&params.left.on)?.get(0)?;
-        check_continuity(&prev.by, &prev.on, &next_by, &next_on, params)?;
+    let sorted_by_cols = params.left_by().iter().chain([&params.left.on]);
+    let sorted_by_descending = params.by_descending.iter().chain([&false]);
+    let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
+    let projection = df.select(sorted_by_cols.clone())?;
+    if let Some(prev_row) = prev_row {
+        let across_split_point = prev_row.vstack(&projection)?;
+        if !across_split_point.is_sorted(
+            &sorted_by_cols.cloned().collect_vec(),
+            &sorted_by_descending.cloned().collect_vec(),
+            &sorted_by_nulls_last.cloned().collect_vec(),
+        )? {
+            return Err(not_sorted_err());
+        }
     }
 
     // Store the last row of this DataFrame for the next check.
-    let by_values = params
-        .left_by()
-        .iter()
-        .map(|col_name| get_cell(col_name, df.height() - 1).into_static())
-        .collect_vec();
-    let on_value = get_cell(&params.left.on, df.height() - 1).into_static();
-    *prev_row = Some(Row {
-        by: by_values,
-        on: on_value,
-    });
+    *prev_row = Some(projection);
     Ok(())
 }
 
-/// Check that the row at `pos` in `right_buffer` does not violate sort order
-/// relative to the row at `pos - 1`.
 fn check_right_continuity(
-    right_buffer: &DataFrameSearchBuffer,
-    pos: usize,
+    dfsb: &DataFrameSearchBuffer,
+    split_at_idx: usize,
     params: &AsOfJoinParams,
-    scratch_vecs: &mut [ScratchVec<AnyValue<'_>>; 2],
 ) -> PolarsResult<()> {
-    let [scratch1, scratch2] = scratch_vecs.each_mut();
-    let prev_by = scratch1.get();
-    let next_by = scratch2.get();
-
-    if pos == 0 || pos >= right_buffer.height() {
+    let Some(before_split) = split_at_idx.checked_sub(1) else {
         return Ok(());
-    }
-
-    // SAFETY: We just checked that pos and pos-1 are in bounds.
-    prev_by.extend(params.right_by().iter().map(|col_name| {
-        unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos - 1) }.into_static()
-    }));
-    let prev_on = unsafe { right_buffer.get_unchecked(params.right.on.as_ref(), pos - 1) };
-    next_by.extend(params.right_by().iter().map(|col_name| {
-        unsafe { right_buffer.get_unchecked(col_name.as_ref(), pos) }.into_static()
-    }));
-    let next_on = unsafe { right_buffer.get_unchecked(params.right.on.as_ref(), pos) };
-    check_continuity(prev_by, &prev_on, next_by, &next_on, params)
-}
-
-fn check_continuity(
-    prev_by: &[AnyValue<'_>],
-    prev_on: &AnyValue<'_>,
-    next_by: &[AnyValue<'_>],
-    next_on: &AnyValue<'_>,
-    params: &AsOfJoinParams,
-) -> PolarsResult<()> {
-    let iter = Iterator::zip(params.by_descending.iter(), params.by_nulls_last.iter()).enumerate();
-    for (i, (descending, nulls_last)) in iter {
-        match reorder_cmp(&prev_by[i], &next_by[i], *descending, *nulls_last) {
-            Ordering::Less => return Ok(()),
-            Ordering::Greater => return Err(err()),
-            Ordering::Equal => {},
-        }
-    }
-    if prev_on > next_on {
-        return Err(err());
+    };
+    let sorted_by_cols = params.right_by().iter().chain([&params.right.on]);
+    let sorted_by_descending = params.by_descending.iter().chain([&false]);
+    let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
+    let across_split_point = dfsb.clone().slice(before_split, 2).into_df();
+    if !across_split_point.is_sorted(
+        &sorted_by_cols.cloned().collect_vec(),
+        &sorted_by_descending.cloned().collect_vec(),
+        &sorted_by_nulls_last.cloned().collect_vec(),
+    )? {
+        return Err(not_sorted_err());
     }
     Ok(())
 }
@@ -517,7 +472,6 @@ fn prune_right_side(
     right: &mut DataFrameSearchBuffer,
     left_row_idx: usize,
     params: &AsOfJoinParams,
-    scratch_vecs: &mut [ScratchVec<AnyValue<'_>>; 2],
 ) -> PolarsResult<()> {
     if left.height() == 0 || right.height() == 0 {
         return Ok(());
@@ -547,7 +501,7 @@ fn prune_right_side(
     }
 
     if params.as_of_options().check_sortedness {
-        check_right_continuity(right, right_range_start, params, scratch_vecs)?;
+        check_right_continuity(right, right_range_start, params)?;
     }
     right.split_at(right_range_start);
     Ok(())
@@ -670,30 +624,6 @@ impl<'a> ByGroups<'a> {
             Some((start, len as usize))
         })
     }
-
-    fn iter_groups_check_sortedness(
-        &self,
-        df: &DataFrame,
-        descending: &[bool],
-        nulls_last: &[bool],
-    ) -> impl Iterator<Item = PolarsResult<(usize, usize)>> {
-        let iter = self.iter_groups();
-        iter.scan(None, |state: &mut Option<(_, _)>, group| match state {
-            Some(prev_group) => {
-                for (d, nl) in Iterator::zip(descending.iter(), nulls_last.iter()) {
-                    if !reorder_cmp(prev_group, group, *d, *nl).is_lt() {
-                        return Some(PolarsResult::Err(not_sorted_err()));
-                    }
-                    *state = Some(group);
-                }
-                Some(Ok(group))
-            },
-            None => {
-                *state = Some(group);
-                Some(Ok(group))
-            },
-        })
-    }
 }
 
 fn drop_columns(
@@ -740,7 +670,7 @@ fn join_asof_ungrouped(
             left_key,
             right_key,
             options.tolerance.is_some(),
-            options.check_sortedness,
+            false,
             false,
         )?;
     }
@@ -771,6 +701,11 @@ fn compute_asof_join(
         .column(params.right.key_col())?
         .clone()
         .to_physical_repr();
+
+    if params.as_of_options().check_sortedness {
+        check_df_sorted(&left_df, params.left_by(), &params.left.on, params)?;
+        check_df_sorted(&right_df, params.right_by(), &params.right.on, params)?;
+    }
 
     if params.left_by().is_empty() {
         return join_asof_ungrouped(
@@ -826,9 +761,6 @@ fn compute_asof_join(
         let group_left_key = left_key.slice(left_start as i64, left_group_len);
         let group_right_key = right_key.slice(right_start as i64, right_chunk_len);
 
-        // TODO: [amber] Check the continuity of the groups here
-        // TODO: [amber] Also needs a _check_asof_columns
-
         let take_idx = _join_asof_dispatch(
             group_left_key.as_materialized_series(),
             group_right_key.as_materialized_series(),
@@ -848,6 +780,25 @@ fn compute_asof_join(
     let out_right =
         accumulate_dataframes_vertical_unchecked([initial].into_iter().chain(out_right));
     _finish_join(left_df, out_right, params.args.suffix.clone())
+}
+
+fn check_df_sorted(
+    dataframe: &DataFrame,
+    by: &[PlSmallStr],
+    on: &PlSmallStr,
+    params: &AsOfJoinParams,
+) -> PolarsResult<()> {
+    let sorted_by_cols = by.iter().chain([on]);
+    let sorted_by_descending = params.by_descending.iter().chain([&false]);
+    let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
+    if !dataframe.is_sorted(
+        &sorted_by_cols.cloned().collect_vec(),
+        &sorted_by_descending.cloned().collect_vec(),
+        &sorted_by_nulls_last.cloned().collect_vec(),
+    )? {
+        return Err(not_sorted_err());
+    }
+    Ok(())
 }
 
 fn not_sorted_err() -> PolarsError {
