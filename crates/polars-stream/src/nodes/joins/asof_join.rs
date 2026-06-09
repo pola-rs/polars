@@ -373,7 +373,7 @@ fn check_left_continuity(
     }
 
     // Store the last row of this DataFrame for the next check.
-    *prev_row = Some(projection);
+    *prev_row = Some(projection.slice((projection.height() - 1) as i64, 1));
     Ok(())
 }
 
