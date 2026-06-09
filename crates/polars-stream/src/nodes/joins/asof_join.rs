@@ -665,15 +665,14 @@ fn join_asof_ungrouped(
     options: &AsOfOptions,
     params: &AsOfJoinParams,
 ) -> PolarsResult<DataFrame> {
-    if options.check_sortedness {
-        _check_asof_columns(
-            left_key,
-            right_key,
-            options.tolerance.is_some(),
-            false,
-            false,
-        )?;
-    }
+    _check_asof_columns(
+        left_key,
+        right_key,
+        options.tolerance.is_some(),
+        false, // Sortedness is already checked
+        false,
+    )?;
+
     let take_idx = _join_asof_dispatch(
         left_key,
         right_key,

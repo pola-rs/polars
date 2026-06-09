@@ -1418,13 +1418,29 @@ def test_join_asof_not_sorted_streaming_27457(
     swap: bool, plmonkeypatch: PlMonkeyPatch
 ) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
-    for n in range(1, 5):
-        df = pl.DataFrame({"a": [1, 2, 3] * n})
+    for n in range(4, 10):
+        df = pl.DataFrame({"a": (10 * [1, 2, 3])[:n]})
         df2 = df.sort("a")
         if swap:
             (df, df2) = df2, df
         with pytest.raises(InvalidOperationError, match="is not sorted"):
             df.lazy().join_asof(df2.lazy(), on="a").collect(engine="streaming")
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_asof_not_sorted_streaming_grouped_27457(
+    swap: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+    for n in range(4, 10):
+        df = pl.DataFrame({"group": (10 * [1, 2, 3])[:n]})
+        df2 = df.sort("group")
+        lf = df.lazy().set_sorted("group").with_row_index("a")  # Deliberately invalid
+        lf2 = df2.lazy().set_sorted("group").with_row_index("a")
+        if swap:
+            (lf, lf2) = lf2, lf
+        with pytest.raises(InvalidOperationError, match="is not sorted"):
+            lf.join_asof(lf2, on="a", by="group").collect(engine="streaming")
 
 
 @pytest.mark.parametrize(
