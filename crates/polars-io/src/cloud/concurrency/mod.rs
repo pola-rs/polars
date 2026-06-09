@@ -51,9 +51,9 @@ pub struct ControllerConfig {
     window: Duration,
     // Time-to-first-byte default in case there is no sample available yet.
     ttfb_default: Duration,
-    // Byte-based budget during the init and start of ramp-up phase. Used as a substitute
-    // for the to-e modeled Bandwidth-Delay Product (BDP).
+    // Byte-based budget during the init and start of ramp-up phase.
     init_byte_budget: u64,
+    // kdn TODO - hard floor (to avoid deadlock) >> RM
     floor_byte_budget: u64,
     // Count-based request budget.
     request_budget: u32,
@@ -108,7 +108,15 @@ fn get_init_byte_budget(max_chunk_size: u64) -> u64 {
                 .get()
         })
         //kdn TODO INIT probably 2* ??
-        .unwrap_or(4 * max_chunk_size)
+        // .unwrap_or(4 * max_chunk_size)
+        .unwrap_or_else(|_| {
+            //kdn TODO - this is just a heuristic
+            // num_pipelines = polars executor thread count = max_threads()
+            // Seed with num_pipelines/4 concurrent requests — enough to keep
+            // all decode pipelines fed from tick 1 without S3 burst.
+            let n = polars_config::config().max_threads() as u64;
+            n.div_ceil(4).max(4) * max_chunk_size
+        })
         .max(1);
 
     if init_byte_budget < max_chunk_size {
@@ -294,8 +302,7 @@ impl ConcurrencyController {
                 ) {
                     //kdn TODO - what if this takes longer than a tick
 
-                    // kdn HACK
-
+                    // kdn HACK >> move to 'rtt_for_bdp'
                     let target_budget = if queuing_ratio > 5.0 {
                         current_byte_budget // hold — we're causing the queuing
                     } else {
