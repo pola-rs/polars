@@ -63,6 +63,10 @@ impl FileReaderBuilder for ParquetReaderBuilder {
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
+        // Bound the number of fetches in the pipeline. 
+        // This bound goes together with the `prefetch_kbytes_limit` bound. In most 
+        // large-dataset use cases, the kbytes memory bound will kick in first.
+        // This limit should be at least as large as the max in-flight concurrency.
         let prefetch_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
             .map(|x| {
                 x.parse::<NonZeroUsize>()
@@ -72,15 +76,12 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                     .get()
             })
             .unwrap_or(
-                // kdn TODO TUNE
-                // TODO - Deprecate the first value.
-                std::cmp::max(
-                    execution_state
-                        .num_pipelines
-                        .saturating_mul(2)
-                        .clamp(8, 512),
-                    get_request_budget() as usize,
-                ),
+                //kdn TODO VERIFY
+                execution_state
+                    .num_pipelines
+                    .saturating_mul(2)
+                    .max(get_request_budget() as usize)
+                    .clamp(16, 2048),
             )
             .max(1);
 

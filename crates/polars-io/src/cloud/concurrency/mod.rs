@@ -150,8 +150,8 @@ pub fn get_request_budget() -> u32 {
     // Maximum number of concurrent in-flight requests.
     // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
     // max concurrent TCP sessions to S3 for the pipeline.
-    // Consider the tokio max_thread count, OS limitations, and object_store back-end limitations
-    // when modifying this value.
+    // Consider the tokio max_thread count, OS limitations (e.g., ulimit -n), and 
+    // object_store back-end limitations when modifying this value.
     let request_budget = std::env::var("POLARS_INFLIGHT_REQUEST_BUDGET")
         .map(|x| {
             x.parse::<NonZeroU32>()
