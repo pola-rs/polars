@@ -102,98 +102,6 @@ impl RecordBatchDataFetcher {
                 }
             }
 
-            // kdn TODO RM
-            //     let block_index = self.record_batch_idx;
-            //     let file_metadata = self.metadata.clone();
-
-            //     // Acquire permits
-            //     let block = file_metadata.blocks.get(block_index).unwrap();
-            //     let n_bytes = block.meta_data_length as usize + block.body_length as usize;
-            //     let n_kbytes = n_bytes.div_ceil(1 << 10).try_into().unwrap_or(u32::MAX);
-            //     let kbytes_permit = self
-            //         .rb_prefetch_kbytes_semaphore
-            //         .clone()
-            //         .acquire_many_owned(n_kbytes)
-            //         .await
-            //         .unwrap();
-
-            //     let count_permit = self
-            //         .rb_prefetch_semaphore
-            //         .clone()
-            //         .acquire_owned()
-            //         .await
-            //         .unwrap();
-
-            //     let permit = PipelinePermit {
-            //         _count: count_permit,
-            //         _kbytes: kbytes_permit,
-            //     };
-
-            //     // Spawn task
-            //     let current_byte_source = self.byte_source.clone();
-            //     let memory_prefetch_func = self.memory_prefetch_func;
-            //     let io_runtime = polars_io::pl_async::get_runtime();
-
-            //     let current_row_offset = current_row_offset.clone();
-            //     let wait_token = row_count_updated.token();
-
-            //     let handle = io_runtime.spawn(async move {
-            //         let block = file_metadata.blocks.get(block_index).unwrap();
-            //         let range = block.offset as usize
-            //             ..block.offset as usize
-            //                 + block.meta_data_length as usize
-            //                 + block.body_length as usize;
-
-            //         let fetched_bytes =
-            //             if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
-            //                 let slice = mem_slice.0.as_ref();
-
-            //                 if !std::ptr::eq(
-            //                     memory_prefetch_func as *const (),
-            //                     polars_utils::mem::prefetch::no_prefetch as *const (),
-            //                 ) {
-            //                     debug_assert!(range.end <= slice.len());
-            //                     memory_prefetch_func(unsafe { slice.get_unchecked(range.clone()) })
-            //                 }
-
-            //                 mem_slice.0.clone().sliced(range)
-            //             } else {
-            //                 // @NOTE. Performance can be optimized by grouping requests and downloading
-            //                 // through `get_ranges()`.
-            //                 current_byte_source.get_range(range).await?
-            //             };
-
-            //         // We extract the length (i.e., nr of rows) at the earliest possible opportunity.
-            //         let num_rows = {
-            //             let mut reader = BlockReader::new(Cursor::new(fetched_bytes.as_ref()));
-            //             let mut message_scratch = Vec::new();
-            //             reader.record_batch_num_rows(&mut message_scratch)?
-            //         };
-
-            //         current_row_offset.fetch_add(num_rows as u64);
-            //         drop(wait_token);
-
-            //         PolarsResult::Ok(RecordBatchData {
-            //             fetched_bytes,
-            //             block_index,
-            //             num_rows,
-            //             row_offset: None,
-            //         })
-            //     });
-
-            //     let handle = tokio_handle_ext::AbortOnDropHandle(handle);
-            //     if self
-            //         .prefetch_send
-            //         .send((handle, permit))
-            //         .await
-            //         .is_err()
-            //     {
-            //         break;
-            //     }
-
-            //     self.record_batch_idx += 1;
-            // }
-
             #[derive(Debug, PartialEq)]
             enum RbFetch {
                 All,
@@ -217,19 +125,12 @@ impl RecordBatchDataFetcher {
                 RbFetch::All
             };
 
-            // kdn TODO RM
-            // let fetch_permit = if rb_fetch != RbFetch::None {
-            //     Some(rb_prefetch_semaphore.clone().acquire_owned().await.unwrap())
-            // } else {
-            //     None
-            // };
-
             let block_index = record_batch_idx;
             let file_metadata = file_metadata.clone();
             let current_byte_source = byte_source.clone();
 
             // Acquire permits
-            // kdn TODO REVIEW
+            // kdn TODO REVIEW: IPC
             let fetch_permit = if rb_fetch != RbFetch::None {
                 Some({
                     let block = file_metadata.blocks.get(block_index).unwrap();

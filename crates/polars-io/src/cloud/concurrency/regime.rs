@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use crate::cloud::concurrency::model::{Model, SignalStats};
+use crate::cloud::concurrency::model::SignalStats;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RegimeState {
@@ -41,20 +41,19 @@ pub struct Regime {
 
 impl Regime {
     pub fn new(now: Instant) -> Self {
-        //kdn TODO consolidate into main Config
         Self {
             state: RegimeState::Init,
             last_transition: now,
-            rampup_growth_threshold: 1.05, //kdn ESTIMATE
+            rampup_growth_threshold: 1.05,
             rampup_exit_rounds: 3,
             // Interval between ProbeUp spikes
-            probe_interval: Duration::from_millis(3000), //kdn TODO TEST & TUNE
-            probe_duration: Duration::from_millis(1000), //kdn TODO TEST & TUNE
+            probe_interval: Duration::from_millis(3000),
+            probe_duration: Duration::from_millis(1000),
         }
     }
 
-    // kdn TODO TUNE: add app-limited state (see BBR paper)
-    // kdn TODO: Add fall-back to Init after long quiet window.
+    // kdn TODO: Add app-limited condition (see BBR paper).
+    // kdn TODO: Add a ProbeDown state if needed.
     pub fn step(&mut self, signal: Option<SignalStats>, now: Instant) -> RegimeState {
         let Some(sig) = signal else {
             return match self.state {

@@ -63,8 +63,8 @@ impl FileReaderBuilder for ParquetReaderBuilder {
     }
 
     fn set_execution_state(&self, execution_state: &crate::execute::StreamingExecutionState) {
-        // Bound the number of fetches in the pipeline. 
-        // This bound goes together with the `prefetch_kbytes_limit` bound. In most 
+        // Bound the number of fetches in the pipeline.
+        // This bound goes together with the `prefetch_kbytes_limit` bound. In most
         // large-dataset use cases, the kbytes memory bound will kick in first.
         // This limit should be at least as large as the max in-flight concurrency.
         let prefetch_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_SIZE")
@@ -103,13 +103,9 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                     .get()
             })
             .unwrap_or({
-                // kdn TODO get chunk_size from somewhere (see below)
+                // kdn TODO INVESTIGATE: get chunk_size from FetchConfig in ParquetReaderBuilder?
                 let chunk_size_kb = pl_async::get_random_access_chunk_size().div_ceil(1024);
                 2 * execution_state.num_pipelines * chunk_size_kb
-
-                // add FetchConfig to StreamingExecutionState ?? (TBD)
-                // let chunk_kb = self.fetch_config.chunk_size.div_ceil(1024);
-                // 2 * pipeline_depth_kb
             })
             // Avoid deadlock.
             .max(pl_async::get_download_chunk_size().div_ceil(1024));
@@ -151,8 +147,6 @@ impl FileReaderBuilder for ParquetReaderBuilder {
 
         let byte_source_builder =
             if scan_source.is_cloud_url() || polars_config::config().force_async() {
-                //kdn TODO how to centrally manage
-                //DynByteSourceBuilder::ObjectStore(self.fetch_config)
                 DynByteSourceBuilder::ObjectStore(FetchConfig::random_access())
             } else {
                 DynByteSourceBuilder::Mmap

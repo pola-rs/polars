@@ -101,6 +101,7 @@ impl ObjectStoreByteSource {
         })
     }
 
+    #[allow(unused)]
     fn chunk_size(&self) -> usize {
         self.config.chunk_size
     }

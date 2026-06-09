@@ -340,9 +340,8 @@ impl PolarsObjectStore {
                     Some(controller) => Some(controller.acquire(bytes_req).await),
                     None => None,
                 };
-                let t0 = Instant::now();
 
-                // kdn TODO REFACTOR
+                // kdn TODO REFACTOR - 3 things happening at once
                 let (out, ttfb) = self
                     .io_metrics()
                     .record_io_read(
@@ -537,9 +536,8 @@ impl PolarsObjectStore {
         Ok(out)
     }
 
-    // kdn TODO REFACTOR?: extend with concurrency strategy
+    // kdn TODO REFACTOR: review and update concurrency strategy
     pub async fn download(&self, path: &Path, file: &mut tokio::fs::File) -> PolarsResult<()> {
-        // kdn TODO TBD: concurrency strategy
         let size = self.head(path, ConcurrencyStrategy::Unbounded).await?.size;
         let parts = split_range(0..size as usize, None);
 
@@ -577,8 +575,9 @@ impl PolarsObjectStore {
         strategy: ConcurrencyStrategy,
     ) -> PolarsResult<ObjectMeta> {
         //kdn TODO REFACTOR: Update concurrency strategy.
-        // For now, we fall back to 'Legacy' which is fine for metadata, with the addition
-        // that we do want to collect the observation.
+        // For now, we fall back to 'Legacy' which is fine for metadata.
+        // Since this carries an early signal, the IO Sample is of interest regardless of
+        // the strategy in use.
         with_concurrency_budget(1, || {
             self.exec_with_rebuild_retry_on_err(|s| {
                 async move {
@@ -612,8 +611,6 @@ impl PolarsObjectStore {
                             .await;
 
                         if let ConcurrencyStrategy::BytesBased = strategy {
-                            //kdn TODO RM
-                            // self.get_or_init_concurrency().record_ttfb(t0.elapsed());
                             self.get_or_init_concurrency().record_io(IoSample {
                                 n_bytes: 0,
                                 ttfb: t0.elapsed(),
@@ -643,41 +640,6 @@ fn split_range(
     chunk_size: Option<usize>,
 ) -> impl ExactSizeIterator<Item = Range<usize>> {
     let chunk_size = chunk_size.unwrap_or_else(|| get_download_chunk_size());
-
-    // Calculate n_parts such that we are as close as possible to the `chunk_size`.
-    let n_parts = [
-        (range.len().div_ceil(chunk_size)).max(1),
-        (range.len() / chunk_size).max(1),
-    ]
-    .into_iter()
-    .min_by_key(|x| (range.len() / *x).abs_diff(chunk_size))
-    .unwrap();
-
-    let chunk_size = (range.len() / n_parts).max(1);
-
-    assert_eq!(n_parts, (range.len() / chunk_size).max(1));
-    let bytes_rem = range.len() % chunk_size;
-
-    (0..n_parts).map(move |part_no| {
-        let (start, end) = if part_no == 0 {
-            // Download remainder length in the first chunk since it starts downloading first.
-            let end = range.start + chunk_size + bytes_rem;
-            let end = if end > range.end { range.end } else { end };
-            (range.start, end)
-        } else {
-            let start = bytes_rem + range.start + part_no * chunk_size;
-            (start, start + chunk_size)
-        };
-
-        start..end
-    })
-}
-
-/// Splits a single range into multiple smaller ranges, which can be downloaded concurrently for
-/// much higher throughput.
-// kdn TODO - consolidated with split_range_sized
-fn split_range_legacy(range: Range<usize>) -> impl ExactSizeIterator<Item = Range<usize>> {
-    let chunk_size = get_download_chunk_size();
 
     // Calculate n_parts such that we are as close as possible to the `chunk_size`.
     let n_parts = [
@@ -796,93 +758,6 @@ fn merge_ranges(
         })
 }
 
-/// Note: For optimal performance, `ranges` should be sorted. More generally,
-/// ranges placed next to each other should also be close in range value.
-///
-/// # Returns
-/// `[(range1, end1), (range2, end2)]`, where:
-/// * `range1` contains bytes for the ranges from `ranges[0..end1]`
-/// * `range2` contains bytes for the ranges from `ranges[end1..end2]`
-/// * etc..
-///
-/// Note that if an end value is 0, it means the range is a splitted part and should be combined.
-// kdn TODO RM (deprecate)
-fn merge_ranges_legacy(
-    ranges: &[Range<usize>],
-) -> impl Iterator<Item = (Range<usize>, usize)> + '_ {
-    let chunk_size = get_download_chunk_size();
-
-    let mut current_merged_range = ranges.first().map_or(0..0, Clone::clone);
-    // Number of fetched bytes excluding excess.
-    let mut current_n_bytes = current_merged_range.len();
-
-    (0..ranges.len())
-        .filter_map(move |current_idx| {
-            let current_idx = 1 + current_idx;
-
-            if current_idx == ranges.len() {
-                // No more items - flush current state.
-                Some((current_merged_range.clone(), current_idx))
-            } else {
-                let range = ranges[current_idx].clone();
-
-                let new_merged = current_merged_range.start.min(range.start)
-                    ..current_merged_range.end.max(range.end);
-
-                // E.g.:
-                // |--------|
-                //  oo        // range1
-                //       oo   // range2
-                //    ^^^     // distance = 3, is_overlapping = false
-                // E.g.:
-                // |--------|
-                //  ooooo     // range1
-                //     ooooo  // range2
-                //     ^^     // distance = 2, is_overlapping = true
-                let (distance, is_overlapping) = {
-                    let l = current_merged_range.end.min(range.end);
-                    let r = current_merged_range.start.max(range.start);
-
-                    (r.abs_diff(l), r < l)
-                };
-
-                let should_merge = is_overlapping || {
-                    let leq_current_len_dist_to_chunk_size = new_merged.len().abs_diff(chunk_size)
-                        <= current_merged_range.len().abs_diff(chunk_size);
-                    let gap_tolerance =
-                        (current_n_bytes.max(range.len()) / 8).clamp(1024 * 1024, 8 * 1024 * 1024);
-
-                    leq_current_len_dist_to_chunk_size && distance <= gap_tolerance
-                };
-
-                if should_merge {
-                    // Merge to existing range
-                    current_merged_range = new_merged;
-                    current_n_bytes += if is_overlapping {
-                        range.len() - distance
-                    } else {
-                        range.len()
-                    };
-                    None
-                } else {
-                    let out = (current_merged_range.clone(), current_idx);
-                    current_merged_range = range;
-                    current_n_bytes = current_merged_range.len();
-                    Some(out)
-                }
-            }
-        })
-        .flat_map(|x| {
-            // Split large individual ranges within the list of ranges.
-            let (range, end) = x;
-            let split = split_range(range, None);
-            let len = split.len();
-
-            split
-                .enumerate()
-                .map(move |(i, range)| (range, if 1 + i == len { end } else { 0 }))
-        })
-}
 
 #[cfg(test)]
 mod tests {

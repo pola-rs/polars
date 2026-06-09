@@ -34,19 +34,14 @@ pub struct IoSample {
     pub n_bytes: u64,
     // Time-to-first-byte.
     pub ttfb: Duration,
-    // kdn TODO - RM from struct - we can generate this on arrival
     pub completion_time: Instant,
 }
-
-// kdn TODO TUNE: make window a multiplier of control_interval?
 
 #[derive(Debug, Clone)]
 pub struct ControllerConfig {
     // Sliding window over which the most recent round-trip-time (RTT) and bandwidth (BW)
     // will be calculated. Also acts as the retention window.
     window: Duration,
-    // Time-to-first-byte default in case there is no sample available yet.
-    ttfb_default: Duration,
     // Byte-based budget during the Init phase, and as the base for the RampUp phase.
     init_byte_budget: u64,
     // Lower limit for the byte-based budget - needed to avoid deadlock.
@@ -65,11 +60,9 @@ impl Default for ControllerConfig {
         let max_chunk_size = get_random_access_chunk_size() as u64;
         Self {
             window: Duration::from_millis(1000),
-            ttfb_default: Duration::from_millis(50), // AWS intra-region S3 TTFB range is 20-80 ms
 
-            // kdn TODO TUNE: size by nr of vCPUs
             // Byte-based budget during the ramp-up phase.
-            // Starting too low results in lost opportunity during ramp-up.
+            // Starting too low results in lost opportunity (time) during ramp-up.
             // Starting too high results in early congestion, delayed completion of the first chunk,
             // and inflated bandwidth estimation.
             //
@@ -86,14 +79,14 @@ impl Default for ControllerConfig {
 
             // Count-based budget, currently fixed
             request_budget: get_request_budget(),
-            control_interval: Duration::from_millis(100),
+            control_interval: Duration::from_millis(100), //kdn TODO: TEST & TUNE
             budget_resize_threshold: 0.05,
         }
     }
 }
 
+/// Max number of bytes concurrently in flight during the init and start of rampup phase.
 fn get_init_byte_budget(max_chunk_size: u64) -> u64 {
-    // Maximum number of bytes concurrently in flight during the init and start of rampup phase.
     let init_byte_budget = std::env::var("POLARS_INFLIGHT_INIT_BYTE_BUDGET")
         .map(|x| {
             x.parse::<NonZeroU64>()
@@ -103,7 +96,7 @@ fn get_init_byte_budget(max_chunk_size: u64) -> u64 {
                 .get()
         })
         .unwrap_or_else(|_| {
-            // kdn TODO TUNE & TEST
+            // kdn TODO TEST & TUNE
             // This should be lower than the expected BDP so it can ramp-up, but
             // too low a value delays the transition to stable.
             // Heuristic: higher bandwidth is expected on larger instances.
@@ -119,12 +112,12 @@ fn get_init_byte_budget(max_chunk_size: u64) -> u64 {
     init_byte_budget
 }
 
+/// Maximum number of requests concurrently in flight.
 pub fn get_request_budget() -> u32 {
-    // Maximum number of concurrent in-flight requests.
     // Since object_store/reqwest use HTTP/1 with a connection pool, this value controls the
     // max concurrent TCP sessions to S3 for the pipeline.
-    // Consider the tokio max_thread count, OS limitations (e.g., ulimit -n), and
-    // object_store back-end limitations when modifying this value.
+    // When modifying this value, consider the max_thread count configuration(s), the OS limitations
+    // (e.g., ulimit -n), and any cloud infrastructure limitations.
     let request_budget = std::env::var("POLARS_INFLIGHT_REQUEST_BUDGET")
         .map(|x| {
             x.parse::<NonZeroU32>()
@@ -149,7 +142,7 @@ impl ConcurrencyController {
     pub fn new(config: ControllerConfig) -> Self {
         let now = Instant::now();
 
-        let model = Arc::new(Mutex::new(Model::new(config.window, config.ttfb_default)));
+        let model = Arc::new(Mutex::new(Model::new(config.window)));
         let regime = Arc::new(Mutex::new(Regime::new(now)));
         let inflight_budget = Arc::new(InFlightBudget::new(
             config.init_byte_budget,
@@ -206,7 +199,6 @@ impl ConcurrencyController {
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(config.control_interval);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            let mut has_signal = false;
 
             loop {
                 ticker.tick().await;
@@ -221,45 +213,12 @@ impl ConcurrencyController {
                     let state = regime.step(signal, now);
                     (state, signal)
                 };
-                // {
-                //     let mut model = model.lock().unwrap();
-                //     model.update(now);
-                // }
-
-                // if !has_signal {
-                //     continue;
-                // }
-
-                // // Step regime through its state machine
-                // let (state, bw_hwm, bw_avg, ttfb_min, ttfb_avg, bdp_observed) = {
-                //     let model = model.lock().unwrap();
-                //     let mut regime = regime.lock().unwrap();
-                //     let state = regime.step(&model, now);
-                //     (
-                //         state,
-                //         model.bw_hwm_bps(),
-                //         model.bw_avg_bps(),
-                //         model.ttfb_min(),
-                //         model.ttfb_avg(),
-                //         model.bdp_bytes(),
-                //     )
-                // };
 
                 // Compute base BDP
                 let base_budget = match (state, signal) {
                     (RegimeState::Init, _) | (_, None) => config.init_byte_budget,
                     (_, Some(signal)) => signal.bdp_bytes().max(config.init_byte_budget),
                 };
-                //kdn TODO RM
-                // let base_budget = match state {
-                //     RegimeState::Init => config.init_byte_budget,
-                //     RegimeState::RampUp { .. }
-                //     | RegimeState::Stable
-                //     | RegimeState::ProbeUp { .. } => bdp_observed
-                //         .map_or(config.init_byte_budget, |bdp| {
-                //             bdp.max(config.init_byte_budget)
-                //         }),
-                // };
 
                 // Compute target BDP using the gain multiplier. This is similar to BBR cwnd_gain.
                 let gain = match state {
@@ -286,7 +245,6 @@ impl ConcurrencyController {
                 }
 
                 // Log snapshot.
-                // kdn TODO SHORTEN
                 if std::env::var("POLARS_LOG_CONCURRENCY").is_ok() {
                     let stats = admission.stats();
                     eprintln!(
@@ -296,7 +254,7 @@ impl ConcurrencyController {
                         rtt_min={:.1} ms, \
                         rtt_avg={:.1} ms, \
                         bdp_obs={:.1} MB, \
-                        byte_budget={:.1} MB, \
+                        bytes_budget={:.1} MB, \
                         bytes_in_use={:.1} MB, \
                         bytes_sat={:.2}, \
                         req_budget={}, \
@@ -309,41 +267,13 @@ impl ConcurrencyController {
                         signal.map_or(0, |s| s.ttfb_min.as_millis()),
                         signal.map_or(0, |s| s.ttfb_avg.as_millis()),
                         signal.map_or(0, |s| s.bdp_bytes()) as f64 / 1e6,
-                        stats.byte_budget as f64 / 1e6,
+                        stats.bytes_budget as f64 / 1e6,
                         stats.bytes_in_use as f64 / 1e6,
                         stats.bytes_saturation,
                         stats.request_budget,
                         stats.requests_in_use,
                         stats.requests_saturation
                     );
-
-                    // eprintln!(
-                    //     "[InFlightConcurrency {}] regime={}, \
-                    //     bw_hwm={:.1} MB/s, \
-                    //     bw_avg={:.1} MB/s, \
-                    //     rtt_min={:.1} ms, \
-                    //     rtt_avg={:.1} ms, \
-                    //     bdp_obs={:.1} MB, \
-                    //     budget={:.1} MB, \
-                    //     in_use={:.1} MB, \
-                    //     bytes_sat={:.2}, \
-                    //     budget={}, \
-                    //     in_use={}, \
-                    //     req_sat={:.2}",
-                    //     chrono::Utc::now(),
-                    //     state.label(),
-                    //     bw_hwm.unwrap_or_default() / 1e6,
-                    //     bw_avg.unwrap_or_default() / 1e6,
-                    //     ttfb_min.unwrap_or_default().as_millis(),
-                    //     ttfb_avg.unwrap_or_default().as_millis(),
-                    //     bdp_observed.unwrap_or_default() as f64 / 1e6,
-                    //     stats.byte_budget as f64 / 1e6,
-                    //     stats.bytes_in_use as f64 / 1e6,
-                    //     stats.bytes_saturation,
-                    //     stats.request_budget,
-                    //     stats.requests_in_use,
-                    //     stats.requests_saturation
-                    // );
                 }
             }
         })

@@ -69,48 +69,11 @@ impl ByteBudget {
             }
             notified.await;
         }
-
-        //     loop {
-        //         let cap = self.current.load(Ordering::Acquire);
-        //         let inflight = self.inflight.load(Ordering::Acquire);
-
-        //         if inflight + n_bytes <= cap {
-        //             if self
-        //                 .inflight
-        //                 .compare_exchange_weak(
-        //                     inflight,
-        //                     inflight + n_bytes,
-        //                     Ordering::AcqRel,
-        //                     Ordering::Relaxed,
-        //                 )
-        //                 .is_ok()
-        //             {
-        //                 return;
-        //             }
-        //             continue;
-        //         } else {
-        //             // Wait for a release event
-        //             let notified = self.waiters.notified();
-        //             // Re-check before awaiting (avoid missed wakeup)
-        //             let cap = self.current.load(Ordering::Acquire);
-        //             let inflight = self.inflight.load(Ordering::Acquire);
-        //             if inflight + n_bytes <= cap {
-        //                 continue;
-        //             }
-        //             notified.await;
-        //             // Chain: we were woken but may not be able to proceed.
-        //             // Notify the next waiter so a smaller request gets a chance.
-        //             self.waiters.notify_one();
-        //         }
-        //     }
-        // }
     }
 
     fn release(&self, bytes: u64) {
-        let prev = self.inflight.fetch_sub(bytes, Ordering::AcqRel);
-        //kdn TODO RM
-        // self.waiters.notify_waiters();
-        self.waiters.notify_one(); // wake exactly one
+        self.inflight.fetch_sub(bytes, Ordering::AcqRel);
+        self.waiters.notify_one();
     }
 
     fn resize(&self, new: u64) {
@@ -155,7 +118,7 @@ impl RequestBudget {
 
 #[derive(Clone, Copy, Debug)]
 pub struct InFlightStats {
-    pub byte_budget: u64,
+    pub bytes_budget: u64,
     pub bytes_in_use: u64,
     // May exceed 1.0 transiently after a budget shrink, while
     // previously-admitted traffic drains. Expected, not a bug.
@@ -220,23 +183,6 @@ impl InFlightBudget {
             _byte_reservation: bytes,
             _req_permit: req_permit,
         }
-        // // Byte budget (may wait)
-        // self.byte_budget.acquire(n_bytes).await;
-
-        // // Request permit (usually instant)
-        // let req_permit = self
-        //     .request_budget
-        //     .semaphore
-        //     .clone()
-        //     .acquire_owned()
-        //     .await
-        //     .expect("semaphore closed");
-
-        // InFlightPermit {
-        //     admission: self.clone(),
-        //     n_bytes,
-        //     _req_permit: req_permit,
-        // }
     }
 
     pub fn current_byte_budget(&self) -> u64 {
@@ -252,10 +198,10 @@ impl InFlightBudget {
     }
 
     pub fn stats(&self) -> InFlightStats {
-        let byte_budget = self.byte_budget.current_budget();
+        let bytes_budget = self.byte_budget.current_budget();
         let bytes_in_use = self.byte_budget.inflight();
-        let bytes_saturation = if byte_budget > 0 {
-            bytes_in_use as f64 / byte_budget as f64
+        let bytes_saturation = if bytes_budget > 0 {
+            bytes_in_use as f64 / bytes_budget as f64
         } else {
             0.0
         };
@@ -270,7 +216,7 @@ impl InFlightBudget {
         };
 
         InFlightStats {
-            byte_budget,
+            bytes_budget,
             bytes_in_use,
             bytes_saturation,
             request_budget,
@@ -280,8 +226,6 @@ impl InFlightBudget {
     }
 }
 
-/// RAII guard for a byte reservation. Releasing happens on drop,
-/// so the reservation survives cancellation at any later await point.
 struct ByteReservation {
     budget: Arc<ByteBudget>,
     n_bytes: u64,
@@ -295,21 +239,5 @@ impl Drop for ByteReservation {
 
 pub struct InFlightPermit {
     _byte_reservation: ByteReservation,
-    //kdn TODO RM
-    // admission: Arc<InFlightBudget>,
-    // n_bytes: u64,
     _req_permit: OwnedSemaphorePermit,
 }
-
-// impl InFlightPermit {
-//     pub fn n_bytes(&self) -> u64 {
-//         self.n_bytes
-//     }
-// }
-
-//kdn TODO RM
-// impl Drop for InFlightPermit {
-//     fn drop(&mut self) {
-//         self.admission.byte_budget.release(self.n_bytes);
-//     }
-// }
