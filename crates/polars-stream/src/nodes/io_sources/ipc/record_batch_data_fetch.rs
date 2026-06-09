@@ -44,8 +44,6 @@ pub(super) struct RecordBatchDataFetcher {
 
     pub(super) prefetch_send: Sender<(
         tokio_handle_ext::AbortOnDropHandle<PolarsResult<RecordBatchData>>,
-        // //kdn TODO CLEANUP
-        // Option<OwnedSemaphorePermit>,
         Option<PipelinePermit>,
     )>,
     pub(super) base_rb_metadata_fetch_count: u64,

@@ -2,9 +2,9 @@
 
 use std::time::{Duration, Instant};
 
-use crate::cloud::concurrency::model::Model;
+use crate::cloud::concurrency::model::{Model, SignalStats};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RegimeState {
     Init,
     RampUp {
@@ -17,13 +17,24 @@ pub enum RegimeState {
     },
 }
 
+impl RegimeState {
+    pub fn label(&self) -> &'static str {
+        match *self {
+            RegimeState::Init => "init",
+            RegimeState::RampUp { .. } => "ramp_up",
+            RegimeState::Stable => "stable",
+            RegimeState::ProbeUp { .. } => "probe_up",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Regime {
     state: RegimeState,
     last_transition: Instant,
 
-    startup_growth_threshold: f64,
-    startup_exit_rounds: u32,
+    rampup_growth_threshold: f64,
+    rampup_exit_rounds: u32,
     probe_interval: Duration,
     probe_duration: Duration,
 }
@@ -34,68 +45,68 @@ impl Regime {
         Self {
             state: RegimeState::Init,
             last_transition: now,
-            startup_growth_threshold: 1.05, //kdn ESTIMATE
-            startup_exit_rounds: 3,
+            rampup_growth_threshold: 1.05, //kdn ESTIMATE
+            rampup_exit_rounds: 3,
             // Interval between ProbeUp spikes
-            probe_interval: Duration::from_millis(3000), //kdn TBD
-            probe_duration: Duration::from_millis(1000), //kdn TBD
+            probe_interval: Duration::from_millis(3000), //kdn TODO TEST & TUNE
+            probe_duration: Duration::from_millis(1000), //kdn TODO TEST & TUNE
         }
     }
 
+    // kdn TODO TUNE: add app-limited state (see BBR paper)
     // kdn TODO: Add fall-back to Init after long quiet window.
-    pub fn step(&mut self, model: &Model, now: Instant) {
+    pub fn step(&mut self, signal: Option<SignalStats>, now: Instant) -> RegimeState {
+        let Some(sig) = signal else {
+            return match self.state {
+                RegimeState::Init => RegimeState::Init,
+                _ => self.transition_to(RegimeState::Init, now),
+            };
+        };
+
         match self.state {
-            // No reliable signal yet.
-            // kdn TODO - should be event-based?
-            // kdn TBD - MultiFileReader may pull a lot of metadata..
-            RegimeState::Init => {
-                //kdn TODO move to config
-                let n_sample_threshold = 5;
-                if model.sample_count() > n_sample_threshold {
-                    self.transition_to(
-                        RegimeState::RampUp {
-                            consecutive_no_growth: 0,
-                            last_bw_observation: model.bw_max_bps(),
-                        },
-                        now,
-                    );
-                }
-            },
+            RegimeState::Init => self.transition_to(
+                RegimeState::RampUp {
+                    consecutive_no_growth: 0,
+                    last_bw_observation: sig.bw_avg_bps,
+                },
+                now,
+            ),
 
             RegimeState::RampUp {
-                mut consecutive_no_growth,
+                consecutive_no_growth,
                 last_bw_observation,
             } => {
-                //kdn TODO: refactor so we detect steady slow growth
-                let current = model.bw_max_bps();
-                let growing = current > last_bw_observation * self.startup_growth_threshold;
-
-                if growing {
-                    consecutive_no_growth = 0;
+                let growing = sig.bw_avg_bps > last_bw_observation * self.rampup_growth_threshold;
+                let consecutive_no_growth = if growing {
+                    0
                 } else {
-                    consecutive_no_growth += 1;
-                }
+                    consecutive_no_growth + 1
+                };
 
-                if consecutive_no_growth >= self.startup_exit_rounds {
-                    self.transition_to(RegimeState::Stable, now);
+                if consecutive_no_growth >= self.rampup_exit_rounds {
+                    self.transition_to(RegimeState::Stable, now)
                 } else {
                     self.state = RegimeState::RampUp {
                         consecutive_no_growth,
-                        last_bw_observation: current,
+                        last_bw_observation: sig.bw_avg_bps,
                     };
+                    self.state
                 }
             },
 
             RegimeState::Stable => {
                 if now.duration_since(self.last_transition) > self.probe_interval {
-                    self.transition_to(RegimeState::ProbeUp { started_at: now }, now);
+                    self.transition_to(RegimeState::ProbeUp { started_at: now }, now)
+                } else {
+                    self.state
                 }
             },
 
-            // kdn TODO: what if BDP goes up?
             RegimeState::ProbeUp { started_at } => {
                 if now.duration_since(started_at) > self.probe_duration {
-                    self.transition_to(RegimeState::Stable, now);
+                    self.transition_to(RegimeState::Stable, now)
+                } else {
+                    self.state
                 }
             },
         }
@@ -105,44 +116,21 @@ impl Regime {
         &self.state
     }
 
-    // Effective inflight_budget will be set at the observed BDP
-    // multiplied by a gain factor. This is similar to BBR cwnd_gain.
-    pub fn gain_factor(&self) -> f64 {
-        match self.state {
-            RegimeState::Init => 1.0,
-            RegimeState::RampUp { .. } => 2.0,
-            RegimeState::Stable => 2.0,
-            RegimeState::ProbeUp { .. } => 3.0,
-        }
-    }
+    fn transition_to(&mut self, new: RegimeState, now: Instant) -> RegimeState {
+        let old_label = self.state.label();
+        let new_label = new.label();
 
-    pub fn state_label(&self) -> &'static str {
-        match self.state {
-            RegimeState::Init => "init",
-            RegimeState::RampUp { .. } => "ramp_up",
-            RegimeState::Stable => "stable",
-            RegimeState::ProbeUp { .. } => "probe_up",
-        }
-    }
-
-    fn transition_to(&mut self, new: RegimeState, now: Instant) {
-        let old_label = self.state_label();
-        self.state = new;
-        let new_label = self.state_label();
-        //kdn TODO VERBOSE - tune
-        if polars_config::config().verbose()
-            && matches!(
-                (&self.state, &new),
-                (RegimeState::RampUp { .. }, RegimeState::Stable)
-            )
-        {
+        if polars_config::config().verbose() && old_label != new_label {
             eprintln!(
-                "[InFlightConcurrency] regime: {} -> {} (after {:?})",
+                "[InFlightConcurrency] regime change from {} to {}, after {:.2}s",
                 old_label,
                 new_label,
-                now.duration_since(self.last_transition),
+                now.duration_since(self.last_transition).as_secs_f64(),
             );
         }
+
+        self.state = new;
         self.last_transition = now;
+        new
     }
 }

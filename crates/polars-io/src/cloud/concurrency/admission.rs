@@ -14,7 +14,7 @@ pub(super) struct ByteBudget {
     current: AtomicU64,
     // Budget in use for in-flight traffic.
     inflight: AtomicU64,
-    // Lowest possible budget.
+    // Lowest allowed budget.
     floor: u64,
     waiters: Notify,
 }
@@ -29,65 +29,105 @@ impl ByteBudget {
         }
     }
 
-    async fn acquire(&self, bytes: u64) {
-        // #kdn TODO PERF AI: this spins on notification; could starve large requests
-        // if small ones keep grabbing released capacity. Consider a proper waker
-        // queue with FIFO ordering or size-aware priority.
-
+    async fn acquire(&self, n_bytes: u64) {
         // Pre-empt deadlock.
-        assert!(bytes <= self.floor);
+        assert!(n_bytes <= self.floor);
+
+        // NOTE: Large waiters can starve under sustained small-request load.
+        // In practice, this may not be material issue.
         loop {
             let cap = self.current.load(Ordering::Acquire);
             let inflight = self.inflight.load(Ordering::Acquire);
 
-            if inflight + bytes <= cap {
-                match self.inflight.compare_exchange_weak(
-                    inflight,
-                    inflight + bytes,
-                    Ordering::AcqRel,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => {
-                        // Update peak (racy, acceptable for a metric)
-                        // self.peak_inflight.fetch_max(inflight + bytes, Ordering::Relaxed);
-                        return;
-                    },
-                    Err(_) => continue,
+            if inflight + n_bytes <= cap {
+                if self
+                    .inflight
+                    .compare_exchange_weak(
+                        inflight,
+                        inflight + n_bytes,
+                        Ordering::AcqRel,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    // Fits. There may be leftover capacity for the next
+                    // waiter (e.g. one big release satisfying several small
+                    // acquires), so keep the wake chain alive — but only
+                    // because progress occurred.
+                    self.waiters.notify_one();
+                    return;
                 }
-            } else {
-                // Wait for a release event
-                let notified = self.waiters.notified();
-                // Re-check before awaiting (avoid missed wakeup)
-                let cap = self.current.load(Ordering::Acquire);
-                let inflight = self.inflight.load(Ordering::Acquire);
-                if inflight + bytes <= cap {
-                    continue;
-                }
-                notified.await;
+                continue;
             }
+
+            // Doesn't fit: register, re-check, park.
+            let notified = self.waiters.notified();
+            let cap = self.current.load(Ordering::Acquire);
+            let inflight = self.inflight.load(Ordering::Acquire);
+            if inflight + n_bytes <= cap {
+                continue;
+            }
+            notified.await;
         }
+
+        //     loop {
+        //         let cap = self.current.load(Ordering::Acquire);
+        //         let inflight = self.inflight.load(Ordering::Acquire);
+
+        //         if inflight + n_bytes <= cap {
+        //             if self
+        //                 .inflight
+        //                 .compare_exchange_weak(
+        //                     inflight,
+        //                     inflight + n_bytes,
+        //                     Ordering::AcqRel,
+        //                     Ordering::Relaxed,
+        //                 )
+        //                 .is_ok()
+        //             {
+        //                 return;
+        //             }
+        //             continue;
+        //         } else {
+        //             // Wait for a release event
+        //             let notified = self.waiters.notified();
+        //             // Re-check before awaiting (avoid missed wakeup)
+        //             let cap = self.current.load(Ordering::Acquire);
+        //             let inflight = self.inflight.load(Ordering::Acquire);
+        //             if inflight + n_bytes <= cap {
+        //                 continue;
+        //             }
+        //             notified.await;
+        //             // Chain: we were woken but may not be able to proceed.
+        //             // Notify the next waiter so a smaller request gets a chance.
+        //             self.waiters.notify_one();
+        //         }
+        //     }
+        // }
     }
 
     fn release(&self, bytes: u64) {
-        self.inflight.fetch_sub(bytes, Ordering::AcqRel);
-        // #kdn TODO PERF AI: notify_waiters() causes thundering herd. Consider
-        // notify_one() chained on release, but that requires tracking waiters
-        // explicitly.
-        self.waiters.notify_waiters();
+        let prev = self.inflight.fetch_sub(bytes, Ordering::AcqRel);
+        //kdn TODO RM
+        // self.waiters.notify_waiters();
+        self.waiters.notify_one(); // wake exactly one
     }
 
     fn resize(&self, new: u64) {
+        let new = new.max(self.floor);
         let old = self.current.swap(new, Ordering::AcqRel);
         if new > old {
-            // Grew: maybe someone can now proceed.
+            // Grow: maybe someone can now proceed.
             self.waiters.notify_waiters();
         }
-        // Shrunk: no need to notify. Existing in-flight complete normally;
-        // new acquires see the smaller cap on next check.
     }
 
     fn current_budget(&self) -> u64 {
         self.current.load(Ordering::Relaxed)
+    }
+
+    fn floor_byte_budget(&self) -> u64 {
+        self.floor
     }
 
     fn inflight(&self) -> u64 {
@@ -98,7 +138,7 @@ impl ByteBudget {
 /// Request_count-based budget with fixed size.
 #[derive(Debug)]
 pub(super) struct RequestBudget {
-    current: usize,
+    budget: usize,
     semaphore: Arc<Semaphore>,
     // // Budget in use for in-flight traffic.
     // inflight: AtomicU64,
@@ -107,10 +147,8 @@ pub(super) struct RequestBudget {
 impl RequestBudget {
     fn new(budget: usize) -> Self {
         Self {
-            current: budget,
-            semaphore: Arc::new(Semaphore::new(
-                usize::try_from(budget).expect("request budget exceeds usize limit"),
-            )),
+            budget,
+            semaphore: Arc::new(Semaphore::new(budget)),
         }
     }
 }
@@ -119,6 +157,8 @@ impl RequestBudget {
 pub struct InFlightStats {
     pub byte_budget: u64,
     pub bytes_in_use: u64,
+    // May exceed 1.0 transiently after a budget shrink, while
+    // previously-admitted traffic drains. Expected, not a bug.
     pub bytes_saturation: f64,
     pub request_budget: usize,
     pub requests_in_use: usize,
@@ -140,7 +180,6 @@ impl InFlightBudget {
         let inflight_budget = Self {
             byte_budget: Arc::new(ByteBudget::new(initial_byte_budget, floor_byte_budget)),
             request_budget: Arc::new(RequestBudget::new(initial_request_budget as usize)),
-            // current_request_budget: AtomicU32::new(initial_request_budget),
         };
 
         if polars_config::config().verbose() {
@@ -156,11 +195,19 @@ impl InFlightBudget {
         inflight_budget
     }
 
-    pub async fn acquire(self: &Arc<Self>, bytes: u64) -> InFlightPermit {
-        // Byte budget (may wait)
-        self.byte_budget.acquire(bytes).await;
+    pub async fn acquire(self: &Arc<Self>, n_bytes: u64) -> InFlightPermit {
+        // Byte budget (may wait). Cancel-safe internally.
+        self.byte_budget.acquire(n_bytes).await;
 
-        // Request permit (usually instant)
+        // Guard immediately — synchronous, so there's no cancellation
+        // window between reservation and guard.
+        let bytes = ByteReservation {
+            budget: self.byte_budget.clone(),
+            n_bytes,
+        };
+
+        // Request permit. If we're cancelled here, `bytes` drops and
+        // releases the reservation (and notifies a waiter).
         let req_permit = self
             .request_budget
             .semaphore
@@ -170,17 +217,37 @@ impl InFlightBudget {
             .expect("semaphore closed");
 
         InFlightPermit {
-            admission: self.clone(),
-            bytes,
+            _byte_reservation: bytes,
             _req_permit: req_permit,
         }
+        // // Byte budget (may wait)
+        // self.byte_budget.acquire(n_bytes).await;
+
+        // // Request permit (usually instant)
+        // let req_permit = self
+        //     .request_budget
+        //     .semaphore
+        //     .clone()
+        //     .acquire_owned()
+        //     .await
+        //     .expect("semaphore closed");
+
+        // InFlightPermit {
+        //     admission: self.clone(),
+        //     n_bytes,
+        //     _req_permit: req_permit,
+        // }
     }
 
     pub fn current_byte_budget(&self) -> u64 {
         self.byte_budget.current_budget()
     }
 
-    pub async fn resize_byte_budget(&self, new: u64) {
+    pub fn floor_byte_budget(&self) -> u64 {
+        self.byte_budget.floor_byte_budget()
+    }
+
+    pub fn resize_byte_budget(&self, new: u64) {
         self.byte_budget.resize(new);
     }
 
@@ -193,7 +260,7 @@ impl InFlightBudget {
             0.0
         };
 
-        let request_budget = self.request_budget.current;
+        let request_budget = self.request_budget.budget;
         let requests_in_use =
             request_budget as usize - self.request_budget.semaphore.available_permits();
         let requests_saturation = if request_budget > 0 {
@@ -213,20 +280,36 @@ impl InFlightBudget {
     }
 }
 
+/// RAII guard for a byte reservation. Releasing happens on drop,
+/// so the reservation survives cancellation at any later await point.
+struct ByteReservation {
+    budget: Arc<ByteBudget>,
+    n_bytes: u64,
+}
+
+impl Drop for ByteReservation {
+    fn drop(&mut self) {
+        self.budget.release(self.n_bytes);
+    }
+}
+
 pub struct InFlightPermit {
-    admission: Arc<InFlightBudget>,
-    bytes: u64,
+    _byte_reservation: ByteReservation,
+    //kdn TODO RM
+    // admission: Arc<InFlightBudget>,
+    // n_bytes: u64,
     _req_permit: OwnedSemaphorePermit,
 }
 
-impl InFlightPermit {
-    pub fn bytes(&self) -> u64 {
-        self.bytes
-    }
-}
+// impl InFlightPermit {
+//     pub fn n_bytes(&self) -> u64 {
+//         self.n_bytes
+//     }
+// }
 
-impl Drop for InFlightPermit {
-    fn drop(&mut self) {
-        self.admission.byte_budget.release(self.bytes);
-    }
-}
+//kdn TODO RM
+// impl Drop for InFlightPermit {
+//     fn drop(&mut self) {
+//         self.admission.byte_budget.release(self.n_bytes);
+//     }
+// }

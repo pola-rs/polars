@@ -342,7 +342,7 @@ impl PolarsObjectStore {
                 };
                 let t0 = Instant::now();
 
-                // kdn HACK
+                // kdn TODO REFACTOR
                 let (out, ttfb) = self
                     .io_metrics()
                     .record_io_read(
@@ -357,8 +357,7 @@ impl PolarsObjectStore {
                                         ..Default::default()
                                     },
                                 )
-                                .await
-                                .expect("unable to fetch get_opts");
+                                .await?;
                             let t1 = t0.elapsed();
                             let out = response.bytes().await?;
 
@@ -367,23 +366,10 @@ impl PolarsObjectStore {
                     )
                     .await?;
 
-                // kdn TODO RM
-                // let out = self
-                //     .io_metrics()
-                //     .record_io_read(
-                //         bytes_req,
-                //         self.exec_with_rebuild_retry_on_err(|s| async move {
-                //             s.get_range(path, range.start as u64..range.end as u64)
-                //                 .await
-                //         }),
-                //     )
-                //     .await?;
-
                 if let Some(controller) = &controller {
                     controller.record_io(IoSample {
-                        nbytes: out.len() as u64,
+                        n_bytes: out.len() as u64,
                         ttfb,
-                        ttlb: t0.elapsed(),
                         completion_time: Instant::now(),
                     });
                 }
@@ -591,14 +577,21 @@ impl PolarsObjectStore {
         strategy: ConcurrencyStrategy,
     ) -> PolarsResult<ObjectMeta> {
         //kdn TODO REFACTOR: Update concurrency strategy.
-        // For now, we fall back to 'Legacy' which is fine for metadata, except we use this
-        // to capture network observations.
+        // For now, we fall back to 'Legacy' which is fine for metadata, with the addition
+        // that we do want to collect the observation.
         with_concurrency_budget(1, || {
             self.exec_with_rebuild_retry_on_err(|s| {
                 async move {
                     let t0 = Instant::now();
                     let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;
-                    let ttfb = t0.elapsed();
+                    if let ConcurrencyStrategy::BytesBased = strategy {
+                        // self.get_or_init_concurrency().record_ttfb(ttfb);
+                        self.get_or_init_concurrency().record_io(IoSample {
+                            n_bytes: 0,
+                            ttfb: t0.elapsed(),
+                            completion_time: Instant::now(),
+                        });
+                    }
 
                     if head_result.is_err() {
                         let t0 = Instant::now();
@@ -619,16 +612,18 @@ impl PolarsObjectStore {
                             .await;
 
                         if let ConcurrencyStrategy::BytesBased = strategy {
-                            self.get_or_init_concurrency().record_ttfb(t0.elapsed());
+                            //kdn TODO RM
+                            // self.get_or_init_concurrency().record_ttfb(t0.elapsed());
+                            self.get_or_init_concurrency().record_io(IoSample {
+                                n_bytes: 0,
+                                ttfb: t0.elapsed(),
+                                completion_time: Instant::now(),
+                            });
                         }
 
                         if let Ok(v) = get_range_0_1_result {
                             return Ok(v.meta);
                         }
-                    }
-
-                    if let ConcurrencyStrategy::BytesBased = strategy {
-                        self.get_or_init_concurrency().record_ttfb(ttfb);
                     }
 
                     let out = head_result?;
@@ -811,7 +806,7 @@ fn merge_ranges(
 /// * etc..
 ///
 /// Note that if an end value is 0, it means the range is a splitted part and should be combined.
-// kdn TODO - consolidate with merge_ranges_sized
+// kdn TODO RM (deprecate)
 fn merge_ranges_legacy(
     ranges: &[Range<usize>],
 ) -> impl Iterator<Item = (Range<usize>, usize)> + '_ {

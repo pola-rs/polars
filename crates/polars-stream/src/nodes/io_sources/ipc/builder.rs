@@ -69,13 +69,11 @@ impl FileReaderBuilder for IpcReaderBuilder {
             })
             .unwrap_or(
                 // Similar to Parquet.
-                std::cmp::max(
-                    execution_state
-                        .num_pipelines
-                        .saturating_mul(2)
-                        .clamp(8, 512),
-                    get_request_budget() as usize,
-                ),
+                execution_state
+                    .num_pipelines
+                    .saturating_mul(2)
+                    .max(get_request_budget() as usize)
+                    .clamp(16, 2048),
             )
             .max(1);
 
