@@ -184,9 +184,28 @@ impl Model {
     //         .unwrap_or(self.ttfb_min_default)
     // }
 
+    // pub fn rtt_for_bdp(&self) -> Duration {
+    //     //kdn TOGGLE HERE
+    //     self.ttfb_avg.unwrap_or(self.ttfb_min_default)
+    // }
+
+    //kdn TODO CLEANUP
+    /// RTT used to compute BDP.
+    ///
+    /// Uses mean TTFB but capped at `QUEUING_RATIO_CAP × rtt_min`.
+    ///
+    /// Rationale: rtt_avg reflects true service time including S3 queuing.
+    /// But when rtt_avg/rtt_min > cap, additional budget only deepens the
+    /// S3 queue — it doesn't increase throughput proportionally. Capping
+    /// here prevents the BDP estimate from spiraling with self-induced queuing
+    /// while still allowing budget to grow if bw_max grows.
     pub fn rtt_for_bdp(&self) -> Duration {
-        //kdn TOGGLE HERE
-        self.ttfb_avg.unwrap_or(self.ttfb_min_default)
+        const QUEUING_RATIO_CAP: f64 = 10.0;
+
+        let rtt_min = self.ttfb_min();
+        let rtt_avg = self.ttfb_avg();
+        let cap = rtt_min.mul_f64(QUEUING_RATIO_CAP);
+        rtt_avg.min(cap)
     }
 
     pub fn bdp_bytes(&self) -> u64 {

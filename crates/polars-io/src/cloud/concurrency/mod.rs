@@ -302,12 +302,12 @@ impl ConcurrencyController {
                 ) {
                     //kdn TODO - what if this takes longer than a tick
 
-                    // kdn HACK >> move to 'rtt_for_bdp'
-                    let target_budget = if queuing_ratio > 5.0 {
-                        current_byte_budget // hold — we're causing the queuing
-                    } else {
-                        (base_budget as f64 * gain) as u64
-                    };
+                    // // kdn HACK >> move to 'rtt_for_bdp'
+                    // let target_budget = if queuing_ratio > 5.0 {
+                    //     current_byte_budget // hold — we're causing the queuing
+                    // } else {
+                    //     (base_budget as f64 * gain) as u64
+                    // };
 
                     admission.resize_byte_budget(target_budget).await;
                 }
