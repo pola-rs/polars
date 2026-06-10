@@ -249,7 +249,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
 
     let received_options = Arc::new(Mutex::new(vec![]));
     let store = Arc::new(InMemory::new());
-    let output_path = "mem://host/data/output.parquet";
+    let output_path = "pl-mem://host/data/output.parquet";
 
     let mut storage_options = CloudOptions::default();
     storage_options.config = Some(CloudConfig::Ext {
@@ -257,7 +257,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
     });
 
     register_object_store_builder(
-        "mem",
+        "pl-mem",
         Arc::new(MemoryBuilder {
             store: store.clone(),
             received_options: received_options.clone(),
@@ -305,7 +305,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
         vec![Some("x"), Some("y"), Some("z")]
     );
 
-    deregister_object_store_builder("mem");
+    deregister_object_store_builder("pl-mem");
 
     Ok(())
 }

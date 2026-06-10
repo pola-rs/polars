@@ -14,11 +14,11 @@ use crate::pl_str::PlRefStr;
 pub const WINDOWS_EXTPATH_PREFIX: &str = r#"\\?\"#;
 
 #[cfg(not(any(test, feature = "test-ext-schemes")))]
-pub const ALLOWED_EXT_SCHEMES: &[&str] = &["hdfs", "mem"];
+pub static ALLOWED_EXT_SCHEMES: &[&str] = &["hdfs", "pl-mem"];
 
 #[cfg(any(test, feature = "test-ext-schemes"))]
-pub const ALLOWED_EXT_SCHEMES: &[&str] = &[
-    "hdfs", "mem", "pl-test1", "pl-test2", "pl-test3", "pl-test4",
+pub static ALLOWED_EXT_SCHEMES: &[&str] = &[
+    "hdfs", "pl-mem", "pl-test1", "pl-test2", "pl-test3", "pl-test4",
 ];
 
 /// Path represented as a UTF-8 string.
