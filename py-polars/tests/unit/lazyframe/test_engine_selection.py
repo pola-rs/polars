@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -69,6 +70,9 @@ def test_default_engine_and_affinity(
 
     if engine_affinity is not None:
         plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", engine_affinity)
+    else:
+        with contextlib.suppress(KeyError):
+            plmonkeypatch.delenv("POLARS_ENGINE_AFFINITY")
 
     capfd.readouterr()
     plmonkeypatch.setenv("POLARS_VERBOSE", "1")

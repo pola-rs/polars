@@ -155,6 +155,18 @@ jobs:
           -k 'not test_polars_import'
           --cov --cov-report xml:main.xml --cov-fail-under=0
 
+      - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
+        working-directory: py-polars
+        env:
+          POLARS_ENGINE_AFFINITY: in-memory
+          POLARS_TIMEOUT_MS: 60000
+        run: >
+          pytest
+          -n auto
+          -m "not release and not benchmark and not docs"
+          -k 'not test_polars_import'
+          --cov --cov-report xml:main.xml --cov-fail-under=0
+
       - name: Run Python tests - streaming
         working-directory: py-polars
         env:
