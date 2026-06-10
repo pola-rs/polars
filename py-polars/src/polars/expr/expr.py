@@ -55,7 +55,6 @@ from polars.datatypes import (
 from polars.exceptions import (
     CustomUFuncWarning,
     OutOfBoundsError,
-    PolarsInefficientMapWarning,
 )
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
