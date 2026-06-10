@@ -28,6 +28,8 @@ enum ValueSlot<T> {
         spill_ctx_stats: Arc<SpillContextStatistics>,
         reinsert_ctx: Weak<dyn SpillContext>,
         reinsert_id: u64,
+        spill_time_ns: u64,
+        spilled_start: Instant,
     },
     Dropped,
 }
@@ -191,7 +193,7 @@ impl<T: Spillable> SpillTokenInner<T> {
             let lock_guard = WithDrop::new(slf, |slf| {
                 slf.wake_waiters(slf.state.fetch_and(!LOCK_BIT, Ordering::AcqRel));
             });
-            // TODO: re-register unspilled frame?
+
             let unspill_start = Instant::now();
             let spilled = (*slf.spilled_value.get()).as_ref().unwrap();
             let value = T::unspill(spilled).await;
@@ -200,12 +202,14 @@ impl<T: Spillable> SpillTokenInner<T> {
                 spill_ctx_stats,
                 reinsert_ctx,
                 reinsert_id,
+                spill_time_ns,
+                spilled_start,
             } = slf.value_slot.get().replace(ValueSlot::InMemory(value))
             else {
                 unreachable!()
             };
 
-            spill_ctx_stats.add_unspill(n_bytes, unspill_start);
+            spill_ctx_stats.add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start);
             if reinsert_id == slf.registration_id.load(Ordering::Relaxed) {
                 if let Some(ctx) = reinsert_ctx.upgrade() {
                     let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
@@ -245,15 +249,21 @@ impl<T: Spillable> SpillTokenInner<T> {
                 spill_ctx_stats,
                 reinsert_ctx,
                 reinsert_id,
+                spill_time_ns,
+                spilled_start,
             } = value_slot
             {
                 debug_assert!(slf.state.load(Ordering::Relaxed) & SPILLED_BIT == SPILLED_BIT);
-                // TODO: re-register unspilled frame?
                 let unspill_start = Instant::now();
                 let spilled = (*slf.spilled_value.get()).take().unwrap();
                 let value = T::unspill(&spilled).await;
 
-                spill_ctx_stats.add_unspill(*n_bytes, unspill_start);
+                spill_ctx_stats.add_unspill(
+                    *n_bytes,
+                    *spill_time_ns,
+                    *spilled_start,
+                    unspill_start,
+                );
                 if *reinsert_id == slf.registration_id.load(Ordering::Relaxed) {
                     if let Some(ctx) = reinsert_ctx.upgrade() {
                         let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
@@ -322,8 +332,11 @@ pub trait DynSpillToken: Send + Sync + 'static {
     /// already spilled.
     fn can_spill(&self) -> bool;
 
+    /// Whether this token is spilled or dropped.
+    fn is_spilled_or_dropped(&self) -> bool;
+
     /// Estimates how many bytes this object takes up in memory. Returns None
-    /// if the object is spilled or dropped.
+    /// if the object cannot be pinned.
     fn estimate_byte_size(&self) -> Option<usize>;
 
     /// Tries to spill this token. Returns true if successful.
@@ -351,6 +364,10 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
     fn can_spill(&self) -> bool {
         self.state.load(Ordering::Acquire) & (SPILLED_BIT | DROPPED_BIT | LOCK_BIT | RO_PIN_MASK)
             == 0
+    }
+
+    fn is_spilled_or_dropped(&self) -> bool {
+        self.state.load(Ordering::Acquire) & (SPILLED_BIT | DROPPED_BIT) != 0
     }
 
     fn estimate_byte_size(&self) -> Option<usize> {
@@ -427,15 +444,18 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                     ValueSlot::InMemory(val) => val.estimate_byte_size(),
                     _ => unreachable!(),
                 };
+                let (spill_time_ns, spilled_start) =
+                    stats.add_successful_spill(n_bytes, spill_start);
                 unsafe {
                     self.value_slot.get().replace(ValueSlot::Spilled {
                         n_bytes,
                         spill_ctx_stats: stats.clone(),
                         reinsert_ctx: context,
                         reinsert_id: registration_id,
+                        spill_time_ns,
+                        spilled_start,
                     })
                 };
-                stats.add_successful_spill(n_bytes, spill_start);
                 self.state
                     .fetch_add(SPILLED_BIT.wrapping_sub(LOCK_BIT), Ordering::AcqRel)
             } else {

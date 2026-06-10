@@ -3403,6 +3403,8 @@ dependencies = [
  "polars-core",
  "polars-io",
  "polars-utils",
+ "rand 0.10.1",
+ "rand_distr",
  "thread_local",
  "tikv-jemallocator",
  "tokio",
