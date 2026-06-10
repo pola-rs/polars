@@ -1259,6 +1259,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 };
 
                 let strict = options.strict;
+                let has_cache_parent = matches!(parent_ir, IR::Cache { .. });
 
                 // concat_horizontal([lf, ..]).select(len())
                 // -> concat_horizontal([lf.select(len().alias(i)) for i, lf in enumerate(..)]).select(max_horizontal('*'))
@@ -1429,7 +1430,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                 let new_inputs = inputs;
 
-                if new_inputs.len() == 1 {
+                if new_inputs.len() == 1 && !has_cache_parent {
                     let input_node = new_inputs.into_iter().next().unwrap();
                     let [in_edge, out_edge] = edges.get_input_output_mut(last_kept_input, 0);
                     let parent_key_and_port = out_edge.parent_key_and_port();
