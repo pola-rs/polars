@@ -231,7 +231,10 @@ impl UnionArray {
     #[inline]
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
-            offset + length <= self.len(),
+            match offset.checked_add(length) {
+                Some(end) => end <= self.len(),
+                None => false,
+            },
             "the offset of the new array cannot exceed the existing length"
         );
         unsafe { self.slice_unchecked(offset, length) }

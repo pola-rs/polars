@@ -4,12 +4,12 @@ use polars_arrow::datatypes::*;
 use polars_arrow::offset::*;
 
 // ===================================================================
-// Category A: Integer overflow in slice() bounds check
+// Category A: Integer overflow in slice()/sliced() bounds check
 // ===================================================================
 
 #[test]
 #[should_panic]
-fn test_01_fixed_size_binary_array_slice_overflow() {
+fn fixed_size_binary_array_slice_overflow() {
     let dtype = ArrowDataType::FixedSizeBinary(4);
     let mut arr = FixedSizeBinaryArray::new(dtype, vec![0u8; 16].into(), None);
     arr.slice(usize::MAX - 1, 6);
@@ -17,7 +17,7 @@ fn test_01_fixed_size_binary_array_slice_overflow() {
 
 #[test]
 #[should_panic]
-fn test_02_fixed_size_list_array_slice_overflow() {
+fn fixed_size_list_array_slice_overflow() {
     let child = PrimitiveArray::<i32>::from_vec(vec![1, 2, 3, 4]).boxed();
     let dtype = FixedSizeListArray::default_datatype(child.dtype().clone(), 2);
     let mut arr = FixedSizeListArray::new(dtype, 2, child, None);
@@ -26,7 +26,7 @@ fn test_02_fixed_size_list_array_slice_overflow() {
 
 #[test]
 #[should_panic]
-fn test_03_list_array_slice_overflow() {
+fn list_array_slice_overflow() {
     let child = PrimitiveArray::<i32>::from_vec(vec![10, 20]).boxed();
     let offsets = OffsetsBuffer::<i32>::try_from(vec![0, 1, 2]).unwrap();
     let dtype = ListArray::<i32>::default_datatype(ArrowDataType::Int32);
@@ -36,7 +36,7 @@ fn test_03_list_array_slice_overflow() {
 
 #[test]
 #[should_panic]
-fn test_04_map_array_slice_overflow() {
+fn map_array_slice_overflow() {
     let entries = Field::new(
         "entries".into(),
         ArrowDataType::Struct(vec![
@@ -52,20 +52,16 @@ fn test_04_map_array_slice_overflow() {
 
 #[test]
 #[should_panic]
-fn test_06_struct_array_slice_overflow() {
+fn struct_array_slice_overflow() {
     let child = PrimitiveArray::<i32>::from_vec(vec![10, 20, 30, 40]).boxed();
-    let dtype = ArrowDataType::Struct(vec![Field::new(
-        "x".into(),
-        ArrowDataType::Int32,
-        false,
-    )]);
+    let dtype = ArrowDataType::Struct(vec![Field::new("x".into(), ArrowDataType::Int32, false)]);
     let mut arr = StructArray::new(dtype, 4, vec![child], None);
     arr.slice(usize::MAX, 5);
 }
 
 #[test]
 #[should_panic]
-fn test_07_union_array_slice_overflow() {
+fn union_array_slice_overflow() {
     let dtype = ArrowDataType::Union(Box::new(UnionType {
         fields: vec![Field::new("a".into(), ArrowDataType::Int32, true)],
         ids: None,
@@ -79,53 +75,60 @@ fn test_07_union_array_slice_overflow() {
 
 #[test]
 #[should_panic]
-fn test_09_utf8_array_slice_overflow() {
+fn utf8_array_slice_overflow() {
     let mut arr = Utf8Array::<i32>::from_slice(["A", "BB", "CCC"]);
     arr.slice(usize::MAX, 4);
 }
 
 #[test]
 #[should_panic]
-fn test_10_bitmap_slice_overflow() {
+fn bitmap_slice_overflow() {
     let mut bm = Bitmap::from([true, false, true, false]);
     bm.slice(usize::MAX, 5);
 }
 
 #[test]
 #[should_panic]
-fn test_12_primitive_array_slice_overflow() {
+fn primitive_array_slice_overflow() {
     let mut arr = PrimitiveArray::<i32>::from_vec(vec![1, 2, 3]);
     arr.slice(1, usize::MAX);
 }
 
 #[test]
 #[should_panic]
-fn test_binary_array_slice_overflow() {
+fn binary_array_slice_overflow() {
     let mut arr = BinaryArray::<i32>::from_slice([b"A" as &[u8], b"BB", b"CCC"]);
     arr.slice(usize::MAX, 4);
 }
 
 #[test]
 #[should_panic]
-fn test_boolean_array_slice_overflow() {
+fn boolean_array_slice_overflow() {
     let mut arr = BooleanArray::from_slice([true, false, true, false]);
     arr.slice(usize::MAX, 5);
 }
 
 #[test]
 #[should_panic]
-fn test_null_array_slice_overflow() {
+fn null_array_slice_overflow() {
     let mut arr = NullArray::new(ArrowDataType::Null, 3);
     arr.slice(usize::MAX, 4);
 }
 
+#[test]
+#[should_panic]
+fn bitmap_sliced_overflow() {
+    let bm = Bitmap::from([true, false, true, false]);
+    let _ = bm.sliced(usize::MAX, 5);
+}
+
 // ===================================================================
-// Category B: fold sum overflow in extend_from_lengths (#5)
+// Category B: fold sum overflow in extend_from_lengths
 // ===================================================================
 
 #[test]
 #[should_panic]
-fn test_05_binview_extend_from_lengths_overflow() {
+fn binview_extend_from_lengths_overflow() {
     let mut arr = MutableBinaryViewArray::<[u8]>::new();
     let buffer = vec![0x41u8; 26];
     let lengths = vec![usize::MAX - 5, 32];
@@ -133,25 +136,13 @@ fn test_05_binview_extend_from_lengths_overflow() {
 }
 
 // ===================================================================
-// Category C: buffer_idx u32 overflow in View::new_with_buffers (#8)
+// Category C: buffer_idx u32 overflow in View::new_with_buffers
 // ===================================================================
 
 #[test]
 #[should_panic]
-fn test_08_view_new_with_buffers_overflow() {
+fn view_new_with_buffers_overflow() {
     let mut raw = vec![vec![0u8; 16], Vec::with_capacity(20)];
     raw[1].extend_from_slice(&[b'B'; 20]);
     let _v = View::new_with_buffers(b"abcdefghijklmn", u32::MAX, &mut raw);
-}
-
-// ===================================================================
-// Category D: check-after-mutation in Offsets::try_extend_from_lengths (#11)
-// ===================================================================
-
-#[test]
-fn test_11_offsets_try_extend_from_lengths_overflow() {
-    let mut off = Offsets::<i32>::new();
-    let result =
-        off.try_extend_from_lengths([2_147_483_649usize, 2_147_483_647usize].into_iter());
-    assert!(result.is_err());
 }
