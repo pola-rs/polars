@@ -705,6 +705,35 @@ def test_raise_invalid_temporal(a: pl.DataType, b: pl.DataType, op: str) -> None
         eval(f"_df.select(pl.col('a') {op} pl.col('b'))")
 
 
+@pytest.mark.parametrize(
+    ("a_dtype", "b_dtype", "op"),
+    [
+        (pl.Date, pl.Int32, "+"),
+        (pl.Int32, pl.Date, "+"),
+        (pl.Date, pl.Int32, "-"),
+        (pl.Int32, pl.Date, "-"),
+        (pl.Datetime, pl.Int32, "+"),
+        (pl.Int32, pl.Datetime, "+"),
+        (pl.Datetime, pl.Int32, "-"),
+        (pl.Time, pl.Int32, "+"),
+        (pl.Int32, pl.Time, "+"),
+        (pl.Time, pl.Int32, "-"),
+        (pl.Duration, pl.Int32, "+"),
+        (pl.Int32, pl.Duration, "+"),
+        (pl.Duration, pl.Int32, "-"),
+    ],
+)
+def test_series_temporal_arithmetic_raises_19135(
+    a_dtype: pl.DataType, b_dtype: pl.DataType, op: str
+) -> None:
+    # Direct Series-level arithmetic must reject temporal/non-temporal combinations
+    # for +/-, matching what the lazy/expression path already does. See #19135.
+    a = pl.Series("a", [], dtype=a_dtype)
+    b = pl.Series("b", [], dtype=b_dtype)
+    with pytest.raises(InvalidOperationError):
+        eval(f"a {op} b")
+
+
 def test_arithmetic_duration_div_multiply() -> None:
     df = pl.DataFrame([pl.Series("a", [100, 200, 3000], dtype=pl.Duration)])
 

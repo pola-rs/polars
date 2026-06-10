@@ -507,6 +507,13 @@ impl Add for &Series {
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.add(b))
             },
+            // Combining a temporal type (Date/Datetime/Duration/Time) with a
+            // non-temporal type is never valid for `+`. This mirrors
+            // `get_arithmetic_field` (polars-plan) so the eager Series path
+            // matches the expression path. See #19135.
+            (l, r) if l.is_temporal() != r.is_temporal() => {
+                polars_bail!(opq = add, l, r)
+            },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
                 list::NumericListOp::add().execute(self, rhs)
             },
@@ -531,6 +538,10 @@ impl Sub for &Series {
             #[cfg(feature = "dtype-struct")]
             (DataType::Struct(_), DataType::Struct(_)) => {
                 _struct_arithmetic(self, rhs, |a, b| a.sub(b))
+            },
+            // Same temporal handling as `Add`. See #19135.
+            (l, r) if l.is_temporal() != r.is_temporal() => {
+                polars_bail!(opq = sub, l, r)
             },
             (DataType::List(_), _) | (_, DataType::List(_)) => {
                 list::NumericListOp::sub().execute(self, rhs)
