@@ -66,7 +66,6 @@ def test_default_engine_and_affinity(
     capfd: pytest.CaptureFixture[str],
 ) -> None:
     plmonkeypatch.setenv("POLARS_FORCE_STREAMING", "0")
-    plmonkeypatch.setenv("POLARS_AUTO_STREAMING", "0")
 
     if engine_affinity is not None:
         plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", engine_affinity)
