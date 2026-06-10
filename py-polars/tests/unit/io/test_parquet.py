@@ -3504,7 +3504,7 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
 
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
 @pytest.mark.parametrize(
-    ("df", "predicate"),
+    ("df", "predicate", "reading"),
     [
         # Per-field pruning: `s.field("a")` uses field a's own min/max, so rg0 (a == 0)
         # and rg2 (a == 2) are skipped even though sibling b varies within every group.
@@ -3522,6 +3522,7 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
                 }
             ),
             pl.col("s").struct.field("a") == 1,
+            "1 / 3",
             id="field",
         ),
         # Whole-struct is_null via per-field null counts: a struct is null only where
@@ -3540,11 +3541,14 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
                 }
             ),
             pl.col("s").is_null(),
+            "1 / 3",
             id="is_null_26239",
         ),
-        # is_null only needs *one* never-null field to rule out a null struct (a null
-        # struct nulls every field). rg0 has a field-null but no null struct, so a
-        # single null-free field must still prune it; rg2 is fully non-null.
+        # is_null needs only *one* never-null field to rule out a null struct (a null
+        # struct nulls every field), so rg0 is pruned via x despite y's field-null and
+        # rg2 is non-null. rg1's genuine null structs are matched (read). rg3's present
+        # all-null structs ({x: None, y: None}) are not null structs but bump x_nc/y_nc
+        # like one, so rg3 is read on its own merit and excluded by is_null.
         pytest.param(
             pl.DataFrame(
                 {
@@ -3555,10 +3559,13 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
                         None,
                         {"x": 3, "y": 30},
                         {"x": 4, "y": 40},
+                        {"x": None, "y": None},
+                        {"x": None, "y": None},
                     ]
                 }
             ),
             pl.col("s").is_null(),
+            "2 / 4",
             id="is_null_field_null_pruned",
         ),
     ],
@@ -3566,12 +3573,13 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
 def test_scan_parquet_skip_row_groups_struct(
     df: pl.DataFrame,
     predicate: pl.Expr,
+    reading: str,
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],
 ) -> None:
-    # Struct statistics prune parquet row groups: with three groups of two rows, only
-    # the one group that can match the predicate is read; the other two are skipped
-    # using the struct's per-field min/max/null-count statistics.
+    # Struct statistics prune parquet row groups: only the groups that can match the
+    # predicate are read; the rest are skipped using the struct's per-field
+    # min/max/null-count statistics.
     f = io.BytesIO()
     df.write_parquet(f, row_group_size=2, statistics="full")
     f.seek(0)
@@ -3581,7 +3589,7 @@ def test_scan_parquet_skip_row_groups_struct(
     out = pl.scan_parquet(f).filter(predicate).collect()
 
     assert_frame_equal(out, df.filter(predicate))
-    assert "Predicate pushdown: reading 1 / 3 row groups" in capfd.readouterr().err
+    assert f"Predicate pushdown: reading {reading} row groups" in capfd.readouterr().err
 
 
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
