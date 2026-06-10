@@ -515,13 +515,16 @@ def read_csv(
             #   fsspec and object_store (would require a breaking change)
         )
     ):
+        source_normalized: str | list[str] | IO[str] | IO[bytes] | bytes | bytearray
         if isinstance(source, (str, Path)):
-            source = normalize_filepath(source, check_not_directory=False)
+            source_normalized = normalize_filepath(source, check_not_directory=False)
         elif is_path_or_str_sequence(source, allow_str=False):
-            source = [  # type: ignore[assignment]
+            source_normalized = [
                 normalize_filepath(source, check_not_directory=False)
                 for source in source
             ]
+        else:
+            source_normalized = source
 
         if not streaming:
             if schema_overrides_is_list:
@@ -532,7 +535,7 @@ def read_csv(
                 raise ValueError(msg)
 
         lf = _scan_csv_impl(
-            source,
+            source_normalized,
             has_header=has_header,
             separator=separator,
             comment_prefix=comment_prefix,

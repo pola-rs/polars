@@ -4,7 +4,7 @@ use polars::prelude::*;
 #[ignore = "fuzz test: Takes to long"]
 fn fuzz_cluster_with_columns() {
     const PRIMES: &[i32] = &[2, 3, 5, 7, 11, 13, 17, 19, 23, 29];
-    use rand::Rng;
+    use rand::RngExt;
 
     macro_rules! to_str {
         ($col:expr) => {
@@ -23,8 +23,6 @@ fn fuzz_cluster_with_columns() {
 
     fn gen_expr(rng: &mut rand::rngs::ThreadRng, used_cols: &[u8]) -> Expr {
         let mut depth = 0;
-
-        use rand::Rng;
 
         fn leaf(rng: &mut rand::rngs::ThreadRng, used_cols: &[u8]) -> Expr {
             if rng.random() {
