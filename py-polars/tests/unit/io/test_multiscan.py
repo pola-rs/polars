@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import re
 import sys
-import warnings
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any
 
@@ -961,23 +960,3 @@ def test_warn_on_scan_with_requested_rechunk(
         match=f"rechunk=True no longer has effect.*{scan.__name__}",
     ):
         scan(f, rechunk=True)
-
-
-@pytest.mark.may_fail_auto_streaming
-def test_scan_rechunk_arg() -> None:
-    df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
-    f = io.BytesIO()
-
-    df.write_parquet(f, row_group_size=1)
-
-    assert pl.scan_parquet(f).collect().n_chunks() == 5
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-
-        # Parameter is ignored / unsupported on the streaming engine.
-        assert (
-            pl.scan_parquet(f, rechunk=True).collect(engine="streaming").n_chunks() != 1
-        )
-
-        assert pl.scan_parquet(f, rechunk=True).collect().n_chunks() == 1

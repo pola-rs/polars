@@ -622,21 +622,11 @@ impl LazyFrame {
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(mut self, engine: Engine) -> PolarsResult<QueryResult> {
-        fn is_scan_with_rechunk(dsl: &DslPlan) -> bool {
-            match dsl {
-                DslPlan::Scan {
-                    unified_scan_args, ..
-                } => unified_scan_args.rechunk,
-                DslPlan::Sink { input, .. } => is_scan_with_rechunk(input),
-                _ => false,
-            }
-        }
-
         let engine = match engine {
             Engine::Streaming => Engine::Streaming,
             _ if std::env::var("POLARS_FORCE_STREAMING").as_deref() == Ok("1") => Engine::Streaming,
             Engine::Auto => {
-                if self.opt_state.eager() || is_scan_with_rechunk(&self.logical_plan) {
+                if self.opt_state.eager() {
                     Engine::InMemory
                 } else {
                     self.opt_state |= OptFlags::AUTO_SELECTED_STREAMING;
