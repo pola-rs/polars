@@ -7,11 +7,19 @@ use std::path::{Path, PathBuf};
 use polars_error::{PolarsResult, polars_err};
 
 use crate::format_pl_refstr;
-use crate::pl_str::{PlRefStr, PlSmallStr};
+use crate::pl_str::PlRefStr;
 
 /// Windows paths can be prefixed with this.
 /// <https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry>
 pub const WINDOWS_EXTPATH_PREFIX: &str = r#"\\?\"#;
+
+#[cfg(not(any(test, feature = "test-ext-schemes")))]
+pub const ALLOWED_EXT_SCHEMES: &[&str] = &["hdfs"];
+
+#[cfg(any(test, feature = "test-ext-schemes"))]
+pub const ALLOWED_EXT_SCHEMES: &[&str] = &[
+    "hdfs", "mem", "pl-test1", "pl-test2", "pl-test3", "pl-test4",
+];
 
 /// Path represented as a UTF-8 string.
 ///
@@ -350,36 +358,37 @@ impl From<&str> for PlRefPath {
 
 macro_rules! impl_cloud_scheme {
     ($($t:ident = $n:literal,)+) => {
-        #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
         #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
         #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
         pub enum CloudScheme {
             $($t,)+
-            Ext(PlSmallStr)
+            Ext(&'static str)
         }
 
         impl CloudScheme {
             /// Note, private function. Users should use [`CloudScheme::from_path`], that will handle e.g.
             /// `file:/` without hostname properly.
             #[expect(unreachable_patterns)]
-            fn from_scheme_str(s: &str) -> Self {
+            fn from_scheme_str(s: &str) -> Option<Self> {
+                // Allow-list of schemes with an external object_store_builder registered at runtime.
                 match s {
-                    $($n => Self::$t,)+
-                    _ => Self::Ext(s.into())
+                    $($n => Some(Self::$t),)+
+                    _ => ALLOWED_EXT_SCHEMES.iter().find(|&&e| e == s).map(|&e| Self::Ext(e)),
                 }
             }
 
             pub fn is_native_str(s: &str) -> bool {
                 match Self::from_scheme_str(s) {
-                    Self::Ext(_) => false,
-                    _ => true,
+                    None | Some(Self::Ext(_)) => false,
+                    Some(_) => true,
                 }
             }
 
-            pub fn as_str(&self) -> &str {
+            pub const fn as_str(&self) -> &'static str {
                 match self {
                     $(Self::$t => $n,)+
-                    Self::Ext(s) => s.as_str(),
+                    Self::Ext(s) => s,
                 }
             }
         }
@@ -413,7 +422,7 @@ impl CloudScheme {
             });
         }
 
-        Some(Self::from_scheme_str(&path[..path.find("://")?]))
+        Self::from_scheme_str(&path[..path.find("://")?])
     }
 
     /// Returns `i` such that `&self.as_str()[i..]` strips the scheme, as well as the `://` if it
@@ -468,13 +477,13 @@ mod tests {
         assert_eq!(
             (
                 p.scheme(),
-                p.scheme().map(|x| x.as_str().to_string()),
+                p.scheme().map(|x| x.as_str()),
                 p.as_str(),
                 p.strip_scheme(),
             ),
             (
                 Some(CloudScheme::File),
-                Some("file".to_string()),
+                Some("file"),
                 "file:///home/user",
                 "/home/user"
             )
@@ -483,14 +492,14 @@ mod tests {
         let p = PlRefPath::new("file:/home/user");
         assert_eq!(
             (
-                p.scheme().clone(),
-                p.scheme().map(|x| x.as_str().to_string()),
+                p.scheme(),
+                p.scheme().map(|x| x.as_str()),
                 p.as_str(),
                 p.strip_scheme(),
             ),
             (
                 Some(CloudScheme::FileNoHostname),
-                Some("file".to_string()),
+                Some("file"),
                 "file:/home/user",
                 "/home/user"
             )

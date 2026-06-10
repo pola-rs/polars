@@ -229,7 +229,7 @@ async fn expand_path_cloud(
         (
             0,
             vec![PlRefPath::new(format_path(
-                cloud_location.scheme.as_str(),
+                cloud_location.scheme,
                 &cloud_location.bucket,
                 prefix.as_ref(),
             ))],
@@ -258,7 +258,7 @@ async fn expand_path_cloud(
                         let out = (x.size > 0).then(|| {
                             PlRefPath::new({
                                 format_path(
-                                    cloud_location.scheme.as_str(),
+                                    cloud_location.scheme,
                                     &cloud_location.bucket,
                                     x.location.as_ref(),
                                 )
@@ -284,7 +284,7 @@ async fn expand_path_cloud(
 
         (
             format_path(
-                cloud_location.scheme.as_str(),
+                cloud_location.scheme,
                 &cloud_location.bucket,
                 prefix.as_ref(),
             )

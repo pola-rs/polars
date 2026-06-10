@@ -72,6 +72,7 @@ serde = [
 ]
 dsl-schema = ["dep:schemars", "schemars/uuid1"]
 python = ["dep:pyo3", "dep:numpy", "polars-error/python"]
+test-ext-schemes = []
 
 [lints]
 workspace = true

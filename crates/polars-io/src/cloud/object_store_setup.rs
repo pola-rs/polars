@@ -5,7 +5,7 @@ use object_store::local::LocalFileSystem;
 use polars_core::config::{self, verbose, verbose_print_sensitive};
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::aliases::PlHashMap;
-use polars_utils::pl_path::{CloudScheme, PlPath, PlRefPath};
+use polars_utils::pl_path::{ALLOWED_EXT_SCHEMES, CloudScheme, PlPath, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
@@ -59,6 +59,16 @@ pub fn register_object_store_builder(
             "cannot register object_store_builder for scheme '{}': \
              this scheme is handled natively",
             scheme
+        );
+    }
+
+    if !ALLOWED_EXT_SCHEMES.contains(&scheme) {
+        polars_bail!(
+            InvalidOperation:
+            "cannot register object_store_builder for scheme '{}': \
+             allowed external schemes are: {:?}",
+            scheme,
+            ALLOWED_EXT_SCHEMES
         );
     }
 
@@ -226,7 +236,7 @@ impl PolarsObjectStoreBuilder {
             )
         }
 
-        let store = match &self.cloud_type {
+        let store = match self.cloud_type {
             CloudType::Aws => {
                 #[cfg(feature = "aws")]
                 {
@@ -289,7 +299,7 @@ impl PolarsObjectStoreBuilder {
                 let store = EXT_OBJECT_STORE_BUILDER_REGISTRY
                     .read()
                     .unwrap()
-                    .get(scheme.as_str())
+                    .get(scheme)
                     .ok_or_else(|| {
                         polars_err!(
                             ComputeError:
@@ -310,14 +320,14 @@ impl PolarsObjectStoreBuilder {
 
     /// Note: Use `build_impl` for a non-caching version.
     pub(super) async fn build(self) -> PolarsResult<PolarsObjectStore> {
-        let opt_cache_key = match &self.cloud_type {
+        let opt_cache_key = match self.cloud_type {
             CloudType::Aws | CloudType::Gcp | CloudType::Azure => {
                 Some(path_and_creds_to_key(&self.path, self.options.as_ref())?)
             },
             CloudType::File | CloudType::Http | CloudType::Hf => None,
             CloudType::Ext(scheme) => {
                 let registry = EXT_OBJECT_STORE_BUILDER_REGISTRY.read().unwrap();
-                let builder = registry.get(scheme.as_str()).ok_or_else(|| {
+                let builder = registry.get(scheme).ok_or_else(|| {
                     polars_err!(
                         ComputeError:
                         "no object_store_builder registered for scheme '{}'; \
@@ -469,22 +479,22 @@ mod ext_store_tests {
     #[tokio::test]
     async fn test_register_and_resolve() {
         let builder = TestBuilder::new();
-        register_object_store_builder("test-scheme", builder.clone()).unwrap();
+        register_object_store_builder("pl-test1", builder.clone()).unwrap();
 
-        let path = PlRefPath::new("test-scheme://host:1234/data/file.parquet");
+        let path = PlRefPath::new("pl-test1://host:1234/data/file.parquet");
         let result = build_object_store(path, None, false).await;
         assert!(result.is_ok());
         assert_eq!(builder.build_count(), 1);
 
-        deregister_object_store_builder("test-scheme");
+        deregister_object_store_builder("pl-test1");
     }
 
     #[tokio::test]
     async fn test_cache_hit_after_first_build() {
         let builder = TestBuilder::new();
-        register_object_store_builder("test-scheme2", builder.clone()).unwrap();
+        register_object_store_builder("pl-test2", builder.clone()).unwrap();
 
-        let path = PlRefPath::new("test-scheme2://host:1234/data/file.parquet");
+        let path = PlRefPath::new("pl-test2://host:1234/data/file.parquet");
 
         // First call — cache miss, build_impl called
         build_object_store(path.clone(), None, false).await.unwrap();
@@ -494,20 +504,7 @@ mod ext_store_tests {
         build_object_store(path.clone(), None, false).await.unwrap();
         assert_eq!(builder.build_count(), 1);
 
-        deregister_object_store_builder("test-scheme2");
-    }
-
-    #[tokio::test]
-    async fn test_unregistered_scheme_errors() {
-        let path = PlRefPath::new("unknown-scheme://host:1234/data/file.parquet");
-        let result = build_object_store(path, None, false).await;
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("no object_store_builder registered")
-        );
+        deregister_object_store_builder("pl-test2");
     }
 
     #[test]
@@ -564,7 +561,7 @@ mod ext_store_tests {
         }
 
         let builder = AuthorityOnlyBuilder::new();
-        register_object_store_builder("test-scheme3", Arc::new(builder.clone())).unwrap();
+        register_object_store_builder("pl-test3", Arc::new(builder.clone())).unwrap();
 
         use crate::cloud::{CloudConfig, CloudOptions};
 
@@ -582,7 +579,7 @@ mod ext_store_tests {
             ..CloudOptions::default()
         };
 
-        let path = PlRefPath::new("test-scheme3://host:1234/data/file.parquet");
+        let path = PlRefPath::new("pl-test3://host:1234/data/file.parquet");
 
         build_object_store(path.clone(), Some(&options_a), false)
             .await
@@ -593,7 +590,7 @@ mod ext_store_tests {
 
         assert_eq!(builder.build_count(), 1);
 
-        deregister_object_store_builder("test-scheme3");
+        deregister_object_store_builder("pl-test3");
     }
 
     #[tokio::test]
@@ -631,7 +628,7 @@ mod ext_store_tests {
             store: Arc::new(InMemory::new()),
         });
 
-        register_object_store_builder("test-scheme4", builder).unwrap();
+        register_object_store_builder("pl-test4", builder).unwrap();
 
         let options = CloudOptions {
             config: Some(CloudConfig::Ext {
@@ -643,7 +640,7 @@ mod ext_store_tests {
             ..CloudOptions::default()
         };
 
-        let path = PlRefPath::new("test-scheme4://host:1234/data/file.parquet");
+        let path = PlRefPath::new("pl-test4://host:1234/data/file.parquet");
         build_object_store(path, Some(&options), false)
             .await
             .unwrap();
@@ -653,6 +650,6 @@ mod ext_store_tests {
         assert!(captured.iter().any(|(k, v)| k == "user" && v == "hadoop"));
         assert!(captured.iter().any(|(k, v)| k == "token" && v == "abc123"));
 
-        deregister_object_store_builder("test-scheme4");
+        deregister_object_store_builder("pl-test4");
     }
 }

@@ -25,7 +25,6 @@ use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::LruCache;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::TotalOrdWrap;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
@@ -233,7 +232,7 @@ where
         .collect::<Configs<T>>())
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum CloudType {
     Aws,
     Azure,
@@ -245,7 +244,7 @@ pub enum CloudType {
     /// HuggingFace
     Hf,
     /// Externally registered scheme (e.g. hdfs:// as "hdfs")
-    Ext(PlSmallStr),
+    Ext(&'static str),
 }
 
 impl CloudType {
