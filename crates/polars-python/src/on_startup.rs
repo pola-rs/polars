@@ -14,15 +14,15 @@ use polars_error::signals::register_polars_keyboard_interrupt_hook;
 use polars_ffi::version_0::SeriesExport;
 use polars_plan::plans::python_df_to_rust;
 use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
+use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
-use pyo3::{IntoPyObjectExt, intern};
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
 use crate::lazyframe::PyLazyFrame;
 use crate::map::lazy::call_lambda_with_series;
 use crate::prelude::ObjectValue;
-use crate::py_modules::{pl_df, pl_utils, polars, polars_rs};
+use crate::py_modules::{pl_df, polars, polars_rs};
 use crate::series::PySeries;
 
 fn python_function_caller_series(
@@ -88,24 +88,29 @@ fn python_function_caller_df(df: DataFrame, lambda: &Py<PyAny>) -> PolarsResult<
 
 fn warning_function(msg: &str, warning: PolarsWarning) {
     Python::attach(|py| {
-        let warn_fn = pl_utils(py)
-            .bind(py)
-            .getattr(intern!(py, "_polars_warn"))
-            .unwrap();
+        let Some(warn_fn) = WARN_FUNCTION.get() else {
+            eprintln!("{msg}");
+            return;
+        };
 
-        if let Err(e) = warn_fn.call1((msg, Wrap(warning).into_pyobject(py).unwrap())) {
+        if let Err(e) = warn_fn
+            .bind(py)
+            .call1((msg, Wrap(warning).into_pyobject(py).unwrap()))
+        {
             eprintln!("{e}")
         }
     });
 }
 
 static POLARS_REGISTRY_INIT_LOCK: OnceLock<()> = OnceLock::new();
+static WARN_FUNCTION: OnceLock<Py<PyAny>> = OnceLock::new();
 
 /// # Safety
 /// Caller must ensure that no other threads read the objects set by this registration.
-pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
+pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_function: Py<PyAny>) {
     // TODO: should we throw an error if we try to initialize while already initialized?
     POLARS_REGISTRY_INIT_LOCK.get_or_init(|| {
+        WARN_FUNCTION.set(warn_function).unwrap();
         set_polars_allow_extension(true);
 
         // Stack frames can get really large in debug mode.

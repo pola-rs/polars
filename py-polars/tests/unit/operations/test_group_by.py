@@ -3125,3 +3125,32 @@ def test_group_by_sort_flag_27672() -> None:
     )
     expected = pl.DataFrame({"s": ["b", "a"], "z": [2, 1]})
     assert_frame_equal(out, expected)
+
+
+def test_group_by_when_then_with_mutated_idxs() -> None:
+    df = pl.DataFrame({"g": ["A", "A"], "v": [10.0, None], "m": [True, True]})
+    out = df.select(
+        ffill=pl.when("m").then(pl.col("v").forward_fill()).otherwise(None).over("g"),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "ffill": [10.0, 10.0],
+            }
+        ),
+    )
+
+    out = df.select(
+        rev=pl.when("m").then(pl.col("v").reverse()).otherwise(None).over("g"),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "rev": [None, 10.0],
+            }
+        ),
+    )

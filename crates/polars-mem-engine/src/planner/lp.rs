@@ -224,7 +224,10 @@ pub fn python_scan_predicate(
                 };
 
                 if let Some(eval_str) = predicate_pa {
-                    options.predicate = PythonPredicate::PyArrow(eval_str);
+                    options.predicate = PythonPredicate::PyArrow {
+                        predicate: eval_str,
+                        has_residual: !residual_predicate_nodes.is_empty(),
+                    };
 
                     residual_predicate_nodes
                         .into_iter()
@@ -247,7 +250,7 @@ pub fn python_scan_predicate(
 
             verbose_print_sensitive(|| {
                 let predicate_pa_verbose_msg = match &options.predicate {
-                    PythonPredicate::PyArrow(p) => p,
+                    PythonPredicate::PyArrow { predicate, .. } => predicate,
                     _ => "<conversion failed>",
                 };
 

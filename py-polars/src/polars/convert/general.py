@@ -28,10 +28,10 @@ from polars._utils.deprecation import (
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.various import (
     _cast_repr_strings_with_schema,
-    issue_warning,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_df, wrap_s
+from polars._warnings import issue_warning
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
 from polars.exceptions import NoDataError
 

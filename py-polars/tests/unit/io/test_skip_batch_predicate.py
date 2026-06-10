@@ -103,6 +103,24 @@ def test_equality() -> None:
     )
 
 
+def test_not_bool() -> None:
+    assert_skp_series(
+        "b",
+        pl.Boolean(),
+        ~pl.col("b"),
+        [
+            {"min": True, "max": True, "null_count": 0, "len": 42, "can_skip": True},
+            {"min": True, "max": True, "null_count": 5, "len": 42, "can_skip": True},
+            {"min": None, "max": None, "null_count": 42, "len": 42, "can_skip": True},
+            {"min": False, "max": False, "null_count": 0, "len": 42, "can_skip": False},
+            {"min": False, "max": True, "null_count": 0, "len": 42, "can_skip": False},
+            {"min": False, "max": False, "null_count": 5, "len": 42, "can_skip": False},
+            {"min": False, "max": True, "null_count": 5, "len": 42, "can_skip": False},
+            {"min": None, "max": None, "null_count": 5, "len": 42, "can_skip": False},
+        ],
+    )
+
+
 def test_datetimes() -> None:
     d = datetime.datetime(2023, 4, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
     td = datetime.timedelta

@@ -28,6 +28,7 @@ bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
 fast-float2 = { workspace = true, optional = true }
+fastrand = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
@@ -40,6 +41,7 @@ object_store = { workspace = true, optional = true }
 parking_lot = { workspace = true, optional = true }
 percent-encoding = { workspace = true }
 pyo3 = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true, features = ["json"] }
@@ -55,7 +57,7 @@ zmij = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-fs4 = { version = "0.13", features = ["sync"], optional = true }
+fs4 = { version = "1.1", features = ["sync"], optional = true }
 home = "0.5.4"
 
 [dev-dependencies]
@@ -135,8 +137,10 @@ cloud = [
   "serde_json",
   "serde",
   "file_cache",
+  "rand",
   "reqwest",
   "http",
+  "fastrand",
 ]
 file_cache = ["async", "dep:blake3", "dep:fs4", "dep:parking_lot", "serde_json", "cloud"]
 aws = ["object_store/aws", "cloud", "reqwest"]

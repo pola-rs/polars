@@ -9,12 +9,15 @@ repository.workspace = true
 description = "Out-of-core processing support for Polars"
 
 [dependencies]
+async-trait = { workspace = true }
 boxcar = { workspace = true }
 libc = { workspace = true }
+polars-async = { workspace = true }
 polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-io = { workspace = true, features = ["ipc"] }
 polars-utils = { workspace = true, features = ["sysinfo"] }
+thread_local = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
 [target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
@@ -22,10 +25,10 @@ mimalloc = { version = "0.1", default-features = false, optional = true }
 
 # Feature background_threads is unsupported on MacOS (https://github.com/jemalloc/jemalloc/issues/843).
 [target.'cfg(all(target_family = "unix", not(target_os = "macos"), not(target_os = "emscripten")))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls", "background_threads"], optional = true }
+tikv-jemallocator = { version = "0.7.0", features = ["disable_initial_exec_tls", "background_threads"], optional = true }
 
 [target.'cfg(all(target_family = "unix", target_os = "macos"))'.dependencies]
-tikv-jemallocator = { version = "0.6.0", features = ["disable_initial_exec_tls"], optional = true }
+tikv-jemallocator = { version = "0.7.0", features = ["disable_initial_exec_tls"], optional = true }
 
 [lints]
 workspace = true

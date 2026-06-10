@@ -21,17 +21,21 @@ use parking_lot::Mutex;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::with_drop::WithDrop;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, RngExt, SeedableRng};
 use slotmap::SlotMap;
 use task::{Cancellable, DynTask, Runnable};
 
 thread_local! {
     pub static ALLOW_RAYON_THREADS: Cell<bool> = const { Cell::new(true) };
+    pub static THREAD_SPAWNED_BY_POLARS_EXECUTOR: Cell<bool> = const { Cell::new(false) };
+
+    /// Used to store which executor thread this is.
+    static TLS_THREAD_ID: Cell<usize> = const { Cell::new(usize::MAX) };
 }
 
-static NUM_EXECUTOR_THREADS: RelaxedCell<usize> = RelaxedCell::new_usize(0);
-pub fn set_num_threads(t: usize) {
-    NUM_EXECUTOR_THREADS.store(t);
+/// Returns whether this thread is actively used for scheduling tasks.
+pub fn is_scheduling_polars_executor_thread() -> bool {
+    TLS_THREAD_ID.get() != usize::MAX
 }
 
 static TRACK_METRICS: RelaxedCell<bool> = RelaxedCell::new_bool(false);
@@ -41,11 +45,6 @@ pub fn track_task_metrics(should_track: bool) {
 }
 
 static GLOBAL_SCHEDULER: OnceLock<Executor> = OnceLock::new();
-
-thread_local!(
-    /// Used to store which executor thread this is.
-    static TLS_THREAD_ID: Cell<usize> = const { Cell::new(usize::MAX) };
-);
 
 slotmap::new_key_type! {
     struct TaskKey;
@@ -281,6 +280,7 @@ impl Executor {
     fn runner(&self, initial_thread_id: Option<usize>) {
         TLS_THREAD_ID.set(initial_thread_id.unwrap_or(usize::MAX));
         ALLOW_RAYON_THREADS.set(false);
+        THREAD_SPAWNED_BY_POLARS_EXECUTOR.set(true);
 
         let mut rng = SmallRng::from_rng(&mut rand::rng());
         let mut worker = self.park_group.new_worker();
@@ -290,6 +290,7 @@ impl Executor {
             let mut thread_id = TLS_THREAD_ID.get();
             if thread_id == usize::MAX {
                 if let Some(tid) = self.acquire_thread_identity() {
+                    TLS_THREAD_ID.set(tid);
                     thread_id = tid;
                 } else {
                     return;
@@ -397,13 +398,7 @@ impl Executor {
 
     fn global() -> &'static Executor {
         GLOBAL_SCHEDULER.get_or_init(|| {
-            let mut n_threads = NUM_EXECUTOR_THREADS.load();
-            if n_threads == 0 {
-                n_threads = std::thread::available_parallelism()
-                    .map(|n| n.get())
-                    .unwrap_or(4);
-            }
-
+            let n_threads = polars_config::config().max_threads();
             let thread_task_lists = (0..n_threads)
                 .map(|t| {
                     std::thread::Builder::new()
