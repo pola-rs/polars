@@ -232,16 +232,17 @@ class _DataTypeMappings:
     @property
     @functools.lru_cache  # noqa: B019
     def REPR_TO_DTYPE(self) -> dict[str, PolarsDataType]:
-        def _dtype_str_repr_safe(o: Any) -> PolarsDataType | None:
+        def _dtype_str_repr_safe(o: Any) -> str | None:
             try:
-                return _dtype_str_repr(o.base_type()).split("[")[0]  # type: ignore[return-value]
+                return _dtype_str_repr(o.base_type()).split("[")[0]
             except TypeError:
                 return None
 
         return {
-            _dtype_str_repr_safe(obj): obj  # type: ignore[misc]
+            str_repr: obj
             for obj in globals().values()
-            if is_polars_dtype(obj) and _dtype_str_repr_safe(obj) is not None
+            if is_polars_dtype(obj)
+            and (str_repr := _dtype_str_repr_safe(obj)) is not None
         }
 
 

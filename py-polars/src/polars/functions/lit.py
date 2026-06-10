@@ -99,7 +99,8 @@ def lit(
 
         # parse time unit
         if dtype is not None and (tu := getattr(dtype, "time_unit", "us")) is not None:
-            time_unit = tu  # type: ignore[assignment]
+            tu = cast("TimeUnit", tu)
+            time_unit = tu
         else:
             time_unit = "us"
 

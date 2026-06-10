@@ -481,6 +481,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.physical().n_unique()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         ChunkUnique::unique_id(self.0.physical())
     }

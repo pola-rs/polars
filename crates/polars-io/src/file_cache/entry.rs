@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use fs4::fs_std::FileExt;
+use fs4::FileExt;
 use polars_core::config;
 use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_path::PlRefPath;
@@ -180,7 +180,7 @@ impl Inner {
             // Initialize it to get the verbose print
             let raise_alloc_err = *RAISE_ALLOC_ERROR;
 
-            file.lock_exclusive().unwrap();
+            file.lock().unwrap();
             if let Err(e) = file.allocate(remote_metadata.size) {
                 let msg = format!(
                     "failed to reserve {} bytes on disk to download uri = {}: {:?}",
