@@ -621,7 +621,7 @@ impl LazyFrame {
     /// `engine`.
     ///
     /// The query is optimized prior to execution.
-    pub fn collect_with_engine(mut self, engine: Engine) -> PolarsResult<QueryResult> {
+    pub fn collect_with_engine(mut self, mut engine: Engine) -> PolarsResult<QueryResult> {
         fn is_scan_with_rechunk(dsl: &DslPlan) -> bool {
             match dsl {
                 DslPlan::Scan {
@@ -632,31 +632,24 @@ impl LazyFrame {
             }
         }
 
-        let engine = match engine {
-            Engine::Streaming => Engine::Streaming,
-            _ if std::env::var("POLARS_FORCE_STREAMING").as_deref() == Ok("1") => Engine::Streaming,
-            Engine::Auto => {
-                if self.opt_state.eager() || is_scan_with_rechunk(&self.logical_plan) {
-                    Engine::InMemory
-                } else {
-                    self.opt_state |= OptFlags::AUTO_SELECTED_STREAMING;
-                    Engine::Streaming
-                }
-            },
-            v => v,
+        engine = if std::env::var("POLARS_FORCE_STREAMING").as_deref() == Ok("1") {
+            Engine::Streaming
+        } else if engine == Engine::Auto {
+            match polars_config::config().engine_affinity() {
+                Engine::Auto => {
+                    if self.opt_state.eager() || is_scan_with_rechunk(&self.logical_plan) {
+                        Engine::InMemory
+                    } else {
+                        self.opt_state |= OptFlags::AUTO_SELECTED_STREAMING;
+                        Engine::Streaming
+                    }
+                },
+                engine => engine,
+            }
+        } else {
+            engine
         };
 
-        if engine != Engine::Streaming
-            && std::env::var("POLARS_AUTO_STREAMING").as_deref() == Ok("1")
-        {
-            self.opt_state |= OptFlags::AUTO_SELECTED_STREAMING;
-
-            feature_gated!("streaming", {
-                if let Some(r) = self.clone()._collect_with_streaming_suppress_todo_panic() {
-                    return r;
-                }
-            })
-        }
         match engine {
             Engine::Streaming => {
                 feature_gated!("streaming", self = self.with_streaming(true))
@@ -856,48 +849,6 @@ impl LazyFrame {
         };
 
         Ok(self)
-    }
-
-    /// Collect with the streaming engine. Returns `None` if the streaming engine panics with a todo!.
-    #[cfg(feature = "streaming")]
-    fn _collect_with_streaming_suppress_todo_panic(
-        mut self,
-    ) -> Option<PolarsResult<polars_core::query_result::QueryResult>> {
-        self.opt_state |= OptFlags::STREAMING;
-        let mut ir_plan = match self.to_alp_optimized() {
-            Ok(v) => v,
-            Err(e) => return Some(Err(e)),
-        };
-
-        ir_plan.ensure_root_node_is_sink();
-
-        let f = || {
-            polars_stream::run_query(
-                ir_plan.lp_top,
-                &mut ir_plan.lp_arena,
-                &mut ir_plan.expr_arena,
-            )
-        };
-
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                // Fallback to normal engine if error is due to not being implemented
-                // and auto_streaming is set, otherwise propagate error.
-                if e.downcast_ref::<&str>()
-                    .is_some_and(|s| s.starts_with("not yet implemented"))
-                {
-                    if polars_core::config::verbose() {
-                        eprintln!(
-                            "caught unimplemented error in new streaming engine, falling back to normal engine"
-                        );
-                    }
-                    None
-                } else {
-                    std::panic::resume_unwind(e)
-                }
-            },
-        }
     }
 
     pub fn sink(

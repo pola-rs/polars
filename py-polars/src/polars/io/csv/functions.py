@@ -492,10 +492,7 @@ def read_csv(
     schema_overrides_is_list = isinstance(schema_overrides, Sequence)
     encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
 
-    streaming = (
-        os.getenv("POLARS_FORCE_STREAMING") == "1"
-        or os.getenv("POLARS_AUTO_STREAMING") == "1"
-    )
+    streaming = os.getenv("POLARS_FORCE_STREAMING") == "1"
 
     if streaming or (
         # Check that it is not a BytesIO object
