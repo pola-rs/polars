@@ -256,6 +256,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
         options: vec![("user".to_string(), "hadoop".to_string())],
     });
 
+    polars_utils::pl_path::_allow_ext_scheme("pl-mem")?;
     register_object_store_builder(
         "pl-mem",
         Arc::new(MemoryBuilder {
@@ -306,6 +307,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
     );
 
     deregister_object_store_builder("pl-mem");
+    polars_utils::pl_path::_disallow_ext_scheme("pl-mem");
 
     Ok(())
 }

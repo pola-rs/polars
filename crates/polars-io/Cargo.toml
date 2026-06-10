@@ -61,7 +61,6 @@ fs4 = { version = "1.1", features = ["sync"], optional = true }
 home = "0.5.4"
 
 [dev-dependencies]
-polars-utils = { workspace = true, features = ["test-ext-schemes"] }
 tempfile = "3"
 
 [features]

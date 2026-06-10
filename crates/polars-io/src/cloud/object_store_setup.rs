@@ -62,7 +62,7 @@ pub fn register_object_store_builder(
         );
     }
 
-    if !ALLOWED_EXT_SCHEMES.contains(&scheme) {
+    if !polars_utils::pl_path::ext_scheme_allowed(scheme) {
         polars_bail!(
             InvalidOperation:
             "cannot register object_store_builder for scheme '{}': \
@@ -477,8 +477,9 @@ mod ext_store_tests {
     }
 
     #[tokio::test]
-    async fn test_register_and_resolve() {
+    async fn test_register_and_resolve() -> PolarsResult<()> {
         let builder = TestBuilder::new();
+        polars_utils::pl_path::_allow_ext_scheme("pl-test1")?;
         register_object_store_builder("pl-test1", builder.clone()).unwrap();
 
         let path = PlRefPath::new("pl-test1://host:1234/data/file.parquet");
@@ -487,11 +488,14 @@ mod ext_store_tests {
         assert_eq!(builder.build_count(), 1);
 
         deregister_object_store_builder("pl-test1");
+        polars_utils::pl_path::_disallow_ext_scheme("pl-test1");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_cache_hit_after_first_build() {
+    async fn test_cache_hit_after_first_build() -> PolarsResult<()> {
         let builder = TestBuilder::new();
+        polars_utils::pl_path::_allow_ext_scheme("pl-test2")?;
         register_object_store_builder("pl-test2", builder.clone()).unwrap();
 
         let path = PlRefPath::new("pl-test2://host:1234/data/file.parquet");
@@ -505,6 +509,8 @@ mod ext_store_tests {
         assert_eq!(builder.build_count(), 1);
 
         deregister_object_store_builder("pl-test2");
+        polars_utils::pl_path::_disallow_ext_scheme("pl-test2");
+        Ok(())
     }
 
     #[test]
@@ -516,7 +522,7 @@ mod ext_store_tests {
     }
 
     #[tokio::test]
-    async fn test_stable_cache_key_override() {
+    async fn test_stable_cache_key_override() -> PolarsResult<()> {
         #[derive(Clone)]
         struct AuthorityOnlyBuilder {
             store: Arc<dyn ObjectStore + Send + Sync>,
@@ -561,6 +567,7 @@ mod ext_store_tests {
         }
 
         let builder = AuthorityOnlyBuilder::new();
+        polars_utils::pl_path::_allow_ext_scheme("pl-test3")?;
         register_object_store_builder("pl-test3", Arc::new(builder.clone())).unwrap();
 
         use crate::cloud::{CloudConfig, CloudOptions};
@@ -591,10 +598,12 @@ mod ext_store_tests {
         assert_eq!(builder.build_count(), 1);
 
         deregister_object_store_builder("pl-test3");
+        polars_utils::pl_path::_disallow_ext_scheme("pl-test3");
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_storage_options_passed_to_builder() {
+    async fn test_storage_options_passed_to_builder() -> PolarsResult<()> {
         use crate::cloud::{CloudConfig, CloudOptions};
 
         #[allow(clippy::type_complexity)]
@@ -628,6 +637,7 @@ mod ext_store_tests {
             store: Arc::new(InMemory::new()),
         });
 
+        polars_utils::pl_path::_allow_ext_scheme("pl-test4")?;
         register_object_store_builder("pl-test4", builder).unwrap();
 
         let options = CloudOptions {
@@ -651,5 +661,7 @@ mod ext_store_tests {
         assert!(captured.iter().any(|(k, v)| k == "token" && v == "abc123"));
 
         deregister_object_store_builder("pl-test4");
+        polars_utils::pl_path::_disallow_ext_scheme("pl-test4");
+        Ok(())
     }
 }
