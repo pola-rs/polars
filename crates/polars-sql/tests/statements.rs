@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
+use polars_testing::asserts::{DataFrameEqualOptions, assert_dataframe_equal};
 
 fn create_ctx() -> SQLContext {
     let a = Column::new("a".into(), (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
@@ -158,7 +159,13 @@ fn test_union_all() {
     .unwrap();
 
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-    assert!(actual.equals(&expected));
+
+    assert_dataframe_equal(
+        &actual,
+        &expected,
+        DataFrameEqualOptions::new().with_check_row_order(false),
+    )
+    .unwrap();
 }
 
 #[test]

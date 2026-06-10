@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import re
 import sys
+import warnings
 from functools import partial
 from typing import IO, TYPE_CHECKING, Any
 
@@ -946,3 +947,37 @@ def test_hive_predicate_filtering_edge_case_25630(
         schema={"index": pl.get_index_type()},
     )
     assert_frame_equal(res, expected)
+
+
+@pytest.mark.parametrize(("scan", "write"), SCAN_AND_WRITE_FUNCS)
+def test_warn_on_scan_with_requested_rechunk(
+    scan: Callable[..., pl.LazyFrame], write: Callable[[pl.DataFrame, Any], Any]
+) -> None:
+    f = io.BytesIO()
+    write(pl.DataFrame({"x": 1}), f)
+
+    with pytest.raises(
+        UserWarning,
+        match=f"rechunk=True no longer has effect.*{scan.__name__}",
+    ):
+        scan(f, rechunk=True)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_scan_rechunk_arg() -> None:
+    df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+    f = io.BytesIO()
+
+    df.write_parquet(f, row_group_size=1)
+
+    assert pl.scan_parquet(f).collect().n_chunks() == 5
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+
+        # Parameter is ignored / unsupported on the streaming engine.
+        assert (
+            pl.scan_parquet(f, rechunk=True).collect(engine="streaming").n_chunks() != 1
+        )
+
+        assert pl.scan_parquet(f, rechunk=True).collect().n_chunks() == 1

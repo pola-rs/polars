@@ -9,6 +9,7 @@ from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -52,3 +53,40 @@ def test_engine_import_error_raises(df: pl.LazyFrame, engine: EngineType) -> Non
         match="GPU engine requested",
     ):
         df.collect(engine=engine)
+
+
+@pytest.mark.parametrize(
+    "engine_affinity",
+    ["in-memory", "streaming", None],
+)
+def test_default_engine_and_affinity(
+    engine_affinity: str | None,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_FORCE_STREAMING", "0")
+    plmonkeypatch.setenv("POLARS_AUTO_STREAMING", "0")
+
+    if engine_affinity is not None:
+        plmonkeypatch.setenv("POLARS_ENGINE_AFFINITY", engine_affinity)
+
+    capfd.readouterr()
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    pl.LazyFrame().collect()
+    capture = capfd.readouterr().err
+    plmonkeypatch.setenv("POLARS_VERBOSE", "0")
+
+    used_engine = (
+        "in-memory"
+        if "run sink_mem" in capture
+        else "streaming"
+        if "polars-stream: updating graph state" in capture
+        else None
+    )
+
+    if engine_affinity is not None:
+        assert used_engine == engine_affinity
+    else:
+        assert used_engine == "streaming"
+
+    capfd.readouterr()

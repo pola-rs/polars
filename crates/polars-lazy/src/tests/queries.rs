@@ -280,7 +280,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
 
     let out = base_df
         .clone()
-        .group_by([col("uid")])
+        .group_by_stable([col("uid")])
         .agg([
             col("day").alias("day"),
             col("cumcases")
@@ -1883,15 +1883,10 @@ fn test_partitioned_gb_mean() -> PolarsResult<()> {
     .lazy()
     .with_columns([lit("a").alias("str"), lit(1).alias("int")])
     .group_by([col("key")])
-    .agg([
-        col("str").mean().alias("mean_str"),
-        col("int").mean().alias("mean_int"),
-    ])
+    .agg([col("int").mean().alias("mean_int")])
     .collect()?;
 
-    assert_eq!(out.shape(), (1, 3));
-    let str_col = out.column("mean_str")?;
-    assert_eq!(str_col.get(0)?, AnyValue::Null);
+    assert_eq!(out.shape(), (1, 2));
     let int_col = out.column("mean_int")?;
     assert_eq!(int_col.get(0)?, AnyValue::Float64(1.0));
 

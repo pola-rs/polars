@@ -1,5 +1,13 @@
 use bitflags::bitflags;
 
+const DEFAULT_OPT_FLAGS: OptFlags = OptFlags::from_bits_truncate(
+    OptFlags::all().bits()
+        & !(OptFlags::STREAMING.bits()
+            | OptFlags::EAGER.bits()
+            | OptFlags::GPU.bits()
+            | OptFlags::AUTO_SELECTED_STREAMING.bits()),
+);
+
 bitflags! {
 #[derive(Copy, Clone, Debug)]
     /// Allowed optimizations.
@@ -39,6 +47,9 @@ bitflags! {
         const CHECK_ORDER_OBSERVE = 1 << 15;
         /// Collapse consecutive sort nodes and pull them up through selecting nodes.
         const SORT_COLLAPSE = 1 << 16;
+        /// The streaming engine was selected automatically. Used in DSl->IR conversion to maintain
+        /// behavior of in-memory engine (e.g. forcing joins to maintain order).
+        const AUTO_SELECTED_STREAMING = 1 << 17;
     }
 }
 
@@ -81,7 +92,7 @@ impl OptFlags {
 
 impl Default for OptFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(u32::MAX) & !Self::STREAMING & !Self::EAGER & !Self::GPU
+        DEFAULT_OPT_FLAGS
     }
 }
 
