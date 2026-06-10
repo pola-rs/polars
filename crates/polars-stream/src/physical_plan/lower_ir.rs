@@ -208,10 +208,12 @@ pub fn lower_ir(
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
 
-            if selectors
-                .iter()
-                .all(|e| matches!(expr_arena.get(e.node()), AExpr::Len | AExpr::Column(_)))
-            {
+            if selectors.iter().all(|e| {
+                matches!(
+                    expr_arena.get(e.node()),
+                    AExpr::Len | AExpr::Column(_) | AExpr::Eval { .. } | AExpr::StructField(_)
+                )
+            }) {
                 disable_morsel_split.get_or_insert(true);
             }
 
