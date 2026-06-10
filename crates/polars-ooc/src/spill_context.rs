@@ -6,7 +6,7 @@ use std::time::Instant;
 use polars_utils::relaxed_cell::RelaxedCell;
 use thread_local::ThreadLocal;
 
-use crate::{DynSpillToken, SpillToken, SpillTokenInner, Spillable, memory_manager};
+use crate::{DynSpillToken, SpillToken, Spillable, memory_manager};
 
 #[derive(Default)]
 struct LocalSpillQueue {
@@ -17,13 +17,16 @@ struct LocalSpillQueue {
 impl LocalSpillQueue {
     pub fn push_back(&mut self, token: &Arc<dyn DynSpillToken>, id: u64) {
         self.gc();
-        self.tokens.push_front((Arc::downgrade(token), id));
+        if token.current_registration_id() == id {
+            self.tokens.push_front((Arc::downgrade(token), id));
+        }
     }
 
-    #[expect(unused)]
     pub fn push_front(&mut self, token: &Arc<dyn DynSpillToken>, id: u64) {
         self.gc();
-        self.tokens.push_front((Arc::downgrade(token), id));
+        if token.current_registration_id() == id {
+            self.tokens.push_front((Arc::downgrade(token), id));
+        }
     }
 
     #[expect(unused)]
@@ -63,15 +66,17 @@ impl LocalSpillQueue {
     }
 }
 
-pub trait SpillContext: Send + Sync + 'static {}
+pub trait SpillContext: Send + Sync + 'static {
+    fn stats(&self) -> &Arc<SpillContextStatistics>;
+    fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64);
+}
 
 pub trait ParameterFreeSpillContext {
     fn register<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
-        S: Spillable;
-
-    fn stats(&self) -> &Arc<SpillContextStatistics>;
+        S: Spillable,
+        Self: Sized;
 }
 
 /// A context that spills the most-recently registered spillable when asked.
@@ -91,25 +96,29 @@ impl MostRecentSpillContext {
     }
 }
 
+impl SpillContext for MostRecentSpillContext {
+    fn stats(&self) -> &Arc<SpillContextStatistics> {
+        &self.stats
+    }
+
+    fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64) {
+        // Reinsertions always act like least recent, so we use push_front.
+        let mut local = self.local.get_or_default().write().unwrap();
+        local.push_front(token, id);
+    }
+}
+
 impl ParameterFreeSpillContext for MostRecentSpillContext {
     fn register<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
-        let token: &SpillToken<S> = token.as_ref();
-        let inner: Arc<SpillTokenInner<S>> = token.inner.clone();
-        let inner: Arc<dyn DynSpillToken> = inner;
+        let dyn_arc = token.as_ref().upcast();
         let mut local = self.local.get_or_default().write().unwrap();
-        local.push_back(&inner, inner.new_registration_id());
-    }
-
-    fn stats(&self) -> &Arc<SpillContextStatistics> {
-        &self.stats
+        local.push_back(&dyn_arc, dyn_arc.new_registration_id());
     }
 }
-
-impl SpillContext for MostRecentSpillContext {}
 
 impl Debug for MostRecentSpillContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -134,25 +143,28 @@ impl LeastRecentSpillContext {
     }
 }
 
+impl SpillContext for LeastRecentSpillContext {
+    fn stats(&self) -> &Arc<SpillContextStatistics> {
+        &self.stats
+    }
+
+    fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64) {
+        let mut local = self.local.get_or_default().write().unwrap();
+        local.push_back(token, id);
+    }
+}
+
 impl ParameterFreeSpillContext for LeastRecentSpillContext {
     fn register<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
-        let token: &SpillToken<S> = token.as_ref();
-        let inner: Arc<SpillTokenInner<S>> = token.inner.clone();
-        let inner: Arc<dyn DynSpillToken> = inner;
+        let dyn_arc = token.as_ref().upcast();
         let mut local = self.local.get_or_default().write().unwrap();
-        local.push_back(&inner, inner.new_registration_id());
-    }
-
-    fn stats(&self) -> &Arc<SpillContextStatistics> {
-        &self.stats
+        local.push_back(&dyn_arc, dyn_arc.new_registration_id());
     }
 }
-
-impl SpillContext for LeastRecentSpillContext {}
 
 impl Debug for LeastRecentSpillContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -177,25 +189,28 @@ impl RandomSpillContext {
     }
 }
 
+impl SpillContext for RandomSpillContext {
+    fn stats(&self) -> &Arc<SpillContextStatistics> {
+        &self.stats
+    }
+
+    fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64) {
+        let mut local = self.local.get_or_default().write().unwrap();
+        local.push_back(token, id);
+    }
+}
+
 impl ParameterFreeSpillContext for RandomSpillContext {
     fn register<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
-        let token: &SpillToken<S> = token.as_ref();
-        let inner: Arc<SpillTokenInner<S>> = token.inner.clone();
-        let inner: Arc<dyn DynSpillToken> = inner;
+        let dyn_arc = token.as_ref().upcast();
         let mut local = self.local.get_or_default().write().unwrap();
-        local.push_back(&inner, inner.new_registration_id());
-    }
-
-    fn stats(&self) -> &Arc<SpillContextStatistics> {
-        &self.stats
+        local.push_back(&dyn_arc, dyn_arc.new_registration_id());
     }
 }
-
-impl SpillContext for RandomSpillContext {}
 
 impl Debug for RandomSpillContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -205,25 +220,45 @@ impl Debug for RandomSpillContext {
 
 // Used to normalize divisor to avoid absurdly high scores. Set to 0.1ms.
 const BASE_IO_TIME: f64 = 1.0 / 10_000.0;
+const UNEXPLORED_SCORE: f64 = 1e100_f64;
 
-#[derive(Default)]
 pub struct SpillContextStatistics {
     score: RelaxedCell<u64>,
     stats: Mutex<Statistics>,
+    explorations: RelaxedCell<u64>,
+}
+
+impl Default for SpillContextStatistics {
+    fn default() -> Self {
+        Self {
+            // TODO: starting score based on context.
+            score: RelaxedCell::new_u64(UNEXPLORED_SCORE.to_bits()),
+            stats: Mutex::default(),
+            explorations: RelaxedCell::new_u64(0),
+        }
+    }
 }
 
 impl SpillContextStatistics {
     pub fn score(&self) -> f64 {
         // Try to re-compute, if lock is taken just take cached value.
         if let Ok(mut stats) = self.stats.try_lock() {
-            stats.update(Instant::now());
-            let io_time = stats.spill_time + stats.unspill_time;
-            let score = stats.spilled_byte_seconds / (BASE_IO_TIME + io_time);
-            self.score.store(score.to_bits());
-            score
+            if self.explorations.load() == 0 {
+                UNEXPLORED_SCORE
+            } else {
+                stats.update(Instant::now());
+                let io_time = stats.spill_time + stats.unspill_time;
+                let score = stats.spilled_byte_seconds / (BASE_IO_TIME + io_time);
+                self.score.store(score.to_bits());
+                score
+            }
         } else {
             f64::from_bits(self.score.load())
         }
+    }
+
+    pub fn add_exploration(&self) {
+        self.explorations.fetch_add(1);
     }
 
     pub fn add_failed_spill(&self, spill_start: Instant) {
