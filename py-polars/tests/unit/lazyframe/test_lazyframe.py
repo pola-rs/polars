@@ -1241,8 +1241,12 @@ def test_lazy_cache_hit(plmonkeypatch: PlMonkeyPatch, capfd: Any) -> None:
     expected = pl.LazyFrame({"a": [0, 0, 0], "c": ["x", "y", "z"]})
     assert_frame_equal(result, expected, check_row_order=False)
 
-    (_, err) = capfd.readouterr()
-    assert "CACHE HIT" in err
+    capture = capfd.readouterr().err
+
+    assert {
+        "CACHE HIT" in capture,
+        re.search(r"multiplexer.*[\w+] [\w+, \w+]", capture) is not None,
+    } == {True, False}
 
 
 @pytest.mark.may_fail_cloud  # reason: impure udf

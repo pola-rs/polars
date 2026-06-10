@@ -3661,6 +3661,7 @@ dependencies = [
  "polars-lazy",
  "polars-ops",
  "polars-plan",
+ "polars-testing",
  "polars-time",
  "polars-utils",
  "regex",

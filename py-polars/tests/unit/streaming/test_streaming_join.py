@@ -570,7 +570,7 @@ def test_merge_join_exprs() -> None:
         left_on="key",
         right_on=pl.concat_str(pl.col("key"), ignore_nulls=False),
         how="full",
-        maintain_order="none",
+        maintain_order="left_right",
     )
     dot = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "merge-join" in dot, "merge-join not used in plan"

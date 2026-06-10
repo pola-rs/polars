@@ -6317,17 +6317,14 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        optimizations = QueryOptFlags._eager()
+        optimizations.slice_pushdown = True
+        optimizations.predicate_pushdown = True
+
         return (
             self.lazy()
             .top_k(k, by=by, reverse=reverse)
-            .collect(
-                optimizations=QueryOptFlags(
-                    projection_pushdown=False,
-                    predicate_pushdown=False,
-                    comm_subplan_elim=False,
-                    slice_pushdown=True,
-                )
-            )
+            .collect(optimizations=optimizations)
         )
 
     @deprecate_renamed_parameter("descending", "reverse", version="1.0.0")
@@ -6406,17 +6403,14 @@ class DataFrame:
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 
+        optimizations = QueryOptFlags._eager()
+        optimizations.slice_pushdown = True
+        optimizations.predicate_pushdown = True
+
         return (
             self.lazy()
             .bottom_k(k, by=by, reverse=reverse)
-            .collect(
-                optimizations=QueryOptFlags(
-                    projection_pushdown=False,
-                    predicate_pushdown=False,
-                    comm_subplan_elim=False,
-                    slice_pushdown=True,
-                )
-            )
+            .collect(optimizations=optimizations)
         )
 
     def equals(self, other: DataFrame, *, null_equal: bool = True) -> bool:

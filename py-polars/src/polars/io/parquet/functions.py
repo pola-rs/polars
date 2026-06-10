@@ -18,6 +18,7 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_ldf
+from polars._warnings import issue_warning
 from polars.convert import from_arrow
 from polars.io._utils import (
     get_sources,
@@ -242,7 +243,8 @@ def read_parquet(
                 "\n\nHint: Pass `pyarrow_options` instead with a 'partitioning' entry."
             )
             raise TypeError(msg)
-        return _read_parquet_with_pyarrow(
+
+        ret = _read_parquet_with_pyarrow(
             source,
             columns=columns,
             storage_options=storage_options,
@@ -250,6 +252,8 @@ def read_parquet(
             memory_map=memory_map,
             rechunk=rechunk,
         )
+
+        return ret
 
     if allow_missing_columns is not None:
         issue_deprecation_warning(
@@ -273,7 +277,6 @@ def read_parquet(
         schema=schema,
         hive_schema=hive_schema,
         try_parse_hive_dates=try_parse_hive_dates,
-        rechunk=rechunk,
         low_memory=low_memory,
         cache=False,
         storage_options=storage_options,
@@ -290,7 +293,12 @@ def read_parquet(
         else:
             lf = lf.select(columns)
 
-    return lf.collect()
+    ret = lf.collect()
+
+    if rechunk:
+        ret = ret.rechunk()
+
+    return ret
 
 
 def _read_parquet_with_pyarrow(
@@ -661,6 +669,14 @@ def scan_parquet(
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
+    if rechunk:
+        issue_warning(
+            "rechunk=True no longer has effect on scan_parquet(). "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            category=UserWarning,
+        )
+
     if schema is not None:
         msg = "the `schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)

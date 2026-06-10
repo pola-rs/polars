@@ -1215,113 +1215,128 @@ pub fn build_group_by_stream(
     ctx: StreamingLowerIRContext<'_>,
     are_keys_sorted: bool,
 ) -> PolarsResult<PhysStream> {
-    #[cfg(feature = "dynamic_group_by")]
-    if let Some(rolling_options) = options.as_ref().rolling.as_ref()
-        && keys.is_empty()
-        && apply.is_none()
-    {
-        let mut input = PhysStream::first(
-            phys_sm.insert(PhysNode::new(
-                output_schema.clone(),
-                PhysNodeKind::RollingGroupBy {
-                    input,
-                    index_column: rolling_options.index_column.clone(),
-                    period: rolling_options.period,
-                    offset: rolling_options.offset,
-                    closed: rolling_options.closed_window,
-                    slice: options
-                        .slice
-                        .filter(|(o, _)| *o >= 0)
-                        .map(|(o, l)| (o as IdxSize, l as IdxSize)),
-                    aggs: aggs.to_vec(),
-                },
-            )),
-        );
-        if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-            input = build_slice_stream(input, *offset, *length, phys_sm);
+    'build_streaming_group_by: {
+        // Fallback to in-mem for objects. Otherwise we get an error in CI:
+        //   FAILED tests/unit/dataframe/test_df.py::test_hashing_on_python_objects
+        //   pyo3_runtime.PanicException: Unsupported in row encoding
+        if input
+            .output_schema(phys_sm)
+            .iter_values()
+            .any(|dtype| dtype.contains_objects())
+        {
+            break 'build_streaming_group_by;
         }
-        return Ok(input);
-    } else if let Some(dynamic_options) = options.as_ref().dynamic.as_ref()
-        && keys.is_empty()
-        && apply.is_none()
-    {
-        let mut input = PhysStream::first(
-            phys_sm.insert(PhysNode::new(
-                output_schema.clone(),
-                PhysNodeKind::DynamicGroupBy {
-                    input,
-                    options: dynamic_options.clone(),
-                    aggs: aggs.to_vec(),
-                    slice: options
-                        .slice
-                        .filter(|(o, _)| *o >= 0)
-                        .map(|(o, l)| (o as IdxSize, l as IdxSize)),
-                },
-            )),
-        );
-        if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
-            input = build_slice_stream(input, *offset, *length, phys_sm);
-        }
-        return Ok(input);
-    }
 
-    if (are_keys_sorted || std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1"))
-        && let Some(stream) = try_build_sorted_group_by(
+        #[cfg(feature = "dynamic_group_by")]
+        if let Some(rolling_options) = options.as_ref().rolling.as_ref()
+            && keys.is_empty()
+            && apply.is_none()
+        {
+            let mut input = PhysStream::first(
+                phys_sm.insert(PhysNode::new(
+                    output_schema.clone(),
+                    PhysNodeKind::RollingGroupBy {
+                        input,
+                        index_column: rolling_options.index_column.clone(),
+                        period: rolling_options.period,
+                        offset: rolling_options.offset,
+                        closed: rolling_options.closed_window,
+                        slice: options
+                            .slice
+                            .filter(|(o, _)| *o >= 0)
+                            .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                        aggs: aggs.to_vec(),
+                    },
+                )),
+            );
+            if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+                input = build_slice_stream(input, *offset, *length, phys_sm);
+            }
+            return Ok(input);
+        } else if let Some(dynamic_options) = options.as_ref().dynamic.as_ref()
+            && keys.is_empty()
+            && apply.is_none()
+        {
+            let mut input = PhysStream::first(
+                phys_sm.insert(PhysNode::new(
+                    output_schema.clone(),
+                    PhysNodeKind::DynamicGroupBy {
+                        input,
+                        options: dynamic_options.clone(),
+                        aggs: aggs.to_vec(),
+                        slice: options
+                            .slice
+                            .filter(|(o, _)| *o >= 0)
+                            .map(|(o, l)| (o as IdxSize, l as IdxSize)),
+                    },
+                )),
+            );
+            if let Some((offset, length)) = options.slice.as_ref().filter(|(o, _)| *o < 0) {
+                input = build_slice_stream(input, *offset, *length, phys_sm);
+            }
+            return Ok(input);
+        }
+
+        return if (are_keys_sorted
+            || std::env::var("POLARS_FORCE_SORTED_GROUP_BY").is_ok_and(|v| v == "1"))
+            && let Some(stream) = try_build_sorted_group_by(
+                input,
+                keys,
+                aggs,
+                output_schema.clone(),
+                maintain_order,
+                options.clone(),
+                apply.clone(),
+                expr_arena,
+                phys_sm,
+                expr_cache,
+                ctx,
+                are_keys_sorted,
+            )? {
+            Ok(stream)
+        } else if let Some(stream) = try_build_streaming_group_by(
             input,
             keys,
             aggs,
-            output_schema.clone(),
             maintain_order,
             options.clone(),
             apply.clone(),
+            GroupByLowerKind::Groups,
             expr_arena,
             phys_sm,
             expr_cache,
             ctx,
-            are_keys_sorted,
-        )?
-    {
-        Ok(stream)
-    } else if let Some(stream) = try_build_streaming_group_by(
+        )? {
+            Ok(stream)
+        } else {
+            break 'build_streaming_group_by;
+        };
+    }
+
+    let format_str = ctx.prepare_visualization.then(|| {
+        let mut buffer = String::new();
+        write_group_by(
+            &mut buffer,
+            0,
+            expr_arena,
+            keys,
+            aggs,
+            apply.as_ref(),
+            maintain_order,
+        )
+        .unwrap();
+        buffer
+    });
+    build_group_by_fallback(
         input,
         keys,
         aggs,
+        output_schema,
         maintain_order,
-        options.clone(),
-        apply.clone(),
-        GroupByLowerKind::Groups,
+        options,
+        apply,
         expr_arena,
         phys_sm,
-        expr_cache,
-        ctx,
-    )? {
-        Ok(stream)
-    } else {
-        let format_str = ctx.prepare_visualization.then(|| {
-            let mut buffer = String::new();
-            write_group_by(
-                &mut buffer,
-                0,
-                expr_arena,
-                keys,
-                aggs,
-                apply.as_ref(),
-                maintain_order,
-            )
-            .unwrap();
-            buffer
-        });
-        build_group_by_fallback(
-            input,
-            keys,
-            aggs,
-            output_schema,
-            maintain_order,
-            options,
-            apply,
-            expr_arena,
-            phys_sm,
-            format_str,
-        )
-    }
+        format_str,
+    )
 }
