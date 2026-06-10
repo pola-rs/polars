@@ -22,7 +22,7 @@ pub fn new_var_std_reduction(
                 Box::new(VGR::new(dtype, VarStdReducer::<$T> {
                     is_std,
                     ddof,
-                    cast: None,
+                    needs_cast: false,
                     _phantom: PhantomData,
                 }))
             })
@@ -33,20 +33,11 @@ pub fn new_var_std_reduction(
             VarStdReducer::<Float64Type> {
                 is_std,
                 ddof,
-                cast: Some(Cast::Float64),
+                needs_cast: true,
                 _phantom: PhantomData,
             },
         )),
-        #[cfg(feature = "dtype-duration")]
-        Duration(_) => Box::new(VGR::new(
-            dtype,
-            VarStdReducer::<Int64Type> {
-                is_std,
-                ddof,
-                cast: Some(Cast::Physical),
-                _phantom: PhantomData,
-            },
-        )),
+        Duration(..) => todo!(),
         Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
             DataType::Null,
         ))),
@@ -59,14 +50,8 @@ pub fn new_var_std_reduction(
 struct VarStdReducer<T> {
     is_std: bool,
     ddof: u8,
-    cast: Option<Cast>,
+    needs_cast: bool,
     _phantom: PhantomData<T>,
-}
-
-#[derive(Clone, Copy)]
-enum Cast {
-    Float64,
-    Physical,
 }
 
 impl<T> Clone for VarStdReducer<T> {
@@ -74,7 +59,7 @@ impl<T> Clone for VarStdReducer<T> {
         Self {
             is_std: self.is_std,
             ddof: self.ddof,
-            cast: self.cast,
+            needs_cast: self.needs_cast,
             _phantom: PhantomData,
         }
     }
@@ -89,10 +74,10 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
     }
 
     fn cast_series<'a>(&self, s: &'a Series) -> Cow<'a, Series> {
-        match self.cast {
-            Some(Cast::Float64) => Cow::Owned(s.cast(&DataType::Float64).unwrap()),
-            Some(Cast::Physical) => s.to_physical_repr(),
-            None => Cow::Borrowed(s),
+        if self.needs_cast {
+            Cow::Owned(s.cast(&DataType::Float64).unwrap())
+        } else {
+            Cow::Borrowed(s)
         }
     }
 
@@ -143,17 +128,6 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
                     })
                     .collect_ca(PlSmallStr::EMPTY);
                 Ok(ca.into_series())
-            },
-            DataType::Duration(tu) => {
-                let ca: Float64Chunked = v
-                    .into_iter()
-                    .map(|s| {
-                        let var = s.finalize(self.ddof);
-                        if self.is_std { var.map(f64::sqrt) } else { var }
-                    })
-                    .collect_ca(PlSmallStr::EMPTY);
-
-                Ok(ca.cast(&DataType::Int64).unwrap().into_duration(*tu))
             },
             _ => {
                 let ca: Float64Chunked = v

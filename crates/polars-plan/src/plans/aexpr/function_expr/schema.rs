@@ -527,29 +527,33 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
-        let map_inner = |dt: &DataType| match dt {
-            DataType::Boolean => DataType::Float64,
-            #[cfg(feature = "dtype-f16")]
-            DataType::Float16 => DataType::Float16,
-            DataType::Float32 => DataType::Float32,
-            DataType::Float64 => DataType::Float64,
-            dt if dt.is_primitive_numeric() => DataType::Float64,
-            #[cfg(feature = "dtype-date")]
-            DataType::Date => DataType::Datetime(TimeUnit::Microseconds, None),
-            #[cfg(feature = "dtype-datetime")]
-            dt @ DataType::Datetime(_, _) => dt.clone(),
-            #[cfg(feature = "dtype-duration")]
-            dt @ DataType::Duration(_) => dt.clone(),
-            #[cfg(feature = "dtype-time")]
-            dt @ DataType::Time => dt.clone(),
-            #[cfg(feature = "dtype-decimal")]
-            DataType::Decimal(..) => DataType::Float64,
+        let map_inner = |dt: &DataType| {
+            Ok(match dt {
+                DataType::Boolean => DataType::Float64,
+                #[cfg(feature = "dtype-f16")]
+                DataType::Float16 => DataType::Float16,
+                DataType::Float32 => DataType::Float32,
+                DataType::Float64 => DataType::Float64,
+                dt if dt.is_primitive_numeric() => DataType::Float64,
+                #[cfg(feature = "dtype-date")]
+                DataType::Date => DataType::Datetime(TimeUnit::Microseconds, None),
+                #[cfg(feature = "dtype-datetime")]
+                dt @ DataType::Datetime(_, _) => dt.clone(),
+                #[cfg(feature = "dtype-duration")]
+                DataType::Duration(_) => {
+                    polars_bail!(InvalidOperation: "operation `std` is not supported for `{dt}`")
+                },
+                #[cfg(feature = "dtype-time")]
+                dt @ DataType::Time => dt.clone(),
+                #[cfg(feature = "dtype-decimal")]
+                DataType::Decimal(..) => DataType::Float64,
 
-            // All other types get mapped to a single `null` of the same type.
-            dt => dt.clone(),
+                // All other types get mapped to a single `null` of the same type.
+                dt => dt.clone(),
+            })
         };
 
-        self.map_dtype(|dt| match dt {
+        self.try_map_dtype(|dt| match dt {
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, _) => map_inner(inner),
             DataType::List(inner) => map_inner(inner),
