@@ -5259,24 +5259,27 @@ Consider using {self}.implode() instead"""
                 def inner(s: Series | Any) -> Series:  # pragma: no cover
                     if isinstance(s, pl.Series):
                         s = s.alias(x.name)
+
                     return function(s)
 
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
-                    return x.map_elements(
-                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.map_elements(
+                    inner,
+                    return_dtype=return_dtype,
+                    skip_nulls=skip_nulls,
+                    _disable_inefficient_map_warning=True,
+                )
 
         else:
 
             def wrap_f(x: Series, **kwargs: Any) -> Series:  # pragma: no cover
                 return_dtype = kwargs["return_dtype"]
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
 
-                    return x.map_elements(
-                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.map_elements(
+                    function,
+                    return_dtype=return_dtype,
+                    skip_nulls=skip_nulls,
+                    _disable_inefficient_map_warning=True,
+                )
 
         if strategy == "thread_local":
             return self.map_batches(
