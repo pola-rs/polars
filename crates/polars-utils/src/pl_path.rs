@@ -14,7 +14,7 @@ use crate::pl_str::PlRefStr;
 pub const WINDOWS_EXTPATH_PREFIX: &str = r#"\\?\"#;
 
 #[cfg(not(any(test, feature = "test-ext-schemes")))]
-pub const ALLOWED_EXT_SCHEMES: &[&str] = &["hdfs"];
+pub const ALLOWED_EXT_SCHEMES: &[&str] = &["hdfs", "mem"];
 
 #[cfg(any(test, feature = "test-ext-schemes"))]
 pub const ALLOWED_EXT_SCHEMES: &[&str] = &[
