@@ -169,6 +169,9 @@ collapsible_if = "allow"
 object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_with_dns_resolver" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd" }
 
+# https://github.com/tikv/jemallocator/pull/168
+tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "0d683dfb157097e2075d5e0eaf25f71f514a7552" }
+
 [profile.mindebug-dev]
 inherits = "dev"
 debug = "line-tables-only"
