@@ -29,6 +29,10 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     Notes
     -----
+    Non-boolean columns are automatically cast to boolean using truthiness evaluation
+    (0 and 0.0 are ``False``, all other values are ``True``). This differs from the
+    vertical :meth:`Expr.all` aggregation, which requires boolean input.
+
     `Kleene logic`_ is used to deal with nulls: if the column contains any null values
     and no `False` values, the output is null.
 
@@ -74,6 +78,10 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
 
     Notes
     -----
+    Non-boolean columns are automatically cast to boolean using truthiness evaluation
+    (0 and 0.0 are ``False``, all other values are ``True``). This differs from the
+    vertical :meth:`Expr.any` aggregation, which requires boolean input.
+
     `Kleene logic`_ is used to deal with nulls: if the column contains any null values
     and no `True` values, the output is null.
 
