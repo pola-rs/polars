@@ -293,49 +293,28 @@ fn extract_impl<T, A, F>(
 ) -> PrimitiveArray<A>
 where
     T: chrono::TimeZone,
-    A: NativeType,
+    A: NativeType + Default,
     F: Fn(chrono::DateTime<T>) -> A,
 {
-    match time_unit {
-        TimeUnit::Second => {
-            let op = |x| {
-                let datetime = timestamp_s_to_datetime(x);
-                let offset = timezone.offset_from_utc_datetime(&datetime);
-                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                    datetime, offset,
-                ))
-            };
-            unary(array, op, A::PRIMITIVE.into())
-        },
-        TimeUnit::Millisecond => {
-            let op = |x| {
-                let datetime = timestamp_ms_to_datetime(x);
-                let offset = timezone.offset_from_utc_datetime(&datetime);
-                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                    datetime, offset,
-                ))
-            };
-            unary(array, op, A::PRIMITIVE.into())
-        },
-        TimeUnit::Microsecond => {
-            let op = |x| {
-                let datetime = timestamp_us_to_datetime(x);
-                let offset = timezone.offset_from_utc_datetime(&datetime);
-                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                    datetime, offset,
-                ))
-            };
-            unary(array, op, A::PRIMITIVE.into())
-        },
-        TimeUnit::Nanosecond => {
-            let op = |x| {
-                let datetime = timestamp_ns_to_datetime(x);
-                let offset = timezone.offset_from_utc_datetime(&datetime);
-                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                    datetime, offset,
-                ))
-            };
-            unary(array, op, A::PRIMITIVE.into())
-        },
-    }
+    // Use the `_opt` timestamp conversion variants to avoid panicking on
+    // out-of-range values (e.g., i64::MIN from Pandas NaT). The validity
+    // bitmap already marks these slots as null, so the value is irrelevant.
+    let timestamp_to_datetime_opt: fn(i64) -> Option<chrono::NaiveDateTime> = match time_unit {
+        TimeUnit::Second => timestamp_s_to_datetime_opt,
+        TimeUnit::Millisecond => timestamp_ms_to_datetime_opt,
+        TimeUnit::Microsecond => timestamp_us_to_datetime_opt,
+        TimeUnit::Nanosecond => timestamp_ns_to_datetime_opt,
+    };
+
+    let op = |x| {
+        if let Some(datetime) = timestamp_to_datetime_opt(x) {
+            let offset = timezone.offset_from_utc_datetime(&datetime);
+            extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
+                datetime, offset,
+            ))
+        } else {
+            A::default()
+        }
+    };
+    unary(array, op, A::PRIMITIVE.into())
 }
