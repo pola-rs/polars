@@ -6,7 +6,22 @@ use polars_core::frame::DataFrame;
 use crate::spill_context::ParameterFreeSpillContext;
 use crate::{PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
 
-impl Spillable for DataFrame {}
+impl Spillable for DataFrame {
+    // TODO: just a dummy spill for now. Boxed to reduce size.
+    type Spilled = Box<DataFrame>;
+
+    fn estimate_byte_size(&self) -> usize {
+        self.estimated_size()
+    }
+
+    async fn spill(&self) -> Self::Spilled {
+        Box::new(self.clone())
+    }
+
+    async fn unspill(location: &Self::Spilled) -> Self {
+        (**location).clone()
+    }
+}
 
 pub struct SpillFrame {
     token: SpillToken<DataFrame>,

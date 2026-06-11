@@ -398,3 +398,26 @@ def test_unique_on_literal_in_agg(maintain_order: bool, stable: bool) -> None:
         ),
         check_row_order=maintain_order,
     )
+
+
+def test_sliced_unique_maintain_order_27841() -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["a", "b", "c", "d", "e"],
+            "value": [0, 1, 2, 3, 4],
+            "score": [4, 3, 2, 1, 0],
+        }
+    )
+
+    out = (
+        df.lazy()
+        .sort("value", descending=True)
+        .unique(["id", "value", "score"], maintain_order=True)
+        .head(4)
+        .sort("score", descending=True)
+        .select("id", "value")
+        .collect()
+    )
+    expected = pl.DataFrame({"id": ["b", "c", "d", "e"], "value": [1, 2, 3, 4]})
+
+    assert_frame_equal(out, expected)

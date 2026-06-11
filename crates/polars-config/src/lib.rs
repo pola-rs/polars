@@ -3,12 +3,14 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 mod engine;
 mod parse;
+mod resolve_mode;
 mod spill_format;
 pub mod spill_path;
 mod spill_policy;
 
 pub use engine::Engine;
 use polars_error::polars_warn;
+pub use resolve_mode::ResolveMode;
 pub use spill_format::SpillFormat;
 pub use spill_policy::SpillPolicy;
 
@@ -43,6 +45,9 @@ const DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH: u64 = 64;
 
 const PRUNE_PARQUET_METADATA: &str = "POLARS_PRUNE_PARQUET_METADATA";
 const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
+
+const RESOLVE_METADATA_LEVEL: &str = "POLARS_RESOLVE_METADATA_LEVEL";
+const DEFAULT_RESOLVE_METADATA_LEVEL: ResolveMode = ResolveMode::RowCounts;
 
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
@@ -93,6 +98,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     PRUNE_PARQUET_METADATA,
     ALLOW_NESTED_CSPE,
+    RESOLVE_METADATA_LEVEL,
     /*
     Not yet supported public options:
 
@@ -139,6 +145,7 @@ pub struct Config {
     parquet_binary_statistics_truncate_length: AtomicU64,
     prune_parquet_metadata: AtomicBool,
     allow_nested_cspe: AtomicBool,
+    resolve_metadata_level: AtomicU8,
 
     // Private.
     verbose_sensitive: AtomicBool,
@@ -166,6 +173,7 @@ impl Config {
                 DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
             ),
             prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
+            resolve_metadata_level: AtomicU8::new(DEFAULT_RESOLVE_METADATA_LEVEL as u8),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
@@ -250,6 +258,11 @@ impl Config {
             ALLOW_NESTED_CSPE => self.allow_nested_cspe.store(
                 val.and_then(|x| parse::parse_bool(var, x))
                     .unwrap_or(DEFAULT_ALLOW_NESTED_CSPE),
+                Ordering::Relaxed,
+            ),
+            RESOLVE_METADATA_LEVEL => self.resolve_metadata_level.store(
+                val.and_then(|x| parse::parse_resolve_mode(var, x))
+                    .unwrap_or(DEFAULT_RESOLVE_METADATA_LEVEL) as u8,
                 Ordering::Relaxed,
             ),
 
@@ -359,6 +372,13 @@ impl Config {
     /// Nested common subplan elimination.
     pub fn allow_nested_cspe(&self) -> bool {
         self.allow_nested_cspe.load(Ordering::Relaxed)
+    }
+
+    /// How much per-file metadata `parquet_file_info` resolves at planning
+    /// time. See [`ResolveMode`] for the variants and their cost / IR-shape
+    /// trade-offs.
+    pub fn resolve_metadata_level(&self) -> ResolveMode {
+        ResolveMode::from_discriminant(self.resolve_metadata_level.load(Ordering::Relaxed))
     }
 
     /// Whether we should do verbose printing on sensitive information.
