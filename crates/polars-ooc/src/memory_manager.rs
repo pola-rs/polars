@@ -1,6 +1,14 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock, Weak};
 
-use crate::SpillContext;
+use polars_async::ASYNC;
+use polars_config::config;
+use polars_utils::total_ord::TotalOrd;
+use rand_distr::Distribution;
+use tokio::sync::Mutex as AsyncMutex;
+
+use crate::spill_token::TrySpillError;
+use crate::{DynSpillToken, SpillContext};
 
 static MEMORY_MANAGER: LazyLock<MemoryManager> = LazyLock::new(MemoryManager::new);
 
@@ -11,12 +19,28 @@ pub fn memory_manager() -> &'static MemoryManager {
 
 pub struct MemoryManager {
     contexts: RwLock<Vec<Weak<dyn SpillContext>>>,
+    finding_spill_lock: AsyncMutex<()>,
+    est_spill_in_progress: AtomicU64,
 }
 
 impl MemoryManager {
     fn new() -> Self {
         Self {
             contexts: RwLock::new(Vec::new()),
+            finding_spill_lock: AsyncMutex::new(()),
+            est_spill_in_progress: AtomicU64::new(0),
+        }
+    }
+
+    fn should_spill(&self) -> bool {
+        let usage = crate::estimate_memory_usage();
+        let likely_dealt_with = self.est_spill_in_progress.load(Ordering::Relaxed);
+        usage.saturating_sub(likely_dealt_with) > config().ooc_memory_budget_bytes()
+    }
+
+    fn clean_contexts(&self) {
+        if let Ok(mut ctxs) = self.contexts.try_write() {
+            ctxs.retain(|ctx| ctx.strong_count() > 0);
         }
     }
 
@@ -25,7 +49,120 @@ impl MemoryManager {
         self.contexts.write().unwrap().push(weak);
     }
 
-    pub async fn spill(&self) {}
+    #[inline(always)]
+    pub async fn spill(&self) {
+        if self.should_spill() {
+            self.do_spill().await
+        }
+    }
 
-    pub fn spill_blocking(&self) {}
+    #[inline(always)]
+    pub fn spill_blocking(&self) {
+        if self.should_spill() {
+            self.do_spill_blocking()
+        }
+    }
+
+    #[inline(never)]
+    #[cold]
+    fn do_spill_blocking(&self) {
+        ASYNC.block_in_place_on(self.do_spill())
+    }
+
+    #[inline(never)]
+    #[cold]
+    async fn do_spill(&self) {
+        while self.should_spill() {
+            let Some((ctx, spillables)) = self.find_spillables().await else {
+                return;
+            };
+
+            for (spillable, id, sz) in spillables {
+                // Spill, or reinsert if a failure.
+                match spillable.try_spill(ctx.stats(), Arc::downgrade(&ctx), id) {
+                    Ok(spill_success) => {
+                        if !spill_success.await {
+                            ctx.reinsert(&spillable, id);
+                        }
+                    },
+                    Err(TrySpillError::Pinned) => {
+                        ctx.reinsert(&spillable, id);
+                    },
+                    Err(TrySpillError::AlreadySpilled) => {},
+                }
+
+                self.est_spill_in_progress
+                    .fetch_sub(sz as u64, Ordering::Relaxed);
+            }
+        }
+    }
+
+    #[inline(never)]
+    #[cold]
+    async fn find_spillables(
+        &self,
+    ) -> Option<(
+        Arc<dyn SpillContext>,
+        Vec<(Arc<dyn DynSpillToken>, u64, usize)>,
+    )> {
+        // TODO: don't block here under a certain memory threshold.
+        let finding_spill_guard = self.finding_spill_lock.lock().await;
+
+        // TODO: don't loop over all contexts here, keep track of good ones and inspect those plus a couple random ones.
+        let contexts = self.contexts.read().unwrap();
+        let mut has_dead_context = false;
+        let mut live_contexts = Vec::new();
+        let mut rng = rand::rng();
+        for weak_ctx in contexts.iter() {
+            let Some(ctx) = weak_ctx.upgrade() else {
+                has_dead_context = true;
+                continue;
+            };
+
+            // Thompson sampling
+            let (mean, var) = ctx.stats().score();
+            let distr = rand_distr::Normal::new(mean, var.sqrt()).unwrap();
+            let score_sample = distr.sample(&mut rng);
+            live_contexts.push((ctx, score_sample));
+        }
+        drop(contexts);
+
+        // Find the best context and loop over its candidates. For each
+        // candidate we check if it can be spilled else we reinsert it.
+        let min_spill = config().ooc_spill_min_bytes();
+        let best_ctx = live_contexts.into_iter().max_by(|a, b| a.1.tot_cmp(&b.1));
+        let out = if let Some((best_ctx, _score)) = best_ctx {
+            let mut total_est_spill = 0;
+            let mut candidates = Vec::new();
+            for (cand, id) in best_ctx.pop() {
+                if cand.can_spill()
+                    && let Some(sz) = cand.estimate_byte_size()
+                    && sz as u64 >= min_spill
+                {
+                    total_est_spill += sz as u64;
+                    candidates.push((cand, id, sz));
+                } else {
+                    if !cand.is_spilled_or_dropped() {
+                        best_ctx.reinsert(&cand, id);
+                    }
+                }
+            }
+
+            // Increment the spill-in-progress to avoid eager over-spilling.
+            self.est_spill_in_progress
+                .fetch_add(total_est_spill, Ordering::Relaxed);
+
+            // TODO: penalize context also for time spent finding candidates, so an all-pinned
+            // context or all-tiny frame context doesn't keep being chosen.
+            Some((best_ctx, candidates))
+        } else {
+            None
+        };
+
+        drop(finding_spill_guard);
+        if has_dead_context {
+            self.clean_contexts();
+        }
+        out
+    }
 }
