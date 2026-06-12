@@ -21,6 +21,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    NoReturn,
     TypeVar,
     overload,
 )
@@ -740,12 +741,9 @@ def require_same_type(current: Any, other: Any) -> None:
 
 
 class _NamespaceSuggestMixin:
-    """
-    Mixin that adds 'did you mean' suggestions to AttributeError
-    on namespace typos.
-    """
+    """Mixin that adds suggestions to AttributeError on namespace typos."""
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name: str) -> NoReturn:
         import difflib
 
         public = [m for m in dir(type(self)) if not m.startswith("_")]
