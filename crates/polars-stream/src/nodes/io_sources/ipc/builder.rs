@@ -9,8 +9,6 @@ use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency::get_request_budget;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
-#[cfg(feature = "ipc")]
-use polars_io::pl_async;
 use polars_plan::dsl::ScanSource;
 
 use super::super::shared::pipeline_budget::PipelineBudget;
@@ -80,11 +78,13 @@ impl FileReaderBuilder for IpcReaderBuilder {
             })
             .unwrap_or({
                 // kdn TODO INVESTIGATE: get chunk_size from FetchConfig?
-                let chunk_size_kb = pl_async::get_random_access_chunk_size().div_ceil(1024);
+                let chunk_size_kb =
+                    polars_io::cloud::concurrency_config::get_random_access_chunk_size()
+                        .div_ceil(1024);
                 2 * execution_state.num_pipelines * chunk_size_kb
             })
             // Avoid deadlock.
-            .max(pl_async::get_download_chunk_size().div_ceil(1024));
+            .max(polars_io::cloud::concurrency_config::get_download_chunk_size().div_ceil(1024));
 
         if config::verbose() {
             eprintln!(

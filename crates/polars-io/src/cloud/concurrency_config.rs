@@ -1,6 +1,63 @@
-use crate::pl_async::{
-    get_download_chunk_size, get_random_access_chunk_size, get_streaming_chunk_size,
-};
+//kdn TODO RM
+// use crate::pl_async::{
+//     get_download_chunk_size, get_random_access_chunk_size, get_streaming_chunk_size,
+// };
+
+use std::sync::LazyLock;
+
+use polars_core::config;
+
+/// Used to determine chunks when splitting large ranges, or combining small
+/// ranges.
+static DOWNLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    let v: usize = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(64 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async download_chunk_size: {v}")
+    }
+
+    v
+});
+
+static RANDOM_ACCESS_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    let v = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE_RANDOM_ACCESS")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(8 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async download_chunk_size_random_access: {v}")
+    }
+
+    v
+});
+
+static STREAMING_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
+    let v = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE_STREAMING")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(32 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async download_chunk_size_streaming: {v}")
+    }
+
+    v
+});
+
+pub fn get_download_chunk_size() -> usize {
+    *DOWNLOAD_CHUNK_SIZE
+}
+
+pub fn get_random_access_chunk_size() -> usize {
+    *RANDOM_ACCESS_CHUNK_SIZE
+}
+pub fn get_streaming_chunk_size() -> usize {
+    *STREAMING_CHUNK_SIZE
+}
 
 /// Determines how in-flight concurrency for access to the back-end store is handled.
 #[derive(Clone, Debug, Copy)]
@@ -29,7 +86,7 @@ impl FetchConfig {
     /// directly using the metadata as an input. Example: Parquet, IPC with internal
     /// extensions.
     ///
-    /// The chunk_size should be smaller to enable smooth operation of the
+    /// The chunk_size should be small enough to enable smooth operation of the
     /// bytes-based in-flight concurrency controller.
     pub fn random_access() -> Self {
         Self {

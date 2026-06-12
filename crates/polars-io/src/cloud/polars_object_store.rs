@@ -14,10 +14,10 @@ use polars_utils::pl_path::PlRefPath;
 use tokio::io::AsyncWriteExt;
 
 use super::concurrency::IoSample;
-use super::concurrency_config::{ConcurrencyStrategy, FetchConfig};
+use super::concurrency_config::{ConcurrencyStrategy, FetchConfig, get_download_chunk_size};
 use crate::pl_async::{
-    self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, get_download_chunk_size,
-    tune_with_concurrency_budget, with_concurrency_budget,
+    self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, tune_with_concurrency_budget,
+    with_concurrency_budget,
 };
 
 #[derive(Debug)]

@@ -11,59 +11,8 @@ use tokio::sync::Semaphore;
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
-/// Used to determine chunks when splitting large ranges, or combining small
-/// ranges.
-static DOWNLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-    let v: usize = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE")
-        .as_deref()
-        .map(|x| x.parse().expect("integer"))
-        .unwrap_or(64 * 1024 * 1024);
-
-    if config::verbose() {
-        eprintln!("async download_chunk_size: {v}")
-    }
-
-    v
-});
-
-static RANDOM_ACCESS_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-    let v = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE_RANDOM_ACCESS")
-        .as_deref()
-        .map(|x| x.parse().expect("integer"))
-        .unwrap_or(8 * 1024 * 1024);
-
-    if config::verbose() {
-        eprintln!("async download_chunk_size_random_access: {v}")
-    }
-
-    v
-});
-
-static STREAMING_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-    let v = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE_STREAMING")
-        .as_deref()
-        .map(|x| x.parse().expect("integer"))
-        .unwrap_or(32 * 1024 * 1024);
-
-    if config::verbose() {
-        eprintln!("async download_chunk_size_streaming: {v}")
-    }
-
-    v
-});
-
-pub fn get_download_chunk_size() -> usize {
-    *DOWNLOAD_CHUNK_SIZE
-}
-
-pub fn get_random_access_chunk_size() -> usize {
-    *RANDOM_ACCESS_CHUNK_SIZE
-}
-pub fn get_streaming_chunk_size() -> usize {
-    *STREAMING_CHUNK_SIZE
-}
-
 static PREFETCH_MEMORY_LIMIT: LazyLock<usize> = LazyLock::new(|| {
+    //kdn TODO: size up for larger instances
     let v = std::env::var("POLARS_PREFETCH_MEMORY_LIMIT")
         .as_deref()
         .map(|x| x.parse().expect("integer"))

@@ -27,7 +27,7 @@ pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
 pub use model::Model;
 pub use regime::{Regime, RegimeState};
 
-use crate::pl_async::get_random_access_chunk_size;
+use crate::cloud::concurrency_config::get_random_access_chunk_size;
 
 #[derive(Clone, Copy, Debug)]
 pub struct IoSample {
