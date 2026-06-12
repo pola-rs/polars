@@ -450,7 +450,8 @@ def test_take_negative_index_is_oob() -> None:
 def test_string_numeric_arithmetic_err() -> None:
     df = pl.DataFrame({"s": ["x"]})
     with pytest.raises(
-        InvalidOperationError, match=r"arithmetic on string and numeric not allowed"
+        InvalidOperationError,
+        match=r"arithmetic on dtypes str and dyn int is not allowed \(lhs: column 's'",
     ):
         df.select(pl.col("s") + 1)
 

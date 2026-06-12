@@ -172,8 +172,8 @@ pub fn parse_time_zone(tz: &str) -> PolarsResult<chrono_tz::Tz> {
 
     polars_bail!(
         ComputeError:
-        "unable to parse time zone: ‘{tz}’. Please check the \
-        Time Zone Database for a list of available time zones.\n\nHint: did you mean ‘{}’ instead?",
+        "unable to parse time zone: '{tz}'. Please check the \
+        Time Zone Database for a list of available time zones.\n\nHint: did you mean '{}' instead?",
         best.unwrap().0,
     )
 }
