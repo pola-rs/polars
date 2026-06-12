@@ -56,21 +56,6 @@ pub struct Model {
     bw_hwm_bps: Option<f64>,
     bw_hwm_last_updated: Option<Instant>,
     signal: Option<SignalStats>,
-    // // Statistics.
-    // // Invariant: if the model 'has signal', then all statistics are Some().
-    // has_signal: bool,
-    // // All min/max/avg statistics are 'in window'. The hwm statistics are 'all time'.
-    // bw_avg_bps: Option<f64>,
-    // // All-time high-watermark of bw_max.
-    // bw_hwm_bps: Option<f64>,
-    // bw_hwm_last_updated: Option<Instant>,
-    // // Time To First Byte (TTFB) minimum observed.
-    // ttfb_min: Option<Duration>,
-    // // TTFB average.
-    // ttfb_avg: Option<Duration>,
-
-    // // Used in the absence of IOSamples.
-    // ttfb_min_default: Duration,
 }
 
 impl Model {

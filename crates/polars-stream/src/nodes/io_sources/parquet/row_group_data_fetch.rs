@@ -85,10 +85,6 @@ impl RowGroupDataFetcher {
     pub(super) async fn next(
         &mut self,
     ) -> Option<PolarsResult<tokio_handle_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
-        // ) -> Option<(
-        //     PolarsResult<tokio_handle_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>,
-        //     u64,
-        // )> {
         while !self.row_group_slice.is_empty() {
             let idx = self.row_group_slice.start;
             self.row_group_slice.start += 1;
