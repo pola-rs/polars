@@ -12,7 +12,7 @@ static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::On
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
 static PREFETCH_MEMORY_LIMIT: LazyLock<usize> = LazyLock::new(|| {
-    //kdn TODO: size up for larger instances
+    //kdn TODO TEST & TUNE: size based on instance type
     let v = std::env::var("POLARS_PREFETCH_MEMORY_LIMIT")
         .as_deref()
         .map(|x| x.parse().expect("integer"))

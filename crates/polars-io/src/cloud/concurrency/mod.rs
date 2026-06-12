@@ -20,12 +20,19 @@ mod model;
 mod regime;
 
 use std::num::{NonZeroU32, NonZeroU64};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
+use crossbeam_queue::ArrayQueue;
 pub use model::Model;
+use polars_utils::relaxed_cell::RelaxedCell;
 pub use regime::{Regime, RegimeState};
+
+// Number of samples in the queue, which gets drained on every tick.
+// At 50k requests per second and 100 ms tick window, we need 5k.
+// kdn TODO TEST & TUNE: Refactor to a run-time config-based value.
+const SAMPLE_QUEUE_CAPACITY: usize = 8192;
 
 use crate::cloud::concurrency_config::get_random_access_chunk_size;
 
@@ -34,6 +41,7 @@ pub struct IoSample {
     pub n_bytes: u64,
     // Time-to-first-byte.
     pub ttfb: Duration,
+    // kdn TODO: Factor out as we only care about per-tick_window stats.
     pub completion_time: Instant,
 }
 
@@ -131,18 +139,17 @@ pub fn get_request_budget() -> u32 {
 #[derive(Debug)]
 pub struct ConcurrencyController {
     config: ControllerConfig,
-    model: Arc<Mutex<Model>>,
-    _regime: Arc<Mutex<Regime>>,
+    sample_queue: Arc<ArrayQueue<IoSample>>,
+    samples_dropped: Arc<RelaxedCell<u64>>,
     inflight_budget: Arc<InFlightBudget>,
     _control_task: tokio::task::JoinHandle<()>,
 }
 
 impl ConcurrencyController {
     pub fn new(config: ControllerConfig) -> Self {
-        let now = Instant::now();
+        let sample_queue = Arc::new(ArrayQueue::new(SAMPLE_QUEUE_CAPACITY));
+        let samples_dropped = Arc::new(RelaxedCell::new_u64(0));
 
-        let model = Arc::new(Mutex::new(Model::new(config.window)));
-        let regime = Arc::new(Mutex::new(Regime::new(now)));
         let inflight_budget = Arc::new(InFlightBudget::new(
             config.init_byte_budget,
             config.floor_byte_budget,
@@ -150,16 +157,16 @@ impl ConcurrencyController {
         ));
 
         let control_task = Self::spawn_control_loop(
-            model.clone(),
-            regime.clone(),
+            sample_queue.clone(),
+            samples_dropped.clone(),
             inflight_budget.clone(),
             config.clone(),
         );
 
         Self {
             config,
-            model,
-            _regime: regime,
+            sample_queue,
+            samples_dropped,
             inflight_budget,
             _control_task: control_task,
         }
@@ -171,8 +178,10 @@ impl ConcurrencyController {
 
     /// Record a completed IO. Hot path.
     pub fn record_io(&self, sample: IoSample) {
-        // kdn TODO PERF - Lockless collection to avoid Mutex contention.
-        lock_recover(&self.model).record(sample);
+        if self.sample_queue.push(sample).is_err() {
+            // Queue full: drop. Samples are statistics is considered acceptable.
+            self.samples_dropped.fetch_add(1);
+        }
     }
 
     pub fn inflight_budget(&self) -> &Arc<InFlightBudget> {
@@ -184,8 +193,8 @@ impl ConcurrencyController {
     }
 
     fn spawn_control_loop(
-        model: Arc<Mutex<Model>>,
-        regime: Arc<Mutex<Regime>>,
+        sample_queue: Arc<ArrayQueue<IoSample>>,
+        samples_dropped: Arc<RelaxedCell<u64>>,
         admission: Arc<InFlightBudget>,
         config: ControllerConfig,
     ) -> tokio::task::JoinHandle<()> {
@@ -196,6 +205,9 @@ impl ConcurrencyController {
             );
         }
         tokio::spawn(async move {
+            let mut model = Model::new(config.window);
+            let mut regime = Regime::new(Instant::now());
+
             let mut ticker = tokio::time::interval(config.control_interval);
             ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
@@ -204,13 +216,16 @@ impl ConcurrencyController {
                 let now = Instant::now();
 
                 // Update model statistics and step regime.
-                let (state, signal) = {
-                    let mut model = lock_recover(&model);
+                let (state, signal, dropped) = {
+                    for _ in 0..SAMPLE_QUEUE_CAPACITY {
+                        let Some(s) = sample_queue.pop() else { break };
+                        model.record(s);
+                    }
+                    let dropped = samples_dropped.swap(0);
                     model.update(now);
                     let signal = model.signal();
-                    let mut regime = lock_recover(&regime);
                     let state = regime.step(signal, now);
-                    (state, signal)
+                    (state, signal, dropped)
                 };
 
                 // Compute base BDP
@@ -224,6 +239,7 @@ impl ConcurrencyController {
                     RegimeState::Init => 1.0,
                     RegimeState::RampUp { .. } => 2.0,
                     RegimeState::Stable => 2.0, // NOTE: >> 1.0 so that environment noise gets absorbed.
+                    // kdn TODO TEST & TUNE
                     RegimeState::ProbeUp { .. } => 3.0,
                 };
                 let target_budget = (base_budget as f64 * gain) as u64;
@@ -273,6 +289,11 @@ impl ConcurrencyController {
                         stats.requests_in_use,
                         stats.requests_saturation
                     );
+                    if dropped > 0 {
+                        eprintln!(
+                            "[InFlightConcurrency] WARN: {dropped} samples dropped (queue full)"
+                        );
+                    }
                 }
             }
         })
@@ -283,10 +304,4 @@ impl Drop for ConcurrencyController {
     fn drop(&mut self) {
         self._control_task.abort();
     }
-}
-
-// Lock a stats mutex, recovering from poisoning.
-// This is preferable over panic, as a partially-mutated Model self-heals on the next tick.
-fn lock_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }

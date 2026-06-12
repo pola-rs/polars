@@ -45,7 +45,7 @@ impl SignalStats {
 #[derive(Debug)]
 pub struct Model {
     // Collect and retain samples
-    // kdn TODO PERF: lockless queue (consider crossbeam_queue::ArrayQueue)
+    // kdn TODO PERF: Move to ring-buffer of TickBucket stats.
     samples: VecDeque<IoSample>,
     first_sample_time: Option<Instant>,
 

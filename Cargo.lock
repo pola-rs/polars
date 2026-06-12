@@ -3286,6 +3286,7 @@ dependencies = [
  "bytes",
  "chrono",
  "chrono-tz",
+ "crossbeam-queue",
  "fast-float2",
  "fastrand",
  "flate2",

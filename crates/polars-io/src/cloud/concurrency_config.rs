@@ -1,8 +1,3 @@
-//kdn TODO RM
-// use crate::pl_async::{
-//     get_download_chunk_size, get_random_access_chunk_size, get_streaming_chunk_size,
-// };
-
 use std::sync::LazyLock;
 
 use polars_core::config;

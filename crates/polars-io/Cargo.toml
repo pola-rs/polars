@@ -27,6 +27,8 @@ blake3 = { workspace = true, optional = true }
 bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
+# kdn TODO CHECK
+crossbeam-queue = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
 fastrand = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }

@@ -299,10 +299,10 @@ impl PolarsObjectStore {
                                     },
                                 )
                                 .await?;
-                            let t1 = t0.elapsed();
+                            let ttfb = t0.elapsed();
                             let out = response.bytes().await?;
 
-                            Ok((out, t1))
+                            Ok((out, ttfb))
                         }),
                     )
                     .await?;
