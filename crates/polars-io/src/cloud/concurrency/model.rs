@@ -1,7 +1,9 @@
 //! Model: model the network parameters using IOSamples
+//!
 //! Parameters:
 //! - BW_max: maximum bandwidth
 //! - RTT_min: minimum round-trip time, based on TTFB (time-to-first-byte)
+//!
 //! Derived parameter:
 //! - BDP: bandwidth-delay product
 

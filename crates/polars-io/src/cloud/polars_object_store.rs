@@ -59,7 +59,6 @@ impl FetchConfig {
     /// Use for file formats that have a sequential layout, i.e. the file bytes
     /// must be fetched and parsed sequentially. The pipeline is responsible for
     /// managing back-pressure and rate-limiting. Example: CSV.
-
     pub fn streaming() -> Self {
         Self {
             chunk_size: get_streaming_chunk_size(),
@@ -69,7 +68,7 @@ impl FetchConfig {
     }
 
     /// Used for legacy fetch.
-    /// @TOOD: Deprecate over time.
+    /// @TODO: Deprecate over time.
     pub fn legacy() -> Self {
         Self {
             chunk_size: get_download_chunk_size(),
@@ -639,7 +638,7 @@ fn split_range(
     range: Range<usize>,
     chunk_size: Option<usize>,
 ) -> impl ExactSizeIterator<Item = Range<usize>> {
-    let chunk_size = chunk_size.unwrap_or_else(|| get_download_chunk_size());
+    let chunk_size = chunk_size.unwrap_or_else(get_download_chunk_size);
 
     // Calculate n_parts such that we are as close as possible to the `chunk_size`.
     let n_parts = [
@@ -684,7 +683,7 @@ fn merge_ranges(
     ranges: &[Range<usize>],
     chunk_size: Option<usize>,
 ) -> impl Iterator<Item = (Range<usize>, usize)> + '_ {
-    let chunk_size = chunk_size.unwrap_or_else(|| get_download_chunk_size());
+    let chunk_size = chunk_size.unwrap_or_else(get_download_chunk_size);
 
     let mut current_merged_range = ranges.first().map_or(0..0, Clone::clone);
     // Number of fetched bytes excluding excess.
@@ -757,7 +756,6 @@ fn merge_ranges(
                 .map(move |(i, range)| (range, if 1 + i == len { end } else { 0 }))
         })
 }
-
 
 #[cfg(test)]
 mod tests {

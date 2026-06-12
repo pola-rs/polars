@@ -7,7 +7,6 @@ use polars_error::{PolarsResult, polars_ensure};
 use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::ParallelStrategy;
 use polars_utils::IdxSize;
-use tokio::sync::OwnedSemaphorePermit;
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
@@ -18,11 +17,6 @@ use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_pushdown_skip_mask;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
-
-struct PipelinePermit {
-    _count: OwnedSemaphorePermit,
-    _kbytes: OwnedSemaphorePermit,
-}
 
 impl ParquetReadImpl {
     /// Constructs the task that distributes morsels across the engine pipelines.
@@ -71,7 +65,7 @@ impl ParquetReadImpl {
         // Prefetch loop (spawns prefetches on the tokio scheduler).
 
         // Three concurrency limits bound the pipeline:
-        // (a) rg_prefetch_kbytes_semaphore: bounds possibly compressed projected bytes 
+        // (a) rg_prefetch_kbytes_semaphore: bounds possibly compressed projected bytes
         //     in the pipeline. Primary memory bound, but does not account for decompression.
         // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Secondary
         //     bound, only binding for degenerate cases (many tiny row groups where
@@ -91,8 +85,8 @@ impl ParquetReadImpl {
 
         let row_index = self.row_index.clone();
 
-        let rg_prefetch_semaphore = Arc::clone(&self.rg_prefetch_semaphore);
-        let rg_prefetch_kbytes_semaphore = Arc::clone(&self.rg_prefetch_kbytes_semaphore);
+        let pipeline_budget = self.pipeline_budget.clone();
+
         let rg_prefetch_prev_all_spawned = Option::take(&mut self.rg_prefetch_prev_all_spawned);
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
@@ -180,36 +174,20 @@ impl ParquetReadImpl {
                 rg_prefetch_prev_all_spawned.wait().await;
             }
 
-            loop {
-                let Some(n_bytes) = row_group_data_fetcher.peek_next_bytes() else {
-                    break;
-                };
+            while let Some(fetch_length) = row_group_data_fetcher.peek_next_bytes() {
+                let fetch_length = usize::try_from(fetch_length)
+                    .expect("ParquetReadImpl: fetch_length too large for usize: {fetch_length}");
 
-                let n_kbytes = n_bytes.div_ceil(1 << 10).try_into().unwrap_or(u32::MAX);
-
-                // Acquire permits, kbytes first
-                let kbytes_permit = rg_prefetch_kbytes_semaphore
-                    .clone()
-                    .acquire_many_owned(n_kbytes)
-                    .await
-                    .unwrap();
-
-                let count_permit = rg_prefetch_semaphore.clone().acquire_owned().await.unwrap();
+                let permit = pipeline_budget.acquire(fetch_length).await;
 
                 // Budget reserved, spawn request
                 let Some(prefetch) = row_group_data_fetcher.next().await else {
                     // Mask skipped all remaining row groups between peek and next — release permits
-                    drop(kbytes_permit);
-                    drop(count_permit);
+                    drop(permit);
                     break;
                 };
 
-                let permits = PipelinePermit {
-                    _count: count_permit,
-                    _kbytes: kbytes_permit,
-                };
-
-                if prefetch_send.send((prefetch?, permits)).await.is_err() {
+                if prefetch_send.send((prefetch?, permit)).await.is_err() {
                     break;
                 }
             }

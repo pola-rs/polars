@@ -244,13 +244,13 @@ impl DynByteSourceBuilder {
         cloud_options: Option<&CloudOptions>,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<DynByteSource> {
-        Ok(match self {
-            &Self::Mmap => {
+        Ok(match *self {
+            Self::Mmap => {
                 BufferByteSource::try_new_mmap_from_path(path.as_std_path(), cloud_options)
                     .await?
                     .into()
             },
-            &Self::ObjectStore(fetch_config) => feature_gated!("cloud", {
+            Self::ObjectStore(fetch_config) => feature_gated!("cloud", {
                 ObjectStoreByteSource::try_new_from_path(
                     path,
                     cloud_options,

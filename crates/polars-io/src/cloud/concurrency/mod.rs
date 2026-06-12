@@ -118,15 +118,14 @@ pub fn get_request_budget() -> u32 {
     // max concurrent TCP sessions to S3 for the pipeline.
     // When modifying this value, consider the max_thread count configuration(s), the OS limitations
     // (e.g., ulimit -n), and any cloud infrastructure limitations.
-    let request_budget = std::env::var("POLARS_INFLIGHT_REQUEST_BUDGET")
+    std::env::var("POLARS_INFLIGHT_REQUEST_BUDGET")
         .map(|x| {
             x.parse::<NonZeroU32>()
                 .unwrap_or_else(|_| panic!("invalid value for POLARS_INFLIGHT_REQUEST_BUDGET: {x}"))
                 .get()
         })
         .unwrap_or(512)
-        .max(1);
-    request_budget
+        .max(1)
 }
 
 #[derive(Debug)]

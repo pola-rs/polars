@@ -42,7 +42,7 @@ pub(super) struct RowGroupDataFetcher {
 }
 
 impl RowGroupDataFetcher {
-    /// Returns the projected byte size of the next row group to be fetched, without advancing 
+    /// Returns the projected byte size of the next row group to be fetched, without advancing
     /// state or spawning any I/O. Returns None if there are no more row groups.
     pub(super) fn peek_next_bytes(&self) -> Option<u64> {
         // Walk forward from current position to find the next unmasked row group
@@ -72,7 +72,7 @@ impl RowGroupDataFetcher {
                 .sum(),
                 _ => row_group_metadata
                     .byte_ranges_iter()
-                    .map(|x| x.end as u64 - x.start as u64)
+                    .map(|x| x.end - x.start)
                     .sum(),
             };
 

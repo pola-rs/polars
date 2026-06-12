@@ -80,7 +80,6 @@ pub fn get_prefetch_memory_limit() -> usize {
     *PREFETCH_MEMORY_LIMIT
 }
 
-
 pub trait GetSize {
     fn size(&self) -> u64;
 }

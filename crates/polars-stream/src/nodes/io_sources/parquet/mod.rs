@@ -23,6 +23,7 @@ use super::multi_scan::reader_interface::output::{FileReaderOutputRecv, FileRead
 use super::multi_scan::reader_interface::{
     BeginReadArgs, FileReader, FileReaderCallbacks, calc_row_position_after_slice,
 };
+use super::shared::pipeline_budget::PipelineBudget;
 use crate::metrics::OptIOMetrics;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -56,11 +57,9 @@ pub struct ParquetFileReader {
 }
 
 struct RowGroupPrefetchSync {
-    prefetch_limit: usize,
-    prefetch_semaphore: Arc<tokio::sync::Semaphore>,
-    prefetch_kbytes_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Pipeline throttling, by count and by memory.
+    pipeline_budget: PipelineBudget,
     shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
-
     /// Waits for the previous reader to finish spawning prefetches.
     prev_all_spawned: Option<WaitGroup>,
     /// Dropped once the current reader has finished spawning prefetches.
@@ -312,7 +311,8 @@ impl FileReader for ParquetFileReader {
         let memory_prefetch_func = get_memory_prefetch_func(verbose);
         let row_group_prefetch_size = self
             .row_group_prefetch_sync
-            .prefetch_limit
+            .pipeline_budget
+            .count_limit()
             .min(file_metadata.row_groups.len())
             .max(1);
 
@@ -346,10 +346,7 @@ impl FileReader for ParquetFileReader {
             memory_prefetch_func,
             row_index,
 
-            rg_prefetch_semaphore: Arc::clone(&self.row_group_prefetch_sync.prefetch_semaphore),
-            rg_prefetch_kbytes_semaphore: Arc::clone(
-                &self.row_group_prefetch_sync.prefetch_kbytes_semaphore,
-            ),
+            pipeline_budget: self.row_group_prefetch_sync.pipeline_budget.clone(),
             rg_prefetch_prev_all_spawned: Option::take(
                 &mut self.row_group_prefetch_sync.prev_all_spawned,
             ),
@@ -442,8 +439,7 @@ struct ParquetReadImpl {
     memory_prefetch_func: fn(&[u8]) -> (),
     row_index: Option<RowIndex>,
 
-    rg_prefetch_semaphore: Arc<tokio::sync::Semaphore>,
-    rg_prefetch_kbytes_semaphore: Arc<tokio::sync::Semaphore>,
+    pipeline_budget: PipelineBudget,
     rg_prefetch_prev_all_spawned: Option<WaitGroup>,
     rg_prefetch_current_all_spawned: Option<WaitToken>,
     disable_morsel_split: bool,

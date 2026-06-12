@@ -9,8 +9,8 @@ use polars_io::pl_async::{self};
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::dsl::ScanSource;
-use polars_utils::relaxed_cell::RelaxedCell;
 
+use super::super::shared::pipeline_budget::PipelineBudget;
 use super::{FileReader, ParquetFileReader};
 use crate::metrics::{IOMetrics, OptIOMetrics};
 use crate::nodes::io_sources::multi_scan::reader_interface::builder::FileReaderBuilder;
@@ -20,10 +20,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::capabilities::Reader
 pub struct ParquetReaderBuilder {
     pub first_metadata: Option<Arc<FileMetadata>>,
     pub options: Arc<ParquetOptions>,
-    pub prefetch_limit: RelaxedCell<usize>,
-    pub prefetch_kbytes_limit: RelaxedCell<usize>,
-    pub prefetch_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
-    pub prefetch_kbytes_semaphore: std::sync::OnceLock<Arc<tokio::sync::Semaphore>>,
+    pub pipeline_budget: std::sync::OnceLock<PipelineBudget>,
     pub shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
     pub io_metrics: std::sync::OnceLock<Arc<IOMetrics>>,
 }
@@ -33,8 +30,7 @@ impl std::fmt::Debug for ParquetReaderBuilder {
         f.debug_struct("ParquetReaderBuilder")
             .field("first_metadata", &self.first_metadata)
             .field("options", &self.options)
-            .field("prefetch_semaphore", &self.prefetch_semaphore)
-            .field("prefetch_kbytes_semaphore", &self.prefetch_kbytes_semaphore)
+            .field("pipeline_budget", &self.pipeline_budget)
             .finish()
     }
 }
@@ -85,8 +81,6 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             )
             .max(1);
 
-        self.prefetch_limit.store(prefetch_limit);
-
         // Bound the max memory in use for the pipeline.
         // This should be large enough to be non-blocking, but small enough to avoid
         // excessive memory use from a run-away prefetch pipeline.
@@ -103,30 +97,23 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                     .get()
             })
             .unwrap_or({
-                // kdn TODO INVESTIGATE: get chunk_size from FetchConfig in ParquetReaderBuilder?
+                // kdn TODO INVESTIGATE: get chunk_size from FetchConfig?
                 let chunk_size_kb = pl_async::get_random_access_chunk_size().div_ceil(1024);
                 2 * execution_state.num_pipelines * chunk_size_kb
             })
             // Avoid deadlock.
             .max(pl_async::get_download_chunk_size().div_ceil(1024));
 
-        self.prefetch_kbytes_limit.store(prefetch_kbytes_limit);
-
         if config::verbose() {
             eprintln!(
                 "[ParquetReaderBuilder]: prefetch_limit: {}, prefetch_kbytes_limit: {}",
-                self.prefetch_limit.load(),
-                self.prefetch_kbytes_limit.load()
+                prefetch_limit, prefetch_kbytes_limit
             );
         }
 
-        self.prefetch_semaphore
-            .set(Arc::new(tokio::sync::Semaphore::new(prefetch_limit)))
-            .unwrap();
-
-        self.prefetch_kbytes_semaphore
-            .set(Arc::new(tokio::sync::Semaphore::new(prefetch_kbytes_limit)))
-            .unwrap();
+        self.pipeline_budget
+            .set(PipelineBudget::new(prefetch_limit, prefetch_kbytes_limit))
+            .unwrap()
     }
 
     fn set_io_metrics(&self, io_metrics: Arc<IOMetrics>) {
@@ -152,7 +139,11 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                 DynByteSourceBuilder::Mmap
             };
 
-        assert!(self.prefetch_limit.load() > 0);
+        let pipeline_budget = self
+            .pipeline_budget
+            .get()
+            .expect("set_execution_state must be called before build_file_reader")
+            .clone();
 
         let reader = ParquetFileReader {
             scan_source,
@@ -165,11 +156,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
             },
             byte_source_builder,
             row_group_prefetch_sync: RowGroupPrefetchSync {
-                prefetch_limit: self.prefetch_limit.load(),
-                prefetch_semaphore: Arc::clone(self.prefetch_semaphore.get().unwrap()),
-                prefetch_kbytes_semaphore: Arc::clone(
-                    self.prefetch_kbytes_semaphore.get().unwrap(),
-                ),
+                pipeline_budget,
                 shared_prefetch_wait_group_slot: Arc::clone(&self.shared_prefetch_wait_group_slot),
                 prev_all_spawned: None,
                 current_all_spawned: None,

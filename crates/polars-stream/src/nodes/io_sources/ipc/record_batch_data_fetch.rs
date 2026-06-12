@@ -14,14 +14,9 @@ use polars_io::utils::slice::SplitSlicePosition;
 use polars_utils::IdxSize;
 use polars_utils::slice_enum::Slice;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+use super::super::shared::pipeline_budget::{PipelineBudget, PipelinePermit};
 use crate::utils::tokio_handle_ext;
-
-pub(crate) struct PipelinePermit {
-    _count: OwnedSemaphorePermit,
-    _kbytes: OwnedSemaphorePermit,
-}
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RecordBatchData {
@@ -48,8 +43,7 @@ pub(super) struct RecordBatchDataFetcher {
     )>,
     pub(super) base_rb_metadata_fetch_count: u64,
 
-    pub(super) rb_prefetch_semaphore: Arc<Semaphore>,
-    pub(super) rb_prefetch_kbytes_semaphore: Arc<Semaphore>,
+    pub(super) pipeline_budget: PipelineBudget,
     pub(super) rb_prefetch_current_all_spawned: Option<WaitToken>,
 }
 
@@ -68,8 +62,7 @@ impl RecordBatchDataFetcher {
             prefetch_send,
             base_rb_metadata_fetch_count,
 
-            rb_prefetch_semaphore,
-            rb_prefetch_kbytes_semaphore,
+            pipeline_budget,
             rb_prefetch_current_all_spawned,
         } = self;
 
@@ -125,46 +118,26 @@ impl RecordBatchDataFetcher {
                 RbFetch::All
             };
 
-            let block_index = record_batch_idx;
-            let file_metadata = file_metadata.clone();
-            let current_byte_source = byte_source.clone();
+            let block = file_metadata.blocks.get(record_batch_idx).unwrap();
+            let fetch_length = match rb_fetch {
+                RbFetch::None => 0,
+                RbFetch::Metadata => block.meta_data_length as usize,
+                RbFetch::All => block.meta_data_length as usize + block.body_length as usize,
+            };
+            let range = block.offset as usize
+                ..usize::checked_add(block.offset as _, fetch_length)
+                    .ok_or_else(|| polars_err!(ComputeError: "IPC block range overflows usize"))?;
 
-            // Acquire permits
-            // kdn TODO REVIEW: IPC
-            let fetch_permit = if rb_fetch != RbFetch::None {
-                Some({
-                    let block = file_metadata.blocks.get(block_index).unwrap();
-                    let n_bytes = block.meta_data_length as usize + block.body_length as usize;
-                    let n_kbytes = n_bytes.div_ceil(1 << 10).try_into().unwrap_or(u32::MAX);
-                    let kbytes_permit = rb_prefetch_kbytes_semaphore
-                        .clone()
-                        .acquire_many_owned(n_kbytes)
-                        .await
-                        .unwrap();
-
-                    let count_permit = rb_prefetch_semaphore.clone().acquire_owned().await.unwrap();
-
-                    let permit = PipelinePermit {
-                        _count: count_permit,
-                        _kbytes: kbytes_permit,
-                    };
-                    permit
-                })
-            } else {
-                None
+            let fetch_permit = match rb_fetch {
+                RbFetch::All | RbFetch::Metadata => {
+                    Some(pipeline_budget.acquire(fetch_length).await)
+                },
+                RbFetch::None => None,
             };
 
+            let current_byte_source = byte_source.clone();
+
             let fetch_handle = ASYNC.spawn(async move {
-                let block = file_metadata.blocks.get(record_batch_idx).unwrap();
-                let fetch_length = match rb_fetch {
-                    RbFetch::None => 0,
-                    RbFetch::Metadata => block.meta_data_length as usize,
-                    RbFetch::All => block.meta_data_length as usize + block.body_length as usize,
-                };
-
-                let range = block.offset as usize
-                    ..usize::checked_add(block.offset as _, fetch_length).unwrap();
-
                 let fetched_bytes = if range.is_empty() {
                     Buffer::new()
                 } else if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {
@@ -185,7 +158,7 @@ impl RecordBatchDataFetcher {
                     current_byte_source.get_range(range).await?
                 };
 
-                // We extract the length (i.e., nr of rows) at the earliest possible opportunity.
+                // Extract the length (i.e., nr of rows) at the earliest possible opportunity.
                 let num_rows = if let Some(num_rows_this_rb) = num_rows_this_rb {
                     num_rows_this_rb
                 } else {
@@ -225,9 +198,9 @@ impl RecordBatchDataFetcher {
 
             eprintln!(
                 "[IpcFileReader]: RecordBatchDataFetcher: \
-                rb_total_count: {rb_total_count}, \
-                rb_full_fetch_count: {rb_full_fetch_count}, \
-                rb_metadata_fetch_count: {rb_metadata_fetch_count}"
+                    rb_total_count: {rb_total_count}, \
+                    rb_full_fetch_count: {rb_full_fetch_count}, \
+                    rb_metadata_fetch_count: {rb_metadata_fetch_count}"
             )
         }
 

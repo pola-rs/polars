@@ -207,8 +207,7 @@ impl InFlightBudget {
         };
 
         let request_budget = self.request_budget.budget;
-        let requests_in_use =
-            request_budget as usize - self.request_budget.semaphore.available_permits();
+        let requests_in_use = request_budget - self.request_budget.semaphore.available_permits();
         let requests_saturation = if request_budget > 0 {
             requests_in_use as f64 / request_budget as f64
         } else {

@@ -3691,7 +3691,6 @@ dependencies = [
  "async-trait",
  "bitflags",
  "bytes",
- "chrono",
  "chrono-tz",
  "crossbeam-channel",
  "crossbeam-queue",

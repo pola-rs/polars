@@ -216,7 +216,7 @@ impl FileReader for CsvFileReader {
         // transparent decompression), into one unified reader source.
         let reader_source = if use_async_prefetch {
             // Prepare parameters for Prefetch task.
-            //kdn TODO REFACTOR: use get_streaming_chunk_size(), 
+            //kdn TODO REFACTOR: use get_streaming_chunk_size(),
             const DEFAULT_CSV_CHUNK_SIZE: usize = 32 * 1024 * 1024;
             let memory_prefetch_func = get_memory_prefetch_func(verbose);
             let chunk_size = std::env::var("POLARS_CSV_CHUNK_SIZE")
