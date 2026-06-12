@@ -1422,8 +1422,6 @@ def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
                 1,  # select(a + 1)
                 1,  # select(a + 1)
                 2,  # concat(lf2, lf2)
-                1,  # select(a + 1)
-                1,  # select(a + 1)
             ],
         ),
     ],
@@ -1519,7 +1517,7 @@ def test_cse_existing_predicate_at_scan_27748() -> None:
 
     plan = q.explain()
 
-    assert plan.count('SELECTION: col("y0")') == 2
+    assert plan.count('SELECTION: col("y0")') == 1
     assert plan.count('SELECTION: col("y1")') == 1
     assert plan.count("CACHE[") == 2
 
