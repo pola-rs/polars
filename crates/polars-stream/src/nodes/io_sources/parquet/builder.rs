@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
+use polars_io::cloud::CloudOptions;
 use polars_io::cloud::concurrency::get_request_budget;
-use polars_io::cloud::{CloudOptions, FetchConfig};
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::pl_async::{self};
 use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;

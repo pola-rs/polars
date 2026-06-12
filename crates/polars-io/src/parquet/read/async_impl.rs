@@ -10,9 +10,9 @@ use polars_parquet::parquet::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAG
 use polars_parquet::write::FileMetadata;
 use polars_utils::pl_path::PlRefPath;
 
+use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
 use crate::cloud::{
-    CloudLocation, CloudOptions, ConcurrencyStrategy, FetchConfig, PolarsObjectStore,
-    build_object_store, object_path_from_str,
+    CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
 use crate::parquet::metadata::FileMetadataRef;
 

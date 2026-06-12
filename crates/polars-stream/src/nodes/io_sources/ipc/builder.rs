@@ -6,9 +6,8 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "ipc")]
-use polars_io::cloud::FetchConfig;
-#[cfg(feature = "ipc")]
 use polars_io::cloud::concurrency::get_request_budget;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "ipc")]
 use polars_io::pl_async;

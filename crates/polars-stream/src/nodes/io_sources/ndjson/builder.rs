@@ -4,8 +4,7 @@ use std::sync::Arc;
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
 use polars_io::cloud::CloudOptions;
-#[cfg(feature = "json")]
-use polars_io::cloud::FetchConfig;
+use polars_io::cloud::concurrency_config::FetchConfig;
 #[cfg(feature = "json")]
 use polars_io::metrics::IOMetrics;
 use polars_plan::dsl::{NDJsonReadOptions, ScanSource};

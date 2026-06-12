@@ -13,9 +13,9 @@ use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::RowIndex;
+use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
 use crate::cloud::{
-    CloudLocation, CloudOptions, ConcurrencyStrategy, FetchConfig, PolarsObjectStore,
-    build_object_store, object_path_from_str,
+    CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
 use crate::file_cache::{FileCacheEntry, init_entries_from_uri_list};
 use crate::predicates::PhysicalIoExpr;

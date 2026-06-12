@@ -3,7 +3,8 @@ use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::config;
-use polars_io::cloud::{CloudOptions, FetchConfig};
+use polars_io::cloud::CloudOptions;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::dsl::ScanSource;

@@ -5,6 +5,7 @@ use polars_utils::pl_path::PlRefPath;
 use super::metadata::FileVersion;
 use super::utils::last_modified_u64;
 use crate::cloud::PolarsObjectStore;
+use crate::cloud::concurrency_config::ConcurrencyStrategy;
 
 pub trait FileFetcher: Send + Sync {
     fn get_uri(&self) -> &PlRefPath;
@@ -95,7 +96,7 @@ impl FileFetcher for CloudFileFetcher {
     fn fetch_metadata(&self) -> PolarsResult<RemoteMetadata> {
         let metadata = ASYNC.block_in_place_on(
             self.object_store
-                .head(&self.cloud_path, crate::cloud::ConcurrencyStrategy::Legacy),
+                .head(&self.cloud_path, ConcurrencyStrategy::Legacy),
         )?;
 
         Ok(RemoteMetadata {

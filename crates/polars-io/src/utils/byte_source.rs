@@ -9,11 +9,11 @@ use polars_utils::_limit_path_len_io_err;
 use polars_utils::mmap::MMapSemaphore;
 use polars_utils::pl_path::PlRefPath;
 
+use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
 use crate::cloud::options::CloudOptions;
 #[cfg(feature = "cloud")]
 use crate::cloud::{
-    CloudLocation, ConcurrencyStrategy, FetchConfig, ObjectStorePath, PolarsObjectStore,
-    build_object_store, object_path_from_str,
+    CloudLocation, ObjectStorePath, PolarsObjectStore, build_object_store, object_path_from_str,
 };
 use crate::metrics::IOMetrics;
 
@@ -266,7 +266,6 @@ impl DynByteSourceBuilder {
     pub fn chunk_size(&self) -> Option<usize> {
         match self {
             Self::Mmap => None,
-            #[cfg(feature = "cloud")]
             Self::ObjectStore(fetch_config) => Some(fetch_config.chunk_size),
         }
     }
@@ -274,7 +273,6 @@ impl DynByteSourceBuilder {
     pub fn concurrency_strategy(&self) -> Option<&ConcurrencyStrategy> {
         match self {
             Self::Mmap => None,
-            #[cfg(feature = "cloud")]
             Self::ObjectStore(fetch_config) => Some(&fetch_config.strategy),
         }
     }
