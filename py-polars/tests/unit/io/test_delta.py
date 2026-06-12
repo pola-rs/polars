@@ -21,6 +21,7 @@ from polars.io.cloud.credential_provider._builder import (
 )
 from polars.io.delta._dataset import DeltaDataset
 from polars.io.delta._utils import _extract_table_statistics_from_delta_add_actions
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_frame_not_equal
 
 if TYPE_CHECKING:
@@ -981,9 +982,15 @@ def _df_many_types() -> pl.DataFrame:
         pl.col.decimal <= pl.lit(2.0).cast(pl.Decimal(10, 2)),
         pl.col.decimal < pl.lit(3.0).cast(pl.Decimal(10, 2)),
         pl.col.decimal.is_null(),
-        # Struct # see github issue #26239
+        # Struct whole-column null-count pushdown
+        pl.col.struct.is_null(),
+        # Struct per-field pushdown
+        pl.col.struct.struct.field("x") == 2,
+        pl.col.struct.struct.field("x") < 3,
+        pl.col.struct.struct.field("x").is_null(),
+        # whole-struct `==` is excluded: comparing structs needs ordering, which is
+        # unimplemented and panics (a kernel gap, not a pushdown one). e.g.:
         # pl.col.struct == {"x": 2, "y": 20},
-        # pl.col.struct.is_null(),
         # Date & datetime
         pl.col.date == pl.date(2020, 1, 1),
         pl.col.datetime == pl.datetime(2020, 1, 1),
@@ -1036,34 +1043,34 @@ def test_scan_delta_extract_table_statistics_df(tmp_path: Path) -> None:
         pl.DataFrame(
             [
                 pl.Series('len', [2, 2, 2], dtype=pl.Int64),
-                pl.Series('p_nc', [None, None, None], dtype=pl.UInt32),
+                pl.Series('p_nc', [None, None, None], dtype=get_index_type()),
                 pl.Series('p_min', [None, None, None], dtype=pl.Int64),
                 pl.Series('p_max', [None, None, None], dtype=pl.Int64),
-                pl.Series('a_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('a_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('a_min', [1, 5, 3], dtype=pl.Int64),
                 pl.Series('a_max', [2, 5, 4], dtype=pl.Int64),
-                pl.Series('bool_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('bool_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('bool_min', [False, True, True], dtype=pl.Boolean),
                 pl.Series('bool_max', [False, True, True], dtype=pl.Boolean),
-                pl.Series('int_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('int_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('int_min', [1, 5, 3], dtype=pl.Int64),
                 pl.Series('int_max', [2, 5, 4], dtype=pl.Int64),
-                pl.Series('float_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('float_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('float_min', [1.0, 5.0, 3.0], dtype=pl.Float64),
                 pl.Series('float_max', [2.0, 5.0, 4.0], dtype=pl.Float64),
-                pl.Series('string_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('string_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('string_min', ['a', 'ccc', 'c'], dtype=pl.String),
                 pl.Series('string_max', ['b', 'ccc', 'cc'], dtype=pl.String),
-                pl.Series('struct_nc', [{'x': 0, 'y': 0}, {'x': 1, 'y': 1}, {'x': 0, 'y': 0}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
+                pl.Series('struct_nc', [{'x': 0, 'y': 0}, {'x': 1, 'y': 1}, {'x': 0, 'y': 0}], dtype=pl.Struct({'x': get_index_type(), 'y': get_index_type()})),
                 pl.Series('struct_min', [{'x': 1, 'y': 10}, {'x': 5, 'y': 50}, {'x': 3, 'y': 30}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
                 pl.Series('struct_max', [{'x': 2, 'y': 20}, {'x': 5, 'y': 50}, {'x': 4, 'y': 40}], dtype=pl.Struct({'x': pl.Int64, 'y': pl.Int64})),
-                pl.Series('decimal_nc', [0, 1, 0], dtype=pl.Int64),
+                pl.Series('decimal_nc', [0, 1, 0], dtype=get_index_type()),
                 pl.Series('decimal_min', [Decimal('1.00'), Decimal('5.00'), Decimal('3.00')], dtype=pl.Decimal(precision=10, scale=2)),
                 pl.Series('decimal_max', [Decimal('2.00'), Decimal('5.00'), Decimal('4.00')], dtype=pl.Decimal(precision=10, scale=2)),
-                pl.Series('date_nc', [0, 0, 0], dtype=pl.Int64),
+                pl.Series('date_nc', [0, 0, 0], dtype=get_index_type()),
                 pl.Series('date_min', [datetime.date(2020, 1, 1), datetime.date(2020, 1, 5), datetime.date(2020, 1, 3)], dtype=pl.Date),
                 pl.Series('date_max', [datetime.date(2020, 1, 2), datetime.date(2020, 1, 6), datetime.date(2020, 1, 4)], dtype=pl.Date),
-                pl.Series('datetime_nc', [0, 0, 0], dtype=pl.Int64),
+                pl.Series('datetime_nc', [0, 0, 0], dtype=get_index_type()),
                 pl.Series('datetime_min', [datetime.datetime(2020, 1, 1, 0, 0), datetime.datetime(2020, 1, 5, 0, 0), datetime.datetime(2020, 1, 3, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
                 pl.Series('datetime_max', [datetime.datetime(2020, 1, 2, 0, 0), datetime.datetime(2020, 1, 6, 0, 0), datetime.datetime(2020, 1, 4, 0, 0)], dtype=pl.Datetime(time_unit='us', time_zone=None)),
             ]
@@ -1396,3 +1403,56 @@ def test_scan_delta_literal_filter_empty_df_27242(tmp_path: Path) -> None:
 
     out = pl.scan_delta(tmp_path).filter(pl.lit(True)).collect()
     assert_frame_equal(df, out)
+
+
+def test_scan_delta_predicate_pushdown_struct_column_27857(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "error_flags": pl.Series(
+                [
+                    {"length_issue": True, "incomplete": True},
+                    {"length_issue": False, "incomplete": False},
+                ]
+            )
+        }
+    )
+    df.write_delta(tmp_path)
+
+    predicate = pl.any_horizontal(pl.col("error_flags").struct.unnest())
+    out = pl.scan_delta(tmp_path).filter(predicate).collect()
+
+    expected = pl.DataFrame(
+        {"error_flags": pl.Series([{"length_issue": True, "incomplete": True}])}
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.write_disk
+def test_scan_delta_predicate_pushdown_struct_is_not_null(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # A struct row with a null *field* is still a non-null *struct*, so `is_not_null()`
+    # must keep it. The per-field null count must not be read as the struct's row-level
+    # null count, or it would wrongly skip the first file (`a` all-null, structs valid).
+    st = pl.Struct({"a": pl.Int64, "b": pl.Int64})
+    df = pl.DataFrame(
+        {
+            "s": pl.Series(
+                [{"a": None, "b": 1}, {"a": None, "b": 2}, {"a": 5, "b": 5}], dtype=st
+            )
+        }
+    )
+    df[:2].write_delta(tmp_path)
+    df[2:].write_delta(tmp_path, mode="append")
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_delta(tmp_path).filter(pl.col("s").is_not_null()).collect()
+    err = capfd.readouterr().err
+
+    # Every struct is non-null, so all rows are kept; the first file (`a` all-null)
+    # must not be pruned.
+    assert_frame_equal(out, df, check_row_order=False)
+    assert "skipping 1 / 2 files" not in err

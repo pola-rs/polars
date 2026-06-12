@@ -3157,16 +3157,22 @@ def test_join_filter_pushdown_iejoin() -> None:
         'RIGHT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("b"), col("a")]',
     }
-    assert extract[3] in {
-        'LEFT PLAN ON: [col("a"), col("b")]',
-        'LEFT PLAN ON: [col("b"), col("a")]',
-    }
-    assert extract[4] == 'FILTER [(col("a")) > (0)]'
-    assert extract[5] in {
-        'RIGHT PLAN ON: [col("a"), col("b")]',
-        'RIGHT PLAN ON: [col("b"), col("a")]',
-    }
-    assert len(extract) == 6
+
+    cse_applied = plan.count("CACHE") == 2
+
+    if cse_applied:
+        assert len(extract) == 3
+    else:
+        assert extract[3] in {
+            'LEFT PLAN ON: [col("a"), col("b")]',
+            'LEFT PLAN ON: [col("b"), col("a")]',
+        }
+        assert extract[4] == 'FILTER [(col("a")) > (0)]'
+        assert extract[5] in {
+            'RIGHT PLAN ON: [col("a"), col("b")]',
+            'RIGHT PLAN ON: [col("b"), col("a")]',
+        }
+        assert len(extract) == 6
 
     assert_frame_equal(q.collect().sort(pl.all()), expect)
     assert_frame_equal(
