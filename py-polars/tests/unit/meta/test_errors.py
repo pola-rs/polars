@@ -785,3 +785,23 @@ def test_column_not_found_suggests_similar() -> None:
     df = pl.DataFrame({"alpha": [1, 2], "beta": [3, 4]})
     with pytest.raises(ColumnNotFoundError, match=r"Did you mean \"alpha\""):
         df.select("alphe")
+
+
+def test_str_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'split'"):
+        pl.col("a").str.spliit("x")  # type: ignore[attr-defined]
+
+
+def test_dt_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
+        pl.col("a").dt.houur()  # type: ignore[attr-defined]
+
+
+def test_list_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'shift'"):
+        pl.col("a").list.shiift()  # type: ignore[attr-defined]
+
+
+def test_struct_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'rename_fields'"):
+        pl.col("a").struct.renam_fields([])  # type: ignore[attr-defined]
