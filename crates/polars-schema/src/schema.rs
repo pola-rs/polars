@@ -378,24 +378,29 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
     pub fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         let Some(i) = self.fields.get_index_of(name) else {
-            let available: Vec<_> = self.iter_names().collect();
-            let suggestion = did_you_mean(name, available.iter().map(|s| s.as_str()));
-            if let Some(s) = suggestion {
-                polars_bail!(
-                    ColumnNotFound:
-                    "unable to find column {:?}; valid columns: {:?}\n\nDid you mean {:?}?",
-                    name, available, s,
-                )
-            } else {
-                polars_bail!(
-                    ColumnNotFound:
-                    "unable to find column {:?}; valid columns: {:?}",
-                    name, available,
-                )
-            }
+            return Err(self.column_not_found_err(name));
         };
 
         Ok(i)
+    }
+
+    /// Build a [`PolarsError::ColumnNotFound`] for `name`, listing available columns
+    /// and a "did you mean" suggestion when one is close enough.
+    pub fn column_not_found_err(&self, name: &str) -> PolarsError {
+        let suggestion = did_you_mean(name, self.iter_names().map(|s| s.as_str()));
+        if let Some(s) = suggestion {
+            polars_err!(
+                ColumnNotFound:
+                "unable to find column {:?}; valid columns: {:?}\n\nDid you mean {:?}?",
+                name, self.iter_names().collect::<Vec<_>>(), s,
+            )
+        } else {
+            polars_err!(
+                ColumnNotFound:
+                "unable to find column {:?}; valid columns: {:?}",
+                name, self.iter_names().collect::<Vec<_>>(),
+            )
+        }
     }
 
     /// Compare the fields between two schema returning the additional columns that each schema has.
