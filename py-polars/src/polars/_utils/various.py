@@ -740,7 +740,10 @@ def require_same_type(current: Any, other: Any) -> None:
 
 
 class _NamespaceSuggestMixin:
-    """Mixin that adds 'did you mean' suggestions to AttributeError on namespace typos."""
+    """
+    Mixin that adds 'did you mean' suggestions to AttributeError
+    on namespace typos.
+    """
 
     def __getattr__(self, name: str) -> Any:
         import difflib
