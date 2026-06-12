@@ -140,6 +140,17 @@ fn disambiguate_projection_cols(
     Ok(result)
 }
 
+/// What to do with the rows whose WHERE predicate evaluates to true.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FilterMode {
+    /// `SELECT ... WHERE`: keep exactly the rows where the predicate is true
+    /// (rows where it is false or NULL are dropped).
+    KeepTrue,
+    /// `DELETE ... WHERE`: drop exactly the rows where the predicate is true
+    /// (rows where it is false or NULL are kept).
+    RemoveTrue,
+}
+
 /// The SQLContext is the main entry point for executing SQL queries.
 #[derive(Clone)]
 pub struct SQLContext {
@@ -280,7 +291,7 @@ impl SQLContext {
 }
 
 impl SQLContext {
-    fn isolated(&self) -> Self {
+    pub(crate) fn isolated(&self) -> Self {
         Self {
             // Deep clone to isolate
             table_map: Arc::new(RwLock::new(self.table_map.read().unwrap().clone())),
@@ -791,7 +802,7 @@ impl SQLContext {
                 Ok(lf.clear())
             } else {
                 // apply constraint as inverted filter (drops rows matching the selection)
-                Ok(self.process_where(lf.clone(), selection, true, None)?)
+                Ok(self.process_where(lf.clone(), selection, FilterMode::RemoveTrue, None)?)
             }
         } else {
             polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
@@ -872,7 +883,10 @@ impl SQLContext {
     }
 
     /// execute the 'FROM' part of the query
-    fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
+    pub(crate) fn execute_from_statement(
+        &mut self,
+        tbl_expr: &TableWithJoins,
+    ) -> PolarsResult<LazyFrame> {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
         if !tbl_expr.joins.is_empty() {
             for join in &tbl_expr.joins {
@@ -1144,7 +1158,12 @@ impl SQLContext {
 
         // Apply `WHERE` constraint
         let mut schema = self.get_frame_schema(&mut lf)?;
-        lf = self.process_where(lf, &select_stmt.selection, false, Some(schema.clone()))?;
+        lf = self.process_where(
+            lf,
+            &select_stmt.selection,
+            FilterMode::KeepTrue,
+            Some(schema.clone()),
+        )?;
 
         // Determine projections
         let mut select_modifiers = SelectModifiers {
@@ -1549,7 +1568,7 @@ impl SQLContext {
         &mut self,
         mut lf: LazyFrame,
         expr: &Option<SQLExpr>,
-        invert_filter: bool,
+        filter_mode: FilterMode,
         schema: Option<SchemaRef>,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
@@ -1575,22 +1594,36 @@ impl SQLContext {
                 },
                 _ => (false, false),
             };
-            if (all_true && !invert_filter) || (all_false && invert_filter) {
+            let removing = filter_mode == FilterMode::RemoveTrue;
+            if (all_true && !removing) || (all_false && removing) {
                 return Ok(lf);
-            } else if (all_false && !invert_filter) || (all_true && invert_filter) {
+            } else if (all_false && !removing) || (all_true && removing) {
                 return Ok(lf.clear());
             }
 
-            // ...otherwise parse and apply the filter as normal
-            let mut filter_expression = parse_sql_expr(expr, self, Some(schema).as_deref())?;
+            // Lower eligible `[NOT] EXISTS` / `[NOT] IN (subquery)` conjuncts
+            // to semi / anti joins; whatever remains goes through the ordinary
+            // filter path below.
+            let residual_exprs: Vec<&SQLExpr>;
+            (lf, residual_exprs) =
+                self.rewrite_subquery_conjuncts(lf, expr, filter_mode, &schema)?;
+
+            let Some(parsed_residual) = residual_exprs
+                .iter()
+                .map(|e| parse_sql_expr(e, self, Some(&*schema)))
+                .reduce(|a, b| Ok(a?.and(b?)))
+            else {
+                // Every conjunct was rewritten to a join; nothing left to filter.
+                return Ok(lf);
+            };
+            let mut filter_expression = parsed_residual?;
             if filter_expression.clone().meta().has_multiple_outputs() {
                 filter_expression = all_horizontal([filter_expression])?;
             }
             lf = self.process_subqueries(lf, vec![&mut filter_expression])?;
-            lf = if invert_filter {
-                lf.remove(filter_expression)
-            } else {
-                lf.filter(filter_expression)
+            lf = match filter_mode {
+                FilterMode::KeepTrue => lf.filter(filter_expression),
+                FilterMode::RemoveTrue => lf.remove(filter_expression),
             };
         }
         Ok(lf)
@@ -2484,7 +2517,7 @@ fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_
 }
 
 /// Extract the table name (or alias) from a TableFactor.
-fn get_table_name(factor: &TableFactor) -> Option<String> {
+pub(crate) fn get_table_name(factor: &TableFactor) -> Option<String> {
     match factor {
         TableFactor::Table { name, alias, .. } => {
             alias.as_ref().map(|a| a.name.value.clone()).or_else(|| {
