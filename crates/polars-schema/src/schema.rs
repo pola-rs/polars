@@ -4,6 +4,7 @@ use core::hash::{Hash, Hasher};
 use indexmap::map::MutableKeys;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
+use polars_utils::levenshtein::did_you_mean;
 use polars_utils::pl_str::PlSmallStr;
 
 #[derive(Debug, Clone)]
@@ -377,11 +378,21 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
     pub fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         let Some(i) = self.fields.get_index_of(name) else {
-            polars_bail!(
-                ColumnNotFound:
-                "unable to find column {:?}; valid columns: {:?}",
-                name, self.iter_names().collect::<Vec<_>>(),
-            )
+            let available: Vec<_> = self.iter_names().collect();
+            let suggestion = did_you_mean(name, available.iter().map(|s| s.as_str()));
+            if let Some(s) = suggestion {
+                polars_bail!(
+                    ColumnNotFound:
+                    "unable to find column {:?}; valid columns: {:?}\n\nDid you mean {:?}?",
+                    name, available, s,
+                )
+            } else {
+                polars_bail!(
+                    ColumnNotFound:
+                    "unable to find column {:?}; valid columns: {:?}",
+                    name, available,
+                )
+            }
         };
 
         Ok(i)

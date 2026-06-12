@@ -773,3 +773,15 @@ def test_raies_on_mismatch_column_length_binary_expr() -> None:
                 pl.col("c").head(pl.col("c").first()),
             )
         )
+
+
+def test_column_not_found_lists_available() -> None:
+    df = pl.DataFrame({"foo": [1, 2], "bar": [3, 4], "baz": [5, 6]})
+    with pytest.raises(ColumnNotFoundError, match=r"(?s).*foo.*bar.*baz.*"):
+        df.select("missing")
+
+
+def test_column_not_found_suggests_similar() -> None:
+    df = pl.DataFrame({"alpha": [1, 2], "beta": [3, 4]})
+    with pytest.raises(ColumnNotFoundError, match=r"Did you mean \"alpha\""):
+        df.select("alphe")
