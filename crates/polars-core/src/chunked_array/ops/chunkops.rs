@@ -21,7 +21,7 @@ pub(crate) fn split_at(
     let (raw_offset, _) = slice_offsets(offset, 0, own_length);
 
     let mut remaining_offset = raw_offset;
-    let mut iter = chunks.iter();
+    let mut iter = chunks.iter().filter(|c| !c.is_empty());
 
     for chunk in &mut iter {
         let chunk_len = chunk.len();
@@ -171,9 +171,19 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 if self.chunks.len() == 1 {
                     Cow::Borrowed(self)
                 } else {
-                    let chunks = vec![concatenate_unchecked(&self.chunks).unwrap()];
+                    // We may have a single chunk of exactly self.len() surrounded by 0-length chunks.
+                    let rechunked = if let Some(chunk) = self
+                        .chunks()
+                        .iter()
+                        .find(|chunk| !chunk.is_empty() || self.is_empty())
+                        && chunk.len() == self.len()
+                    {
+                        chunk.clone()
+                    } else {
+                        concatenate_unchecked(self.chunks()).unwrap()
+                    };
 
-                    let mut ca = unsafe { self.copy_with_chunks(chunks) };
+                    let mut ca = unsafe { self.copy_with_chunks(vec![rechunked]) };
                     use StatisticsFlags as F;
                     ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
                     Cow::Owned(ca)
@@ -184,15 +194,27 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Rechunks this ChunkedArray in-place.
     pub fn rechunk_mut(&mut self) {
-        if self.chunks.len() > 1 {
-            let rechunked = concatenate_unchecked(&self.chunks).unwrap();
-            if self.chunks.capacity() <= 8 {
-                // Reuse chunk allocation if not excessive.
-                self.chunks.clear();
-                self.chunks.push(rechunked);
-            } else {
-                self.chunks = vec![rechunked];
-            }
+        // We may have a single chunk of exactly self.len() surrounded by 0-length chunks.
+        let rechunked = if let Some(i) = self
+            .chunks()
+            .iter()
+            .position(|chunk| !chunk.is_empty() || self.is_empty())
+            && self.chunks()[i].len() == self.len()
+        {
+            self.chunks.truncate(i + 1);
+            let chunk = self.chunks.pop().unwrap();
+            self.chunks.clear();
+            chunk
+        } else {
+            concatenate_unchecked(&self.chunks).unwrap()
+        };
+
+        // Reuse chunk allocation if not excessive.
+        if self.chunks.capacity() <= 8 {
+            self.chunks.clear();
+            self.chunks.push(rechunked);
+        } else {
+            self.chunks = vec![rechunked];
         }
     }
 
