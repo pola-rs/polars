@@ -323,8 +323,8 @@ def _subquery_ctx() -> pl.SQLContext:
             "SEMI JOIN",
             [2, 3, 5],
         ),
-        # A subquery conjunct must rewrite even when ANDed with ordinary
-        # predicates (which must stay behind as a filter).
+        # A subquery conjunct must rewrite even when AND-combined with
+        # ordinary predicates (which must stay behind as a filter).
         (
             "SELECT c_custkey FROM customer WHERE c_custkey > 1 AND NOT EXISTS"
             " (SELECT 1 FROM orders WHERE o_custkey = c_custkey)",
