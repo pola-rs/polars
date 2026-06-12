@@ -805,3 +805,12 @@ def test_list_namespace_typo_suggests() -> None:
 def test_struct_namespace_typo_suggests() -> None:
     with pytest.raises(AttributeError, match="Did you mean: 'rename_fields'"):
         pl.col("a").struct.renam_fields([])  # type: ignore[attr-defined]
+
+
+def test_dtype_mismatch_names_column_and_dtypes() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"arithmetic on dtypes i64 and str is not allowed \(lhs: column 'a', rhs: column 'b'\)",
+    ):
+        df.select(pl.col("a") + pl.col("b"))
