@@ -602,12 +602,12 @@ impl Series {
         }
     }
 
-    /// Compute the sum of all values in this Series.
-    /// Returns `Some(0)` if the array is empty, and `None` if the array only
-    /// contains null values.
+    /// Get the sum of the Series as a new Series of length 1.
+    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum<T>(&self) -> PolarsResult<T>
     where
         T: NumCast + IsFloat,
@@ -810,12 +810,28 @@ impl Series {
     /// Get the sum of the Series as a new Series of length 1.
     /// Returns a Series with a single zeroed entry if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
         use DataType::*;
         match self.dtype() {
-            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
+            Int8 => Ok(Scalar::new(
+                Int64,
+                AnyValue::Int64(sum_upcast(self.i8().unwrap())),
+            )),
+            UInt8 => Ok(Scalar::new(
+                Int64,
+                AnyValue::Int64(sum_upcast(self.u8().unwrap())),
+            )),
+            Int16 => Ok(Scalar::new(
+                Int64,
+                AnyValue::Int64(sum_upcast(self.i16().unwrap())),
+            )),
+            UInt16 => Ok(Scalar::new(
+                Int64,
+                AnyValue::Int64(sum_upcast(self.u16().unwrap())),
+            )),
             _ => self.0.sum_reduce(),
         }
     }

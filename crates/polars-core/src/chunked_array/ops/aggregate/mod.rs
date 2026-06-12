@@ -7,7 +7,7 @@ use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
-use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
+use polars_compute::sum::{WrappingSum, wrapping_sum_arr, wrapping_sum_arr_upcast};
 use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 pub use quantile::*;
@@ -74,6 +74,16 @@ where
     } else {
         wrapping_sum_arr(array)
     }
+}
+
+pub(crate) fn sum_upcast<T>(ca: &ChunkedArray<T>) -> i64
+where
+    T: PolarsNumericType,
+    T::Native: Into<i64>,
+{
+    ca.downcast_iter()
+        .map(wrapping_sum_arr_upcast)
+        .fold(0i64, |a, b| a.wrapping_add(b))
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>

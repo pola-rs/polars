@@ -62,6 +62,21 @@ fn wrapping_sum_with_mask_scalar<T: Zero + WrappingAdd + Copy>(vals: &[T], mask:
         .fold(T::zero(), |a, b| a.wrapping_add(&b))
 }
 
+fn wrapping_sum_with_mask_scalar_upcast<T, S>(vals: &[T], mask: &BitMask) -> S
+where
+    T: NativeType + Zero + Into<S>,
+    S: Zero + WrappingAdd + Copy,
+{
+    assert!(vals.len() == mask.len());
+    vals.iter()
+        .enumerate()
+        .map(|(i, x)| {
+            // No filter but rather select of 0 for cmov opt.
+            if mask.get(i) { *x } else { T::zero() }
+        })
+        .fold(S::zero(), |a, b| a.wrapping_add(&b.into()))
+}
+
 #[cfg(not(feature = "simd"))]
 impl<T> WrappingSum for T
 where
@@ -167,5 +182,20 @@ where
         WrappingSum::wrapping_sum_with_validity(arr.values(), &BitMask::from_bitmap(mask))
     } else {
         WrappingSum::wrapping_sum(arr.values())
+    }
+}
+
+pub fn wrapping_sum_arr_upcast<T, S>(arr: &PrimitiveArray<T>) -> S
+where
+    T: NativeType + Zero + Into<S>,
+    S: Zero + WrappingAdd + Copy,
+{
+    let validity = arr.validity().filter(|_| arr.null_count() > 0);
+    if let Some(bitmap) = validity {
+        wrapping_sum_with_mask_scalar_upcast(arr.values(), &BitMask::from_bitmap(bitmap))
+    } else {
+        arr.values()
+            .iter()
+            .fold(S::zero(), |a, b| a.wrapping_add(&(*b).into()))
     }
 }
