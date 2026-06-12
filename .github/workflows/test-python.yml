@@ -102,7 +102,7 @@ jobs:
         if: matrix.python-version == '3.14t'
         run: |
           pip install uv
-          uv pip install maturin
+          uv pip install maturin pytest
 
       - name: Install Python dependencies
         if: matrix.python-version != '3.14t'
@@ -166,6 +166,10 @@ jobs:
           pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_multiscan.py
           pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_scan_row_deletion.py
           pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/test_iceberg.py
+
+      - name: Run free-threaded Python smoke tests
+        if: github.ref_name != 'main' && matrix.python-version == '3.14t' && matrix.os == 'ubuntu-latest'
+        run: pytest tests/free_threading/test_free_threading.py
 
       - name: Check import without optional dependencies
         if: github.event_name == 'pull_request' && matrix.os == 'ubuntu-latest' && (matrix.python-version == '3.14' || matrix.python-version == '3.14t')
