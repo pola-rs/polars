@@ -11,9 +11,9 @@
 //! - Model: records IO observations and models the network (BW_max, TTFB_est, BDP)
 //! - Regime: state machine driving the admission (Init / RampUp / Stable / ProbeUp)
 //! - Admission: admission control, enforces byte-based + request-based budgets
-//!
-//! Loosely based on BBR: Congestion-Based Congestion Control
-//! see https://queue.acm.org/detail.cfm?id=3022184
+
+// Loosely based on BBR: Congestion-Based Congestion Control
+// see https://queue.acm.org/detail.cfm?id=3022184
 
 mod admission;
 mod model;
