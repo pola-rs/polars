@@ -287,7 +287,7 @@ def test_derived_table_alias_errors() -> None:
         )
 
 
-def _subquery_ctx() -> pl.SQLContext:
+def _subquery_ctx() -> pl.SQLContext[pl.LazyFrame]:
     # One shared fixture for all subquery-to-join tests. The data placement is
     # deliberate: NULL keys on both sides (the NULL-semantics rows) and the
     # same-named composite columns a/b in both tables (the correlation-
