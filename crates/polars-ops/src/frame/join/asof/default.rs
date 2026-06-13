@@ -135,6 +135,9 @@ where
         return IdxCa::full_null(PlSmallStr::EMPTY, left.len());
     }
 
+    debug_assert_eq!(left.null_count(), 0);
+    debug_assert_eq!(right.null_count(), 0);
+
     let n = left.len();
     let n_right = right.len() as IdxSize;
     let n_threads = RAYON.current_num_threads().max(1);
@@ -171,17 +174,18 @@ where
     let mut out = vec![IdxSize::default(); n];
     let mut mask = vec![0u8; n.div_ceil(8)];
 
-    // Process chunks in parallel writing directly to disjoint slices of
-    // the shared `out` and `mask` buffers. Chunks are 8-aligned and
-    // chunk_size is a multiple of 8, so the mask byte ranges are
-    // disjoint. We split the mutable references manually because rayon
-    // does not provide a way to express "disjoint mutable sub-slices
+    // Process chunks in parallel writing directly to disjoint ranges of
+    // the shared `out` and `mask` buffers. Chunks start at 8-aligned
+    // offsets and all non-final chunks end at 8-aligned offsets; the
+    // final chunk may end mid-byte, but no later chunk can write that
+    // byte. We split the mutable references manually because rayon does
+    // not provide a way to express "disjoint mutable sub-slices
     // across threads" through safe APIs.
     //
     // SAFETY: chunk `i` writes to out[chunk_start..chunk_end] and to
-    // mask[chunk_start/8 .. (chunk_end-1)/8 + 1]. These ranges are
-    // disjoint across chunks because chunks are 8-aligned and
-    // chunk_size is a multiple of 8.
+    // mask[chunk_start/8 .. (chunk_end-1)/8 + 1]. Non-final chunks
+    // start and end on byte boundaries. The final chunk may end in the
+    // middle of a byte, but no later chunk can write that byte.
     let out_ptr = out.as_mut_ptr() as usize;
     let mask_ptr = mask.as_mut_ptr() as usize;
     let left_ptr = left_slice.as_ptr() as usize;
@@ -254,6 +258,9 @@ where
         return IdxCa::full_null(PlSmallStr::EMPTY, left.len());
     }
 
+    debug_assert_eq!(left.null_count(), 0);
+    debug_assert_eq!(right.null_count(), 0);
+
     let n = left.len();
     let n_right = right.len() as IdxSize;
     let n_threads = RAYON.current_num_threads().max(1);
@@ -283,11 +290,10 @@ where
     let mut out = vec![IdxSize::default(); n];
     let mut mask = vec![0u8; n.div_ceil(8)];
 
-    // Same disjoint-write invariant as the no-filter kernel above: chunk `i`
-    // writes to out[chunk_start..chunk_end] and to
-    // mask[chunk_start/8 .. (chunk_end-1)/8 + 1]. These ranges are disjoint
-    // across chunks because chunk starts are 8-aligned and chunk_size is a
-    // multiple of 8.
+    // Same disjoint-write invariant as the no-filter kernel above: chunks
+    // start at 8-aligned offsets and all non-final chunks end at 8-aligned
+    // offsets. The final chunk may end mid-byte, but no later chunk can
+    // write that byte.
     let out_ptr = out.as_mut_ptr() as usize;
     let mask_ptr = mask.as_mut_ptr() as usize;
     let left_ptr = left_slice.as_ptr() as usize;
@@ -691,6 +697,48 @@ mod test {
                     &format!(
                         "nearest equal-distance tie allow_eq={allow_eq} tolerance={tolerance:?}"
                     ),
+                    &actual,
+                    &expected,
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_asof_parallel_nearest_chunk_seed_with_gap_right_values() {
+        let n = PARALLEL_ASOF_MIN_ROWS + 25;
+        let boundaries = parallel_chunk_starts(n);
+        assert!(!boundaries.is_empty());
+
+        let left_vals = (0..n).map(|i| i as i64 * 10).collect::<Vec<_>>();
+        let mut right_vals = Vec::with_capacity(n + boundaries.len() * 3 + 32);
+        for i in 0..(n + 32) {
+            let value = i as i64 * 10;
+            if boundaries.contains(&i) {
+                right_vals.push(value - 5);
+                right_vals.push(value);
+            }
+            right_vals.push(value);
+        }
+
+        for allow_eq in [false, true] {
+            for tolerance in [None, Some(5)] {
+                let actual = dispatch_numeric_asof_i64(
+                    &left_vals,
+                    &right_vals,
+                    AsofStrategy::Nearest,
+                    tolerance,
+                    allow_eq,
+                );
+                let expected = serial_numeric_asof_i64(
+                    &left_vals,
+                    &right_vals,
+                    AsofStrategy::Nearest,
+                    tolerance,
+                    allow_eq,
+                );
+                assert_idx_equal(
+                    &format!("nearest gap boundary allow_eq={allow_eq} tolerance={tolerance:?}"),
                     &actual,
                     &expected,
                 );
