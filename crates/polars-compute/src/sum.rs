@@ -191,8 +191,8 @@ where
     S: Zero + WrappingAdd + Copy,
 {
     let validity = arr.validity().filter(|_| arr.null_count() > 0);
-    if let Some(bitmap) = validity {
-        wrapping_sum_with_mask_scalar_upcast(arr.values(), &BitMask::from_bitmap(bitmap))
+    if let Some(mask) = validity {
+        wrapping_sum_with_mask_scalar_upcast(arr.values(), &BitMask::from_bitmap(mask))
     } else {
         arr.values()
             .iter()
