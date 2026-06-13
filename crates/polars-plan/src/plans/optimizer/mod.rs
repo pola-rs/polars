@@ -17,6 +17,8 @@ mod flatten_merge_sorted;
 mod flatten_union;
 #[cfg(feature = "fused")]
 mod fused;
+#[cfg(feature = "asof_join")]
+mod hoist_asof_join_exprs;
 mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
@@ -55,6 +57,8 @@ pub use stack_opt::{OptimizationRule, OptimizeExprContext, StackOptimizer};
 #[cfg(feature = "merge_sorted")]
 use self::flatten_merge_sorted::FlattenMergeSortedRule;
 use self::flatten_union::FlattenUnionRule;
+#[cfg(feature = "asof_join")]
+use self::hoist_asof_join_exprs::HoistAsOfJoinExpressions;
 pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 #[cfg(feature = "cse")]
@@ -212,6 +216,8 @@ pub fn optimize(
 
     if opt_flags.projection_pushdown() {
         projection_pushdown(root, ir_arena, expr_arena);
+        #[cfg(feature = "asof_join")]
+        rules.push(Box::new(HoistAsOfJoinExpressions));
     }
 
     if opt_flags.fast_projection() {
