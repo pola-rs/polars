@@ -16,7 +16,7 @@ use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 
 #[inline]
-fn ge_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
+pub(super) fn ge_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
     match l.tot_cmp(r) {
         Ordering::Equal => allow_eq,
         Ordering::Greater => true,
@@ -25,7 +25,7 @@ fn ge_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
 }
 
 #[inline]
-fn lt_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
+pub(super) fn lt_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
     match l.tot_cmp(r) {
         Ordering::Equal => allow_eq,
         Ordering::Less => true,
@@ -33,7 +33,7 @@ fn lt_allow_eq<T: TotalOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
     }
 }
 
-trait AsofJoinState<T> {
+trait AsofJoinState<T>: Copy {
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
         left_val: &T,
@@ -42,8 +42,22 @@ trait AsofJoinState<T> {
     ) -> Option<IdxSize>;
 
     fn new(allow_eq: bool) -> Self;
+
+    /// Seed the state so that the next call to [`Self::next`] behaves as
+    /// though every left row up to (but not including) the chunk start had
+    /// already been processed. `state_bound` is strategy-specific: backward
+    /// uses it as the current best bound, nearest as the strictly smaller
+    /// lower candidate, and forward ignores it.
+    fn reset_to(&mut self, _scan_offset: IdxSize, _state_bound: Option<IdxSize>) {}
+
+    /// Binary-search the right array to find the strategy-specific state
+    /// tuple for a chunk that starts at `left_val`. Used by the parallel
+    /// no-by kernel to seed per-chunk states without paying the linear scan
+    /// of the state machine.
+    fn initial_for_left(&self, right: &[T], left_val: &T) -> (IdxSize, Option<IdxSize>);
 }
 
+#[derive(Clone, Copy)]
 struct AsofJoinForwardState {
     scan_offset: IdxSize,
     allow_eq: bool,
@@ -55,6 +69,26 @@ impl<T: TotalOrd> AsofJoinState<T> for AsofJoinForwardState {
             scan_offset: Default::default(),
             allow_eq,
         }
+    }
+    #[inline]
+    fn reset_to(&mut self, scan_offset: IdxSize, _state_bound: Option<IdxSize>) {
+        self.scan_offset = scan_offset;
+    }
+    #[inline]
+    fn initial_for_left(&self, right: &[T], left_val: &T) -> (IdxSize, Option<IdxSize>) {
+        // Find first j such that right[j] >= left_val (allow_eq=true)
+        // or right[j] > left_val (allow_eq=false).
+        let mut lo: IdxSize = 0;
+        let mut hi = right.len() as IdxSize;
+        while lo < hi {
+            let mid = lo + ((hi - lo) >> 1);
+            if ge_allow_eq(&right[mid as usize], left_val, self.allow_eq) {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        (lo, if lo > 0 { Some(lo - 1) } else { None })
     }
     #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
@@ -75,6 +109,7 @@ impl<T: TotalOrd> AsofJoinState<T> for AsofJoinForwardState {
     }
 }
 
+#[derive(Clone, Copy)]
 struct AsofJoinBackwardState {
     // best_bound is the greatest right index <= left_val.
     best_bound: Option<IdxSize>,
@@ -89,6 +124,27 @@ impl<T: TotalOrd> AsofJoinState<T> for AsofJoinBackwardState {
             best_bound: Default::default(),
             allow_eq,
         }
+    }
+    #[inline]
+    fn reset_to(&mut self, scan_offset: IdxSize, state_bound: Option<IdxSize>) {
+        self.scan_offset = scan_offset;
+        self.best_bound = state_bound;
+    }
+    #[inline]
+    fn initial_for_left(&self, right: &[T], left_val: &T) -> (IdxSize, Option<IdxSize>) {
+        // Find first j such that right[j] > left_val (allow_eq=true)
+        // or right[j] >= left_val (allow_eq=false).
+        let mut lo: IdxSize = 0;
+        let mut hi = right.len() as IdxSize;
+        while lo < hi {
+            let mid = lo + ((hi - lo) >> 1);
+            if lt_allow_eq(&right[mid as usize], left_val, self.allow_eq) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        (lo, if lo > 0 { Some(lo - 1) } else { None })
     }
     #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
@@ -111,7 +167,7 @@ impl<T: TotalOrd> AsofJoinState<T> for AsofJoinBackwardState {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 struct AsofJoinNearestState {
     /// The last value that is strictly smaller than the current
     /// left value.
@@ -130,6 +186,33 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
             allow_eq,
             ..Default::default()
         }
+    }
+    #[inline]
+    fn initial_for_left(&self, right: &[T], left_val: &T) -> (IdxSize, Option<IdxSize>) {
+        // For the nearest strategy we need both `upper_candidate` (first
+        // right[j] > left_val when allow_eq, or >= left_val otherwise)
+        // and `strictly_smaller` (the last j with right[j] < left_val).
+        // Both are recovered with a single binary search.
+        let mut lo: IdxSize = 0;
+        let mut hi = right.len() as IdxSize;
+        while lo < hi {
+            let mid = lo + ((hi - lo) >> 1);
+            if lt_allow_eq(&right[mid as usize], left_val, self.allow_eq) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        let upper_candidate = lo;
+        let strictly_smaller = if lo > 0 { Some(lo - 1) } else { None };
+        // The state field layout is: strictly_smaller, upper_candidate.
+        // reset_to writes (scan_offset -> upper_candidate, state_bound -> strictly_smaller).
+        (upper_candidate, strictly_smaller)
+    }
+    #[inline]
+    fn reset_to(&mut self, scan_offset: IdxSize, state_bound: Option<IdxSize>) {
+        self.upper_candidate = scan_offset;
+        self.strictly_smaller = state_bound;
     }
     #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
