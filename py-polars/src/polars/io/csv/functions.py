@@ -231,8 +231,8 @@ def read_csv(
             This parameter is now a no-op.
     eol_char
         Single byte end of line character (default: `\\n`). When encountering a file
-        with windows line endings (`\\r\\n`), one can go with the default `\\n`. The extra
-        `\\r` will be removed when processed.
+        with windows line endings (`\\r\\n`), one can go with the default `\\n`.
+        The extra `\\r` will be removed when processed.
     raise_if_empty
         When there is no data in the source, `NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -918,8 +918,8 @@ def read_csv_batched(
             Is a no-op.
     eol_char
         Single byte end of line character (default: `\\n`). When encountering a file
-        with windows line endings (`\\r\\n`), one can go with the default `\\n`. The extra
-        `\\r` will be removed when processed.
+        with windows line endings (`\\r\\n`), one can go with the default `\\n`.
+        The extra `\\r` will be removed when processed.
     raise_if_empty
         When there is no data in the source,`NoDataError` is raised. If this parameter
         is set to False, `None` will be returned from `next_batches(n)` instead.
@@ -1253,8 +1253,8 @@ def scan_csv(
         the column remains of data type `pl.String`.
     eol_char
         Single byte end of line character (default: `\\n`). When encountering a file
-        with windows line endings (`\\r\\n`), one can go with the default `\\n`. The extra
-        `\\r` will be removed when processed.
+        with windows line endings (`\\r\\n`), one can go with the default `\\n`.
+        The extra `\\r` will be removed when processed.
     new_columns
         Provide an explicit list of string column names to use (for example, when
         scanning a headerless CSV file). If the given list is shorter than the width of
