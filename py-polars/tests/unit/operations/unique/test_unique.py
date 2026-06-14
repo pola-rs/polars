@@ -218,7 +218,7 @@ def test_unique_with_bad_subset(
 ) -> None:
     df = pl.DataFrame(input_json_data, schema=input_schema)
 
-    with pytest.raises(ColumnNotFoundError, match='unable to find column'):
+    with pytest.raises(ColumnNotFoundError, match="unable to find column"):
         df.unique(subset=subset)
 
 
