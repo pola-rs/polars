@@ -164,15 +164,11 @@ impl DataFrameSearchBuffer {
         I: IntoIterator<Item = S> + Clone,
         S: AsRef<str>,
     {
+        let select_map = |df: &DataFrame| df.select(columns.clone()).expect("projection failed");
         let dfs_at_offsets = self
             .dfs_at_offsets
             .iter()
-            .map(|(offset, df)| {
-                (
-                    *offset,
-                    df.select(columns.clone()).expect("projection failed"),
-                )
-            })
+            .map(|(offset, df)| (*offset, select_map(df)))
             .collect();
         DataFrameSearchBuffer {
             schema: self

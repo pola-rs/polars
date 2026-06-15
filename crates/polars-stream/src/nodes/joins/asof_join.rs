@@ -91,8 +91,8 @@ pub struct AsOfJoinNode {
     /// Buffer of the live range of right AsOf join rows.
     right_buffer: DataFrameSearchBuffer,
     output_seq: MorselSeq,
-    // Slot to store the last row of the previous left morsel. Used to check
-    // that the left side is sorted across morsel boundaries.
+    // Slot to store the last non-null row of the previous morsel. Used to check
+    // that that side is sorted across morsel boundaries.
     last_non_null_row_left: Option<DataFrame>,
     last_non_null_row_right: Option<DataFrame>,
 }
@@ -400,10 +400,10 @@ fn check_right_continuity(
 ) -> PolarsResult<()> {
     let key_col_name = params.right.key_col();
     let sorted_by_cols = params.right_by().iter().chain([key_col_name]);
-    let project = dfsb.select(sorted_by_cols.clone());
-    let df = project.into_df();
     let sorted_by_descending = params.by_descending.iter().chain([&false]);
     let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
+    let project = dfsb.select(sorted_by_cols.clone());
+    let df = project.into_df();
     let before_split = df.slice(0, split_at_idx);
     let after_split = df.slice(split_at_idx as i64, df.height() - split_at_idx);
     let last_non_null = before_split.column(key_col_name)?.last_non_null();
