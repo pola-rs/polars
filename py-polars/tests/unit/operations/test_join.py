@@ -3195,8 +3195,8 @@ def test_join_filter_pushdown_asof_join() -> None:
 
     q = lhs.join_asof(
         rhs,
-        left_on=pl.col("a").set_sorted(nulls_last=True),
-        right_on=pl.col("b").set_sorted(nulls_last=True),
+        left_on=pl.col("a"),
+        right_on=pl.col("b"),
         tolerance=0,
     ).filter(
         pl.col("a") >= 2,

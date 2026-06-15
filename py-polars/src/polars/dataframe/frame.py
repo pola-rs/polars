@@ -7968,7 +7968,7 @@ class DataFrame:
                 (i.e., strictly less-than / strictly greater-than).
         check_sortedness
             Check the sortedness of the asof keys. If the keys are not sorted Polars
-            will error. Currently, the `in-memory` engine  cannot check the sortedness
+            will error. Currently, the `in-memory` engine cannot check the sortedness
             if 'by' groups are provided. The `streaming` engine will only check the
             sortedness of the rows it processes.
 

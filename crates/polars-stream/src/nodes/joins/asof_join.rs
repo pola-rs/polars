@@ -93,7 +93,8 @@ pub struct AsOfJoinNode {
     output_seq: MorselSeq,
     // Slot to store the last row of the previous left morsel. Used to check
     // that the left side is sorted across morsel boundaries.
-    last_seen_row_left: Option<DataFrame>,
+    last_non_null_row_left: Option<DataFrame>,
+    last_non_null_row_right: Option<DataFrame>,
 }
 
 impl AsOfJoinNode {
@@ -151,7 +152,8 @@ impl AsOfJoinNode {
             left_buffer: Default::default(),
             right_buffer: DataFrameSearchBuffer::empty_with_schema(right_input_schema),
             output_seq: Default::default(),
-            last_seen_row_left: None,
+            last_non_null_row_left: None,
+            last_non_null_row_right: None,
         }
     }
 }
@@ -246,7 +248,8 @@ impl ComputeNode for AsOfJoinNode {
                 let left_buffer = &mut self.left_buffer;
                 let right_buffer = &mut self.right_buffer;
                 let output_seq = &mut self.output_seq;
-                let left_continuity = &mut self.last_seen_row_left;
+                let last_non_null_row_left = &mut self.last_non_null_row_left;
+                let last_non_null_row_right = &mut self.last_non_null_row_right;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     distribute_work_task(
                         recv_left,
@@ -255,7 +258,8 @@ impl ComputeNode for AsOfJoinNode {
                         left_buffer,
                         right_buffer,
                         output_seq,
-                        left_continuity,
+                        last_non_null_row_left,
+                        last_non_null_row_right,
                         params,
                     )
                     .await
@@ -282,7 +286,8 @@ async fn distribute_work_task(
     left_buffer: &mut VecDeque<DataFrame>,
     right_buffer: &mut DataFrameSearchBuffer,
     output_seq: &mut MorselSeq,
-    last_seen_row_left: &mut Option<DataFrame>,
+    last_non_null_row_left: &mut Option<DataFrame>,
+    last_non_null_row_right: &mut Option<DataFrame>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     let source_token = SourceToken::new();
@@ -328,7 +333,14 @@ async fn distribute_work_task(
         }
 
         if params.as_of_options().check_sortedness {
-            check_left_continuity(last_seen_row_left, &left_df, params)?;
+            check_left_continuity(last_non_null_row_left, &left_df, params)?;
+        }
+
+        if !params.as_of_options().check_sortedness {
+            // If we need to check sortedness, we cannot prune the right side
+            // yet, because the worker task still needs to check the internal
+            // sortedness of this right chunk.
+            prune_right_side(&left_df, right_buffer, 0, last_non_null_row_right, params)?;
         }
         if distributor
             .send((left_df.clone(), right_buffer.clone(), *output_seq, st))
@@ -342,6 +354,7 @@ async fn distribute_work_task(
             &left_df,
             right_buffer,
             left_df.height().saturating_sub(1),
+            last_non_null_row_right,
             params,
         )?;
     }
@@ -349,7 +362,7 @@ async fn distribute_work_task(
 
 /// Check that the first row of the DataFrame is in order with respect to the value in prev_row.
 fn check_left_continuity(
-    prev_row: &mut Option<DataFrame>,
+    last_non_null_row: &mut Option<DataFrame>,
     df: &DataFrame,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
@@ -357,12 +370,15 @@ fn check_left_continuity(
         return Ok(());
     }
 
-    let sorted_by_cols = params.left_by().iter().chain([&params.left.on]);
+    let key_col_name = params.left.key_col();
+    let sorted_by_cols = params.left_by().iter().chain([key_col_name]);
     let sorted_by_descending = params.by_descending.iter().chain([&false]);
     let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
     let projection = df.select(sorted_by_cols.clone())?;
-    if let Some(prev_row) = prev_row {
-        let across_split_point = prev_row.vstack(&projection)?;
+    if let Some(prev_row) = last_non_null_row
+        && let Some(first_non_null_on) = projection.column(key_col_name)?.first_non_null()
+    {
+        let across_split_point = prev_row.vstack(&projection.slice(first_non_null_on as i64, 1))?;
         if !across_split_point.is_sorted(
             &sorted_by_cols.cloned().collect_vec(),
             &sorted_by_descending.cloned().collect_vec(),
@@ -373,11 +389,14 @@ fn check_left_continuity(
     }
 
     // Store the last row of this DataFrame for the next check.
-    *prev_row = Some(projection.slice((projection.height() - 1) as i64, 1));
+    if let Some(pos) = projection.column(key_col_name)?.last_non_null() {
+        *last_non_null_row = Some(projection.slice((pos) as i64, 1));
+    }
     Ok(())
 }
 
 fn check_right_continuity(
+    last_non_null_row: &mut Option<DataFrame>,
     dfsb: &DataFrameSearchBuffer,
     split_at_idx: usize,
     params: &AsOfJoinParams,
@@ -385,17 +404,37 @@ fn check_right_continuity(
     let Some(before_split) = split_at_idx.checked_sub(1) else {
         return Ok(());
     };
-    let sorted_by_cols = params.right_by().iter().chain([&params.right.on]);
+    let key_col_name = params.right.key_col();
+    let sorted_by_cols = params.right_by().iter().chain([key_col_name]);
+    // TODO: [amber] It looks like this may be slow?
+    let df = dfsb.clone().into_df().select(sorted_by_cols.clone())?;
     let sorted_by_descending = params.by_descending.iter().chain([&false]);
     let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
-    let across_split_point = dfsb.clone().slice(before_split, 2).into_df();
-    if !across_split_point.is_sorted(
-        &sorted_by_cols.cloned().collect_vec(),
-        &sorted_by_descending.cloned().collect_vec(),
-        &sorted_by_nulls_last.cloned().collect_vec(),
-    )? {
-        return Err(not_sorted_err());
+    let before_split = df.slice(0, split_at_idx);
+    let after_split = df.slice(split_at_idx as i64, df.height() - split_at_idx);
+    let last_non_null = before_split.column(key_col_name)?.last_non_null();
+    let first_non_null = after_split.column(key_col_name)?.first_non_null();
+    let before_split_point_row = last_non_null
+        .map(|pos| before_split.slice(pos as i64, 1))
+        .or(last_non_null_row.clone()); // TODO: [amber] Elim this clone
+    let after_split_point_row = first_non_null.map(|pos| after_split.slice(pos as i64, 1));
+    if let Some(before_split_point) = before_split_point_row
+        && let Some(after_split_point) = after_split_point_row
+    {
+        let across_split_point = before_split_point.vstack(&after_split_point)?;
+        if !across_split_point.is_sorted(
+            &sorted_by_cols.cloned().collect_vec(),
+            &sorted_by_descending.cloned().collect_vec(),
+            &sorted_by_nulls_last.cloned().collect_vec(),
+        )? {
+            return Err(not_sorted_err());
+        }
     }
+
+    if let Some(pos) = after_split.column(key_col_name)?.last_non_null() {
+        *last_non_null_row = Some(after_split.slice(pos as i64, 1));
+    }
+
     Ok(())
 }
 
@@ -472,6 +511,7 @@ fn prune_right_side(
     left: &DataFrame,
     right: &mut DataFrameSearchBuffer,
     left_row_idx: usize,
+    last_non_null_row: &mut Option<DataFrame>,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
     if left.height() == 0 || right.height() == 0 {
@@ -502,7 +542,7 @@ fn prune_right_side(
     }
 
     if params.as_of_options().check_sortedness {
-        check_right_continuity(right, right_range_start, params)?;
+        check_right_continuity(last_non_null_row, right, right_range_start, params)?;
     }
     right.split_at(right_range_start);
     Ok(())

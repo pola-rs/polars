@@ -89,6 +89,7 @@ impl DataFrameSearchBuffer {
         self.total_rows -= offset;
         self.total_rows = usize::min(self.total_rows, len);
         self.frozen = true;
+        self.gc();
         self
     }
 
@@ -156,6 +157,24 @@ impl DataFrameSearchBuffer {
 
     pub(super) async fn stop_and_buffer_from_pipe(&mut self, port: Option<&mut PortReceiver>) {
         stop_and_buffer_pipe_contents(port, &mut |df| self.push_df(df)).await
+    }
+
+    pub(super) fn map<F>(&self, mapper: F) -> Self
+    where
+        F: Fn(&DataFrame) -> DataFrame,
+    {
+        let dfs_at_offsets = self
+            .dfs_at_offsets
+            .iter()
+            .map(|(offset, df)| (*offset, mapper(df)))
+            .collect();
+        DataFrameSearchBuffer {
+            schema: self.schema.clone(),
+            dfs_at_offsets,
+            total_rows: self.total_rows,
+            skip_rows: self.skip_rows,
+            frozen: self.frozen,
+        }
     }
 }
 
