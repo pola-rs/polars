@@ -164,6 +164,33 @@ def test_rows_by_key() -> None:
     }
 
 
+def test_rows_by_key_all_columns_27925() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+
+    # All columns used as keys leaves no value columns; the grouped rows are
+    # empty tuples/dicts rather than raising a length-mismatch error.
+    assert df.rows_by_key(["a", "b"]) == {
+        (1, 4): [()],
+        (2, 5): [()],
+        (3, 6): [()],
+    }
+    assert df.rows_by_key(["a", "b"], unique=True) == {
+        (1, 4): (),
+        (2, 5): (),
+        (3, 6): (),
+    }
+    assert df.rows_by_key(["a", "b"], named=True) == {
+        (1, 4): [{}],
+        (2, 5): [{}],
+        (3, 6): [{}],
+    }
+    assert df.rows_by_key(["a", "b"], include_key=True) == {
+        (1, 4): [(1, 4)],
+        (2, 5): [(2, 5)],
+        (3, 6): [(3, 6)],
+    }
+
+
 def test_iter_rows() -> None:
     df = pl.DataFrame(
         {
