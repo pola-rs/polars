@@ -136,7 +136,10 @@ mod trigonometry;
 
 pub use groups_dispatch::drop_items;
 
-pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUdf>> {
+pub fn function_expr_to_udf(
+    func: IRFunctionExpr,
+    _allow_threading: bool,
+) -> SpecialEq<Arc<dyn ColumnsUdf>> {
     use IRFunctionExpr as F;
     match func {
         // Namespaces
@@ -447,7 +450,8 @@ pub fn function_expr_to_udf(func: IRFunctionExpr) -> SpecialEq<Arc<dyn ColumnsUd
                 polars_plan::plans::plugin::call_plugin,
                 lib.as_ref(),
                 symbol.as_ref(),
-                kwargs.as_ref()
+                kwargs.as_ref(),
+                _allow_threading
             )
         },
 

@@ -77,6 +77,7 @@ pub unsafe fn call_plugin(
     lib: &str,
     symbol: &str,
     kwargs: &[u8],
+    parallel: bool,
 ) -> PolarsResult<Column> {
     let plugin = get_lib(lib)?;
     let lib = &plugin.0;
@@ -113,7 +114,10 @@ pub unsafe fn call_plugin(
 
         let mut return_value = SeriesExport::empty();
         let return_value_ptr = &mut return_value as *mut SeriesExport;
-        let context = CallerContext::default();
+        let mut context = CallerContext::default();
+        if parallel {
+            context._set_parallel();
+        }
         let context_ptr = &context as *const CallerContext;
         symbol(
             slice_ptr,

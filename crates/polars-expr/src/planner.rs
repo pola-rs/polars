@@ -612,7 +612,7 @@ fn create_physical_expr_inner(
 
             Ok(Arc::new(ApplyExpr::new(
                 input,
-                function_expr_to_udf(function.clone()),
+                function_expr_to_udf(function.clone(), state.allow_threading),
                 function_expr_to_groups_udf(&function),
                 node_to_expr(expression, expr_arena),
                 options,
