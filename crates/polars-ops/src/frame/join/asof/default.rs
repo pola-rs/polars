@@ -148,11 +148,7 @@ where
     // a mask byte boundary (each thread flushes its own cur_mask register
     // into its slice of `mask` without atomic writes).
     let chunk_size = (raw_chunk / 8) * 8;
-    let n_chunks = if chunk_size == 0 {
-        1
-    } else {
-        n.div_ceil(chunk_size)
-    };
+    let n_chunks = n.div_ceil(chunk_size);
 
     let left_slice: &[T::Native] = left.values().as_slice();
     let right_slice: &[T::Native] = right.values().as_slice();
@@ -266,11 +262,7 @@ where
     let n_threads = RAYON.current_num_threads().max(1);
     let raw_chunk = (n / n_threads).max(65_536);
     let chunk_size = (raw_chunk / 8) * 8;
-    let n_chunks = if chunk_size == 0 {
-        1
-    } else {
-        n.div_ceil(chunk_size)
-    };
+    let n_chunks = n.div_ceil(chunk_size);
 
     let left_slice: &[T::Native] = left.values().as_slice();
     let right_slice: &[T::Native] = right.values().as_slice();

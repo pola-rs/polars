@@ -48,7 +48,7 @@ trait AsofJoinState<T>: Copy {
     /// already been processed. `state_bound` is strategy-specific: backward
     /// uses it as the current best bound, nearest as the strictly smaller
     /// lower candidate, and forward ignores it.
-    fn reset_to(&mut self, _scan_offset: IdxSize, _state_bound: Option<IdxSize>) {}
+    fn reset_to(&mut self, scan_offset: IdxSize, state_bound: Option<IdxSize>);
 
     /// Binary-search the right array to find the strategy-specific state
     /// tuple for a chunk that starts at `left_val`. Used by the parallel
