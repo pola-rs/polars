@@ -413,7 +413,7 @@ fn check_right_continuity(
         .or(last_non_null_row.clone());
     let after_split_point_row = first_non_null.map(|pos| after_split.slice(pos as i64, 1));
     check_continuity(
-        before_split_point_row,
+        before_split_point_row.clone(),
         after_split_point_row,
         sorted_by_cols,
         sorted_by_descending,
@@ -421,9 +421,7 @@ fn check_right_continuity(
     )?;
 
     // Store the last non-null row of this DataFrame for the next check.
-    if let Some(pos) = df.column(key_col_name)?.last_non_null() {
-        *last_non_null_row = Some(df.slice(pos as i64, 1));
-    }
+    *last_non_null_row = before_split_point_row;
 
     Ok(())
 }
