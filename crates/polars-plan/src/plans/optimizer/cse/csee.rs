@@ -999,13 +999,15 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                             ProjectionOptions {
                                 run_parallel: options.run_parallel,
                                 duplicate_check: options.duplicate_check,
-                                // These columns might have different
-                                // lengths from the dataframe, but
-                                // they are only temporaries that will
+                                // These columns are temporaries that will
                                 // be removed by the evaluation of the
                                 // default_exprs and the subsequent
-                                // projection.
-                                should_broadcast: false,
+                                // projection. We must broadcast them to
+                                // the dataframe height so that expressions
+                                // that produce 0-length columns (e.g.
+                                // coalesce with non-matching selectors)
+                                // work correctly.
+                                should_broadcast: true,
                             },
                         )
                         .build();
@@ -1042,16 +1044,18 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                     let lp = IRBuilder::new(input, &mut arena.1, &mut arena.0)
                         .with_columns(
                             exprs.cse_exprs().to_vec(),
-                            // These columns might have different
-                            // lengths from the dataframe, but they
-                            // are only temporaries that will be
-                            // removed by the evaluation of the
+                            // These columns are temporaries that will
+                            // be removed by the evaluation of the
                             // default_exprs and the subsequent
-                            // projection.
+                            // projection. We must broadcast them to
+                            // the dataframe height so that expressions
+                            // that produce 0-length columns (e.g.
+                            // coalesce with non-matching selectors)
+                            // work correctly.
                             ProjectionOptions {
                                 run_parallel: options.run_parallel,
                                 duplicate_check: options.duplicate_check,
-                                should_broadcast: false,
+                                should_broadcast: true,
                             },
                         )
                         .with_columns(exprs.default_exprs().to_vec(), options)
