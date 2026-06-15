@@ -64,8 +64,12 @@ pub(crate) fn import_array_pycapsules(
     // array_capsule holds a valid C ArrowArray pointer, as defined by the Arrow PyCapsule
     // Interface
     unsafe {
-        #[allow(deprecated)]
-        let array_ptr = std::ptr::replace(array_capsule.pointer() as _, ArrowArray::empty());
+        let array_ptr = std::ptr::replace(
+            array_capsule
+                .pointer_checked(Some(c"arrow_array"))?
+                .as_ptr() as _,
+            ArrowArray::empty(),
+        );
         let array = ffi::import_array_from_c(array_ptr, field.dtype().clone()).unwrap();
 
         Ok((field, array))
@@ -81,8 +85,10 @@ pub(crate) fn import_schema_pycapsule(
     // schema_capsule holds a valid C ArrowSchema pointer, as defined by the Arrow PyCapsule
     // Interface
     unsafe {
-        #[allow(deprecated)]
-        let schema_ptr = schema_capsule.reference::<ArrowSchema>();
+        let schema_ptr = schema_capsule
+            .pointer_checked(Some(c"arrow_schema"))?
+            .cast::<ArrowSchema>()
+            .as_ref();
         let field = ffi::import_field_from_c(schema_ptr).unwrap();
 
         Ok(field)
@@ -108,11 +114,10 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
     // capsule holds a valid C ArrowArrayStream pointer, as defined by the Arrow PyCapsule
     // Interface
     let mut stream = unsafe {
-        // Takes ownership of the pointed to ArrowArrayStream
-        // This acts to move the data out of the capsule pointer, setting the release callback to NULL
-        #[allow(deprecated)]
         let stream_ptr = Box::new(std::ptr::replace(
-            capsule.pointer() as _,
+            capsule
+                .pointer_checked(Some(c"arrow_array_stream"))?
+                .as_ptr() as _,
             ArrowArrayStream::empty(),
         ));
         ArrowArrayStreamReader::try_new(stream_ptr)
