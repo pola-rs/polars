@@ -159,17 +159,27 @@ impl DataFrameSearchBuffer {
         stop_and_buffer_pipe_contents(port, &mut |df| self.push_df(df)).await
     }
 
-    pub(super) fn map<F>(&self, mapper: F) -> Self
+    pub(super) fn select<I, S>(&self, columns: I) -> Self
     where
-        F: Fn(&DataFrame) -> DataFrame,
+        I: IntoIterator<Item = S> + Clone,
+        S: AsRef<str>,
     {
         let dfs_at_offsets = self
             .dfs_at_offsets
             .iter()
-            .map(|(offset, df)| (*offset, mapper(df)))
+            .map(|(offset, df)| {
+                (
+                    *offset,
+                    df.select(columns.clone()).expect("projection failed"),
+                )
+            })
             .collect();
         DataFrameSearchBuffer {
-            schema: self.schema.clone(),
+            schema: self
+                .schema
+                .try_project(columns)
+                .expect("projection failed")
+                .into(),
             dfs_at_offsets,
             total_rows: self.total_rows,
             skip_rows: self.skip_rows,

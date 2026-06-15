@@ -401,13 +401,10 @@ fn check_right_continuity(
     split_at_idx: usize,
     params: &AsOfJoinParams,
 ) -> PolarsResult<()> {
-    let Some(before_split) = split_at_idx.checked_sub(1) else {
-        return Ok(());
-    };
     let key_col_name = params.right.key_col();
     let sorted_by_cols = params.right_by().iter().chain([key_col_name]);
-    // TODO: [amber] It looks like this may be slow?
-    let df = dfsb.clone().into_df().select(sorted_by_cols.clone())?;
+    let project = dfsb.select(sorted_by_cols.clone());
+    let df = project.into_df();
     let sorted_by_descending = params.by_descending.iter().chain([&false]);
     let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
     let before_split = df.slice(0, split_at_idx);
@@ -416,7 +413,7 @@ fn check_right_continuity(
     let first_non_null = after_split.column(key_col_name)?.first_non_null();
     let before_split_point_row = last_non_null
         .map(|pos| before_split.slice(pos as i64, 1))
-        .or(last_non_null_row.clone()); // TODO: [amber] Elim this clone
+        .or(last_non_null_row.clone());
     let after_split_point_row = first_non_null.map(|pos| after_split.slice(pos as i64, 1));
     if let Some(before_split_point) = before_split_point_row
         && let Some(after_split_point) = after_split_point_row
