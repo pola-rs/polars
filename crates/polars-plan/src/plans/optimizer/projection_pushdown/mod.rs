@@ -696,11 +696,24 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     let output_schema = Arc::make_mut(output_schema_arc);
                     let mut orig_schema = mem::take(output_schema);
 
+                    // Input columns keep their original position (whether passed
+                    // through or overwritten by an expression); this matches how
+                    // the executor places results and avoids corrupting the layout.
+                    for name in input_schema.iter_names() {
+                        if input_names_projection.contains(name) || expr_output_names.contains(name)
+                        {
+                            output_schema
+                                .extend(orig_schema.remove(name).map(|dtype| (name.clone(), dtype)));
+                        }
+                    }
+
+                    // Requested columns not present in the input schema.
                     for name in input_names_projection.iter() {
                         output_schema
                             .extend(orig_schema.remove(name).map(|dtype| (name.clone(), dtype)));
                     }
 
+                    // Brand-new expression outputs, appended in expression order.
                     for name in expr_output_names.iter() {
                         output_schema
                             .extend(orig_schema.remove(name).map(|dtype| (name.clone(), dtype)));
