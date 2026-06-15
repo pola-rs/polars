@@ -422,7 +422,7 @@ fn check_right_continuity(
 
     // Store the last non-null row of this DataFrame for the next check.
     if let Some(pos) = df.column(key_col_name)?.last_non_null() {
-        *last_non_null_row = Some(after_split.slice(pos as i64, 1));
+        *last_non_null_row = Some(df.slice(pos as i64, 1));
     }
 
     Ok(())
@@ -759,8 +759,13 @@ fn compute_asof_join(
         .to_physical_repr();
 
     if params.as_of_options().check_sortedness {
-        check_df_sorted(&left_df, params.left_by(), &params.left.on, params)?;
-        check_df_sorted(&right_df, params.right_by(), &params.right.on, params)?;
+        check_df_sorted(&left_df, params.left_by(), &params.left.key_col(), params)?;
+        check_df_sorted(
+            &right_df,
+            params.right_by(),
+            &params.right.key_col(),
+            params,
+        )?;
     }
 
     if params.left_by().is_empty() {
