@@ -67,7 +67,7 @@ pdsh_q3(customer_sf10, lineitem_sf10, orders_sf10).remote(context=ctx).show()
 import polars_cloud as pc
 
 ctx = pc.ClusterContext(
-    compute_address="https://...",
+    uri="https://...",
 )
 
 # Use a larger dataset available on S3

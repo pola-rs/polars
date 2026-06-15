@@ -121,7 +121,7 @@ cell:
 import polars as pl
 import polars_cloud as pc
 
-ctx = pc.ClusterContext(compute_address="localhost")
+ctx = pc.ClusterContext(uri="http://localhost")
 result = (
     pl.LazyFrame()
     .with_columns(a=pl.arange(0, 100000000).sum())
