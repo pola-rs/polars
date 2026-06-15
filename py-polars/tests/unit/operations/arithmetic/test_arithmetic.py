@@ -983,3 +983,33 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
         pl.Series("a", [81], dtype=dtype).log(b),
         pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
     )
+
+
+def test_series_reflected_arithmetic_with_series_operand() -> None:
+    # GH#27752: reflected operators between two Series computed `self op other`
+    # instead of `other op self` (Python's reflected-operator protocol means
+    # `lhs.__rsub__(rhs)` should equal `rhs - lhs`).
+    lhs = pl.Series("lhs", [2, 3, 4])
+    rhs = pl.Series("rhs", [5, 7, 9])
+
+    assert_series_equal(lhs.__rsub__(rhs), rhs - lhs, check_names=False)
+    assert_series_equal(lhs.__rtruediv__(rhs), rhs / lhs, check_names=False)
+    assert_series_equal(lhs.__rfloordiv__(rhs), rhs // lhs, check_names=False)
+    assert_series_equal(lhs.__rmod__(rhs), rhs % lhs, check_names=False)
+    assert_series_equal(lhs.__rpow__(rhs), rhs**lhs, check_names=False)
+    # commutative reflected operators are unaffected
+    assert_series_equal(lhs.__radd__(rhs), rhs + lhs, check_names=False)
+    assert_series_equal(lhs.__rmul__(rhs), rhs * lhs, check_names=False)
+
+
+def test_series_reflected_arithmetic_with_numpy_operand() -> None:
+    # GH#27752: same defect for ndarray operands routed through `_arithmetic`.
+    lhs = pl.Series("lhs", [2, 3, 4])
+    arr = np.array([5, 7, 9])
+
+    assert_series_equal(
+        lhs.__rsub__(arr), pl.Series("lhs", [3, 4, 5]), check_dtypes=False
+    )
+    assert_series_equal(
+        lhs.__rfloordiv__(arr), pl.Series("lhs", [2, 2, 2]), check_dtypes=False
+    )

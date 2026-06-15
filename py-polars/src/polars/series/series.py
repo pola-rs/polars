@@ -1158,8 +1158,14 @@ class Series:
             other = pl.Series("", [None])
 
         if isinstance(other, Series):
+            if "rhs" in op_ffi:
+                return self._from_pyseries(getattr(other._s, op_s)(self._s))
             return self._from_pyseries(getattr(self._s, op_s)(other._s))
         elif _check_for_numpy(other) and isinstance(other, np.ndarray):
+            if "rhs" in op_ffi:
+                return self._from_pyseries(
+                    getattr(Series(self.name, other)._s, op_s)(self._s)
+                )
             return self._from_pyseries(getattr(self._s, op_s)(Series(other)._s))
         elif isinstance(other, timedelta):
             _s = sequence_to_pyseries(self.name, [other])
@@ -1393,6 +1399,8 @@ class Series:
         return self.pow(exponent)
 
     def __rpow__(self, other: Any) -> Series:
+        if isinstance(other, Series):
+            return other.pow(self)
         return (
             self.to_frame()
             .select_seq((other ** F.col(self.name)).alias(self.name))
