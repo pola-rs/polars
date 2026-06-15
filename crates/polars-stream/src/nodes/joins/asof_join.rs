@@ -374,23 +374,20 @@ fn check_left_continuity(
     let sorted_by_cols = params.left_by().iter().chain([key_col_name]);
     let sorted_by_descending = params.by_descending.iter().chain([&false]);
     let sorted_by_nulls_last = params.by_nulls_last.iter().chain([&false]);
-    let projection = df.select(sorted_by_cols.clone())?;
-    if let Some(prev_row) = last_non_null_row
-        && let Some(first_non_null_on) = projection.column(key_col_name)?.first_non_null()
-    {
-        let across_split_point = prev_row.vstack(&projection.slice(first_non_null_on as i64, 1))?;
-        if !across_split_point.is_sorted(
-            &sorted_by_cols.cloned().collect_vec(),
-            &sorted_by_descending.cloned().collect_vec(),
-            &sorted_by_nulls_last.cloned().collect_vec(),
-        )? {
-            return Err(not_sorted_err());
-        }
-    }
+    let project = df.select(sorted_by_cols.clone())?;
+    let first_non_null_at = project.column(key_col_name)?.first_non_null();
+    let first_non_null_row = first_non_null_at.map(|at| project.slice(at as i64, 1));
+    check_continuity(
+        last_non_null_row.clone(),
+        first_non_null_row,
+        sorted_by_cols,
+        sorted_by_descending,
+        sorted_by_nulls_last,
+    )?;
 
-    // Store the last row of this DataFrame for the next check.
-    if let Some(pos) = projection.column(key_col_name)?.last_non_null() {
-        *last_non_null_row = Some(projection.slice((pos) as i64, 1));
+    // Store the last non-null row of this DataFrame for the next check.
+    if let Some(pos) = project.column(key_col_name)?.last_non_null() {
+        *last_non_null_row = Some(project.slice((pos) as i64, 1));
     }
     Ok(())
 }
@@ -415,6 +412,33 @@ fn check_right_continuity(
         .map(|pos| before_split.slice(pos as i64, 1))
         .or(last_non_null_row.clone());
     let after_split_point_row = first_non_null.map(|pos| after_split.slice(pos as i64, 1));
+    check_continuity(
+        before_split_point_row,
+        after_split_point_row,
+        sorted_by_cols,
+        sorted_by_descending,
+        sorted_by_nulls_last,
+    )?;
+
+    // Store the last non-null row of this DataFrame for the next check.
+    if let Some(pos) = df.column(key_col_name)?.last_non_null() {
+        *last_non_null_row = Some(after_split.slice(pos as i64, 1));
+    }
+
+    Ok(())
+}
+
+fn check_continuity<'a, IS, IB>(
+    before_split_point_row: Option<DataFrame>,
+    after_split_point_row: Option<DataFrame>,
+    sorted_by_cols: IS,
+    sorted_by_descending: IB,
+    sorted_by_nulls_last: IB,
+) -> PolarsResult<()>
+where
+    IS: Iterator<Item = &'a PlSmallStr> + Clone,
+    IB: Iterator<Item = &'a bool> + Clone,
+{
     if let Some(before_split_point) = before_split_point_row
         && let Some(after_split_point) = after_split_point_row
     {
@@ -427,11 +451,6 @@ fn check_right_continuity(
             return Err(not_sorted_err());
         }
     }
-
-    if let Some(pos) = after_split.column(key_col_name)?.last_non_null() {
-        *last_non_null_row = Some(after_split.slice(pos as i64, 1));
-    }
-
     Ok(())
 }
 
