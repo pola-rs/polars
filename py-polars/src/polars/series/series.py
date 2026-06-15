@@ -6156,6 +6156,7 @@ class Series:
         return_dtype: PolarsDataType | None = None,
         *,
         skip_nulls: bool = True,
+        _disable_inefficient_map_warning: bool = False,
     ) -> Self:
         """
         Map a custom/user-defined function (UDF) over elements in this Series.
@@ -6238,7 +6239,9 @@ class Series:
         else:
             pl_return_dtype = parse_into_dtype(return_dtype)
 
-        warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+        if not _disable_inefficient_map_warning:
+            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+
         return self._from_pyseries(
             self._s.map_elements(
                 function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls

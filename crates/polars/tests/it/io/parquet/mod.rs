@@ -206,3 +206,108 @@ fn test_vstack_empty_3220() -> PolarsResult<()> {
     assert!(stacked.equals(&read_df));
     Ok(())
 }
+
+#[test]
+fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
+    use std::num::NonZeroUsize;
+    use std::sync::{Arc, Mutex};
+
+    use object_store::ObjectStore;
+    use object_store::memory::InMemory;
+    use polars::prelude::*;
+    use polars_core::runtime::ASYNC;
+    use polars_io::cloud::cloud_writer::{CloudWriter, CloudWriterIoTraitWrap};
+    use polars_io::cloud::{
+        CloudConfig, CloudOptions, ExtObjectStoreBuilder, build_object_store,
+        deregister_object_store_builder, register_object_store_builder,
+    };
+    use polars_io::prelude::ParquetWriter;
+    use polars_io::utils::file::WriteableTrait;
+    use polars_utils::pl_path::PlRefPath;
+
+    struct MemoryBuilder {
+        store: Arc<InMemory>,
+        received_options: Arc<Mutex<Vec<(String, String)>>>,
+    }
+
+    impl ExtObjectStoreBuilder for MemoryBuilder {
+        fn build(
+            &self,
+            _url: &PlRefPath,
+            options: Option<&CloudOptions>,
+        ) -> PolarsResult<Arc<dyn ObjectStore + Send + Sync>> {
+            if let Some(CloudOptions {
+                config: Some(CloudConfig::Ext { options: ext_opts }),
+                ..
+            }) = options
+            {
+                *self.received_options.lock().unwrap() = ext_opts.clone();
+            }
+            Ok(self.store.clone())
+        }
+    }
+
+    let received_options = Arc::new(Mutex::new(vec![]));
+    let store = Arc::new(InMemory::new());
+    let output_path = "pl-mem://host/data/output.parquet";
+
+    let mut storage_options = CloudOptions::default();
+    storage_options.config = Some(CloudConfig::Ext {
+        options: vec![("user".to_string(), "hadoop".to_string())],
+    });
+
+    polars_utils::pl_path::_allow_ext_scheme("pl-mem")?;
+    register_object_store_builder(
+        "pl-mem",
+        Arc::new(MemoryBuilder {
+            store: store.clone(),
+            received_options: received_options.clone(),
+        }),
+    )
+    .unwrap();
+
+    let (cloud_location, polars_store) = ASYNC.block_in_place_on(async {
+        build_object_store(PlRefPath::new(output_path), Some(&storage_options), false)
+            .await
+            .unwrap()
+    });
+
+    let obj_path = object_store::path::Path::parse(&cloud_location.prefix).unwrap();
+
+    let mut wrap = CloudWriterIoTraitWrap::from(CloudWriter::new(
+        polars_store,
+        obj_path,
+        8 * 1024 * 1024,
+        NonZeroUsize::new(1).unwrap(),
+        None,
+    ));
+
+    let mut df = df![
+        "a" => [1i32, 2, 3],
+        "b" => ["x", "y", "z"],
+    ]?;
+
+    // Sink
+    ParquetWriter::new(&mut wrap).finish(&mut df)?;
+    wrap.close()?;
+
+    // Assert options were received
+    let opts = received_options.lock().unwrap().clone();
+    assert_eq!(opts.len(), 1);
+    assert_eq!(opts[0], ("user".to_string(), "hadoop".to_string()));
+
+    // Scan
+    let result = LazyFrame::scan_parquet(output_path.into(), Default::default())?.collect()?;
+
+    assert_eq!(result.shape(), (3, 2));
+    assert_eq!(result.column("a")?.i32()?.cont_slice()?, &[1, 2, 3]);
+    assert_eq!(
+        result.column("b")?.str()?.iter().collect::<Vec<_>>(),
+        vec![Some("x"), Some("y"), Some("z")]
+    );
+
+    deregister_object_store_builder("pl-mem");
+    polars_utils::pl_path::_disallow_ext_scheme("pl-mem");
+
+    Ok(())
+}

@@ -1053,10 +1053,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 for expr in &exprs {
                     match expr {
                         Expr::Column(name) => {
-                            polars_ensure!(
-                                input_schema.contains(name),
-                                ColumnNotFound: "{name:?} not found"
-                            );
+                            if !input_schema.contains(name) {
+                                return Err(input_schema.column_not_found_err(name));
+                            }
                             subset_colnames.push(name.clone());
                         },
                         _ => subset_exprs.push(expr.clone()),

@@ -688,6 +688,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     input_names_projection.extend(min_dtype_size_col(input_schema.iter()).cloned());
                 }
 
+                input_names_projection
+                    .sort_unstable_by_key(|name| input_schema.index_of(name).unwrap_or(usize::MAX));
+
                 let output_schema_arc = output_schema;
 
                 let has_dropped_input_column = input_names_projection.len() != input_schema.len();

@@ -613,12 +613,16 @@ def _convert_iceberg_to_object_store_storage_options(
 ) -> dict[str, str]:
     storage_options = {}
 
+    # Allow-list for HDFS
+    # See https://py.iceberg.apache.org/configuration/#hdfs
+    HDFS_KEY_PREFIXES = "hdfs."
+
     for k, v in iceberg_storage_properties.items():
         if (
             translated_key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP.get(k)
         ) is not None:
             storage_options[translated_key] = v
-        elif "." not in k:
+        elif "." not in k or any(k.startswith(p) for p in HDFS_KEY_PREFIXES):
             # Pass-through non-Iceberg config keys, as they may be native config
             # keys. We identify Iceberg keys by checking for a dot - from
             # observation nearly all Iceberg config keys contain dots, whereas
