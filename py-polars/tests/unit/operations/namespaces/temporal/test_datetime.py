@@ -1559,3 +1559,18 @@ def test_out_of_range_date_year_11991() -> None:
     # is_leap_year should also return null for out-of-range dates
     result_leap = s.dt.is_leap_year()
     assert result_leap[0] is None
+
+
+@pytest.mark.parametrize(
+    "method", ["day", "month", "year", "hour", "minute", "second", "weekday"]
+)
+def test_dt_extract_with_null_tz_aware_27862(method: str) -> None:
+    # A null in a timezone-aware column is physically i64::MIN; component
+    # extraction must not panic on it and must propagate the null.
+    s = pl.Series(
+        [datetime(2025, 6, 1), None],
+        dtype=pl.Datetime("us", "UTC"),
+    )
+    out = getattr(s.dt, method)()
+    assert out[1] is None
+    assert out[0] is not None

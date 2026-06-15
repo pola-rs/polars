@@ -293,12 +293,13 @@ fn extract_impl<T, A, F>(
 ) -> PrimitiveArray<A>
 where
     T: chrono::TimeZone,
-    A: NativeType + Default,
+    A: NativeType,
     F: Fn(chrono::DateTime<T>) -> A,
 {
-    // Use the `_opt` timestamp conversion variants to avoid panicking on
-    // out-of-range values (e.g., i64::MIN from Pandas NaT). The validity
-    // bitmap already marks these slots as null, so the value is irrelevant.
+    // Use the `_opt` timestamp conversion variants so out-of-range values (e.g.
+    // `i64::MIN` from a Pandas `NaT`) become null instead of panicking. We map
+    // over the validity-aware iterator rather than `unary`, so a value that is
+    // present but unrepresentable produces a null rather than a garbage default.
     let timestamp_to_datetime_opt: fn(i64) -> Option<chrono::NaiveDateTime> = match time_unit {
         TimeUnit::Second => timestamp_s_to_datetime_opt,
         TimeUnit::Millisecond => timestamp_ms_to_datetime_opt,
@@ -306,15 +307,15 @@ where
         TimeUnit::Nanosecond => timestamp_ns_to_datetime_opt,
     };
 
-    let op = |x| {
-        if let Some(datetime) = timestamp_to_datetime_opt(x) {
-            let offset = timezone.offset_from_utc_datetime(&datetime);
-            extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                datetime, offset,
-            ))
-        } else {
-            A::default()
-        }
-    };
-    unary(array, op, A::PRIMITIVE.into())
+    let iter = array.iter().map(|opt| {
+        opt.and_then(|&x| {
+            timestamp_to_datetime_opt(x).map(|datetime| {
+                let offset = timezone.offset_from_utc_datetime(&datetime);
+                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
+                    datetime, offset,
+                ))
+            })
+        })
+    });
+    PrimitiveArray::from_trusted_len_iter(iter)
 }
