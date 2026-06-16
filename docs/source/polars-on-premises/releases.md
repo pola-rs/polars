@@ -6,8 +6,8 @@
 **Highlights**
 
 - Improved cgroup setup for Anyscale
-- Dynamic cluster scaling
-- Fixed performance regression in presigning anonymous results
+- Support for externally-scaled cluster
+- Improved performance in presigning anonymous results
 
 ## 0.5.1 <small>- 3 June 2026</small>
 
