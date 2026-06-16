@@ -91,8 +91,8 @@ pub struct AsOfJoinNode {
     /// Buffer of the live range of right AsOf join rows.
     right_buffer: DataFrameSearchBuffer,
     output_seq: MorselSeq,
-    // Slot to store the last non-null row of the previous morsel. Used to check
-    // that that side is sorted across morsel boundaries.
+    // Slots to store the last non-null row of the previous morsel.
+    // Used to check that that side is sorted across morsel boundaries.
     last_non_null_row_left: Option<DataFrame>,
     last_non_null_row_right: Option<DataFrame>,
 }
