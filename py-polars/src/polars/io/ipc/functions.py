@@ -502,6 +502,10 @@ def scan_ipc(
         msg = "file cache is no longer supported as of 1.40.0."
         issue_deprecation_warning(msg)
 
+    if memory_map is not None:
+        msg = "controlling memory map behavior is no longer supported as of 1.7.0."
+        issue_deprecation_warning(msg)
+
     cache_deprecated = False
 
     credential_provider_builder = _init_credential_provider_builder(
