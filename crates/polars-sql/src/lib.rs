@@ -7,6 +7,7 @@ mod functions;
 pub mod keywords;
 mod sql_expr;
 mod sql_visitors;
+mod subquery;
 mod table_functions;
 mod types;
 

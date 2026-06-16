@@ -10,6 +10,7 @@ on:
       - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
+      - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
   push:
@@ -23,6 +24,7 @@ on:
       - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
+      - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
 

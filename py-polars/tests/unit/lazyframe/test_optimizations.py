@@ -1089,3 +1089,36 @@ def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
             {"B": None, "C": None}, schema={"B": pl.Boolean, "C": pl.Categorical}
         ),
     )
+
+
+def test_projection_pushdown_with_columns_27914() -> None:
+    q = (
+        pl.LazyFrame({"x": [1, 2], "y": [1, 2]})
+        .with_row_index("index")
+        .with_columns(pl.col.y)
+        .group_by("index")
+        .agg(pl.col.y.sum())
+    )
+
+    assert_frame_equal(
+        q.collect().sort("index"),
+        pl.DataFrame(
+            {"index": [0, 1], "y": [1, 2]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )
+
+    q = (
+        pl.LazyFrame({"x": [1, 2], "y": [1, 2]})
+        .with_row_index("index")
+        .with_columns(pl.col.y)
+        .select("y", "index")
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"y": [1, 2], "index": [0, 1]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )

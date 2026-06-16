@@ -20,19 +20,13 @@ ignore = [
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
 
-  # error[unsound]: Rand is unsound with a custom logger using `rand::rng()`
-  "RUSTSEC-2026-0097",
-
-  # error[vulnerability]: Name constraints for URI names were incorrectly accepted
-  "RUSTSEC-2026-0098",
-  # error[vulnerability]: Name constraints were accepted for certificates asserting a wildcard name
-  "RUSTSEC-2026-0099",
-
-  # error[vulnerability]: CRLs not considered authoritative by Distribution Point due to faulty matching logic
-  "RUSTSEC-2026-0049",
-
-  # error[yanked]: detected yanked crate (try `cargo update -p core2`)
-  { name = "core2", version = "0.4.0" },
+  # error[vulnerability]: Out-of-bounds read in `nth` / `nth_back` for `PyList` and `PyTuple` iterators
+  # Fixed in pyo3 0.29.0, but upgrade is blocked until numpy and pyo3-polars
+  # publish releases compatible with pyo3 0.29 (numpy is at 0.28.0 / pyo3 0.28).
+  "RUSTSEC-2026-0176",
+  # error[vulnerability]: Missing `Sync` bound on `PyCFunction::new_closure` closures
+  # Same blocker as above; remove both once pyo3 is bumped to >=0.29.
+  "RUSTSEC-2026-0177",
 ]
 
 [licenses]
@@ -72,4 +66,5 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 unknown-git = "deny"
 allow-git = [
   "https://github.com/kdn36/arrow-rs-object-store",
+  "https://github.com/pola-rs/jemallocator",
 ]
