@@ -4,7 +4,6 @@ use std::sync::{Arc, LazyLock, RwLock, Weak};
 use polars_async::ASYNC;
 use polars_config::config;
 use polars_utils::total_ord::TotalOrd;
-use rand_distr::Distribution;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::spill_token::TrySpillError;
@@ -119,10 +118,8 @@ impl MemoryManager {
                 continue;
             };
 
-            // Thompson sampling
-            let (mean, var) = ctx.stats().score();
-            let distr = rand_distr::Normal::new(mean, var.sqrt()).unwrap();
-            let score_sample = distr.sample(&mut rng);
+            // Thompson sampling.
+            let score_sample = ctx.stats().sample_score(&mut rng);
             live_contexts.push((ctx, score_sample));
         }
         drop(contexts);
