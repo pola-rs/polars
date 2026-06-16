@@ -578,7 +578,7 @@ impl Statistics {
                 r = mean_r + std_r * z1;
                 t = mean_t + std_t * z2;
             }
-            
+
             if r >= 0.0 && t >= 0.0 {
                 return r / (BASE_IO_TIME + t);
             }
