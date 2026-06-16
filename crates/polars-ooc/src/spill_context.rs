@@ -563,21 +563,26 @@ impl Statistics {
         let std_r = var_r.sqrt();
         let std_t = var_t.sqrt();
 
-        let z1: f64 = rand_distr::StandardNormal.sample(rng);
-        let z2: f64 = rand_distr::StandardNormal.sample(rng);
+        loop {
+            let z1: f64 = rand_distr::StandardNormal.sample(rng);
+            let z2: f64 = rand_distr::StandardNormal.sample(rng);
 
-        let (r, t);
-        if std_r > 0.0 && std_t > 0.0 {
-            // Sample from bivariate distribution.
-            let rho = (cov_rt / (std_r * std_t)).clamp(-1.0, 1.0);
-            r = mean_r + std_r * z1;
-            t = mean_t + std_t * (rho * z1 + (1.0 - rho * rho).sqrt() * z2);
-        } else {
-            // At least one variance is zero, just independent sampling.
-            r = mean_r + std_r * z1;
-            t = mean_t + std_t * z2;
+            let (r, t);
+            if std_r > 0.0 && std_t > 0.0 {
+                // Sample from bivariate distribution.
+                let rho = (cov_rt / (std_r * std_t)).clamp(-1.0, 1.0);
+                r = mean_r + std_r * z1;
+                t = mean_t + std_t * (rho * z1 + (1.0 - rho * rho).sqrt() * z2);
+            } else {
+                // At least one variance is zero, just independent sampling.
+                r = mean_r + std_r * z1;
+                t = mean_t + std_t * z2;
+            }
+            
+            if r >= 0.0 && t >= 0.0 {
+                return r / (BASE_IO_TIME + t);
+            }
         }
-        r.max(0.0) / (BASE_IO_TIME + t.max(0.0))
     }
 }
 
