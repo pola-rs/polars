@@ -1396,7 +1396,10 @@ def test_join_asof_no_exact_matches_parametric(
 
 def test_join_asof_not_sorted() -> None:
     df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
-    with pytest.raises(InvalidOperationError, match="is not sorted"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+    ):
         df.join_asof(df, on="b")
 
     # When 'by' is provided, we do not check sortedness, but a warning is received
@@ -1423,7 +1426,10 @@ def test_join_asof_not_sorted_streaming_27457(
         df2 = df.sort("a")
         if swap:
             (df, df2) = df2, df
-        with pytest.raises(InvalidOperationError, match="is not sorted"):
+        with pytest.raises(
+            InvalidOperationError,
+            match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+        ):
             df.lazy().join_asof(df2.lazy(), on="a").collect(engine="streaming")
 
 
@@ -1439,7 +1445,10 @@ def test_join_asof_not_sorted_streaming_grouped_27457(
         lf2 = df2.lazy().set_sorted("group").with_row_index("a")
         if swap:
             (lf, lf2) = lf2, lf
-        with pytest.raises(InvalidOperationError, match="is not sorted"):
+        with pytest.raises(
+            InvalidOperationError,
+            match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+        ):
             lf.join_asof(lf2, on="a", by="group").collect(engine="streaming")
 
 

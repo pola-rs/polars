@@ -3221,14 +3221,14 @@ def test_join_filter_pushdown_asof_join() -> None:
 
     assert extract[:2] == [
         'FILTER [(col("c_right")) >= ("B")]',
-        'LEFT PLAN ON: [col("a").set_sorted()]',
+        'LEFT PLAN ON: [col("a")]',
     ]
 
     assert 'col("b")) >= (3)' in extract[2]
     assert 'col("c")) >= ("A")' in extract[2]
     assert 'col("a")) >= (2)' in extract[2]
 
-    assert extract[3:] == ['RIGHT PLAN ON: [col("b").set_sorted()]']
+    assert extract[3:] == ['RIGHT PLAN ON: [col("b")]']
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
