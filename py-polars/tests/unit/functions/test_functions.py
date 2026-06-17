@@ -165,7 +165,9 @@ def test_concat_horizontal_three_dfs(lazy: bool) -> None:
     c = pl.DataFrame({"c1": [1, 2, 3, 4], "c2": [5, 6, 7, 8], "c3": [9, 10, 11, 12]})
 
     if lazy:
-        out = pl.concat([a.lazy(), b.lazy(), c.lazy()], how="horizontal", strict=False).collect()
+        out = pl.concat(
+            [a.lazy(), b.lazy(), c.lazy()], how="horizontal", strict=False
+        ).collect()
     else:
         out = pl.concat([a, b, c], how="horizontal", strict=False)
 
