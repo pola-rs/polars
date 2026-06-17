@@ -569,7 +569,7 @@ pub(super) fn convert_functions(
             PowFunction::Cbrt => IRPowFunction::Cbrt,
         }),
         #[cfg(feature = "row_hash")]
-        F::Hash(s0, s1, s2, s3) => I::Hash(s0, s1, s2, s3),
+        F::Hash(seed) => I::Hash(seed),
         #[cfg(feature = "arg_where")]
         F::ArgWhere => I::ArgWhere,
         #[cfg(feature = "index_of")]

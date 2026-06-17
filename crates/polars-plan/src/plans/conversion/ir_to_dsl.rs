@@ -744,7 +744,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             })
         },
         #[cfg(feature = "row_hash")]
-        IF::Hash(s0, s1, s2, s3) => F::Hash(s0, s1, s2, s3),
+        IF::Hash(seed) => F::Hash(seed),
         #[cfg(feature = "arg_where")]
         IF::ArgWhere => F::ArgWhere,
         #[cfg(feature = "index_of")]

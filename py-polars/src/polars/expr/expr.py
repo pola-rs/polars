@@ -6775,7 +6775,7 @@ Consider using {self}.implode() instead"""
         │ 11638928888656214026 ┆ 13382926553367784577 │
         └──────────────────────┴──────────────────────┘
         """
-        return wrap_expr(self._pyexpr.hash(seed, seed, seed, seed))
+        return wrap_expr(self._pyexpr.hash(seed))
 
     def reinterpret(
         self,

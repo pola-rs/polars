@@ -12329,7 +12329,7 @@ class DataFrame:
             2047317070637311557
         ]
         """
-        return wrap_s(self._df.hash_rows(seed, seed, seed, seed))
+        return wrap_s(self._df.hash_rows(seed))
 
     def interpolate(self) -> DataFrame:
         """
