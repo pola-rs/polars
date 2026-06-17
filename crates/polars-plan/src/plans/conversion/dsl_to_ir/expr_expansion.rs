@@ -81,6 +81,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
         F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
             | F::Coalesce
             | F::ListExpr(ListFunction::Concat)
+            | F::ListExpr(ListFunction::Pack)
             | F::ConcatExpr(..)
             | F::MinHorizontal
             | F::MaxHorizontal

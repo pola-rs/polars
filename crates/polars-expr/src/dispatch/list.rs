@@ -14,6 +14,7 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
     use IRListFunction::*;
     match func {
         Concat => wrap!(concat),
+        Pack => wrap!(pack),
         #[cfg(feature = "is_in")]
         Contains { nulls_equal } => map_as_slice!(contains, nulls_equal),
         #[cfg(feature = "list_drop_nulls")]
@@ -255,6 +256,18 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
     }
 
     first_ca.lst_concat(other).map(IntoColumn::into_column)
+}
+
+pub(super) fn pack(s: &mut [Column]) -> PolarsResult<Column> {
+    let wrap = |c: &Column| c.as_materialized_series().to_unit_list().into_column();
+
+    let first = wrap(&s[0]);
+    let other: Vec<Column> = s[1..].iter().map(wrap).collect();
+
+    first
+        .list()?
+        .lst_concat(&other)
+        .map(IntoColumn::into_column)
 }
 
 pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Column> {

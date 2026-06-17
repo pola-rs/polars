@@ -11,7 +11,7 @@ use crate::chunked_array::builder::get_list_builder;
 use crate::datatypes::{DataType, ListChunked};
 use crate::prelude::{IntoSeries, Series, *};
 
-fn reshape_fast_path(name: PlSmallStr, s: &Series) -> Series {
+pub(crate) fn reshape_fast_path(name: PlSmallStr, s: &Series) -> Series {
     let mut ca = ListChunked::from_chunk_iter(
         name,
         s.chunks().iter().map(|arr| array_to_unit_list(arr.clone())),
@@ -69,6 +69,12 @@ impl Series {
         }
 
         (offsets, validities)
+    }
+
+    /// Wrap each element of this Series in a single-element list.
+    /// A Series `[1, 2, 3]` becomes `[[1], [2], [3]]`.
+    pub fn to_unit_list(&self) -> Series {
+        reshape_fast_path(self.name().clone(), self)
     }
 
     /// Convert the values of this Series to a ListChunked with a length of 1,

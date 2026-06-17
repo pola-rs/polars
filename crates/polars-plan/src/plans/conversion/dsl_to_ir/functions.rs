@@ -132,6 +132,7 @@ pub(super) fn convert_functions(
             use ListFunction as L;
             I::ListExpr(match list_function {
                 L::Concat => IL::Concat,
+                L::Pack => IL::Pack,
                 #[cfg(feature = "is_in")]
                 L::Contains { nulls_equal } => IL::Contains { nulls_equal },
                 #[cfg(feature = "list_drop_nulls")]

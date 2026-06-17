@@ -104,6 +104,18 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
     })
 }
 
+/// Collect expressions into a list, treating each expression's value as one element.
+pub fn pack_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+    let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
+
+    polars_ensure!(!s.is_empty(), ComputeError: "`pack_list` needs one or more expressions");
+
+    Ok(Expr::Function {
+        input: s,
+        function: FunctionExpr::ListExpr(ListFunction::Pack),
+    })
+}
+
 /// Concat lists entries.
 pub fn concat_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();

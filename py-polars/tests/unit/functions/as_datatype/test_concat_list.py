@@ -230,3 +230,25 @@ def test_concat_list_broadcast_empty() -> None:
     out = df.select(pl.concat_list(pl.lit(0.0), pl.lit(0.0), pl.col("a")))
     expected = pl.DataFrame(schema={"literal": pl.List(pl.Float64)})
     assert_frame_equal(out, expected)
+
+
+def test_list_function() -> None:
+    df = pl.LazyFrame(
+        {
+            "a": [1, 2, None],
+            "b": [4, 5, 6],
+            "c": [[1], [2, 3], None],
+            "d": [[3, 4], [5], [6]],
+        }
+    )
+    result = df.with_columns(a_b=pl.list("a", "b"), c_d=pl.list("c", "d"))
+    expected = {
+        "a": [1, 2, None],
+        "b": [4, 5, 6],
+        "c": [[1], [2, 3], None],
+        "d": [[3, 4], [5], [6]],
+        "a_b": [[1, 4], [2, 5], [None, 6]],
+        "c_d": [[[1], [3, 4]], [[2, 3], [5]], [None, [6]]],
+    }
+    assert_frame_equal(result.collect(), pl.DataFrame(expected))
+    assert result.collect().schema == result.collect_schema()

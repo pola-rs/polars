@@ -386,6 +386,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use ListFunction as L;
             F::ListExpr(match f {
                 IL::Concat => L::Concat,
+                IL::Pack => L::Pack,
                 #[cfg(feature = "is_in")]
                 IL::Contains { nulls_equal } => L::Contains { nulls_equal },
                 #[cfg(feature = "list_drop_nulls")]

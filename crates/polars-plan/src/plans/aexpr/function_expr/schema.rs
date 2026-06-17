@@ -648,6 +648,19 @@ impl<'a> FieldsMapper<'a> {
         }
     }
 
+    /// Map the dtypes to a list whose element type is the supertype of all input dtypes.
+    /// Unlike `map_to_list_supertype`, List inputs are NOT unwrapped — each input dtype
+    /// is treated as an element type, so `List(T)` inputs produce `List(List(T))` output.
+    pub fn map_to_list_of_dtypes(&self) -> PolarsResult<Field> {
+        self.try_map_dtypes(|dts| {
+            let mut super_type = dts[0].clone();
+            for dt in &dts[1..] {
+                super_type = try_get_supertype(&super_type, dt)?;
+            }
+            Ok(DataType::List(Box::new(super_type)))
+        })
+    }
+
     /// Map the dtypes to the "supertype" of a list of lists.
     pub fn map_to_list_supertype(&self) -> PolarsResult<Field> {
         self.try_map_dtypes(|dts| {
