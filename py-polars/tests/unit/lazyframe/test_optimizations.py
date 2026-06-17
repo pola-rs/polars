@@ -46,6 +46,10 @@ def test_is_null_followed_by_any() -> None:
     result_lf = lf.group_by("group", maintain_order=True).agg(
         pl.col("val").is_null().any()
     )
+    plan = result_lf.explain()
+    assert ".has_nulls()" in plan
+    assert "null_count" not in plan
+    assert "is_null" not in plan
     assert_frame_equal(expected_df, result_lf.collect())
 
     # edge case of empty series
@@ -206,6 +210,52 @@ def test_drop_nulls_followed_by_count() -> None:
     )
     assert "null_count" not in non_optimized_result_plan
     assert "drop_nulls" in non_optimized_result_plan
+
+
+@pytest.mark.parametrize(
+    ("expr", "optimized_expr"),
+    [
+        (pl.col("val").len() == 0, ".is_empty()"),
+        (pl.col("val").len() < 1, ".is_empty()"),
+        (pl.col("val").len() <= 0, ".is_empty()"),
+        (pl.col("val").len() != 0, ".is_empty().not()"),
+        (pl.col("val").len() > 0, ".is_empty().not()"),
+        (pl.col("val").len() >= 1, ".is_empty().not()"),
+        (pl.lit(0) == pl.col("val").len(), ".is_empty()"),
+        (pl.lit(1) > pl.col("val").len(), ".is_empty()"),
+        (pl.lit(0) >= pl.col("val").len(), ".is_empty()"),
+        (pl.lit(0) != pl.col("val").len(), ".is_empty().not()"),
+        (pl.lit(0) < pl.col("val").len(), ".is_empty().not()"),
+        (pl.lit(1) <= pl.col("val").len(), ".is_empty().not()"),
+        (pl.col("val").null_count() == 0, ".has_nulls().not()"),
+        (pl.col("val").null_count() < 1, ".has_nulls().not()"),
+        (pl.col("val").null_count() <= 0, ".has_nulls().not()"),
+        (pl.col("val").null_count() != 0, ".has_nulls()"),
+        (pl.col("val").null_count() > 0, ".has_nulls()"),
+        (pl.col("val").null_count() >= 1, ".has_nulls()"),
+        (pl.lit(0) == pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(1) > pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(0) >= pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(0) != pl.col("val").null_count(), ".has_nulls()"),
+        (pl.lit(0) < pl.col("val").null_count(), ".has_nulls()"),
+        (pl.lit(1) <= pl.col("val").null_count(), ".has_nulls()"),
+    ],
+)
+def test_len_null_count_comparison_optimized(
+    expr: pl.Expr, optimized_expr: str
+) -> None:
+    lf = pl.LazyFrame({"group": [0, 0, 1, 2], "val": [6, None, 5, None]})
+    result_lf = lf.group_by("group", maintain_order=True).agg(expr.alias("out"))
+
+    plan = result_lf.explain()
+    assert optimized_expr in plan
+    assert ".len()" not in plan
+    assert ".null_count()" not in plan
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+    )
 
 
 def test_collapse_joins() -> None:
