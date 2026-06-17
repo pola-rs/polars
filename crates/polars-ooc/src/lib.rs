@@ -1,6 +1,3 @@
-#[allow(unused)]
-mod v1;
-
 mod global_alloc;
 mod memory_manager;
 mod spill_context;
