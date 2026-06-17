@@ -1034,3 +1034,16 @@ def test_lazyframe_gather_select_len() -> None:
 
     with pytest.raises(pl.exceptions.OutOfBoundsError):
         q.collect()
+
+
+def test_projection_pushdown_identity_with_columns_27935() -> None:
+    # An identity with_columns (b=col("b")) plus a pruned expression must not
+    # reorder the remaining columns, which previously caused "a" to be dropped.
+    out = (
+        pl.LazyFrame({"a": [0], "b": [0]})
+        .with_columns(b=pl.col("b"), x=pl.lit(1.0))
+        .group_by("b")
+        .agg(pl.col("a"))
+        .collect()
+    )
+    assert_frame_equal(out, pl.DataFrame({"b": [0], "a": [[0]]}))
