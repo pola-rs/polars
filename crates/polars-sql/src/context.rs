@@ -849,8 +849,9 @@ impl SQLContext {
                 polars_bail!(SQLInterface: "recursive CTEs are not supported")
             }
             for cte in &with.cte_tables {
+                // Note: isolate CTE execution to prevent context state leakage
                 let cte_name = cte.alias.name.value.clone();
-                let mut lf = self.execute_query(&cte.query)?;
+                let mut lf = self.execute_isolated(|ctx| ctx.execute_query(&cte.query))?;
                 lf = self.rename_columns_from_table_alias(lf, &cte.alias)?;
                 self.register_cte(&cte_name, lf);
             }
