@@ -11,7 +11,7 @@ from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Sequence
+    from collections.abc import Collection, Mapping, Sequence
 
     from polars.type_aliases import PolarsDataType
 
@@ -25,7 +25,7 @@ _POLARS_TO_SQLITE_: dict[PolarsDataType, str] = {
 
 
 def _execute_with_sqlite(
-    frames: dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: Mapping[str, pl.DataFrame | pl.LazyFrame],
     query: str,
 ) -> pl.DataFrame:
     """Execute a SQL query against SQLite, returning a DataFrame."""
@@ -57,7 +57,7 @@ def _execute_with_sqlite(
 
 
 def _execute_with_duckdb(
-    frames: dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: Mapping[str, pl.DataFrame | pl.LazyFrame],
     query: str,
 ) -> pl.DataFrame:
     """Execute a SQL query against DuckDB, returning a DataFrame."""
@@ -81,7 +81,7 @@ _COMPARISON_BACKENDS_ = {
 
 
 def assert_sql_matches(
-    frames: pl.DataFrame | pl.LazyFrame | dict[str, pl.DataFrame | pl.LazyFrame],
+    frames: pl.DataFrame | pl.LazyFrame | Mapping[str, pl.DataFrame | pl.LazyFrame],
     *,
     query: str,
     compare_with: Literal["sqlite", "duckdb"]
