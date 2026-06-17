@@ -267,7 +267,7 @@ impl Debug for RandomSpillContext {
 
 // Used to normalize divisor to avoid absurdly high scores. Set to 1us.
 const BASE_IO_TIME: f64 = 1e-6;
-const UNEXPLORED_SCORE: f64 = 1e10_f64;
+pub(crate) const UNEXPLORED_SCORE: f64 = 1e30_f64;
 const EXPLORED_WEIGHT_THRESHOLD: f64 = 1.1; // Just over 1 so sample variance correction is stable.
 const UNSPILL_EVENT_HALF_LIFE_SEC: f64 = 5.0;
 const NANOSECONDS_IN_SECOND: f64 = 1e9;
@@ -299,15 +299,15 @@ impl Drop for SpillContextStatistics {
             let unspill_io = Duration::from_secs_f64(stats.spill_time);
             let spills_tot = stats.successful_spills + stats.failed_spills;
             let spills_succ = 100.0 * stats.successful_spills as f64 / spills_tot as f64;
-            let eval_tot = stats.total_evaluations;
-            let eval_succ = 100.0 * stats.successful_evaluations as f64 / eval_tot as f64;
+            let explore_tot = stats.total_explorations;
+            let explore_succ = 100.0 * stats.successful_explorations as f64 / explore_tot as f64;
 
             eprintln!(
                 "spill_stats({name}): \
                 relief_mb_s({relief:.2}), \
                 io(spill={spill_io:.2?}, unspill={unspill_io:.2?}), \
                 spill(succ={spills_succ:.1}%, n={spills_tot}), \
-                eval(succ={eval_succ:.1}%, n={eval_tot})"
+                explore(succ={explore_succ:.1}%, n={explore_tot})"
             )
         }
     }
@@ -320,8 +320,8 @@ struct Statistics {
     unspill_time: f64,
     successful_spills: u64,
     failed_spills: u64,
-    total_evaluations: u64,
-    successful_evaluations: u64,
+    total_explorations: u64,
+    successful_explorations: u64,
 
     // Historical stats for the multi-armed bandit algorithm. These are
     // discounted statistics (meaning they decay over time), where weight is the
@@ -341,8 +341,8 @@ struct Statistics {
     bandit_tt_sum: f64,
     bandit_rt_sum: f64,
 
-    bandit_eval_weight: f64,
-    bandit_eval_success: f64,
+    bandit_explore_weight: f64,
+    bandit_explore_success: f64,
 
     // Stats of currently active spills. We prefer integers here for accuracy,
     // but have to use floats for the bigger accumulators. Those are only used
@@ -367,8 +367,8 @@ impl SpillContextStatistics {
         &self.name
     }
 
-    // Returns the discounted mean and discounted variance of the 'score' of
-    // this context. The score is the number of spilled byte-seconds divided by
+    // Returns a sample of the expected performance of this context, discounting
+    // older data. The score is the number of spilled byte-seconds divided by
     // the IO time in seconds. The discount is a time-based exponential decay
     // which assigns lower weight to older spill events (with a half-life of
     // UNSPILL_EVENT_HALF_LIFE_SEC), and full weight to current spills.
@@ -386,15 +386,15 @@ impl SpillContextStatistics {
     pub fn start_exploration_event(&self) {
         // We don't bother stepping time here as it's already done in score sampling.
         let mut stats = self.stats.lock().unwrap();
-        stats.total_evaluations += 1;
-        stats.bandit_eval_weight += 1.0;
+        stats.total_explorations += 1;
+        stats.bandit_explore_weight += 1.0;
     }
 
     pub fn finish_exploration_event(&self, success: bool) {
         // We don't bother stepping time here as it's already done in score sampling.
         let mut stats = self.stats.lock().unwrap();
-        stats.successful_evaluations += success as u64;
-        stats.bandit_eval_success += success as u64 as f64;
+        stats.successful_explorations += success as u64;
+        stats.bandit_explore_success += success as u64 as f64;
     }
 
     pub fn add_failed_spill(&self, spill_start: Instant) {
@@ -537,8 +537,8 @@ impl Statistics {
         self.bandit_tt_sum *= decay_factor;
         self.bandit_rt_sum *= decay_factor;
 
-        self.bandit_eval_success *= decay_factor;
-        self.bandit_eval_weight *= decay_factor;
+        self.bandit_explore_success *= decay_factor;
+        self.bandit_explore_weight *= decay_factor;
 
         self.last_update = now;
     }
@@ -565,9 +565,12 @@ impl Statistics {
     fn sample_score<R: Rng>(&mut self, rng: &mut R) -> f64 {
         self.step_time(Instant::now());
 
-        if self.bandit_eval_weight >= EXPLORED_WEIGHT_THRESHOLD {
-            let alpha = self.bandit_eval_success.max(0.0) + 1.0;
-            let beta = (self.bandit_eval_weight - self.bandit_eval_success).max(0.0) + 1.0;
+        // Take into account how often we've tried to inspect this context and
+        // didn't find anything to spill.
+        if self.bandit_explore_weight >= EXPLORED_WEIGHT_THRESHOLD {
+            // Bernoulli Thompson sampling of a probability.
+            let alpha = 1.0 + self.bandit_explore_success.max(0.0);
+            let beta = 1.0 + (self.bandit_explore_weight - self.bandit_explore_success).max(0.0);
             let p = rand_distr::Beta::new(alpha, beta).unwrap().sample(rng);
             if !rng.random_bool(p) {
                 return 0.0;
@@ -656,8 +659,8 @@ impl Default for Statistics {
             unspill_time: 0.0,
             successful_spills: 0,
             failed_spills: 0,
-            successful_evaluations: 0,
-            total_evaluations: 0,
+            successful_explorations: 0,
+            total_explorations: 0,
             last_update: Instant::now(),
 
             bandit_weight: 0.0,
@@ -667,8 +670,8 @@ impl Default for Statistics {
             bandit_tt_sum: 0.0,
             bandit_rt_sum: 0.0,
 
-            bandit_eval_weight: 0.0,
-            bandit_eval_success: 0.0,
+            bandit_explore_weight: 0.0,
+            bandit_explore_success: 0.0,
 
             active_spills: 0,
             active_spills_io_time_ns: 0,
