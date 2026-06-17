@@ -18,11 +18,12 @@ impl Spillable for DataFrame {
         self.estimated_size()
     }
 
-    async fn spill(&self) -> Self::Spilled {
+    async fn spill(&self, context_id: &str) -> Self::Spilled {
         let mut df = self.clone();
+        let context_id = context_id.to_owned();
         ASYNC
             .spawn_blocking(move || {
-                let spill_file = SpillFile::new("ipc");
+                let spill_file = SpillFile::new(&context_id, "ipc");
 
                 let mut file = std::fs::File::create(spill_file.path()).unwrap_or_else(|e| {
                     panic!(

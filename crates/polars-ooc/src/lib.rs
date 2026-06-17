@@ -25,7 +25,7 @@ pub trait Spillable: Send + Sync + 'static {
     fn estimate_byte_size(&self) -> usize;
 
     /// Spills this value, returning a spilled representation.
-    fn spill(&self) -> impl Future<Output = Self::Spilled> + Send;
+    fn spill(&self, context_id: &str) -> impl Future<Output = Self::Spilled> + Send;
 
     /// Given a previously spilled representation
     fn unspill(location: &Self::Spilled) -> impl Future<Output = Self> + Send;

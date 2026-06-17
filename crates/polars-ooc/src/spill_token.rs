@@ -422,7 +422,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                         .fetch_add(RO_PIN_COUNT_UNIT - LOCK_BIT, Ordering::AcqRel),
                 );
                 let pin_guard = PinnedRef { inner: self };
-                let spilled = pin_guard.spill().await;
+                let spilled = pin_guard.spill(stats.name()).await;
                 core::mem::forget(pin_guard);
                 // We can simply re-acquire the lock here blindly, as we still hold
                 // our pin meaning no one else could've gotten the lock.

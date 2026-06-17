@@ -4,6 +4,14 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use polars_io::create_dir_owner_only;
 
+/// On-disk layout:
+///
+/// ```text
+/// <spill_dir>/
+///   <pid>/                     <- process directory (one per OS process)
+///     spill-<ctx>-<uuid>.ipc   <- individual spill file (unique per spill)
+/// ```
+
 static SPILL_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     let spill_dir = polars_config::config().ooc_spill_dir();
     let process_dir = spill_dir.join(std::process::id().to_string());
@@ -18,11 +26,11 @@ pub struct SpillFile {
 }
 
 impl SpillFile {
-    pub fn new(ext: &str) -> Self {
-        let fname = uuid::Uuid::now_v7();
+    pub fn new(context_id: &str, ext: &str) -> Self {
+        let uuid = uuid::Uuid::now_v7();
         Self {
             path: SPILL_DIR
-                .join(fname.as_hyphenated().to_string())
+                .join(format!("spill-{context_id}-{uuid}.{ext}", uuid=uuid.as_hyphenated()))
                 .with_extension(ext),
         }
     }

@@ -25,5 +25,5 @@ pub fn default_ooc_spill_dir() -> PathBuf {
     let (base, user_var) = (std::env::temp_dir(), "USER");
 
     let user = std::env::var(user_var).unwrap_or_else(|_| "unknown".to_string());
-    base.join(format!("polars-{user}/spill"))
+    base.join(format!("polars-{user}")).join("spill")
 }
