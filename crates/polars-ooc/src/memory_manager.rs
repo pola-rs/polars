@@ -6,6 +6,11 @@ use polars_config::config;
 use polars_utils::total_ord::TotalOrd;
 use tokio::sync::Mutex as AsyncMutex;
 
+// How much worse than the best achieved (sample) score are we willing to look
+// for spillables.
+const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
+
+use crate::spill_context::UNEXPLORED_SCORE;
 use crate::spill_token::TrySpillError;
 use crate::{DynSpillToken, SpillContext};
 
@@ -125,6 +130,7 @@ impl MemoryManager {
 
             // Thompson sampling.
             let score_sample = ctx.stats().sample_score(&mut rng);
+            assert!(!score_sample.is_nan());
             live_contexts.push((ctx, score_sample));
         }
         drop(contexts);
@@ -132,13 +138,27 @@ impl MemoryManager {
         // Find the best context and loop over its candidates. For each
         // candidate we check if it can be spilled else we reinsert it.
         let min_spill = config().ooc_spill_min_bytes();
-        let best_ctx = live_contexts.into_iter().max_by(|a, b| a.1.tot_cmp(&b.1));
-        let out = if let Some((best_ctx, _score)) = best_ctx {
-            best_ctx.stats().start_exploration_event();
+        live_contexts.sort_by(|a, b| a.1.tot_cmp(&b.1).reverse());
+        let best_explored_score = live_contexts
+            .iter()
+            .map(|(_ctx, score)| *score)
+            .filter(|s| *s < UNEXPLORED_SCORE)
+            .next()
+            .unwrap_or_default();
+
+        let mut out = None;
+        for (ctx, score) in live_contexts {
+            // Refuse to consider contexts which are significantly worse than
+            // the best already-explored one.
+            if score * EXPLORE_BEYOND_BEST_SCORE_THRESHOLD < best_explored_score {
+                break;
+            }
+
+            ctx.stats().start_exploration_event();
 
             let mut total_est_spill = 0;
             let mut candidates = Vec::new();
-            for (cand, id) in best_ctx.pop() {
+            for (cand, id) in ctx.pop() {
                 if cand.can_spill()
                     && let Some(sz) = cand.estimate_byte_size()
                     && sz as u64 >= min_spill
@@ -147,21 +167,21 @@ impl MemoryManager {
                     candidates.push((cand, id, sz));
                 } else {
                     if !cand.is_spilled_or_dropped() {
-                        best_ctx.reinsert(&cand, id);
+                        ctx.reinsert(&cand, id);
                     }
                 }
             }
 
-            // Increment the spill-in-progress to avoid eager over-spilling.
-            self.est_spill_in_progress
-                .fetch_add(total_est_spill, Ordering::Relaxed);
-
-            // TODO: penalize context also for time spent finding candidates, so an all-pinned
-            // context or all-tiny frame context doesn't keep being chosen.
-            Some((best_ctx, candidates))
-        } else {
-            None
-        };
+            if candidates.is_empty() {
+                ctx.stats().finish_exploration_event(false);
+            } else {
+                // Increment the spill-in-progress to avoid eager over-spilling.
+                self.est_spill_in_progress
+                    .fetch_add(total_est_spill, Ordering::Relaxed);
+                out = Some((ctx, candidates));
+                break
+            }
+        }
 
         drop(finding_spill_guard);
         if has_dead_context {
