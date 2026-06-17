@@ -50,7 +50,7 @@ def test_selector_all(df: pl.DataFrame) -> None:
     assert df.schema == df.select(cs.all()).schema
     assert df.select(~cs.all()).schema == {}
     assert df.schema == df.select(~(~cs.all())).schema
-    assert df.select(cs.all() & pl.col("abc")).schema == {"abc": pl.UInt16}
+    assert df.select(cs.all() & cs.by_name("abc")).schema == {"abc": pl.UInt16}
 
 
 def test_selector_alpha() -> None:
@@ -211,11 +211,7 @@ def test_selector_by_index(df: pl.DataFrame) -> None:
 
 
 def test_selector_by_name(df: pl.DataFrame) -> None:
-    for selector in (
-        cs.by_name("abc", "cde"),
-        cs.by_name("abc") | pl.col("cde"),
-    ):
-        assert df.select(selector).columns == ["abc", "cde"]
+    assert df.select(cs.by_name("abc", "cde")).columns == ["abc", "cde"]
 
     assert df.select(~cs.by_name("abc", "cde", "ghi", "Lmn", "opp", "eee")).columns == [
         "bbb",
@@ -234,13 +230,9 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
     for missing_column in ("missing", "???"):
         assert df.select(cs.by_name(missing_column, require_all=False)).columns == []
 
-    # check "by_name & col"
-    for selector_expr, expected in (
-        (cs.by_name("abc", "cde") & pl.col("ghi"), []),
-        (cs.by_name("abc", "cde") & pl.col("cde"), ["cde"]),
-        (cs.by_name("cde") & cs.by_name("cde", "abc"), ["cde"]),
-    ):
-        assert df.select(selector_expr).columns == expected
+    # check "by_name & by_name"
+    assert df.select(cs.by_name("abc", "cde") & cs.by_name("cde")).columns == ["cde"]
+    assert df.select(cs.by_name("cde") & cs.by_name("cde", "abc")).columns == ["cde"]
 
     # check "by_name & by_name"
     assert df.select(
@@ -815,7 +807,7 @@ def test_regex_expansion_exclude_10002() -> None:
 def test_is_selector() -> None:
     # only actual/compound selectors should pass this check
     assert is_selector(cs.numeric())
-    assert is_selector(cs.by_dtype(pl.UInt32) | pl.col("xyz"))
+    assert is_selector(cs.by_dtype(pl.UInt32) | cs.by_name("xyz"))
 
     # expressions (and literals, etc) should fail
     assert not is_selector(pl.col("xyz"))

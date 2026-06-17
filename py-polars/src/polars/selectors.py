@@ -471,9 +471,6 @@ class Selector(Expr):
     def __and__(self, other: Any) -> Expr: ...
 
     def __and__(self, other: Any) -> Selector | Expr:
-        if is_column(other):  # @2.0: remove
-            colname = other.meta.output_name()
-            other = by_name(colname)
         if is_selector(other):
             return Selector._from_pyselector(
                 PySelector.intersect(self._pyselector, other._pyselector)
@@ -491,8 +488,6 @@ class Selector(Expr):
     def __or__(self, other: Any) -> Expr: ...
 
     def __or__(self, other: Any) -> Selector | Expr:
-        if is_column(other):  # @2.0: remove
-            other = by_name(other.meta.output_name())
         if is_selector(other):
             return Selector._from_pyselector(
                 PySelector.union(self._pyselector, other._pyselector)
@@ -530,8 +525,6 @@ class Selector(Expr):
     def __xor__(self, other: Any) -> Expr: ...
 
     def __xor__(self, other: Any) -> Selector | Expr:
-        if is_column(other):  # @2.0: remove
-            other = by_name(other.meta.output_name())
         if is_selector(other):
             return Selector._from_pyselector(
                 PySelector.exclusive_or(self._pyselector, other._pyselector)
@@ -540,8 +533,6 @@ class Selector(Expr):
             return self.as_expr().__xor__(other)
 
     def __rxor__(self, other: Any) -> Expr:
-        if is_column(other):  # @2.0: remove
-            other = by_name(other.meta.output_name())
         return self.as_expr().__rxor__(other)
 
     def exclude(
