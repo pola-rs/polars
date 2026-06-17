@@ -3,6 +3,7 @@ use std::fmt::Write;
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustMyLength;
+use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::error::feature_gated;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -26,7 +27,7 @@ pub struct WindowExpr {
     /// the root column that the Function will be applied on.
     /// This will be used to create a smaller DataFrame to prevent taking unneeded columns by index
     pub(crate) group_by: Vec<Arc<dyn PhysicalExpr>>,
-    pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortOptions)>,
+    pub(crate) order_by: Option<(Arc<dyn PhysicalExpr>, SortMultipleOptions)>,
     pub(crate) apply_columns: Vec<PlSmallStr>,
     pub(crate) phys_function: Arc<dyn PhysicalExpr>,
     pub(crate) mapping: WindowMapping,
@@ -347,6 +348,39 @@ pub fn window_function_format_order_by(to: &mut String, e: &Expr, k: &SortOption
     write!(to, "_PL_{:?}{}_{}", e, k.descending, k.nulls_last).unwrap();
 }
 
+pub fn prepare_order_by(
+    s: &Series,
+    options: &SortMultipleOptions,
+) -> PolarsResult<(Series, SortOptions)> {
+    //Note: s is the key field, if only one order_by column is provided then the
+    //key is just that column. If mulitple order_by columns are provided then the
+    //key is a struct field, which we row encode into a single binary rep
+    match s.dtype() {
+        DataType::Struct(_) => {
+            let fields: Vec<Column> = s
+                .struct_()?
+                .fields_as_series()
+                .into_iter()
+                .map(Column::from)
+                .collect();
+            let key = _get_rows_encoded_ca(
+                s.name().clone(),
+                &fields,
+                &options.descending,
+                &options.nulls_last,
+                false,
+            )?
+            .into_series();
+
+            let mut opts = SortOptions::from(options);
+            opts.descending = false;
+
+            Ok((key, opts))
+        },
+        _ => Ok((*s, SortOptions::from(options))),
+    }
+}
+
 impl PhysicalExpr for WindowExpr {
     // Note: this was first implemented with expression evaluation but this performed really bad.
     // Therefore we choose the group_by -> apply -> self join approach
@@ -436,8 +470,12 @@ impl PhysicalExpr for WindowExpr {
             if let Some((order_by, options)) = &self.order_by {
                 let order_by = order_by.evaluate(df, state)?;
                 polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
-                groups = update_groups_sort_by(&groups, order_by.as_materialized_series(), options)?
-                    .into_sliceable()
+                groups = update_groups_sort_by(
+                    &groups,
+                    order_by.as_materialized_series(),
+                    &SortOptions::from(options),
+                )?
+                .into_sliceable()
             }
 
             let out: PolarsResult<GroupPositions> = Ok(groups);
@@ -714,7 +752,7 @@ impl PhysicalExpr for WindowExpr {
                     None
                 };
 
-                Some((e.clone(), arr, *options))
+                Some((e.clone(), arr, options.clone()))
             },
         };
 
@@ -944,8 +982,11 @@ impl PhysicalExpr for WindowExpr {
 
         let mut subgroups = GroupsType::Idx(subgroups.into());
         if let Some((order_by, _, options)) = order_by {
-            subgroups =
-                update_groups_sort_by(&subgroups, order_by.as_materialized_series(), &options)?;
+            subgroups = update_groups_sort_by(
+                &subgroups,
+                order_by.as_materialized_series(),
+                &SortOptions::from(&options),
+            )?;
         }
         let subgroups = subgroups.into_sliceable();
         let mut data = self
