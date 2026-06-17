@@ -843,6 +843,7 @@ def test_projection_pushdown_nonstrict_hconcat_select_len() -> None:
             pl.LazyFrame({"b": [0, 1, 2, 3, 4]}),
         ],
         how="horizontal",
+        strict=False,
     ).select(pl.len())
     plan = q.explain()
 

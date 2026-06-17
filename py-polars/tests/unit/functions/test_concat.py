@@ -36,16 +36,16 @@ def test_concat_horizontally_strict() -> None:
     df2 = pl.DataFrame({"c": [11, 12], "d": [42, 24]})  # 2 vs N
     df3 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
     with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([df1, df3], how="horizontal", strict=True)
+        pl.concat([df1, df3], how="horizontal")
 
     with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([df2, df3], how="horizontal", strict=True)
+        pl.concat([df2, df3], how="horizontal")
 
     with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([df1.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
+        pl.concat([df1.lazy(), df3.lazy()], how="horizontal").collect()
 
     with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([df2.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
+        pl.concat([df2.lazy(), df3.lazy()], how="horizontal").collect()
 
     out = pl.concat([df1, df3], how="horizontal", strict=False)
     assert out.to_dict(as_series=False) == {
