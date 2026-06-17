@@ -6,13 +6,11 @@ mod parse;
 mod resolve_mode;
 mod spill_format;
 pub mod spill_path;
-mod spill_policy;
 
 pub use engine::Engine;
 use polars_error::polars_warn;
 pub use resolve_mode::ResolveMode;
 pub use spill_format::SpillFormat;
-pub use spill_policy::SpillPolicy;
 
 // Public.
 const VERBOSE: &str = "POLARS_VERBOSE";
@@ -62,9 +60,7 @@ const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
 const OOC_DRIFT_THRESHOLD: &str = "POLARS_OOC_DRIFT_THRESHOLD";
 const DEFAULT_OOC_DRIFT_THRESHOLD: u64 = 4 * 1024 * 1024;
 
-const OOC_SPILL_POLICY: &str = "POLARS_OOC_SPILL_POLICY";
-const DEFAULT_OOC_SPILL_POLICY: SpillPolicy = SpillPolicy::NoSpill;
-
+// Unused at the moment, always IPC.
 const OOC_SPILL_FORMAT: &str = "POLARS_OOC_SPILL_FORMAT";
 const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
 
@@ -133,7 +129,6 @@ static KNOWN_OPTIONS: &[&str] = &[
     FORCE_ASYNC,
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
-    OOC_SPILL_POLICY,
     OOC_SPILL_FORMAT,
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
@@ -160,7 +155,6 @@ pub struct Config {
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
     import_interval_as_struct: AtomicBool,
-    ooc_spill_policy: AtomicU8,
     ooc_spill_format: AtomicU8,
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
@@ -190,7 +184,6 @@ impl Config {
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
-            ooc_spill_policy: AtomicU8::new(DEFAULT_OOC_SPILL_POLICY as u8),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
             ooc_memory_budget_fraction: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_BUDGET_FRACTION.to_bits(),
@@ -300,11 +293,6 @@ impl Config {
             OOC_DRIFT_THRESHOLD => OOC_DRIFT_THRESHOLD_ATOMIC.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_DRIFT_THRESHOLD),
-                Ordering::Relaxed,
-            ),
-            OOC_SPILL_POLICY => self.ooc_spill_policy.store(
-                val.and_then(|x| parse::parse_spill_policy(var, x))
-                    .unwrap_or(DEFAULT_OOC_SPILL_POLICY) as u8,
                 Ordering::Relaxed,
             ),
             OOC_SPILL_FORMAT => self.ooc_spill_format.store(
@@ -435,11 +423,6 @@ impl Config {
     #[inline(always)]
     pub fn ooc_drift_threshold(&self) -> u64 {
         get_ooc_drift_threshold()
-    }
-
-    #[inline(always)]
-    pub fn ooc_spill_policy(&self) -> SpillPolicy {
-        SpillPolicy::from_discriminant(self.ooc_spill_policy.load(Ordering::Relaxed))
     }
 
     #[inline(always)]
