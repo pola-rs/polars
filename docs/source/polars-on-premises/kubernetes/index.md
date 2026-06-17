@@ -1,4 +1,4 @@
-# Kubernetes
+# Getting started
 
 The following section walks you through the few steps required to deploy a cluster on your own
 Kubernetes infrastructure. We expect the latter to be provisioned, and the few tools to interact
@@ -30,7 +30,7 @@ commands to register the repo and install the chart:
 
 !!! info "Workspace ID"
 
-    The Workspace ID can be found in the workspace settings page or with `pc workspace list`
+    The Workspace ID can be found in the workspace settings page or with `pc workspace list`.
 
 ```sh
 helm repo add polars-inc https://polars-inc.github.io/helm-charts
@@ -43,9 +43,10 @@ helm repo update
 ```sh
 helm upgrade --install polars polars-inc/polars \
   --set clusterId="My First Cluster" \
-  --set workspaceId=<WORKSPACE ID> \
-  --set clientId=<SERVICE ACCOUNT ID> \
-  --set clientSecret=<SERVICE ACCOUNT SECRET> \
+  --set license.onPrem.enabled=true \
+  --set license.onPrem.workspaceId=<WORKSPACE ID> \
+  --set license.onPrem.clientId=<SERVICE ACCOUNT ID> \
+  --set license.onPrem.clientSecret=<SERVICE ACCOUNT SECRET> \
   --set scheduler.deployment.runtimeContainer.resources.requests.memory=1Gi \
   --set worker.deployment.replicaCount=2 \
   --set worker.deployment.runtimeContainer.resources.requests.memory=4Gi \
@@ -53,9 +54,11 @@ helm upgrade --install polars polars-inc/polars \
   --set anonymousResults.temporaryStorage.enabled=true
 ```
 
-!!! warning "Not for production use" The cluster configuration defined above is for a quickstart
-only and should not be used in a production environment! See the
-[Production configuration](#production-configuration) section below.
+!!! warning "Not for production use"
+
+    The cluster configuration defined above is for a quickstart only and should not be used in a
+    production environment! See the [Production configuration](#production-configuration) section
+    below.
 
 Key parameters explained:
 
@@ -90,8 +93,8 @@ polars-worker-xxxxxxxxx-xxxxx                1/1     Running   0          1m
 polars-temporary-storage-xxxxxxxxx-xxxxx     1/1     Running   0          1m
 ```
 
-Once all pods show `Running`, the cluster is registered with our control plane and ready to accept
-queries.
+Once all pods show a `Running` status, the cluster is registered with our control plane and ready to
+accept queries.
 
 #### Run your first query
 
@@ -125,7 +128,7 @@ result = (
     .remote(ctx)
     .execute()
 )
-print(result.head())
+print(result.head)
 ```
 
 The cluster is now ready to execute your own Polars queries. The following sections give more
@@ -191,7 +194,7 @@ S3-compatible storage, which must be accessible from all worker nodes and the cl
 For a lightweight quickstart we opted for [SeaweedFS](https://github.com/seaweedfs/seaweedfs),
 backed by an `emptyDir`. In a production environment, any S3-compatible technology can be used
 (_i.e._, MinIO, DigitalOcean Spaces, _etc._). Support for Azure Blob Storage (ABS) and Google Cloud
-Storage (GCS) is underway.
+Storage (GCS) is currently being tested (released as beta).
 
 Anonymous results configuration is under the
 [`anonymousResults` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data).
@@ -203,14 +206,16 @@ other nodes needs to be made available to be able to perform next operations; in
 the data is _shuffled_ between worker nodes, according to the bookkeeping done by the scheduler.
 
 By default, `emptyDir` volumes are used on each worker node. You can however decide to use ephemeral
-volumes instead for more configuration flexibility; as an alternative, your own S3- compatible
+volumes instead for more configuration flexibility; as an alternative, your own S3-compatible
 storage can be used.
 
 Using S3-compatible storage might improve fault tolerance, since intermediate results are stored
-independently of the worker pods themselves. The performance trade-off depends on the latency and
-throughput characteristics of your storage backend relative to local volumes. As an example, on AWS,
-EBS offers lower latency than S3 but lower throughput. This makes EBS a better fit for workloads
-that produce many small shuffle files, while S3 will outperform it when shuffle files are large.
+independently of the worker pods themselves. It also keeps queries resilient to worker out-of-memory
+events on cgroup v2 clusters; see [Memory limits and OOM behavior](#memory-limits-and-oom-behavior).
+The performance trade-off depends on the latency and throughput characteristics of your storage
+backend relative to local volumes. As an example, on AWS, EBS offers lower latency than S3 but lower
+throughput. This makes EBS a better fit for workloads that produce many small shuffle files, while
+S3 will outperform it when shuffle files are large.
 
 Shuffle configuration is under the
 [`shuffleData` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#shuffle-data).
@@ -227,8 +232,32 @@ the cluster.
 Resource allocation and cluster topology configuration is under the
 [`worker.deployment` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#resource-allocation-and-node-selectors).
 
+#### Memory limits and OOM behavior
+
+Each Polars On-Prem worker runs two processes: a main process that supervises the worker and tracks
+completed work (including shuffle data), and an executor process that performs the actual
+computation. Only the executor needs to die when a worker runs out of memory: the main process can
+then report the failure, and the scheduler reschedules the affected stage. Polars On-Prem sets
+`oom_score_adj` on the executor so the kernel prefers to kill it first.
+
+!!! warning "cgroup v2 clusters kill the whole worker on OOM"
+
+    On clusters using cgroup v2, the kubelet sets `memory.oom.group=1` on each container
+    (Kubernetes 1.28 and later). The kernel then treats the container as a single unit: when the
+    memory limit is exceeded, **every** process in the worker is killed, not just the executor.
+    Polars On-Prem's `oom_score_adj` handling cannot prevent this.
+
+To stay resilient to worker out-of-memory events on cgroup v2, store shuffle data on shared storage
+(S3-compatible or a shared filesystem) rather than on worker-local disk. Because intermediate
+results then live independently of the worker pods, the scheduler can reschedule work onto another
+worker when one is killed, with no data loss. See [Shuffle data](#shuffle-data) above.
+
+If you control the kubelet configuration, setting `singleProcessOOMKill: true` (Kubernetes 1.32 and
+later) restores single-process OOM kills on cgroup v2. This is a node-level setting that is often
+unavailable on managed clusters, so prefer shared shuffle storage where possible.
+
 ## On-Prem Enterprise
 
 If you are interested in deploying one or several clusters without any resource limitations nor data
 sharing, on bare-metal machines or in a Kubernetes setup, and in air-gapped environments, please
-[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv).
+[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide).

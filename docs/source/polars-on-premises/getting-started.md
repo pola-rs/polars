@@ -38,7 +38,7 @@ temporary storage bucket. Replace Workspace ID and Service Account credentials w
 
 !!! info "Workspace ID"
 
-    The Workspace ID can be found in the workspace settings page or with `pc workspace list`
+    The Workspace ID can be found in the workspace settings page or with `pc workspace list`.
 
 ```bash
 helm repo add polars-inc https://polars-inc.github.io/helm-charts && helm repo update
@@ -47,9 +47,10 @@ helm repo add polars-inc https://polars-inc.github.io/helm-charts && helm repo u
 ```bash
 helm upgrade --install polars polars-inc/polars \
   --set clusterId="My First Cluster" \
-  --set workspaceId=<WORKSPACE ID> \
-  --set clientId=<SERVICE ACCOUNT ID> \
-  --set clientSecret=<SERVICE ACCOUNT SECRET> \
+  --set license.onPrem.enabled=true \
+  --set license.onPrem.workspaceId=<WORKSPACE ID> \
+  --set license.onPrem.clientId=<SERVICE ACCOUNT ID> \
+  --set license.onPrem.clientSecret=<SERVICE ACCOUNT SECRET> \
   --set scheduler.deployment.runtimeContainer.resources.requests.memory=1Gi \
   --set worker.deployment.replicaCount=2 \
   --set worker.deployment.runtimeContainer.resources.requests.memory=4Gi \
@@ -57,8 +58,11 @@ helm upgrade --install polars polars-inc/polars \
   --set anonymousResults.temporaryStorage.enabled=true
 ```
 
-!!! warning "Not for production use" This configuration is for a quickstart only. See the
-[Kubernetes deployment guide](./kubernetes/getting-started.md) for production configuration.
+!!! warning "Not for production use"
+
+    The cluster configuration defined above is for a quickstart only and should not be used in a
+    production environment! See the [Kubernetes deployment guide](./kubernetes/index.md)
+    for more details.
 
 Verify all pods are running before continuing:
 
@@ -103,8 +107,8 @@ result = (
     .remote(ctx)
     .execute()
 )
-print(result.head())
+print(result.head)
 ```
 
 Your cluster is ready. For a full walkthrough of deployed resources, networking, and production
-configuration, see the [Kubernetes deployment guide](./kubernetes/getting-started.md).
+configuration, see the [Kubernetes deployment guide](./kubernetes/index.md).

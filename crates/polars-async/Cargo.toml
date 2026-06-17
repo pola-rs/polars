@@ -17,8 +17,9 @@ parking_lot = { workspace = true }
 pin-project-lite = { workspace = true }
 rand = { workspace = true }
 slotmap = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "sync", "net", "time"] }
 
+polars-config = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 

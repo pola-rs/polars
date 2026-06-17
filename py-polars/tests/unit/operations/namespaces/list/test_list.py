@@ -1096,14 +1096,17 @@ def test_list_sample_fraction_unequal_lengths_22018() -> None:
 
 
 def test_list_sample_n_self_broadcast() -> None:
-    assert pl.Series("a", [[1, 2]]).list.sample(pl.Series([1, 2, 1])).len() == 3
+    result = pl.Series("a", [[1, 2, 3, 4]]).list.sample(pl.Series([1, 2, 3]), seed=0)
+    assert result.len() == 3
+    assert [len(row) for row in result] == [1, 2, 3]
 
 
 def test_list_sample_fraction_self_broadcast() -> None:
-    assert (
-        pl.Series("a", [[1, 2]]).list.sample(fraction=pl.Series([0.5, 0.2, 0.4])).len()
-        == 3
+    result = pl.Series("a", [[1, 2, 3, 4]]).list.sample(
+        fraction=pl.Series([0.25, 0.5, 1.0]), seed=0
     )
+    assert result.len() == 3
+    assert [len(row) for row in result] == [1, 2, 4]
 
 
 def test_list_shift_unequal_lengths_22018() -> None:
@@ -1173,7 +1176,6 @@ def test_list_filter_null() -> None:
     ]
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:

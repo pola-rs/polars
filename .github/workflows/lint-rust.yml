@@ -10,11 +10,13 @@ on:
       - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
+      - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
   push:
     branches:
       - main
+      - "2.0"
     paths:
       - crates/**
       - docs/source/src/rust/**
@@ -23,6 +25,7 @@ on:
       - pyo3-polars/Cargo.toml
       - py-polars/src/**
       - py-polars/Cargo.toml
+      - deny.toml
       - Cargo.toml
       - .github/workflows/lint-rust.yml
 
@@ -46,7 +49,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Run cargo clippy with all features enabled
         run: python3 tools/cargo-fail-warning.py clippy --workspace --all-targets --all-features --locked -- -W clippy::dbg_macro
@@ -67,13 +71,14 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Run cargo clippy
         run: python3 tools/cargo-fail-warning.py clippy --all-targets --locked -- -W clippy::dbg_macro
 
   rustfmt:
-    if: github.ref_name != 'main'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -85,10 +90,13 @@ jobs:
         run: cargo fmt --all --check
 
   miri:
-    if: github.ref_name != 'main'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
 
       - name: Set up Rust
         run: rustup component add miri
@@ -107,7 +115,7 @@ jobs:
 #          -p polars-arrow
 
   deny:
-    if: github.ref_name != 'main'
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

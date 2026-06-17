@@ -927,3 +927,16 @@ def test_projection_pushdown_fastcount_27534(
 
     assert_frame_equal(lf.select(pl.len()).collect(), df.select(pl.len()))
     assert_frame_equal(lf.collect(), df)
+
+
+def test_projection_pushdown_select_non_column_height_27807() -> None:
+    q = (
+        pl.LazyFrame()
+        .select(
+            x=pl.Series([1, 2, 3]),
+            y=pl.lit(10, dtype=pl.Int64),
+        )
+        .select("y")
+    )
+
+    assert_frame_equal(q.collect(), pl.Series("y", [10, 10, 10]).to_frame())

@@ -838,7 +838,8 @@ def test_cse_series_collision_16138() -> None:
     )
 
 
-def test_nested_cache_no_panic_16553() -> None:
+def test_nested_cache_no_panic_16553(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1")
     assert pl.LazyFrame().select(a=[[[1]]]).collect(
         optimizations=pl.QueryOptFlags(comm_subexpr_elim=True)
     ).to_dict(as_series=False) == {"a": [[[[1]]]]}
@@ -1410,35 +1411,47 @@ def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
     )
 
 
-def test_cspe_create_nested_caches() -> None:
+@pytest.mark.parametrize(
+    ("enable_nested_cspe", "expected_cache_seq_ids"),
+    [
+        (False, [1, 1]),
+        (
+            True,
+            [
+                2,  # concat(lf2, lf2)
+                1,  # select(a + 1)
+                1,  # select(a + 1)
+                2,  # concat(lf2, lf2)
+            ],
+        ),
+    ],
+)
+def test_cspe_create_nested_caches(
+    enable_nested_cspe: bool,
+    expected_cache_seq_ids: list[int],
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_ALLOW_NESTED_CSPE", "1" if enable_nested_cspe else "0")
+
     lf = pl.LazyFrame({"a": [0, 1, 2]})
-
     lf1 = lf.select(pl.col("a") + 1)
-
     lf2 = pl.concat([lf1, lf1])
-
     lf3 = pl.concat([lf2, lf2, pl.LazyFrame({"a": [0, 1, 2]})])
 
     q = lf3
-
     plan = q.explain()
 
     df = pl.DataFrame({"line": [x.strip() for x in plan.splitlines() if "CACHE" in x]})
 
-    assert df.join(
+    cache_seq_ids = df.join(
         df.unique(maintain_order=True).with_columns(
             cache_seq_id=pl.int_range(1, 1 + pl.len()).reverse()
         ),
         on="line",
         maintain_order="left",
-    )["cache_seq_id"].to_list() == [
-        2,  # concat(lf2, lf2)
-        1,  # select(a + 1)
-        1,  # select(a + 1)
-        2,  # concat(lf2, lf2)
-        1,  # select(a + 1)
-        1,  # select(a + 1)
-    ]
+    )["cache_seq_id"].to_list()
+
+    assert cache_seq_ids == expected_cache_seq_ids
 
 
 @pytest.mark.parametrize(
@@ -1478,4 +1491,37 @@ def test_cse_projection_pushdown_27569() -> None:
     assert_frame_equal(
         q.collect(),
         pl.DataFrame({"a": [1, None, 1], "b": [None, 1, 1]}),
+    )
+
+
+def test_cse_existing_predicate_at_scan_27748() -> None:
+    base_q = pl.scan_csv(
+        pl.DataFrame(
+            [
+                pl.Series("x", [True, False]),
+                pl.Series("y0", [False, False]),
+                pl.Series("y1", [True, True]),
+            ]
+        )
+        .write_csv()
+        .encode()
+    ).with_columns(x_not=pl.col("x").not_())
+
+    q = pl.concat(
+        [
+            base_q.filter(pl.col("x_not") & pl.col("y0")),
+            base_q.filter(pl.col("x_not") & pl.col("y0")),
+            base_q.filter(pl.col("x_not") & pl.col("y1")),
+        ]
+    )
+
+    plan = q.explain()
+
+    assert plan.count('SELECTION: col("y0")') == 1
+    assert plan.count('SELECTION: col("y1")') == 1
+    assert plan.count("CACHE[") == 2
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"x": False, "y0": False, "y1": True, "x_not": True}),
     )

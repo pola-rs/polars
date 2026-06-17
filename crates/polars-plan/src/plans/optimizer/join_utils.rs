@@ -1,5 +1,5 @@
 #![allow(unused)]
-use polars_core::error::{PolarsResult, polars_bail};
+use polars_core::error::{PolarsResult, polars_bail, polars_err};
 use polars_core::schema::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -81,7 +81,22 @@ impl ExprOrigin {
             {
                 ExprOrigin::Right
             } else {
-                polars_bail!(ColumnNotFound: "{column_name}")
+                let suggestion = polars_utils::levenshtein::did_you_mean(
+                    column_name,
+                    left_schema
+                        .iter_names()
+                        .chain(right_schema.iter_names())
+                        .map(|s| s.as_str()),
+                );
+                let available: Vec<_> = left_schema
+                    .iter_names()
+                    .chain(right_schema.iter_names())
+                    .collect();
+                return Err(if let Some(s) = suggestion {
+                    polars_err!(ColumnNotFound: "unable to find column {:?}; valid columns: {:?}\n\nDid you mean {:?}?", column_name, available, s)
+                } else {
+                    polars_err!(ColumnNotFound: "unable to find column {:?}; valid columns: {:?}", column_name, available)
+                });
             },
         )
     }

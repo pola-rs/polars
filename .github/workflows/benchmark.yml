@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - main
+      - "2.0"
     paths:
       - crates/**
       - Cargo.toml
@@ -30,6 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -63,7 +67,8 @@ jobs:
         with:
           env-vars: ImageVersion
           workspaces: py-polars
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -87,7 +92,7 @@ jobs:
 
       - name: Comment wheel size
         uses: actions/github-script@v8
-        if: github.ref_name != 'main'
+        if: github.event_name == 'pull_request'
         with:
           script: |
               const currentSize = process.env.LIB_SIZE || 'Unknown';

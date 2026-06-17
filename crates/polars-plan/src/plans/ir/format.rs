@@ -3,8 +3,10 @@ use std::fmt::{self, Display, Formatter, Write};
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
+use polars_utils::aliases::{InitHashMaps as _, PlHashSet};
 use polars_utils::format_list_truncated;
 use polars_utils::slice_enum::Slice;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
@@ -146,7 +148,12 @@ impl<'a> IRDisplay<'a> {
     }
 
     #[recursive]
-    fn _format(&self, f: &mut Formatter, indent: usize) -> fmt::Result {
+    fn _format(
+        &self,
+        f: &mut Formatter,
+        indent: usize,
+        seen_caches: &mut PlHashSet<UniqueId>,
+    ) -> fmt::Result {
         if indent != 0 {
             writeln!(f)?;
         }
@@ -158,6 +165,13 @@ impl<'a> IRDisplay<'a> {
         let output_schema = ir_node.schema(self.lp.lp_arena);
         let output_schema = output_schema.as_ref();
         match ir_node {
+            Cache { input, id } => {
+                write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
+                if seen_caches.insert(*id) {
+                    self.with_root(*input)._format(f, sub_indent, seen_caches)?;
+                }
+                Ok(())
+            },
             Union { inputs, options } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 let name = if let Some(slice) = options.slice {
@@ -176,7 +190,8 @@ impl<'a> IRDisplay<'a> {
                 let sub_sub_indent = sub_indent + INDENT_INCREMENT;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
-                    self.with_root(*plan)._format(f, sub_sub_indent)?;
+                    self.with_root(*plan)
+                        ._format(f, sub_sub_indent, seen_caches)?;
                 }
                 write!(f, "\n{:indent$}END {name}", "")
             },
@@ -185,14 +200,15 @@ impl<'a> IRDisplay<'a> {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
-                    self.with_root(*plan)._format(f, sub_sub_indent)?;
+                    self.with_root(*plan)
+                        ._format(f, sub_sub_indent, seen_caches)?;
                 }
                 write!(f, "\n{:indent$}END HCONCAT", "")
             },
             GroupBy { input, .. } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 write!(f, "\n{:sub_indent$}FROM", "")?;
-                self.with_root(*input)._format(f, sub_indent)?;
+                self.with_root(*input)._format(f, sub_indent, seen_caches)?;
                 Ok(())
             },
             Join {
@@ -212,23 +228,27 @@ impl<'a> IRDisplay<'a> {
                     let name = "NESTED LOOP";
                     write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN:", "")?;
-                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    self.with_root(*input_left)
+                        ._format(f, sub_indent, seen_caches)?;
                     write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
-                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    self.with_root(*input_right)
+                        ._format(f, sub_indent, seen_caches)?;
                     write!(f, "\n{:indent$}END {name} JOIN", "")
                 } else {
                     let how = &options.args.how;
                     write!(f, "{:indent$}{how} JOIN:", "")?;
                     write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
-                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    self.with_root(*input_left)
+                        ._format(f, sub_indent, seen_caches)?;
                     write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
-                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    self.with_root(*input_right)
+                        ._format(f, sub_indent, seen_caches)?;
                     write!(f, "\n{:indent$}END {how} JOIN", "")
                 }
             },
             MapFunction { input, .. } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
-                self.with_root(*input)._format(f, sub_indent)
+                self.with_root(*input)._format(f, sub_indent, seen_caches)
             },
             SinkMultiple { inputs } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
@@ -240,7 +260,8 @@ impl<'a> IRDisplay<'a> {
                 let sub_sub_indent = sub_indent + 2;
                 for (i, plan) in inputs.iter().enumerate() {
                     write!(f, "\n{:sub_indent$}PLAN {i}:", "")?;
-                    self.with_root(*plan)._format(f, sub_sub_indent)?;
+                    self.with_root(*plan)
+                        ._format(f, sub_sub_indent, seen_caches)?;
                 }
                 write!(f, "\n{:indent$}END SINK_MULTIPLE", "")
             },
@@ -255,15 +276,17 @@ impl<'a> IRDisplay<'a> {
                 write!(f, ":")?;
 
                 write!(f, "\n{:indent$}LEFT PLAN:", "")?;
-                self.with_root(*input_left)._format(f, sub_indent)?;
+                self.with_root(*input_left)
+                    ._format(f, sub_indent, seen_caches)?;
                 write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
-                self.with_root(*input_right)._format(f, sub_indent)?;
+                self.with_root(*input_right)
+                    ._format(f, sub_indent, seen_caches)?;
                 write!(f, "\n{:indent$}END MERGE_SORTED", "")
             },
             ir_node => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
                 for input in ir_node.inputs() {
-                    self.with_root(input)._format(f, sub_indent)?;
+                    self.with_root(input)._format(f, sub_indent, seen_caches)?;
                 }
                 Ok(())
             },
@@ -290,7 +313,8 @@ impl<'a> ExprIRDisplay<'a> {
 
 impl Display for IRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self._format(f, 0)
+        let mut seen_caches = PlHashSet::new();
+        self._format(f, 0, &mut seen_caches)
     }
 }
 
@@ -712,7 +736,7 @@ pub fn write_ir_non_recursive(
 
             let predicate = match &options.predicate {
                 PythonPredicate::Polars(e) => Some(e.display(expr_arena)),
-                PythonPredicate::PyArrow(_) => None,
+                PythonPredicate::PyArrow { .. } => None,
                 PythonPredicate::None => None,
             };
 

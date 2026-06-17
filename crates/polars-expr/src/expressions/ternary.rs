@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
+use recursive::recursive;
 
 use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
@@ -84,6 +85,7 @@ impl PhysicalExpr for TernaryExpr {
         Some(&self.expr)
     }
 
+    #[recursive]
     fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let mut state = state.split();
         // Don't cache window functions as they run in parallel.
@@ -109,6 +111,7 @@ impl PhysicalExpr for TernaryExpr {
     }
 
     #[allow(clippy::ptr_arg)]
+    #[recursive]
     fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,

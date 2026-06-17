@@ -4,7 +4,7 @@ pub mod allocator;
 // Since Python Polars cannot share its version into here and we need to be able to build this
 // package correctly without `py-polars`, we need to mirror the version here.
 // example: 1.35.0-beta.1
-pub static PYPOLARS_VERSION: &str = "1.41.0";
+pub static PYPOLARS_VERSION: &str = "1.41.2";
 
 // We allow multiple features to be set simultaneously so checking with all-features
 // is possible. In the case multiple are set or none at all, we set the repr to "unknown".
@@ -97,6 +97,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyBooleanFunction>().unwrap();
     m.add_class::<PyTemporalFunction>().unwrap();
     m.add_class::<PyStructFunction>().unwrap();
+    m.add_class::<PyRollingFunction>().unwrap();
     // Options
     m.add_class::<PyWindowMapping>().unwrap();
     m.add_class::<PyRollingGroupOptions>().unwrap();

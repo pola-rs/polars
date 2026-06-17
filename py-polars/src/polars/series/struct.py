@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    _NamespaceSuggestMixin,
     qualified_type_name,
     sphinx_accessor,
 )
@@ -25,7 +26,7 @@ elif BUILDING_SPHINX_DOCS:
 
 
 @expr_dispatch
-class StructNameSpace:
+class StructNameSpace(_NamespaceSuggestMixin):
     """Series.struct namespace."""
 
     _accessor = "struct"

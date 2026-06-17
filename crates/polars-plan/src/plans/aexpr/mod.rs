@@ -7,6 +7,7 @@ mod hash;
 mod minterm_iter;
 pub(crate) mod or_factoring;
 pub mod predicates;
+pub(crate) mod range_merge;
 mod scalar;
 mod schema;
 mod traverse;

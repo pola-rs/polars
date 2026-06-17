@@ -3,6 +3,8 @@ use std::io::Read;
 #[cfg(feature = "aws")]
 use std::path::Path;
 use std::str::FromStr;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use std::sync::Arc;
 use std::sync::LazyLock;
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
@@ -32,7 +34,11 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "cloud")]
+use super::dns::get_dns_cache_ttl;
+#[cfg(feature = "cloud")]
 use crate::cloud::ObjectStoreErrorContext;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use crate::cloud::dns::CachingResolver;
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
@@ -55,7 +61,7 @@ type Configs<T> = Vec<(T, String)>;
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub(crate) enum CloudConfig {
+pub enum CloudConfig {
     #[cfg(feature = "aws")]
     Aws(
         #[cfg_attr(feature = "dsl-schema", schemars(with = "Vec<(String, String)>"))]
@@ -72,7 +78,12 @@ pub(crate) enum CloudConfig {
         Configs<GoogleConfigKey>,
     ),
     #[cfg(feature = "http")]
-    Http { headers: Vec<(String, String)> },
+    Http {
+        headers: Vec<(String, String)>,
+    },
+    Ext {
+        options: Vec<(String, String)>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
@@ -82,7 +93,7 @@ pub(crate) enum CloudConfig {
 pub struct CloudOptions {
     #[cfg(feature = "file_cache")]
     pub file_cache_ttl: u64,
-    pub(crate) config: Option<CloudConfig>,
+    pub config: Option<CloudConfig>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub retry_config: CloudRetryConfig,
     #[cfg(feature = "cloud")]
@@ -221,7 +232,7 @@ where
         .collect::<Configs<T>>())
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum CloudType {
     Aws,
     Azure,
@@ -232,6 +243,8 @@ pub enum CloudType {
     Http,
     /// HuggingFace
     Hf,
+    /// Externally registered scheme (e.g. hdfs:// as "hdfs")
+    Ext(&'static str),
 }
 
 impl CloudType {
@@ -252,6 +265,8 @@ impl CloudType {
             CloudScheme::Http | CloudScheme::Https => Self::Http,
 
             CloudScheme::S3 | CloudScheme::S3a => Self::Aws,
+
+            CloudScheme::Ext(scheme) => Self::Ext(scheme),
         }
     }
 }
@@ -282,6 +297,7 @@ pub(super) fn get_client_options() -> ClientOptions {
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
+        .with_dns_resolver(Arc::new(CachingResolver::new(get_dns_cache_ttl())))
 }
 
 #[cfg(feature = "aws")]
@@ -746,6 +762,21 @@ impl CloudOptions {
                 {
                     polars_bail!(ComputeError: "'http' feature is not enabled");
                 }
+            },
+            CloudType::Ext(_) => {
+                let pairs: Vec<(String, String)> = config
+                    .into_iter()
+                    .map(|(k, v)| (k.as_ref().to_string(), v.into()))
+                    .collect();
+
+                Ok(Self {
+                    config: if pairs.is_empty() {
+                        None
+                    } else {
+                        Some(CloudConfig::Ext { options: pairs })
+                    },
+                    ..Self::default()
+                })
             },
         }
     }

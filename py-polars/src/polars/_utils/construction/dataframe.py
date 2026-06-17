@@ -9,6 +9,7 @@ from operator import itemgetter
 from typing import (
     TYPE_CHECKING,
     Any,
+    cast,
 )
 
 import polars._reexport as pl
@@ -37,9 +38,9 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
-    issue_warning,
     parse_version,
 )
+from polars._warnings import issue_warning
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
@@ -64,6 +65,8 @@ if TYPE_CHECKING:
     from polars import DataFrame, Series
     from polars._plr import PySeries
     from polars._typing import (
+        ArrayLike,
+        NonNestedLiteral,
         Orientation,
         PolarsDataType,
         SchemaDefinition,
@@ -74,7 +77,7 @@ _MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 
 
 def dict_to_pydf(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -332,7 +335,7 @@ def _post_apply_columns(
 
 
 def _expand_dict_values(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     *,
     schema_overrides: SchemaDict | None = None,
     strict: bool = True,
@@ -380,6 +383,7 @@ def _expand_dict_values(
                     updated_data[name] = s
 
                 elif arrlen(val) is not None or _is_generator(val):
+                    val = cast("Iterable[Any]", val)  # help type-checkers
                     updated_data[name] = pl.Series(
                         name=name,
                         values=val,
@@ -387,7 +391,7 @@ def _expand_dict_values(
                         strict=strict,
                         nan_to_null=nan_to_null,
                     )
-                elif val is None or isinstance(  # type: ignore[redundant-expr]
+                elif val is None or isinstance(
                     val, (int, float, str, bytes, bool, date, datetime, time, timedelta)
                 ):
                     updated_data[name] = F.repeat(
@@ -400,8 +404,12 @@ def _expand_dict_values(
 
         elif all((arrlen(val) == 0) for val in data.values()):
             for name, val in data.items():
+                val = cast("Iterable[Any]", val)  # help type-checkers
                 updated_data[name] = pl.Series(
-                    name, values=val, dtype=dtypes.get(name), strict=strict
+                    name,
+                    values=val,
+                    dtype=dtypes.get(name),
+                    strict=strict,
                 )
 
         elif all((arrlen(val) is None) for val in data.values()):
@@ -418,19 +426,17 @@ def _expand_dict_values(
 
 
 def _expand_dict_data(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     dtypes: SchemaDict,
     *,
     strict: bool = True,
-) -> Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series]:
+) -> Mapping[str, ArrayLike | NonNestedLiteral | None]:
     """
     Expand any unsized generators/iterators.
 
     (Note that `range` is sized, and will take a fast-path on Series init).
     """
-    expanded_data: dict[
-        str, Sequence[object] | Mapping[str, Sequence[object]] | Series
-    ] = {}
+    expanded_data: dict[str, ArrayLike | NonNestedLiteral | None] = {}
     for name, val in data.items():
         expanded_data[name] = (
             pl.Series(name, val, dtypes.get(name), strict=strict)
