@@ -4009,11 +4009,11 @@ class Series:
             3
             5
         ]
-        # To search for a list of values in a series, of lists, use pl.lit():
+        >>> # To search for a list of values in a series, of lists, use pl.lit():
         >>> list_s = pl.Series("lists", [[0, 1], [0, 2], [1, 4]])
-        s.search_sorted(pl.lit([0, 2]), "left")
+        >>> list_s.search_sorted(pl.lit([0, 2]), "left")
         shape: (1,)
-        Series: 'set' [u32]
+        Series: 'lists' [u32]
         [
             1
         ]
