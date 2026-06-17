@@ -155,7 +155,6 @@ def test_nested_enum_creation() -> None:
     assert s.dtype == dtype
 
 
-
 def test_nested_enum_concat() -> None:
     dtype = pl.List(pl.Enum(["a", "b", "c", "d"]))
     s1 = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)

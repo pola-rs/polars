@@ -1017,7 +1017,6 @@ class Enum(DataType):
         return f"{class_name}(categories={self.categories.to_list()!r})"
 
 
-
 class Object(ObjectType):
     """Data type for wrapping arbitrary Python objects."""
 
