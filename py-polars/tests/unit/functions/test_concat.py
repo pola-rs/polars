@@ -296,7 +296,7 @@ def test_concat_horizontal() -> None:
     df2 = pl.DataFrame({"b": [4, 5]})
     df3 = pl.DataFrame({"c": [6, 7, 8, 9]})
 
-    result = pl.concat([df1, df2, df3], how="horizontal")
+    result = pl.concat([df1, df2, df3], how="horizontal", strict=False)
     expected = pl.DataFrame(
         {"a": [1, 2, 3, None], "b": [4, 5, None, None], "c": [6, 7, 8, 9]}
     )
@@ -329,7 +329,7 @@ def test_concat_lazyframe_horizontal() -> None:
     lf1 = pl.DataFrame({"a": [1, 2]}).lazy()
     lf2 = pl.DataFrame({"b": [3, 4, 5]}).lazy()
 
-    result = pl.concat([lf1, lf2], how="horizontal")
+    result = pl.concat([lf1, lf2], how="horizontal", strict=False)
     assert isinstance(result, pl.LazyFrame)
 
     collected = result.collect()

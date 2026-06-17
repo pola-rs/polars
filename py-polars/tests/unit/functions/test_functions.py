@@ -142,9 +142,9 @@ def test_concat_horizontal(lazy: bool) -> None:
     b = pl.DataFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "e": [1, 2, 1, 2]})
 
     if lazy:
-        out = pl.concat([a.lazy(), b.lazy()], how="horizontal").collect()
+        out = pl.concat([a.lazy(), b.lazy()], how="horizontal", strict=False).collect()
     else:
-        out = pl.concat([a, b], how="horizontal")
+        out = pl.concat([a, b], how="horizontal", strict=False)
 
     expected = pl.DataFrame(
         {
@@ -165,9 +165,9 @@ def test_concat_horizontal_three_dfs(lazy: bool) -> None:
     c = pl.DataFrame({"c1": [1, 2, 3, 4], "c2": [5, 6, 7, 8], "c3": [9, 10, 11, 12]})
 
     if lazy:
-        out = pl.concat([a.lazy(), b.lazy(), c.lazy()], how="horizontal").collect()
+        out = pl.concat([a.lazy(), b.lazy(), c.lazy()], how="horizontal", strict=False).collect()
     else:
-        out = pl.concat([a, b, c], how="horizontal")
+        out = pl.concat([a, b, c], how="horizontal", strict=False)
 
     expected = pl.DataFrame(
         {
@@ -200,7 +200,7 @@ def test_concat_horizontal_duplicate_col() -> None:
     b = pl.LazyFrame({"c": [5, 7, 8, 9], "d": [1, 2, 1, 2], "a": [1, 2, 1, 2]})
 
     with pytest.raises(DuplicateError):
-        pl.concat([a, b], how="horizontal").collect()
+        pl.concat([a, b], how="horizontal", strict=False).collect()
 
 
 def test_concat_vertical() -> None:

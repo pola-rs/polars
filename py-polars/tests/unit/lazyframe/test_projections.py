@@ -115,7 +115,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     # the length of the result, even though no columns are used.
     lf1 = pl.LazyFrame({"a": [0, 1], "b": [2, 3]})
     lf2 = pl.LazyFrame({"c": [4, 5, 6, 7], "d": [8, 9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal").select(["a"])
+    query = pl.concat([lf1, lf2], how="horizontal", strict=False).select(["a"])
 
     explanation = query.explain()
     assert "1/2 COLUMNS" in explanation
