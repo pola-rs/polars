@@ -84,9 +84,9 @@ def assert_sql_matches(
     frames: pl.DataFrame | pl.LazyFrame | Mapping[str, pl.DataFrame | pl.LazyFrame],
     *,
     query: str,
-    compare_with: Literal["sqlite", "duckdb"]
-    | Collection[Literal["sqlite", "duckdb"]]
-    | None,
+    compare_with: (
+        Literal["sqlite", "duckdb"] | Collection[Literal["sqlite", "duckdb"]] | None
+    ),
     check_dtypes: bool = False,
     check_row_order: bool = True,
     check_column_names: bool = True,

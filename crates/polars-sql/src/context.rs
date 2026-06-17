@@ -2171,8 +2171,8 @@ impl SQLContext {
         let mut projection_aliases = PlHashSet::new();
         let mut group_key_aliases = PlHashSet::new();
 
-        // Pre-compute group key data (stripped expression + output name) to avoid repeated work.
-        // We check both expression AND output name match to avoid cross-aliasing issues.
+        // Pre-compute group key data (alias-stripped expression + aggregated output
+        // name) to avoid repeated work matching projections against the group keys
         let group_key_data: Vec<_> = group_by_keys
             .iter()
             .map(|gk| {
@@ -2183,18 +2183,20 @@ impl SQLContext {
             })
             .collect();
 
-        let projection_matches_group_key: Vec<bool> = projections
+        let projection_group_key: Vec<Option<PlSmallStr>> = projections
             .iter()
             .map(|p| {
                 let p_stripped = strip_outer_alias(p);
-                let p_name = p.to_field(&schema_before).ok().map(|f| f.name);
-                group_key_data
-                    .iter()
-                    .any(|(gk_stripped, gk_name)| *gk_stripped == p_stripped && *gk_name == p_name)
+                group_key_data.iter().find_map(|(gk_stripped, gk_name)| {
+                    (*gk_stripped == p_stripped)
+                        .then(|| gk_name.clone())
+                        .flatten()
+                })
             })
             .collect();
 
-        for (e, &matches_group_key) in projections.iter().zip(&projection_matches_group_key) {
+        for (e, group_key) in projections.iter().zip(&projection_group_key) {
+            let matches_group_key = group_key.is_some();
             // `Len` represents COUNT(*) so we treat as an aggregation here.
             let is_non_group_key_expr = !matches_group_key
                 && has_expr(e, |e| {
@@ -2256,9 +2258,9 @@ impl SQLContext {
                 // If aggregation colname conflicts with a group key,
                 // alias it to avoid duplicate/mis-tracked columns
                 if group_by_keys_schema.get(&field.name).is_some() {
-                    let alias_name = format!("__POLARS_AGG_{}", field.name);
-                    e = e.alias(alias_name.as_str());
-                    aliased_aggregations.insert(field.name.clone(), alias_name.as_str().into());
+                    let alias_name = format_pl_smallstr!("__POLARS_AGG_{}", field.name);
+                    e = e.alias(alias_name.clone());
+                    aliased_aggregations.insert(field.name.clone(), alias_name);
                 }
                 aggregation_projection.push(e);
             } else if !matches_group_key {
@@ -2332,14 +2334,20 @@ impl SQLContext {
         // (will also drop any temporary columns created for the HAVING post-filter).
         let final_projection = projection_schema
             .iter_names()
-            .zip(projections.iter().zip(&projection_matches_group_key))
-            .map(|(name, (projection_expr, &matches_group_key))| {
+            .zip(projections.iter().zip(&projection_group_key))
+            .map(|(name, (projection_expr, group_key))| {
                 if let Some(expr) = projection_overrides.get(name.as_str()) {
                     expr.clone()
                 } else if let Some(aliased_name) = aliased_aggregations.get(name) {
                     col(aliased_name.clone()).alias(name.clone())
-                } else if group_by_keys_schema.get(name).is_some() && matches_group_key {
-                    col(name.clone())
+                } else if let Some(key_name) = group_key {
+                    // projection is a group key; reference aggregated key col rather than
+                    // re-evaluating against aggregated frame (incorrect for computed keys)
+                    if key_name == name {
+                        col(name.clone())
+                    } else {
+                        col(key_name.clone()).alias(name.clone())
+                    }
                 } else if group_by_keys_schema.get(name).is_some()
                     || projection_aliases.contains(name.as_str())
                     || group_key_aliases.contains(name.as_str())
@@ -2365,10 +2373,10 @@ impl SQLContext {
                 output_projection.push(col(key_name.clone()));
             } else if group_by_keys.iter().any(|k| is_simple_col_ref(k, key_name)) {
                 // Original col name in output - check if cross-aliased
-                let is_cross_aliased = projections.iter().any(|p| {
-                    p.to_field(&schema_before).is_ok_and(|f| f.name == key_name)
-                        && !is_simple_col_ref(p, key_name)
-                });
+                let is_cross_aliased = projection_schema
+                    .iter_names()
+                    .zip(projections.iter())
+                    .any(|(name, p)| name == key_name && !is_simple_col_ref(p, key_name));
                 if is_cross_aliased {
                     // Add original name under a prefixed alias for subsequent ORDER BY resolution
                     let internal_name = format_pl_smallstr!("__POLARS_ORIG_{}", key_name);
