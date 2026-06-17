@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 
 import polars._reexport as pl
 import polars.datatypes
-import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars._plr as plr
