@@ -78,6 +78,9 @@ const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
 const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KB
 
+const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
+const DEFAULT_OOC_LOG_METRICS: bool = false;
+
 const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
 const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
 
@@ -135,6 +138,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
+    OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
 ];
@@ -161,6 +165,7 @@ pub struct Config {
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
+    ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
 }
@@ -194,6 +199,7 @@ impl Config {
                 DEFAULT_OOC_MEMORY_BUDGET_MB.saturating_mul(1_000_000),
             ),
             ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
+            ooc_log_metrics: AtomicBool::new(false),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
@@ -323,6 +329,11 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_SPILL_MIN_BYTES),
                 Ordering::Relaxed,
             ),
+            OOC_LOG_METRICS => self.ooc_log_metrics.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_OOC_LOG_METRICS),
+                Ordering::Relaxed,
+            ),
             JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_JOIN_SAMPLE_LIMIT),
@@ -449,6 +460,11 @@ impl Config {
     #[inline(always)]
     pub fn ooc_spill_min_bytes(&self) -> u64 {
         self.ooc_spill_min_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn ooc_log_metrics(&self) -> bool {
+        self.ooc_log_metrics.load(Ordering::Relaxed)
     }
 
     pub fn ooc_spill_dir(&self) -> std::path::PathBuf {

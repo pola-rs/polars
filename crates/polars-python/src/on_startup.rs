@@ -16,6 +16,7 @@ use polars_plan::plans::python_df_to_rust;
 use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
+use pyo3::types::PyCFunction;
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
@@ -303,5 +304,18 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             },
         };
         polars_core::datatypes::extension::set_unknown_extension_type_behavior(behavior);
+
+        // Out-of-core cleaning.
+        polars_ooc::init_ooc_cleaner();
+        Python::attach(|py| {
+            let atexit = py.import("atexit").unwrap();
+            let flush_fn = PyCFunction::new_closure(py, None, None, |_args, _kwargs| {
+                polars_ooc::flush_ooc_cleanup();
+                PyResult::Ok(())
+            })
+            .unwrap();
+            atexit.call_method1("register", (flush_fn,)).unwrap();
+        });
+
     });
 }

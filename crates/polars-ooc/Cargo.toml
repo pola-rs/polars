@@ -21,6 +21,7 @@ rand = { workspace = true }
 rand_distr = { workspace = true }
 thread_local = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+uuid = { workspace = true }
 
 [target.'cfg(any(not(target_family = "unix"), target_os = "emscripten"))'.dependencies]
 mimalloc = { version = "0.1", default-features = false, optional = true }

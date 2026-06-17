@@ -4,6 +4,7 @@ mod v1;
 mod global_alloc;
 mod memory_manager;
 mod spill_context;
+mod spill_file;
 mod spill_frame;
 mod spill_token;
 
@@ -13,6 +14,7 @@ pub use spill_context::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, RandomSpillContext,
     SpillContext,
 };
+pub use spill_file::{flush_ooc_cleanup, init_ooc_cleaner};
 pub use spill_frame::SpillFrame;
 pub use spill_token::{DynSpillToken, PinnedMut, PinnedRef, SpillToken};
 

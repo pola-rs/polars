@@ -1,25 +1,63 @@
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 
+use polars_async::ASYNC;
 use polars_core::frame::DataFrame;
+use polars_io::ipc::{IpcReader, IpcWriter};
+use polars_io::{SerReader, SerWriter};
 
 use crate::spill_context::ParameterFreeSpillContext;
+use crate::spill_file::SpillFile;
 use crate::{PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
 
 impl Spillable for DataFrame {
     // TODO: just a dummy spill for now. Boxed to reduce size.
-    type Spilled = Box<DataFrame>;
+    type Spilled = SpillFile;
 
     fn estimate_byte_size(&self) -> usize {
         self.estimated_size()
     }
 
     async fn spill(&self) -> Self::Spilled {
-        Box::new(self.clone())
+        let mut df = self.clone();
+        ASYNC
+            .spawn_blocking(move || {
+                let spill_file = SpillFile::new("ipc");
+
+                let mut file = std::fs::File::create(spill_file.path()).unwrap_or_else(|e| {
+                    panic!(
+                        "failed to create spill file '{}': {e}",
+                        spill_file.path().display()
+                    )
+                });
+                IpcWriter::new(&mut file)
+                    .finish(&mut df)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "failed to write spill file '{}': {e}",
+                            spill_file.path().display()
+                        )
+                    });
+
+                spill_file
+            })
+            .await
+            .unwrap()
     }
 
     async fn unspill(location: &Self::Spilled) -> Self {
-        (**location).clone()
+        let path = location.path().to_owned();
+        ASYNC
+            .spawn_blocking(move || {
+                let file = std::fs::File::open(&path).unwrap_or_else(|e| {
+                    panic!("failed to open spill file {:?}: {e}", path.display())
+                });
+                IpcReader::new(file).finish().unwrap_or_else(|e| {
+                    panic!("failed to read spill file {:?}: {e}", path.display())
+                })
+            })
+            .await
+            .unwrap()
     }
 }
 

@@ -76,11 +76,14 @@ impl MemoryManager {
                 return;
             };
 
+            let mut successful_spill = false;
             for (spillable, id, sz) in spillables {
                 // Spill, or reinsert if a failure.
                 match spillable.try_spill(ctx.stats(), Arc::downgrade(&ctx), id) {
                     Ok(spill_success) => {
-                        if !spill_success.await {
+                        if spill_success.await {
+                            successful_spill = true;
+                        } else {
                             ctx.reinsert(&spillable, id);
                         }
                     },
@@ -93,6 +96,8 @@ impl MemoryManager {
                 self.est_spill_in_progress
                     .fetch_sub(sz as u64, Ordering::Relaxed);
             }
+
+            ctx.stats().finish_exploration_event(successful_spill);
         }
     }
 
@@ -129,6 +134,8 @@ impl MemoryManager {
         let min_spill = config().ooc_spill_min_bytes();
         let best_ctx = live_contexts.into_iter().max_by(|a, b| a.1.tot_cmp(&b.1));
         let out = if let Some((best_ctx, _score)) = best_ctx {
+            best_ctx.stats().start_exploration_event();
+
             let mut total_est_spill = 0;
             let mut candidates = Vec::new();
             for (cand, id) in best_ctx.pop() {

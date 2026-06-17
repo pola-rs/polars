@@ -18,7 +18,10 @@ enum BufferedStream {
 
 impl BufferedStream {
     fn new() -> Self {
-        Self::Open(VecDeque::new(), MostRecentSpillContext::new())
+        Self::Open(
+            VecDeque::new(),
+            MostRecentSpillContext::new("multiplexer".into()),
+        )
     }
 }
 

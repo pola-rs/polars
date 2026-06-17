@@ -36,7 +36,7 @@ impl NegativeSliceNode {
             state: NegativeSliceState::Buffering(Buffer::default()),
             slice_offset,
             length,
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("negative-slice".into()),
         }
     }
 }

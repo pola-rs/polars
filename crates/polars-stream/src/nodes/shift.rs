@@ -221,7 +221,7 @@ impl ComputeNode for ShiftNode {
                     frames: VecDeque::new(),
                     fill: fill_frame,
                     seq: MorselSeq::default(),
-                    spill_ctx: MostRecentSpillContext::new(),
+                    spill_ctx: MostRecentSpillContext::new("shift".into()),
                 })
             }
         }

@@ -592,7 +592,7 @@ impl GroupByNode {
             num_inputs,
             num_pipelines,
             output_schema,
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("group-by".into()),
         }
     }
 }
