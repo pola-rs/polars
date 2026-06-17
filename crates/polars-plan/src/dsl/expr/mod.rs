@@ -125,7 +125,7 @@ pub enum Expr {
         /// Also has the input. i.e. avg("foo")
         function: Arc<Expr>,
         partition_by: Vec<Expr>,
-        order_by: Option<(Arc<Expr>, SortOptions)>,
+        order_by: Option<(Arc<Expr>, SortMultipleOptions)>,
         mapping: WindowMapping,
     },
     #[cfg(feature = "dynamic_group_by")]

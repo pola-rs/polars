@@ -3945,8 +3945,8 @@ class Expr:
         partition_by: IntoExpr | Iterable[IntoExpr] | None = None,
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        descending: bool = False,
-        nulls_last: bool = False,
+        descending: bool | Iterable[bool] = False,
+        nulls_last: bool | Iterable[bool] = False,
         mapping_strategy: WindowMappingStrategy = "group_to_rows",
     ) -> Expr:
         """

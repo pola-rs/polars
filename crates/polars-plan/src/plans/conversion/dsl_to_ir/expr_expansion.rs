@@ -745,7 +745,7 @@ fn expand_expression_rec(
                     partition_by: e[1..e.len() - usize::from(order_by.is_some())].to_vec(),
                     order_by: order_by
                         .as_ref()
-                        .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), *options)),
+                        .map(|(_, options)| (Arc::new(e.last().unwrap().clone()), options.clone())),
                     mapping: *mapping,
                 },
             )?

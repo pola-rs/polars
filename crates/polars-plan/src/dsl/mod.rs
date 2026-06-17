@@ -837,7 +837,7 @@ impl Expr {
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
         self,
         partition_by: Option<E>,
-        order_by: Option<(E, SortOptions)>,
+        order_by: Option<(E, SortMultipleOptions)>,
         mapping: WindowMapping,
     ) -> PolarsResult<Self> {
         let order_by_is_set = order_by
