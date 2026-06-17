@@ -1150,3 +1150,18 @@ def test_multiline_colname_matches() -> None:
         cs.contains(prefix).alias("contains"),
     )
     assert res.columns == ["starts_with", "ends_with", "contains"]
+
+
+def test_bitwise_ops_eval_on_expr(df: pl.DataFrame) -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="& not allowed on time and u16"
+    ):
+        df.select(cs.all() & pl.col("abc"))
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match=r"\| not allowed on time and u16"
+    ):
+        df.select(cs.all() | pl.col("abc"))
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match=r"\^ not allowed on time and u16"
+    ):
+        df.select(cs.all() ^ pl.col("abc"))
