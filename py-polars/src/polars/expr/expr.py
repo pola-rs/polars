@@ -6738,9 +6738,6 @@ Consider using {self}.implode() instead"""
     def hash(
         self,
         seed: int = 0,
-        seed_1: int | None = None,
-        seed_2: int | None = None,
-        seed_3: int | None = None,
     ) -> Expr:
         """
         Hash the elements in the selection.
@@ -6751,12 +6748,6 @@ Consider using {self}.implode() instead"""
         ----------
         seed
             Random seed parameter. Defaults to 0.
-        seed_1
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_2
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_3
-            Random seed parameter. Defaults to `seed` if not set.
 
         Notes
         -----
@@ -6772,7 +6763,7 @@ Consider using {self}.implode() instead"""
         ...         "b": ["x", None, "z"],
         ...     }
         ... )
-        >>> df.with_columns(pl.all().hash(10, 20, 30, 40))  # doctest: +IGNORE_RESULT
+        >>> df.with_columns(pl.all().hash(10))  # doctest: +IGNORE_RESULT
         shape: (3, 2)
         ┌──────────────────────┬──────────────────────┐
         │ a                    ┆ b                    │
@@ -6784,11 +6775,7 @@ Consider using {self}.implode() instead"""
         │ 11638928888656214026 ┆ 13382926553367784577 │
         └──────────────────────┴──────────────────────┘
         """
-        k0 = seed
-        k1 = seed_1 if seed_1 is not None else seed
-        k2 = seed_2 if seed_2 is not None else seed
-        k3 = seed_3 if seed_3 is not None else seed
-        return wrap_expr(self._pyexpr.hash(k0, k1, k2, k3))
+        return wrap_expr(self._pyexpr.hash(seed, seed, seed, seed))
 
     def reinterpret(
         self,
