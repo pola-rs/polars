@@ -3953,7 +3953,7 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: list_[Any] | np.ndarray[Any, Any] | Expr | Series,
+        element: np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
         *,
         descending: bool = ...,
@@ -3992,7 +3992,7 @@ class Series:
         3
         >>> s.search_sorted(4, "right")
         5
-        >>> s.search_sorted([1, 4, 5])
+        >>> s.search_sorted(pl.Series([1, 4, 5]))
         shape: (3,)
         Series: 'set' [u32]
         [
@@ -4000,7 +4000,7 @@ class Series:
             3
             5
         ]
-        >>> s.search_sorted([1, 4, 5], "left")
+        >>> s.search_sorted(pl.Series([1, 4, 5]), "left")
         shape: (3,)
         Series: 'set' [u32]
         [
@@ -4008,7 +4008,7 @@ class Series:
             3
             5
         ]
-        >>> s.search_sorted([1, 4, 5], "right")
+        >>> s.search_sorted(pl.Series([1, 4, 5]), "right")
         shape: (3,)
         Series: 'set' [u32]
         [
@@ -4018,7 +4018,7 @@ class Series:
         ]
         """
         df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
-        if isinstance(element, (list, Series, pl.Expr)):
+        if isinstance(element, (Series, pl.Expr)):
             return df.to_series()
         elif _check_for_numpy(element) and isinstance(element, np.ndarray):
             return df.to_series()
