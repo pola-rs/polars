@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           tag="${{ github.event.inputs.polars_version || github.event.client_payload.tag }}"
-          regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
+          regex="py-([0-9]+)\.([0-9]+)\.[0-9]+.*"
           if [[ $tag =~ $regex ]]; then
             major=${BASH_REMATCH[1]}
             minor=${BASH_REMATCH[2]}
