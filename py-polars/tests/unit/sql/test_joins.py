@@ -866,6 +866,26 @@ def test_miscellaneous_cte_join_aliasing() -> None:
     ]
 
 
+def test_cte_join_no_leak_ambiguity_27981() -> None:
+    # the join inside the CTE body must not leak alias state into the
+    # outer query; unqualified "key" should resolve to the CTE column
+    left = pl.DataFrame({"key": [1, 2], "value": ["a", "b"]})
+    right = pl.DataFrame({"key": [2, 3]})
+
+    query = """
+        WITH join_results AS (
+            SELECT left.key AS key, value
+            FROM left
+            FULL JOIN right ON left.key = right.key
+        )
+        SELECT {col} FROM join_results ORDER BY key
+    """
+    expected = {"key": [1, 2, None]}
+    for col in ("key", "join_results.key"):
+        res = pl.sql(query.format(col=col), eager=True)
+        assert res.to_dict(as_series=False) == expected
+
+
 def test_nested_joins_17381() -> None:
     df = pl.DataFrame({"id": ["one", "two"]})
 
