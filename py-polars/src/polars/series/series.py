@@ -33,6 +33,7 @@ from polars._dependencies import (
 from polars._dependencies import numpy as np
 from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
+from polars._plr import InvalidOperationError
 from polars._utils.construction import (
     arrow_to_pyseries,
     dataframe_to_pyseries,
@@ -4008,17 +4009,20 @@ class Series:
             3
             5
         ]
-        >>> s.search_sorted(pl.Series([1, 4, 5]), "right")
-        shape: (3,)
+        # To search for a list of values in a series, of lists, use pl.lit():
+        >>> list_s = pl.Series("lists", [[0, 1], [0, 2], [1, 4]])
+        s.search_sorted(pl.lit([0, 2]), "left")
+        shape: (1,)
         Series: 'set' [u32]
         [
             1
-            5
-            6
         ]
         """
         df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
-        if isinstance(element, (Series, pl.Expr)):
+        if isinstance(element, list):
+            msg = "passing a list to `search_sorted` is not ambiguous; use `Series.search_sorted(pl.Series([...]), ...)` or `Series.search_sorted(pl.lit(...), ...)`"
+            raise InvalidOperationError(msg)
+        elif isinstance(element, (Series, pl.Expr)):
             return df.to_series()
         elif _check_for_numpy(element) and isinstance(element, np.ndarray):
             return df.to_series()

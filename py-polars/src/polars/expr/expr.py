@@ -2773,7 +2773,7 @@ class Expr:
         └──────┴───────┴─────┘
         """
         if isinstance(element, list):
-            msg = "passing a list to `search_sorted` is not supported; use `pl.Series([...])`"
+            msg = "passing a list to `search_sorted` is not ambiguous; use `pl.Series([...])` or `pl.lit(...)`"
             raise InvalidOperationError(msg)
         element_pyexpr = parse_into_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.search_sorted(element_pyexpr, side, descending))
