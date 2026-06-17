@@ -496,8 +496,6 @@ class Selector(Expr):
             return self.as_expr().__or__(other)
 
     def __ror__(self, other: Any) -> Expr:
-        if is_column(other):
-            other = by_name(other.meta.output_name())
         return self.as_expr().__ror__(other)
 
     @overload
