@@ -142,8 +142,7 @@ impl MemoryManager {
         let best_explored_score = live_contexts
             .iter()
             .map(|(_ctx, score)| *score)
-            .filter(|s| *s < UNEXPLORED_SCORE)
-            .next()
+            .find(|s| *s < UNEXPLORED_SCORE)
             .unwrap_or_default();
 
         let mut out = None;

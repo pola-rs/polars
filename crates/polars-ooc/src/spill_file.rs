@@ -11,7 +11,6 @@ use polars_io::create_dir_owner_only;
 ///   <pid>/                     <- process directory (one per OS process)
 ///     spill-<ctx>-<uuid>.ipc   <- individual spill file (unique per spill)
 /// ```
-
 static SPILL_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     let spill_dir = polars_config::config().ooc_spill_dir();
     let process_dir = spill_dir.join(std::process::id().to_string());
