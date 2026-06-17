@@ -728,7 +728,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     # exclusive or
     for selected in (
         df.select((cs.matches("e|g")) ^ cs.numeric()),
-        df.select((cs.contains("b", "g")) ^ pl.col("eee")),
+        df.select((cs.contains("b", "g")) ^ cs.by_name("eee")),
     ):
         assert selected.schema == OrderedDict(
             {
