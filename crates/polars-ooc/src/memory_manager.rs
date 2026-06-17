@@ -179,7 +179,7 @@ impl MemoryManager {
                 self.est_spill_in_progress
                     .fetch_add(total_est_spill, Ordering::Relaxed);
                 out = Some((ctx, candidates));
-                break
+                break;
             }
         }
 

@@ -30,7 +30,10 @@ impl SpillFile {
         let uuid = uuid::Uuid::now_v7();
         Self {
             path: SPILL_DIR
-                .join(format!("spill-{context_id}-{uuid}.{ext}", uuid=uuid.as_hyphenated()))
+                .join(format!(
+                    "spill-{context_id}-{uuid}.{ext}",
+                    uuid = uuid.as_hyphenated()
+                ))
                 .with_extension(ext),
         }
     }
