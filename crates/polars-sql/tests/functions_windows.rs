@@ -71,7 +71,10 @@ fn test_lead_lag() {
                 .shift(shift.into())
                 .over_with_options(
                     Some([col("a")]),
-                    Some(([col("b")], SortOptions::new().with_order_descending(false))),
+                    Some((
+                        [col("b")],
+                        SortMultipleOptions::new().with_order_descending(false),
+                    )),
                     Default::default(),
                 )
                 .unwrap()
@@ -97,7 +100,10 @@ fn test_lead_lag_default() {
                 .shift(shift.into())
                 .over_with_options(
                     Some([col("a")]),
-                    Some(([col("b")], SortOptions::new().with_order_descending(false))),
+                    Some((
+                        [col("b")],
+                        SortMultipleOptions::new().with_order_descending(false),
+                    )),
                     Default::default(),
                 )
                 .unwrap()
@@ -178,7 +184,10 @@ fn test_lead_lag_without_partition_by() {
                 .shift(shift.into())
                 .over_with_options(
                     None, // No partition by
-                    Some(([col("a")], SortOptions::new().with_order_descending(false))),
+                    Some((
+                        [col("a")],
+                        SortMultipleOptions::new().with_order_descending(false),
+                    )),
                     Default::default(),
                 )
                 .unwrap()
