@@ -5,7 +5,7 @@ import math
 import operator
 import sys
 import warnings
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence, Iterable
 from datetime import timedelta
 from decimal import Decimal
 from functools import reduce
@@ -3945,8 +3945,8 @@ class Expr:
         partition_by: IntoExpr | Iterable[IntoExpr] | None = None,
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        descending: bool | Iterable[bool] = [False],
-        nulls_last: bool | Iterable[bool] = [False],
+        descending: bool | Iterable[bool] = False,
+        nulls_last: bool | Iterable[bool] = False,
         mapping_strategy: WindowMappingStrategy = "group_to_rows",
     ) -> Expr:
         """
@@ -4156,8 +4156,12 @@ class Expr:
 
         if order_by is not None:
             order_by_pyexprs = parse_into_list_of_expressions(order_by)
-        else:
+        else: 
             order_by_pyexprs = None
+
+        n_order_by = len(order_by_pyexprs) if order_by is not None else 0 
+        descending = extend_bool(descending, n_order_by, "descending", "order_by")
+        nulls_last = extend_bool(nulls_last, n_order_by, "nulls_last", "order_by")
 
         return wrap_expr(
             self._pyexpr.over(
