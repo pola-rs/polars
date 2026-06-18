@@ -4,6 +4,7 @@ use arrow::array::PrimitiveArray;
 use arrow::bitmap::Bitmap;
 use arrow::trusted_len::TrustMyLength;
 use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_ca;
+use polars_core::chunked_array::ops::sort::_broadcast_bools;
 use polars_core::downcast_as_macro_arg_physical;
 use polars_core::error::feature_gated;
 use polars_core::prelude::row_encode::encode_rows_unordered;
@@ -344,8 +345,8 @@ impl WindowExpr {
 }
 
 // Utility to create partitions and cache keys
-pub fn window_function_format_order_by(to: &mut String, e: &Expr, k: &SortOptions) {
-    write!(to, "_PL_{:?}{}_{}", e, k.descending, k.nulls_last).unwrap();
+pub fn window_function_format_order_by(to: &mut String, e: &Expr, k: &SortMultipleOptions) {
+    write!(to, "_PL_{:?}{:?}_{:?}", e, k.descending, k.nulls_last).unwrap();
 }
 
 pub fn prepare_order_by(
@@ -356,6 +357,7 @@ pub fn prepare_order_by(
     //key is just that column. If mulitple order_by columns are provided then the
     //key is a struct field, which we row encode into a single binary rep
     match s.dtype() {
+        #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
             let fields: Vec<Column> = s
                 .struct_()?
@@ -363,21 +365,25 @@ pub fn prepare_order_by(
                 .into_iter()
                 .map(Column::from)
                 .collect();
-            let key = _get_rows_encoded_ca(
-                s.name().clone(),
-                &fields,
-                &options.descending,
-                &options.nulls_last,
-                false,
-            )?
-            .into_series();
 
+            // Broadcast a single direction to every field (e.g. `descending=True` over
+            // multiple keys)
+            let mut descending = options.descending.clone();
+            let mut nulls_last = options.nulls_last.clone();
+            _broadcast_bools(fields.len(), &mut descending);
+            _broadcast_bools(fields.len(), &mut nulls_last);
+
+            let key =
+                _get_rows_encoded_ca(s.name().clone(), &fields, &descending, &nulls_last, false)?
+                    .into_series();
+
+            // Per-field directions are baked into the encoding, so sort the key ascending.
             let mut opts = SortOptions::from(options);
             opts.descending = false;
 
             Ok((key, opts))
         },
-        _ => Ok((*s, SortOptions::from(options))),
+        _ => Ok((s.clone(), SortOptions::from(options))),
     }
 }
 
@@ -469,13 +475,12 @@ impl PhysicalExpr for WindowExpr {
 
             if let Some((order_by, options)) = &self.order_by {
                 let order_by = order_by.evaluate(df, state)?;
+
+                let s = order_by.as_materialized_series();
+                let (key, options) = prepare_order_by(s, options)?;
+
                 polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
-                groups = update_groups_sort_by(
-                    &groups,
-                    order_by.as_materialized_series(),
-                    &SortOptions::from(options),
-                )?
-                .into_sliceable()
+                groups = update_groups_sort_by(&groups, &key, &options)?.into_sliceable()
             }
 
             let out: PolarsResult<GroupPositions> = Ok(groups);
@@ -730,6 +735,7 @@ impl PhysicalExpr for WindowExpr {
                 if e.len() == 1 {
                     e = e.new_from_index(0, length_preserving_height);
                 }
+                let (e, options) = prepare_order_by(e.into_materialized_series(), options)?;
                 // Sanity check: Length Preserving.
                 assert_eq!(e.len(), length_preserving_height);
                 let arr: Option<PrimitiveArray<IdxSize>> = if needs_remap_to_rows {
@@ -737,7 +743,7 @@ impl PhysicalExpr for WindowExpr {
                         // Performance: precompute the rank here, so we can avoid dispatching per group
                         // later.
                         use polars_ops::series::SeriesRank;
-                        let arr = e.as_materialized_series().rank(
+                        let arr = e.rank(
                             RankOptions {
                                 method: RankMethod::Ordinal,
                                 descending: false,
@@ -752,7 +758,7 @@ impl PhysicalExpr for WindowExpr {
                     None
                 };
 
-                Some((e.clone(), arr, options.clone()))
+                Some((e.clone(), arr, options))
             },
         };
 
@@ -982,11 +988,7 @@ impl PhysicalExpr for WindowExpr {
 
         let mut subgroups = GroupsType::Idx(subgroups.into());
         if let Some((order_by, _, options)) = order_by {
-            subgroups = update_groups_sort_by(
-                &subgroups,
-                order_by.as_materialized_series(),
-                &SortOptions::from(&options),
-            )?;
+            subgroups = update_groups_sort_by(&subgroups, &order_by, &options)?;
         }
         let subgroups = subgroups.into_sliceable();
         let mut data = self
