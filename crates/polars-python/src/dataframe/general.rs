@@ -1,5 +1,3 @@
-use std::hash::BuildHasher;
-
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use parking_lot::RwLock;
@@ -506,16 +504,7 @@ impl PyDataFrame {
         py.enter_polars_ok(|| self.df.write().shrink_to_fit())
     }
 
-    pub fn hash_rows(
-        &self,
-        py: Python<'_>,
-        k0: u64,
-        k1: u64,
-        k2: u64,
-        k3: u64,
-    ) -> PyResult<PySeries> {
-        // TODO: don't expose all these seeds.
-        let seed = PlFixedStateQuality::default().hash_one((k0, k1, k2, k3));
+    pub fn hash_rows(&self, py: Python<'_>, seed: u64) -> PyResult<PySeries> {
         let hb = PlSeedableRandomStateQuality::seed_from_u64(seed);
         py.enter_polars_series(|| self.df.write().hash_rows(Some(hb)))
     }
