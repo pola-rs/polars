@@ -17,6 +17,8 @@ polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["algorithm_group_by"] }
 polars-io = { workspace = true, features = ["ipc"] }
 polars-utils = { workspace = true, features = ["sysinfo"] }
+rand = { workspace = true }
+rand_distr = { workspace = true }
 thread_local = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 

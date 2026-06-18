@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -9,6 +10,9 @@ import polars as pl
 from polars.exceptions import SQLSyntaxError
 from polars.testing import assert_frame_equal
 from tests.unit.sql import assert_sql_matches
+
+if TYPE_CHECKING:
+    from typing import Literal
 
 
 @pytest.fixture
@@ -502,6 +506,7 @@ def test_group_by_struct_cat_24049(maintain_order: bool) -> None:
     b = {"k1": "b2", "k2": "b2"}
     c = {"k1": "c2", "k2": "c2"}
     s = pl.Struct({"k1": pl.Categorical, "k2": pl.Categorical})
+
     df = pl.DataFrame(
         {
             "x": [a, b, a, a, c, b],
@@ -554,15 +559,15 @@ def test_group_by_aggregate_name_is_group_key() -> None:
     "query",
     [
         # GROUP BY referencing SELECT alias for arithmetic expression
-        "SELECT COUNT(*) AS n, value / 10 AS bucket FROM self GROUP BY bucket ORDER BY bucket",
+        "SELECT COUNT(*) AS n, value / 10.0 AS bucket FROM self GROUP BY bucket ORDER BY bucket",
         # Multiple aliased expressions in GROUP BY
-        "SELECT COUNT(*) AS n, value / 10 AS tens, value % 3 AS rem FROM self GROUP BY tens, rem ORDER BY tens, rem",
+        "SELECT COUNT(*) AS n, value / 10.0 AS tens, value % 3 AS rem FROM self GROUP BY tens, rem ORDER BY tens, rem",
         # GROUP BY alias with additional aggregation
-        "SELECT SUM(id) AS total, value / 20 AS grp FROM self GROUP BY grp ORDER BY grp",
+        "SELECT SUM(id) AS total, value / 20.0 AS grp FROM self GROUP BY grp ORDER BY grp",
         # GROUP BY ordinal position with aliased column
         "SELECT value / 10 AS bucket, COUNT(*) AS n FROM self GROUP BY 1 ORDER BY 1",
         # GROUP BY ordinal with multiple aliased columns
-        "SELECT id % 2 AS parity, value / 10 AS tens, SUM(id) AS total FROM self GROUP BY 1, 2 ORDER BY 1, 2",
+        "SELECT id % 2 AS parity, value / 10.0 AS tens, SUM(id) AS total FROM self GROUP BY 1, 2 ORDER BY 1, 2",
     ],
 )
 def test_group_by_select_alias(query: str) -> None:
@@ -573,7 +578,28 @@ def test_group_by_select_alias(query: str) -> None:
             "value": [10, 20, 30, 40, 50],
         }
     )
-    assert_sql_matches(df, query=query, compare_with="duckdb")
+    assert_sql_matches(df, query=query, compare_with="sqlite")
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT (x >= 5) AS x_gt_5, COUNT(*) AS n FROM self GROUP BY (x >= 5) ORDER BY x_gt_5",
+        "SELECT (x * 10) AS x10, COUNT(*) AS n FROM self GROUP BY (x * 10) ORDER BY x10",
+        "SELECT (x = 5) AS x_eq_5, COUNT(*) AS n FROM self GROUP BY (x = 5) ORDER BY x_eq_5",
+        "SELECT (x >= 5) AS x_gt_5, COUNT(*) AS n FROM self GROUP BY ALL ORDER BY x_gt_5",
+    ],
+)
+def test_group_by_computed_key_repeated_27735(query: str) -> None:
+    comparison_backend: Literal["sqlite", "duckdb"] = (
+        "duckdb" if "GROUP BY ALL" in query else "sqlite"
+    )
+    df = pl.DataFrame({"x": [3, 5, 7]})
+    assert_sql_matches(
+        frames=df,
+        query=query,
+        compare_with=comparison_backend,
+    )
 
 
 def test_group_by_empty_or_scalar_key_exprs_23397() -> None:

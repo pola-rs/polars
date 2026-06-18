@@ -511,3 +511,42 @@ def test_concat_horizontal_lazy_strict_raises_shape_error_27415(
             }
         ),
     )
+
+
+def test_concat_horizontal_strict_cached_projection_27923(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    plmonkeypatch.setenv("POLARS_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS", "1")
+
+    lf = pl.concat(
+        [
+            pl.LazyFrame(
+                {
+                    "idx": [0, 1],
+                    "a": [10, 11],
+                    "left_unused": [20, 21],
+                }
+            ),
+            pl.LazyFrame({"right_unused": [30, 31, 32]}),
+        ],
+        how="horizontal",
+        strict=True,
+    ).cache()
+    q = pl.concat(
+        [
+            lf.clone().select("idx"),
+            lf.select("a"),
+        ],
+        how="horizontal",
+        strict=True,
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "idx": [0, 1],
+                "a": [10, 11],
+            }
+        ),
+    )

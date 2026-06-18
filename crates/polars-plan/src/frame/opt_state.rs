@@ -43,16 +43,26 @@ bitflags! {
 }
 
 impl OptFlags {
-    pub fn schema_only() -> Self {
-        Self::TYPE_COERCION | Self::TYPE_CHECK
+    pub fn cluster_with_columns(&self) -> bool {
+        self.contains(OptFlags::CLUSTER_WITH_COLUMNS)
+    }
+
+    pub fn cover_ir_conversion(&self, requested: OptFlags) -> bool {
+        let mask =  // flags that can impact DSL->IR conversion
+            Self::PREDICATE_PUSHDOWN | Self::SIMPLIFY_EXPR | Self::TYPE_COERCION | Self::TYPE_CHECK;
+        (*self & mask).contains(requested & mask)
     }
 
     pub fn eager(&self) -> bool {
         self.contains(OptFlags::EAGER)
     }
 
-    pub fn cluster_with_columns(&self) -> bool {
-        self.contains(OptFlags::CLUSTER_WITH_COLUMNS)
+    pub fn fast_projection(&self) -> bool {
+        self.contains(OptFlags::FAST_PROJECTION)
+    }
+
+    pub fn gpu(&self) -> bool {
+        self.contains(OptFlags::GPU)
     }
 
     pub fn predicate_pushdown(&self) -> bool {
@@ -62,20 +72,21 @@ impl OptFlags {
     pub fn projection_pushdown(&self) -> bool {
         self.contains(OptFlags::PROJECTION_PUSHDOWN)
     }
+
+    pub fn schema_only() -> Self {
+        Self::TYPE_COERCION | Self::TYPE_CHECK
+    }
+
     pub fn simplify_expr(&self) -> bool {
         self.contains(OptFlags::SIMPLIFY_EXPR)
     }
+
     pub fn slice_pushdown(&self) -> bool {
         self.contains(OptFlags::SLICE_PUSHDOWN)
     }
+
     pub fn streaming(&self) -> bool {
         self.contains(OptFlags::STREAMING)
-    }
-    pub fn fast_projection(&self) -> bool {
-        self.contains(OptFlags::FAST_PROJECTION)
-    }
-    pub fn gpu(&self) -> bool {
-        self.contains(OptFlags::GPU)
     }
 }
 

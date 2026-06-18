@@ -21,6 +21,7 @@ from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from polars._typing import AsofJoinStrategy, PolarsIntegerType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_asof_join_singular_right_11966() -> None:
@@ -568,7 +569,7 @@ def test_asof_join_nearest_reference(allow_exact_matches: bool) -> None:
         return result
 
     test_dfs = []
-    rng = random.Random()
+    rng = random.Random(0)
     for n_a, n_b, n_c, n_d in itertools.product([0, 1, 2], repeat=4):
         a = rng.randint(0, 10)
         b = rng.randint(0, 10)
@@ -1185,8 +1186,11 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # See #18927.
+@pytest.mark.may_fail_auto_streaming
 def test_asof_join_string() -> None:
+    # These set_sorted() calls are invalid, so the code is technically incorrect.
+    # However, this code used to work in the past and we'd like to know when it
+    # breaks. (See also: #18927)
     left = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None]}).set_sorted("x")
     right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted(
         "x"
@@ -1392,7 +1396,10 @@ def test_join_asof_no_exact_matches_parametric(
 
 def test_join_asof_not_sorted() -> None:
     df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
-    with pytest.raises(InvalidOperationError, match="is not sorted"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+    ):
         df.join_asof(df, on="b")
 
     # When 'by' is provided, we do not check sortedness, but a warning is received
@@ -1407,6 +1414,42 @@ def test_join_asof_not_sorted() -> None:
         df.join_asof(df, on="b", check_sortedness=False)
         df.join_asof(df, on="b", by="a", check_sortedness=False)
         assert len(w) == 0  # no warnings caught
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_asof_not_sorted_streaming_27457(
+    swap: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+    for n in range(4, 10):
+        df = pl.DataFrame({"a": (10 * [1, 2, 3])[:n]})
+        df2 = df.sort("a")
+        if swap:
+            (df, df2) = df2, df
+        with pytest.raises(
+            InvalidOperationError,
+            match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+        ):
+            df.lazy().join_asof(df2.lazy(), on="a").collect(engine="streaming")
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_asof_not_sorted_streaming_grouped_27457(
+    swap: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+    for n in range(4, 10):
+        df = pl.DataFrame({"group": (10 * [1, 2, 3])[:n]})
+        df2 = df.sort("group")
+        lf = df.lazy().set_sorted("group").with_row_index("a")  # Deliberately invalid
+        lf2 = df2.lazy().set_sorted("group").with_row_index("a")
+        if swap:
+            (lf, lf2) = lf2, lf
+        with pytest.raises(
+            InvalidOperationError,
+            match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+        ):
+            lf.join_asof(lf2, on="a", by="group").collect(engine="streaming")
 
 
 @pytest.mark.parametrize(
