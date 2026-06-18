@@ -33,7 +33,6 @@ from polars._dependencies import (
 from polars._dependencies import numpy as np
 from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
-from polars._plr import InvalidOperationError
 from polars._utils.construction import (
     arrow_to_pyseries,
     dataframe_to_pyseries,
@@ -97,7 +96,12 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.datatypes._utils import dtype_to_init_repr
-from polars.exceptions import ComputeError, ModuleUpgradeRequiredError, ShapeError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    ModuleUpgradeRequiredError,
+    ShapeError,
+)
 from polars.interchange.protocol import CompatLevel
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
