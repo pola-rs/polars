@@ -38,6 +38,11 @@ def all_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     the vertical :meth:`Expr.all`, which ignores nulls by default
     (``ignore_nulls=True``).
 
+    .. warning::
+        From Polars 2.0, the null handling will change to match the vertical
+        :meth:`Expr.all` (nulls ignored by default). See
+        https://github.com/pola-rs/polars/issues/17827.
+
     .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
     Examples
@@ -88,6 +93,11 @@ def any_horizontal(*exprs: IntoExpr | Iterable[IntoExpr]) -> Expr:
     and no `True` values, the output is null. This null handling also differs from
     the vertical :meth:`Expr.any`, which ignores nulls by default
     (``ignore_nulls=True``).
+
+    .. warning::
+        From Polars 2.0, the null handling will change to match the vertical
+        :meth:`Expr.any` (nulls ignored by default). See
+        https://github.com/pola-rs/polars/issues/17827.
 
     .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
