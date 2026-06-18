@@ -11,25 +11,6 @@ use pyo3::types::{PyCapsule, PyTuple, PyType};
 use super::PySeries;
 use crate::error::PyPolarsErr;
 
-/// Validate PyCapsule has provided name
-fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> PyResult<()> {
-    let capsule_name = capsule.name()?;
-    if let Some(capsule_name) = capsule_name {
-        let capsule_name = unsafe { capsule_name.as_cstr() };
-        if capsule_name.to_str() != Ok(expected_name) {
-            return Err(PyValueError::new_err(format!(
-                "Expected name '{expected_name}' in PyCapsule, instead got '{capsule_name:?}'"
-            )));
-        }
-    } else {
-        return Err(PyValueError::new_err(
-            "Expected schema PyCapsule to have name set.",
-        ));
-    }
-
-    Ok(())
-}
-
 /// Import `__arrow_c_array__` across Python boundary
 pub(crate) fn call_arrow_c_array<'py>(
     ob: &Bound<'py, PyAny>,
@@ -58,8 +39,6 @@ pub(crate) fn import_array_pycapsules(
 ) -> PyResult<(arrow::datatypes::Field, Box<dyn Array>)> {
     let field = import_schema_pycapsule(schema_capsule)?;
 
-    validate_pycapsule_name(array_capsule, "arrow_array")?;
-
     // # Safety
     // array_capsule holds a valid C ArrowArray pointer, as defined by the Arrow PyCapsule
     // Interface
@@ -79,8 +58,6 @@ pub(crate) fn import_array_pycapsules(
 pub(crate) fn import_schema_pycapsule(
     schema_capsule: &Bound<PyCapsule>,
 ) -> PyResult<arrow::datatypes::Field> {
-    validate_pycapsule_name(schema_capsule, "arrow_schema")?;
-
     // # Safety
     // schema_capsule holds a valid C ArrowSchema pointer, as defined by the Arrow PyCapsule
     // Interface
@@ -108,8 +85,6 @@ fn call_arrow_c_stream<'py>(ob: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyCap
 }
 
 pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<PySeries> {
-    validate_pycapsule_name(capsule, "arrow_array_stream")?;
-
     // # Safety
     // capsule holds a valid C ArrowArrayStream pointer, as defined by the Arrow PyCapsule
     // Interface
