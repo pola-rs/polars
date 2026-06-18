@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-class DateTimeNameSpace:
+class DateTimeNameSpace(_NamespaceSuggestMixin):
     """Series.dt namespace."""
 
     _accessor = "dt"
