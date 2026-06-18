@@ -183,6 +183,8 @@ pub enum DslPlan {
         version: u32,
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
         node: Option<Node>,
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        opt_flags: Option<crate::frame::OptFlags>,
     },
 }
 
@@ -220,7 +222,7 @@ impl Clone for DslPlan {
             Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order, column_naming }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order, column_naming: *column_naming },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key, maintain_order } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone(), maintain_order: *maintain_order },
-            Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
+            Self::IR {node, dsl, version, opt_flags} => Self::IR {node: *node, dsl: dsl.clone(), version: *version, opt_flags: *opt_flags},
         }
     }
 }
