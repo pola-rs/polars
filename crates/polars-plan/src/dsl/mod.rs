@@ -1608,8 +1608,8 @@ impl Expr {
 
     #[cfg(feature = "row_hash")]
     /// Compute the hash of every element.
-    pub fn hash(self, k0: u64, k1: u64, k2: u64, k3: u64) -> Expr {
-        self.map_unary(FunctionExpr::Hash(k0, k1, k2, k3))
+    pub fn hash(self, seed: u64) -> Expr {
+        self.map_unary(FunctionExpr::Hash(seed))
     }
 
     pub fn to_physical(self) -> Expr {

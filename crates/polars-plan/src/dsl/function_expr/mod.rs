@@ -111,7 +111,7 @@ pub enum FunctionExpr {
     NullCount,
     Pow(PowFunction),
     #[cfg(feature = "row_hash")]
-    Hash(u64, u64, u64, u64),
+    Hash(u64),
     #[cfg(feature = "arg_where")]
     ArgWhere,
     #[cfg(feature = "index_of")]
@@ -508,7 +508,7 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "sign")]
             Sign => {},
             #[cfg(feature = "row_hash")]
-            Hash(a, b, c, d) => (a, b, c, d).hash(state),
+            Hash(seed) => seed.hash(state),
             FillNull => {},
             #[cfg(feature = "rolling_window")]
             RollingExpr { function, options } => {
@@ -717,7 +717,7 @@ impl Display for FunctionExpr {
             NullCount => "null_count",
             Pow(func) => return write!(f, "{func}"),
             #[cfg(feature = "row_hash")]
-            Hash(_, _, _, _) => "hash",
+            Hash(_) => "hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
             #[cfg(feature = "index_of")]

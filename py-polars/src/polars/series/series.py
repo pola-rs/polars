@@ -8270,9 +8270,6 @@ class Series:
     def hash(
         self,
         seed: int = 0,
-        seed_1: int | None = None,
-        seed_2: int | None = None,
-        seed_3: int | None = None,
     ) -> Series:
         """
         Hash the Series.
@@ -8283,12 +8280,6 @@ class Series:
         ----------
         seed
             Random seed parameter. Defaults to 0.
-        seed_1
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_2
-            Random seed parameter. Defaults to `seed` if not set.
-        seed_3
-            Random seed parameter. Defaults to `seed` if not set.
 
         Notes
         -----
