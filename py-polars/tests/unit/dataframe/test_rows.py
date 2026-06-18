@@ -190,6 +190,19 @@ def test_rows_by_key_all_columns_27925() -> None:
         (3, 6): [(3, 6)],
     }
 
+    # Non-unique keys must preserve multiplicity: one (empty) row per occurrence.
+    dup = pl.DataFrame({"a": [1, 2, 3, 1, 2, 3], "b": [4, 5, 6, 4, 5, 6]})
+    assert dup.rows_by_key(["a", "b"]) == {
+        (1, 4): [(), ()],
+        (2, 5): [(), ()],
+        (3, 6): [(), ()],
+    }
+    assert dup.rows_by_key(["a", "b"], named=True) == {
+        (1, 4): [{}, {}],
+        (2, 5): [{}, {}],
+        (3, 6): [{}, {}],
+    }
+
 
 def test_iter_rows() -> None:
     df = pl.DataFrame(
