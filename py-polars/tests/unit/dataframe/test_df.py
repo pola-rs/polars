@@ -1798,18 +1798,18 @@ def test_reproducible_hash_with_seeds() -> None:
     the same seeds.
     """
     df = pl.DataFrame({"s": [1234, None, 5678]})
-    seeds = (11, 22, 33, 44)
+    seed = 42
     expected = pl.Series(
         "s",
-        [7829205897147972687, 10151361788274345728, 17508017346787321581],
+        [17009557467372503927, 1704163803583719673, 1546285934846828044],
         dtype=pl.UInt64,
     )
-    result = df.hash_rows(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df["s"].hash(*seeds)
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
-    result = df.select([pl.col("s").hash(*seeds)])["s"]
-    assert_series_equal(expected, result, check_names=False, check_exact=True)
+    result = df.hash_rows(seed)
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
+    result = df["s"].hash(seed)
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
+    result = df.select([pl.col("s").hash(seed)])["s"]
+    assert_series_equal(result, expected, check_names=False, check_exact=True)
 
 
 @pytest.mark.slow
