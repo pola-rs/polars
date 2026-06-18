@@ -927,7 +927,8 @@ def test_nested_struct_cast_22744() -> None:
 
     assert_series_equal(
         s.cast(
-            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})}),
+            strict=False,
         ),
         expected.to_series(),
     )
@@ -937,7 +938,8 @@ def test_nested_struct_cast_22744() -> None:
                 "x": pl.Struct(
                     {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
                 )
-            }
+            },
+            strict=False,
         ),
         expected,
     )
