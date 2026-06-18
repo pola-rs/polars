@@ -10,8 +10,8 @@ pub(super) fn process_join(
     opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    input_left: Node,
-    input_right: Node,
+    mut input_left: Node,
+    mut input_right: Node,
     mut left_on: Vec<ExprIR>,
     mut right_on: Vec<ExprIR>,
     mut schema: SchemaRef,
@@ -34,6 +34,20 @@ pub(super) fn process_join(
 
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
+
+    let mut opt_join_key_reduction_select = try_reduce_redundant_join_keys(
+        opt,
+        lp_arena,
+        expr_arena,
+        &mut input_left,
+        &mut input_right,
+        &schema_left,
+        &schema_right,
+        &mut schema,
+        &options,
+        &mut left_on,
+        &mut right_on,
+    )?;
 
     let opt_post_select = try_rewrite_join_type(
         &schema_left,
@@ -63,6 +77,8 @@ pub(super) fn process_join(
             schema,
             options,
         };
+        let lp =
+            apply_join_key_reduction_select(lp, opt_join_key_reduction_select.take(), lp_arena);
 
         return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
@@ -381,7 +397,202 @@ pub(super) fn process_join(
         lp
     };
 
+    let lp = apply_join_key_reduction_select(lp, opt_join_key_reduction_select, lp_arena);
+
     Ok(lp)
+}
+
+fn apply_join_key_reduction_select(
+    lp: IR,
+    opt_select: Option<(Vec<ExprIR>, SchemaRef)>,
+    lp_arena: &mut Arena<IR>,
+) -> IR {
+    if let Some((projections, schema)) = opt_select {
+        IR::Select {
+            input: lp_arena.add(lp),
+            expr: projections,
+            schema,
+            options: ProjectionOptions {
+                run_parallel: false,
+                duplicate_check: false,
+                should_broadcast: false,
+            },
+        }
+    } else {
+        lp
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn try_reduce_redundant_join_keys(
+    opt: &mut PredicatePushDown,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    input_left: &mut Node,
+    input_right: &mut Node,
+    schema_left: &SchemaRef,
+    schema_right: &SchemaRef,
+    output_schema: &mut SchemaRef,
+    options: &Arc<JoinOptionsIR>,
+    left_on: &mut Vec<ExprIR>,
+    right_on: &mut Vec<ExprIR>,
+) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
+    if left_on.len() <= 1 {
+        return Ok(None);
+    }
+
+    // Only filter a side when removed rows from that side cannot contribute to the join output.
+    let reduce_left = match options.args.how {
+        JoinType::Inner | JoinType::Right => true,
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => true,
+        _ => false,
+    };
+    let reduce_right = match options.args.how {
+        JoinType::Inner | JoinType::Left => true,
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => true,
+        _ => false,
+    };
+
+    if !(reduce_left || reduce_right) {
+        return Ok(None);
+    }
+
+    let mut remove_key = vec![false; left_on.len()];
+    let mut pushdown_left = init_hashmap(None);
+    let mut pushdown_right = init_hashmap(None);
+
+    if reduce_left {
+        collect_redundant_join_key_filters(
+            left_on,
+            right_on,
+            options.args.nulls_equal,
+            &mut remove_key,
+            &mut pushdown_left,
+            expr_arena,
+        );
+    }
+
+    if reduce_right {
+        collect_redundant_join_key_filters(
+            right_on,
+            left_on,
+            options.args.nulls_equal,
+            &mut remove_key,
+            &mut pushdown_right,
+            expr_arena,
+        );
+    }
+
+    if !remove_key.iter().any(|remove| *remove) {
+        return Ok(None);
+    }
+
+    debug_assert!(remove_key.iter().any(|remove| !*remove));
+
+    if !pushdown_left.is_empty() {
+        opt.pushdown_and_assign(*input_left, pushdown_left, lp_arena, expr_arena)?;
+    }
+    if !pushdown_right.is_empty() {
+        opt.pushdown_and_assign(*input_right, pushdown_right, lp_arena, expr_arena)?;
+    }
+
+    let original_schema = output_schema.clone();
+
+    let mut new_left_on = Vec::with_capacity(left_on.len());
+    let mut new_right_on = Vec::with_capacity(right_on.len());
+    for (i, (l, r)) in left_on.iter().zip(right_on.iter()).enumerate() {
+        if !remove_key[i] {
+            new_left_on.push(l.clone());
+            new_right_on.push(r.clone());
+        }
+    }
+    *left_on = new_left_on;
+    *right_on = new_right_on;
+
+    *output_schema = det_join_schema(
+        schema_left,
+        schema_right,
+        left_on,
+        right_on,
+        options,
+        expr_arena,
+    )?;
+
+    let original_names = original_schema.iter_names().collect::<Vec<_>>();
+    let new_names = output_schema.iter_names().collect::<Vec<_>>();
+    if original_names == new_names {
+        return Ok(None);
+    }
+
+    let projections = original_schema
+        .iter_names()
+        .map(|name| {
+            let node = expr_arena.add(AExpr::Column(name.clone()));
+            ExprIR::from_node(node, expr_arena)
+        })
+        .collect();
+
+    Ok(Some((projections, original_schema)))
+}
+
+fn collect_redundant_join_key_filters(
+    reduced_side_on: &[ExprIR],
+    other_side_on: &[ExprIR],
+    nulls_equal: bool,
+    remove_key: &mut [bool],
+    pushdown: &mut PlHashMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+) {
+    let op = if nulls_equal {
+        Operator::EqValidity
+    } else {
+        Operator::Eq
+    };
+
+    let mut l_stack = Vec::new();
+    let mut r_stack = Vec::new();
+
+    for group_start in 0..other_side_on.len() {
+        let group_node = other_side_on[group_start].node();
+
+        for i in group_start + 1..other_side_on.len() {
+            if remove_key[i] {
+                continue;
+            }
+
+            let other_node = other_side_on[i].node();
+            if !expr_arena.get(group_node).is_expr_equal_to_amortized(
+                expr_arena.get(other_node),
+                expr_arena,
+                &mut l_stack,
+                &mut r_stack,
+            ) {
+                continue;
+            }
+
+            remove_key[i] = true;
+
+            let lhs = reduced_side_on[group_start].node();
+            let rhs = reduced_side_on[i].node();
+
+            if expr_arena
+                .get(lhs)
+                .is_expr_equal_to(expr_arena.get(rhs), expr_arena)
+            {
+                continue;
+            }
+
+            let predicate = expr_arena.add(AExpr::BinaryExpr {
+                left: lhs,
+                op,
+                right: rhs,
+            });
+            let predicate = ExprIR::from_node(predicate, expr_arena);
+            insert_predicate_dedup(pushdown, &predicate, expr_arena);
+        }
+    }
 }
 
 /// Attempts to rewrite the join-type based on NULL-removing filters.

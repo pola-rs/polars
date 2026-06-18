@@ -47,6 +47,21 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
     })
 }
 
+fn optimized_join_key_lengths(q: LazyFrame) -> Vec<(usize, usize)> {
+    let (mut expr_arena, mut lp_arena) = get_arenas();
+    let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
+
+    lp_arena
+        .iter(lp)
+        .filter_map(|(_, lp)| match lp {
+            IR::Join {
+                left_on, right_on, ..
+            } => Some((left_on.len(), right_on.len())),
+            _ => None,
+        })
+        .collect()
+}
+
 #[cfg(any(feature = "parquet", feature = "csv"))]
 fn slice_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
@@ -123,6 +138,150 @@ fn test_no_left_join_pass() -> PolarsResult<()> {
     ]?;
 
     assert!(out.equals(&expected));
+    Ok(())
+}
+
+#[test]
+fn test_redundant_join_key_filter_inner_join_21710() -> PolarsResult<()> {
+    let left = df![
+        "a" => [1, 2, 3, 4],
+        "b" => [1, 2, 4, 4],
+        "payload" => ["aa", "bb", "cc", "dd"],
+    ]?;
+    let right = df![
+        "x" => [1, 2, 4],
+        "value" => [10, 20, 40],
+    ]?;
+
+    let q = left.lazy().join(
+        right.lazy(),
+        [col("a"), col("b")],
+        [col("x"), col("x")],
+        JoinType::Inner.into(),
+    );
+
+    let expected = q.clone().with_predicate_pushdown(false).collect()?;
+    let actual = q.clone().collect()?;
+    assert!(actual.equals(&expected));
+    assert_eq!(optimized_join_key_lengths(q), vec![(1, 1)]);
+
+    Ok(())
+}
+
+#[test]
+fn test_redundant_join_key_filter_partial_reduction_21710() -> PolarsResult<()> {
+    let left = df![
+        "a" => [1, 2, 3, 4],
+        "b" => [9, 9, 8, 8],
+        "c" => [1, 0, 4, 4],
+    ]?;
+    let right = df![
+        "x" => [1, 4],
+        "y" => [9, 8],
+        "value" => [10, 40],
+    ]?;
+
+    let q = left.lazy().join(
+        right.lazy(),
+        [col("a"), col("b"), col("c")],
+        [col("x"), col("y"), col("x")],
+        JoinType::Inner.into(),
+    );
+
+    let expected = q.clone().with_predicate_pushdown(false).collect()?;
+    let actual = q.clone().collect()?;
+    assert!(actual.equals(&expected));
+    assert_eq!(optimized_join_key_lengths(q), vec![(2, 2)]);
+
+    Ok(())
+}
+
+#[test]
+fn test_redundant_join_key_filter_restores_schema_21710() -> PolarsResult<()> {
+    let left = df![
+        "a" => [1, 2, 3],
+        "payload" => ["aa", "bb", "cc"],
+    ]?;
+    let right = df![
+        "x" => [1, 2, 3],
+        "y" => [1, 0, 3],
+        "value" => [10, 20, 30],
+    ]?;
+
+    let q = left.lazy().join(
+        right.lazy(),
+        [col("a"), col("a")],
+        [col("x"), col("y")],
+        JoinType::Inner.into(),
+    );
+
+    let expected = q.clone().with_predicate_pushdown(false).collect()?;
+    let actual = q.clone().collect()?;
+    assert!(actual.equals(&expected));
+    assert_eq!(actual.get_column_names(), ["a", "payload", "value"]);
+    assert_eq!(optimized_join_key_lengths(q), vec![(1, 1)]);
+
+    Ok(())
+}
+
+#[test]
+fn test_redundant_join_key_filter_respects_nulls_equal_21710() -> PolarsResult<()> {
+    let left = df![
+        "a" => [Some(1i32), None, Some(2)],
+        "b" => [Some(1i32), None, Some(3)],
+    ]?;
+    let right = df![
+        "x" => [Some(1i32), None, Some(3)],
+        "value" => [10, 20, 30],
+    ]?;
+
+    let args = JoinArgs {
+        how: JoinType::Inner,
+        nulls_equal: true,
+        ..Default::default()
+    };
+    let q = left.lazy().join(
+        right.lazy(),
+        [col("a"), col("b")],
+        [col("x"), col("x")],
+        args,
+    );
+
+    let expected = q.clone().with_predicate_pushdown(false).collect()?;
+    let actual = q.clone().collect()?;
+    assert!(actual.equals_missing(&expected));
+    assert_eq!(optimized_join_key_lengths(q), vec![(1, 1)]);
+
+    Ok(())
+}
+
+#[test]
+fn test_redundant_join_key_filter_does_not_filter_preserved_side_21710() -> PolarsResult<()> {
+    let left = df![
+        "a" => [1, 2, 3],
+        "b" => [1, 0, 3],
+    ]?;
+    let right = df![
+        "x" => [1, 3],
+        "value" => [10, 30],
+    ]?;
+
+    let left_join = left.clone().lazy().join(
+        right.clone().lazy(),
+        [col("a"), col("b")],
+        [col("x"), col("x")],
+        JoinType::Left.into(),
+    );
+    let full_join = left.lazy().join(
+        right.lazy(),
+        [col("a"), col("b")],
+        [col("x"), col("x")],
+        JoinType::Full.into(),
+    );
+
+    assert_eq!(optimized_join_key_lengths(left_join), vec![(2, 2)]);
+    assert_eq!(optimized_join_key_lengths(full_join), vec![(2, 2)]);
+
     Ok(())
 }
 
