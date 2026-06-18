@@ -11985,6 +11985,7 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
+        zipped: Iterable[tuple[Any, Any]]
         if values.width == 0:
             empty_row: Any = {} if named else ()
             zipped = ((k, empty_row) for k in keys)
