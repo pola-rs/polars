@@ -577,10 +577,12 @@ fn collect_redundant_join_key_filters(
             let lhs = reduced_side_on[group_start].node();
             let rhs = reduced_side_on[i].node();
 
-            if expr_arena
-                .get(lhs)
-                .is_expr_equal_to(expr_arena.get(rhs), expr_arena)
-            {
+            if expr_arena.get(lhs).is_expr_equal_to_amortized(
+                expr_arena.get(rhs),
+                expr_arena,
+                &mut l_stack,
+                &mut r_stack,
+            ) {
                 continue;
             }
 

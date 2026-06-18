@@ -272,15 +272,61 @@ fn test_redundant_join_key_filter_does_not_filter_preserved_side_21710() -> Pola
         [col("x"), col("x")],
         JoinType::Left.into(),
     );
-    let full_join = left.lazy().join(
-        right.lazy(),
+    let right_join = right.clone().lazy().join(
+        left.clone().lazy(),
+        [col("x"), col("x")],
+        [col("a"), col("b")],
+        JoinType::Right.into(),
+    );
+    let full_join = left.clone().lazy().join(
+        right.clone().lazy(),
         [col("a"), col("b")],
         [col("x"), col("x")],
         JoinType::Full.into(),
     );
 
     assert_eq!(optimized_join_key_lengths(left_join), vec![(2, 2)]);
+    assert_eq!(optimized_join_key_lengths(right_join), vec![(2, 2)]);
     assert_eq!(optimized_join_key_lengths(full_join), vec![(2, 2)]);
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "semi_anti_join")]
+fn test_redundant_join_key_filter_semi_anti_join_21710() -> PolarsResult<()> {
+    let left = df![
+        "a" => [1, 2, 3, 4],
+        "b" => [1, 2, 4, 4],
+        "payload" => ["aa", "bb", "cc", "dd"],
+    ]?;
+    let right = df![
+        "x" => [1, 2, 4],
+    ]?;
+
+    let semi_join = left.clone().lazy().join(
+        right.clone().lazy(),
+        [col("a"), col("b")],
+        [col("x"), col("x")],
+        JoinType::Semi.into(),
+    );
+    let anti_join = left.lazy().join(
+        right.lazy(),
+        [col("a"), col("b")],
+        [col("x"), col("x")],
+        JoinType::Anti.into(),
+    );
+
+    let expected_semi = semi_join.clone().with_predicate_pushdown(false).collect()?;
+    let actual_semi = semi_join.clone().collect()?;
+    assert!(actual_semi.equals(&expected_semi));
+
+    let expected_anti = anti_join.clone().with_predicate_pushdown(false).collect()?;
+    let actual_anti = anti_join.clone().collect()?;
+    assert!(actual_anti.equals(&expected_anti));
+
+    assert_eq!(optimized_join_key_lengths(semi_join), vec![(1, 1)]);
+    assert_eq!(optimized_join_key_lengths(anti_join), vec![(2, 2)]);
 
     Ok(())
 }
