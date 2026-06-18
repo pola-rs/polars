@@ -16,20 +16,20 @@ pub fn hash_parquet_scalar(scalar: &ParquetScalar) -> Option<u64> {
     match scalar {
         S::Null => None,
         S::Boolean(v) => Some(hash_byte([*v as u8])),
-        // The following four columns are stored as physical INT32 in Parquet.
+        // The following four logical types are stored as physical INT32 in Parquet.
         S::Int8(v) => Some(hash_native(i32::from(*v))),
         S::UInt8(v) => Some(hash_native(i32::from(*v))),
         S::Int16(v) => Some(hash_native(i32::from(*v))),
         S::UInt16(v) => Some(hash_native(i32::from(*v))),
         S::Int32(v) => Some(hash_native(*v)),
         S::Int64(v) => Some(hash_native(*v)),
-        // UInt32 columns are stored as physical INT32.
+        // UInt32 logical type is stored as physical INT32.
         S::UInt32(v) => Some(hash_byte(v.to_le_bytes())),
-        // UInt64 columns are stored as physical INT64.
+        // UInt64 logical type is stored as physical INT64.
         S::UInt64(v) => Some(hash_byte(v.to_le_bytes())),
         S::Float32(v) => Some(hash_native(*v)),
         S::Float64(v) => Some(hash_native(*v)),
-        // String columns are stored as physical BYTE_ARRAY.
+        // String logical type is stored as physical BYTE_ARRAY.
         S::String(v) => Some(hash_byte(v.as_bytes())),
         S::Binary(v) | S::FixedSizeBinary(v) => Some(hash_byte(v)),
     }

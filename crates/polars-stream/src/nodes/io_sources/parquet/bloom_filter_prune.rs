@@ -28,13 +28,13 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::projection::ArrowFieldProjection;
 
-/// Column to probe with a bloom: on-disk Arrow field name and precomputed literal hashes.
+/// On-disk Arrow field name and precomputed hashes used to probe that column's Bloom filter.
 pub(super) struct BloomColumnPred {
     pub(super) arrow_field_name: PlSmallStr,
     pub(super) hashes: Box<[u64]>,
 }
 
-/// Combine statistics- and bloom-derived skip masks.
+/// Combine statistics- and Bloom filter-derived skip masks.
 ///
 /// Either path may mark a row group for skipping; we take the union (`|`).
 pub(super) fn merge_row_group_skip_masks(
@@ -48,12 +48,12 @@ pub(super) fn merge_row_group_skip_masks(
     &statistics_mask | &bloom_mask
 }
 
-/// Collect bloom-eligible columns and hash literals once per file.
+/// Collect Bloom filter-eligible columns and hash literals once per file.
 pub(super) fn collect_bloom_preds(
     predicate: &ScanIOPredicate,
     projected_arrow_fields: &[ArrowFieldProjection],
 ) -> Option<Vec<BloomColumnPred>> {
-    // Name translation table from what the filter uses to what Parquet stores on disk (bloom offsets live in chunk metadata by Arrow name).
+    // Name translation table from what the filter uses to what Parquet stores on disk (Bloom offsets live in chunk metadata by Arrow name).
     let output_to_arrow_name: PlHashMap<_, _> = projected_arrow_fields
         .iter()
         .map(|p| (p.output_name().clone(), p.arrow_field().name.clone()))
@@ -82,10 +82,11 @@ pub(super) fn collect_bloom_preds(
     (!bloom_preds.is_empty()).then_some(bloom_preds)
 }
 
-/// For each row group not already skipped by `statistics_mask`, probe on-disk bloom filters.
+/// For each row group not already skipped by `statistics_mask`, probe on-disk Bloom filters.
 ///
-/// Returns `None` if there are no bloom predicates. Otherwise returns a bitmap of length
-/// `row_groups.len()` where `true` means skip (value cannot be in bloom).
+/// Returns `None` if there are no Bloom predicates. Otherwise returns a bitmap of length
+/// `row_groups.len()` where `true` means skip (value cannot be in Bloom) for row groups not
+/// already skipped by statistics; for those skipped by statistics, the Bloom mask is irrelevant.
 pub(super) async fn bloom_filter_row_group_skip_mask(
     row_groups: &[RowGroupMetadata],
     byte_source: Arc<DynByteSource>,
@@ -114,7 +115,7 @@ pub(super) async fn bloom_filter_row_group_skip_mask(
     Ok(Some(skip.freeze()))
 }
 
-/// Literals to hash into the bloom filter; `None` for non-point predicates (ranges, strings, …).
+/// Literals to hash into the Bloom filter; `None` for non-point predicates (ranges, strings, …).
 fn bloom_pred_values(specialized: &Option<SpecializedColumnPredicate>) -> Option<&[Scalar]> {
     match specialized {
         Some(SpecializedColumnPredicate::Equal(s)) => Some(std::slice::from_ref(s)),
@@ -125,7 +126,7 @@ fn bloom_pred_values(specialized: &Option<SpecializedColumnPredicate>) -> Option
     }
 }
 
-/// Byte range of the serialized bloom filter for a column chunk, if present and valid.
+/// Byte range of the serialized Bloom filter for a column chunk, if present and valid.
 ///
 /// Returns `None` on missing metadata or values we cannot read safely (caller treats as “might contain”).
 fn bloom_byte_range(meta: &ColumnChunkMetadata) -> Option<Range<usize>> {
@@ -142,7 +143,7 @@ fn bloom_byte_range(meta: &ColumnChunkMetadata) -> Option<Range<usize>> {
     Some(offset..end)
 }
 
-/// Returns `true` if blooms prove this row group cannot satisfy the filter conjuncts.
+/// Returns `true` if Blooms prove this row group cannot satisfy the filter conjuncts.
 async fn should_skip_row_group(
     rg: &RowGroupMetadata,
     bloom_preds: &[BloomColumnPred],
@@ -153,7 +154,7 @@ async fn should_skip_row_group(
         let Some(idxs) = rg.columns_idxs_under_root_iter(pred.arrow_field_name.as_str()) else {
             continue;
         };
-        // Structs/lists map to 0 or 2+ chunks; blooms are per chunk, so we cannot pick a single bloom for a nested field.
+        // Structs/lists map to 0 or 2+ chunks; Blooms are per chunk, so we cannot pick a single Bloom for a nested field.
         if idxs.len() != 1 {
             continue;
         }
@@ -173,10 +174,10 @@ async fn should_skip_row_group(
     Ok(false)
 }
 
-/// Max bytes to read for the Thrift bloom filter header; Apache Arrow seems to think 20 is enough.
+/// Max bytes to read for the Thrift Bloom filter header; Apache Arrow seems to think 20 is enough.
 const BLOOM_HEADER_READ_CAP: usize = 64;
 
-/// Probe bloom filter literals, reading only the split-block(s) needed when cheaper than the full slice.
+/// Probe Bloom filter literals, reading only the split-block(s) needed when cheaper than the full slice.
 async fn probe_bloom_hashes(
     hashes: &[u64],
     bloom_range: Range<usize>,
