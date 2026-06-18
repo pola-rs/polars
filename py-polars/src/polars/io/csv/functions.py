@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Literal
@@ -40,7 +40,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable
 
     from polars import DataFrame, LazyFrame
     from polars._typing import (
@@ -310,7 +310,7 @@ def read_csv(
                 raise ValueError(msg)
 
     if schema_overrides is not None and not isinstance(
-        schema_overrides, (dict, Sequence)
+        schema_overrides, (Mapping, Sequence)
     ):
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
@@ -662,7 +662,7 @@ def _read_csv_impl(
     dtype_list: Sequence[tuple[str, PolarsDataType]] | None = None
     dtype_slice: Sequence[PolarsDataType] | None = None
     if schema_overrides is not None:
-        if isinstance(schema_overrides, dict):
+        if isinstance(schema_overrides, Mapping):
             dtype_list = []
             for k, v in schema_overrides.items():
                 dtype_list.append((k, parse_into_dtype(v)))
@@ -1379,7 +1379,7 @@ def scan_csv(
     └─────┴──────┘
     """
     if schema_overrides is not None and not isinstance(
-        schema_overrides, (dict, Sequence)
+        schema_overrides, (Mapping, Sequence)
     ):
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
@@ -1516,7 +1516,7 @@ def _scan_csv_impl(
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
-        if not isinstance(schema_overrides, dict):
+        if not isinstance(schema_overrides, Mapping):
             msg = "expected 'schema_overrides' dict, found 'list'"
             raise TypeError(msg)
         dtype_list = []

@@ -3207,3 +3207,17 @@ def test_read_csv_mixed_i128_float_infers_float64_27654(chunk_override: None) ->
     csv_data = b"value\n12345678901234567890\n1.5"
     df = pl.read_csv(csv_data)
     assert df.schema["value"] == pl.Float64
+
+
+def test_read_csv_schema_overrides_mapping_27980() -> None:
+    from collections import UserDict
+
+    data = b"ID,Name\n1,Alice\n2,Bob\n"
+
+    # A Mapping that is not a dict subclass (matches the documented type) is accepted.
+    df = pl.read_csv(data, schema_overrides=UserDict(ID=pl.String))
+    assert df.schema["ID"] == pl.String
+
+    # Plain dict continues to work.
+    df = pl.read_csv(data, schema_overrides={"ID": pl.String})
+    assert df.schema["ID"] == pl.String
