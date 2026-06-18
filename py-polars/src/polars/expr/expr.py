@@ -4160,12 +4160,18 @@ class Expr:
             order_by_pyexprs = None
 
         n_order_by = len(order_by_pyexprs) if order_by_pyexprs is not None else 0
-        if isinstance(descending, bool):
-            descending = [descending]
-        if isinstance(nulls_last, bool):
-            nulls_last = [nulls_last]
-        descending = extend_bool(list(descending), n_order_by, "descending", "order_by")
-        nulls_last = extend_bool(list(nulls_last), n_order_by, "nulls_last", "order_by")
+        descending = extend_bool(
+            descending if isinstance(descending, bool) else list(descending),
+            n_order_by,
+            "descending",
+            "order_by",
+        )
+        nulls_last = extend_bool(
+            nulls_last if isinstance(nulls_last, bool) else list(nulls_last),
+            n_order_by,
+            "nulls_last",
+            "order_by",
+        )
 
         return wrap_expr(
             self._pyexpr.over(
