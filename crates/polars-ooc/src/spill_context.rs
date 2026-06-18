@@ -4,8 +4,9 @@ use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::Instant;
 
 use polars_utils::relaxed_cell::RelaxedCell;
-use rand::RngExt;
 use rand::rngs::ThreadRng;
+use rand::{Rng, RngExt};
+use rand_distr::Distribution;
 use thread_local::ThreadLocal;
 
 use crate::{DynSpillToken, SpillToken, Spillable, memory_manager};
@@ -20,7 +21,7 @@ impl LocalSpillQueue {
     pub fn push_back(&mut self, token: &Arc<dyn DynSpillToken>, id: u64) {
         self.gc();
         if token.current_registration_id() == id {
-            self.tokens.push_front((Arc::downgrade(token), id));
+            self.tokens.push_back((Arc::downgrade(token), id));
         }
     }
 
@@ -263,20 +264,10 @@ impl Debug for RandomSpillContext {
     }
 }
 
-fn f32_pair_to_u64(a: f32, b: f32) -> u64 {
-    ((a.to_bits() as u64) << 32) | b.to_bits() as u64
-}
-
-fn u64_to_f32_pair(u: u64) -> (f32, f32) {
-    (f32::from_bits((u >> 32) as u32), f32::from_bits(u as u32))
-}
-
 // Used to normalize divisor to avoid absurdly high scores. Set to 1us.
 const BASE_IO_TIME: f64 = 1e-6;
-const UNEXPLORED_SCORE: f32 = 1e10_f32;
-const UNEXPLORED_VARIANCE: f32 = 1e5_f32;
-const STABLE_WEIGHT_THRESHOLD: f64 = 0.1; // Weights under this are considered unreliable (division).
-const EXPLORED_WEIGHT_THRESHOLD: f64 = 1.0 + STABLE_WEIGHT_THRESHOLD; // Just over 1 so sample variance correction is stable.
+const UNEXPLORED_SCORE: f64 = 1e10_f64;
+const EXPLORED_WEIGHT_THRESHOLD: f64 = 1.1; // Just over 1 so sample variance correction is stable.
 const UNSPILL_EVENT_HALF_LIFE_SEC: f64 = 5.0;
 const NANOSECONDS_IN_SECOND: f64 = 1e9;
 
@@ -289,13 +280,54 @@ impl Default for SpillContextStatistics {
     fn default() -> Self {
         Self {
             // TODO: starting score based on context.
-            score_cache: RelaxedCell::new_u64(f32_pair_to_u64(
-                UNEXPLORED_SCORE,
-                UNEXPLORED_VARIANCE,
-            )),
+            score_cache: RelaxedCell::new_u64(UNEXPLORED_SCORE.to_bits()),
             stats: Mutex::default(),
         }
     }
+}
+
+struct Statistics {
+    // Total stats.
+    spilled_byte_seconds: f64,
+    spill_time: f64,
+    unspill_time: f64,
+    successful_spills: u64,
+    failed_spills: u64,
+
+    // Historical stats for the multi-armed bandit algorithm. These are
+    // discounted statistics (meaning they decay over time), where weight is the
+    // (decaying) number of observations.
+    //
+    // Each observation consists of r (relief in byte-seconds) and t (io time).
+    // After sampling from this bivariate distribution the score is r / t.
+    //
+    // The multi-armed bandit algorithm in use is adapted from
+    // "Discounted Thompson Sampling for Non-Stationary Bandit Problems" https://arxiv.org/pdf/2305.10718
+    // Adaptations made: use direct sample mean/variance, discount based on time
+    // rather than arm pulls.
+    bandit_weight: f64,
+    bandit_r_sum: f64,
+    bandit_rr_sum: f64,
+    bandit_t_sum: f64,
+    bandit_tt_sum: f64,
+    bandit_rt_sum: f64,
+
+    // Stats of currently active spills. We prefer integers here for accuracy,
+    // but have to use floats for the bigger accumulators. Those are only used
+    // for variance, so some drift is acceptable.
+    active_spills: u64,
+    active_spills_bytes: u64,      // sum(bytes)
+    active_spills_bytes_ns: u128,  // sum(bytes * ns)
+    active_spills_io_time_ns: u64, // sum(io_time)
+
+    // These two are Welford-style accumulators (co-moments) for variance.
+    // dp = product of deviations, see moment.rs in polars-compute.
+    // r_i = b_i * s_i (relief in byte-seconds).
+    active_spills_dp_rr: f64, // sum((r_i - mean(r))^2)
+    active_spills_dp_bb: f64, // sum((b_i - mean(b))^2)
+    active_spills_dp_rb: f64, // sum((r_i - mean(r)) * (b_i - mean(b)))
+
+    last_update: Instant,
 }
 
 impl SpillContextStatistics {
@@ -304,20 +336,23 @@ impl SpillContextStatistics {
     // the IO time in seconds. The discount is a time-based exponential decay
     // which assigns lower weight to older spill events (with a half-life of
     // UNSPILL_EVENT_HALF_LIFE_SEC), and full weight to current spills.
-    pub fn score(&self) -> (f32, f32) {
+    pub fn sample_score<R: Rng>(&self, rng: &mut R) -> f64 {
         // Try to re-compute, if lock is taken just take cached value.
         if let Ok(mut stats) = self.stats.try_lock() {
-            let (mean, var) = stats.score();
-            self.score_cache.store(f32_pair_to_u64(mean, var));
-            (mean, var)
+            let score = stats.sample_score(rng);
+            self.score_cache.store(score.to_bits());
+            score
         } else {
-            u64_to_f32_pair(self.score_cache.load())
+            f64::from_bits(self.score_cache.load())
         }
     }
 
     pub fn add_failed_spill(&self, spill_start: Instant) {
         let mut stats = self.stats.lock().unwrap();
-        let spill_time_sec = spill_start.elapsed().as_secs_f64();
+        let now = Instant::now();
+        stats.step_time(now); // Important: step time before mutating.
+
+        let spill_time_sec = (now - spill_start).as_secs_f64();
         stats.spill_time += spill_time_sec;
         stats.failed_spills += 1;
         stats.add_bandit_event(0, spill_time_sec, 0.0, 0.0);
@@ -332,13 +367,27 @@ impl SpillContextStatistics {
         let now = Instant::now();
         stats.step_time(now); // Important: step time before mutating.
 
+        let mean_b_before = stats.active_spills_bytes as f64 / stats.active_spills.max(1) as f64;
+        let mean_r_before = stats.active_spills_bytes_ns as f64
+            / (stats.active_spills.max(1) as f64 * NANOSECONDS_IN_SECOND);
+
         let spill_time = now - spill_start;
         let spill_time_ns = spill_time.as_nanos() as u64;
         stats.spill_time += spill_time.as_secs_f64();
         stats.successful_spills += 1;
         stats.active_spills += 1;
-        stats.bytes_currently_spilled += n_bytes as u64;
+        stats.active_spills_bytes += n_bytes as u64;
         stats.active_spills_io_time_ns += spill_time_ns;
+
+        let mean_b_after = stats.active_spills_bytes as f64 / stats.active_spills as f64;
+        let mean_r_after = stats.active_spills_bytes_ns as f64
+            / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND);
+
+        let delta_r = -0.0;
+        let delta_b = n_bytes as f64;
+        stats.active_spills_dp_rr += (delta_r - mean_r_before) * (delta_r - mean_r_after);
+        stats.active_spills_dp_rb += (delta_r - mean_r_before) * (delta_b - mean_b_after);
+        stats.active_spills_dp_bb += (delta_b - mean_b_before) * (delta_b - mean_b_after);
         (spill_time_ns, now)
     }
 
@@ -353,18 +402,40 @@ impl SpillContextStatistics {
         let now = Instant::now();
         stats.step_time(now); // Important: step time before mutating.
 
+        let mean_b_before = stats.active_spills_bytes as f64 / stats.active_spills as f64;
+        let mean_r_before = stats.active_spills_bytes_ns as f64
+            / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND);
+
         let spilled_time = unspill_start - spilled_start;
         let unspill_time = now - unspill_start;
         stats.unspill_time += unspill_time.as_secs_f64();
         stats.active_spills -= 1;
-        stats.bytes_currently_spilled -= n_bytes as u64;
+        stats.active_spills_bytes -= n_bytes as u64;
         stats.active_spills_io_time_ns -= spill_time_ns;
 
         // The unspill time was also included in active_spilled_byte_nanoseconds
         // due to our consistent stepping of time, so to cancel everything out
         // we have to count from spilled_start until now. Otherwise
         // active_spilled_byte_nanoseconds would slowly drift upward over time.
-        stats.active_spilled_byte_nanoseconds -= n_bytes as u128 * (now - spilled_start).as_nanos();
+        let elapsed = now - spilled_start;
+        let elapsed_s = elapsed.as_secs_f64();
+
+        stats.active_spills_bytes_ns -= n_bytes as u128 * elapsed.as_nanos();
+
+        if stats.active_spills == 0 {
+            stats.active_spills_dp_rr = 0.0;
+            stats.active_spills_dp_bb = 0.0;
+            stats.active_spills_dp_rb = 0.0;
+        } else {
+            let delta_b = n_bytes as f64;
+            let delta_r = delta_b * elapsed_s;
+            let mean_b_after = stats.active_spills_bytes as f64 / stats.active_spills as f64;
+            let mean_r_after = stats.active_spills_bytes_ns as f64
+                / (stats.active_spills as f64 * NANOSECONDS_IN_SECOND);
+            stats.active_spills_dp_rr -= (delta_r - mean_r_before) * (delta_r - mean_r_after);
+            stats.active_spills_dp_rb -= (delta_r - mean_r_before) * (delta_b - mean_b_after);
+            stats.active_spills_dp_bb -= (delta_b - mean_b_before) * (delta_b - mean_b_after);
+        }
 
         stats.add_bandit_event(
             n_bytes as u64,
@@ -375,51 +446,46 @@ impl SpillContextStatistics {
     }
 }
 
-struct Statistics {
-    // Total stats.
-    spilled_byte_seconds: f64,
-    spill_time: f64,
-    unspill_time: f64,
-    successful_spills: u64,
-    failed_spills: u64,
-
-    // Stats of currently active spills. These are tracked as integers so they
-    // remain exact.
-    active_spills: u64,
-    active_spilled_byte_nanoseconds: u128,
-    active_spills_io_time_ns: u64,
-    bytes_currently_spilled: u64,
-
-    // Historical stats for the multi-armed bandit algorithm. These are
-    // discounted statistics (meaning they decay over time), where weight is the
-    // (decaying) number of observations, and each observation is of the form
-    // spilled_byte_seconds / spill_time.
-    //
-    // The multi-armed bandit algorithm in use is adapted from
-    // "Discounted Thompson Sampling for Non-Stationary Bandit Problems" https://arxiv.org/pdf/2305.10718
-    // Adaptations made: use direct sample mean/variance, discount based on time
-    // rather than arm pulls.
-    bandit_weight: f64,
-    bandit_reward: f64,
-    bandit_sq_reward: f64,
-
-    last_update: Instant,
-}
-
 impl Statistics {
     fn step_time(&mut self, now: Instant) {
         let dt = now - self.last_update;
         let dt_s = dt.as_secs_f64();
         let dt_ns = dt.as_nanos();
-        self.active_spilled_byte_nanoseconds += self.bytes_currently_spilled as u128 * dt_ns;
-        self.spilled_byte_seconds += self.bytes_currently_spilled as f64 * dt_s;
+        self.active_spills_bytes_ns += self.active_spills_bytes as u128 * dt_ns;
+        self.spilled_byte_seconds += self.active_spills_bytes as f64 * dt_s;
+
+        /*
+            This part is rather tricky. Remember that r_i = b_i * s_i.
+
+            We have these two deviations:
+                dv_r_i = r_i - mean(r)
+                dv_b_i = b_i - mean(b)
+
+            Note that in this update step:
+                b_i is unchanged
+                r_i increases by b_i * dt
+                mean(r) increases by mean(b) * dt
+                dv_r_i increases by dv_b_i * dt
+
+            Thus:
+                dp_rr_new = sum((dv_r_i + dv_b_i * dt)^2)
+                dp_rr_new = sum(dv_r_i^2) + 2 * sum(dv_r_i * dv_b_i) * dt + sum((dv_b_i)^2) * dt^2
+                dp_rr_new = dp_rr_old + 2 * dp_rb_old * dt + dp_bb * dt * dt
+        */
+
+        self.active_spills_dp_rr +=
+            2.0 * self.active_spills_dp_rb * dt_s + self.active_spills_dp_bb * dt_s * dt_s;
+        self.active_spills_dp_rb += self.active_spills_dp_bb * dt_s;
 
         // Exponentially decay old bandit events.
         let mult = -f64::ln(2.0) / UNSPILL_EVENT_HALF_LIFE_SEC;
         let decay_factor = f64::exp(mult * dt_s);
         self.bandit_weight *= decay_factor;
-        self.bandit_reward *= decay_factor;
-        self.bandit_sq_reward *= decay_factor;
+        self.bandit_r_sum *= decay_factor;
+        self.bandit_rr_sum *= decay_factor;
+        self.bandit_t_sum *= decay_factor;
+        self.bandit_tt_sum *= decay_factor;
+        self.bandit_rt_sum *= decay_factor;
 
         self.last_update = now;
     }
@@ -432,52 +498,91 @@ impl Statistics {
         spilled_time: f64,
         unspill_time: f64,
     ) {
-        let spilled_byte_seconds = n_bytes as f64 * spilled_time;
-        let io_time = spill_time + unspill_time;
-        let r = spilled_byte_seconds / (BASE_IO_TIME + io_time);
+        let r = n_bytes as f64 * spilled_time;
+        let t = spill_time + unspill_time;
+
         self.bandit_weight += 1.0;
-        self.bandit_reward += r;
-        self.bandit_sq_reward += r * r;
+        self.bandit_r_sum += r;
+        self.bandit_rr_sum += r * r;
+        self.bandit_t_sum += t;
+        self.bandit_tt_sum += t * t;
+        self.bandit_rt_sum += r * t;
     }
 
-    fn score(&mut self) -> (f32, f32) {
+    fn sample_score<R: Rng>(&mut self, rng: &mut R) -> f64 {
         self.step_time(Instant::now());
 
-        let mut reward_weight = 0.0;
-        let mut reward_sum = 0.0;
-        let mut reward_sum_of_sq = 0.0;
+        let mut weight = self.bandit_weight;
+        let mut r_sum = self.bandit_r_sum;
+        let mut rr_sum = self.bandit_rr_sum;
+        let mut t_sum = self.bandit_t_sum;
+        let mut tt_sum = self.bandit_tt_sum;
+        let mut rt_sum = self.bandit_rt_sum;
 
-        let active_reward_weight = self.active_spills as f64;
-        if active_reward_weight >= STABLE_WEIGHT_THRESHOLD {
-            // We don't keep track of the variance of active spills, so we
-            // just assume it has no variance, that is, each active spill is
-            // accounted for as the mean active spill.
-            let active_spill_byte_seconds =
-                self.active_spilled_byte_nanoseconds as f64 / NANOSECONDS_IN_SECOND;
-            let active_spill_io_time = self.active_spills_io_time_ns as f64 / NANOSECONDS_IN_SECOND;
-            let active_reward_mean = active_spill_byte_seconds
-                / (BASE_IO_TIME * active_reward_weight + active_spill_io_time);
-            let active_reward_sum = active_reward_mean * active_reward_weight;
+        if self.active_spills > 0 {
+            // We have active spills but there are three problems:
+            //
+            //  1. We don't know how long these spills will go on.
+            //  2. We don't know the correlation between spill time and relief.
+            //  3. We have no idea how long unspilling will take, as that hasn't happened yet.
+            //
+            // We will assume that these spills get unspilled right now, and make the assumption
+            // that IO time is 1:1 correlated with size, using the total spill time so far as
+            // multiplier.
 
-            reward_weight += active_reward_weight;
-            reward_sum += active_reward_sum;
-            reward_sum_of_sq += active_reward_mean * active_reward_sum;
+            let w = self.active_spills as f64;
+            let b = self.active_spills_bytes as f64;
+            let r = self.active_spills_bytes_ns as f64 / NANOSECONDS_IN_SECOND;
+            let t = self.active_spills_io_time_ns as f64 / NANOSECONDS_IN_SECOND;
+            let io_sec_per_byte = t / b;
+
+            let rr = self.active_spills_dp_rr + r * (r / w);
+            let bb = self.active_spills_dp_bb + b * (b / w);
+            let rb = self.active_spills_dp_rb + r * (b / w);
+
+            weight += w;
+            r_sum += r;
+            rr_sum += rr;
+            t_sum += t;
+            tt_sum += io_sec_per_byte * io_sec_per_byte * bb;
+            rt_sum += io_sec_per_byte * rb;
         }
 
-        if self.bandit_weight >= STABLE_WEIGHT_THRESHOLD {
-            reward_weight += self.bandit_weight;
-            reward_sum += self.bandit_reward;
-            reward_sum_of_sq += self.bandit_sq_reward;
+        if weight < EXPLORED_WEIGHT_THRESHOLD {
+            return UNEXPLORED_SCORE;
         }
 
-        if reward_weight < EXPLORED_WEIGHT_THRESHOLD {
-            return (UNEXPLORED_SCORE, UNEXPLORED_VARIANCE);
-        }
+        // Calculate means and covariance matrix.
+        let inv_weight = 1.0 / weight;
+        let bessel = weight / (weight - 1.0);
+        let mean_r = r_sum * inv_weight;
+        let mean_t = t_sum * inv_weight;
+        let var_r = bessel * (rr_sum * inv_weight - mean_r * mean_r).max(0.0);
+        let var_t = bessel * (tt_sum * inv_weight - mean_t * mean_t).max(0.0);
+        let cov_rt = bessel * (rt_sum * inv_weight - mean_r * mean_t);
+        let std_r = var_r.sqrt();
+        let std_t = var_t.sqrt();
 
-        let mean = reward_sum / reward_weight;
-        let var = reward_sum_of_sq / reward_weight - mean * mean;
-        let corr = reward_weight / (reward_weight - 1.0);
-        (mean as f32, (var * corr) as f32)
+        loop {
+            let z1: f64 = rand_distr::StandardNormal.sample(rng);
+            let z2: f64 = rand_distr::StandardNormal.sample(rng);
+
+            let (r, t);
+            if std_r > 0.0 && std_t > 0.0 {
+                // Sample from bivariate distribution.
+                let rho = (cov_rt / (std_r * std_t)).clamp(-1.0, 1.0);
+                r = mean_r + std_r * z1;
+                t = mean_t + std_t * (rho * z1 + (1.0 - rho * rho).sqrt() * z2);
+            } else {
+                // At least one variance is zero, just independent sampling.
+                r = mean_r + std_r * z1;
+                t = mean_t + std_t * z2;
+            }
+
+            if r >= 0.0 && t >= 0.0 {
+                return r / (BASE_IO_TIME + t);
+            }
+        }
     }
 }
 
@@ -491,14 +596,21 @@ impl Default for Statistics {
             failed_spills: 0,
             last_update: Instant::now(),
 
+            bandit_weight: 0.0,
+            bandit_r_sum: 0.0,
+            bandit_rr_sum: 0.0,
+            bandit_t_sum: 0.0,
+            bandit_tt_sum: 0.0,
+            bandit_rt_sum: 0.0,
+
             active_spills: 0,
             active_spills_io_time_ns: 0,
-            active_spilled_byte_nanoseconds: 0,
-            bytes_currently_spilled: 0,
+            active_spills_bytes_ns: 0,
+            active_spills_bytes: 0,
 
-            bandit_weight: 0.0,
-            bandit_reward: 0.0,
-            bandit_sq_reward: 0.0,
+            active_spills_dp_rr: 0.0,
+            active_spills_dp_bb: 0.0,
+            active_spills_dp_rb: 0.0,
         }
     }
 }
