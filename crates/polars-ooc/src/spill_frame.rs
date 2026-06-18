@@ -3,8 +3,9 @@ use std::ops::{Deref, DerefMut};
 
 use polars_async::ASYNC;
 use polars_core::frame::DataFrame;
-use polars_io::ipc::{IpcReader, IpcWriter};
+use polars_io::ipc::{IpcCompression, IpcReader, IpcWriter};
 use polars_io::{SerReader, SerWriter};
+use polars_utils::compression::ZstdLevel;
 
 use crate::spill_context::ParameterFreeSpillContext;
 use crate::spill_file::SpillFile;
@@ -32,6 +33,8 @@ impl Spillable for DataFrame {
                     )
                 });
                 IpcWriter::new(&mut file)
+                    .with_compression(Some(IpcCompression::ZSTD(ZstdLevel::default())))
+                    .with_parallel(false)
                     .finish(&mut df)
                     .unwrap_or_else(|e| {
                         panic!(
