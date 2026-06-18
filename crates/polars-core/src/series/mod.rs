@@ -814,26 +814,7 @@ impl Series {
     /// computed in an `Int64` accumulator and the result is returned as `Int64`
     /// to prevent overflow issues.
     pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
-        use DataType::*;
-        match self.dtype() {
-            Int8 => Ok(Scalar::new(
-                Int64,
-                AnyValue::Int64(sum_upcast(self.i8().unwrap())),
-            )),
-            UInt8 => Ok(Scalar::new(
-                Int64,
-                AnyValue::Int64(sum_upcast(self.u8().unwrap())),
-            )),
-            Int16 => Ok(Scalar::new(
-                Int64,
-                AnyValue::Int64(sum_upcast(self.i16().unwrap())),
-            )),
-            UInt16 => Ok(Scalar::new(
-                Int64,
-                AnyValue::Int64(sum_upcast(self.u16().unwrap())),
-            )),
-            _ => self.0.sum_reduce(),
-        }
+        self.0.sum_reduce()
     }
 
     /// Get the mean of the Series as a new Series of length 1.

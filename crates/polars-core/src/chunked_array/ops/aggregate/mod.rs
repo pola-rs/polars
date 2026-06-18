@@ -4,10 +4,13 @@ mod var;
 
 use arrow::types::NativeType;
 use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
-use polars_compute::sum::{WrappingSum, wrapping_sum_arr, wrapping_sum_arr_upcast};
+use polars_compute::sum::{WrappingAdd, WrappingSum, wrapping_sum_arr, wrapping_sum_arr_upcast};
+use polars_utils::float::IsFloat;
 use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 pub use quantile::*;
@@ -20,6 +23,45 @@ use crate::chunked_array::{ChunkedArray, arg_max_binary, arg_min_binary};
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
 use crate::series::IsSorted;
+
+pub trait SumCast: Sized {
+    type Sum: NumericNative + From<Self>;
+}
+
+macro_rules! impl_sum_cast {
+    ($($x:ty),*) => {
+        $(impl SumCast for $x { type Sum = $x; })*
+    };
+    ($($from:ty as $to:ty),*) => {
+        $(impl SumCast for $from { type Sum = $to; })*
+    };
+}
+
+impl_sum_cast!(
+    bool as IdxSize,
+    u8 as i64,
+    u16 as i64,
+    i8 as i64,
+    i16 as i64
+);
+impl_sum_cast!(u32, u64, i32, i64, f32, f64);
+#[cfg(feature = "dtype-f16")]
+impl_sum_cast!(pf16);
+#[cfg(feature = "dtype-i128")]
+impl_sum_cast!(i128);
+#[cfg(feature = "dtype-u128")]
+impl_sum_cast!(u128);
+
+pub fn out_dtype(in_dtype: &DataType) -> DataType {
+    use DataType::*;
+    match in_dtype {
+        Boolean => IDX_DTYPE,
+        Int8 | UInt8 | Int16 | UInt16 => Int64,
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_, scale) => Decimal(DEC128_MAX_PREC, *scale),
+        dt => dt.clone(),
+    }
+}
 
 /// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -74,16 +116,6 @@ where
     } else {
         wrapping_sum_arr(array)
     }
-}
-
-pub(crate) fn sum_upcast<T>(ca: &ChunkedArray<T>) -> i64
-where
-    T: PolarsNumericType,
-    T::Native: Into<i64>,
-{
-    ca.downcast_iter()
-        .map(wrapping_sum_arr_upcast)
-        .fold(0i64, |a, b| a.wrapping_add(b))
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
@@ -268,12 +300,19 @@ impl BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: WrappingSum,
+    T::Native: WrappingSum + SumCast,
+    <T::Native as SumCast>::Sum: WrappingAdd,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     fn sum_reduce(&self) -> Scalar {
-        let v: Option<T::Native> = self.sum();
-        Scalar::new(T::get_static_dtype(), v.into())
+        let v: <T::Native as SumCast>::Sum = if T::Native::is_float() {
+            self.sum().map(Into::into).unwrap_or_else(Zero::zero)
+        } else {
+            self.downcast_iter()
+                .map(wrapping_sum_arr_upcast)
+                .fold(Zero::zero(), |a, b| a.wrapping_add(&b))
+        };
+        Scalar::new(out_dtype(&T::get_static_dtype()), v.into())
     }
 
     fn max_reduce(&self) -> Scalar {

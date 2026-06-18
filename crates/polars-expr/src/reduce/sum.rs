@@ -2,53 +2,10 @@ use std::borrow::Cow;
 
 use arrow::array::PrimitiveArray;
 use num_traits::Zero;
-#[cfg(feature = "dtype-decimal")]
-use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
-#[cfg(feature = "dtype-f16")]
-use polars_utils::float16::pf16;
 
 use super::*;
-
-pub trait SumCast: Sized {
-    type Sum: NumericNative + From<Self>;
-}
-
-macro_rules! impl_sum_cast {
-    ($($x:ty),*) => {
-        $(impl SumCast for $x { type Sum = $x; })*
-    };
-    ($($from:ty as $to:ty),*) => {
-        $(impl SumCast for $from { type Sum = $to; })*
-    };
-}
-
-impl_sum_cast!(
-    bool as IdxSize,
-    u8 as i64,
-    u16 as i64,
-    i8 as i64,
-    i16 as i64
-);
-impl_sum_cast!(u32, u64, i32, i64, f32, f64);
-#[cfg(feature = "dtype-f16")]
-impl_sum_cast!(pf16);
-#[cfg(feature = "dtype-i128")]
-impl_sum_cast!(i128);
-#[cfg(feature = "dtype-u128")]
-impl_sum_cast!(u128);
-
-fn out_dtype(in_dtype: &DataType) -> DataType {
-    use DataType::*;
-    match in_dtype {
-        Boolean => IDX_DTYPE,
-        Int8 | UInt8 | Int16 | UInt16 => Int64,
-        #[cfg(feature = "dtype-decimal")]
-        Decimal(_, scale) => Decimal(DEC128_MAX_PREC, *scale),
-        dt => dt.clone(),
-    }
-}
 
 pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
     // TODO: Move the error checks up and make this function infallible
