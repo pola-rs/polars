@@ -19,14 +19,6 @@ ignore = [
 
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
-
-  # error[vulnerability]: Out-of-bounds read in `nth` / `nth_back` for `PyList` and `PyTuple` iterators
-  # Fixed in pyo3 0.29.0, but upgrade is blocked until numpy and pyo3-polars
-  # publish releases compatible with pyo3 0.29 (numpy is at 0.28.0 / pyo3 0.28).
-  "RUSTSEC-2026-0176",
-  # error[vulnerability]: Missing `Sync` bound on `PyCFunction::new_closure` closures
-  # Same blocker as above; remove both once pyo3 is bumped to >=0.29.
-  "RUSTSEC-2026-0177",
 ]
 
 [licenses]
@@ -66,4 +58,5 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 unknown-git = "deny"
 allow-git = [
   "https://github.com/kdn36/arrow-rs-object-store",
+  "https://github.com/pola-rs/jemallocator",
 ]
