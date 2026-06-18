@@ -1493,45 +1493,49 @@ def test_predicate_pushdown_block_at_embedded_slice_groupby_26824() -> None:
 
 
 def test_filter_contradiction_collapses() -> None:
-    a = pl.LazyFrame({"a": [1, 2, 3]})
-    # Each filter is always false and should collapse to an empty scan.
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1], "flag": [True, False, True]})
     collapsing = [
-        a.filter(pl.col("a") > 1).filter(~(pl.col("a") > 1)),  # A AND NOT A
-        a.filter(pl.col("a") == 2).filter(pl.col("a") != 2),  # == AND !=
-        a.filter(pl.col("a").is_in([])),  # empty is_in
-        a.filter(pl.lit(False)),  # literal false
-        a.filter(pl.col("a") < 2).filter(pl.col("a") >= 3),  # disjoint inequalities
-        a.filter(pl.col("a").is_between(2, 3)).filter(
+        lf.filter(pl.col("a") > 1).filter(~(pl.col("a") > 1)),  # A AND NOT A
+        lf.filter(pl.col("a") == 2).filter(pl.col("a") != 2),  # == AND !=
+        lf.filter(pl.col("a").is_in([])),  # empty is_in
+        lf.filter(pl.lit(False)),  # literal false
+        lf.filter(pl.col("a") < 2).filter(pl.col("a") >= 3),  # disjoint inequalities
+        lf.filter(pl.col("a").is_between(2, 3)).filter(
             pl.col("a").is_between(0, 1)
         ),  # disjoint is_between
-        a.filter(pl.col("a") == 5).filter(pl.col("a") > 10),  # == outside range
-        pl.LazyFrame({"b": [True, False, True]}).filter(
-            pl.col("b") & ~pl.col("b")
-        ),  # structural b AND NOT b
-        pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).filter(
+        lf.filter(pl.col("a") == 5).filter(pl.col("a") > 10),  # == outside range
+        lf.filter(pl.col("a") >= 3)
+        .filter(pl.col("a") <= 3)
+        .filter(pl.col("a") != 3),  # point range ruled out by !=
+        lf.filter(pl.col("a").is_in([1, 2])).filter(
+            pl.col("a").is_in([3, 4])
+        ),  # disjoint is_in
+        lf.filter(pl.col("a").is_in([1, 2]))
+        .filter(pl.col("a") != 1)
+        .filter(pl.col("a") != 2),  # is_in fully excluded by !=
+        lf.filter(pl.col("flag") & ~pl.col("flag")),  # structural flag AND NOT flag
+        lf.filter(
             (pl.col("a") > pl.col("b")) & (pl.col("a") < pl.col("b"))
         ),  # disjoint comparisons on two columns (a > b AND a < b)
     ]
-    for lf in collapsing:
+    for q in collapsing:
         # The FILTER node is gone from the optimized plan and the result is empty;
         # disabling `simplify_expression` keeps it, proving the rewrite owns it.
-        assert "FILTER" not in lf.explain()
-        assert lf.collect().is_empty()
-        assert "FILTER" in lf.explain(
+        assert "FILTER" not in q.explain()
+        assert q.collect().is_empty()
+        assert "FILTER" in q.explain(
             optimizations=pl.QueryOptFlags(simplify_expression=False)
         )
 
-    # A satisfiable range keeps its rows: `a >= 1 AND a >= 3` tightens to `a >= 3`.
-    lf = a.filter(pl.col("a") >= 1).filter(pl.col("a") >= 3)
-    assert "FILTER" in lf.explain()
-    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [3]}))
-
     # `>= AND <=` on the same operands is satisfiable (the equal rows), so it
     # must not be folded away.
-    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).filter(
-        (pl.col("a") >= pl.col("b")) & (pl.col("a") <= pl.col("b"))
-    )
-    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [2], "b": [2]}))
+    q = lf.filter((pl.col("a") >= pl.col("b")) & (pl.col("a") <= pl.col("b")))
+    assert_frame_equal(q.select("a", "b").collect(), pl.DataFrame({"a": [2], "b": [2]}))
+
+    # An `is_in` that still overlaps the range keeps its rows.
+    q = lf.filter(pl.col("a").is_in([1, 2, 3])).filter(pl.col("a") >= 2)
+    assert "FILTER" in q.explain()
+    assert_frame_equal(q.select("a").collect(), pl.DataFrame({"a": [2, 3]}))
 
 
 def test_filter_contradiction_fallible_error_handling(
@@ -1550,6 +1554,108 @@ def test_filter_contradiction_fallible_error_handling(
     plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
     with pytest.raises(InvalidOperationError):
         lf.collect()
+
+
+def test_filter_range_tightening() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+
+    # Each redundant chain tightens to the same optimized plan as its minimal
+    # hand-written form, and returns the same rows.
+    cases = [
+        # Redundant lower bounds collapse to the tightest one.
+        (
+            lf.filter(pl.col("a") >= 1).filter(pl.col("a") >= 3),
+            lf.filter(pl.col("a") >= 3),
+        ),
+        # Mixed strictness on the same value: the strict bound wins.
+        (
+            lf.filter(pl.col("a") >= 3).filter(pl.col("a") > 3),
+            lf.filter(pl.col("a") > 3),
+        ),
+        # A redundant lower drops while the upper is kept (lower then upper).
+        (
+            lf.filter(pl.col("a") >= 1)
+            .filter(pl.col("a") <= 4)
+            .filter(pl.col("a") >= 2),
+            lf.filter((pl.col("a") >= 2) & (pl.col("a") <= 4)),
+        ),
+        # Equality subsumes a looser bound and rebuilds back to `col == v`.
+        (
+            lf.filter(pl.col("a") == 3).filter(pl.col("a") >= 1),
+            lf.filter(pl.col("a") == 3),
+        ),
+        # `!=` on an inclusive endpoint tightens the bound to exclusive.
+        (
+            lf.filter(pl.col("a") >= 3).filter(pl.col("a") != 3),
+            lf.filter(pl.col("a") > 3),
+        ),
+        # `!=` outside the range is redundant and dropped.
+        (
+            lf.filter(pl.col("a") <= 3).filter(pl.col("a") != 9),
+            lf.filter(pl.col("a") <= 3),
+        ),
+    ]
+    for redundant, minimal in cases:
+        assert redundant.explain() == minimal.explain()
+        assert_frame_equal(redundant.collect(), minimal.collect())
+        # Turning the rewrite off keeps the redundant comparison in the plan.
+        assert (
+            redundant.explain(optimizations=pl.QueryOptFlags(simplify_expression=False))
+            != redundant.explain()
+        )
+
+
+def test_filter_cross_column_equality_propagation() -> None:
+    lf = pl.LazyFrame({"a": [5, 5, 1], "b": [5, 6, 1]})
+    no_simplify = pl.QueryOptFlags(simplify_expression=False)
+
+    # `a == b AND a == 5` derives `b == 5` (and drops the now-redundant `a == b`):
+    # the optimized plan pins b to 5, which it does not without the rewrite.
+    q = lf.filter((pl.col("a") == pl.col("b")) & (pl.col("a") == 5))
+    assert 'col("b")) == (5)' in q.explain()
+    assert 'col("b")) == (5)' not in q.explain(optimizations=no_simplify)
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [5], "b": [5]}))
+
+    # Transitive: `a == b AND b == c AND a == 7` derives `b == 7` and `c == 7`,
+    # neither present without the rewrite.
+    lf3 = pl.LazyFrame({"a": [7, 7], "b": [7, 8], "c": [7, 7]})
+    q3 = lf3.filter(
+        (pl.col("a") == pl.col("b")) & (pl.col("b") == pl.col("c")) & (pl.col("a") == 7)
+    )
+    assert 'col("b")) == (7)' in q3.explain()
+    assert 'col("c")) == (7)' in q3.explain()
+    assert 'col("b")) == (7)' not in q3.explain(optimizations=no_simplify)
+    assert_frame_equal(q3.collect(), pl.DataFrame({"a": [7], "b": [7], "c": [7]}))
+
+    # Open bound: `a == b AND a > 1` derives `b > 1` while keeping the equality,
+    # so (3, 5) is dropped (both > 1 but unequal) while (2, 2) survives.
+    lf_bound = pl.LazyFrame({"a": [2, 3, 0], "b": [2, 5, 0]})
+    q_bound = lf_bound.filter((pl.col("a") == pl.col("b")) & (pl.col("a") > 1))
+    assert 'col("b")) > (1)' in q_bound.explain()
+    assert 'col("b")) > (1)' not in q_bound.explain(optimizations=no_simplify)
+    assert_frame_equal(q_bound.collect(), pl.DataFrame({"a": [2], "b": [2]}))
+
+    # `a == b` with no fixed value or bound: nothing to propagate, plan unchanged.
+    q_noop = lf.filter(pl.col("a") == pl.col("b"))
+    assert q_noop.explain() == q_noop.explain(optimizations=no_simplify)
+    assert_frame_equal(q_noop.collect(), pl.DataFrame({"a": [5, 1], "b": [5, 1]}))
+
+    # Conflicting cross-column constraints collapse the filter to an empty scan.
+    conflicting = [
+        lf.filter(
+            (pl.col("a") == pl.col("b")) & (pl.col("a") == 5) & (pl.col("b") == 6)
+        ),  # a == b forces a, b equal, but a == 5 and b == 6
+        lf.filter(
+            (pl.col("a") == pl.col("b")) & (pl.col("a") == 5) & (pl.col("b") != 5)
+        ),  # a == b AND a == 5 forces b == 5, contradicting b != 5
+        lf.filter(
+            (pl.col("a") == pl.col("b")) & (pl.col("a") > 5) & (pl.col("b") < 3)
+        ),  # open bound: a == b carries a > 5 onto b, contradicting b < 3
+    ]
+    for q in conflicting:
+        assert "FILTER" not in q.explain()
+        assert q.collect().is_empty()
+        assert "FILTER" in q.explain(optimizations=no_simplify)
 
 
 def test_predicate_pushdown_after_collect_schema_26882() -> None:
