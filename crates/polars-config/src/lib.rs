@@ -64,6 +64,9 @@ const DEFAULT_OOC_DRIFT_THRESHOLD: u64 = 4 * 1024 * 1024;
 const OOC_SPILL_FORMAT: &str = "POLARS_OOC_SPILL_FORMAT";
 const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
 
+const OOC_SPILL_COMPRESSION_LEVEL: &str = "POLARS_OOC_SPILL_COMPRESSION_LEVEL";
+const DEFAULT_OOC_SPILL_COMPRESSION_LEVEL: u64 = 0;
+
 // Unused at the moment.
 const OOC_MEMORY_BUDGET_FRACTION: &str = "POLARS_OOC_MEMORY_BUDGET_FRACTION";
 const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
@@ -130,6 +133,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
     OOC_SPILL_FORMAT,
+    OOC_SPILL_COMPRESSION_LEVEL,
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
@@ -156,6 +160,7 @@ pub struct Config {
     force_async: AtomicBool,
     import_interval_as_struct: AtomicBool,
     ooc_spill_format: AtomicU8,
+    ooc_spill_compression_level: AtomicU64,
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
@@ -185,6 +190,7 @@ impl Config {
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
+            ooc_spill_compression_level: AtomicU64::new(DEFAULT_OOC_SPILL_COMPRESSION_LEVEL),
             ooc_memory_budget_fraction: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_BUDGET_FRACTION.to_bits(),
             ),
@@ -298,6 +304,11 @@ impl Config {
             OOC_SPILL_FORMAT => self.ooc_spill_format.store(
                 val.and_then(|x| parse::parse_spill_format(var, x))
                     .unwrap_or(DEFAULT_OOC_SPILL_FORMAT) as u8,
+                Ordering::Relaxed,
+            ),
+            OOC_SPILL_COMPRESSION_LEVEL => self.ooc_spill_compression_level.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_SPILL_COMPRESSION_LEVEL),
                 Ordering::Relaxed,
             ),
             OOC_MEMORY_BUDGET_FRACTION => self.ooc_memory_budget_fraction.store(
@@ -428,6 +439,11 @@ impl Config {
     #[inline(always)]
     pub fn ooc_spill_format(&self) -> SpillFormat {
         SpillFormat::from_discriminant(self.ooc_spill_format.load(Ordering::Relaxed))
+    }
+
+    #[inline(always)]
+    pub fn ooc_spill_compression_level(&self) -> u64 {
+        self.ooc_spill_compression_level.load(Ordering::Relaxed)
     }
 
     #[inline(always)]

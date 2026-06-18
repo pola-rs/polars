@@ -1,14 +1,18 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock, Weak};
 
 use polars_async::ASYNC;
+use polars_async::executor::TaskPriority;
 use polars_config::config;
 use polars_utils::total_ord::TotalOrd;
-use tokio::sync::Mutex as AsyncMutex;
+use polars_utils::with_drop::WithDrop;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore as AsyncSemaphore};
 
 // How much worse than the best achieved (sample) score are we willing to look
 // for spillables.
 const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
+
+const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
 use crate::spill_context::UNEXPLORED_SCORE;
 use crate::spill_token::TrySpillError;
@@ -24,6 +28,7 @@ pub fn memory_manager() -> &'static MemoryManager {
 pub struct MemoryManager {
     contexts: RwLock<Vec<Weak<dyn SpillContext>>>,
     finding_spill_lock: AsyncMutex<()>,
+    spill_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
 }
 
@@ -32,6 +37,7 @@ impl MemoryManager {
         Self {
             contexts: RwLock::new(Vec::new()),
             finding_spill_lock: AsyncMutex::new(()),
+            spill_semaphore: Arc::new(AsyncSemaphore::new(MAX_PARALLEL_SPILL_TASKS)),
             est_spill_in_progress: AtomicU64::new(0),
         }
     }
@@ -81,28 +87,46 @@ impl MemoryManager {
                 return;
             };
 
-            let mut successful_spill = false;
+            let successful_spill = Arc::new(WithDrop::new(
+                (AtomicBool::new(false), ctx.stats().clone()),
+                |(success, stats)| {
+                    if !success.load(Ordering::Relaxed) {
+                        stats.finish_exploration_event(false);
+                    }
+                },
+            ));
+
             for (spillable, id, sz) in spillables {
-                // Spill, or reinsert if a failure.
-                match spillable.try_spill(ctx.stats(), Arc::downgrade(&ctx), id) {
-                    Ok(spill_success) => {
-                        if spill_success.await {
-                            successful_spill = true;
-                        } else {
+                let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
+
+                let successful_spill = successful_spill.clone();
+                let ctx = ctx.clone();
+
+                polars_async::executor::spawn(TaskPriority::High, async move {
+                    // Spill, or reinsert if a failure.
+                    match spillable.try_spill(ctx.stats(), Arc::downgrade(&ctx), id) {
+                        Ok(spill_success) => {
+                            if spill_success.await {
+                                if !successful_spill.0.swap(true, Ordering::Relaxed) {
+                                    ctx.stats().finish_exploration_event(true);
+                                }
+                            } else {
+                                ctx.reinsert(&spillable, id);
+                            }
+                        },
+                        Err(TrySpillError::Pinned) => {
                             ctx.reinsert(&spillable, id);
-                        }
-                    },
-                    Err(TrySpillError::Pinned) => {
-                        ctx.reinsert(&spillable, id);
-                    },
-                    Err(TrySpillError::AlreadySpilled) => {},
-                }
+                        },
+                        Err(TrySpillError::AlreadySpilled) => {},
+                    }
 
-                self.est_spill_in_progress
-                    .fetch_sub(sz as u64, Ordering::Relaxed);
+                    MEMORY_MANAGER
+                        .est_spill_in_progress
+                        .fetch_sub(sz as u64, Ordering::Relaxed);
+
+                    drop(permit);
+                });
             }
-
-            ctx.stats().finish_exploration_event(successful_spill);
         }
     }
 
