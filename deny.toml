@@ -66,4 +66,5 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 unknown-git = "deny"
 allow-git = [
   "https://github.com/kdn36/arrow-rs-object-store",
+  "https://github.com/pola-rs/jemallocator",
 ]
