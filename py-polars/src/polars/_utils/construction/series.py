@@ -503,7 +503,9 @@ def numpy_to_pyseries(
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
-    values = np.ascontiguousarray(values)
+    # Require aligned, C-contiguous, >=1d; an unaligned view would otherwise panic.
+    values = np.atleast_1d(values)
+    values = np.require(values, requirements=["A", "C"])
 
     if values.ndim == 1:
         values, dtype = numpy_values_and_dtype(values)
