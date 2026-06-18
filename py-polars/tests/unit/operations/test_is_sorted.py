@@ -354,7 +354,6 @@ def test_sorted_flag() -> None:
     pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(descending=True)
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
@@ -391,32 +390,62 @@ def test_sorted_flag_after_joins() -> None:
         b = joined.sort(["a", "b"]).to_pandas()
         pd.testing.assert_frame_equal(a, b)
 
-    joined = dfa.join(dfb, on="b", how="left", coalesce=True)
+    joined = dfa.join(dfb, on="b", how="left", maintain_order="left", coalesce=True)
     assert joined["a"].flags["SORTED_ASC"]
     test_with_pd(dfapd, dfbpd, "b", "left", joined)
 
-    joined = dfa.join(dfb, on="b", how="inner")
+    joined = dfa.join(
+        dfb,
+        on="b",
+        how="inner",
+        maintain_order="left",
+    )
     assert joined["a"].flags["SORTED_ASC"]
     test_with_pd(dfapd, dfbpd, "b", "inner", joined)
 
-    joined = dfa.join(dfb, on="b", how="semi")
+    joined = dfa.join(
+        dfb,
+        on="b",
+        how="semi",
+        maintain_order="left",
+    )
     assert joined["a"].flags["SORTED_ASC"]
-    joined = dfa.join(dfb, on="b", how="semi")
+    joined = dfa.join(
+        dfb,
+        on="b",
+        how="semi",
+        maintain_order="left",
+    )
     assert joined["a"].flags["SORTED_ASC"]
 
-    joined = dfb.join(dfa, on="b", how="left", coalesce=True)
+    joined = dfb.join(dfa, on="b", how="left", maintain_order="left", coalesce=True)
     assert not joined["a"].flags["SORTED_ASC"]
     test_with_pd(dfbpd, dfapd, "b", "left", joined)
 
-    joined = dfb.join(dfa, on="b", how="inner")
+    joined = dfb.join(
+        dfa,
+        on="b",
+        how="inner",
+        maintain_order="left",
+    )
     if (joined["a"] != sorted(joined["a"])).any():
         assert not joined["a"].flags["SORTED_ASC"]
 
-    joined = dfb.join(dfa, on="b", how="semi")
+    joined = dfb.join(
+        dfa,
+        on="b",
+        how="semi",
+        maintain_order="left",
+    )
     if (joined["a"] != sorted(joined["a"])).any():
         assert not joined["a"].flags["SORTED_ASC"]
 
-    joined = dfb.join(dfa, on="b", how="anti")
+    joined = dfb.join(
+        dfa,
+        on="b",
+        how="anti",
+        maintain_order="left",
+    )
     if (joined["a"] != sorted(joined["a"])).any():
         assert not joined["a"].flags["SORTED_ASC"]
 

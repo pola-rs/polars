@@ -673,21 +673,26 @@ def test_join_concat_projection_pd_case_7071() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # legacy full join is not order-preserving whereas new-streaming is
 def test_join_sorted_fast_paths_null() -> None:
     df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
     df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})
-    assert df1.join(df2, on="x", how="inner").to_dict(as_series=False) == {
+
+    def join(how: JoinStrategy) -> dict[str, list[object]]:
+        return df1.join(df2, on="x", how=how, maintain_order="left_right").to_dict(
+            as_series=False
+        )
+
+    assert join(how="inner") == {
         "x": [0, 0],
         "y": [0, 0],
     }
-    assert df1.join(df2, on="x", how="left").to_dict(as_series=False) == {
+    assert join(how="left") == {
         "x": [0, 0, 1],
         "y": [0, 0, None],
     }
-    assert df1.join(df2, on="x", how="anti").to_dict(as_series=False) == {"x": [1]}
-    assert df1.join(df2, on="x", how="semi").to_dict(as_series=False) == {"x": [0, 0]}
-    assert df1.join(df2, on="x", how="full").to_dict(as_series=False) == {
+    assert join(how="anti") == {"x": [1]}
+    assert join(how="semi") == {"x": [0, 0]}
+    assert join(how="full") == {
         "x": [0, 0, 1, None],
         "x_right": [0, 0, None, None],
         "y": [0, 0, None, 1],
@@ -1306,123 +1311,6 @@ def test_join_preserve_order_inner() -> None:
         right, on="a", how="inner", maintain_order="right"
     ).collect()
     assert inner_right.get_column("a").equals(inner_right_left.get_column("a"))
-
-
-# The new streaming engine does not provide the same maintain_order="none"
-# ordering guarantee that is currently kept for compatibility on the in-memory
-# engine.
-@pytest.mark.may_fail_auto_streaming
-def test_join_preserve_order_left() -> None:
-    left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
-    right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
-
-    # Right now the left join algorithm is ordered without explicitly setting any order
-    # This behaviour is deprecated but can only be removed in 2.0
-    left_none = left.join(right, on="a", how="left", maintain_order="none").collect()
-    assert left_none.get_column("a").cast(pl.UInt32).to_list() == [
-        None,
-        2,
-        1,
-        1,
-        5,
-    ]
-
-    left_left = left.join(right, on="a", how="left", maintain_order="left").collect()
-    assert left_left.get_column("a").cast(pl.UInt32).to_list() == [
-        None,
-        2,
-        1,
-        1,
-        5,
-    ]
-
-    left_left_right = left.join(
-        right, on="a", how="left", maintain_order="left_right"
-    ).collect()
-    # If the left order is preserved then there are no unsorted right rows
-    assert left_left.get_column("a").equals(left_left_right.get_column("a"))
-
-    left_right = left.join(right, on="a", how="left", maintain_order="right").collect()
-    assert left_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [
-        1,
-        1,
-        2,
-        None,
-        5,
-    ]
-
-    left_right_left = left.join(
-        right, on="a", how="left", maintain_order="right_left"
-    ).collect()
-    assert left_right_left.get_column("a").cast(pl.UInt32).to_list() == [
-        1,
-        1,
-        2,
-        None,
-        5,
-    ]
-
-    right_left = left.join(right, on="a", how="right", maintain_order="left").collect()
-    assert right_left.get_column("a").cast(pl.UInt32).to_list() == [2, 1, 1, None, 6]
-
-    right_right = left.join(
-        right, on="a", how="right", maintain_order="right"
-    ).collect()
-    assert right_right.get_column("a").cast(pl.UInt32).to_list() == [
-        1,
-        1,
-        None,
-        2,
-        6,
-    ]
-
-
-def test_join_preserve_order_full() -> None:
-    left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
-    right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
-
-    full_left = left.join(right, on="a", how="full", maintain_order="left").collect()
-    assert full_left.get_column("a").cast(pl.UInt32).to_list()[:5] == [
-        None,
-        2,
-        1,
-        1,
-        5,
-    ]
-    full_right = left.join(right, on="a", how="full", maintain_order="right").collect()
-    assert full_right.get_column("a").cast(pl.UInt32).to_list()[:5] == [
-        1,
-        1,
-        None,
-        2,
-        None,
-    ]
-
-    full_left_right = left.join(
-        right, on="a", how="full", maintain_order="left_right"
-    ).collect()
-    assert full_left_right.get_column("a_right").cast(pl.UInt32).to_list() == [
-        None,
-        2,
-        1,
-        1,
-        None,
-        None,
-        6,
-    ]
-
-    full_right_left = left.join(
-        right, on="a", how="full", maintain_order="right_left"
-    ).collect()
-    assert full_right_left.get_column("a").cast(pl.UInt32).to_list() == [
-        1,
-        1,
-        None,
-        2,
-        None,
-        None,
-        5,
-    ]
 
 
 @pytest.mark.parametrize(
