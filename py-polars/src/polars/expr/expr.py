@@ -5,7 +5,7 @@ import math
 import operator
 import sys
 import warnings
-from collections.abc import Collection, Mapping, Sequence, Iterable
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from datetime import timedelta
 from decimal import Decimal
 from functools import reduce
@@ -4156,12 +4156,16 @@ class Expr:
 
         if order_by is not None:
             order_by_pyexprs = parse_into_list_of_expressions(order_by)
-        else: 
+        else:
             order_by_pyexprs = None
 
-        n_order_by = len(order_by_pyexprs) if order_by is not None else 0 
-        descending = extend_bool(descending, n_order_by, "descending", "order_by")
-        nulls_last = extend_bool(nulls_last, n_order_by, "nulls_last", "order_by")
+        n_order_by = len(order_by_pyexprs) if order_by_pyexprs is not None else 0
+        if isinstance(descending, bool):
+            descending = [descending]
+        if isinstance(nulls_last, bool):
+            nulls_last = [nulls_last]
+        descending = extend_bool(list(descending), n_order_by, "descending", "order_by")
+        nulls_last = extend_bool(list(nulls_last), n_order_by, "nulls_last", "order_by")
 
         return wrap_expr(
             self._pyexpr.over(

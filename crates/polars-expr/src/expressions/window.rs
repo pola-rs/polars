@@ -353,9 +353,6 @@ pub fn prepare_order_by(
     s: &Series,
     options: &SortMultipleOptions,
 ) -> PolarsResult<(Series, SortOptions)> {
-    //Note: s is the key field, if only one order_by column is provided then the
-    //key is just that column. If mulitple order_by columns are provided then the
-    //key is a struct field, which we row encode into a single binary rep
     match s.dtype() {
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {

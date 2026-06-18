@@ -1,5 +1,4 @@
 use polars_core::chunked_array::ops::SortMultipleOptions;
-use polars_core::prelude::SortOptions;
 use polars_utils::arena::{Arena, Node};
 
 use super::{AExpr, IRAggExpr};
