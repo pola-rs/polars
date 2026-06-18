@@ -1289,10 +1289,13 @@ def numpy_to_pydf(
 
     # Convert data to series
     if structured_array:
+        # A structured-array field is a strided view that may be unaligned (e.g.
+        # for packed/unaligned dtypes); require an aligned, contiguous array,
+        # copying only when needed.
         data_series = [
             pl.Series(
                 name=series_name,
-                values=data[record_name],
+                values=np.require(data[record_name], requirements=["A", "C"]),
                 dtype=schema_overrides.get(record_name),
                 strict=strict,
                 nan_to_null=nan_to_null,
