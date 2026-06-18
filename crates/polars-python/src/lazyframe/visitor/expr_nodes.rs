@@ -1260,9 +1260,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRPowFunction::Sqrt => ("sqrt",).into_py_any(py),
                     IRPowFunction::Cbrt => ("cbrt",).into_py_any(py),
                 },
-                IRFunctionExpr::Hash(seed, seed_1, seed_2, seed_3) => {
-                    ("hash", seed, seed_1, seed_2, seed_3).into_py_any(py)
-                },
+                IRFunctionExpr::Hash(seed) => ("hash", seed).into_py_any(py),
                 IRFunctionExpr::ArgWhere => ("argwhere",).into_py_any(py),
                 #[cfg(feature = "index_of")]
                 IRFunctionExpr::IndexOf => ("index_of",).into_py_any(py),
