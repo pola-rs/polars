@@ -2817,6 +2817,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
+        overwrite: bool = False,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
@@ -2843,6 +2844,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
+        overwrite: bool = False,
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
@@ -2870,6 +2872,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
         lazy: bool = False,
+        overwrite: bool = False,
         engine: EngineType = "auto",
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _sinked_paths_callback: SinkedPathsCallback | None = None,
@@ -2985,6 +2988,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 point without it being considered a breaking change.
         lazy: bool
             Wait to start execution until `collect` is called.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed at any
+                point without it being considered a breaking change.
+        overwrite: bool
+            Overwrite the contents in a directory path if already present.
 
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
@@ -3109,6 +3118,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ldf_py = self._ldf.sink_parquet(
             target=target,
             sink_options=sink_options,
+            overwrite=overwrite,
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,

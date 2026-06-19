@@ -971,6 +971,7 @@ class PyLazyFrame:
         self,
         target: SinkTarget,
         sink_options: Any,
+        overwrite: bool,
         compression: str,
         compression_level: int | None,
         statistics: StatisticsOptions,
