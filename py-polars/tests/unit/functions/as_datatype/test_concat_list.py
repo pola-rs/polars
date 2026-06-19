@@ -276,5 +276,7 @@ def test_list_function_w_scalars() -> None:
 
     result = df.select(literals=pl.list(pl.lit(1), pl.lit(2)))
     expected = {"literals": [[1, 2]]}
-    assert_frame_equal(result.collect(), pl.DataFrame(expected))
+    assert_frame_equal(
+        result.collect(), pl.DataFrame(expected, schema={"literals": pl.List(pl.Int32)})
+    )
     assert result.collect().schema == result.collect_schema()
