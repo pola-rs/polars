@@ -4733,6 +4733,39 @@ class DataFrame:
             - If 'append', will add new data.
             - If 'overwrite', will replace table with new data.
 
+        See Also
+        --------
+        polars.scan_iceberg : Lazily read from an Apache Iceberg table.
+
+        Examples
+        --------
+        Create a local Iceberg table with PyIceberg, write a DataFrame, and read
+        it back with `polars.scan_iceberg`.
+
+        .. code-block:: python
+
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+
+            from pyiceberg.catalog.sql import SqlCatalog
+
+            df = pl.DataFrame({"id": [1, 2], "value": ["a", "b"]})
+
+            with TemporaryDirectory() as tmp_dir:
+                catalog = SqlCatalog(
+                    "local",
+                    uri="sqlite:///:memory:",
+                    warehouse=Path(tmp_dir).as_uri(),
+                )
+                catalog.create_namespace("demo")
+                table = catalog.create_table(
+                    "demo.events",
+                    schema=df.to_arrow().schema,
+                )
+
+                df.write_iceberg(table, mode="append")
+                result = pl.scan_iceberg(table).collect()
+
         """
         from pyiceberg.catalog import load_catalog
 

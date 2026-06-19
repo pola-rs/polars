@@ -102,6 +102,10 @@ def scan_iceberg(
     -------
     LazyFrame
 
+    See Also
+    --------
+    DataFrame.write_iceberg : Write a DataFrame to an Apache Iceberg table.
+
     Examples
     --------
     Creates a scan for an Iceberg table from local filesystem, or object store.
