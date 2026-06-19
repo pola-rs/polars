@@ -1372,6 +1372,7 @@ impl SQLContext {
                                 nulls_equal: false,
                                 coalesce: Default::default(),
                                 maintain_order: MaintainOrderJoin::Left,
+                                indicator: None,
                                 build_side: None,
                             },
                         );

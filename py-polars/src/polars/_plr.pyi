@@ -1081,6 +1081,7 @@ class PyLazyFrame:
         validate: JoinValidation,
         maintain_order: MaintainOrderJoin,
         coalesce: bool | None,
+        indicator: str | None,
     ) -> PyLazyFrame: ...
     def join_where(
         self, other: PyLazyFrame, predicates: Sequence[PyExpr], suffix: str

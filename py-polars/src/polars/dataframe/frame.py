@@ -8223,6 +8223,7 @@ class DataFrame:
         nulls_equal: bool = False,
         coalesce: bool | None = None,
         maintain_order: MaintainOrderJoin | None = None,
+        indicator: str | None = None,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -8326,6 +8327,11 @@ class DataFrame:
                  - First preserves the order of the left DataFrame, then the right.
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
+
+        indicator
+            If given, adds a string column with this name to the result indicating
+            the source of each row. Values are ``"left_only"``, ``"right_only"``,
+            or ``"both"``. Only supported for ``how="full"`` joins.
 
         See Also
         --------
@@ -8434,6 +8440,10 @@ class DataFrame:
         │ 3   ┆ 8.0 ┆ c   ┆ z     ┆ d         │
         └─────┴─────┴─────┴───────┴───────────┘
         """
+        if indicator is not None and how not in ("full", "outer"):
+            msg = "`indicator` is only supported for `how='full'` joins"
+            raise InvalidOperationError(msg)
+
         require_same_type(self, other)
 
         from polars.lazyframe.opt_flags import QueryOptFlags
@@ -8451,6 +8461,7 @@ class DataFrame:
                 nulls_equal=nulls_equal,
                 coalesce=coalesce,
                 maintain_order=maintain_order,
+                indicator=indicator,
             )
             .collect(optimizations=QueryOptFlags._eager())
         )

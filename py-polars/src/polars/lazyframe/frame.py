@@ -6327,6 +6327,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         maintain_order: MaintainOrderJoin | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
+        indicator: str | None = None,
     ) -> LazyFrame:
         """
         Add a join operation to the Logical Plan.
@@ -6411,6 +6412,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Do not rely on any observed ordering without explicitly setting this
             parameter, as your code may break in a future release.
             Not specifying any ordering can improve performance.
+
+        indicator
+            If given, adds a string column with this name to the result indicating
+            the source of each row. Values are ``"left_only"``, ``"right_only"``,
+            or ``"both"``. Only supported for ``how="full"`` joins.
 
             .. list-table ::
                :header-rows: 0
@@ -6553,6 +6559,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "use of `how='outer_coalesce'` should be replaced with `how='full', coalesce=True`.",
                 version="0.20.29",
             )
+
+        if indicator is not None and how not in ("full", "outer"):
+            msg = "`indicator` is only supported for `how='full'` joins"
+            raise InvalidOperationError(msg)
+
         elif how == "cross":
             if uses_on or uses_lr_on:
                 msg = "cross join should not pass join keys"
@@ -6570,6 +6581,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     validate,
                     maintain_order,
                     coalesce=None,
+                    indicator=indicator,
                 )
             )
 
@@ -6597,6 +6609,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 validate,
                 maintain_order,
                 coalesce,
+                indicator=indicator,
             )
         )
 

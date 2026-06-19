@@ -1134,6 +1134,7 @@ fn lower_exprs_with_ctx(
                         nulls_equal,
                         coalesce: Default::default(),
                         maintain_order: Default::default(),
+                        indicator: None,
                         build_side: None,
                     },
                     output_bool: true,

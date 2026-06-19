@@ -48,6 +48,7 @@ pub struct JoinArgs {
     pub coalesce: JoinCoalesce,
     pub maintain_order: MaintainOrderJoin,
     pub build_side: Option<JoinBuildSide>,
+    pub indicator: Option<PlSmallStr>,
 }
 
 impl JoinArgs {
@@ -152,6 +153,7 @@ impl JoinArgs {
             coalesce: Default::default(),
             maintain_order: Default::default(),
             build_side: None,
+            indicator: None,
         }
     }
 
@@ -168,6 +170,25 @@ impl JoinArgs {
     pub fn with_build_side(mut self, build_side: Option<JoinBuildSide>) -> Self {
         self.build_side = build_side;
         self
+    }
+
+    pub fn with_indicator(mut self, indicator: Option<PlSmallStr>) -> Self {
+        self.indicator = indicator;
+        self
+    }
+
+    pub fn validate_indicator(
+        &self,
+        schema_left: &Schema,
+        schema_right: &Schema,
+    ) -> PolarsResult<()> {
+        if let Some(ref name) = self.indicator {
+            polars_ensure!(
+                !schema_left.contains(name.as_str()) && !schema_right.contains(name.as_str()),
+                Duplicate: "cannot use name of an existing column for indicator column"
+            );
+        }
+        Ok(())
     }
 
     pub fn suffix(&self) -> &PlSmallStr {

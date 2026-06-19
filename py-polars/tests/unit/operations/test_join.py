@@ -4056,3 +4056,97 @@ def test_full_join_coalesce_empty_suffix_non_key_collision_27368() -> None:
 
     with pytest.raises(DuplicateError):
         df1.join(df2, how="full", on="a", coalesce=True, suffix="")
+
+
+def test_full_join_indicator() -> None:
+    df_left = pl.DataFrame({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    df_right = pl.DataFrame({"id": [2, 3, 4], "val": ["x", "y", "z"]})
+
+    result = df_left.join(
+        df_right, on="id", how="full", coalesce=True, indicator="_merge"
+    )
+
+    expected = pl.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "val": ["a", "b", "c", None],
+            "val_right": [None, "x", "y", "z"],
+            "_merge": ["left_only", "both", "both", "right_only"],
+        }
+    )
+
+    assert_frame_equal(result, expected, check_row_order=False)
+
+    # lazy
+    result_lazy = (
+        df_left.lazy()
+        .join(df_right.lazy(), on="id", how="full", coalesce=True, indicator="_merge")
+        .collect()
+    )
+
+    assert_frame_equal(result_lazy, expected, check_row_order=False)
+
+
+def test_full_join_indicator_null_keys() -> None:
+    df_left = pl.DataFrame({"id": [1, None], "val": ["a", "b"]})
+    df_right = pl.DataFrame({"id": [1, None], "val": ["x", "y"]})
+
+    result = df_left.join(
+        df_right,
+        on="id",
+        how="full",
+        coalesce=True,
+        nulls_equal=False,
+        indicator="_merge",
+    )
+
+    # null keys never match when nulls_equal=False, so both nulls are unmatched
+    assert result["_merge"].is_in(["left_only", "right_only", "both"]).all()
+    assert result.filter(pl.col("id") == 1)["_merge"].to_list() == ["both"]
+
+
+def test_full_join_indicator_maintain_order() -> None:
+    df_left = pl.DataFrame({"id": [3, 1, 2], "val": ["c", "a", "b"]})
+    df_right = pl.DataFrame({"id": [2, 4, 3], "val": ["x", "y", "z"]})
+
+    result = (
+        df_left.lazy()
+        .join(
+            df_right.lazy(),
+            on="id",
+            how="full",
+            coalesce=True,
+            maintain_order="left",
+            indicator="_merge",
+        )
+        .collect()
+    )
+
+    # left order (3, 1, 2) is preserved, unmatched right (4) appended
+    assert result["id"].to_list() == [3, 1, 2, 4]
+    assert result["_merge"].to_list() == ["both", "left_only", "both", "right_only"]
+
+
+def test_full_join_indicator_non_full_join_raises() -> None:
+    df_left = pl.DataFrame({"id": [1, 2], "val": ["a", "b"]})
+    df_right = pl.DataFrame({"id": [1, 2], "val": ["x", "y"]})
+
+    with pytest.raises(InvalidOperationError):
+        df_left.join(df_right, on="id", how="left", indicator="_merge")
+
+    with pytest.raises(InvalidOperationError):
+        df_left.join(df_right, on="id", how="inner", indicator="_merge")
+
+
+def test_full_join_indicator_existing_column_raises() -> None:
+    df_left = pl.DataFrame({"id": [1, 2], "_merge": ["a", "b"]})
+    df_right = pl.DataFrame({"id": [1, 2], "val": ["x", "y"]})
+
+    with pytest.raises(DuplicateError):
+        df_left.join(df_right, on="id", how="full", indicator="_merge")
+
+    df_left2 = pl.DataFrame({"id": [1, 2], "val": ["a", "b"]})
+    df_right2 = pl.DataFrame({"id": [1, 2], "_merge": ["x", "y"]})
+
+    with pytest.raises(DuplicateError):
+        df_left2.join(df_right2, on="id", how="full", indicator="_merge")

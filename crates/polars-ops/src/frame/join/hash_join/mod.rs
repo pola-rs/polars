@@ -148,6 +148,7 @@ pub trait JoinDispatch: IntoDf {
         args: JoinArgs,
     ) -> PolarsResult<DataFrame> {
         let df_self = self.to_df();
+        args.validate_indicator(df_self.schema(), other.schema())?;
 
         // Get the indexes of the joined relations
         let (mut join_idx_l, mut join_idx_r) =
@@ -162,44 +163,78 @@ pub trait JoinDispatch: IntoDf {
         let idx_ca_l = IdxCa::with_chunk("a".into(), join_idx_l);
         let idx_ca_r = IdxCa::with_chunk("b".into(), join_idx_r);
 
-        let (df_left, df_right) = if args.maintain_order != MaintainOrderJoin::None {
-            let mut df = unsafe {
-                DataFrame::new_unchecked_infer_height(vec![
-                    idx_ca_l.into_series().into(),
-                    idx_ca_r.into_series().into(),
-                ])
-            };
-
-            let options = SortMultipleOptions::new()
-                .with_order_descending(false)
-                .with_maintain_order(true)
-                .with_nulls_last(true);
-
-            let columns = match args.maintain_order {
-                MaintainOrderJoin::Left => vec!["a"],
-                MaintainOrderJoin::LeftRight => vec!["a", "b"],
-                MaintainOrderJoin::Right => vec!["b"],
-                MaintainOrderJoin::RightLeft => vec!["b", "a"],
-                _ => unreachable!(),
-            };
-
-            df.sort_in_place(columns, options)?;
-
-            let join_tuples_left = df.column("a").unwrap().idx().unwrap();
-            let join_tuples_right = df.column("b").unwrap().idx().unwrap();
-            RAYON.join(
-                || unsafe { df_self.take_unchecked(join_tuples_left) },
-                || unsafe { other.take_unchecked(join_tuples_right) },
-            )
-        } else {
-            RAYON.join(
-                || unsafe { df_self.take_unchecked(&idx_ca_l) },
-                || unsafe { other.take_unchecked(&idx_ca_r) },
-            )
+        // Helper: derive indicator values from two index ChunkedArrays.
+        // IdxCa::iter() yields Option<IdxSize>; None means "no match on that side".
+        //   left None  -> row came from right only
+        //   right None -> row came from left only
+        //   both Some  -> row matched on both sides
+        let build_indicator = |name: &PlSmallStr, l: &IdxCa, r: &IdxCa| -> Series {
+            let values: Vec<&str> = l
+                .iter()
+                .zip(r.iter())
+                .map(|(lv, rv)| match (lv, rv) {
+                    (None, _) => "right_only",
+                    (_, None) => "left_only",
+                    _ => "both",
+                })
+                .collect();
+            Series::new(name.clone(), values)
         };
 
+        let (df_left, df_right, indicator_series) =
+            if args.maintain_order != MaintainOrderJoin::None {
+                let mut df = unsafe {
+                    DataFrame::new_unchecked_infer_height(vec![
+                        idx_ca_l.into_series().into(),
+                        idx_ca_r.into_series().into(),
+                    ])
+                };
+
+                let options = SortMultipleOptions::new()
+                    .with_order_descending(false)
+                    .with_maintain_order(true)
+                    .with_nulls_last(true);
+
+                let columns = match args.maintain_order {
+                    MaintainOrderJoin::Left => vec!["a"],
+                    MaintainOrderJoin::LeftRight => vec!["a", "b"],
+                    MaintainOrderJoin::Right => vec!["b"],
+                    MaintainOrderJoin::RightLeft => vec!["b", "a"],
+                    _ => unreachable!(),
+                };
+
+                df.sort_in_place(columns, options)?;
+
+                let join_tuples_left = df.column("a").unwrap().idx().unwrap();
+                let join_tuples_right = df.column("b").unwrap().idx().unwrap();
+
+                // Build indicator from the sorted index arrays before RAYON moves them.
+                let ind = args
+                    .indicator
+                    .as_ref()
+                    .map(|name| build_indicator(name, join_tuples_left, join_tuples_right));
+
+                let (dfl, dfr) = RAYON.join(
+                    || unsafe { df_self.take_unchecked(join_tuples_left) },
+                    || unsafe { other.take_unchecked(join_tuples_right) },
+                );
+                (dfl, dfr, ind)
+            } else {
+                // Build indicator before RAYON borrows the arrays.
+                let ind = args
+                    .indicator
+                    .as_ref()
+                    .map(|name| build_indicator(name, &idx_ca_l, &idx_ca_r));
+
+                let (dfl, dfr) = RAYON.join(
+                    || unsafe { df_self.take_unchecked(&idx_ca_l) },
+                    || unsafe { other.take_unchecked(&idx_ca_r) },
+                );
+                (dfl, dfr, ind)
+            };
+
         let coalesce = args.coalesce.coalesce(&JoinType::Full);
-        if coalesce {
+        let mut out = if coalesce {
             let tmp_right_name = unique_column_name();
             let mut df_right = df_right;
             df_right.rename(s_right.name().as_str(), tmp_right_name.clone())?;
@@ -213,7 +248,13 @@ pub trait JoinDispatch: IntoDf {
             ))
         } else {
             _finish_join(df_left, df_right, args.suffix.clone())
+        }?;
+
+        if let Some(ind) = indicator_series {
+            out.with_column(ind.into())?;
         }
+
+        Ok(out)
     }
 }
 

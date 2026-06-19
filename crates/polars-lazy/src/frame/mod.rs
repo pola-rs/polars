@@ -1377,6 +1377,7 @@ impl LazyFrame {
             nulls_equal,
             coalesce,
             maintain_order,
+            indicator,
             build_side,
         } = args;
 
@@ -1394,6 +1395,7 @@ impl LazyFrame {
             .join_nulls(nulls_equal)
             .coalesce(coalesce)
             .maintain_order(maintain_order)
+            .indicator(indicator)
             .build_side(build_side);
 
         if let Some(suffix) = suffix {
@@ -2154,6 +2156,7 @@ pub struct JoinBuilder {
     nulls_equal: bool,
     coalesce: JoinCoalesce,
     maintain_order: MaintainOrderJoin,
+    indicator: Option<PlSmallStr>,
     build_side: Option<JoinBuildSide>,
 }
 impl JoinBuilder {
@@ -2172,6 +2175,7 @@ impl JoinBuilder {
             nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
+            indicator: None,
             build_side: None,
         }
     }
@@ -2259,6 +2263,11 @@ impl JoinBuilder {
         self
     }
 
+    pub fn indicator(mut self, indicator: Option<PlSmallStr>) -> Self {
+        self.indicator = indicator;
+        self
+    }
+
     /// Whether to prefer a specific build side.
     pub fn build_side(mut self, build_side: Option<JoinBuildSide>) -> Self {
         self.build_side = build_side;
@@ -2278,6 +2287,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            indicator: self.indicator,
             build_side: self.build_side,
         };
 
@@ -2370,6 +2380,7 @@ impl JoinBuilder {
             nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
+            indicator: self.indicator,
             build_side: self.build_side,
         };
         let options = JoinOptions {
