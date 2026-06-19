@@ -98,7 +98,7 @@ sha2 = "0.11"
 simd-json = { version = "0.17", features = ["known-key", "128bit"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
-sqlparser = { version = "0.60", features = ["visitor"] }
+sqlparser = { version = "0.62", features = ["visitor"] }
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"
