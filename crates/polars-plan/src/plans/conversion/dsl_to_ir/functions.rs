@@ -132,7 +132,6 @@ pub(super) fn convert_functions(
             use ListFunction as L;
             I::ListExpr(match list_function {
                 L::Concat => IL::Concat,
-                L::Pack => IL::Pack,
                 #[cfg(feature = "is_in")]
                 L::Contains { nulls_equal } => IL::Contains { nulls_equal },
                 #[cfg(feature = "list_drop_nulls")]
@@ -843,6 +842,7 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "round_series")]
         F::Clip { has_min, has_max } => I::Clip { has_min, has_max },
+        F::AsList => I::AsList,
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => I::AsStruct,
         #[cfg(feature = "top_k")]

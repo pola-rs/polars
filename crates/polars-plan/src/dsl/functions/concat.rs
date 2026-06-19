@@ -105,14 +105,14 @@ pub fn format_str(format: &str, args: &[Expr]) -> PolarsResult<Expr> {
 }
 
 /// Collect expressions into a list, treating each expression's value as one element.
-pub fn pack_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
+pub fn as_list<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(s: E) -> PolarsResult<Expr> {
     let s: Vec<_> = s.as_ref().iter().map(|e| e.clone().into()).collect();
 
-    polars_ensure!(!s.is_empty(), ComputeError: "`pack_list` needs one or more expressions");
+    polars_ensure!(!s.is_empty(), ComputeError: "`as_list` needs one or more expressions");
 
     Ok(Expr::Function {
         input: s,
-        function: FunctionExpr::ListExpr(ListFunction::Pack),
+        function: FunctionExpr::AsList,
     })
 }
 

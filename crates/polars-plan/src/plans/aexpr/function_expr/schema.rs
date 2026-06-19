@@ -161,6 +161,7 @@ impl IRFunctionExpr {
                 RankMethod::Average => DataType::Float64,
                 _ => IDX_DTYPE,
             }),
+            AsList => mapper.map_to_list_of_dtypes(),
             #[cfg(feature = "dtype-struct")]
             AsStruct => {
                 let mut field_names = PlHashSet::with_capacity(fields.len() - 1);

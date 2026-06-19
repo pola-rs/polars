@@ -162,6 +162,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Repeat => false,
         #[cfg(feature = "round_series")]
         F::Clip { .. } => false,
+        F::AsList => false,
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => false,
         #[cfg(feature = "top_k")]
@@ -299,7 +300,6 @@ fn is_inherently_nondeterministic_list_fn(f: &IRListFunction) -> bool {
     use IRListFunction as L;
     match f {
         L::Concat
-        | L::Pack
         | L::Slice
         | L::Shift
         | L::Get(_)

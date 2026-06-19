@@ -252,3 +252,29 @@ def test_list_function() -> None:
     }
     assert_frame_equal(result.collect(), pl.DataFrame(expected))
     assert result.collect().schema == result.collect_schema()
+
+
+def test_list_function_w_scalars() -> None:
+    df = pl.LazyFrame(
+        {
+            "a": [1, 2, None],
+            "b": [4, 5, 6],
+            "c": [[1], [2, 3], None],
+            "d": [[3, 4], [5], [6]],
+        }
+    )
+    result = df.with_columns(a_b_lit=pl.list("a", "b", pl.lit(3)))
+    expected = {
+        "a": [1, 2, None],
+        "b": [4, 5, 6],
+        "c": [[1], [2, 3], None],
+        "d": [[3, 4], [5], [6]],
+        "a_b_lit": [[1, 4, 3], [2, 5, 3], [None, 6, 3]],
+    }
+    assert_frame_equal(result.collect(), pl.DataFrame(expected))
+    assert result.collect().schema == result.collect_schema()
+
+    result = df.select(lits=pl.list(pl.lit(1), pl.lit(2)))
+    expected = {"lits": [[1, 2]]}
+    assert_frame_equal(result.collect(), pl.DataFrame(expected))
+    assert result.collect().schema == result.collect_schema()

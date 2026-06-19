@@ -206,7 +206,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_list))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::pack_list))
+    m.add_wrapped(wrap_pyfunction!(functions::as_list))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::concat_str))
         .unwrap();

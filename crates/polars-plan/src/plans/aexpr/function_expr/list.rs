@@ -6,7 +6,6 @@ use super::*;
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IRListFunction {
     Concat,
-    Pack,
     #[cfg(feature = "is_in")]
     Contains {
         nulls_equal: bool,
@@ -72,7 +71,6 @@ impl IRListFunction {
         use IRListFunction::*;
         match self {
             Concat => mapper.map_to_list_supertype(),
-            Pack => mapper.map_to_list_of_dtypes(),
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => mapper.ensure_is_list()?.with_dtype(DataType::Boolean),
             #[cfg(feature = "list_drop_nulls")]
@@ -163,8 +161,6 @@ impl IRListFunction {
         match self {
             L::Concat => FunctionOptions::elementwise()
                 .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
-            L::Pack => FunctionOptions::elementwise()
-                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "is_in")]
             L::Contains { nulls_equal: _ } => FunctionOptions::elementwise(),
             #[cfg(feature = "list_sample")]
@@ -223,7 +219,6 @@ impl Display for IRListFunction {
 
         let name = match self {
             Concat => "concat",
-            Pack => "pack",
             #[cfg(feature = "is_in")]
             Contains { nulls_equal: _ } => "contains",
             #[cfg(feature = "list_drop_nulls")]
