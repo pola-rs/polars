@@ -264,6 +264,10 @@ def read_csv(
     `infer_schema_length` or override the inferred dtype for those columns with
     `schema_overrides`.
 
+    Empty lines in the input are not skipped; each is read as a row of null values
+    in every column. This differs from `pandas` and `pyarrow`, which drop empty
+    lines. There is currently no option to skip empty lines.
+
     Examples
     --------
     >>> pl.read_csv("data.csv", separator="|")  # doctest: +SKIP
@@ -1322,6 +1326,12 @@ def scan_csv(
     See Also
     --------
     read_csv : Read a CSV file into a DataFrame.
+
+    Notes
+    -----
+    Empty lines in the input are not skipped; each is read as a row of null values
+    in every column. This differs from `pandas` and `pyarrow`, which drop empty
+    lines. There is currently no option to skip empty lines.
 
     Examples
     --------
