@@ -141,3 +141,16 @@ def test_qcut_over() -> None:
         dtype=pl.Categorical,
     )
     assert_series_equal(out, expected, categorical_as_str=True)
+
+
+def test_qcut_nan_input_values() -> None:
+    s = pl.Series("a", [1.0, 2.0, 3.0, 4.0, float("nan")])
+
+    result = s.qcut([0.5, 1.0])
+
+    expected = pl.Series(
+        "a",
+        ["(-inf, 2.5]", "(-inf, 2.5]", "(2.5, 4]", "(2.5, 4]", None],
+        dtype=pl.Categorical,
+    )
+    assert_series_equal(result, expected, categorical_as_str=True)
