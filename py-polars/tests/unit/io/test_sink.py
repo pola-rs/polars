@@ -471,3 +471,17 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
             ),
             _sinked_paths_callback=lambda _: None,
         )
+
+
+@pytest.mark.write_disk
+def test_sink_parquet_cross_join_filter_27922(tmp_path: Path) -> None:
+    lf = pl.LazyFrame({"a": [[1, 2], [3, 4]]}).join(
+        pl.LazyFrame({"b": [1, 5]}), how="cross"
+    )
+    q = lf.filter(pl.col("a").list.contains(pl.col("b")))
+
+    path = tmp_path / "out.parquet"
+    q.sink_parquet(path)
+
+    # The cross-join filter must be applied by the sink, matching collect().
+    assert_frame_equal(pl.read_parquet(path), q.collect())

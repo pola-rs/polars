@@ -1417,6 +1417,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 })
             }
 
+            // Sinks always execute on the streaming engine (the in-memory
+            // engine dispatches file sinks to it), so the sink's input must be
+            // optimized as streaming. Otherwise streaming-incompatible rewrites
+            // such as fusing a filter into a cross join (`CrossAndFilter`) are
+            // produced and then silently dropped by the streaming lowering.
+            //
+            // The flag persists past this conversion (as in `resolve_join`,
+            // which sets `OptFlags::PREDICATE_PUSHDOWN`): predicate pushdown --
+            // the pass that performs the fusion -- reads `opt_flags.streaming()`
+            // only after the whole plan has been lowered to IR.
+            ctxt.opt_flags.insert(OptFlags::STREAMING);
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);

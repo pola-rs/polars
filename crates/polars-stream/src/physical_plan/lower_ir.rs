@@ -1042,6 +1042,16 @@ pub fn lower_ir(
             let mut tmp_right_col_names: Vec<Option<PlSmallStr>> = Vec::new();
             let args = options.args.clone();
             let options = options.options.clone();
+            // A cross join with a fused filter (`CrossAndFilter`) is an in-memory
+            // -only rewrite; predicate pushdown must not produce it for the
+            // streaming engine. Assert that invariant rather than silently
+            // dropping the filter.
+            assert!(
+                !(args.how.is_cross()
+                    && matches!(options, Some(JoinTypeOptionsIR::CrossAndFilter { .. }))),
+                "CrossAndFilter reached streaming cross-join lowering; predicate \
+                 pushdown should not produce it when targeting the streaming engine"
+            );
             #[cfg(feature = "asof_join")]
             let asof_options = || match args.how {
                 JoinType::AsOf(ref asof_options) => asof_options,
