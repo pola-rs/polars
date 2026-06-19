@@ -471,3 +471,16 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
             ),
             _sinked_paths_callback=lambda _: None,
         )
+
+
+@pytest.mark.write_disk
+def test_sinked_partitioned_overwrite_27916(tmp_path: Path) -> None:
+    out_path = tmp_path / "a"
+    pb = pl.PartitionBy(out_path, max_rows_per_file=1, overwrite=True)
+
+    pl.LazyFrame({"x": [0, 1]}).sink_parquet(pb)
+    left = pl.LazyFrame({"x": [2]})
+    left.sink_parquet(pb)
+
+    right = pl.read_parquet(out_path).lazy()
+    assert_frame_equal(left, right)
