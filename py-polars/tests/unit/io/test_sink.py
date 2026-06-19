@@ -482,5 +482,5 @@ def test_sinked_partitioned_overwrite_27916(tmp_path: Path) -> None:
     left = pl.LazyFrame({"x": [2]})
     left.sink_parquet(pb)
 
-    right = pl.read_parquet(out_path).lazy()
+    right = pl.scan_parquet(out_path)
     assert_frame_equal(left, right)
