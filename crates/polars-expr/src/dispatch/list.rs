@@ -257,18 +257,6 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
     first_ca.lst_concat(other).map(IntoColumn::into_column)
 }
 
-pub(super) fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
-    let wrap = |c: &Column| c.as_materialized_series().to_unit_list().into_column();
-
-    let first = wrap(&s[0]);
-    let other: Vec<Column> = s[1..].iter().map(wrap).collect();
-
-    first
-        .list()?
-        .lst_concat(&other)
-        .map(IntoColumn::into_column)
-}
-
 pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Column> {
     let ca = s[0].list()?;
     let index = s[1].cast(&DataType::Int64)?;

@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::ops::NullBehavior;
+use polars_ops::prelude::ListNameSpaceImpl;
 #[cfg(feature = "interpolate")]
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "rank")]
@@ -677,6 +678,18 @@ pub fn as_struct(cols: &[Column]) -> PolarsResult<Column> {
     let length = if min_length == 0 { 0 } else { max_length };
 
     Ok(StructChunked::from_columns(fst.name().clone(), length, cols)?.into_column())
+}
+
+pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
+    let wrap = |c: &Column| c.as_materialized_series().to_unit_list().into_column();
+
+    let first = wrap(&s[0]);
+    let other: Vec<Column> = s[1..].iter().map(wrap).collect();
+
+    first
+        .list()?
+        .lst_concat(&other)
+        .map(IntoColumn::into_column)
 }
 
 #[cfg(feature = "log")]
