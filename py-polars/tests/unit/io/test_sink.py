@@ -402,8 +402,7 @@ def test_sink_file_provider_absolute_path_not_under_base_path(
                 base_path,
                 file_path_provider=lambda _: provided_path,
                 max_rows_per_file=1,
-            ),
-            overwrite=False,
+            )
         )
 
 

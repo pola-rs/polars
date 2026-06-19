@@ -40,6 +40,8 @@ class PartitionBy:
     ----------
     base_path
         Base path to write to.
+    overwrite
+        Whether to overwrite the contents in the path.
     file_path_provider
         Callable for custom file output paths.
     key
@@ -85,6 +87,7 @@ class PartitionBy:
         self,
         base_path: str | Path,
         *,
+        overwrite: bool = False,
         file_path_provider: Callable[
             [FileProviderArgs], str | Path | IO[bytes] | IO[str]
         ]
@@ -126,6 +129,7 @@ class PartitionBy:
 
         self._pl_partition_by = _PartitionByInner(
             base_path=base_path,
+            overwrite=overwrite,
             file_path_provider=file_path_provider,
             key=_parse_to_pyexpr_list(key) if key is not None else None,
             include_key=include_key,
@@ -157,6 +161,7 @@ class _PartitionByInner:
     """
 
     base_path: str
+    overwrite: bool
     file_path_provider: (
         Callable[[FileProviderArgs], str | Path | IO[bytes] | IO[str]]
         | _InternalPlPathProviderConfig

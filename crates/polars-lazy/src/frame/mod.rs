@@ -902,6 +902,7 @@ impl LazyFrame {
                 }),
                 SinkDestination::Partitioned {
                     base_path,
+                    overwrite: _,
                     file_path_provider,
                     partition_strategy,
                     max_rows_per_file,

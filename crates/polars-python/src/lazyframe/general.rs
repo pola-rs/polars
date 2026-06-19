@@ -679,7 +679,7 @@ impl PyLazyFrame {
 
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (
-        target, sink_options, overwrite, compression, compression_level, statistics, row_group_size, data_page_size,
+        target, sink_options, compression, compression_level, statistics, row_group_size, data_page_size,
         metadata, arrow_schema
     ))]
     fn sink_parquet(
@@ -687,7 +687,6 @@ impl PyLazyFrame {
         py: Python<'_>,
         target: PyFileSinkDestination,
         sink_options: PySinkOptions,
-        overwrite: bool,
         compression: &str,
         compression_level: Option<i32>,
         statistics: Wrap<StatisticsOptions>,
@@ -710,10 +709,13 @@ impl PyLazyFrame {
 
         let target = target.extract_file_sink_destination()?;
         let unified_sink_args = sink_options.extract_unified_sink_args(target.cloud_scheme())?;
-        if let SinkDestination::Partitioned { base_path, .. } = &target
-            && overwrite
+        if let SinkDestination::Partitioned {
+            base_path,
+            overwrite,
+            ..
+        } = &target
         {
-            if std::path::Path::new(base_path).is_dir() {
+            if std::path::Path::new(base_path).is_dir() && *overwrite {
                 for entry in fs::read_dir(base_path)? {
                     let entry = entry?;
                     let path = entry.path();

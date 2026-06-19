@@ -57,6 +57,7 @@ pub enum SinkDestination {
     },
     Partitioned {
         base_path: PlRefPath,
+        overwrite: bool,
         file_path_provider: Option<FileProviderType>,
         partition_strategy: PartitionStrategy,
         max_rows_per_file: IdxSize,
