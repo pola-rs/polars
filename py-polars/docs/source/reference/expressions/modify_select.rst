@@ -23,7 +23,6 @@ Manipulation/selection
     Expr.fill_nan
     Expr.fill_null
     Expr.filter
-    Expr.flatten
     Expr.floor
     Expr.forward_fill
     Expr.gather
