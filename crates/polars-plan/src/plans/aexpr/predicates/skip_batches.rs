@@ -299,37 +299,88 @@ fn aexpr_to_skip_batch_predicate_rec(
                         //     null_count(A) == LEN || min(A) > B || max(A) < B, if B.is_not_null(),
                         // }
 
-                        Some(lv_cases!(
-                            lv, lv_node,
-                            null: {
-                                if matches!(op, O::Eq) {
-                                    lv!(false).node()
-                                } else {
+                        // Boolean columns need special handling: `>` / `<`
+                        // comparisons involving the delta-stats BoolArray's
+                        // validity mask can produce incorrect results when the
+                        // Min/Max columns contain only a single concrete value
+                        // alongside nulls. We use direct equality instead.
+                        //
+                        //   col(A) == true  -> skip files where max(A) == false
+                        //   col(A) == false -> skip files where min(A) == true
+                        if matches!(dtype, DataType::Boolean) {
+                            // Boolean columns need special handling: use direct
+                            // equality (eq) instead of ordinal comparisons (gt/lt).
+                            //
+                            //   col(A) == true  -> skip files where max(A) == false
+                            //   col(A) == false -> skip files where min(A) == true
+                            Some(lv_cases!(
+                                lv, lv_node,
+                                null: {
+                                    if matches!(op, O::Eq) {
+                                        lv!(false).node()
+                                    } else {
+                                        let col_nc = target.null_count(arena);
+                                        let idx_zero = lv!(idx: 0);
+                                        col_nc.eq(idx_zero, arena).node()
+                                    }
+                                },
+                                not_null: {
+                                    // Extract the boolean value from the literal expression.
+                                    // Use `lv_node` (the outer variable) not `$lv_node`
+                                    // (the macro param), since `$` is not valid inside
+                                    // the `$non_null_case:expr` fragment.
+                                    let lv_is_true = match arena.get(lv_node) {
+                                        AExpr::Literal(lv) => lv.to_any_value()
+                                            .is_some_and(|av| matches!(av, AnyValue::Boolean(true))),
+                                        _ => false,
+                                    };
                                     let col_nc = target.null_count(arena);
-                                    let idx_zero = lv!(idx: 0);
-                                    col_nc.eq(idx_zero, arena).node()
+                                    let len = col!(len);
+                                    let all_nulls = col_nc.eq(len, arena);
+                                    if lv_is_true {
+                                        // col(A) == true: skip files where max(A) == false
+                                        let col_max = target.max(arena);
+                                        all_nulls.or(col_max.eq(lv!(false), arena), arena).node()
+                                    } else {
+                                        // col(A) == false: skip files where min(A) == true
+                                        let col_min = target.min(arena);
+                                        all_nulls.or(col_min.eq(lv!(true), arena), arena).node()
+                                    }
                                 }
-                            },
-                            not_null: {
-                                let col_min = target.min(arena);
-                                let col_max = target.max(arena);
+                            ))
+                        } else {
+                            Some(lv_cases!(
+                                lv, lv_node,
+                                null: {
+                                    if matches!(op, O::Eq) {
+                                        lv!(false).node()
+                                    } else {
+                                        let col_nc = target.null_count(arena);
+                                        let idx_zero = lv!(idx: 0);
+                                        col_nc.eq(idx_zero, arena).node()
+                                    }
+                                },
+                                not_null: {
+                                    let col_min = target.min(arena);
+                                    let col_max = target.max(arena);
 
-                                let min_is_defined = is_stat_defined(col_min.node(), dtype, arena);
-                                let max_is_defined = is_stat_defined(col_max.node(), dtype, arena);
+                                    let min_is_defined = is_stat_defined(col_min.node(), dtype, arena);
+                                    let max_is_defined = is_stat_defined(col_max.node(), dtype, arena);
 
-                                let min_gt = col_min.gt(lv_node, arena);
-                                let min_gt = min_gt.and(min_is_defined, arena);
+                                    let min_gt = col_min.gt(lv_node, arena);
+                                    let min_gt = min_gt.and(min_is_defined, arena);
 
-                                let max_lt = col_max.lt(lv_node, arena);
-                                let max_lt = max_lt.and(max_is_defined, arena);
+                                    let max_lt = col_max.lt(lv_node, arena);
+                                    let max_lt = max_lt.and(max_is_defined, arena);
 
-                                let col_nc = target.null_count(arena);
-                                let len = col!(len);
-                                let all_nulls = col_nc.eq(len, arena);
+                                    let col_nc = target.null_count(arena);
+                                    let len = col!(len);
+                                    let all_nulls = col_nc.eq(len, arena);
 
-                                all_nulls.or(min_gt, arena).or(max_lt, arena).node()
-                            }
-                        ))
+                                    all_nulls.or(min_gt, arena).or(max_lt, arena).node()
+                                }
+                            ))
+                        }
                     },
                     O::NotEq | O::NotEqValidity => {
                         let ((target, _), (lv, lv_node)) =
@@ -347,30 +398,74 @@ fn aexpr_to_skip_batch_predicate_rec(
                         //     null_count(A) == 0 && min(A) == B && max(A) == B, if B.is_not_null(),
                         // }
 
-                        Some(lv_cases!(
-                            lv, lv_node,
-                            null: {
-                                if matches!(op, O::NotEq) {
-                                    lv!(false).node()
-                                } else {
+                        if matches!(dtype, DataType::Boolean) {
+                            Some(lv_cases!(
+                                lv, lv_node,
+                                null: {
+                                    if matches!(op, O::NotEq) {
+                                        lv!(false).node()
+                                    } else {
+                                        let col_nc = target.null_count(arena);
+                                        let len = col!(len);
+                                        col_nc.eq(len, arena).node()
+                                    }
+                                },
+                                not_null: {
+                                    //   col != true  -> skip when all values are true
+                                    //   col != false -> skip when all values are false
+                                    let lv_is_false = match arena.get(lv_node) {
+                                        AExpr::Literal(lv) => lv.to_any_value()
+                                            .is_some_and(|av| matches!(av, AnyValue::Boolean(false))),
+                                        _ => false,
+                                    };
                                     let col_nc = target.null_count(arena);
                                     let len = col!(len);
-                                    col_nc.eq(len, arena).node()
+                                    let all_nulls = col_nc.eq(len, arena);
+                                    let col_min = target.min(arena);
+                                    let col_max = target.max(arena);
+                                    if lv_is_false {
+                                        // col != false: skip when all non-null values are false
+                                        all_nulls.or(
+                                            col_min.eq(lv!(false), arena)
+                                                .and(col_max.eq(lv!(false), arena), arena),
+                                            arena,
+                                        ).node()
+                                    } else {
+                                        // col != true: skip when all non-null values are true
+                                        all_nulls.or(
+                                            col_min.eq(lv!(true), arena)
+                                                .and(col_max.eq(lv!(true), arena), arena),
+                                            arena,
+                                        ).node()
+                                    }
                                 }
-                            },
-                            not_null: {
-                                let col_min = target.min(arena);
-                                let col_max = target.max(arena);
-                                let min_eq = col_min.eq(lv_node, arena);
-                                let max_eq = col_max.eq(lv_node, arena);
+                            ))
+                        } else {
+                            Some(lv_cases!(
+                                lv, lv_node,
+                                null: {
+                                    if matches!(op, O::NotEq) {
+                                        lv!(false).node()
+                                    } else {
+                                        let col_nc = target.null_count(arena);
+                                        let len = col!(len);
+                                        col_nc.eq(len, arena).node()
+                                    }
+                                },
+                                not_null: {
+                                    let col_min = target.min(arena);
+                                    let col_max = target.max(arena);
+                                    let min_eq = col_min.eq(lv_node, arena);
+                                    let max_eq = col_max.eq(lv_node, arena);
 
-                                let col_nc = target.null_count(arena);
-                                let idx_zero = lv!(idx: 0);
-                                let no_nulls = col_nc.eq(idx_zero, arena);
+                                    let col_nc = target.null_count(arena);
+                                    let idx_zero = lv!(idx: 0);
+                                    let no_nulls = col_nc.eq(idx_zero, arena);
 
-                                no_nulls.and(min_eq, arena).and(max_eq, arena).node()
-                            }
-                        ))
+                                    no_nulls.and(min_eq, arena).and(max_eq, arena).node()
+                                }
+                            ))
+                        }
                     },
                     O::Lt | O::Gt | O::LtEq | O::GtEq => {
                         let ((target, col_node), (lv, lv_node)) =
