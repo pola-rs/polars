@@ -299,19 +299,20 @@ fn aexpr_to_skip_batch_predicate_rec(
                         //     null_count(A) == LEN || min(A) > B || max(A) < B, if B.is_not_null(),
                         // }
 
-                        // Boolean columns are handled specially because Rust `bool`
-                        // does not implement `Ord` (only `PartialOrd` with
-                        // `false < true`). Using `>` / `<` comparisons on booleans
-                        // via TotalOrd kernels is correct but the `>` and `<` kernels
-                        // don't compose cleanly when the stats-dataframe Boolean
-                        // column comes from delta-rs partition statistics (which may
-                        // carry a BoolArray whose validity mask interacts
-                        // unexpectedly with the broadcast kernels). We use direct
-                        // equality checks instead.
+                        // Boolean columns need special handling: `>` / `<`
+                        // comparisons involving the delta-stats BoolArray's
+                        // validity mask can produce incorrect results when the
+                        // Min/Max columns contain only a single concrete value
+                        // alongside nulls. We use direct equality instead.
                         //
                         //   col(A) == true  -> skip files where max(A) == false
                         //   col(A) == false -> skip files where min(A) == true
                         if matches!(dtype, DataType::Boolean) {
+                            // Boolean columns need special handling: use direct
+                            // equality (eq) instead of ordinal comparisons (gt/lt).
+                            //
+                            //   col(A) == true  -> skip files where max(A) == false
+                            //   col(A) == false -> skip files where min(A) == true
                             Some(lv_cases!(
                                 lv, lv_node,
                                 null: {
@@ -324,28 +325,27 @@ fn aexpr_to_skip_batch_predicate_rec(
                                     }
                                 },
                                 not_null: {
+                                    // Extract the boolean value from the literal expression.
+                                    // Use `lv_node` (the outer variable) not `$lv_node`
+                                    // (the macro param), since `$` is not valid inside
+                                    // the `$non_null_case:expr` fragment.
+                                    let lv_is_true = match arena.get(lv_node) {
+                                        AExpr::Literal(lv) => lv.to_any_value()
+                                            .is_some_and(|av| matches!(av, AnyValue::Boolean(true))),
+                                        _ => false,
+                                    };
                                     let col_nc = target.null_count(arena);
                                     let len = col!(len);
                                     let all_nulls = col_nc.eq(len, arena);
-
-                                    // col(A) == true  -> skip when max(A) == false
-                                    // col(A) == false -> skip when min(A) == true
-                                    let truthy = lv_node.into_aexpr_builder();
-                                    let col_max = target.max(arena);
-                                    let col_min = target.min(arena);
-
-                                    let max_not_true = col_max.eq(lv!(false), arena);
-                                    let min_not_false = col_min.eq(lv!(true), arena);
-
-                                    let skip_if_eq_true = all_nulls.or(max_not_true, arena);
-                                    let skip_if_eq_false = all_nulls.or(min_not_false, arena);
-
-                                    // Branch on the literal value.
-                                    truthy.if_else(
-                                        skip_if_eq_true,
-                                        skip_if_eq_false,
-                                        arena,
-                                    ).node()
+                                    if lv_is_true {
+                                        // col(A) == true: skip files where max(A) == false
+                                        let col_max = target.max(arena);
+                                        all_nulls.or(col_max.eq(lv!(false), arena), arena).node()
+                                    } else {
+                                        // col(A) == false: skip files where min(A) == true
+                                        let col_min = target.min(arena);
+                                        all_nulls.or(col_min.eq(lv!(true), arena), arena).node()
+                                    }
                                 }
                             ))
                         } else {
@@ -399,13 +399,6 @@ fn aexpr_to_skip_batch_predicate_rec(
                         // }
 
                         if matches!(dtype, DataType::Boolean) {
-                            // For booleans we use direct equality instead of ordinal
-                            // comparisons. See the O::Eq case above for rationale.
-                            //
-                            //   col(A) != true  -> skip when all values are true
-                            //                       (no false/nulls)
-                            //   col(A) != false -> skip when all values are false
-                            //                       (no true/nulls)
                             Some(lv_cases!(
                                 lv, lv_node,
                                 null: {
@@ -418,27 +411,33 @@ fn aexpr_to_skip_batch_predicate_rec(
                                     }
                                 },
                                 not_null: {
+                                    //   col != true  -> skip when all values are true
+                                    //   col != false -> skip when all values are false
+                                    let lv_is_false = match arena.get(lv_node) {
+                                        AExpr::Literal(lv) => lv.to_any_value()
+                                            .is_some_and(|av| matches!(av, AnyValue::Boolean(false))),
+                                        _ => false,
+                                    };
                                     let col_nc = target.null_count(arena);
                                     let len = col!(len);
                                     let all_nulls = col_nc.eq(len, arena);
-
                                     let col_min = target.min(arena);
                                     let col_max = target.max(arena);
-
-                                    let both_true = col_min.eq(lv!(true), arena)
-                                        .and(col_max.eq(lv!(true), arena), arena);
-                                    let both_false = col_min.eq(lv!(false), arena)
-                                        .and(col_max.eq(lv!(false), arena), arena);
-
-                                    let truthy = lv_node.into_aexpr_builder();
-                                    let all_true_not = all_nulls.or(both_true, arena);
-                                    let all_false_not = all_nulls.or(both_false, arena);
-
-                                    truthy.if_else(
-                                        all_false_not,
-                                        all_true_not,
-                                        arena,
-                                    ).node()
+                                    if lv_is_false {
+                                        // col != false: skip when all non-null values are false
+                                        all_nulls.or(
+                                            col_min.eq(lv!(false), arena)
+                                                .and(col_max.eq(lv!(false), arena), arena),
+                                            arena,
+                                        ).node()
+                                    } else {
+                                        // col != true: skip when all non-null values are true
+                                        all_nulls.or(
+                                            col_min.eq(lv!(true), arena)
+                                                .and(col_max.eq(lv!(true), arena), arena),
+                                            arena,
+                                        ).node()
+                                    }
                                 }
                             ))
                         } else {

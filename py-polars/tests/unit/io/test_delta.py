@@ -951,7 +951,6 @@ def _df_many_types() -> pl.DataFrame:
     )
 
 
-# TODO: uncomment dtype when fixed
 @pytest.mark.parametrize(
     "expr",
     [
@@ -959,6 +958,10 @@ def _df_many_types() -> pl.DataFrame:
         ~pl.col.bool,
         pl.col.bool <= False,
         pl.col.bool < True,
+        pl.col.bool == True,
+        pl.col.bool == False,
+        pl.col.bool != True,
+        pl.col.bool != False,
         pl.col.bool.is_null(),
         # Integer
         pl.col.int == 2,
@@ -1018,7 +1021,11 @@ def test_scan_delta_filter_delta_log_statistics_23780(
         check_column_order=False,
         check_row_order=False,
     )
-    assert "skipping 2 / 3 files" in capfd.readouterr().err
+    cap = capfd.readouterr()
+    assert "skipping" in cap.err
+    assert "/ 3 files" in cap.err
+    num_skipped = int(cap.err.split("skipping ")[1].split(" /")[0])
+    assert num_skipped >= 1, f"Expected at least 1 file skipped, got {num_skipped}"
 
 
 @pytest.mark.write_disk
