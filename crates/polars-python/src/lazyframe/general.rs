@@ -707,23 +707,6 @@ impl PyLazyFrame {
 
         let target = target.extract_file_sink_destination()?;
         let unified_sink_args = sink_options.extract_unified_sink_args(target.cloud_scheme())?;
-        // if let SinkDestination::Partitioned {
-        //     base_path,
-        //     overwrite,
-        //     ..
-        // } = &target
-        // {
-        //     if std::path::Path::new(base_path).is_dir() && *overwrite {
-        //         for entry in fs::read_dir(base_path)? {
-        //             let entry = entry?;
-        //             let path = entry.path();
-        //
-        //             if path.is_file() {
-        //                 fs::remove_file(path)?;
-        //             }
-        //         }
-        //     }
-        // }
 
         py.enter_polars(|| {
             self.ldf
