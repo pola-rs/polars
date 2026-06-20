@@ -299,37 +299,88 @@ fn aexpr_to_skip_batch_predicate_rec(
                         //     null_count(A) == LEN || min(A) > B || max(A) < B, if B.is_not_null(),
                         // }
 
-                        Some(lv_cases!(
-                            lv, lv_node,
-                            null: {
-                                if matches!(op, O::Eq) {
-                                    lv!(false).node()
-                                } else {
+                        // Boolean columns are handled specially because Rust `bool`
+                        // does not implement `Ord` (only `PartialOrd` with
+                        // `false < true`). Using `>` / `<` comparisons on booleans
+                        // via TotalOrd kernels is correct but the `>` and `<` kernels
+                        // don't compose cleanly when the stats-dataframe Boolean
+                        // column comes from delta-rs partition statistics (which may
+                        // carry a BoolArray whose validity mask interacts
+                        // unexpectedly with the broadcast kernels). We use direct
+                        // equality checks instead.
+                        //
+                        //   col(A) == true  -> skip files where max(A) == false
+                        //   col(A) == false -> skip files where min(A) == true
+                        if matches!(dtype, DataType::Boolean) {
+                            Some(lv_cases!(
+                                lv, lv_node,
+                                null: {
+                                    if matches!(op, O::Eq) {
+                                        lv!(false).node()
+                                    } else {
+                                        let col_nc = target.null_count(arena);
+                                        let idx_zero = lv!(idx: 0);
+                                        col_nc.eq(idx_zero, arena).node()
+                                    }
+                                },
+                                not_null: {
                                     let col_nc = target.null_count(arena);
-                                    let idx_zero = lv!(idx: 0);
-                                    col_nc.eq(idx_zero, arena).node()
+                                    let len = col!(len);
+                                    let all_nulls = col_nc.eq(len, arena);
+
+                                    // col(A) == true  -> skip when max(A) == false
+                                    // col(A) == false -> skip when min(A) == true
+                                    let truthy = lv_node.into_aexpr_builder();
+                                    let col_max = target.max(arena);
+                                    let col_min = target.min(arena);
+
+                                    let max_not_true = col_max.eq(lv!(false), arena);
+                                    let min_not_false = col_min.eq(lv!(true), arena);
+
+                                    let skip_if_eq_true = all_nulls.or(max_not_true, arena);
+                                    let skip_if_eq_false = all_nulls.or(min_not_false, arena);
+
+                                    // Branch on the literal value.
+                                    truthy.if_else(
+                                        skip_if_eq_true,
+                                        skip_if_eq_false,
+                                        arena,
+                                    ).node()
                                 }
-                            },
-                            not_null: {
-                                let col_min = target.min(arena);
-                                let col_max = target.max(arena);
+                            ))
+                        } else {
+                            Some(lv_cases!(
+                                lv, lv_node,
+                                null: {
+                                    if matches!(op, O::Eq) {
+                                        lv!(false).node()
+                                    } else {
+                                        let col_nc = target.null_count(arena);
+                                        let idx_zero = lv!(idx: 0);
+                                        col_nc.eq(idx_zero, arena).node()
+                                    }
+                                },
+                                not_null: {
+                                    let col_min = target.min(arena);
+                                    let col_max = target.max(arena);
 
-                                let min_is_defined = is_stat_defined(col_min.node(), dtype, arena);
-                                let max_is_defined = is_stat_defined(col_max.node(), dtype, arena);
+                                    let min_is_defined = is_stat_defined(col_min.node(), dtype, arena);
+                                    let max_is_defined = is_stat_defined(col_max.node(), dtype, arena);
 
-                                let min_gt = col_min.gt(lv_node, arena);
-                                let min_gt = min_gt.and(min_is_defined, arena);
+                                    let min_gt = col_min.gt(lv_node, arena);
+                                    let min_gt = min_gt.and(min_is_defined, arena);
 
-                                let max_lt = col_max.lt(lv_node, arena);
-                                let max_lt = max_lt.and(max_is_defined, arena);
+                                    let max_lt = col_max.lt(lv_node, arena);
+                                    let max_lt = max_lt.and(max_is_defined, arena);
 
-                                let col_nc = target.null_count(arena);
-                                let len = col!(len);
-                                let all_nulls = col_nc.eq(len, arena);
+                                    let col_nc = target.null_count(arena);
+                                    let len = col!(len);
+                                    let all_nulls = col_nc.eq(len, arena);
 
-                                all_nulls.or(min_gt, arena).or(max_lt, arena).node()
-                            }
-                        ))
+                                    all_nulls.or(min_gt, arena).or(max_lt, arena).node()
+                                }
+                            ))
+                        }
                     },
                     O::NotEq | O::NotEqValidity => {
                         let ((target, _), (lv, lv_node)) =
@@ -347,30 +398,75 @@ fn aexpr_to_skip_batch_predicate_rec(
                         //     null_count(A) == 0 && min(A) == B && max(A) == B, if B.is_not_null(),
                         // }
 
-                        Some(lv_cases!(
-                            lv, lv_node,
-                            null: {
-                                if matches!(op, O::NotEq) {
-                                    lv!(false).node()
-                                } else {
+                        if matches!(dtype, DataType::Boolean) {
+                            // For booleans we use direct equality instead of ordinal
+                            // comparisons. See the O::Eq case above for rationale.
+                            //
+                            //   col(A) != true  -> skip when all values are true
+                            //                       (no false/nulls)
+                            //   col(A) != false -> skip when all values are false
+                            //                       (no true/nulls)
+                            Some(lv_cases!(
+                                lv, lv_node,
+                                null: {
+                                    if matches!(op, O::NotEq) {
+                                        lv!(false).node()
+                                    } else {
+                                        let col_nc = target.null_count(arena);
+                                        let len = col!(len);
+                                        col_nc.eq(len, arena).node()
+                                    }
+                                },
+                                not_null: {
                                     let col_nc = target.null_count(arena);
                                     let len = col!(len);
-                                    col_nc.eq(len, arena).node()
+                                    let all_nulls = col_nc.eq(len, arena);
+
+                                    let col_min = target.min(arena);
+                                    let col_max = target.max(arena);
+
+                                    let both_true = col_min.eq(lv!(true), arena)
+                                        .and(col_max.eq(lv!(true), arena), arena);
+                                    let both_false = col_min.eq(lv!(false), arena)
+                                        .and(col_max.eq(lv!(false), arena), arena);
+
+                                    let truthy = lv_node.into_aexpr_builder();
+                                    let all_true_not = all_nulls.or(both_true, arena);
+                                    let all_false_not = all_nulls.or(both_false, arena);
+
+                                    truthy.if_else(
+                                        all_false_not,
+                                        all_true_not,
+                                        arena,
+                                    ).node()
                                 }
-                            },
-                            not_null: {
-                                let col_min = target.min(arena);
-                                let col_max = target.max(arena);
-                                let min_eq = col_min.eq(lv_node, arena);
-                                let max_eq = col_max.eq(lv_node, arena);
+                            ))
+                        } else {
+                            Some(lv_cases!(
+                                lv, lv_node,
+                                null: {
+                                    if matches!(op, O::NotEq) {
+                                        lv!(false).node()
+                                    } else {
+                                        let col_nc = target.null_count(arena);
+                                        let len = col!(len);
+                                        col_nc.eq(len, arena).node()
+                                    }
+                                },
+                                not_null: {
+                                    let col_min = target.min(arena);
+                                    let col_max = target.max(arena);
+                                    let min_eq = col_min.eq(lv_node, arena);
+                                    let max_eq = col_max.eq(lv_node, arena);
 
-                                let col_nc = target.null_count(arena);
-                                let idx_zero = lv!(idx: 0);
-                                let no_nulls = col_nc.eq(idx_zero, arena);
+                                    let col_nc = target.null_count(arena);
+                                    let idx_zero = lv!(idx: 0);
+                                    let no_nulls = col_nc.eq(idx_zero, arena);
 
-                                no_nulls.and(min_eq, arena).and(max_eq, arena).node()
-                            }
-                        ))
+                                    no_nulls.and(min_eq, arena).and(max_eq, arena).node()
+                                }
+                            ))
+                        }
                     },
                     O::Lt | O::Gt | O::LtEq | O::GtEq => {
                         let ((target, col_node), (lv, lv_node)) =
