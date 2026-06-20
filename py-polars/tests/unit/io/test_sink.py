@@ -484,3 +484,15 @@ def test_sink_using_partition_with_overwrite_27916(tmp_path: Path) -> None:
 
     right = pl.scan_parquet(out_path)
     assert_frame_equal(left, right)
+
+
+@pytest.mark.write_disk
+def test_sink_using_partition_with_overwrite_w_keys_27916(tmp_path: Path) -> None:
+    out_path = tmp_path / "a"
+    pb = pl.PartitionBy(out_path, key="year", overwrite=True)
+
+    pl.LazyFrame({"year": [2026, 2027, 1970], "month": [1, 2, 3]}).sink_parquet(pb)
+    left = pl.LazyFrame({"year": [2026], "month": [5]})
+    left.sink_parquet(pb)
+    right = pl.scan_parquet(out_path)
+    assert_frame_equal(left, right)

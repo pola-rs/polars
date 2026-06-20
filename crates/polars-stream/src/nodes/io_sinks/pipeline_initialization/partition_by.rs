@@ -134,11 +134,12 @@ pub fn start_partition_sink_pipeline(
 
     if std::path::Path::new(file_provider.base_path.as_str()).is_dir() && overwrite {
         for entry in fs::read_dir(file_provider.base_path.as_str())? {
-            let entry = entry?;
-            let path = entry.path();
+            let path = entry?.path();
 
             if path.is_file() {
                 fs::remove_file(path)?;
+            } else if path.is_dir() {
+                fs::remove_dir_all(path)?;
             }
         }
     }
