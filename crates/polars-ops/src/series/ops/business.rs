@@ -83,10 +83,10 @@ pub fn business_day_count(
 
     let out: ChunkedArray<Int32Type> = (0..output_height)
         .map(|i| {
+            let holidays = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
             let start =
                 unsafe { start_dates.get_unchecked(if start_dates.len() == 1 { 0 } else { i }) }?;
             let end = unsafe { end_dates.get_unchecked(if end_dates.len() == 1 { 0 } else { i }) }?;
-            let holidays = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
 
             Some(business_day_count_impl(
                 start,
@@ -273,11 +273,11 @@ pub fn add_business_days(
 
         (0..output_height)
             .map(|i| {
+                let holidays_list = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
                 let start = unsafe {
                     start_dates.get_unchecked(if start_dates.len() == 1 { 0 } else { i })
                 }?;
                 let n = unsafe { n.get_unchecked(if n.len() == 1 { 0 } else { i }) }?;
-                let holidays_list = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
 
                 Some(roll_start_date(start, roll, &week_mask, holidays_list).map(
                     |(start, day_of_week)| {
@@ -413,8 +413,8 @@ pub fn is_business_day(
 
     let out: BooleanChunked = (0..output_height)
         .map(|i| {
-            let date = unsafe { dates.get_unchecked(if dates.len() == 1 { 0 } else { i }) }?;
             let holidays_list = holidays_getter.holidays_at_idx_last_ret_on_oob(i)?;
+            let date = unsafe { dates.get_unchecked(if dates.len() == 1 { 0 } else { i }) }?;
 
             let day_of_week = get_day_of_week(date);
 

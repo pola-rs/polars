@@ -188,6 +188,17 @@ def test_unequal_length_22018() -> None:
         )
 
 
+def test_business_day_count_broadcast_holidays_null_leading_28018() -> None:
+    holiday = date(2023, 11, 23)
+    end = date(2023, 11, 24)
+    df = pl.DataFrame({"start": [holiday, holiday], "end": [None, end]})
+    result = df.select(
+        n=pl.business_day_count("start", "end", holidays=[holiday]),
+    )["n"]
+    expected = pl.Series("n", [None, 0], pl.Int32)
+    assert_series_equal(result, expected)
+
+
 def test_business_day_count_multiple_holidays() -> None:
     base_df = pl.DataFrame(
         {
