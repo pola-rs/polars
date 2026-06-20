@@ -2492,6 +2492,35 @@ def test_full_null_cast_to_empty_struct_23276() -> None:
     assert s.cast(pl.Struct({})).to_list() == [None, None, None]
 
 
+def test_is_sorted_flag() -> None:
+    # an unsorted (order-unknown) Series carries no flag, even if data is ordered
+    s = pl.Series("a", [1, 2, 3])
+    assert s.is_sorted_flag() is False
+
+    # explicitly flagging ascending sets the flag
+    s_asc = s.set_sorted()
+    assert s_asc.is_sorted_flag() is True
+    assert s_asc._s.is_sorted_ascending_flag() is True
+    assert s_asc._s.is_sorted_descending_flag() is False
+
+    # flagging descending sets the flag and reflects descending order
+    s_desc = pl.Series("a", [3, 2, 1]).set_sorted(descending=True)
+    assert s_desc.is_sorted_flag() is True
+    assert s_desc._s.is_sorted_descending_flag() is True
+    assert s_desc._s.is_sorted_ascending_flag() is False
+
+    # is_sorted_flag() must not alter is_sorted()'s full-scan behavior
+    unsorted = pl.Series("a", [2, 1, 3])
+    assert unsorted.is_sorted_flag() is False
+    assert unsorted.is_sorted() is False
+
+    # using a flagged Series in a join works without error
+    left = pl.DataFrame({"key": pl.Series([1, 2, 3]).set_sorted()})
+    right = pl.DataFrame({"key": pl.Series([2, 3, 4]).set_sorted(), "val": ["b", "c", "d"]})
+    joined = left.join(right, on="key", how="inner")
+    assert joined["key"].to_list() == [2, 3]
+
+
 def test_is_sorted_struct_27613() -> None:
     s = pl.Series([{"x": 1, "y": 1}, {"x": 1, "y": 2}, {"x": 2, "y": 0}])
     assert s.is_sorted()

@@ -4182,6 +4182,59 @@ class Series:
         """
         return self._s.is_sorted(descending, nulls_last)
 
+    def is_sorted_flag(self) -> bool:
+        """
+        Check whether the Series carries a 'sorted' flag.
+
+        This returns the value of the internal sorted flag *without* scanning the
+        data, so it is O(1). The flag is set either implicitly by operations that
+        preserve sortedness (e.g. :meth:`sort`) or explicitly via
+        :meth:`set_sorted`. It is `False` for Series whose order is simply unknown,
+        even if the underlying data happens to be sorted.
+
+        This is distinct from :meth:`is_sorted`, which performs a full element
+        scan of the data to determine the actual order.
+
+        Returns
+        -------
+        bool
+            `True` if the Series is flagged as sorted (ascending or descending),
+            `False` otherwise.
+
+        See Also
+        --------
+        is_sorted
+        set_sorted
+
+        Examples
+        --------
+        A freshly constructed Series carries no sorted flag, even when the data is
+        ordered:
+
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> s.is_sorted_flag()
+        False
+
+        Marking it as sorted sets the flag:
+
+        >>> s.set_sorted().is_sorted_flag()
+        True
+
+        The flag is also set for descending order:
+
+        >>> s.set_sorted(descending=True).is_sorted_flag()
+        True
+
+        Setting the flag lets downstream operations such as a join on pre-sorted
+        data use fast paths without a redundant sort:
+
+        >>> left = pl.Series("key", [1, 2, 3]).set_sorted()
+        >>> right = pl.Series("key", [2, 3, 4]).set_sorted()
+        >>> left.is_sorted_flag() and right.is_sorted_flag()
+        True
+        """
+        return self._s.is_sorted_ascending_flag() or self._s.is_sorted_descending_flag()
+
     def not_(self) -> Series:
         """
         Negate a boolean Series.

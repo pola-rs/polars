@@ -23,6 +23,7 @@ Descriptive
     Series.is_not_null
     Series.is_null
     Series.is_sorted
+    Series.is_sorted_flag
     Series.is_unique
     Series.len
     Series.lower_bound
