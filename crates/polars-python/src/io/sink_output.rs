@@ -41,7 +41,7 @@ impl PyFileSinkDestination<'_> {
         #[derive(FromPyObject)]
         struct Extract {
             base_path: Wrap<PlRefPath>,
-            overwrite: bool,
+            clear: bool,
             file_path_provider: Option<Py<PyAny>>,
             key: Option<Vec<PyExpr>>,
             include_key: Option<bool>,
@@ -51,7 +51,7 @@ impl PyFileSinkDestination<'_> {
 
         let Extract {
             base_path,
-            overwrite,
+            clear,
             file_path_provider,
             key,
             include_key,
@@ -105,7 +105,7 @@ impl PyFileSinkDestination<'_> {
 
         Ok(SinkDestination::Partitioned {
             base_path: base_path.0,
-            overwrite,
+            clear,
             file_path_provider,
             partition_strategy,
             max_rows_per_file: max_rows_per_file.unwrap_or(IdxSize::MAX),

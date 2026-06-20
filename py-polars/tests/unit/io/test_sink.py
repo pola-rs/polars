@@ -474,9 +474,9 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_sink_using_partition_with_overwrite_27916(tmp_path: Path) -> None:
+def test_sink_using_partition_with_clear_27916(tmp_path: Path) -> None:
     out_path = tmp_path / "a"
-    pb = pl.PartitionBy(out_path, max_rows_per_file=1, overwrite=True)
+    pb = pl.PartitionBy(out_path, max_rows_per_file=1, clear=True)
 
     pl.LazyFrame({"x": [0, 1]}).sink_parquet(pb)
     left = pl.LazyFrame({"x": [2]})
@@ -487,9 +487,9 @@ def test_sink_using_partition_with_overwrite_27916(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_sink_using_partition_with_overwrite_w_keys_27916(tmp_path: Path) -> None:
+def test_sink_using_partition_with_clear_w_keys_27916(tmp_path: Path) -> None:
     out_path = tmp_path / "a"
-    pb = pl.PartitionBy(out_path, key="year", overwrite=True)
+    pb = pl.PartitionBy(out_path, key="year", clear=True)
 
     pl.LazyFrame({"year": [2026, 2027, 1970], "month": [1, 2, 3]}).sink_parquet(pb)
     left = pl.LazyFrame({"year": [2026], "month": [5]})

@@ -60,7 +60,7 @@ pub fn start_partition_sink_pipeline(
 
     let PartitionedTarget {
         base_path,
-        overwrite,
+        clear,
         mut file_path_provider,
         partitioner,
         hstack_keys,
@@ -132,7 +132,7 @@ pub fn start_partition_sink_pipeline(
         );
     }
 
-    if std::path::Path::new(file_provider.base_path.as_str()).is_dir() && overwrite {
+    if std::path::Path::new(file_provider.base_path.as_str()).is_dir() && clear {
         for entry in fs::read_dir(file_provider.base_path.as_str())? {
             let path = entry?.path();
 

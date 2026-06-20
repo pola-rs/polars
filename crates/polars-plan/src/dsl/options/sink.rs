@@ -57,7 +57,7 @@ pub enum SinkDestination {
     },
     Partitioned {
         base_path: PlRefPath,
-        overwrite: bool,
+        clear: bool,
         file_path_provider: Option<FileProviderType>,
         partition_strategy: PartitionStrategy,
         max_rows_per_file: IdxSize,
@@ -261,7 +261,7 @@ pub enum SinkTypeIR {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedSinkOptions {
     pub base_path: PlRefPath,
-    pub overwrite: bool,
+    pub clear: bool,
     pub file_path_provider: Option<FileProviderType>,
     pub partition_strategy: PartitionStrategy,
     pub file_format: FileWriteFormat,
@@ -372,7 +372,7 @@ impl SinkTypeIR {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedSinkOptionsIR {
     pub base_path: PlRefPath,
-    pub overwrite: bool,
+    pub clear: bool,
     pub file_path_provider: FileProviderType,
     pub partition_strategy: PartitionStrategyIR,
     pub file_format: FileWriteFormat,
@@ -444,7 +444,7 @@ impl PartitionedSinkOptionsIR {
     pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
         let PartitionedSinkOptionsIR {
             base_path,
-            overwrite,
+            clear,
             file_path_provider,
             partition_strategy,
             file_format,
@@ -454,7 +454,7 @@ impl PartitionedSinkOptionsIR {
         } = self;
 
         base_path.hash(state);
-        overwrite.hash(state);
+        clear.hash(state);
         file_path_provider.hash(state);
         partition_strategy.traverse_and_hash(expr_arena, state);
         file_format.hash(state);
