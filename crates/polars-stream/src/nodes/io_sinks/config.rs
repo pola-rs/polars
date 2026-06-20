@@ -86,6 +86,7 @@ impl IOSinkTarget {
 
 pub struct PartitionedTarget {
     pub base_path: PlRefPath,
+    pub overwrite: bool,
     pub file_path_provider: FileProviderType,
     pub partitioner: Partitioner,
     /// How to hstack the keys back into the dataframe (with_columns)

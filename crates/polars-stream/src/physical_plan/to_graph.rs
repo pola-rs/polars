@@ -355,6 +355,7 @@ fn to_graph_rec<'a>(
             options:
                 PartitionedSinkOptionsIR {
                     base_path,
+                    overwrite,
                     file_path_provider,
                     partition_strategy,
                     file_format,
@@ -470,6 +471,7 @@ fn to_graph_rec<'a>(
 
             let target = IOSinkTarget::Partitioned(Box::new(PartitionedTarget {
                 base_path: base_path.clone(),
+                overwrite: *overwrite,
                 file_path_provider: file_path_provider.clone(),
                 partitioner,
                 hstack_keys,

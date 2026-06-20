@@ -1,3 +1,4 @@
+use std::fs;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -59,6 +60,7 @@ pub fn start_partition_sink_pipeline(
 
     let PartitionedTarget {
         base_path,
+        overwrite,
         mut file_path_provider,
         partitioner,
         hstack_keys,
@@ -128,6 +130,17 @@ pub fn start_partition_sink_pipeline(
             io_metrics_is_some,
             sinked_path_info_list.is_some(),
         );
+    }
+
+    if std::path::Path::new(file_provider.base_path.as_str()).is_dir() && overwrite {
+        for entry in fs::read_dir(file_provider.base_path.as_str())? {
+            let entry = entry?;
+            let path = entry.path();
+
+            if path.is_file() {
+                fs::remove_file(path)?;
+            }
+        }
     }
 
     let (partitioned_dfs_tx, partitioned_dfs_rx) = tokio::sync::mpsc::channel(match &partitioner {

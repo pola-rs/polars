@@ -1474,6 +1474,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 },
                 SinkType::Partitioned(PartitionedSinkOptions {
                     base_path,
+                    overwrite,
                     file_path_provider,
                     partition_strategy,
                     file_format,
@@ -1512,6 +1513,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                     let mut options = PartitionedSinkOptionsIR {
                         base_path,
+                        overwrite,
                         file_path_provider: file_path_provider.unwrap_or_else(|| {
                             FileProviderType::Hive(HivePathProvider {
                                 extension: PlSmallStr::from_static(file_format.extension()),
