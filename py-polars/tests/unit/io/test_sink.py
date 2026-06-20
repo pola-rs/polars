@@ -474,7 +474,7 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_sinked_partitioned_overwrite_27916(tmp_path: Path) -> None:
+def test_sink_using_partition_with_overwrite_27916(tmp_path: Path) -> None:
     out_path = tmp_path / "a"
     pb = pl.PartitionBy(out_path, max_rows_per_file=1, overwrite=True)
 
