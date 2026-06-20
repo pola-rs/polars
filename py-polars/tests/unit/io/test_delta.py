@@ -951,11 +951,12 @@ def _df_many_types() -> pl.DataFrame:
     )
 
 
-# TODO: uncomment dtype when fixed
 @pytest.mark.parametrize(
     "expr",
     [
         # Bool (requires deltalake >= 1.5.1)
+        pl.col.bool == True,
+        pl.col.bool == False,
         ~pl.col.bool,
         pl.col.bool <= False,
         pl.col.bool < True,
