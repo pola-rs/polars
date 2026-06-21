@@ -194,6 +194,7 @@ impl SQLExprVisitor<'_> {
                 expr,
                 data_type,
                 format,
+                array: _,
             } => self.visit_cast(expr, data_type, format, kind),
             SQLExpr::Ceil { expr, .. } => Ok(self.visit_expr(expr)?.ceil()),
             SQLExpr::CompoundFieldAccess { root, access_chain } => {
@@ -258,7 +259,7 @@ impl SQLExprVisitor<'_> {
                 if *any {
                     polars_bail!(SQLSyntax: "LIKE ANY is not a supported syntax")
                 }
-                let escape_str = escape_char.as_ref().and_then(|v| match v {
+                let escape_str = escape_char.as_ref().and_then(|v| match &**v {
                     SQLValue::SingleQuotedString(s) => Some(s.clone()),
                     _ => None,
                 });
@@ -274,7 +275,7 @@ impl SQLExprVisitor<'_> {
                 if *any {
                     polars_bail!(SQLSyntax: "ILIKE ANY is not a supported syntax")
                 }
-                let escape_str = escape_char.as_ref().and_then(|v| match v {
+                let escape_str = escape_char.as_ref().and_then(|v| match &**v {
                     SQLValue::SingleQuotedString(s) => Some(s.clone()),
                     _ => None,
                 });

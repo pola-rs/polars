@@ -41,6 +41,23 @@ fn maybe_negate(ae: AExpr, negate: bool, expr_arena: &mut Arena<AExpr>) -> AExpr
     }
 }
 
+fn bool_literal(value: bool) -> AExpr {
+    AExpr::Literal(Scalar::from(value).into())
+}
+
+fn non_negative_count_cmp_literal(op: Operator, literal: i64) -> Option<AExpr> {
+    let value = match op {
+        Operator::Eq if literal < 0 => false,
+        Operator::NotEq if literal < 0 => true,
+        Operator::Gt if literal < 0 => true,
+        Operator::GtEq if literal <= 0 => true,
+        Operator::Lt if literal <= 0 => false,
+        Operator::LtEq if literal < 0 => false,
+        _ => return None,
+    };
+    Some(bool_literal(value))
+}
+
 fn optimize_len_or_null_count_cmp(
     left: Node,
     op: Operator,
@@ -79,6 +96,10 @@ fn optimize_len_or_null_count_cmp(
         } if input.len() == 1 => CountCmpInput::NullCount(input[0].node()),
         _ => return None,
     };
+
+    if let Some(out) = non_negative_count_cmp_literal(op, literal) {
+        return Some(out);
+    }
 
     match input {
         CountCmpInput::Len(input) => {
