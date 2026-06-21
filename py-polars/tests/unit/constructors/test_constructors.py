@@ -1907,3 +1907,36 @@ def test_dataframe_height() -> None:
 
     with pytest.raises(AssertionError):
         assert_frame_equal(pl.DataFrame(), pl.DataFrame(height=10))
+
+
+class _BothDunders:
+    """Object exposing both Arrow PyCapsule dunders to test priority."""
+
+    def __init__(self) -> None:
+        self.called: list[str] = []
+        inner = pa.table({"x": [1, 2, 3]})
+
+        def _stream(*args: object, **kwargs: object) -> object:
+            self.called.append("__arrow_c_stream__")
+            return inner.__arrow_c_stream__(*args, **kwargs)
+
+        def _array(*args: object, **kwargs: object) -> object:
+            self.called.append("__arrow_c_array__")
+            return inner.__arrow_c_array__(*args, **kwargs)
+
+        self._stream = _stream
+        self._array = _array
+
+    def __arrow_c_stream__(self, requested_schema: object = None) -> object:
+        return self._stream(requested_schema)
+
+    def __arrow_c_array__(self, requested_schema: object = None) -> object:
+        return self._array(requested_schema)
+
+
+def test_pycapsule_priority_stream_over_array_27921() -> None:
+    obj = _BothDunders()
+    result = pl.DataFrame(obj)
+    assert obj.called == ["__arrow_c_stream__"], f"Expected stream, got {obj.called}"
+    expected = pl.DataFrame({"x": [1, 2, 3]})
+    assert_frame_equal(result, expected)
