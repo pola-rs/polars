@@ -6,7 +6,7 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use num_traits::{AsPrimitive, Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::{CustomIterTools, NoNull};
+use polars_core::utils::NoNull;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
