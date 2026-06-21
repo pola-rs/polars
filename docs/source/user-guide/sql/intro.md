@@ -115,8 +115,8 @@ For example, here is a non-exhaustive list of some of the supported functionalit
 - Write Common Table Expressions (CTE's) such as: `WITH tablename AS`
 - Explain a query: `EXPLAIN SELECT ...`
 - List registered tables: `SHOW TABLES`
-- Drop a table: `DROP TABLE tablename`
-- Truncate a table: `TRUNCATE TABLE tablename`
+- Drop a table: `DROP TABLE [IF EXISTS] tablename`
+- Truncate a table: `TRUNCATE TABLE [IF EXISTS] tablename`
 
 The following are some features that are not yet supported:
 
