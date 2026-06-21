@@ -547,6 +547,8 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
         window_before_qualify: _, // only meaningful with `qualify`
         value_table_mode,         // changes what a row is: bail
         connect_by,               // hierarchical recursion: bail
+        optimizer_hints,          // unsupported: bail
+        select_modifiers,         // unsupported: bail
         flavor: _,                // surface syntax only
     } = select.as_ref();
     let no_group_by = matches!(
@@ -560,9 +562,11 @@ fn eligible_subquery_select(subquery: &Query) -> Option<&Select> {
         || having.is_some()
         || qualify.is_some()
         || prewhere.is_some()
-        || connect_by.is_some()
+        || !connect_by.is_empty()
         || value_table_mode.is_some()
         || !lateral_views.is_empty()
+        || !optimizer_hints.is_empty()
+        || select_modifiers.is_some()
     {
         return None;
     }

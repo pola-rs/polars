@@ -35,7 +35,7 @@ unsafe fn aligned_array<T: Element + NativeType>(
 
     let ptr = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
-        PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
+        npyffi::get_type_object(py, npyffi::NpyTypes::PyArray_Type),
         T::get_dtype(py).into_dtype_ptr(),
         dims.ndim_cint(),
         dims.as_dims_ptr(),
@@ -56,7 +56,7 @@ unsafe fn aligned_array<T: Element + NativeType>(
 ///   - For CPython: Get reference counter.
 ///   - For PyPy: Reference counters for a live PyPy object = refcnt + 2 << 60.
 fn get_refcnt<T>(pyarray: &Bound<'_, PyArray1<T>>) -> isize {
-    let refcnt = pyarray.get_refcnt();
+    let refcnt = unsafe { pyo3::ffi::Py_REFCNT(pyarray.as_ptr()) };
     #[cfg(target_pointer_width = "64")]
     if refcnt >= (2 << 60) {
         return refcnt - (2 << 60);

@@ -10,10 +10,11 @@ use polars_plan::prelude::*;
 use polars_utils::aliases::{PlHashSet, PlIndexSet};
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, Delete, Distinct,
-    ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg, GroupByExpr, Ident,
-    JoinConstraint, JoinOperator, LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName,
-    ObjectType, OrderBy, OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
+    BinaryOperator as SQLBinaryOperator, CreateTable, CreateTableLikeKind, CreateTableOptions,
+    Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, Fetch, FromTable, FunctionArg,
+    GroupByExpr, HiveDistributionStyle, HiveFormat, Ident, JoinConstraint, JoinOperator,
+    LimitClause, NamedWindowDefinition, NamedWindowExpr, ObjectName, ObjectType, OrderBy,
+    OrderByKind, Query, RenameSelectItem, Select, SelectFlavor, SelectItem,
     SelectItemQualifiedWildcardKind, SetExpr, SetOperator, SetQuantifier, Statement, TableAlias,
     TableFactor, TableWithJoins, Truncate, UnaryOperator as SQLUnaryOperator, Value as SQLValue,
     ValueWithSpan, Values, Visit, WildcardAdditionalOptions, WindowSpec,
@@ -507,7 +508,7 @@ impl SQLContext {
                 explicit_row: _,
                 rows,
                 value_keyword: _,
-            }) => self.process_values(rows),
+            }) => self.process_values(rows.iter().map(|p| &p.content)),
 
             SetExpr::Table(tbl) => {
                 if let Some(table_name) = tbl.table_name.as_ref() {
@@ -697,8 +698,11 @@ impl SQLContext {
         Ok(lf)
     }
 
-    fn process_values(&mut self, values: &[Vec<SQLExpr>]) -> PolarsResult<LazyFrame> {
-        let frame_rows: Vec<Row> = values.iter().map(|row| {
+    fn process_values<'a>(
+        &mut self,
+        values: impl Iterator<Item = &'a Vec<SQLExpr>>,
+    ) -> PolarsResult<LazyFrame> {
+        let frame_rows: Vec<Row> = values.map(|row| {
             let row_data: Result<Vec<_>, _> = row.iter().map(|expr| {
                 let expr = parse_sql_expr(expr, self, None)?;
                 match expr {
@@ -743,14 +747,37 @@ impl SQLContext {
 
     // DROP TABLE <tbl>
     fn execute_drop_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
-        match stmt {
-            Statement::Drop { names, .. } => {
-                names.iter().for_each(|name| {
-                    self.table_map.write().unwrap().remove(&name.to_string());
-                });
-                Ok(DataFrame::empty().lazy())
-            },
-            _ => polars_bail!(SQLInterface: "unexpected statement type; expected DROP"),
+        // Destructure exhaustively so new sqlparser fields surface as compile errors.
+        if let Statement::Drop {
+            object_type: _,
+            names,
+            if_exists,
+
+            // Unsupported modifiers
+            cascade,
+            restrict,
+            purge,
+            temporary,
+            table,
+        } = stmt
+        {
+            polars_ensure!(!cascade, SQLInterface: "`DROP ... CASCADE` is not supported");
+            polars_ensure!(!purge, SQLInterface: "`DROP ... PURGE` is not supported");
+            polars_ensure!(!restrict, SQLInterface: "`DROP ... RESTRICT` is not supported");
+            polars_ensure!(!temporary, SQLInterface: "`DROP TEMPORARY` is not supported");
+            polars_ensure!(table.is_none(), SQLInterface: "`DROP ... ON <table>` is not supported");
+
+            for name in names {
+                let tbl = name.to_string();
+                // `DROP TABLE IF EXISTS <tbl>` is a no-op on a missing table;
+                // otherwise dropping a table that doesn't exist is an error.
+                if self.table_map.write().unwrap().remove(&tbl).is_none() && !if_exists {
+                    polars_bail!(SQLInterface: "table '{}' does not exist", tbl);
+                }
+            }
+            Ok(DataFrame::empty().lazy())
+        } else {
+            polars_bail!(SQLInterface: "unexpected statement type; expected DROP")
         }
     }
 
@@ -765,6 +792,8 @@ impl SQLContext {
             order_by,
             limit,
             delete_token: _,
+            optimizer_hints: _,
+            output: _,
         }) = stmt
         {
             let error_message: Option<&'static str> = if !tables.is_empty() {
@@ -814,9 +843,17 @@ impl SQLContext {
         if let Statement::Truncate(Truncate {
             table_names,
             partitions,
-            ..
+            table: _, // whether the `TABLE` keyword was present: cosmetic
+            if_exists,
+            identity,
+            cascade,
+            on_cluster,
         }) = stmt
         {
+            polars_ensure!(identity.is_none(), SQLInterface: "`TRUNCATE ... RESTART/CONTINUE IDENTITY` is not supported");
+            polars_ensure!(cascade.is_none(), SQLInterface: "`TRUNCATE ... CASCADE/RESTRICT` is not supported");
+            polars_ensure!(on_cluster.is_none(), SQLInterface: "`TRUNCATE ... ON CLUSTER` is not supported");
+
             match partitions {
                 None => {
                     if table_names.len() != 1 {
@@ -826,6 +863,9 @@ impl SQLContext {
                     if let Some(lf) = self.table_map.write().unwrap().get_mut(&tbl) {
                         *lf = lf.clone().clear();
                         Ok(lf.clone())
+                    } else if *if_exists {
+                        // `TRUNCATE TABLE IF EXISTS <tbl>` is a no-op on a missing table.
+                        Ok(DataFrame::empty().lazy())
                     } else {
                         polars_bail!(SQLInterface: "table '{}' does not exist", tbl);
                     }
@@ -1042,7 +1082,9 @@ impl SQLContext {
             ref exclude,
             ref into,
             ref lateral_views,
+            ref optimizer_hints,
             ref prewhere,
+            ref select_modifiers,
             ref sort_by,
             ref top,
             ref value_table_mode,
@@ -1050,15 +1092,180 @@ impl SQLContext {
 
         // Raise specific error messages for unsupported attributes
         polars_ensure!(cluster_by.is_empty(), SQLInterface: "`CLUSTER BY` clause is not supported");
-        polars_ensure!(connect_by.is_none(), SQLInterface: "`CONNECT BY` clause is not supported");
+        polars_ensure!(connect_by.is_empty(), SQLInterface: "`CONNECT BY` clause is not supported");
         polars_ensure!(distribute_by.is_empty(), SQLInterface: "`DISTRIBUTE BY` clause is not supported");
         polars_ensure!(exclude.is_none(), SQLInterface: "`EXCLUDE` clause is not supported");
         polars_ensure!(into.is_none(), SQLInterface: "`SELECT INTO` clause is not supported");
         polars_ensure!(lateral_views.is_empty(), SQLInterface: "`LATERAL VIEW` clause is not supported");
+        polars_ensure!(optimizer_hints.is_empty(), SQLInterface: "optimizer hints are not supported");
         polars_ensure!(prewhere.is_none(), SQLInterface: "`PREWHERE` clause is not supported");
+        polars_ensure!(select_modifiers.is_none(), SQLInterface: "`SELECT` modifiers are not supported");
         polars_ensure!(sort_by.is_empty(), SQLInterface: "`SORT BY` clause is not supported; use `ORDER BY` instead");
         polars_ensure!(top.is_none(), SQLInterface: "`TOP` clause is not supported; use `LIMIT` instead");
         polars_ensure!(value_table_mode.is_none(), SQLInterface: "`SELECT AS VALUE/STRUCT` is not supported");
+
+        Ok(())
+    }
+
+    /// Raise specific errors for any unsupported clauses on a plain table relation.
+    fn validate_table_factor(&self, factor: &TableFactor) -> PolarsResult<()> {
+        // Destructure exhaustively; that way if/when new fields are added in future
+        // sqlparser versions, we'll get a compilation error and can handle them
+        let TableFactor::Table {
+            // Supported/handled in `get_table`
+            name: _,
+            alias: _,
+            args: _,
+
+            // Unsupported dialect-specific modifiers
+            ref index_hints,
+            ref json_path,
+            ref partitions,
+            ref sample,
+            ref version,
+            ref with_hints,
+            with_ordinality,
+        } = *factor
+        else {
+            return Ok(());
+        };
+
+        polars_ensure!(!with_ordinality, SQLInterface: "`WITH ORDINALITY` is not supported");
+        polars_ensure!(index_hints.is_empty(), SQLInterface: "table index hints are not supported");
+        polars_ensure!(json_path.is_none(), SQLInterface: "table JSON path access is not supported");
+        polars_ensure!(partitions.is_empty(), SQLInterface: "table `PARTITION` selection is not supported");
+        polars_ensure!(sample.is_none(), SQLInterface: "table `SAMPLE` clause is not supported");
+        polars_ensure!(version.is_none(), SQLInterface: "table version (time-travel) qualifiers are not supported");
+        polars_ensure!(with_hints.is_empty(), SQLInterface: "table `WITH (...)` hints are not supported");
+
+        Ok(())
+    }
+
+    /// Check that a CREATE TABLE statement only carries supported clauses.
+    fn validate_create_table(&self, create_table: &CreateTable) -> PolarsResult<()> {
+        // Destructure exhaustively; that way if/when new fields are added in future
+        // sqlparser versions, we'll get a compilation error and can handle them
+        let CreateTable {
+            // Supported/handled in `execute_create_table`
+            name: _,
+            columns: _,
+            query: _,
+            like: _,
+            if_not_exists: _, // our CREATE is idempotent-friendly already
+
+            // Unsupported `CREATE [...] TABLE` modifiers
+            ref copy_grants,
+            ref dynamic,
+            ref external,
+            ref global,
+            ref iceberg,
+            ref or_replace,
+            ref require_user,
+            ref snapshot,
+            ref strict,
+            ref temporary,
+            ref transient,
+            ref volatile,
+            ref without_rowid,
+
+            // Unsupported table definition / storage clauses
+            ref backup,
+            ref base_location,
+            ref catalog,
+            ref catalog_sync,
+            ref change_tracking,
+            ref clone,
+            ref cluster_by,
+            ref clustered_by,
+            ref comment,
+            ref constraints,
+            ref data_retention_time_in_days,
+            ref default_ddl_collation,
+            ref distkey,
+            ref diststyle,
+            ref enable_schema_evolution,
+            ref external_volume,
+            ref file_format,
+            ref for_values,
+            ref hive_distribution,
+            ref hive_formats,
+            ref inherits,
+            ref initialize,
+            ref location,
+            ref max_data_extension_time_in_days,
+            ref on_cluster,
+            ref on_commit,
+            ref order_by,
+            ref partition_by,
+            ref partition_of,
+            ref primary_key,
+            ref refresh_mode,
+            ref sortkey,
+            ref storage_serialization_policy,
+            ref table_options,
+            ref target_lag,
+            ref version,
+            ref warehouse,
+            ref with_aggregation_policy,
+            ref with_row_access_policy,
+            ref with_storage_lifecycle_policy,
+            ref with_tags,
+        } = *create_table;
+
+        polars_ensure!(!copy_grants, SQLInterface: "`COPY GRANTS` is not supported");
+        polars_ensure!(!dynamic, SQLInterface: "`CREATE DYNAMIC TABLE` is not supported");
+        polars_ensure!(!external, SQLInterface: "`CREATE EXTERNAL TABLE` is not supported");
+        polars_ensure!(!iceberg, SQLInterface: "`CREATE ICEBERG TABLE` is not supported");
+        polars_ensure!(!or_replace, SQLInterface: "`CREATE OR REPLACE TABLE` is not supported");
+        polars_ensure!(!require_user, SQLInterface: "`REQUIRE USER` is not supported");
+        polars_ensure!(!snapshot, SQLInterface: "`CREATE SNAPSHOT TABLE` is not supported");
+        polars_ensure!(!strict, SQLInterface: "`STRICT` tables are not supported");
+        polars_ensure!(!temporary, SQLInterface: "`CREATE TEMPORARY TABLE` is not supported");
+        polars_ensure!(!transient, SQLInterface: "`CREATE TRANSIENT TABLE` is not supported");
+        polars_ensure!(!volatile, SQLInterface: "`CREATE VOLATILE TABLE` is not supported");
+        polars_ensure!(!without_rowid, SQLInterface: "`WITHOUT ROWID` is not supported");
+        polars_ensure!(backup.is_none(), SQLInterface: "`BACKUP` is not supported");
+        polars_ensure!(base_location.is_none(), SQLInterface: "`BASE_LOCATION` is not supported");
+        polars_ensure!(catalog.is_none(), SQLInterface: "`CATALOG` is not supported");
+        polars_ensure!(catalog_sync.is_none(), SQLInterface: "`CATALOG_SYNC` is not supported");
+        polars_ensure!(change_tracking.is_none(), SQLInterface: "`CHANGE_TRACKING` is not supported");
+        polars_ensure!(clone.is_none(), SQLInterface: "`CREATE TABLE ... CLONE` is not supported");
+        polars_ensure!(cluster_by.is_none(), SQLInterface: "table `CLUSTER BY` clauses are not supported");
+        polars_ensure!(clustered_by.is_none(), SQLInterface: "table `CLUSTERED BY` clauses are not supported");
+        polars_ensure!(comment.is_none(), SQLInterface: "table `COMMENT` clauses are not supported");
+        polars_ensure!(constraints.is_empty(), SQLInterface: "table constraints are not supported");
+        polars_ensure!(data_retention_time_in_days.is_none(), SQLInterface: "`DATA_RETENTION_TIME_IN_DAYS` is not supported");
+        polars_ensure!(default_ddl_collation.is_none(), SQLInterface: "`DEFAULT_DDL_COLLATION` is not supported");
+        polars_ensure!(distkey.is_none(), SQLInterface: "`DISTKEY` is not supported");
+        polars_ensure!(diststyle.is_none(), SQLInterface: "`DISTSTYLE` is not supported");
+        polars_ensure!(enable_schema_evolution.is_none(), SQLInterface: "`ENABLE_SCHEMA_EVOLUTION` is not supported");
+        polars_ensure!(external_volume.is_none(), SQLInterface: "`EXTERNAL_VOLUME` is not supported");
+        polars_ensure!(file_format.is_none(), SQLInterface: "table `STORED AS` clauses are not supported");
+        polars_ensure!(for_values.is_none(), SQLInterface: "`FOR VALUES` clauses are not supported");
+        polars_ensure!(global.is_none(), SQLInterface: "`CREATE GLOBAL/LOCAL TABLE` is not supported");
+        polars_ensure!(hive_formats.as_ref().is_none_or(|f| *f == HiveFormat::default()), SQLInterface: "Hive table format clauses are not supported");
+        polars_ensure!(inherits.is_none(), SQLInterface: "table `INHERITS` clauses are not supported");
+        polars_ensure!(initialize.is_none(), SQLInterface: "`INITIALIZE` is not supported");
+        polars_ensure!(location.is_none(), SQLInterface: "table `LOCATION` clauses are not supported");
+        polars_ensure!(matches!(hive_distribution, HiveDistributionStyle::NONE), SQLInterface: "Hive table distribution clauses are not supported");
+        polars_ensure!(matches!(table_options, CreateTableOptions::None), SQLInterface: "table `WITH`/`OPTIONS` clauses are not supported");
+        polars_ensure!(max_data_extension_time_in_days.is_none(), SQLInterface: "`MAX_DATA_EXTENSION_TIME_IN_DAYS` is not supported");
+        polars_ensure!(on_cluster.is_none(), SQLInterface: "`ON CLUSTER` clauses are not supported");
+        polars_ensure!(on_commit.is_none(), SQLInterface: "`ON COMMIT` clauses are not supported");
+        polars_ensure!(order_by.is_none(), SQLInterface: "table `ORDER BY` clauses are not supported");
+        polars_ensure!(partition_by.is_none(), SQLInterface: "table `PARTITION BY` clauses are not supported");
+        polars_ensure!(partition_of.is_none(), SQLInterface: "`PARTITION OF` clauses are not supported");
+        polars_ensure!(primary_key.is_none(), SQLInterface: "inline `PRIMARY KEY` clauses are not supported");
+        polars_ensure!(refresh_mode.is_none(), SQLInterface: "`REFRESH_MODE` is not supported");
+        polars_ensure!(sortkey.is_none(), SQLInterface: "`SORTKEY` is not supported");
+        polars_ensure!(storage_serialization_policy.is_none(), SQLInterface: "`STORAGE_SERIALIZATION_POLICY` is not supported");
+        polars_ensure!(target_lag.is_none(), SQLInterface: "`TARGET_LAG` is not supported");
+        polars_ensure!(version.is_none(), SQLInterface: "table version (time-travel) qualifiers are not supported");
+        polars_ensure!(warehouse.is_none(), SQLInterface: "`WAREHOUSE` is not supported");
+        polars_ensure!(with_aggregation_policy.is_none(), SQLInterface: "`WITH AGGREGATION POLICY` is not supported");
+        polars_ensure!(with_row_access_policy.is_none(), SQLInterface: "`WITH ROW ACCESS POLICY` is not supported");
+        polars_ensure!(with_storage_lifecycle_policy.is_none(), SQLInterface: "`WITH STORAGE LIFECYCLE POLICY` is not supported");
+        polars_ensure!(with_tags.is_none(), SQLInterface: "`WITH TAG` is not supported");
 
         Ok(())
     }
@@ -1479,7 +1686,8 @@ impl SQLContext {
                     UniqueKeepStrategy::First,
                 ));
             },
-            None => lf,
+            // Note: `ALL` explicitly keeps duplicate rows (the default), so it's a no-op.
+            Some(Distinct::All) | None => lf,
         };
         Ok(lf)
     }
@@ -1513,6 +1721,9 @@ impl SQLContext {
                     items.push(ProjectionItem::Exprs(vec![
                         expr.alias(PlSmallStr::from_str(alias.value.as_str())),
                     ]));
+                },
+                SelectItem::ExprWithAliases { .. } => {
+                    polars_bail!(SQLSyntax: "multiple aliases per expression are not supported: {:?}", select_item)
                 },
                 SelectItem::QualifiedWildcard(kind, wildcard_options) => match kind {
                     SelectItemQualifiedWildcardKind::ObjectName(obj_name) => {
@@ -1845,15 +2056,17 @@ impl SQLContext {
     }
 
     fn execute_create_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
-        if let Statement::CreateTable(CreateTable {
-            if_not_exists,
-            name,
-            query,
-            columns,
-            like,
-            ..
-        }) = stmt
-        {
+        if let Statement::CreateTable(create_table) = stmt {
+            self.validate_create_table(create_table)?;
+            let CreateTable {
+                if_not_exists,
+                name,
+                query,
+                columns,
+                like,
+                ..
+            } = create_table;
+
             let tbl_name = name.0.first().unwrap().as_ident().unwrap().value.as_str();
             if *if_not_exists && self.table_map.read().unwrap().contains_key(tbl_name) {
                 polars_bail!(SQLInterface: "relation '{}' already exists", tbl_name);
@@ -1927,6 +2140,7 @@ impl SQLContext {
             TableFactor::Table {
                 name, alias, args, ..
             } => {
+                self.validate_table_factor(relation)?;
                 if let Some(args) = args {
                     return self.execute_table_function(name, alias, &args.args);
                 }
@@ -1948,8 +2162,11 @@ impl SQLContext {
                 lateral,
                 subquery,
                 alias,
+                sample,
             } => {
-                polars_ensure!(!(*lateral), SQLInterface: "LATERAL not supported");
+                polars_ensure!(!(*lateral), SQLInterface: "`LATERAL` clause is not supported");
+                polars_ensure!(sample.is_none(), SQLInterface: "table `SAMPLE` clause is not supported");
+
                 // Execute the subquery in isolation so that outer join state
                 // doesn't leak into it and cause spurious ambiguous-column errors
                 if let Some(alias) = alias {
@@ -1971,7 +2188,7 @@ impl SQLContext {
                 array_exprs,
                 with_offset,
                 with_offset_alias: _,
-                ..
+                with_ordinality,
             } => {
                 if let Some(alias) = alias {
                     let column_names: Vec<Option<PlSmallStr>> = alias
@@ -2017,7 +2234,7 @@ impl SQLContext {
 
                     let lf = DataFrame::new_infer_height(column_series)?.lazy();
 
-                    if *with_offset {
+                    if *with_offset || *with_ordinality {
                         // TODO: support 'WITH ORDINALITY|OFFSET' modifier.
                         polars_bail!(SQLInterface: "UNNEST tables do not (yet) support WITH ORDINALITY|OFFSET");
                     }
@@ -2503,13 +2720,13 @@ impl SQLContext {
         // SELECT * EXCLUDE
         if let Some(items) = &options.opt_exclude {
             match items {
-                ExcludeSelectItem::Single(ident) => {
-                    modifiers.exclude.insert(ident.value.clone());
+                ExcludeSelectItem::Single(name) => {
+                    modifiers.exclude.insert(object_name_to_string(name));
                 },
-                ExcludeSelectItem::Multiple(idents) => {
+                ExcludeSelectItem::Multiple(names) => {
                     modifiers
                         .exclude
-                        .extend(idents.iter().map(|i| i.value.clone()));
+                        .extend(names.iter().map(object_name_to_string));
                 },
             };
         }
@@ -2616,6 +2833,16 @@ fn expand_exprs(expr: Expr, schema: &SchemaRef) -> Vec<Expr> {
 
 fn is_regex_colname(nm: &str) -> bool {
     nm.starts_with('^') && nm.ends_with('$')
+}
+
+/// Render an `ObjectName` (dot-separated identifier parts) back to a string.
+fn object_name_to_string(name: &ObjectName) -> String {
+    name.0
+        .iter()
+        .filter_map(|p| p.as_ident())
+        .map(|i| i.value.as_str())
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 /// Extract column names from a USING clause in a JoinOperator (if present).
