@@ -1,5 +1,4 @@
 //! Declares [`TrustedLen`].
-use std::iter::Scan;
 use std::slice::{Iter, IterMut};
 
 /// An iterator of known, fixed size.
@@ -73,13 +72,6 @@ unsafe impl<T> TrustedLen for std::ops::Range<T> where std::ops::Range<T>: Itera
 unsafe impl<T> TrustedLen for std::ops::RangeInclusive<T> where std::ops::RangeInclusive<T>: Iterator
 {}
 unsafe impl<A: TrustedLen> TrustedLen for std::iter::StepBy<A> {}
-
-unsafe impl<I, St, F, B> TrustedLen for Scan<I, St, F>
-where
-    F: FnMut(&mut St, I::Item) -> Option<B>,
-    I: TrustedLen,
-{
-}
 
 unsafe impl<T: Copy> TrustedLen for polars_buffer::buffer::IntoIter<T> {}
 

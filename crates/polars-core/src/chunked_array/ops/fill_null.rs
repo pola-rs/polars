@@ -148,7 +148,7 @@ where
             *prev = v.map(|v| v.into()).unwrap_or(*prev);
             Some(*prev)
         })
-        .collect_trusted();
+        .collect();
 
     // Compute bitmask.
     let num_start_nulls = ca.first_non_null().unwrap_or(ca.len());
@@ -170,14 +170,18 @@ where
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
-    let values: Vec<T::ZeroablePhysical<'a>> = ca
-        .iter()
-        .rev()
-        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
-            *prev = v.map(|v| v.into()).unwrap_or(*prev);
-            Some(*prev)
-        })
-        .collect_reversed();
+    let values: Vec<T::ZeroablePhysical<'a>> = {
+        let mut vals: Vec<_> = ca
+            .iter()
+            .rev()
+            .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
+                *prev = v.map(|v| v.into()).unwrap_or(*prev);
+                Some(*prev)
+            })
+            .collect();
+        vals.reverse();
+        vals
+    };
 
     // Compute bitmask.
     let num_end_nulls = ca

@@ -89,8 +89,12 @@ where
     F: Fn(&mut S, Option<T::Native>) -> Option<Option<T::Native>>,
 {
     let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, update).collect_trusted(),
-        true => ca.iter().rev().scan(init, update).collect_reversed(),
+        false => ca.iter().scan(init, update).collect(),
+        true => {
+            let mut out: Vec<_> = ca.iter().rev().scan(init, update).collect();
+            out.reverse();
+            out.into_iter().collect()
+        },
     };
     out.with_name(ca.name().clone())
 }
