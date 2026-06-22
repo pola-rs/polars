@@ -751,7 +751,48 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             column.clone(),
                         )),
                         MissingColumnsPolicyOrExpr::InsertWith(expr) => {
-                            exprs.push(Expr::Alias(Arc::new(expr.clone()), column.clone()))
+                            // Validate expression dtype against the schema, same as for existing columns.
+                            let eir = to_expr_ir(
+                                expr.clone(),
+                                &mut ExprToIRContext::new_with_opt_eager(
+                                    ctxt.expr_arena,
+                                    &input_schema,
+                                    ctxt.opt_flags,
+                                ),
+                            )?;
+                            // Materialize Unknown dtypes (e.g., dyn int) to concrete types.
+                            let from_dtype = eir
+                                .field(&input_schema, ctxt.expr_arena)?
+                                .dtype
+                                .materialize_unknown(true)?;
+
+                            let final_expr = if &from_dtype == dtype {
+                                expr.clone()
+                            } else {
+                                // Apply the same casting policy as for existing columns with dtype mismatch.
+                                let policy = CastColumnsPolicy {
+                                    integer_upcast: per_column.integer_cast
+                                        == UpcastOrForbid::Upcast,
+                                    float_upcast: per_column.float_cast == UpcastOrForbid::Upcast,
+                                    missing_struct_fields: per_column.missing_struct_fields,
+                                    extra_struct_fields: per_column.extra_struct_fields,
+                                    ..Default::default()
+                                };
+
+                                // This will raise an error if the cast is not allowed by policy.
+                                let should_cast =
+                                    policy.should_cast_column(column, dtype, &from_dtype)?;
+
+                                let mut final_expr = expr.clone();
+                                if should_cast {
+                                    final_expr = final_expr.cast_with_options(
+                                        dtype.clone(),
+                                        CastOptions::NonStrict,
+                                    );
+                                }
+                                final_expr
+                            };
+                            exprs.push(Expr::Alias(Arc::new(final_expr), column.clone()))
                         },
                     },
                     Some(input_dtype) if dtype == input_dtype => {
