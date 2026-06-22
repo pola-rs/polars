@@ -66,7 +66,7 @@ def _scan_pyarrow_dataset_impl(
     n_rows: int | None = None,
     snapshot_id: int | None = None,
     **kwargs: Any,  # noqa: ARG001
-) -> tuple[Iterator[DataFrame], bool]:
+) -> tuple[Iterable[DataFrame], bool]:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -121,7 +121,7 @@ def _scan_pyarrow_dataset_impl(
 
     batches = scan.to_arrow_batch_reader()
 
-    return ((from_arrow(batch) for batch in batches), False)  # type: ignore[misc]
+    return ((from_arrow(batch) for batch in batches), False)
 
 
 def _ensure_boolean_expression(result: Any) -> Any:

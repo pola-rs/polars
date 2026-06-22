@@ -2450,7 +2450,7 @@ def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
-def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: str) -> None:
+def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: Any) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
