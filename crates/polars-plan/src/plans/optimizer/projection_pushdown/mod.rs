@@ -1766,14 +1766,30 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
-                if !projected_names.shift_remove(name) {
+                let Some(row_index_idx) = projected_names.get_index_of(name) else {
                     unlink_current_node_and_return!(*input)
+                };
+
+                if let Some(names) = out_edge.compute_projected_names(&current_node_schema)
+                    && let Some(schema) = compute_simple_projection_schema(
+                        names.as_slice(),
+                        &current_node_schema,
+                        false,
+                    )
+                {
+                    out_edge
+                        .parent_key_and_port_mut()
+                        .attach_simple_projection(Arc::new(schema), storage);
+                } else {
+                    debug_assert_eq!(row_index_idx, 0);
                 }
 
-                let names = out_edge.take_names();
+                let mut projected_names = out_edge.take_names().unwrap();
+                projected_names.shift_remove_index(row_index_idx);
+
                 *edges.inputs()[0].projection_state_mut() = ProjectionState {
                     projection: Projection::Names,
-                    names,
+                    names: Some(projected_names),
                 };
             },
 
