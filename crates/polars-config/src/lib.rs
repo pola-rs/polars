@@ -3,14 +3,14 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
 mod engine;
 mod parse;
+mod resolve_mode;
 mod spill_format;
 pub mod spill_path;
-mod spill_policy;
 
 pub use engine::Engine;
 use polars_error::polars_warn;
+pub use resolve_mode::ResolveMode;
 pub use spill_format::SpillFormat;
-pub use spill_policy::SpillPolicy;
 
 // Public.
 const VERBOSE: &str = "POLARS_VERBOSE";
@@ -44,6 +44,9 @@ const DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH: u64 = 64;
 const PRUNE_PARQUET_METADATA: &str = "POLARS_PRUNE_PARQUET_METADATA";
 const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
 
+const RESOLVE_METADATA_LEVEL: &str = "POLARS_RESOLVE_METADATA_LEVEL";
+const DEFAULT_RESOLVE_METADATA_LEVEL: ResolveMode = ResolveMode::RowCounts;
+
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
 const DEFAULT_VERBOSE_SENSITIVE: bool = false;
@@ -57,17 +60,25 @@ const DEFAULT_IMPORT_INTERVAL_AS_STRUCT: bool = false;
 const OOC_DRIFT_THRESHOLD: &str = "POLARS_OOC_DRIFT_THRESHOLD";
 const DEFAULT_OOC_DRIFT_THRESHOLD: u64 = 4 * 1024 * 1024;
 
-const OOC_SPILL_POLICY: &str = "POLARS_OOC_SPILL_POLICY";
-const DEFAULT_OOC_SPILL_POLICY: SpillPolicy = SpillPolicy::NoSpill;
-
+// Unused at the moment, always IPC.
 const OOC_SPILL_FORMAT: &str = "POLARS_OOC_SPILL_FORMAT";
 const DEFAULT_OOC_SPILL_FORMAT: SpillFormat = SpillFormat::Ipc;
 
+const OOC_SPILL_COMPRESSION_LEVEL: &str = "POLARS_OOC_SPILL_COMPRESSION_LEVEL";
+const DEFAULT_OOC_SPILL_COMPRESSION_LEVEL: u64 = 0;
+
+// Unused at the moment.
 const OOC_MEMORY_BUDGET_FRACTION: &str = "POLARS_OOC_MEMORY_BUDGET_FRACTION";
 const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
 
+const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
+const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
+
 const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
-const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 100 * 1024; // 100 KB
+const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KB
+
+const OOC_LOG_METRICS: &str = "POLARS_OOC_LOG_METRICS";
+const DEFAULT_OOC_LOG_METRICS: bool = false;
 
 const JOIN_SAMPLE_LIMIT: &str = "POLARS_JOIN_SAMPLE_LIMIT";
 const DEFAULT_JOIN_SAMPLE_LIMIT: u64 = 10_000_000;
@@ -93,6 +104,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
     PRUNE_PARQUET_METADATA,
     ALLOW_NESTED_CSPE,
+    RESOLVE_METADATA_LEVEL,
     /*
     Not yet supported public options:
 
@@ -120,10 +132,12 @@ static KNOWN_OPTIONS: &[&str] = &[
     FORCE_ASYNC,
     IMPORT_INTERVAL_AS_STRUCT,
     OOC_DRIFT_THRESHOLD,
-    OOC_SPILL_POLICY,
     OOC_SPILL_FORMAT,
+    OOC_SPILL_COMPRESSION_LEVEL,
     OOC_MEMORY_BUDGET_FRACTION,
+    OOC_MEMORY_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
+    OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
     PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
 ];
@@ -139,15 +153,18 @@ pub struct Config {
     parquet_binary_statistics_truncate_length: AtomicU64,
     prune_parquet_metadata: AtomicBool,
     allow_nested_cspe: AtomicBool,
+    resolve_metadata_level: AtomicU8,
 
     // Private.
     verbose_sensitive: AtomicBool,
     force_async: AtomicBool,
     import_interval_as_struct: AtomicBool,
-    ooc_spill_policy: AtomicU8,
     ooc_spill_format: AtomicU8,
+    ooc_spill_compression_level: AtomicU64,
     ooc_memory_budget_fraction: AtomicU64,
+    ooc_memory_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
+    ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
     projection_pushdown_prune_strict_hconcat_inputs: AtomicBool,
 }
@@ -166,17 +183,22 @@ impl Config {
                 DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
             ),
             prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
+            resolve_metadata_level: AtomicU8::new(DEFAULT_RESOLVE_METADATA_LEVEL as u8),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
             force_async: AtomicBool::new(DEFAULT_FORCE_ASYNC),
             import_interval_as_struct: AtomicBool::new(DEFAULT_IMPORT_INTERVAL_AS_STRUCT),
-            ooc_spill_policy: AtomicU8::new(DEFAULT_OOC_SPILL_POLICY as u8),
             ooc_spill_format: AtomicU8::new(DEFAULT_OOC_SPILL_FORMAT as u8),
+            ooc_spill_compression_level: AtomicU64::new(DEFAULT_OOC_SPILL_COMPRESSION_LEVEL),
             ooc_memory_budget_fraction: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_BUDGET_FRACTION.to_bits(),
             ),
+            ooc_memory_budget_bytes: AtomicU64::new(
+                DEFAULT_OOC_MEMORY_BUDGET_MB.saturating_mul(1_000_000),
+            ),
             ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
+            ooc_log_metrics: AtomicBool::new(false),
             join_sample_limit: AtomicU64::new(DEFAULT_JOIN_SAMPLE_LIMIT),
             projection_pushdown_prune_strict_hconcat_inputs: AtomicBool::new(
                 DEFAULT_PROJECTION_PUSHDOWN_PRUNE_STRICT_HCONCAT_INPUTS,
@@ -252,6 +274,11 @@ impl Config {
                     .unwrap_or(DEFAULT_ALLOW_NESTED_CSPE),
                 Ordering::Relaxed,
             ),
+            RESOLVE_METADATA_LEVEL => self.resolve_metadata_level.store(
+                val.and_then(|x| parse::parse_resolve_mode(var, x))
+                    .unwrap_or(DEFAULT_RESOLVE_METADATA_LEVEL) as u8,
+                Ordering::Relaxed,
+            ),
 
             // Private flags.
             VERBOSE_SENSITIVE => self.verbose_sensitive.store(
@@ -274,14 +301,14 @@ impl Config {
                     .unwrap_or(DEFAULT_OOC_DRIFT_THRESHOLD),
                 Ordering::Relaxed,
             ),
-            OOC_SPILL_POLICY => self.ooc_spill_policy.store(
-                val.and_then(|x| parse::parse_spill_policy(var, x))
-                    .unwrap_or(DEFAULT_OOC_SPILL_POLICY) as u8,
-                Ordering::Relaxed,
-            ),
             OOC_SPILL_FORMAT => self.ooc_spill_format.store(
                 val.and_then(|x| parse::parse_spill_format(var, x))
                     .unwrap_or(DEFAULT_OOC_SPILL_FORMAT) as u8,
+                Ordering::Relaxed,
+            ),
+            OOC_SPILL_COMPRESSION_LEVEL => self.ooc_spill_compression_level.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_SPILL_COMPRESSION_LEVEL),
                 Ordering::Relaxed,
             ),
             OOC_MEMORY_BUDGET_FRACTION => self.ooc_memory_budget_fraction.store(
@@ -290,9 +317,20 @@ impl Config {
                     .to_bits(),
                 Ordering::Relaxed,
             ),
+            OOC_MEMORY_BUDGET_MB => self.ooc_memory_budget_bytes.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_MEMORY_BUDGET_MB)
+                    .saturating_mul(1_000_000),
+                Ordering::Relaxed,
+            ),
             OOC_SPILL_MIN_BYTES => self.ooc_spill_min_bytes.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_SPILL_MIN_BYTES),
+                Ordering::Relaxed,
+            ),
+            OOC_LOG_METRICS => self.ooc_log_metrics.store(
+                val.and_then(|x| parse::parse_bool(var, x))
+                    .unwrap_or(DEFAULT_OOC_LOG_METRICS),
                 Ordering::Relaxed,
             ),
             JOIN_SAMPLE_LIMIT => self.join_sample_limit.store(
@@ -320,31 +358,37 @@ impl Config {
     }
 
     /// Whether we should do verbose printing.
+    #[inline(always)]
     pub fn verbose(&self) -> bool {
         self.verbose.load(Ordering::Relaxed)
     }
 
     /// Whether we should warn when unstable features are used.
+    #[inline(always)]
     pub fn warn_unstable(&self) -> bool {
         self.warn_unstable.load(Ordering::Relaxed)
     }
 
     /// The number of threads Polars should ideally use for CPU-intensive work.
+    #[inline(always)]
     pub fn max_threads(&self) -> usize {
         self.max_threads.load(Ordering::Relaxed).try_into().unwrap()
     }
 
     /// The ideal size of a morsel, in rows.
+    #[inline(always)]
     pub fn ideal_morsel_size(&self) -> u64 {
         self.ideal_morsel_size.load(Ordering::Relaxed)
     }
 
     /// Which engine to use by default.
+    #[inline(always)]
     pub fn engine_affinity(&self) -> Engine {
         Engine::from_discriminant(self.engine_affinity.load(Ordering::Relaxed))
     }
 
     /// Target byte length to truncate statistics to for binary/string columns in parquet.
+    #[inline(always)]
     pub fn parquet_binary_statistics_truncate_length(&self) -> u64 {
         self.parquet_binary_statistics_truncate_length
             .load(Ordering::Relaxed)
@@ -352,46 +396,74 @@ impl Config {
 
     /// Whether the optimizer should prune parquet metadata to projected/predicate columns
     /// before serializing the IR plan. See `parquet_metadata_prune` in `polars-plan`.
+    #[inline(always)]
     pub fn prune_parquet_metadata(&self) -> bool {
         self.prune_parquet_metadata.load(Ordering::Relaxed)
     }
 
     /// Nested common subplan elimination.
+    #[inline(always)]
     pub fn allow_nested_cspe(&self) -> bool {
         self.allow_nested_cspe.load(Ordering::Relaxed)
     }
 
+    /// How much per-file metadata `parquet_file_info` resolves at planning
+    /// time. See [`ResolveMode`] for the variants and their cost / IR-shape
+    /// trade-offs.
+    #[inline(always)]
+    pub fn resolve_metadata_level(&self) -> ResolveMode {
+        ResolveMode::from_discriminant(self.resolve_metadata_level.load(Ordering::Relaxed))
+    }
+
     /// Whether we should do verbose printing on sensitive information.
+    #[inline(always)]
     pub fn verbose_sensitive(&self) -> bool {
         self.verbose_sensitive.load(Ordering::Relaxed)
     }
 
+    #[inline(always)]
     pub fn force_async(&self) -> bool {
         self.force_async.load(Ordering::Relaxed)
     }
 
+    #[inline(always)]
     pub fn import_interval_as_struct(&self) -> bool {
         self.import_interval_as_struct.load(Ordering::Relaxed)
     }
 
+    #[inline(always)]
     pub fn ooc_drift_threshold(&self) -> u64 {
         get_ooc_drift_threshold()
     }
 
-    pub fn ooc_spill_policy(&self) -> SpillPolicy {
-        SpillPolicy::from_discriminant(self.ooc_spill_policy.load(Ordering::Relaxed))
-    }
-
+    #[inline(always)]
     pub fn ooc_spill_format(&self) -> SpillFormat {
         SpillFormat::from_discriminant(self.ooc_spill_format.load(Ordering::Relaxed))
     }
 
+    #[inline(always)]
+    pub fn ooc_spill_compression_level(&self) -> u64 {
+        self.ooc_spill_compression_level.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn ooc_memory_budget_fraction(&self) -> f64 {
         f64::from_bits(self.ooc_memory_budget_fraction.load(Ordering::Relaxed))
     }
 
+    #[inline(always)]
+    pub fn ooc_memory_budget_bytes(&self) -> u64 {
+        self.ooc_memory_budget_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
     pub fn ooc_spill_min_bytes(&self) -> u64 {
         self.ooc_spill_min_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn ooc_log_metrics(&self) -> bool {
+        self.ooc_log_metrics.load(Ordering::Relaxed)
     }
 
     pub fn ooc_spill_dir(&self) -> std::path::PathBuf {
@@ -402,10 +474,12 @@ impl Config {
         }
     }
 
+    #[inline(always)]
     pub fn join_sample_limit(&self) -> u64 {
         self.join_sample_limit.load(Ordering::Relaxed)
     }
 
+    #[inline(always)]
     pub fn projection_pushdown_prune_strict_hconcat_inputs(&self) -> bool {
         self.projection_pushdown_prune_strict_hconcat_inputs
             .load(Ordering::Relaxed)

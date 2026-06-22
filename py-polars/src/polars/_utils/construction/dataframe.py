@@ -38,9 +38,9 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
-    issue_warning,
     parse_version,
 )
+from polars._warnings import issue_warning
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,

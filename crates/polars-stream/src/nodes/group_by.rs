@@ -475,7 +475,7 @@ impl GroupBySinkState {
             drop(arc_pre_aggs_per_local);
             drop(drop_q_send);
 
-            ASYNC.block_on(async move {
+            ASYNC.block_in_place_on(async move {
                 for handle in join_handles {
                     handle.await?;
                 }
@@ -592,7 +592,7 @@ impl GroupByNode {
             num_inputs,
             num_pipelines,
             output_schema,
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("group-by".into()),
         }
     }
 }

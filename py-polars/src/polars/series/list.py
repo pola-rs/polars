@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.unstable import unstable
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-class ListNameSpace:
+class ListNameSpace(_NamespaceSuggestMixin):
     """Namespace for list related methods."""
 
     _accessor = "list"

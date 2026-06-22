@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         async_sessionmaker,
     )
     from sqlalchemy.orm import Session
+    from xlsxwriter.format import Format
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
@@ -340,7 +341,7 @@ FrameInitTypes: TypeAlias = Union[
 ColumnFormatDict: TypeAlias = Mapping[
     # dict of colname(s) or selector(s) to format string or dict
     ColumnNameOrSelector | tuple[ColumnNameOrSelector, ...],
-    str | Mapping[str, str],
+    Union[str, Mapping[str, str], "Format"],
 ]
 ConditionalFormatDict: TypeAlias = Mapping[
     # dict of colname(s) to str, dict, or sequence of str/dict

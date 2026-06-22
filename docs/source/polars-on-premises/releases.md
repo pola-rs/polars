@@ -1,4 +1,23 @@
-## 0.4.3 (latest) <small>- 29 May 2026</small>
+## 0.5.2 (latest) <small>- 16 June 2026</small>
+
+- `polars` [1.41.2](https://github.com/pola-rs/polars/releases/tag/py-1.41.2)
+- `polars-cloud` [0.8.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.8.0)
+
+**Highlights**
+
+- Improved cgroup setup for Anyscale
+- Support for externally-scaled cluster
+- Improved performance in presigning anonymous results
+
+## 0.5.1 <small>- 3 June 2026</small>
+
+- `polars` [1.41.2](https://github.com/pola-rs/polars/releases/tag/py-1.41.2)
+- `polars-cloud` [0.8.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.8.0)
+
+The changelog can be found in
+[the client repo](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.8.0)
+
+## 0.4.3 <small>- 29 May 2026</small>
 
 - `polars` [1.40.1](https://github.com/pola-rs/polars/releases/tag/py-1.40.1)
 - `polars-cloud` [0.7.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.7.0)

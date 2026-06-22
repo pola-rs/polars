@@ -14,8 +14,8 @@ from polars.io.cloud._utils import POLARS_STORAGE_CONFIG_KEYS, _get_path_scheme
 if TYPE_CHECKING:
     from deltalake import DeltaTable
 
-    from polars import DataFrame, DataType
-    from polars._typing import SchemaDict, StorageOptionsDict
+    from polars import DataFrame, DataType, Series
+    from polars._typing import PolarsDataType, SchemaDict, StorageOptionsDict
 
 
 def _resolve_delta_lake_uri(table_uri: str | Path, *, strict: bool = True) -> str:
@@ -106,6 +106,23 @@ def _check_for_unsupported_types(dtypes: list[DataType]) -> None:
         raise TypeError(msg)
 
 
+def _null_count_dtype(dtype: PolarsDataType) -> PolarsDataType:
+    """Statistics-frame dtype for a column's ``null_count``.
+
+    Scalar (and non-struct nested) columns carry a single row-level null count (the
+    index type). Struct columns carry a *per-field* null count mirroring the column
+    shape (each leaf replaced by the index type), so the skip-batch predicate can prune
+    on an individual struct field via ``col("<c>_nc").struct.field(..)``.
+    """
+    import polars as pl
+
+    if isinstance(dtype, pl.Struct):
+        return pl.Struct(
+            {field.name: _null_count_dtype(field.dtype) for field in dtype.fields}
+        )
+    return pl.get_index_type()
+
+
 def _extract_table_statistics_from_delta_add_actions(
     add_actions_df: DataFrame,
     *,
@@ -141,23 +158,37 @@ def _extract_table_statistics_from_delta_add_actions(
         else {}
     )
 
+    height = add_actions_df.height
+
+    def null_col(dt: PolarsDataType) -> Series:
+        return pl.Series([None], dtype=dt).new_from_index(0, height)
+
     for col_name in filter_columns:
-        if (col_nc := null_count_cols.get(col_name)) is None:
-            col_nc = pl.Series([None], dtype=pl.get_index_type()).new_from_index(
-                0, add_actions_df.height
-            )
-        if (col_min := min_cols.get(col_name)) is None:
-            col_min = pl.Series([None], dtype=schema[col_name]).new_from_index(
-                0, add_actions_df.height
-            )
+        dtype = schema[col_name]
+        # The skip-batch predicate expects `<col>_nc` in the index type (a per-field
+        # struct of index counts for struct columns), so normalise the counts here.
+        nc_dtype = _null_count_dtype(dtype)
+        col_nc = null_count_cols.get(col_name)
+        col_min = min_cols.get(col_name)
+        col_max = max_cols.get(col_name)
 
-        if (col_max := max_cols.get(col_name)) is None:
-            col_max = pl.Series([None], dtype=schema[col_name]).new_from_index(
-                0, add_actions_df.height
+        out[f"{col_name}_nc"] = (
+            col_nc.cast(nc_dtype) if col_nc is not None else null_col(nc_dtype)
+        )
+
+        if isinstance(dtype, pl.Struct):
+            # Delta records struct min/max field-wise as a struct mirroring the column
+            # schema. Cast to the column dtype so every schema field is present and
+            # resolvable, letting the skip-batch predicate prune on an individual struct
+            # field via `col("<c>_min").struct.field(..)`.
+            out[f"{col_name}_min"] = (
+                col_min.cast(dtype) if col_min is not None else null_col(dtype)
             )
+            out[f"{col_name}_max"] = (
+                col_max.cast(dtype) if col_max is not None else null_col(dtype)
+            )
+        else:
+            out[f"{col_name}_min"] = col_min if col_min is not None else null_col(dtype)
+            out[f"{col_name}_max"] = col_max if col_max is not None else null_col(dtype)
 
-        out[f"{col_name}_nc"] = col_nc
-        out[f"{col_name}_min"] = col_min
-        out[f"{col_name}_max"] = col_max
-
-    return pl.DataFrame(out, height=add_actions_df.height)
+    return pl.DataFrame(out, height=height)

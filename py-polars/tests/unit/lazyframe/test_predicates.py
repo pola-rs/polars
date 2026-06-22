@@ -1489,3 +1489,86 @@ def test_predicate_pushdown_block_at_embedded_slice_groupby_26824() -> None:
             schema_overrides={"len": pl.get_index_type()},
         ),
     )
+
+
+def test_filter_contradiction_collapses() -> None:
+    a = pl.LazyFrame({"a": [1, 2, 3]})
+    # Each filter is always false and should collapse to an empty scan.
+    collapsing = [
+        a.filter(pl.col("a") > 1).filter(~(pl.col("a") > 1)),  # A AND NOT A
+        a.filter(pl.col("a") == 2).filter(pl.col("a") != 2),  # == AND !=
+        a.filter(pl.col("a").is_in([])),  # empty is_in
+        a.filter(pl.lit(False)),  # literal false
+        a.filter(pl.col("a") < 2).filter(pl.col("a") >= 3),  # disjoint inequalities
+        a.filter(pl.col("a").is_between(2, 3)).filter(
+            pl.col("a").is_between(0, 1)
+        ),  # disjoint is_between
+        a.filter(pl.col("a") == 5).filter(pl.col("a") > 10),  # == outside range
+        pl.LazyFrame({"b": [True, False, True]}).filter(
+            pl.col("b") & ~pl.col("b")
+        ),  # structural b AND NOT b
+        pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).filter(
+            (pl.col("a") > pl.col("b")) & (pl.col("a") < pl.col("b"))
+        ),  # disjoint comparisons on two columns (a > b AND a < b)
+    ]
+    for lf in collapsing:
+        # The FILTER node is gone from the optimized plan and the result is empty;
+        # disabling `simplify_expression` keeps it, proving the rewrite owns it.
+        assert "FILTER" not in lf.explain()
+        assert lf.collect().is_empty()
+        assert "FILTER" in lf.explain(
+            optimizations=pl.QueryOptFlags(simplify_expression=False)
+        )
+
+    # A satisfiable range keeps its rows: `a >= 1 AND a >= 3` tightens to `a >= 3`.
+    lf = a.filter(pl.col("a") >= 1).filter(pl.col("a") >= 3)
+    assert "FILTER" in lf.explain()
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [3]}))
+
+    # `>= AND <=` on the same operands is satisfiable (the equal rows), so it
+    # must not be folded away.
+    lf = pl.LazyFrame({"a": [1, 2, 3], "b": [3, 2, 1]}).filter(
+        (pl.col("a") >= pl.col("b")) & (pl.col("a") <= pl.col("b"))
+    )
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [2], "b": [2]}))
+
+
+def test_filter_contradiction_fallible_error_handling(
+    plmonkeypatch: PlMonkeyPatch,
+) -> None:
+    # `(cast > 0) AND (cast <= 0)` is always false, and the strict cast would
+    # overflow Int8 (so it can error).
+    cast_a = pl.col("a").cast(pl.Int8, strict=True)
+    lf = pl.LazyFrame({"a": [1000]}).filter((cast_a > 0) & (cast_a <= 0))
+
+    # By default the contradiction is dropped, so the cast never runs: empty.
+    assert lf.collect().is_empty()
+
+    # With error preservation on, the filter must NOT be dropped, so the overflow
+    # still surfaces.
+    plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
+    with pytest.raises(InvalidOperationError):
+        lf.collect()
+
+
+def test_predicate_pushdown_after_collect_schema_26882() -> None:
+    # Resolving schema mid-build caches DSL->IR conversion with schema-only `opt_flags`
+    # (eg: no predicate pushdown); subsequent `collect` should NOT skip optimisations
+    left = pl.LazyFrame({"id": [1, 2, 3, 4], "status": ["A", "B", "A", "A"]})
+    right = pl.LazyFrame({"id": [1, 2, 3, 4], "category": [1, 2, 1, 2]})
+
+    def _build() -> pl.LazyFrame:
+        return left.join(right, on="id", how="inner").filter(
+            (pl.col("status") == "A") & (pl.col("category") == 1)
+        )
+
+    expected_plan = _build().explain()
+
+    cached = _build()
+    cached.collect_schema()
+    assert cached.explain() == expected_plan
+
+    # both filters pushed *below* the join
+    join_idx = expected_plan.index("INNER JOIN")
+    assert "FILTER" not in expected_plan[:join_idx]
+    assert_frame_equal(cached.collect(), _build().collect(), check_row_order=False)

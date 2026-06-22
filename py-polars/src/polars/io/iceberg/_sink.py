@@ -231,6 +231,8 @@ class IcebergSinkState:
             eprint(
                 f"IcebergSinkState[commit]: finish transaction commit ({elapsed:.3f}s)"
             )
+        else:
+            now = None
 
         new_metadata_location = table.metadata_location
 
@@ -244,7 +246,7 @@ class IcebergSinkState:
             )
         )
 
-        if verbose:
+        if now is not None:
             total_elapsed = now - function_start_instant
 
             eprint(

@@ -4,7 +4,6 @@ use num_traits::AsPrimitive;
 use parking_lot::Mutex;
 use polars_core::config;
 use polars_core::prelude::PlRandomState;
-use polars_core::runtime::RAYON;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_expr::groups::new_hash_grouper;
@@ -79,8 +78,7 @@ pub fn physical_plan_to_graph(
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
-    // Get the number of threads from the rayon thread-pool as that respects our config.
-    let num_pipelines = RAYON.current_num_threads();
+    let num_pipelines = polars_config::config().max_threads();
     let mut ctx = GraphConversionContext {
         phys_sm,
         expr_arena,
@@ -763,6 +761,19 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(input.node, ctx)?;
             ctx.graph.add_node(
                 nodes::peak_minmax::PeakMinMaxNode::new(*is_peak_max),
+                [(input_key, input.port)],
+            )
+        },
+
+        IsSorted {
+            input,
+            descending,
+            nulls_last,
+            output_name,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::is_sorted::IsSortedNode::new(*descending, *nulls_last, output_name.clone()),
                 [(input_key, input.port)],
             )
         },

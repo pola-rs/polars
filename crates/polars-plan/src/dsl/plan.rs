@@ -183,6 +183,8 @@ pub enum DslPlan {
         version: u32,
         #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
         node: Option<Node>,
+        #[cfg_attr(any(feature = "serde", feature = "dsl-schema"), serde(skip))]
+        opt_flags: Option<crate::frame::OptFlags>,
     },
 }
 
@@ -220,7 +222,7 @@ impl Clone for DslPlan {
             Self::Pivot { input, on, on_columns, index, values, agg, separator, maintain_order, column_naming }  => Self::Pivot { input: input.clone(), on: on.clone(), on_columns: on_columns.clone(), index: index.clone(), values: values.clone(), agg: agg.clone(), separator: separator.clone(), maintain_order: *maintain_order, column_naming: *column_naming },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key, maintain_order } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone(), maintain_order: *maintain_order },
-            Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
+            Self::IR {node, dsl, version, opt_flags} => Self::IR {node: *node, dsl: dsl.clone(), version: *version, opt_flags: *opt_flags},
         }
     }
 }
@@ -383,15 +385,18 @@ impl DslPlan {
             fn transform(&mut self, schema: &mut Schema) {
                 // Remove descriptions auto-generated from doc comments
                 schema.remove("description");
-
                 transform_subschemas(self, schema);
             }
         }
 
+        // Wrapper so we get DslPlan in the $defs.
+        #[derive(schemars::JsonSchema)]
+        struct DslPlanWrapper(DslPlan);
+
         let mut schema = SchemaSettings::default()
             .with_transform(MyTransform)
             .into_generator()
-            .into_root_schema_for::<DslPlan>();
+            .into_root_schema_for::<DslPlanWrapper>();
 
         // Add the DSL schema hash as a top level field
         schema.insert("hash".into(), DSL_SCHEMA_HASH.to_string().into());

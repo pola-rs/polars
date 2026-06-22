@@ -18,7 +18,10 @@ enum BufferedStream {
 
 impl BufferedStream {
     fn new() -> Self {
-        Self::Open(VecDeque::new(), MostRecentSpillContext::new())
+        Self::Open(
+            VecDeque::new(),
+            MostRecentSpillContext::new("multiplexer".into()),
+        )
     }
 }
 
@@ -203,25 +206,30 @@ impl ComputeNode for MultiplexerNode {
                 let buffered_source_token = buffered_source_token.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // First we try to flush all the old buffered data.
-                    while let Some((token, seq)) = buf.pop_back() {
-                        let df = token.into_df().await;
+                    while let Some((sf, seq)) = buf.pop_back() {
+                        let df = sf.into_df().await;
                         let mut morsel = Morsel::new(df, seq, buffered_source_token.clone());
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
                             return Ok(());
                         }
-                        if buffered_source_token.stop_requested()
-                            && let Ok((token, seq, source_token)) = rx.try_recv()
-                        {
-                            source_token.stop();
-                            buf.push_front((token, seq));
+
+                        // Someone wants to stop, flush remainder into buffer.
+                        if buffered_source_token.stop_requested() {
+                            drop(sender);
+                            while let Some((sf, seq, source_token)) = rx.recv().await {
+                                source_token.stop();
+                                buf.push_front((sf, seq));
+                            }
+                            return Ok(());
                         }
+
                         wait_group.wait().await;
                     }
 
                     // Then send along data from the multiplexer.
-                    while let Some((token, seq, source_token)) = rx.recv().await {
-                        let df = token.into_df().await;
+                    while let Some((sf, seq, source_token)) = rx.recv().await {
+                        let df = sf.into_df().await;
                         let mut morsel = Morsel::new(df, seq, source_token);
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
