@@ -47,15 +47,17 @@ impl Spillable for DataFrame {
                     spill_file.creation_aborted();
                     polars_error::abort::polars_abort_ooc_out_of_disk();
                 }
-                tokio::fs::write(spill_file.path(), buf)
-                    .await
-                    .unwrap_or_else(|e| {
-                        panic!(
+                match tokio::fs::write(spill_file.path(), buf).await {
+                    Ok(()) => spill_file,
+                    Err(e) => {
+                        let msg = format!(
                             "failed to create spill file '{}': {e}",
                             spill_file.path().display()
-                        )
-                    });
-                spill_file
+                        );
+                        spill_file.creation_aborted();
+                        panic!("{msg}")
+                    },
+                }
             })
             .await
             .unwrap()

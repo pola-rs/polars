@@ -46,6 +46,7 @@ impl SpillFile {
     }
 
     pub fn creation_aborted(mut self) {
+        BYTES_SPILLED_TO_DISK.fetch_sub(self.size);
         core::mem::take(&mut self.path);
         core::mem::forget(self);
     }
