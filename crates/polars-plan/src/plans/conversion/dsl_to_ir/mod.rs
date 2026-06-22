@@ -698,6 +698,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 resolve_with_columns(exprs, input, ctxt.lp_arena, ctxt.expr_arena, ctxt.opt_flags)
                     .map_err(|e| e.context(failed_here!(with_columns)))?;
 
+            if !ctxt.opt_flags.eager() && std::env::var("POLARS_STRICT_MODE").as_deref() == Ok("1")
+            {
+                if let Some(pos) = exprs
+                    .iter()
+                    .position(|e| !e.is_known_length(ctxt.expr_arena))
+                {
+                    let invalid_e = &exprs[pos];
+
+                    let err = polars_err!(InvalidOperation: "all expressions should return the same length or scalar;\n\nInvalid expression: {}", node_to_expr(invalid_e.node(), ctxt.expr_arena));
+                    return Err(err.context(failed_here!(with_columns)));
+                }
+            }
             ctxt.conversion_optimizer
                 .fill_scratch(&exprs, ctxt.expr_arena);
             let lp = IR::HStack {

@@ -412,7 +412,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             self.ae_nodes_scratch,
                             self.ae_height_scratch,
                         ) {
-                            EH::Unknown => break 'len_propagate,
+                            EH::Unknown | EH::Range => break 'len_propagate,
                             EH::Column => has_column = true,
                             EH::Scalar => {},
                         }
@@ -465,7 +465,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 self.ae_height_scratch,
                             ) {
                                 EH::Scalar | EH::Column => {},
-                                EH::Unknown => {
+                                EH::Unknown | EH::Range => {
                                     exprs.swap(i, truncate_len);
                                     truncate_len += 1;
                                 },

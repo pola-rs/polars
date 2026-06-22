@@ -87,7 +87,9 @@ def test_lazyframe_membership_operator() -> None:
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = ldf.with_columns_seq(
-        pl.col("a").map_batches(lambda s: s * 2, return_dtype=pl.Int64).alias("foo")
+        pl.col("a")
+        .map_batches(lambda s: s * 2, return_dtype=pl.Int64, is_elementwise=True)
+        .alias("foo")
     )
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
