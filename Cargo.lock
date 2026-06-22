@@ -3403,6 +3403,7 @@ dependencies = [
  "polars-async",
  "polars-config",
  "polars-core",
+ "polars-error",
  "polars-io",
  "polars-utils",
  "rand 0.10.1",

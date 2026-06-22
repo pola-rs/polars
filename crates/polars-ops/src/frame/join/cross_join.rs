@@ -121,7 +121,7 @@ fn cross_join_dfs<'a>(
         }
     };
     let (l_df, r_df) = if parallel {
-        try_raise_keyboard_interrupt();
+        try_raise_polars_abort();
         RAYON.install(|| rayon::join(create_left_df, create_right_df))
     } else {
         (create_left_df(), create_right_df())

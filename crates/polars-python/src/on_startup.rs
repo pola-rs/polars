@@ -10,7 +10,7 @@ use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_error::PolarsWarning;
-use polars_error::signals::register_polars_keyboard_interrupt_hook;
+use polars_error::abort::register_polars_abort_mechanism;
 use polars_ffi::version_0::SeriesExport;
 use polars_plan::plans::python_df_to_rust;
 use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
@@ -290,7 +290,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         polars_error::set_warning_function(warning_function);
 
         if catch_keyboard_interrupt {
-            register_polars_keyboard_interrupt_hook();
+            register_polars_abort_mechanism();
         }
 
         use polars_core::datatypes::extension::UnknownExtensionTypeBehavior;

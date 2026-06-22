@@ -9,7 +9,7 @@ use std::fmt::{self, Display, Formatter, Write};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock};
 use std::{env, io};
-pub mod signals;
+pub mod abort;
 
 pub use warning::*;
 

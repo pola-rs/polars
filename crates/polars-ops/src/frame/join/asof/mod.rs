@@ -300,7 +300,7 @@ pub trait AsofJoin: IntoDf {
         let mut take_idx =
             _join_asof_dispatch(&left_key, &right_key, strategy, tolerance, allow_eq)?;
 
-        try_raise_keyboard_interrupt();
+        try_raise_polars_abort();
 
         // Drop right join column.
         let other = if coalesce && left_key.name() == right_key.name() {

@@ -4,6 +4,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use polars_io::create_dir_owner_only;
 
+use crate::BYTES_SPILLED_TO_DISK;
+
 /// On-disk layout:
 ///
 /// ```text
@@ -22,10 +24,11 @@ static SPILL_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 
 pub struct SpillFile {
     path: PathBuf,
+    size: u64,
 }
 
 impl SpillFile {
-    pub fn new(context_id: &str, ext: &str) -> Self {
+    pub fn new(context_id: &str, ext: &str, size: u64) -> Self {
         let uuid = uuid::Uuid::now_v7();
         Self {
             path: SPILL_DIR
@@ -34,11 +37,17 @@ impl SpillFile {
                     uuid = uuid.as_hyphenated()
                 ))
                 .with_extension(ext),
+            size,
         }
     }
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn creation_aborted(mut self) {
+        core::mem::take(&mut self.path);
+        core::mem::forget(self);
     }
 }
 
@@ -46,7 +55,10 @@ impl Drop for SpillFile {
     fn drop(&mut self) {
         SPILL_CLEANER
             .send_rq
-            .send(CleanRequest::File(core::mem::take(&mut self.path)))
+            .send(CleanRequest::File(
+                core::mem::take(&mut self.path),
+                self.size,
+            ))
             .unwrap();
     }
 }
@@ -61,12 +73,13 @@ impl SpillCleaner {
 
         while let Ok(rq) = recv_rq.recv() {
             match rq {
-                CleanRequest::File(p) => {
+                CleanRequest::File(p, sz) => {
                     if let Err(e) = std::fs::remove_file(&p) {
                         if polars_config::config().verbose() {
                             eprintln!("Error while removing spill file '{}': {e}", p.display());
                         }
                     }
+                    BYTES_SPILLED_TO_DISK.fetch_sub(sz);
                 },
                 CleanRequest::Directory(p) => {
                     if let Err(e) = std::fs::remove_dir_all(&p) {
@@ -96,7 +109,7 @@ static SPILL_CLEANER: LazyLock<SpillCleaner> = LazyLock::new(|| {
 });
 
 enum CleanRequest {
-    File(PathBuf),
+    File(PathBuf, u64),
     #[expect(unused)]
     Directory(PathBuf),
     Flush(Sender<()>),

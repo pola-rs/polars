@@ -74,6 +74,9 @@ const DEFAULT_OOC_MEMORY_BUDGET_FRACTION: f64 = 0.8;
 const OOC_MEMORY_BUDGET_MB: &str = "POLARS_OOC_MEMORY_BUDGET_MB";
 const DEFAULT_OOC_MEMORY_BUDGET_MB: u64 = u64::MAX;
 
+const OOC_DISK_BUDGET_MB: &str = "POLARS_OOC_DISK_BUDGET_MB";
+const DEFAULT_OOC_DISK_BUDGET_MB: u64 = u64::MAX;
+
 const OOC_SPILL_MIN_BYTES: &str = "POLARS_OOC_SPILL_MIN_BYTES";
 const DEFAULT_OOC_SPILL_MIN_BYTES: u64 = 64 * 1024; // 64 KB
 
@@ -136,6 +139,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     OOC_SPILL_COMPRESSION_LEVEL,
     OOC_MEMORY_BUDGET_FRACTION,
     OOC_MEMORY_BUDGET_MB,
+    OOC_DISK_BUDGET_MB,
     OOC_SPILL_MIN_BYTES,
     OOC_LOG_METRICS,
     JOIN_SAMPLE_LIMIT,
@@ -163,6 +167,7 @@ pub struct Config {
     ooc_spill_compression_level: AtomicU64,
     ooc_memory_budget_fraction: AtomicU64,
     ooc_memory_budget_bytes: AtomicU64,
+    ooc_disk_budget_bytes: AtomicU64,
     ooc_spill_min_bytes: AtomicU64,
     ooc_log_metrics: AtomicBool,
     join_sample_limit: AtomicU64,
@@ -196,6 +201,9 @@ impl Config {
             ),
             ooc_memory_budget_bytes: AtomicU64::new(
                 DEFAULT_OOC_MEMORY_BUDGET_MB.saturating_mul(1_000_000),
+            ),
+            ooc_disk_budget_bytes: AtomicU64::new(
+                DEFAULT_OOC_DISK_BUDGET_MB.saturating_mul(1_000_000),
             ),
             ooc_spill_min_bytes: AtomicU64::new(DEFAULT_OOC_SPILL_MIN_BYTES),
             ooc_log_metrics: AtomicBool::new(false),
@@ -320,6 +328,12 @@ impl Config {
             OOC_MEMORY_BUDGET_MB => self.ooc_memory_budget_bytes.store(
                 val.and_then(|x| parse::parse_u64(var, x))
                     .unwrap_or(DEFAULT_OOC_MEMORY_BUDGET_MB)
+                    .saturating_mul(1_000_000),
+                Ordering::Relaxed,
+            ),
+            OOC_DISK_BUDGET_MB => self.ooc_disk_budget_bytes.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_OOC_DISK_BUDGET_MB)
                     .saturating_mul(1_000_000),
                 Ordering::Relaxed,
             ),
@@ -454,6 +468,11 @@ impl Config {
     #[inline(always)]
     pub fn ooc_memory_budget_bytes(&self) -> u64 {
         self.ooc_memory_budget_bytes.load(Ordering::Relaxed)
+    }
+
+    #[inline(always)]
+    pub fn ooc_disk_budget_bytes(&self) -> u64 {
+        self.ooc_disk_budget_bytes.load(Ordering::Relaxed)
     }
 
     #[inline(always)]

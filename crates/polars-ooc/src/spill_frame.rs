@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::io::Write;
 use std::ops::{Deref, DerefMut};
 
 use polars_async::ASYNC;
@@ -10,7 +9,7 @@ use polars_utils::compression::ZstdLevel;
 
 use crate::spill_context::ParameterFreeSpillContext;
 use crate::spill_file::SpillFile;
-use crate::{PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
+use crate::{BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
 
 impl Spillable for DataFrame {
     // TODO: just a dummy spill for now. Boxed to reduce size.
@@ -39,20 +38,23 @@ impl Spillable for DataFrame {
 
         // Do file creation / writing on tokio.
         ASYNC
-            .spawn_blocking(move || {
-                let spill_file = SpillFile::new(&context_id, "ipc");
-                let mut file = std::fs::File::create(spill_file.path()).unwrap_or_else(|e| {
-                    panic!(
-                        "failed to create spill file '{}': {e}",
-                        spill_file.path().display()
-                    )
-                });
-                file.write_all(&buf).unwrap_or_else(|e| {
-                    panic!(
-                        "failed to write to spill file '{}': {e}",
-                        spill_file.path().display()
-                    )
-                });
+            .spawn(async move {
+                let size = buf.len() as u64;
+                let spill_file = SpillFile::new(&context_id, "ipc", size);
+                if BYTES_SPILLED_TO_DISK.fetch_add(size).saturating_add(size)
+                    > polars_config::config().ooc_disk_budget_bytes()
+                {
+                    spill_file.creation_aborted();
+                    polars_error::abort::polars_abort_ooc_out_of_disk();
+                }
+                tokio::fs::write(spill_file.path(), buf)
+                    .await
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "failed to create spill file '{}': {e}",
+                            spill_file.path().display()
+                        )
+                    });
                 spill_file
             })
             .await
