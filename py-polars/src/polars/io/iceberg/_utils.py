@@ -30,7 +30,7 @@ from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Sequence
     from datetime import date, datetime
 
     import pyiceberg
@@ -96,8 +96,6 @@ def _scan_pyarrow_dataset_impl(
     that could not be converted
     to pyarrow and need to be applied as post-predicate.
     """
-    from polars import from_arrow
-
     scan = tbl.scan(limit=n_rows, snapshot_id=snapshot_id)
 
     if with_columns is not None:
@@ -121,7 +119,7 @@ def _scan_pyarrow_dataset_impl(
 
     batches = scan.to_arrow_batch_reader()
 
-    return ((from_arrow(batch) for batch in batches), False)
+    return ((pl.DataFrame(batch) for batch in batches), False)
 
 
 def _ensure_boolean_expression(result: Any) -> Any:
