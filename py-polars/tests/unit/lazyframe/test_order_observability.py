@@ -793,3 +793,16 @@ def test_order_simplify_exprs() -> None:
     )
 
     assert 'col("a").sort(asc).unique_stable()' in plan
+
+
+def test_order_simplify_expr_slice_28028() -> None:
+    q = pl.LazyFrame(data={"a": [0, 1, 3, 4, 2, 2], "b": [0, 1, 4, 5, 2, 3]}).select(
+        pl.col("a").sort_by("b").head(5).mode().first()
+    )
+
+    plan = q.explain()
+
+    assert ".sort_by(" in plan
+    assert ".slice(" in plan
+
+    assert q.collect().item() == 2
