@@ -96,7 +96,12 @@ from polars.datatypes import (
     supported_numpy_char_code,
 )
 from polars.datatypes._utils import dtype_to_init_repr
-from polars.exceptions import ComputeError, ModuleUpgradeRequiredError, ShapeError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    ModuleUpgradeRequiredError,
+    ShapeError,
+)
 from polars.interchange.protocol import CompatLevel
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
@@ -3953,7 +3958,7 @@ class Series:
     @overload
     def search_sorted(
         self,
-        element: list_[Any] | np.ndarray[Any, Any] | Expr | Series,
+        element: np.ndarray[Any, Any] | Expr | Series,
         side: SearchSortedSide = ...,
         *,
         descending: bool = ...,
@@ -3992,7 +3997,7 @@ class Series:
         3
         >>> s.search_sorted(4, "right")
         5
-        >>> s.search_sorted([1, 4, 5])
+        >>> s.search_sorted(pl.Series([1, 4, 5]))
         shape: (3,)
         Series: 'set' [u32]
         [
@@ -4000,7 +4005,7 @@ class Series:
             3
             5
         ]
-        >>> s.search_sorted([1, 4, 5], "left")
+        >>> s.search_sorted(pl.Series([1, 4, 5]), "left")
         shape: (3,)
         Series: 'set' [u32]
         [
@@ -4008,17 +4013,20 @@ class Series:
             3
             5
         ]
-        >>> s.search_sorted([1, 4, 5], "right")
-        shape: (3,)
-        Series: 'set' [u32]
+        >>> # To search for a list of values in a series, of lists, use pl.lit():
+        >>> list_s = pl.Series("lists", [[0, 1], [0, 2], [1, 4]])
+        >>> list_s.search_sorted(pl.lit([0, 2]), "left")
+        shape: (1,)
+        Series: 'lists' [u32]
         [
             1
-            5
-            6
         ]
         """
         df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
-        if isinstance(element, (list, Series, pl.Expr)):
+        if isinstance(element, list):
+            msg = "passing a list to `search_sorted` is ambiguous; use `Series.search_sorted(pl.Series([...]), ...)` or `Series.search_sorted(pl.lit(...), ...)`"
+            raise InvalidOperationError(msg)
+        elif isinstance(element, (Series, pl.Expr)):
             return df.to_series()
         elif _check_for_numpy(element) and isinstance(element, np.ndarray):
             return df.to_series()
