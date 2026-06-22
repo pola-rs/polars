@@ -96,19 +96,14 @@ def test_concat_arr_broadcast() -> None:
         pl.select(
             pl.concat_arr(
                 pl.Series(
-                    [{"x": [1], "y": [2]}, {"x": [3], "y": None}],
+                    [{"x": [1]}, {"x": [3]}],
                     dtype=pl.Struct({"x": pl.Array(pl.Int64, 1)}),
                 ),
-                pl.lit(
-                    {"x": [9], "y": [11]}, dtype=pl.Struct({"x": pl.Array(pl.Int64, 1)})
-                ),
+                pl.lit({"x": [9]}, dtype=pl.Struct({"x": pl.Array(pl.Int64, 1)})),
             )
         ).to_series(),
         pl.Series(
-            [
-                [{"x": [1], "y": [2]}, {"x": [9], "y": [11]}],
-                [{"x": [3], "y": [4]}, {"x": [9], "y": [11]}],
-            ],
+            [[{"x": [1]}, {"x": [9]}], [{"x": [3]}, {"x": [9]}]],
             dtype=pl.Array(pl.Struct({"x": pl.Array(pl.Int64, 1)}), 2),
         ),
     )
