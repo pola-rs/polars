@@ -30,7 +30,7 @@ from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Iterator, Sequence
     from datetime import date, datetime
 
     import pyiceberg
@@ -101,6 +101,22 @@ def _scan_pyarrow_dataset_impl(
     scan = tbl.scan(limit=n_rows, snapshot_id=snapshot_id)
 
     if with_columns is not None:
+        if not with_columns:
+            assert iceberg_table_filter is None
+
+            def gen() -> Iterable[pl.DataFrame]:
+                remaining = scan.count()
+
+                if n_rows is not None:
+                    remaining = min(remaining, n_rows)
+
+                while remaining > 0:
+                    n = min(remaining, 100_000)
+                    yield pl.DataFrame(height=n)
+                    remaining -= n
+
+            return (gen(), False)
+
         scan = scan.select(*with_columns)
 
     if iceberg_table_filter is not None:

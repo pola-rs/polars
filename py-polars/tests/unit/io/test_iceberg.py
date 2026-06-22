@@ -2449,7 +2449,8 @@ def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
+@pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
+def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: str) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
@@ -2467,7 +2468,9 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
 
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        pl.scan_iceberg(
+            tbl, reader_override=reader_override, use_metadata_statistics=True
+        )
         .select(pl.len())
         .collect()
         .item()
@@ -2475,7 +2478,9 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     )
 
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        pl.scan_iceberg(
+            tbl, reader_override=reader_override, use_metadata_statistics=True
+        )
         .filter(pl.col("a") <= 2)
         .select(pl.len())
         .collect()
@@ -2484,7 +2489,9 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     )
 
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        pl.scan_iceberg(
+            tbl, reader_override=reader_override, use_metadata_statistics=True
+        )
         .head(3)
         .select(pl.len())
         .collect()
@@ -2493,7 +2500,9 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     )
 
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        pl.scan_iceberg(
+            tbl, reader_override=reader_override, use_metadata_statistics=True
+        )
         .slice(1, 3)
         .select(pl.len())
         .collect()
@@ -2516,10 +2525,18 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
         p,
     )
 
+    if reader_override == "pyiceberg":
+        return
+
     # `use_metadata_statistics=False` should disable sourcing the row count from
     # Iceberg metadata.
+
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=False)
+        pl.scan_iceberg(
+            tbl,
+            reader_override=reader_override,
+            use_metadata_statistics=False,
+        )
         .select(pl.len())
         .collect()
         .item()
@@ -2530,7 +2547,7 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
         pickle.loads(
             pickle.dumps(
                 pl.scan_iceberg(
-                    tbl, reader_override="native", use_metadata_statistics=False
+                    tbl, reader_override=reader_override, use_metadata_statistics=False
                 ).select(pl.len())
             )
         )
@@ -2549,12 +2566,15 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
             else "No such file or directory"
         ),
     ):
-        pl.scan_iceberg(tbl, reader_override="native").collect()
+        pl.scan_iceberg(tbl, reader_override=reader_override).collect()
 
     # `select(len())` should be able to return the result from the Iceberg metadata
     # without looking at the underlying data files.
     assert (
-        pl.scan_iceberg(tbl, reader_override="native").select(pl.len()).collect().item()
+        pl.scan_iceberg(tbl, reader_override=reader_override)
+        .select(pl.len())
+        .collect()
+        .item()
         == 5
     )
 
