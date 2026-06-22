@@ -65,7 +65,7 @@ pub struct ControllerConfig {
 impl Default for ControllerConfig {
     fn default() -> Self {
         // Only used for bytes-based budget.
-        let max_chunk_size = get_random_access_chunk_size() as u64;
+        let target_chunk_size = get_random_access_chunk_size() as u64;
         Self {
             window: Duration::from_millis(1000),
 
@@ -79,11 +79,11 @@ impl Default for ControllerConfig {
             //   1 Gbps x 50 ms = 6.25 MB
             //   10 Gbps x 50 ms = 62.5 MB
             //   100 Gbps x 50 ms = 625 MB
-            init_byte_budget: get_init_byte_budget(max_chunk_size),
+            init_byte_budget: get_init_byte_budget(target_chunk_size),
 
             // Byte-based budget floor.
-            // Must be >=larger than max_chunk_size to avoid potential deadlock.
-            floor_byte_budget: max_chunk_size,
+            // Must be >=larger than target_chunk_size to avoid potential deadlock.
+            floor_byte_budget: target_chunk_size,
 
             // Count-based budget, currently fixed
             request_budget: get_request_budget(),
@@ -94,7 +94,7 @@ impl Default for ControllerConfig {
 }
 
 /// Max number of bytes concurrently in flight during the init and start of rampup phase.
-fn get_init_byte_budget(max_chunk_size: u64) -> u64 {
+fn get_init_byte_budget(target_chunk_size: u64) -> u64 {
     let init_byte_budget = std::env::var("POLARS_INFLIGHT_INIT_BYTE_BUDGET")
         .map(|x| {
             x.parse::<NonZeroU64>()
@@ -109,12 +109,12 @@ fn get_init_byte_budget(max_chunk_size: u64) -> u64 {
             // too low a value delays the transition to stable.
             // Heuristic: higher bandwidth is expected on larger instances.
             let n = polars_config::config().max_threads() as u64;
-            n.div_ceil(8).max(4) * max_chunk_size
+            n.div_ceil(8).max(4) * target_chunk_size
         })
         .max(1);
 
-    if init_byte_budget < max_chunk_size {
-        panic!("in-flight byte budget init must be larger than the max_chunk_size");
+    if init_byte_budget < target_chunk_size {
+        panic!("in-flight byte budget init must be larger than the target_chunk_size");
     }
 
     init_byte_budget

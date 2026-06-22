@@ -85,7 +85,9 @@ impl FileReaderBuilder for ParquetReaderBuilder {
         // This should be large enough to be non-blocking, but small enough to avoid
         // excessive memory use from a run-away prefetch pipeline.
         // "Correct" formula: (a) max effective in-flight bdp-based bytes budget + (b) decode pipeline.
-        // Since we do not know (a) at startup, we use (b) as a proxy for (a).
+        // Since we do not know (a) at startup, we use  '3 * (b) + buffer' as a proxy for (a), where the
+        // multiplier reflects the max gain factor for in-flight control.
+        // TODO: Dynamically adapt the max memory to the observed BDP.
         // NOTE: This does not account for the decompression multiplier, so actual memory
         // usage can be substantially larger.
         let prefetch_kbytes_limit = std::env::var("POLARS_ROW_GROUP_PREFETCH_KBYTES_BUDGET")
@@ -97,11 +99,9 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                     .get()
             })
             .unwrap_or({
-                // kdn TODO INVESTIGATE: get chunk_size from FetchConfig?
-                let chunk_size_kb =
-                    polars_io::cloud::concurrency_config::get_random_access_chunk_size()
+                let target_chunk_size_kb = FetchConfig::random_access().chunk_size
                         .div_ceil(1024);
-                2 * execution_state.num_pipelines * chunk_size_kb
+                4 * execution_state.num_pipelines * target_chunk_size_kb
             })
             // Avoid deadlock.
             .max(polars_io::cloud::concurrency_config::get_download_chunk_size().div_ceil(1024));

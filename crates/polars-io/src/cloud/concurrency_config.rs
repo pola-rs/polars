@@ -76,7 +76,7 @@ pub struct FetchConfig {
 }
 
 impl FetchConfig {
-    /// Use for file formats that are randomly accessible, i.e. individual
+    /// Use for cloud-based file formats that are randomly accessible, i.e. individual
     /// row groups (or record batches) and/or individual columns can be fetched
     /// directly using the metadata as an input. Example: Parquet, IPC with internal
     /// extensions.
@@ -90,7 +90,7 @@ impl FetchConfig {
         }
     }
 
-    /// Use for file formats that have a sequential layout, i.e. the file bytes
+    /// Use for cloud-based file formats that have a sequential layout, i.e. the file bytes
     /// must be fetched and parsed sequentially. The pipeline is responsible for
     /// managing back-pressure and rate-limiting. Example: CSV.
     pub fn streaming() -> Self {

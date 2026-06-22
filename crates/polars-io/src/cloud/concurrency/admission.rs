@@ -10,38 +10,41 @@ use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 /// permits by acquiring them, which blocks under saturation).
 #[derive(Debug)]
 pub(super) struct ByteBudget {
-    // Current budget, measured in number of bytes.
-    current: AtomicU64,
-    // Budget in use for in-flight traffic.
-    inflight: AtomicU64,
-    // Lowest allowed budget.
-    floor: u64,
+    // Current budget, measured in number of bytes, reflecting the maximum
+    // allowed in-flight volume.
+    current_budget: AtomicU64,
+    // Lowest allowed budget for the current_budget.
+    floor_budget: u64,
+    // Volume in use for in-flight traffic, as allowed by the current_budget.
+    inflight_in_use: AtomicU64,
     waiters: Notify,
 }
 
 impl ByteBudget {
-    fn new(initial: u64, floor: u64) -> Self {
+    fn new(initial: u64, floor_budget: u64) -> Self {
         Self {
-            current: AtomicU64::new(initial),
-            floor,
-            inflight: AtomicU64::new(0),
+            current_budget: AtomicU64::new(initial),
+            floor_budget,
+            inflight_in_use: AtomicU64::new(0),
             waiters: Notify::new(),
         }
     }
 
-    async fn acquire(&self, n_bytes: u64) {
+    /// Acquire a bytes-based permit. The call site is responsible for capping the
+    /// request size to prevent deadlock.
+    async fn acquire_strict(&self, n_bytes: u64) {
         // Pre-empt deadlock.
-        assert!(n_bytes <= self.floor);
+        assert!(n_bytes <= self.floor_budget);
 
         // NOTE: Large waiters can starve under sustained small-request load.
         // In practice, this may not be material issue.
         loop {
-            let cap = self.current.load(Ordering::Acquire);
-            let inflight = self.inflight.load(Ordering::Acquire);
+            let cap = self.current_budget.load(Ordering::Acquire);
+            let inflight = self.inflight_in_use.load(Ordering::Acquire);
 
             if inflight + n_bytes <= cap {
                 if self
-                    .inflight
+                    .inflight_in_use
                     .compare_exchange_weak(
                         inflight,
                         inflight + n_bytes,
@@ -62,8 +65,8 @@ impl ByteBudget {
 
             // Doesn't fit: register, re-check, park.
             let notified = self.waiters.notified();
-            let cap = self.current.load(Ordering::Acquire);
-            let inflight = self.inflight.load(Ordering::Acquire);
+            let cap = self.current_budget.load(Ordering::Acquire);
+            let inflight = self.inflight_in_use.load(Ordering::Acquire);
             if inflight + n_bytes <= cap {
                 continue;
             }
@@ -72,13 +75,13 @@ impl ByteBudget {
     }
 
     fn release(&self, bytes: u64) {
-        self.inflight.fetch_sub(bytes, Ordering::AcqRel);
+        self.inflight_in_use.fetch_sub(bytes, Ordering::AcqRel);
         self.waiters.notify_one();
     }
 
     fn resize(&self, new: u64) {
-        let new = new.max(self.floor);
-        let old = self.current.swap(new, Ordering::AcqRel);
+        let new = new.max(self.floor_budget);
+        let old = self.current_budget.swap(new, Ordering::AcqRel);
         if new > old {
             // Grow: maybe someone can now proceed.
             self.waiters.notify_waiters();
@@ -86,15 +89,15 @@ impl ByteBudget {
     }
 
     fn current_budget(&self) -> u64 {
-        self.current.load(Ordering::Relaxed)
+        self.current_budget.load(Ordering::Relaxed)
     }
 
     fn floor_byte_budget(&self) -> u64 {
-        self.floor
+        self.floor_budget
     }
 
-    fn inflight(&self) -> u64 {
-        self.inflight.load(Ordering::Relaxed)
+    fn inflight_in_use(&self) -> u64 {
+        self.inflight_in_use.load(Ordering::Relaxed)
     }
 }
 
@@ -159,11 +162,12 @@ impl InFlightBudget {
     }
 
     pub async fn acquire(self: &Arc<Self>, n_bytes: u64) -> InFlightPermit {
-        // kdn TODO INVESTIGATE: Note that merge_ranges and split_ranges may overshoot the floor.
+        // NOTE: since chunk_size is a target, merge_ranges and split_ranges may overshoot 
+        // the floor. Cap'ing prevents deadlock at the expense of memory management precision.
         let n_bytes = n_bytes.min(self.byte_budget.floor_byte_budget());
 
         // Byte budget (may wait). Cancel-safe internally.
-        self.byte_budget.acquire(n_bytes).await;
+        self.byte_budget.acquire_strict(n_bytes).await;
 
         // Guard immediately — synchronous, so there's no cancellation
         // window between reservation and guard.
@@ -202,7 +206,7 @@ impl InFlightBudget {
 
     pub fn stats(&self) -> InFlightStats {
         let bytes_budget = self.byte_budget.current_budget();
-        let bytes_in_use = self.byte_budget.inflight();
+        let bytes_in_use = self.byte_budget.inflight_in_use();
         let bytes_saturation = if bytes_budget > 0 {
             bytes_in_use as f64 / bytes_budget as f64
         } else {

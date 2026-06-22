@@ -52,7 +52,7 @@ pub struct Model {
     // Model parameters for estimation and lifecycle management.
     window: Duration,
 
-    // Statistics
+    // Statistics.
     bw_hwm_bps: Option<f64>,
     bw_hwm_last_updated: Option<Instant>,
     signal: Option<SignalStats>,
@@ -76,7 +76,7 @@ impl Model {
             self.first_sample_time = Some(sample.completion_time);
             if polars_config::config().verbose() {
                 eprintln!(
-                    "[InFlightConcurrency]: observed first RTT sample: {}ms, for {} bytes",
+                    "[InFlightConcurrency]: observed first RTT sample: {} ms, for {} bytes",
                     sample.ttfb.as_millis(),
                     sample.n_bytes
                 )
@@ -94,7 +94,7 @@ impl Model {
     /// Returns true if the model contains a valid signal.
     // @TODO. The regime should account for an 'app-limited' state, to
     // account for slow inbound rate not caused by the upstream network,
-    // but caused by the downstream processing (see also BBR paper).
+    // but caused by the downstream processing backpressure (see also BBR paper).
     pub fn update(&mut self, now: Instant) {
         const N_SAMPLE_THRESHOLD: usize = 5;
 

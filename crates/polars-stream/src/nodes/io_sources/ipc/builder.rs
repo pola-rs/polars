@@ -77,11 +77,9 @@ impl FileReaderBuilder for IpcReaderBuilder {
                     .get()
             })
             .unwrap_or({
-                // kdn TODO INVESTIGATE: get chunk_size from FetchConfig?
-                let chunk_size_kb =
-                    polars_io::cloud::concurrency_config::get_random_access_chunk_size()
-                        .div_ceil(1024);
-                2 * execution_state.num_pipelines * chunk_size_kb
+                // Similar to Parquet.
+                let target_chunk_size_kb = FetchConfig::random_access().chunk_size.div_ceil(1024);
+                4 * execution_state.num_pipelines * target_chunk_size_kb
             })
             // Avoid deadlock.
             .max(polars_io::cloud::concurrency_config::get_download_chunk_size().div_ceil(1024));
