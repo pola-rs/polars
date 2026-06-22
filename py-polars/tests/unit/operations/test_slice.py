@@ -169,8 +169,10 @@ def test_hconcat_tail_unequal_heights_27552() -> None:
     a = pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
     b = pl.LazyFrame({"y": [10, 20, 30]})
 
-    lazy_out = pl.concat([a, b], how="horizontal").tail(2).collect()
-    eager_out = pl.concat([a.collect(), b.collect()], how="horizontal").tail(2)
+    lazy_out = pl.concat([a, b], how="horizontal", strict=False).tail(2).collect()
+    eager_out = pl.concat(
+        [a.collect(), b.collect()], how="horizontal", strict=False
+    ).tail(2)
 
     assert_frame_equal(lazy_out, eager_out)
 
@@ -185,7 +187,7 @@ def test_hconcat_tail_unequal_heights_strict_raises_27552() -> None:
     b = pl.LazyFrame({"y": [10, 20, 30]})
 
     with pytest.raises(ShapeError):
-        pl.concat([a, b], how="horizontal", strict=True).tail(2).collect()
+        pl.concat([a, b], how="horizontal").tail(2).collect()
 
 
 @pytest.mark.parametrize(

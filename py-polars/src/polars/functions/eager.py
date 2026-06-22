@@ -35,7 +35,7 @@ def concat(
     how: ConcatMethod = "vertical",
     rechunk: bool = False,
     parallel: bool = True,
-    strict: bool = False,
+    strict: bool = True,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -54,8 +54,8 @@ def concat(
           values with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
-          if the lengths don't match.
+        * horizontal: Stacks Series from DataFrames horizontally. Requires all DataFrames
+          to have the same height when `strict=True` (the default).
         * align, align_full, align_left, align_right: Combines frames horizontally,
           auto-determining the common key columns and aligning rows using the same
           logic as `align_frames` (note that "align" is an alias for "align_full").
@@ -70,7 +70,9 @@ def concat(
         Only relevant for LazyFrames. This determines if the concatenated
         lazy computations may be executed in parallel.
     strict
-        When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
+        When how=`horizontal`, require all DataFrames to be the same height, raising an
+        error if not. Set to `False` to allow DataFrames of different heights and fill
+        with `null` where rows are missing.
 
     Examples
     --------
@@ -330,7 +332,7 @@ def union(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
-    strict: bool = False,
+    strict: bool = True,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -353,8 +355,8 @@ def union(
           values with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
-          if the lengths don't match.
+        * horizontal: Stacks Series from DataFrames horizontally. Requires all DataFrames
+          to have the same height when `strict=True` (the default).
         * align, align_full, align_left, align_right: Combines frames horizontally,
           auto-determining the common key columns and aligning rows using the same
           logic as `align_frames` (note that "align" is an alias for "align_full").
@@ -364,7 +366,9 @@ def union(
           will raise an error (if you need more control over this you should use
           a suitable `join` method directly).
     strict
-        When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
+        When how=`horizontal`, require all DataFrames to be the same height, raising an
+        error if not. Set to `False` to allow DataFrames of different heights and fill
+        with `null` where rows are missing.
 
     Examples
     --------
