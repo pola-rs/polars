@@ -3,9 +3,8 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-static SHOULD_LOG_CONCURRENCY: LazyLock<bool> = LazyLock::new(|| {
-    std::env::var("POLARS_LOG_CONCURRENCY").is_ok()
-});
+static SHOULD_LOG_CONCURRENCY: LazyLock<bool> =
+    LazyLock::new(|| std::env::var("POLARS_LOG_CONCURRENCY").is_ok());
 
 #[derive(Clone, Debug)]
 pub(crate) struct PipelineBudget {

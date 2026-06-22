@@ -162,7 +162,7 @@ impl InFlightBudget {
     }
 
     pub async fn acquire(self: &Arc<Self>, n_bytes: u64) -> InFlightPermit {
-        // NOTE: since chunk_size is a target, merge_ranges and split_ranges may overshoot 
+        // NOTE: since chunk_size is a target, merge_ranges and split_ranges may overshoot
         // the floor. Cap'ing prevents deadlock at the expense of memory management precision.
         let n_bytes = n_bytes.min(self.byte_budget.floor_byte_budget());
 
