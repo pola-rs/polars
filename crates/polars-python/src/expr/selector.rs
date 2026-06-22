@@ -238,6 +238,11 @@ impl PySelector {
         dsl::functions::all().into()
     }
 
+    #[staticmethod]
+    fn remaining() -> Self {
+        Selector::Remaining.into()
+    }
+
     fn hash(&self) -> u64 {
         let mut hasher = std::hash::DefaultHasher::default();
         self.inner.hash(&mut hasher);
