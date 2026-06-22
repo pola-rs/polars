@@ -698,7 +698,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 resolve_with_columns(exprs, input, ctxt.lp_arena, ctxt.expr_arena, ctxt.opt_flags)
                     .map_err(|e| e.context(failed_here!(with_columns)))?;
 
-            if !ctxt.opt_flags.eager() && std::env::var("POLARS_STRICT_MODE").as_deref() != Ok("1")
+            if !ctxt.opt_flags.eager() && std::env::var("POLARS_STRICT_MODE").as_deref() == Ok("1")
             {
                 if let Some(pos) = exprs
                     .iter()
