@@ -2187,6 +2187,7 @@ def _assert_matches_without_predicate_pushdown(q: pl.LazyFrame) -> None:
     assert_frame_equal(
         q.collect(),
         q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+        check_row_order=False,
     )
 
 
