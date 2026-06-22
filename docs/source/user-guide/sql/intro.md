@@ -82,7 +82,7 @@ SQL queries can be executed just as easily from multiple sources. In the example
 - a NDJSON file (loaded lazily)
 - a Pandas DataFrame
 
-And join them together using SQL. Lazy reading allows to only load the necessary rows and columns
+And join them together using SQL. Lazy reading lets you only load the necessary rows and columns
 from the files.
 
 In the same way, it's possible to register cloud datalakes (S3, Azure Data Lake). A PyArrow dataset
