@@ -13,6 +13,7 @@ use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 pub enum ExprProjectionHeight {
     Column,
     Scalar,
+    Range,
     #[default]
     Unknown,
 }
@@ -23,6 +24,8 @@ impl ExprProjectionHeight {
 
         match (self, other) {
             (Scalar, v) | (v, Scalar) => v,
+            (Range, Column) | (Column, Range) => Column,
+            (Range, _) | (_, Range) => Range,
             (Unknown, _) | (_, Unknown) => Unknown,
             (Column, Column) => Column,
         }
@@ -126,7 +129,7 @@ pub fn aexpr_projection_height(
             if lv.is_scalar() {
                 H::Scalar
             } else {
-                H::Unknown
+                H::Range
             }
         },
 
@@ -165,6 +168,7 @@ pub fn aexpr_projection_height(
                 match indices_height {
                     H::Column => H::Column,
                     H::Scalar | H::Unknown => H::Unknown,
+                    H::Range => H::Range,
                 }
             }
         },
@@ -174,6 +178,8 @@ pub fn aexpr_projection_height(
                 H::Scalar
             } else if options.flags.is_elementwise() || options.flags.is_length_preserving() {
                 H::zipped_projection_height(input_heights?.iter().copied())
+            } else if options.flags.is_range() {
+                H::Range
             } else {
                 H::Unknown
             }

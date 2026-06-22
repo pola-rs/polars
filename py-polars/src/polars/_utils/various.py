@@ -21,6 +21,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     Literal,
+    NoReturn,
     TypeVar,
     overload,
 )
@@ -737,3 +738,18 @@ def require_same_type(current: Any, other: Any) -> None:
             f"not {qualified_type_name(other)!r}"
         )
         raise TypeError(msg)
+
+
+class _NamespaceSuggestMixin:
+    """Mixin that adds suggestions to AttributeError on namespace typos."""
+
+    def __getattr__(self, name: str) -> NoReturn:
+        import difflib
+
+        public = [m for m in dir(type(self)) if not m.startswith("_")]
+        matches = difflib.get_close_matches(name, public, n=1, cutoff=0.6)
+        if matches:
+            msg = f"'{type(self).__name__}' object has no attribute {name!r}. Did you mean: {matches[0]!r}?"
+        else:
+            msg = f"'{type(self).__name__}' object has no attribute {name!r}"
+        raise AttributeError(msg)

@@ -117,6 +117,9 @@ bitflags!(
 
             /// Indicates that this expression does not produce any ordering into its output.
             const NON_ORDER_PRODUCING = 1 << 12;
+
+            /// Produces a RANGE based on its inputs.
+            const RANGE = 1 << 13;
         }
 );
 
@@ -156,6 +159,10 @@ impl FunctionFlags {
 
     pub fn returns_scalar(self) -> bool {
         self.contains(Self::RETURNS_SCALAR)
+    }
+
+    pub fn is_range(self) -> bool {
+        self.contains(Self::RANGE)
     }
 }
 
@@ -248,6 +255,7 @@ impl FunctionOptions {
         .with_flags(|f| f | FunctionFlags::LENGTH_PRESERVING)
     }
 
+    /// Will respect group boundaries. Shift, Reverse, etc.
     pub fn groupwise() -> FunctionOptions {
         FunctionOptions {
             ..Default::default()

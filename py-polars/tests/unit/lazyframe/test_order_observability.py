@@ -637,6 +637,7 @@ def test_filter_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
         ),
     ],
 )
+@pytest.mark.may_fail_strict
 def test_with_columns_sensitivity(
     exprs: list[pl.Expr], is_ordered: bool, unordered_columns: list[str] | None
 ) -> None:

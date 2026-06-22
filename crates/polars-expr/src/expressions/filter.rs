@@ -99,14 +99,15 @@ impl PhysicalExpr for FilterExpr {
             // If either side needs a broadcast, perform the broadcasting on the groups before the
             // `aggregated`.
             if needs_broadcast {
-                ac_s.groups = Cow::Owned(
+                ac_s.with_groups(
                     GroupsType::Idx(broadcast(
                         ac_s.groups.as_ref(),
                         ac_predicate.groups.iter().map(|i| i.len()),
                     ))
                     .into_sliceable(),
                 );
-                ac_predicate.groups = Cow::Owned(
+
+                ac_predicate.with_groups(
                     GroupsType::Idx(broadcast(
                         ac_predicate.groups.as_ref(),
                         ac_s.groups.iter().map(|i| i.len()),

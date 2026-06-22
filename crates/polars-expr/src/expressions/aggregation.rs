@@ -308,7 +308,7 @@ impl PhysicalExpr for AggregationExpr {
                         GroupsType::new_slice(groups, false, true).into_sliceable()
                     });
                     let mut out = AggregationContext::from_agg_state(AggregatedScalar(col), groups);
-                    out.set_original_len(false);
+                    out.set_original_groups(false);
                     return Ok(out);
                 },
                 GroupByMethod::Groups => {

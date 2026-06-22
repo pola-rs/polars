@@ -46,7 +46,7 @@ pub fn to_alp(
     lp: DslPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<IR>,
-    // Only `SIMPLIFY_EXPR`, `TYPE_COERCION`, `TYPE_CHECK` are respected.
+    // Only `SIMPLIFY_EXPR`, `TYPE_COERCION`, `TYPE_CHECK`, and `PREDICATE_PUSHDOWN` are respected.
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Node> {
     let conversion_optimizer = ConversionOptimizer::new(
@@ -698,6 +698,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 resolve_with_columns(exprs, input, ctxt.lp_arena, ctxt.expr_arena, ctxt.opt_flags)
                     .map_err(|e| e.context(failed_here!(with_columns)))?;
 
+            if !ctxt.opt_flags.eager() && std::env::var("POLARS_STRICT_MODE").as_deref() == Ok("1")
+            {
+                if let Some(pos) = exprs
+                    .iter()
+                    .position(|e| !e.is_known_length(ctxt.expr_arena))
+                {
+                    let invalid_e = &exprs[pos];
+
+                    let err = polars_err!(InvalidOperation: "all expressions should return the same length or scalar;\n\nInvalid expression: {}", node_to_expr(invalid_e.node(), ctxt.expr_arena));
+                    return Err(err.context(failed_here!(with_columns)));
+                }
+            }
             ctxt.conversion_optimizer
                 .fill_scratch(&exprs, ctxt.expr_arena);
             let lp = IR::HStack {
@@ -841,6 +853,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     dsl: Arc::new(plan.clone()),
                     version: ctxt.lp_arena.version(),
                     node: Some(ir),
+                    opt_flags: Some(*ctxt.opt_flags),
                 };
                 inputs.push(dsl);
                 input_schemas.push(schema);
@@ -1053,10 +1066,9 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 for expr in &exprs {
                     match expr {
                         Expr::Column(name) => {
-                            polars_ensure!(
-                                input_schema.contains(name),
-                                ColumnNotFound: "{name:?} not found"
-                            );
+                            if !input_schema.contains(name) {
+                                return Err(input_schema.column_not_found_err(name));
+                            }
                             subset_colnames.push(name.clone());
                         },
                         _ => subset_exprs.push(expr.clone()),
@@ -1591,10 +1603,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 maintain_order,
             }
         },
-        DslPlan::IR { node, dsl, version } => {
+        DslPlan::IR {
+            node,
+            dsl,
+            version,
+            opt_flags,
+        } => {
+            let ir_built_with_required_flags =
+                opt_flags.is_some_and(|flags| flags.cover_ir_conversion(*ctxt.opt_flags));
             return match node {
                 Some(node)
-                    if version == ctxt.lp_arena.version()
+                    if ir_built_with_required_flags  // can reuse
+                        && version == ctxt.lp_arena.version()
                         && ctxt.conversion_optimizer.used_arenas.insert(version) =>
                 {
                     Ok(node)

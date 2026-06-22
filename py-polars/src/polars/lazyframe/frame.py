@@ -998,7 +998,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Allows to alter the lazy frame during the plan stage with the resolved schema.
 
         In contrast to `pipe`, this method does not execute `function` immediately but
-        only during the plan stage. This allows to use the resolved schema of the input
+        only during the plan stage. This allows using the resolved schema of the input
         to dynamically alter the lazy frame. This also means that any exceptions raised
         by `function` will only be emitted during the plan stage.
 
@@ -6034,8 +6034,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (i.e., strictly less-than / strictly greater-than).
         check_sortedness
             Check the sortedness of the asof keys. If the keys are not sorted Polars
-            will error. Currently, sortedness cannot be checked if 'by' groups are
-            provided.
+            will error. Currently, the `in-memory` engine cannot check the sortedness
+            if 'by' groups are provided. The `streaming` engine will only check the
+            sortedness of the rows it processes.
 
         Notes
         -----

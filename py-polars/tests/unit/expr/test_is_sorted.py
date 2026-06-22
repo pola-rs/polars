@@ -1,0 +1,143 @@
+from __future__ import annotations
+
+import polars as pl
+from polars.testing import assert_frame_equal
+
+
+def test_is_sorted_ascending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+    result = df.select(pl.col("a").is_sorted())
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_descending() -> None:
+    df = pl.DataFrame({"a": [4, 3, 2, 1]})
+    result = df.select(pl.col("a").is_sorted(descending=True))
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_unsorted() -> None:
+    df = pl.DataFrame({"a": [3, 1, 4, 2]})
+    result = df.select(pl.col("a").is_sorted())
+    expected = pl.DataFrame({"a": [False]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_descending_none_accepts_either() -> None:
+    df = pl.DataFrame({"a": [4, 3, 2, 1]})
+    result = df.select(pl.col("a").is_sorted(descending=None))
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_with_nulls_last() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, None]})
+    result = df.select(pl.col("a").is_sorted(nulls_last=True))
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_empty() -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Int64})
+    result = df.select(pl.col("a").is_sorted())
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_single_element() -> None:
+    df = pl.DataFrame({"a": [42]})
+    result = df.select(pl.col("a").is_sorted())
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_all_equal() -> None:
+    df = pl.DataFrame({"a": [5, 5, 5, 5]})
+    result = df.select(pl.col("a").is_sorted())
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_all_null() -> None:
+    df = pl.DataFrame({"a": [None, None, None]}, schema={"a": pl.Int64})
+    result = df.select(pl.col("a").is_sorted())
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_infer_ascending() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4]})
+    result = df.select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_infer_descending() -> None:
+    df = pl.DataFrame({"a": [4, 3, 2, 1]})
+    result = df.select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_infer_nulls_last() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, None]})
+    result = df.select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_infer_nulls_first() -> None:
+    df = pl.DataFrame({"a": [None, 1, 2, 3]})
+    result = df.select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_descending_with_nulls_first() -> None:
+    df = pl.DataFrame({"a": [None, 4, 3, 2, 1]})
+    result = df.select(pl.col("a").is_sorted(descending=True, nulls_last=False))
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_nulls_interleaved() -> None:
+    df = pl.DataFrame({"a": [1, None, 2, None, 3]})
+    result = df.select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+    expected = pl.DataFrame({"a": [False]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_streaming_nulls_after_null_free_chunk() -> None:
+    s = pl.concat(
+        [pl.Series("a", [3, 2, 1]), pl.Series("a", [None, None], dtype=pl.Int64)],
+        rechunk=False,
+    )
+    assert s.n_chunks() == 2
+    result = (
+        pl.LazyFrame({"a": s})
+        .select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+        .collect(engine="streaming")
+    )
+    expected = pl.DataFrame({"a": [True]})
+    assert_frame_equal(result, expected)
+
+
+def test_is_sorted_streaming_interleaved_across_chunks() -> None:
+    s = pl.concat(
+        [
+            pl.Series("a", [3, 2, 1]),
+            pl.Series("a", [None], dtype=pl.Int64),
+            pl.Series("a", [0]),
+        ],
+        rechunk=False,
+    )
+    assert s.n_chunks() == 3
+    result = (
+        pl.LazyFrame({"a": s})
+        .select(pl.col("a").is_sorted(descending=None, nulls_last=None))
+        .collect(engine="streaming")
+    )
+    expected = pl.DataFrame({"a": [False]})
+    assert_frame_equal(result, expected)

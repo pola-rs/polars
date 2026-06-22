@@ -294,6 +294,7 @@ markers = [
   "write_disk: Tests that write to disk",
   "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
   "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_strict: Test that may fail strict mode.",
 ]
 filterwarnings = [
   # Fail on warnings

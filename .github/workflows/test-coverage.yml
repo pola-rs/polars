@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - main
+      - "2.0"
     paths:
       - '**.rs'
       - '**.py'
@@ -54,7 +55,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Prepare coverage
         run: cargo llvm-cov clean --workspace
@@ -132,7 +134,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Prepare coverage
         run: cargo llvm-cov clean --workspace
