@@ -464,7 +464,7 @@ def test_array_explode() -> None:
         ],
         dtype=pl.Array(pl.Date, 2),
     )
-    out_s = s.arr.explode(empty_as_null=True)
+    out_s = s.arr.explode(empty_as_null=False)
     expected_s = pl.Series(
         [
             datetime.date(1998, 1, 1),

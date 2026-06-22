@@ -16,7 +16,7 @@ def test_implode_explode_over_22188() -> None:
     result = df.select(
         (
             pl.col.x
-            * (pl.lit(pl.Series([1, 1, 1])).implode().explode(empty_as_null=True))
+            * (pl.lit(pl.Series([1, 1, 1])).implode().explode(empty_as_null=False))
         ).over(pl.col.y),
     )
 
@@ -50,7 +50,7 @@ def test_over_explode_22770() -> None:
     df = pl.DataFrame({"x": [[1.0], [2.0]], "idx": [1, 2]})
     e = (
         pl.col("x")
-        .list.explode(empty_as_null=True)
+        .list.explode(empty_as_null=False)
         .over("idx", mapping_strategy="join")
     )
 
@@ -119,14 +119,16 @@ def test_over_replace_strict_22870() -> None:
 )
 def test_implode_explode_list_over_24616(col: list[Any]) -> None:
     df = pl.DataFrame({"x": col})
-    q = df.lazy().select(pl.col.x.implode().explode(empty_as_null=True).over(1))
+    q = df.lazy().select(pl.col.x.implode().explode(empty_as_null=False).over(1))
     q_base = df.lazy().select(pl.col.x.over(1))
     expected = df
     assert_frame_equal(q.collect(), expected)
     assert_frame_equal(q_base.collect(), expected)
 
     df = pl.DataFrame({"g": [10, 10, 20], "x": col})
-    q = df.lazy().with_columns(pl.col.x.implode().explode(empty_as_null=True).over("g"))
+    q = df.lazy().with_columns(
+        pl.col.x.implode().explode(empty_as_null=False).over("g")
+    )
     q_base = df.lazy().with_columns(pl.col.x.over("g"))
     expected = df
     assert_frame_equal(q.collect(), expected)

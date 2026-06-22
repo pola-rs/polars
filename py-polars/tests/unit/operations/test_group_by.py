@@ -2055,18 +2055,18 @@ def test_group_by_unique_parametric(
     sl = df.select(expr(pl.col.a))
     gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a)).drop("literal")
     if not is_scalar:
-        gb = gb.select(pl.col.a.explode(empty_as_null=True))
+        gb = gb.select(pl.col.a.explode(empty_as_null=False))
     assert_frame_equal(sl, gb, check_row_order=maintain_order)
 
     # check scalar case
     sl_first = df.select(expr(pl.col.a.first()))
     gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a.first())).drop("literal")
     if not is_scalar:
-        gb = gb.select(pl.col.a.explode(empty_as_null=True))
+        gb = gb.select(pl.col.a.explode(empty_as_null=False))
     assert_frame_equal(sl_first, gb, check_row_order=maintain_order)
 
     li = df.select(pl.col.a.implode().list.eval(expr(pl.element())))
-    li = li.select(pl.col.a.explode(empty_as_null=True))
+    li = li.select(pl.col.a.explode(empty_as_null=False))
     assert_frame_equal(sl, li, check_row_order=maintain_order)
 
 

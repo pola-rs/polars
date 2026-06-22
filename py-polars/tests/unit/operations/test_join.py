@@ -1267,7 +1267,7 @@ def test_join_key_type_coercion_19597() -> None:
 def test_array_explode_join_19763() -> None:
     q = pl.LazyFrame().select(
         pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1)))
-        .explode(empty_as_null=True)
+        .explode(empty_as_null=False)
         .alias("k")
     )
 

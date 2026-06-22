@@ -217,9 +217,9 @@ def test_merge_sorted_deep_chain_explain_matches_balanced(n_frames: int) -> None
         pl.arange(0, pl.len()),
         pl.int_range(pl.len()),
         pl.row_index().cast(pl.Int64),
-        pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(empty_as_null=True),
+        pl.lit([0, 1, 2, 3, 4], dtype=pl.List(pl.Int64)).explode(empty_as_null=False),
         pl.lit(pl.Series([0, 1, 2, 3, 4])),
-        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(empty_as_null=True),
+        pl.lit(pl.Series([[0], [1], [2], [3], [4]])).explode(empty_as_null=False),
         pl.col("y").sort(),
         pl.col("y").sort_by(pl.col("y"), maintain_order=True),
         pl.col("y").sort_by(pl.col("y"), maintain_order=False),
@@ -335,7 +335,8 @@ lf6 = pl.LazyFrame({"a": [[1], [2]], "b": [[3], [4]]})
         (lf2, pl.col.a.filter(pl.col.a != 1), [2, 3], False),
         (
             lf3,
-            pl.col.a.explode(empty_as_null=True) * pl.col.b.explode(empty_as_null=True),
+            pl.col.a.explode(empty_as_null=False)
+            * pl.col.b.explode(empty_as_null=False),
             [3, 8, 15],
             True,
         ),
@@ -371,7 +372,7 @@ def test_with_columns_implicit_columns() -> None:
     q = (
         lf6.select("a")
         .unique(maintain_order=True)
-        .with_columns(pl.col.a.explode(empty_as_null=True))
+        .with_columns(pl.col.a.explode(empty_as_null=False))
         .unique()
     )
     assert "UNIQUE[maintain_order: true" not in q.explain()
@@ -380,7 +381,7 @@ def test_with_columns_implicit_columns() -> None:
     )
     q = (
         lf6.unique(maintain_order=True)
-        .with_columns(pl.col.a.explode(empty_as_null=True))
+        .with_columns(pl.col.a.explode(empty_as_null=False))
         .unique()
     )
     assert "UNIQUE[maintain_order: true" in q.explain()
@@ -423,7 +424,7 @@ def test_with_columns_implicit_columns() -> None:
         (
             pl.col.a.cast(pl.List(pl.Int64))
             .map_batches(lambda x: x, is_elementwise=True)
-            .explode(empty_as_null=True),
+            .explode(empty_as_null=False),
             [1, 2, 3],
             True,
             False,
@@ -461,7 +462,7 @@ def test_group_by_key_sensitivity(
         (
             pl.col.a.cast(pl.List(pl.Int64))
             .map_batches(lambda x: x, is_elementwise=True)
-            .explode(empty_as_null=True),
+            .explode(empty_as_null=False),
             True,
         ),
         (pl.col.a.sort(), True),
@@ -567,7 +568,7 @@ def test_group_by_input_ordering() -> None:
         (
             pl.col.a.cast(pl.List(pl.Int64))
             .map_batches(lambda x: x, is_elementwise=True)
-            .explode(empty_as_null=True),
+            .explode(empty_as_null=False),
             True,
         ),
         (pl.col.a.cum_prod(), True),
@@ -595,7 +596,7 @@ def test_sort_key_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
         (
             pl.col.a.cast(pl.List(pl.Int64))
             .map_batches(lambda x: x, is_elementwise=True)
-            .explode(empty_as_null=True),
+            .explode(empty_as_null=False),
             True,
         ),
         (pl.col.a.cum_prod(), True),

@@ -210,7 +210,7 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         # Sort the lists to make sure that the result is correctly ordered
         list_cols = [c for c in result.columns if c != "A"]
         result = (
-            result.explode(list_cols, empty_as_null=True)
+            result.explode(list_cols, empty_as_null=False)
             .sort("Idx")
             .group_by("A", maintain_order=True)
             .all()

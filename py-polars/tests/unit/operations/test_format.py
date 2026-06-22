@@ -89,7 +89,7 @@ def test_format_on_multiple_chunks_25159(plmonkeypatch: PlMonkeyPatch) -> None:
     df = pl.DataFrame({"group": ["A", "B"]})
     df = df.with_columns(
         pl.date_ranges(pl.date(2025, 1, 1), pl.date(2025, 1, 3))
-    ).explode("date", empty_as_null=True)
+    ).explode("date", empty_as_null=False)
     out = df.group_by(pl.all()).agg(
         pl.format("{}", (pl.col("date").max()).dt.to_string()).alias("label")
     )

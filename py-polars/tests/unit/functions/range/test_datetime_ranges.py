@@ -114,7 +114,7 @@ def test_datetime_ranges_schema(
         .dt.replace_time_zone(values_time_zone)
         .dt.cast_time_unit(values_time_unit),
         pl.col("datetime_range")
-        .explode(empty_as_null=True)
+        .explode(empty_as_null=False)
         .dt.replace_time_zone(output_time_zone)
         .dt.cast_time_unit(output_time_unit)
         .implode(),
@@ -214,7 +214,7 @@ def test_datetime_ranges_schema_upcasts_to_datetime(
         }
     ).with_columns(
         pl.col("datetime_range")
-        .explode(empty_as_null=True)
+        .explode(empty_as_null=False)
         .dt.cast_time_unit(output_dtype.time_unit)  # type: ignore[union-attr]
         .dt.replace_time_zone(output_dtype.time_zone)  # type: ignore[union-attr]
         .implode(),
@@ -232,7 +232,7 @@ def test_datetime_ranges_schema_upcasts_to_datetime(
     ).alias("datetime")
     assert_series_equal(
         result_single,
-        expected["datetime_range"].explode(empty_as_null=True).rename("datetime"),
+        expected["datetime_range"].explode(empty_as_null=False).rename("datetime"),
     )
 
 

@@ -1362,7 +1362,7 @@ def test_parquet_pyarrow_map() -> None:
         schema={"x": pl.Struct({"key": pl.Int32, "value": pl.Int32})},
     )
     f.seek(0)
-    assert_frame_equal(pl.read_parquet(f).explode(["x"], empty_as_null=True), expected)
+    assert_frame_equal(pl.read_parquet(f).explode(["x"], empty_as_null=False), expected)
 
     # Test for https://github.com/pola-rs/polars/issues/21317
     # Specifying schema/allow_missing_columns
@@ -1373,7 +1373,7 @@ def test_parquet_pyarrow_map() -> None:
                 f,
                 schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
                 missing_columns=missing_columns,  # type: ignore[arg-type]
-            ).explode(["x"], empty_as_null=True),
+            ).explode(["x"], empty_as_null=False),
             expected,
         )
 

@@ -206,7 +206,7 @@ def test_categorical_list() -> None:
     assert s.dtype == pl.List
     assert s.dtype.inner == pl.Categorical  # type: ignore[attr-defined]
     assert s.to_list() == values
-    assert s.explode(empty_as_null=True).to_list() == ["a", "b", "c", "a", "d", "d"]
+    assert s.explode(empty_as_null=False).to_list() == ["a", "b", "c", "a", "d", "d"]
 
 
 def test_group_by_list_column() -> None:
@@ -342,7 +342,7 @@ def test_list_sum_and_dtypes() -> None:
         )
 
         assert_frame_equal(
-            df.select("a").explode("a", empty_as_null=True).sum(),
+            df.select("a").explode("a", empty_as_null=False).sum(),
             pl.DataFrame(pl.Series("a", [32], dtype=dt_out)),
             check_dtypes=True,
             check_exact=True,
@@ -546,7 +546,7 @@ def test_logical_parallel_list_collect() -> None:
         )
         .group_by("Group")
         .agg(pl.col("Values").value_counts(sort=True))
-        .explode("Values", empty_as_null=True)
+        .explode("Values", empty_as_null=False)
         .unnest("Values")
     )
     assert out.dtypes == [pl.String, pl.Categorical, pl.get_index_type()]
@@ -638,7 +638,7 @@ def test_struct_with_nulls_as_list() -> None:
 def test_list_amortized_iter_clear_settings_10126() -> None:
     out = (
         pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
-        .explode("a", empty_as_null=True)
+        .explode("a", empty_as_null=False)
         .group_by("a")
         .agg(pl.col("b").list.explode(keep_nulls=False, empty_as_null=False))
         .with_columns(pl.col("b").list.unique())
@@ -887,7 +887,7 @@ def test_sort() -> None:
 def test_list_agg_temporal(inner_dtype: PolarsDataType, agg: str) -> None:
     lf = pl.LazyFrame({"a": [[1, 3]]}, schema={"a": pl.List(inner_dtype)})
     result = lf.select(getattr(pl.col("a").list, agg)())
-    expected = lf.select(getattr(pl.col("a").explode(empty_as_null=True), agg)())
+    expected = lf.select(getattr(pl.col("a").explode(empty_as_null=False), agg)())
     assert result.collect_schema() == expected.collect_schema()
     assert_frame_equal(result.collect(), expected.collect())
 
