@@ -41,7 +41,7 @@ pub struct IoSample {
     pub n_bytes: u64,
     // Time-to-first-byte.
     pub ttfb: Duration,
-    // kdn TODO: Factor out as we only care about per-tick_window stats.
+    // TODO: Factor out as we only care about per-tick_window stats.
     pub completion_time: Instant,
 }
 
@@ -87,7 +87,7 @@ impl Default for ControllerConfig {
 
             // Count-based budget, currently fixed
             request_budget: get_request_budget(),
-            control_interval: Duration::from_millis(100), //kdn TODO: TEST & TUNE
+            control_interval: Duration::from_millis(100),
             budget_resize_threshold: 0.05,
         }
     }
@@ -104,7 +104,6 @@ fn get_init_byte_budget(target_chunk_size: u64) -> u64 {
                 .get()
         })
         .unwrap_or_else(|_| {
-            // kdn TODO TEST & TUNE
             // This should be lower than the expected BDP so it can ramp-up, but
             // too low a value delays the transition to stable.
             // Heuristic: higher bandwidth is expected on larger instances.
@@ -240,8 +239,8 @@ impl ConcurrencyController {
                     let gain = match state {
                         RegimeState::Init => 1.0,
                         RegimeState::RampUp { .. } => 2.0,
-                        RegimeState::Stable => 2.0, // NOTE: >> 1.0 so that environment noise gets absorbed.
-                        // kdn TODO TEST & TUNE
+                        // NOTE: >> 1.0 for the purpose of absorbing environment noise.
+                        RegimeState::Stable => 2.0,
                         RegimeState::ProbeUp { .. } => 3.0,
                         // Unreachable.
                         RegimeState::WarmIdle { .. } => 1.0,

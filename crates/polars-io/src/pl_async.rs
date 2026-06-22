@@ -1,33 +1,14 @@
 use std::error::Error;
 use std::future::Future;
-use std::sync::LazyLock;
 
 use polars_buffer::Buffer;
-use polars_core::config::{self, verbose};
+use polars_core::config::verbose;
 use polars_core::runtime::RAYON;
 use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::sync::Semaphore;
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
-
-static PREFETCH_MEMORY_LIMIT: LazyLock<usize> = LazyLock::new(|| {
-    //kdn TODO TEST & TUNE: size based on instance type
-    let v = std::env::var("POLARS_PREFETCH_MEMORY_LIMIT")
-        .as_deref()
-        .map(|x| x.parse().expect("integer"))
-        .unwrap_or(256 * 1024 * 1024);
-
-    if config::verbose() {
-        eprintln!("async prefetch_memory_limit: {v}")
-    }
-
-    v
-});
-
-pub fn get_prefetch_memory_limit() -> usize {
-    *PREFETCH_MEMORY_LIMIT
-}
 
 pub trait GetSize {
     fn size(&self) -> u64;

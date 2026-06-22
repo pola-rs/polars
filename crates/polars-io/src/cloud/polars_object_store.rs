@@ -283,7 +283,6 @@ impl PolarsObjectStore {
                     None => None,
                 };
 
-                // kdn TODO REFACTOR - 3 things happening at once
                 let (out, ttfb) = self
                     .io_metrics()
                     .record_io_read(
@@ -478,7 +477,7 @@ impl PolarsObjectStore {
         Ok(out)
     }
 
-    // kdn TODO REFACTOR: review and update concurrency strategy
+    // TODO: Refactor for updated concurrency strategy.
     pub async fn download(&self, path: &Path, file: &mut tokio::fs::File) -> PolarsResult<()> {
         let size = self.head(path, ConcurrencyStrategy::Unbounded).await?.size;
         let parts = split_range(0..size as usize, None);
@@ -516,7 +515,7 @@ impl PolarsObjectStore {
         path: &Path,
         strategy: ConcurrencyStrategy,
     ) -> PolarsResult<ObjectMeta> {
-        //kdn TODO REFACTOR: Update concurrency strategy.
+        // TODO: Refactor for updated concurrency strategy.
         // For now, we fall back to 'Legacy' which is fine for metadata.
         // Since this carries an early signal, the IO Sample is of interest regardless of
         // the strategy in use.

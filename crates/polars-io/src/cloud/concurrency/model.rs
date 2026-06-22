@@ -45,7 +45,7 @@ impl SignalStats {
 #[derive(Debug)]
 pub struct Model {
     // Collect and retain samples
-    // kdn TODO PERF: Move to ring-buffer of TickBucket stats.
+    // TODO: Introduce 'tick buckets' and move to ring-buffer of bucket-based stats.
     samples: VecDeque<IoSample>,
     first_sample_time: Option<Instant>,
 
@@ -137,7 +137,8 @@ impl Model {
         let bw_avg_bps = n_bytes as f64 / self.window.as_secs_f64();
 
         // All-time high-water-mark (HWM).
-        // kdn TODO: Some form of HWM expiration or decay.
+        // TODO: Some form of HWM expiration or decay would be in order.
+        // In the current implementation, HWM can only go up.
         if self.bw_hwm_bps.is_none_or(|hwm| bw_avg_bps > hwm) {
             self.bw_hwm_bps = Some(bw_avg_bps);
             self.bw_hwm_last_updated = Some(now);

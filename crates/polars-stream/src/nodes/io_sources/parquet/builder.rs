@@ -72,7 +72,6 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                     .get()
             })
             .unwrap_or(
-                //kdn TODO TEST & TUNE
                 execution_state
                     .num_pipelines
                     .saturating_mul(2)
