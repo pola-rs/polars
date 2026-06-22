@@ -381,10 +381,16 @@ impl SampleState {
 
         // Transition to building state.
         params.left_is_build = Some(left_is_build);
-        let mut sampled_build_morsels =
-            BufferedStream::new(core::mem::take(&mut self.left), MorselSeq::default());
-        let mut sampled_probe_morsels =
-            BufferedStream::new(core::mem::take(&mut self.right), MorselSeq::default());
+        let mut sampled_build_morsels = BufferedStream::new(
+            "equi-join-left-sample".into(),
+            core::mem::take(&mut self.left),
+            MorselSeq::default(),
+        );
+        let mut sampled_probe_morsels = BufferedStream::new(
+            "equi-join-right-sample".into(),
+            core::mem::take(&mut self.right),
+            MorselSeq::default(),
+        );
         if !left_is_build {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
         }
@@ -1296,7 +1302,7 @@ impl EquiJoinNode {
                 sample_limit,
             },
             table: new_idx_table(unique_key_schema),
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("equi-join".into()),
         })
     }
 }

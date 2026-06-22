@@ -3409,6 +3409,7 @@ dependencies = [
  "thread_local",
  "tikv-jemallocator",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

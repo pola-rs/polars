@@ -1,9 +1,7 @@
-#[allow(unused)]
-mod v1;
-
 mod global_alloc;
 mod memory_manager;
 mod spill_context;
+mod spill_file;
 mod spill_frame;
 mod spill_token;
 
@@ -13,6 +11,7 @@ pub use spill_context::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, RandomSpillContext,
     SpillContext,
 };
+pub use spill_file::{flush_ooc_cleanup, init_ooc_cleaner};
 pub use spill_frame::SpillFrame;
 pub use spill_token::{DynSpillToken, PinnedMut, PinnedRef, SpillToken};
 
@@ -23,7 +22,7 @@ pub trait Spillable: Send + Sync + 'static {
     fn estimate_byte_size(&self) -> usize;
 
     /// Spills this value, returning a spilled representation.
-    fn spill(&self) -> impl Future<Output = Self::Spilled> + Send;
+    fn spill(&self, context_id: &str) -> impl Future<Output = Self::Spilled> + Send;
 
     /// Given a previously spilled representation
     fn unspill(location: &Self::Spilled) -> impl Future<Output = Self> + Send;

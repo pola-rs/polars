@@ -20,7 +20,7 @@ impl InMemorySinkNode {
         Self {
             morsels_per_pipe: Mutex::default(),
             schema,
-            spill_ctx: LeastRecentSpillContext::new(),
+            spill_ctx: LeastRecentSpillContext::new("in-memory-sink".into()),
         }
     }
 }
