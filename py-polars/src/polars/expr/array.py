@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from polars import functions as F
 from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
+from polars._utils.various import _Omitted
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -788,7 +789,7 @@ class ExprArrayNameSpace:
         return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
     def explode(
-        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
     ) -> Expr:
         """
         Returns a column with a separate row for every array element.
@@ -825,7 +826,7 @@ class ExprArrayNameSpace:
         │ 6   │
         └─────┘
         """
-        if empty_as_null is None:
+        if empty_as_null is _Omitted:
             issue_deprecation_warning(
                 "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
                 "To keep the current behavior, explicitly set `empty_as_null=True`."

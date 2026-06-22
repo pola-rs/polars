@@ -38,6 +38,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
+    _Omitted,
     extend_bool,
     normalize_filepath,
     sphinx_accessor,
@@ -5378,7 +5379,7 @@ Consider using {self}.implode() instead"""
         return self.explode(empty_as_null=True, keep_nulls=True)
 
     def explode(
-        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
     ) -> Expr:
         """
         Explode a list expression.
@@ -5425,7 +5426,7 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
-        if empty_as_null is None:
+        if empty_as_null is _Omitted:
             issue_deprecation_warning(
                 "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
                 "To keep the current behavior, explicitly set `empty_as_null=True`."
