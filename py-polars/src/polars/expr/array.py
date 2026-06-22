@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
@@ -786,7 +787,9 @@ class ExprArrayNameSpace:
         separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Expr:
         """
         Returns a column with a separate row for every array element.
 
@@ -822,6 +825,13 @@ class ExprArrayNameSpace:
         │ 6   │
         └─────┘
         """
+        if empty_as_null is None:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.arr_explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )

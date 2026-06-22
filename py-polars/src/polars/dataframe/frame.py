@@ -9455,7 +9455,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool | None = None,
         keep_nulls: bool = True,
     ) -> DataFrame:
         """

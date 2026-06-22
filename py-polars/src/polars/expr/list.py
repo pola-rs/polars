@@ -11,7 +11,7 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_expr
-from polars._warnings import issue_warning
+from polars._warnings import issue_deprecation_warning, issue_warning
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1113,7 +1113,9 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Expr:
         """
         Returns a column with a separate row for every list element.
 
@@ -1151,6 +1153,13 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         │ 6   │
         └─────┘
         """
+        if empty_as_null is None:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
