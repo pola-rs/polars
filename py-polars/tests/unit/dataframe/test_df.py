@@ -643,7 +643,7 @@ def test_map_columns() -> None:
 
 def test_explode() -> None:
     df = pl.DataFrame({"letters": ["c", "a"], "nrs": [[1, 2], [1, 3]]})
-    out = df.explode("nrs")
+    out = df.explode("nrs", empty_as_null=True)
     assert out["letters"].to_list() == ["c", "c", "a", "a"]
     assert out["nrs"].to_list() == [1, 2, 1, 3]
 
@@ -995,7 +995,7 @@ def test_head_group_by() -> None:
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(cs.all().exclude(keys))
+        .explode(cs.all().exclude(keys), empty_as_null=True)
     )
 
     assert out.shape == (5, 4)
@@ -1915,7 +1915,7 @@ def test_group_by_cat_list() -> None:
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
-    out = grouped.explode()
+    out = grouped.explode(empty_as_null=True)
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 
@@ -2077,14 +2077,14 @@ def test_extension() -> None:
     out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 2
-    s = out["a"].list.explode()
+    s = out["a"].list.explode(empty_as_null=True)
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 3
     del s
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 2
 
-    assert out["a"].list.explode().to_list() == foos
+    assert out["a"].list.explode(empty_as_null=True).to_list() == foos
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 2
     del out
@@ -2407,7 +2407,7 @@ def test_group_by_slice_expression_args() -> None:
     out = (
         df.group_by("groups", maintain_order=True)
         .agg([pl.col("vals").slice((pl.len() * 0.1).cast(int), (pl.len() // 5))])
-        .explode("vals")
+        .explode("vals", empty_as_null=True)
     )
 
     expected = pl.DataFrame(
@@ -2434,14 +2434,14 @@ def test_explode_empty() -> None:
         .group_by("x", maintain_order=True)
         .agg(pl.col("y").gather([]))
     )
-    assert df.explode("y").to_dict(as_series=False) == {
+    assert df.explode("y", empty_as_null=True).to_dict(as_series=False) == {
         "x": ["a", "b"],
         "y": [None, None],
     }
 
     df = pl.DataFrame({"x": ["1", "2", "4"], "y": [["a", "b", "c"], ["d"], []]})
     assert_frame_equal(
-        df.explode("y"),
+        df.explode("y", empty_as_null=True),
         pl.DataFrame({"x": ["1", "1", "1", "2", "4"], "y": ["a", "b", "c", "d", None]}),
     )
 
@@ -2451,7 +2451,7 @@ def test_explode_empty() -> None:
             "numbers": [[]],
         }
     )
-    assert df.explode("numbers").to_dict(as_series=False) == {
+    assert df.explode("numbers", empty_as_null=True).to_dict(as_series=False) == {
         "letters": ["a"],
         "numbers": [None],
     }

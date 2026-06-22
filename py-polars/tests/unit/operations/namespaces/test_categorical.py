@@ -127,7 +127,7 @@ def test_cat_len_bytes(dtype: PolarsDataType) -> None:
         pl.LazyFrame({"key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2], "value": s.extend(s)})
         .group_by("key", maintain_order=True)
         .agg(pl.col("value").cat.len_bytes().alias("len_bytes"))
-        .explode("len_bytes")
+        .explode("len_bytes", empty_as_null=True)
         .collect()
     )
     expected_df = pl.DataFrame(
@@ -167,7 +167,7 @@ def test_cat_len_chars(dtype: PolarsDataType) -> None:
         pl.LazyFrame({"key": [1, 1, 1, 1, 1, 2, 2, 2, 2, 2], "value": s.extend(s)})
         .group_by("key", maintain_order=True)
         .agg(pl.col("value").cat.len_chars().alias("len_bytes"))
-        .explode("len_bytes")
+        .explode("len_bytes", empty_as_null=True)
         .collect()
     )
     expected_df = pl.DataFrame(

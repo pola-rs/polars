@@ -515,7 +515,7 @@ def test_nested_explode_4026() -> None:
         }
     )
 
-    assert df.explode("data").to_dict(as_series=False) == {
+    assert df.explode("data", empty_as_null=True).to_dict(as_series=False) == {
         "data": [
             {"account_id": 10, "values": [1, 2]},
             {"account_id": 11, "values": [10, 20]},
@@ -1362,7 +1362,7 @@ def test_struct_arithmetic_broadcast_21376() -> None:
     )
     out = (
         df.with_row_index()
-        .explode("list_struct")
+        .explode("list_struct", empty_as_null=True)
         .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
     )
     assert_frame_equal(out, expected)

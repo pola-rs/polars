@@ -507,7 +507,7 @@ def test_explode_date() -> None:
         out = (
             df.group_by("b", maintain_order=True)
             .agg([pl.col("a"), pl.col("c").pct_change()])
-            .explode(["a", "c"])
+            .explode(["a", "c"], empty_as_null=True)
         )
         assert out.shape == (4, 3)
         assert out.rows() == [

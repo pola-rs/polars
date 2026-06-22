@@ -510,7 +510,7 @@ def test_decimal_explode() -> None:
             "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
         }
     )
-    df = nested_decimal_df.explode("bar")
+    df = nested_decimal_df.explode("bar", empty_as_null=True)
     expected_df = pl.DataFrame(
         {
             "bar": [D("3.4"), D("3.4"), D("4.5")],

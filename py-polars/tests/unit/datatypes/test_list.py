@@ -206,7 +206,7 @@ def test_categorical_list() -> None:
     assert s.dtype == pl.List
     assert s.dtype.inner == pl.Categorical  # type: ignore[attr-defined]
     assert s.to_list() == values
-    assert s.explode().to_list() == ["a", "b", "c", "a", "d", "d"]
+    assert s.explode(empty_as_null=True).to_list() == ["a", "b", "c", "a", "d", "d"]
 
 
 def test_group_by_list_column() -> None:
@@ -283,7 +283,7 @@ def test_fast_explode_on_list_struct_6208() -> None:
     )
 
     assert not df["parents"].flags["FAST_EXPLODE"]
-    assert df.explode("parents").to_dict(as_series=False) == {
+    assert df.explode("parents", empty_as_null=True).to_dict(as_series=False) == {
         "label": ["l", "l"],
         "tag": ["t", "t"],
         "ref": [1, 1],
@@ -342,7 +342,7 @@ def test_list_sum_and_dtypes() -> None:
         )
 
         assert_frame_equal(
-            df.select("a").explode("a").sum(),
+            df.select("a").explode("a", empty_as_null=True).sum(),
             pl.DataFrame(pl.Series("a", [32], dtype=dt_out)),
             check_dtypes=True,
             check_exact=True,
@@ -356,7 +356,7 @@ def test_list_sum_and_dtypes() -> None:
 
         # include nulls in the list
         assert_frame_equal(
-            df.select("b").explode("b").sum(),
+            df.select("b").explode("b", empty_as_null=True).sum(),
             pl.DataFrame(pl.Series("b", [19], dtype=dt_out)),
             check_dtypes=True,
             check_exact=True,
@@ -546,7 +546,7 @@ def test_logical_parallel_list_collect() -> None:
         )
         .group_by("Group")
         .agg(pl.col("Values").value_counts(sort=True))
-        .explode("Values")
+        .explode("Values", empty_as_null=True)
         .unnest("Values")
     )
     assert out.dtypes == [pl.String, pl.Categorical, pl.get_index_type()]
@@ -638,7 +638,7 @@ def test_struct_with_nulls_as_list() -> None:
 def test_list_amortized_iter_clear_settings_10126() -> None:
     out = (
         pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
-        .explode("a")
+        .explode("a", empty_as_null=True)
         .group_by("a")
         .agg(pl.col("b").list.explode(keep_nulls=False, empty_as_null=False))
         .with_columns(pl.col("b").list.unique())
@@ -804,9 +804,9 @@ def test_take_list_15719() -> None:
         {"a": [None, None], "b": [None, [[1, 2]]]}, schema={"a": schema, "b": schema}
     )
     df = df.select(
-        a_explode=pl.col("a").explode(),
+        a_explode=pl.col("a").explode(empty_as_null=True),
         a_get=pl.col("a").list.get(0, null_on_oob=True),
-        b_explode=pl.col("b").explode(),
+        b_explode=pl.col("b").explode(empty_as_null=True),
         b_get=pl.col("b").list.get(0, null_on_oob=True),
     )
 
@@ -887,7 +887,7 @@ def test_sort() -> None:
 def test_list_agg_temporal(inner_dtype: PolarsDataType, agg: str) -> None:
     lf = pl.LazyFrame({"a": [[1, 3]]}, schema={"a": pl.List(inner_dtype)})
     result = lf.select(getattr(pl.col("a").list, agg)())
-    expected = lf.select(getattr(pl.col("a").explode(), agg)())
+    expected = lf.select(getattr(pl.col("a").explode(empty_as_null=True), agg)())
     assert result.collect_schema() == expected.collect_schema()
     assert_frame_equal(result.collect(), expected.collect())
 

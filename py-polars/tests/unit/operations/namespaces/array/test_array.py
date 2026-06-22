@@ -440,7 +440,7 @@ def test_array_explode() -> None:
             "logical": pl.Array(pl.Date, 2),
         },
     )
-    out = df.select(pl.all().arr.explode())
+    out = df.select(pl.all().arr.explode(empty_as_null=True))
     expected = pl.DataFrame(
         {
             "str": ["a", "b", "c", None, None],
@@ -464,7 +464,7 @@ def test_array_explode() -> None:
         ],
         dtype=pl.Array(pl.Date, 2),
     )
-    out_s = s.arr.explode()
+    out_s = s.arr.explode(empty_as_null=True)
     expected_s = pl.Series(
         [
             datetime.date(1998, 1, 1),
@@ -565,7 +565,7 @@ def test_array_n_unique() -> None:
 
 def test_explode_19049() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3]]}, schema={"a": pl.Array(pl.Int64, 3)})
-    result_df = df.select(pl.col.a.arr.explode())
+    result_df = df.select(pl.col.a.arr.explode(empty_as_null=True))
     expected_df = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
     assert_frame_equal(result_df, expected_df)
 
@@ -574,7 +574,7 @@ def test_explode_19049() -> None:
         InvalidOperationError,
         match="expected Array datatype for array operation, got: Int64",
     ):
-        df.select(pl.col.a.arr.explode())
+        df.select(pl.col.a.arr.explode(empty_as_null=True))
 
 
 def test_array_join_unequal_lengths_22018() -> None:
@@ -653,7 +653,7 @@ def test_arr_contains() -> None:
     "expr",
     [
         pl.col("a").arr.contains("z"),
-        pl.col("a").arr.explode(),
+        pl.col("a").arr.explode(empty_as_null=True),
         pl.col("a").arr.sum(),
         pl.col("a").arr.to_list(),
         pl.col("a").arr.to_struct(),

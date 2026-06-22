@@ -25,7 +25,7 @@ def test_implode_explode_agg() -> None:
     assert_frame_equal(
         pl.DataFrame({"a": [1, 2]})
         .group_by(pl.lit(1, pl.Int64))
-        .agg(pl.col.a.implode().explode().sum()),
+        .agg(pl.col.a.implode().explode(empty_as_null=True).sum()),
         pl.DataFrame({"literal": [1], "a": [3]}),
     )
 

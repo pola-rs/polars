@@ -199,7 +199,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().top_k_by("a", 2))
-        .explode(cs.all().exclude("c")),
+        .explode(cs.all().exclude("c"), empty_as_null=True),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -213,7 +213,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().bottom_k_by("a", 2))
-        .explode(cs.all().exclude("c")),
+        .explode(cs.all().exclude("c"), empty_as_null=True),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],

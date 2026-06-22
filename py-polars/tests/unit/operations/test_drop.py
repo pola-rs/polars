@@ -28,7 +28,7 @@ def test_drop_explode_6641() -> None:
     ).lazy()
 
     assert (
-        df.explode(["identifier", "alternate"])
+        df.explode(["identifier", "alternate"], empty_as_null=True)
         .with_columns(pl.struct(["identifier", "alternate"]).alias("test"))
         .drop(["identifier", "alternate"])
         .select(pl.concat_list([pl.col("test"), pl.col("test")]))

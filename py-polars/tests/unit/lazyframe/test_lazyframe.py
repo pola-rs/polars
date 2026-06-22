@@ -455,7 +455,7 @@ def test_head_group_by() -> None:
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(cs.all().exclude(keys))
+        .explode(cs.all().exclude(keys), empty_as_null=True)
     )
 
     assert out.collect().rows() == [

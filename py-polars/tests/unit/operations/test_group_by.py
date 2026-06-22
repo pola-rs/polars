@@ -60,7 +60,9 @@ def test_group_by() -> None:
     )
 
     # check if this query runs and thus column names propagate
-    df.group_by("b").agg(pl.col("c").fill_null(strategy="forward")).explode("c")
+    df.group_by("b").agg(pl.col("c").fill_null(strategy="forward")).explode(
+        "c", empty_as_null=True
+    )
 
     # get a specific column
     result = df.group_by("b", maintain_order=True).agg(pl.count("a"))
@@ -1055,11 +1057,11 @@ def test_group_by_with_expr_as_key() -> None:
 
     # tests: 11766
     result = gb.head(0)
-    expected = gb.agg(pl.col("x").head(0)).explode("x")
+    expected = gb.agg(pl.col("x").head(0)).explode("x", empty_as_null=True)
     assert_frame_equal(result, expected)
 
     result = gb.tail(0)
-    expected = gb.agg(pl.col("x").tail(0)).explode("x")
+    expected = gb.agg(pl.col("x").tail(0)).explode("x", empty_as_null=True)
     assert_frame_equal(result, expected)
 
 
@@ -2053,18 +2055,18 @@ def test_group_by_unique_parametric(
     sl = df.select(expr(pl.col.a))
     gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a)).drop("literal")
     if not is_scalar:
-        gb = gb.select(pl.col.a.explode())
+        gb = gb.select(pl.col.a.explode(empty_as_null=True))
     assert_frame_equal(sl, gb, check_row_order=maintain_order)
 
     # check scalar case
     sl_first = df.select(expr(pl.col.a.first()))
     gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a.first())).drop("literal")
     if not is_scalar:
-        gb = gb.select(pl.col.a.explode())
+        gb = gb.select(pl.col.a.explode(empty_as_null=True))
     assert_frame_equal(sl_first, gb, check_row_order=maintain_order)
 
     li = df.select(pl.col.a.implode().list.eval(expr(pl.element())))
-    li = li.select(pl.col.a.explode())
+    li = li.select(pl.col.a.explode(empty_as_null=True))
     assert_frame_equal(sl, li, check_row_order=maintain_order)
 
 
@@ -2218,15 +2220,17 @@ def test_group_broadcast_binary_apply_expr_25046(
 
 def test_group_by_explode_none_dtype_25045() -> None:
     df = pl.DataFrame({"a": [None, None, None], "b": [1.0, 2.0, None]})
-    out_a = df.group_by(pl.lit(1)).agg(pl.col.a.explode())
+    out_a = df.group_by(pl.lit(1)).agg(pl.col.a.explode(empty_as_null=True))
     expected_a = pl.DataFrame({"literal": 1, "a": [[None, None, None]]})
     assert_frame_equal(out_a, expected_a)
 
-    out_b = df.group_by(pl.lit(1)).agg(pl.col.b.explode())
+    out_b = df.group_by(pl.lit(1)).agg(pl.col.b.explode(empty_as_null=True))
     assert len(out_a["a"][0]) == len(out_b["b"][0])
 
     out_c = df.select(
-        pl.coalesce(pl.col.a.explode(), pl.col.b.explode())
+        pl.coalesce(
+            pl.col.a.explode(empty_as_null=True), pl.col.b.explode(empty_as_null=True)
+        )
         .implode()
         .over(pl.int_range(pl.len()))
     )
@@ -2275,17 +2279,19 @@ def test_group_by_forward_backward_fill(
 
     data = df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit")
     if not is_scalar:
-        data = data.explode(cs.all())
+        data = data.explode(cs.all(), empty_as_null=True)
     assert_frame_equal(df.select(expr(cl)), data)
 
     data = df.group_by("g").agg(expr(cl)).drop("g")
     if not is_scalar:
-        data = data.explode(cs.all())
+        data = data.explode(cs.all(), empty_as_null=True)
     assert_frame_equal(df.select(expr(cl)), data)
 
     assert_frame_equal(
         df.select(expr(cl)),
-        df.select(cl.implode().list.eval(expr(pl.element())).explode()),
+        df.select(
+            cl.implode().list.eval(expr(pl.element())).explode(empty_as_null=True)
+        ),
     )
 
     df = pl.Schema({"x": pl.Int64()}).to_frame()
@@ -2479,7 +2485,11 @@ def test_grouped_agg_parametric(
     if not is_window:
         types["first"] = (pl.Expr.first, True, False)
         types["slice"] = (lambda e: e.slice(1, 3), False, False)
-        types["impl_expl"] = (lambda e: e.implode().explode(), False, False)
+        types["impl_expl"] = (
+            lambda e: e.implode().explode(empty_as_null=True),
+            False,
+            False,
+        )
         types["rolling"] = (
             lambda e: e.rolling(pl.row_index(), period="3i"),
             False,
