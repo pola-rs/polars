@@ -6,13 +6,21 @@ use crate::cloud::concurrency::model::SignalStats;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RegimeState {
+    // Starting state.
     Init,
+    // Rapid increase to gauge the max_bandwidth.
     RampUp {
         consecutive_no_growth: u32,
         last_bw_observation: f64,
     },
+    // Nominal steady state.
     Stable,
+    // Actively sense for higher bandwidth.
     ProbeUp {
+        started_at: Instant,
+    },
+    // No signal available, but the prior model still applies.
+    WarmIdle {
         started_at: Instant,
     },
 }
@@ -24,6 +32,7 @@ impl RegimeState {
             RegimeState::RampUp { .. } => "ramp_up",
             RegimeState::Stable => "stable",
             RegimeState::ProbeUp { .. } => "probe_up",
+            RegimeState::WarmIdle { .. } => "warm_idle",
         }
     }
 }
@@ -37,6 +46,7 @@ pub struct Regime {
     rampup_exit_rounds: u32,
     probe_interval: Duration,
     probe_duration: Duration,
+    warm_idle_grace: Duration,
 }
 
 impl Regime {
@@ -49,16 +59,26 @@ impl Regime {
             // Interval between ProbeUp spikes
             probe_interval: Duration::from_millis(3000),
             probe_duration: Duration::from_millis(1000),
+            warm_idle_grace: Duration::from_millis(5000),
         }
     }
 
-    // kdn TODO: Add app-limited condition (see BBR paper).
-    // kdn TODO: Add a ProbeDown state if needed.
+    // TODO: Add sensing-based app-limited state (see BBR paper). This state avoids model regression in
+    // when bandwidth is artificially constrained by the downstream backpressure kicking in (e.g., from
+    // decode or from the streaming engine execution).
+    // TODO: Add a ProbeDown state if needed.
     pub fn step(&mut self, signal: Option<SignalStats>, now: Instant) -> RegimeState {
         let Some(sig) = signal else {
             return match self.state {
                 RegimeState::Init => RegimeState::Init,
-                _ => self.transition_to(RegimeState::Init, now),
+                RegimeState::WarmIdle { started_at } => {
+                    if now.duration_since(started_at) > self.warm_idle_grace {
+                        self.transition_to(RegimeState::Init, now)
+                    } else {
+                        self.state
+                    }
+                },
+                _ => self.transition_to(RegimeState::WarmIdle { started_at: now }, now),
             };
         };
 
@@ -92,6 +112,8 @@ impl Regime {
                     self.state
                 }
             },
+
+            RegimeState::WarmIdle { .. } => self.transition_to(RegimeState::Stable, now),
 
             RegimeState::Stable => {
                 if now.duration_since(self.last_transition) > self.probe_interval {

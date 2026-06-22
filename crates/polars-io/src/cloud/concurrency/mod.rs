@@ -216,7 +216,7 @@ impl ConcurrencyController {
                 let now = Instant::now();
 
                 // Update model statistics and step regime.
-                let (state, signal, dropped) = {
+                let (state, signal, dropped, bw_hwm_held) = {
                     for _ in 0..SAMPLE_QUEUE_CAPACITY {
                         let Some(s) = sample_queue.pop() else { break };
                         model.record(s);
@@ -225,38 +225,43 @@ impl ConcurrencyController {
                     model.update(now);
                     let signal = model.signal();
                     let state = regime.step(signal, now);
-                    (state, signal, dropped)
+                    let bw_hwm_held = model.bw_hwm_bps();
+                    (state, signal, dropped, bw_hwm_held)
                 };
 
-                // Compute base BDP
-                let base_budget = match (state, signal) {
-                    (RegimeState::Init, _) | (_, None) => config.init_byte_budget,
-                    (_, Some(signal)) => signal.bdp_bytes().max(config.init_byte_budget),
-                };
+                if !matches!(state, RegimeState::WarmIdle { .. }) {
+                    // Compute base BDP
+                    let base_budget = match (state, signal) {
+                        (RegimeState::Init, _) | (_, None) => config.init_byte_budget,
+                        (_, Some(signal)) => signal.bdp_bytes().max(config.init_byte_budget),
+                    };
 
-                // Compute target BDP using the gain multiplier. This is similar to BBR cwnd_gain.
-                let gain = match state {
-                    RegimeState::Init => 1.0,
-                    RegimeState::RampUp { .. } => 2.0,
-                    RegimeState::Stable => 2.0, // NOTE: >> 1.0 so that environment noise gets absorbed.
-                    // kdn TODO TEST & TUNE
-                    RegimeState::ProbeUp { .. } => 3.0,
-                };
-                let target_budget = (base_budget as f64 * gain) as u64;
+                    // Compute target BDP using the gain multiplier. This is similar to BBR cwnd_gain.
+                    let gain = match state {
+                        RegimeState::Init => 1.0,
+                        RegimeState::RampUp { .. } => 2.0,
+                        RegimeState::Stable => 2.0, // NOTE: >> 1.0 so that environment noise gets absorbed.
+                        // kdn TODO TEST & TUNE
+                        RegimeState::ProbeUp { .. } => 3.0,
+                        // Unreachable.
+                        RegimeState::WarmIdle { .. } => 1.0,
+                    };
+                    let target_budget = (base_budget as f64 * gain) as u64;
 
-                // Resize if needed.
-                let current_byte_budget = admission.current_byte_budget();
-                let threshold = config.budget_resize_threshold;
-                let should_resize = match current_byte_budget {
-                    0 => target_budget > 0,
-                    current => {
-                        let ratio = target_budget as f64 / current as f64;
-                        ratio < (1.0 - threshold) || ratio > (1.0 + threshold)
-                    },
-                };
+                    // Resize if needed.
+                    let current_byte_budget = admission.current_byte_budget();
+                    let threshold = config.budget_resize_threshold;
+                    let should_resize = match current_byte_budget {
+                        0 => target_budget > 0,
+                        current => {
+                            let ratio = target_budget as f64 / current as f64;
+                            ratio < (1.0 - threshold) || ratio > (1.0 + threshold)
+                        },
+                    };
 
-                if should_resize {
-                    admission.resize_byte_budget(target_budget);
+                    if should_resize {
+                        admission.resize_byte_budget(target_budget);
+                    }
                 }
 
                 // Log snapshot.
@@ -277,7 +282,7 @@ impl ConcurrencyController {
                         req_sat={:.2}",
                         chrono::Utc::now(),
                         state.label(),
-                        signal.map_or(0.0, |s| s.bw_hwm_bps) / 1e6,
+                        signal.map(|s| s.bw_hwm_bps).or(bw_hwm_held).unwrap_or(0.0) / 1e6,
                         signal.map_or(0.0, |s| s.bw_avg_bps) / 1e6,
                         signal.map_or(0, |s| s.ttfb_min.as_millis()),
                         signal.map_or(0, |s| s.ttfb_avg.as_millis()),

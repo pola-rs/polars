@@ -90,6 +90,10 @@ impl Model {
         self.signal // Copy
     }
 
+    pub fn bw_hwm_bps(&self) -> Option<f64> {
+        self.bw_hwm_bps
+    }
+
     /// Recompute statistics from current samples.
     /// Returns true if the model contains a valid signal.
     // @TODO. The regime should account for an 'app-limited' state, to
@@ -129,6 +133,7 @@ impl Model {
 
         // Rate against fixed window duration; bursty traffic may under-report,
         // but the HWM tracks the peak.
+        // TODO: Improve accuracy by spreading arrival volume over ttlb-ttfb duration.
         let bw_avg_bps = n_bytes as f64 / self.window.as_secs_f64();
 
         // All-time high-water-mark (HWM).
