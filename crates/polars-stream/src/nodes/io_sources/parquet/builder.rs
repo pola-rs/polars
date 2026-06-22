@@ -99,8 +99,7 @@ impl FileReaderBuilder for ParquetReaderBuilder {
                     .get()
             })
             .unwrap_or({
-                let target_chunk_size_kb = FetchConfig::random_access().chunk_size
-                        .div_ceil(1024);
+                let target_chunk_size_kb = FetchConfig::random_access().chunk_size.div_ceil(1024);
                 4 * execution_state.num_pipelines * target_chunk_size_kb
             })
             // Avoid deadlock.
