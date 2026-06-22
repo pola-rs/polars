@@ -616,3 +616,29 @@ def test_explode_params() -> None:
         df.explode("a", empty_as_null=False, keep_nulls=False),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 6], "b": [1, 1, 1, 3, 3, 3]}),
     )
+
+
+def test_explode_empty_as_null_deprecation() -> None:
+    list_df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
+    arr_df = pl.DataFrame(
+        {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
+    )
+    list_s = list_df.to_series()
+    arr_s = arr_df.to_series()
+
+    with pytest.warns(DeprecationWarning, match="empty_as_null"):
+        list_df.select(pl.col("a").explode())
+    with pytest.warns(DeprecationWarning, match="empty_as_null"):
+        list_df.select(pl.col("a").list.explode())
+    with pytest.warns(DeprecationWarning, match="empty_as_null"):
+        arr_df.select(pl.col("a").arr.explode())
+    with pytest.warns(DeprecationWarning, match="empty_as_null"):
+        list_s.explode()
+    with pytest.warns(DeprecationWarning, match="empty_as_null"):
+        list_s.list.explode()
+    with pytest.warns(DeprecationWarning, match="empty_as_null"):
+        arr_s.arr.explode()
+    with pytest.warns(DeprecationWarning, match="empty_as_null"):
+        list_df.explode("a")
+    with pytest.warns(DeprecationWarning, match="empty_as_null"):
+        list_df.lazy().explode("a").collect()

@@ -7,11 +7,12 @@ from typing import TYPE_CHECKING, Any
 import polars._reexport as pl
 from polars import exceptions
 from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_expr
-from polars._warnings import issue_deprecation_warning, issue_warning
+from polars._warnings import issue_warning
 
 if TYPE_CHECKING:
     from collections.abc import Callable
