@@ -110,13 +110,7 @@ def _scan_pyarrow_dataset_impl(
                 if n_rows is not None:
                     remaining = min(remaining, n_rows)
 
-                while True:
-                    n = min(remaining, 100_000)
-                    yield pl.DataFrame(height=n)
-                    remaining -= n
-
-                    if remaining == 0:
-                        break
+                yield pl.DataFrame(height=remaining)
 
             return (gen(), False)
 
