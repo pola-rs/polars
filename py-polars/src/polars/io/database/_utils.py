@@ -187,6 +187,82 @@ def _open_adbc_connection(connection_uri: str) -> Any:
     return adbc_driver.connect(connection_uri)
 
 
+def _write_database_sqlalchemy(
+    df: Any,
+    table_name: str,
+    schema: str | None,
+    connection: Any,
+    if_table_exists: str,
+    engine_options: dict[str, Any] | None,
+    *,
+    commit: bool,
+) -> int:
+    """Write a DataFrame to a database table using the SQLAlchemy engine."""
+    from sqlalchemy.engine import Connectable, Connection, Engine, create_engine
+    from sqlalchemy.orm import Session
+
+    from polars._utils.various import qualified_type_name
+
+    def _to_sql(con: Any) -> int | None:
+        return df.to_sql(
+            name=table_name,
+            schema=schema,
+            con=con,
+            if_exists=if_table_exists,
+            index=False,
+            **(engine_options or {}),
+        )
+
+    res: int | None
+
+    if isinstance(connection, Session):
+        # The Session owns the transaction; Polars must not commit on its
+        # behalf as session.commit() also flushes ORM state and expires
+        # loaded objects. The caller is responsible for committing.
+        res = _to_sql(connection.connection())
+
+    elif isinstance(connection, str):
+        # URI: Polars creates and owns the engine and connection.
+        _engine = create_engine(connection)
+        with _engine.connect() as _conn:
+            _conn.begin()
+            res = _to_sql(_conn)
+            if commit:
+                _conn.commit()
+            # else: context manager closes without commit → implicit rollback
+
+    elif isinstance(connection, Connection):
+        if connection.in_transaction():
+            # Caller owns the transaction; Polars must not commit.
+            res = _to_sql(connection)
+        else:
+            # Polars manages the transaction.
+            connection.begin()
+            res = _to_sql(connection)
+            if commit:
+                connection.commit()
+            # else: leave open for the caller to commit or roll back
+
+    elif isinstance(connection, Engine):
+        # Engine: Polars opens and owns the connection.
+        with connection.connect() as _conn:
+            _conn.begin()
+            res = _to_sql(_conn)
+            if commit:
+                _conn.commit()
+            # else: context manager closes without commit → implicit rollback
+
+    elif isinstance(connection, Connectable):
+        # Fallback for other Connectable types; no transaction management.
+        res = _to_sql(connection)
+
+    else:
+        msg = f"unrecognised connection type {qualified_type_name(connection)!r}"
+        raise TypeError(msg)
+
+    return -1 if res is None else res
+
+
 def _is_adbc_snowflake_conn(conn: Any) -> bool:
     import adbc_driver_manager
 

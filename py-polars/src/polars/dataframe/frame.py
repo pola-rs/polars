@@ -72,6 +72,7 @@ from polars._utils.various import (
     NO_DEFAULT,
     _in_notebook,
     is_bool_sequence,
+    issue_warning,
     normalize_filepath,
     parse_version,
     qualified_type_name,
@@ -4391,6 +4392,7 @@ class DataFrame:
         if_table_exists: DbWriteMode = "fail",
         engine: DbWriteEngine | None = None,
         engine_options: dict[str, Any] | None = None,
+        commit: bool = True,
     ) -> int:
         """
         Write the data in a Polars DataFrame to a database.
@@ -4398,6 +4400,9 @@ class DataFrame:
         .. versionadded:: 0.20.26
             Support for instantiated connection objects in addition to URI strings, and
             a new `engine_options` parameter.
+
+        .. versionadded:: 1.41.0
+            The `commit` parameter.
 
         Parameters
         ----------
@@ -4430,6 +4435,30 @@ class DataFrame:
             * Setting `engine` to "adbc" inserts using the ADBC cursor's `adbc_ingest`
               method. Note that when passing an instantiated connection object, PyArrow
               is required for SQLite and Snowflake drivers.
+        commit
+            If ``True`` (default), commit the transaction after writing. Set to
+            ``False`` to manage the transaction yourself, allowing you to commit or
+            roll back after the call returns.
+
+            Behaviour varies by connection type:
+
+            * **ADBC connection object**: fully honoured — Polars commits or not
+              based on this flag. Raises ``ValueError`` if ``commit=False`` is set
+              on a connection with ``autocommit=True``, since the driver commits each
+              statement immediately and deferring the commit is not possible. Pass an
+              instantiated connection with ``autocommit=False`` (the default) instead.
+            * **ADBC URI string**: ``commit=False`` emits a ``UserWarning`` because
+              Polars owns and closes the connection, so no data will be persisted.
+              To control the transaction yourself, pass an instantiated connection
+              object instead of a URI string.
+            * **SQLAlchemy URI string or ``Engine``**: Polars opens a ``Connection``
+              internally and commits or not based on this flag.
+            * **SQLAlchemy ``Connection`` (no open transaction)**: Polars begins a
+              transaction and commits or not based on this flag, leaving an open
+              transaction for the caller when ``commit=False``.
+            * **SQLAlchemy ``Connection`` (caller-owned transaction)** or
+              **``Session``**: Polars never commits — the caller controls the
+              transaction. This flag has no effect in these cases.
 
         Examples
         --------
@@ -4499,6 +4528,14 @@ class DataFrame:
                 else (connection, False)
             )
 
+            if not commit and isinstance(connection, str):
+                issue_warning(
+                    "commit=False has no effect when connection is a URI string: "
+                    "Polars owns the connection and will close it after writing, "
+                    "so no data will be persisted.",
+                    UserWarning,
+                )
+
             driver_manager = import_optional("adbc_driver_manager")
 
             # base class for ADBC connections
@@ -4529,6 +4566,14 @@ class DataFrame:
                 msg = (
                     f"unexpected value for `if_table_exists`: {if_table_exists!r}"
                     f"\n\nChoose one of {{'fail', 'replace', 'append'}}"
+                )
+                raise ValueError(msg)
+
+            if not commit and not getattr(conn, "_commit_supported", True):
+                msg = (
+                    "commit=False is not supported when the ADBC connection has "
+                    "autocommit enabled (or the driver does not support transactions). "
+                    "Either set autocommit=False on the connection or remove commit=False."
                 )
                 raise ValueError(msg)
 
@@ -4651,7 +4696,8 @@ class DataFrame:
                         mode=mode,
                         **(engine_options or {}),
                     )
-                conn.commit()
+                if commit:
+                    conn.commit()
             return n_rows
 
         elif engine == "sqlalchemy":
@@ -4667,22 +4713,7 @@ class DataFrame:
                 min_version=("2.0" if pd_version >= (2, 2) else "1.4"),
                 min_err_prefix="pandas >= 2.2 requires",
             )
-            # note: the catalog (database) should be a part of the connection string
-            from sqlalchemy.engine import Connectable, create_engine
-            from sqlalchemy.orm import Session
-
-            sa_object: Connectable
-            if isinstance(connection, str):
-                sa_object = create_engine(connection)
-            elif isinstance(connection, Session):
-                sa_object = connection.connection()
-            elif isinstance(connection, Connectable):
-                sa_object = connection
-            else:
-                msg = (
-                    f"unrecognised connection type {qualified_type_name(connection)!r}"
-                )
-                raise TypeError(msg)
+            from polars.io.database._utils import _write_database_sqlalchemy
 
             catalog, db_schema, unpacked_table_name = unpack_table_name(table_name)
             if catalog:
@@ -4691,17 +4722,17 @@ class DataFrame:
 
             # ensure conversion to pandas uses the pyarrow extension array option
             # so that we can make use of the sql/db export *without* copying data
-            res: int | None = self.to_pandas(
-                use_pyarrow_extension_array=True,
-            ).to_sql(
-                name=unpacked_table_name,
+            pandas_df = self.to_pandas(use_pyarrow_extension_array=True)
+
+            return _write_database_sqlalchemy(
+                df=pandas_df,
+                table_name=unpacked_table_name,
                 schema=db_schema,
-                con=sa_object,
-                if_exists=if_table_exists,
-                index=False,
-                **(engine_options or {}),
+                connection=connection,
+                if_table_exists=if_table_exists,
+                engine_options=engine_options,
+                commit=commit,
             )
-            return -1 if res is None else res
 
         elif isinstance(engine, str):
             msg = f"engine {engine!r} is not supported"
