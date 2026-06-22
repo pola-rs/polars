@@ -2310,7 +2310,7 @@ def test_search_sorted(
     single_s = s.search_sorted(single)
     assert single_s == single_expected
 
-    multiple_s = s.search_sorted(multiple)
+    multiple_s = s.search_sorted(pl.Series(multiple))
     assert_series_equal(
         multiple_s, pl.Series(multiple_expected, dtype=pl.get_index_type())
     )
