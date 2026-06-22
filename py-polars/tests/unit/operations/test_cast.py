@@ -927,7 +927,8 @@ def test_nested_struct_cast_22744() -> None:
 
     assert_series_equal(
         s.cast(
-            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})}),
+            strict=False,
         ),
         expected.to_series(),
     )
@@ -937,7 +938,8 @@ def test_nested_struct_cast_22744() -> None:
                 "x": pl.Struct(
                     {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
                 )
-            }
+            },
+            strict=False,
         ),
         expected,
     )
@@ -1072,3 +1074,17 @@ def test_strict_cast_nested() -> None:
         df.cast(struct, strict=False),
         pl.DataFrame({"a": [{"x": 42}, {"x": None}]}, schema={"a": struct}),
     )
+
+
+def test_strict_struct_cast_field_count_mismatch() -> None:
+    # strict=True should raise when the number of struct fields differs
+    s = pl.Series("x", [{"a": 1, "b": 2}])
+    with pytest.raises(InvalidOperationError, match="same number of fields"):
+        s.cast(pl.Struct({"a": pl.Int64}), strict=True)
+
+
+def test_strict_struct_cast_field_name_mismatch() -> None:
+    # strict=True should raise when struct field names do not match
+    s = pl.Series("x", [{"a": 1}])
+    with pytest.raises(InvalidOperationError, match="field name mismatch"):
+        s.cast(pl.Struct({"b": pl.Int64}), strict=True)

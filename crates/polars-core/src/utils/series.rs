@@ -18,41 +18,67 @@ where
     f(&mut us)
 }
 
-pub fn is_deprecated_cast(input_dtype: &DataType, output_dtype: &DataType) -> bool {
+pub fn check_is_valid_struct_cast(
+    input_dtype: &DataType,
+    output_dtype: &DataType,
+    output_name: &PlSmallStr,
+) -> PolarsResult<()> {
     use DataType as D;
+
+    let err = |msg: &str| -> PolarsError {
+        polars_err!(
+            InvalidOperation:
+            "cast from `{}` to `{}` failed in column '{}': {}\n\n\
+            Ensure that any output struct has the same number of fields as the input, and that all struct field names in the output are present in the input.\n\
+            Use `strict=False` to force the cast, and Polars will select the first n fields from the struct.",
+            input_dtype,
+            output_dtype,
+            output_name,
+            msg,
+        )
+    };
 
     #[allow(clippy::single_match)]
     match (input_dtype, output_dtype) {
         #[cfg(feature = "dtype-struct")]
         (D::Struct(l_fields), D::Struct(r_fields)) => {
-            l_fields.len() != r_fields.len()
-                || l_fields
-                    .iter()
-                    .zip(r_fields.iter())
-                    .any(|(l, r)| l.name() != r.name() || is_deprecated_cast(l.dtype(), r.dtype()))
+            if l_fields.len() != r_fields.len() {
+                return Err(err(&format!(
+                    "structs do not have the same number of fields: {} vs {}",
+                    l_fields.len(),
+                    r_fields.len(),
+                )));
+            }
+            for (l, r) in Iterator::zip(l_fields.iter(), r_fields.iter()) {
+                if l.name() != r.name() {
+                    return Err(err(&format!(
+                        "structs field name mismatch: {} vs {}",
+                        l.name(),
+                        r.name()
+                    )));
+                }
+                check_is_valid_struct_cast(l.dtype(), r.dtype(), output_name)?;
+            }
+            Ok(())
         },
         (D::List(input_dtype), D::List(output_dtype)) => {
-            is_deprecated_cast(input_dtype, output_dtype)
+            check_is_valid_struct_cast(input_dtype, output_dtype, output_name)
         },
         #[cfg(feature = "dtype-array")]
         (D::Array(input_dtype, _), D::Array(output_dtype, _)) => {
-            is_deprecated_cast(input_dtype, output_dtype)
+            check_is_valid_struct_cast(input_dtype, output_dtype, output_name)
         },
         #[cfg(feature = "dtype-array")]
         (D::List(input_dtype), D::Array(output_dtype, _))
         | (D::Array(input_dtype, _), D::List(output_dtype)) => {
-            is_deprecated_cast(input_dtype, output_dtype)
+            check_is_valid_struct_cast(input_dtype, output_dtype, output_name)
         },
-        _ => false,
+        _ => Ok(()),
     }
 }
 
 pub fn handle_casting_failures(input: &Series, output: &Series) -> PolarsResult<()> {
-    // @Hack to deal with deprecated cast
-    // @2.0
-    if is_deprecated_cast(input.dtype(), output.dtype()) {
-        return Ok(());
-    }
+    check_is_valid_struct_cast(input.dtype(), output.dtype(), output.name())?;
 
     let mut idxs = Vec::new();
     input.find_validity_mismatch(output, &mut idxs);
