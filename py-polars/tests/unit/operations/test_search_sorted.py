@@ -96,7 +96,7 @@ def test_raise_literal_numeric_search_sorted_18096() -> None:
         df.with_columns(idx=pl.col("foo").search_sorted("bar"))
 
 
-def test_search_sorted_list_22058() -> None:
+def test_search_sorted_list_ambiguous_22058() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
         pl.Series([1, 2, 3]).search_sorted([1, 2])  # type: ignore[call-overload]
 

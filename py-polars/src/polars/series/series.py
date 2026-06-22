@@ -4024,7 +4024,7 @@ class Series:
         """
         df = F.select(F.lit(self).search_sorted(element, side, descending=descending))
         if isinstance(element, list):
-            msg = "passing a list to `search_sorted` is not ambiguous; use `Series.search_sorted(pl.Series([...]), ...)` or `Series.search_sorted(pl.lit(...), ...)`"
+            msg = "passing a list to `search_sorted` is ambiguous; use `Series.search_sorted(pl.Series([...]), ...)` or `Series.search_sorted(pl.lit(...), ...)`"
             raise InvalidOperationError(msg)
         elif isinstance(element, (Series, pl.Expr)):
             return df.to_series()
