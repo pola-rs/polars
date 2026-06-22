@@ -52,6 +52,7 @@ static BIN_VIEW_TYPE: ArrowDataType = ArrowDataType::BinaryView;
 static UTF8_VIEW_TYPE: ArrowDataType = ArrowDataType::Utf8View;
 
 // Growth parameters of view array buffers.
+const ARROW_BUFFER_LEN_LIMIT: usize = i32::MAX as usize;
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 

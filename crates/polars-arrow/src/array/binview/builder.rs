@@ -6,7 +6,7 @@ use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
-use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
+use crate::array::binview::{ARROW_BUFFER_LEN_LIMIT, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use crate::bitmap::OptBitmapBuilder;
@@ -62,7 +62,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     fn reserve_active_buffer(&mut self, additional: usize) {
         let len = self.active_buffer.len();
         let cap = self.active_buffer.capacity();
-        if additional > cap - len || len + additional >= Self::MAX_ROW_BYTE_LEN {
+        if additional > usize::min(ARROW_BUFFER_LEN_LIMIT, cap) - len {
             self.reserve_active_buffer_slow(additional);
         }
     }
@@ -74,10 +74,13 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
             "strings longer than 2^32 - 2 are not supported"
         );
 
+        const _: () = assert!(MAX_EXP_BLOCK_SIZE < ARROW_BUFFER_LEN_LIMIT);
+
         // Allocate a new buffer and flush the old buffer.
-        let new_capacity = (self.active_buffer.capacity() * 2)
-            .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
-            .max(additional);
+        let new_capacity = usize::max(
+            additional,
+            (self.active_buffer.capacity() * 2).clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE),
+        );
 
         let old_buffer =
             core::mem::replace(&mut self.active_buffer, Vec::with_capacity(new_capacity));

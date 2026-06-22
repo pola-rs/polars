@@ -67,27 +67,24 @@ pub fn utf8_to_binary<O: Offset>(from: &Utf8Array<O>, to_dtype: ArrowDataType) -
     )
 }
 
-// Different types to test the overflow path.
-#[cfg(not(test))]
-type OffsetType = u32;
-
-// To trigger overflow
-#[cfg(test)]
-type OffsetType = i8;
+const ARROW_MAX_OFFSET: u32 = if cfg!(test) {
+    // Used to test buffer splitting.
+    i8::MAX as u32
+} else {
+    // Limit to i32 rather than u32 to maintain interop compatibility with arrow consumers that
+    // use signed integers.
+    i32::MAX as u32
+};
 
 // If we don't do this the GC of binview will trigger. As we will split up buffers into multiple
 // chunks so that we don't overflow the offset u32.
 fn truncate_buffer(buf: &Buffer<u8>) -> Buffer<u8> {
     // * 2, as it must be able to hold u32::MAX offset + u32::MAX len.
-    let len = std::cmp::min(buf.len(), ((OffsetType::MAX as u64) * 2) as usize);
+    let len = std::cmp::min(buf.len(), ((u32::MAX as u64) * 2) as usize);
     buf.clone().sliced(..len)
 }
 
 pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
-    // Ensure we didn't accidentally set wrong type
-    #[cfg(not(debug_assertions))]
-    let _ = std::mem::transmute::<OffsetType, u32>;
-
     let mut views = Vec::with_capacity(arr.len());
     let mut uses_buffer = false;
 
@@ -123,8 +120,10 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
             let current_bytes_ptr = bytes.as_ptr() as usize;
             let offset = current_bytes_ptr - base_ptr;
 
-            // Here we check the overflow of the buffer offset.
-            if let Ok(offset) = OffsetType::try_from(offset) {
+            // * (offset + length) must be less than i32::MAX for compatibility with other arrow consumers.
+            if let Ok(offset) = u32::try_from(offset)
+                && (offset.saturating_add(len) <= ARROW_MAX_OFFSET)
+            {
                 #[allow(clippy::unnecessary_cast)]
                 let offset = offset as u32;
                 payload[12..16].copy_from_slice(&offset.to_le_bytes());
