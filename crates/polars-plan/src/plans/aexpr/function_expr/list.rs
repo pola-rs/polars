@@ -21,7 +21,9 @@ pub enum IRListFunction {
     },
     Slice,
     Shift,
+    // bool: null on oob
     Get(bool),
+    // bool: null on oob
     #[cfg(feature = "list_gather")]
     Gather(bool),
     #[cfg(feature = "list_gather")]
@@ -181,10 +183,10 @@ impl IRListFunction {
             L::DropNulls => FunctionOptions::elementwise(),
             #[cfg(feature = "list_count")]
             L::CountMatches => FunctionOptions::elementwise(),
+            L::Get(_) => FunctionOptions::aggregation(),
             L::Sum
             | L::Slice
             | L::Shift
-            | L::Get(_)
             | L::Length
             | L::Max
             | L::Min
