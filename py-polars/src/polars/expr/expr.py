@@ -54,6 +54,7 @@ from polars.datatypes import (
 )
 from polars.exceptions import (
     CustomUFuncWarning,
+    InvalidOperationError,
     OutOfBoundsError,
 )
 from polars.expr.array import ExprArrayNameSpace
@@ -2771,9 +2772,10 @@ class Expr:
         │ 0    ┆ 2     ┆ 4   │
         └──────┴───────┴─────┘
         """
-        element_pyexpr = parse_into_expression(
-            element, str_as_lit=True, list_as_series=True
-        )
+        if isinstance(element, list):
+            msg = "passing a list to `search_sorted` is ambiguous; use `pl.Series([...])` or `pl.lit(...)`"
+            raise InvalidOperationError(msg)
+        element_pyexpr = parse_into_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.search_sorted(element_pyexpr, side, descending))
 
     def sort_by(
