@@ -74,7 +74,7 @@ if sys.version_info >= (3, 11):
     _reverse_mapping_views = tuple(type(reversed(view)) for view in _views)
 
 # Sentinel value to disallow None
-_Omitted = object()
+_Omitted: Any = object()
 
 
 def _process_null_values(
