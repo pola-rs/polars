@@ -574,7 +574,7 @@ pub fn cast(
                 Date32 => {
                     polars_warn!(
                         Deprecation,
-                        "Casting from String to DateTime is deprecated and will be removed in Polars 2.0.\n\
+                        "Casting from String to Date is deprecated and will be removed in Polars 2.0.\n\
                         Use `str.to_date()` instead."
                     );
                     utf8view_to_date32_dyn(array)

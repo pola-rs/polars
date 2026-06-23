@@ -2526,3 +2526,22 @@ def test_timezone_ignore_error(
         match="unable to parse time zone: 'non-existent'",
     ):
         pl.DataFrame(tbl)
+
+
+def test_string_to_temporal_cast_deprecated() -> None:
+    with pytest.warns(
+        DeprecationWarning, match="Casting from String to DateTime is deprecated"
+    ):
+        pl.Series(["2022-08-30T10:30:45"]).cast(pl.Datetime("us"))
+
+    with pytest.warns(
+        DeprecationWarning, match="Casting from String to DateTime is deprecated"
+    ):
+        pl.Series(["2022-08-30T10:30:45+00:00"]).cast(
+            pl.Datetime("us", "Europe/Amsterdam")
+        )
+
+    with pytest.warns(
+        DeprecationWarning, match="Casting from String to Date is deprecated"
+    ):
+        pl.Series(["2022-08-30"]).cast(pl.Date)
