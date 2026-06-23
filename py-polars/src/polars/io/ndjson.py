@@ -10,6 +10,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.various import is_path_or_str_sequence, normalize_filepath
 from polars._utils.wrap import wrap_ldf
+from polars._warnings import issue_warning
 from polars.datatypes import N_INFER_DEFAULT
 from polars.io._utils import parse_row_index_args
 from polars.io.cloud.credential_provider._builder import (
@@ -300,6 +301,14 @@ def scan_ndjson(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
+    if rechunk:
+        issue_warning(
+            "rechunk=True no longer has effect on scan_ndjson(). "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            category=UserWarning,
+        )
+
     sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source, check_not_directory=False)

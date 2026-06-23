@@ -17,6 +17,7 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
+from polars._warnings import issue_warning
 from polars.io._utils import (
     get_sources,
     is_glob_pattern,
@@ -138,7 +139,6 @@ def read_ipc(
             storage_options=storage_options,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            rechunk=rechunk,
         )
 
         if columns:
@@ -148,6 +148,9 @@ def read_ipc(
                 lf = lf.select(columns)
 
         df = lf.collect()
+
+        if rechunk:
+            df = df.rechunk()
 
         return df
 
@@ -206,7 +209,6 @@ def _read_ipc_impl(
         scan = scan_ipc(
             source,
             n_rows=n_rows,
-            rechunk=rechunk,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
         )
@@ -220,6 +222,10 @@ def _read_ipc_impl(
                 "\n\nUse columns: List[str]"
             )
             raise TypeError(msg)
+
+        if rechunk:
+            df = df.rechunk()
+
         return df
 
     projection, columns = parse_columns_arg(columns)
@@ -489,6 +495,14 @@ def scan_ipc(
     """
     # Memory Mapping is now a no-op
     _ = memory_map
+
+    if rechunk:
+        issue_warning(
+            "rechunk=True no longer has effect on scan_ipc(). "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            category=UserWarning,
+        )
 
     sources = get_sources(source)
 
