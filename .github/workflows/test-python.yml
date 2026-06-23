@@ -143,6 +143,13 @@ jobs:
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs"
 
+      - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
+        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        env:
+          POLARS_ENGINE_AFFINITY: in-memory
+          POLARS_TIMEOUT_MS: 60000
+        run: pytest -n auto -m "not release and not benchmark and not docs"
+
       - name: Run tests with new streaming engine
         if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.auto_new_streaming
         env:
