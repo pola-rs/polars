@@ -6,9 +6,11 @@ use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
-use crate::array::binview::{ARROW_BUFFER_LEN_LIMIT, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
+use crate::array::binview::{
+    BINVIEW_ARROW_BUFFER_LEN_LIMIT, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE,
+};
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
-use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
+use crate::array::{Array, BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGeneric, View, ViewType};
 use crate::bitmap::OptBitmapBuilder;
 use crate::datatypes::ArrowDataType;
 use crate::pushable::Pushable;
@@ -38,8 +40,6 @@ pub struct BinaryViewArrayGenericBuilder<V: ViewType + ?Sized> {
 }
 
 impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
-    pub const MAX_ROW_BYTE_LEN: usize = (u32::MAX - 1) as _;
-
     pub fn new(dtype: ArrowDataType) -> Self {
         Self {
             dtype,
@@ -62,7 +62,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     fn reserve_active_buffer(&mut self, additional: usize) {
         let len = self.active_buffer.len();
         let cap = self.active_buffer.capacity();
-        if additional > usize::min(ARROW_BUFFER_LEN_LIMIT, cap) - len {
+        if additional > usize::min(BINVIEW_ARROW_BUFFER_LEN_LIMIT, cap) - len {
             self.reserve_active_buffer_slow(additional);
         }
     }
@@ -70,11 +70,11 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     #[cold]
     fn reserve_active_buffer_slow(&mut self, additional: usize) {
         assert!(
-            additional <= Self::MAX_ROW_BYTE_LEN,
+            additional <= BINVIEW_MAX_ROW_BYTE_LEN,
             "strings longer than 2^32 - 2 are not supported"
         );
 
-        const _: () = assert!(MAX_EXP_BLOCK_SIZE < ARROW_BUFFER_LEN_LIMIT);
+        const _: () = assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
 
         // Allocate a new buffer and flush the old buffer.
         let new_capacity = usize::max(
