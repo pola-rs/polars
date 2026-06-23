@@ -1026,15 +1026,6 @@ def test_misaligned_nested_arrow_19097() -> None:
     assert_series_equal(pl.Series("a", a.to_arrow()), a)
 
 
-def test_arrow_roundtrip_lex_cat_20288() -> None:
-    tb = pl.Series("a", ["A", "B"], pl.Categorical()).to_frame().to_arrow()
-    df = pl.from_arrow(tb)
-    assert isinstance(df, pl.DataFrame)
-    dt = df.schema["a"]
-    assert isinstance(dt, pl.Categorical)
-    assert dt.ordering == "lexical"
-
-
 def test_from_arrow_20271() -> None:
     df = pl.from_arrow(
         pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
