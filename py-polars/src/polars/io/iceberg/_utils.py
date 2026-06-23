@@ -30,7 +30,7 @@ from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Sequence
     from datetime import date, datetime
 
     import pyiceberg
@@ -66,7 +66,7 @@ def _scan_pyarrow_dataset_impl(
     n_rows: int | None = None,
     snapshot_id: int | None = None,
     **kwargs: Any,  # noqa: ARG001
-) -> tuple[Iterator[DataFrame], bool]:
+) -> tuple[Iterable[DataFrame], bool]:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -96,11 +96,22 @@ def _scan_pyarrow_dataset_impl(
     that could not be converted
     to pyarrow and need to be applied as post-predicate.
     """
-    from polars import from_arrow
-
     scan = tbl.scan(limit=n_rows, snapshot_id=snapshot_id)
 
     if with_columns is not None:
+        if not with_columns:
+            assert iceberg_table_filter is None
+
+            def gen() -> Iterable[pl.DataFrame]:
+                remaining = scan.count()
+
+                if n_rows is not None:
+                    remaining = min(remaining, n_rows)
+
+                yield pl.DataFrame(height=remaining)
+
+            return (gen(), False)
+
         scan = scan.select(*with_columns)
 
     if iceberg_table_filter is not None:
@@ -108,7 +119,7 @@ def _scan_pyarrow_dataset_impl(
 
     batches = scan.to_arrow_batch_reader()
 
-    return ((from_arrow(batch) for batch in batches), False)  # type: ignore[misc]
+    return ((pl.DataFrame(batch) for batch in batches), False)
 
 
 def _ensure_boolean_expression(result: Any) -> Any:
