@@ -15,7 +15,12 @@ use binary::process_binary;
 ))]
 use datetime::coerce_temporal_dt;
 #[cfg(all(feature = "range", feature = "dtype-datetime"))]
-use datetime::{ensure_datetime, ensure_int, temporal_range_output_type};
+use datetime::temporal_range_output_type;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+use datetime::{ensure_datetime, ensure_int};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 #[cfg(all(

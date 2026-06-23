@@ -35,10 +35,7 @@ pub use horizontal::{
 pub use horizontal::{cum_fold_exprs, cum_reduce_exprs};
 #[cfg(any(feature = "range", feature = "arg_where"))]
 pub use index::*;
-#[cfg(all(
-    feature = "range",
-    any(feature = "dtype-date", feature = "dtype-datetime")
-))]
+#[cfg(all(feature = "range", feature = "dtype-date"))]
 pub use range::date_range; // This shouldn't be necessary, but clippy complains about dead code
 #[cfg(all(feature = "range", feature = "dtype-time"))]
 pub use range::time_range; // This shouldn't be necessary, but clippy complains about dead code

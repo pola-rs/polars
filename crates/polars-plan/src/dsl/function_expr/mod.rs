@@ -59,8 +59,13 @@ pub use self::datetime::TemporalFunction;
 #[cfg(feature = "dtype-extension")]
 pub use self::extension::ExtensionFunction;
 pub use self::pow::PowFunction;
+#[cfg(all(
+    feature = "range",
+    any(feature = "dtype-date", feature = "dtype-datetime")
+))]
+pub use self::range::DateRangeArgs;
 #[cfg(feature = "range")]
-pub use self::range::{DateRangeArgs, RangeFunction};
+pub use self::range::RangeFunction;
 #[cfg(feature = "rolling_window")]
 pub use self::rolling::RollingFunction;
 #[cfg(feature = "rolling_window_by")]

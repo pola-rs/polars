@@ -22,6 +22,7 @@ pub enum DateRangeArgs {
     EndIntervalSamples,
 }
 
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 impl DateRangeArgs {
     pub fn parse(
         start: Option<Expr>,

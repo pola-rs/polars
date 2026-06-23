@@ -42,7 +42,7 @@ pub fn coerce_temporal_dt(
 ) -> PolarsResult<()> {
     if from_type != to_type {
         #[cfg(feature = "dtype-datetime")]
-        if let &DataType::Datetime(tu, Some(ref from_tz)) = to_type {
+        if let &DataType::Datetime(tu, Some(ref _from_tz)) = to_type {
             match from_type {
                 #[cfg(feature = "dtype-date")]
                 DataType::Date => {
@@ -51,15 +51,18 @@ pub fn coerce_temporal_dt(
                         dtype: DataType::Datetime(tu, None),
                         options: CastOptions::Strict,
                     }));
-                    replace_tz(expr, to_type, expr_arena)?;
-                    return Ok(());
+                    #[cfg(feature = "timezones")]
+                    {
+                        replace_tz(expr, to_type, expr_arena)?;
+                        return Ok(());
+                    }
                 },
                 #[cfg(feature = "timezones")]
                 DataType::Datetime(_, None) => {
                     replace_tz(expr, to_type, expr_arena)?;
                 },
                 #[cfg(feature = "timezones")]
-                DataType::Datetime(_, Some(to_tz)) if from_tz != to_tz => {
+                DataType::Datetime(_, Some(to_tz)) if _from_tz != to_tz => {
                     convert_tz(expr, to_type, expr_arena)?;
                 },
                 _ => (),

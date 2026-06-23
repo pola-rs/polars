@@ -1,7 +1,7 @@
 #[cfg(feature = "timezones")]
 use polars_core::prelude::time_zone::parse_time_zone;
 use polars_core::prelude::*;
-#[cfg(feature = "dtype-date")]
+#[cfg(any(feature = "dtype-date", feature = "dtype-datetime"))]
 use polars_plan::dsl::DateRangeArgs;
 use polars_time::{ClosedWindow, Duration, datetime_range_impl};
 
