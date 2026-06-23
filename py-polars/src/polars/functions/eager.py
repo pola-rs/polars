@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, get_args
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import ConcatMethod
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.unstable import unstable
 from polars._utils.various import (
@@ -29,13 +30,44 @@ if TYPE_CHECKING:
     from polars._typing import FrameType, JoinStrategy, PolarsType
 
 
+def _normalize_horizontal_concat(
+    function_name: str, how: ConcatMethod, *, strict: bool | None
+) -> ConcatMethod:
+    """Normalize deprecated horizontal concat arguments."""
+    if how == "horizontal":
+        if strict is None:
+            issue_deprecation_warning(
+                f"the default behavior of `how='horizontal'` for `{function_name}` "
+                "is deprecated and will require equal heights in the next breaking "
+                "release. "
+                "Use `how='horizontal_extend'` to keep the current behavior.",
+                version="1.41.2",
+            )
+            return "horizontal_extend"
+        elif strict is False:
+            issue_deprecation_warning(
+                f"the `strict` parameter for `{function_name}` is deprecated. "
+                "Use `how='horizontal_extend'` instead.",
+                version="1.41.2",
+            )
+            return "horizontal_extend"
+        else:
+            return "horizontal"
+
+    if how == "horizontal_extend" and strict is not None:
+        msg = "`strict` cannot be used with `how='horizontal_extend'`"
+        raise ValueError(msg)
+
+    return how
+
+
 def concat(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
     rechunk: bool = False,
     parallel: bool = True,
-    strict: bool = False,
+    strict: bool | None = None,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -44,7 +76,7 @@ def concat(
     ----------
     items
         DataFrames, LazyFrames, or Series to concatenate.
-    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
+    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'horizontal_extend', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
         Note that `Series` only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
@@ -54,7 +86,9 @@ def concat(
           values with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
+        * horizontal: Stacks Series from DataFrames horizontally. All input frames
+          must have the same height; raises a `ShapeError` otherwise.
+        * horizontal_extend: Same as `horizontal`, but pads shorter frames with `null`
           if the lengths don't match.
         * align, align_full, align_left, align_right: Combines frames horizontally,
           auto-determining the common key columns and aligning rows using the same
@@ -71,6 +105,10 @@ def concat(
         lazy computations may be executed in parallel.
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
+
+        .. deprecated:: 1.41.2
+            Use `how='horizontal'` (equal heights) or
+            `how='horizontal_extend'` (pad with null) instead.
 
     Examples
     --------
@@ -180,7 +218,8 @@ def concat(
     if not elems:
         msg = "cannot concat empty list"
         raise ValueError(msg)
-    elif len(elems) == 1 and isinstance(
+
+    if len(elems) == 1 and isinstance(
         elems[0], (pl.DataFrame, pl.Series, pl.LazyFrame)
     ):
         return elems[0]
@@ -242,6 +281,8 @@ def concat(
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     if is_non_empty_sequence_of(elems, pl.DataFrame):
+        how = _normalize_horizontal_concat("concat", how, strict=strict)
+
         if how == "vertical":
             out = wrap_df(plr.concat_df(elems))
         elif how == "vertical_relaxed":
@@ -268,13 +309,17 @@ def concat(
                 )
             ).collect(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
-            out = wrap_df(plr.concat_df_horizontal(elems, strict=strict))
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=True))
+        elif how == "horizontal_extend":
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=False))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
     elif is_non_empty_sequence_of(elems, pl.LazyFrame):
+        how = _normalize_horizontal_concat("concat", how, strict=strict)
+
         if how in ("vertical", "vertical_relaxed"):
             return wrap_ldf(
                 plr.concat_lf(
@@ -300,7 +345,15 @@ def concat(
                 plr.concat_lf_horizontal(
                     elems,
                     parallel=parallel,
-                    strict=strict,
+                    strict=True,
+                )
+            )
+        elif how == "horizontal_extend":
+            return wrap_ldf(
+                plr.concat_lf_horizontal(
+                    elems,
+                    parallel=parallel,
+                    strict=False,
                 )
             )
         else:
@@ -330,7 +383,7 @@ def union(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
-    strict: bool = False,
+    strict: bool | None = None,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -343,7 +396,7 @@ def union(
     ----------
     items
         DataFrames, LazyFrames, or Series to concatenate.
-    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
+    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'horizontal_extend', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
         Note that `Series` only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
@@ -353,7 +406,9 @@ def union(
           values with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
+        * horizontal: Stacks Series from DataFrames horizontally. All input frames
+          must have the same height; raises a `ShapeError` otherwise.
+        * horizontal_extend: Same as `horizontal`, but pads shorter frames with `null`
           if the lengths don't match.
         * align, align_full, align_left, align_right: Combines frames horizontally,
           auto-determining the common key columns and aligning rows using the same
@@ -365,6 +420,10 @@ def union(
           a suitable `join` method directly).
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
+
+        .. deprecated:: 1.41.2
+            Use `how='horizontal'` (equal heights) or
+            `how='horizontal_extend'` (pad with null) instead.
 
     Examples
     --------
@@ -474,7 +533,8 @@ def union(
     if not elems:
         msg = "cannot concat empty list"
         raise ValueError(msg)
-    elif len(elems) == 1 and isinstance(
+
+    if len(elems) == 1 and isinstance(
         elems[0], (pl.DataFrame, pl.Series, pl.LazyFrame)
     ):
         return elems[0]
@@ -536,6 +596,8 @@ def union(
     from polars.lazyframe.opt_flags import QueryOptFlags
 
     if is_non_empty_sequence_of(elems, pl.DataFrame):
+        how = _normalize_horizontal_concat("union", how, strict=strict)
+
         if how in ("vertical", "vertical_relaxed"):
             out = wrap_ldf(
                 plr.concat_lf(
@@ -557,13 +619,17 @@ def union(
                 )
             ).collect(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
-            out = wrap_df(plr.concat_df_horizontal(elems, strict=strict))
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=True))
+        elif how == "horizontal_extend":
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=False))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
     elif is_non_empty_sequence_of(elems, pl.LazyFrame):
+        how = _normalize_horizontal_concat("union", how, strict=strict)
+
         if how in ("vertical", "vertical_relaxed"):
             return wrap_ldf(
                 plr.concat_lf(
@@ -589,7 +655,15 @@ def union(
                 plr.concat_lf_horizontal(
                     elems,
                     parallel=True,
-                    strict=strict,
+                    strict=True,
+                )
+            )
+        elif how == "horizontal_extend":
+            return wrap_ldf(
+                plr.concat_lf_horizontal(
+                    elems,
+                    parallel=True,
+                    strict=False,
                 )
             )
         else:
