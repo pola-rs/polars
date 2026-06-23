@@ -9,6 +9,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
+from tests.free_threading._free_threading import assert_gil_disabled
+
 
 def is_free_threaded_python() -> bool:
     return bool(sysconfig.get_config_var("Py_GIL_DISABLED"))
@@ -20,12 +22,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def assert_gil_disabled() -> None:
-    is_gil_enabled = getattr(sys, "_is_gil_enabled", None)
-    assert callable(is_gil_enabled)
-    assert not is_gil_enabled()
-
-
 def test_import_does_not_enable_gil() -> None:
     code = """
     import sys
@@ -34,6 +30,7 @@ def test_import_does_not_enable_gil() -> None:
 
     assert not sys._is_gil_enabled()
     assert pl.DataFrame({"x": [1, 2, 3]}).select(pl.col("x").sum()).item() == 6
+    assert not sys._is_gil_enabled()
     """
     env = os.environ.copy()
     env.pop("PYTHON_GIL", None)
@@ -46,6 +43,7 @@ def test_independent_dataframes_from_multiple_threads() -> None:
     assert_gil_disabled()
 
     def worker(seed: int) -> tuple[int, int]:
+        assert_gil_disabled()
         df = pl.DataFrame(
             {
                 "g": [seed % 4, seed % 4, (seed + 1) % 4, (seed + 1) % 4],
@@ -67,6 +65,7 @@ def test_independent_dataframes_from_multiple_threads() -> None:
     assert sum(total for _, total in results) == sum(
         8 * seed + 12 for seed in range(64)
     )
+    assert_gil_disabled()
 
 
 def test_independent_lazyframes_from_multiple_threads() -> None:
@@ -75,6 +74,7 @@ def test_independent_lazyframes_from_multiple_threads() -> None:
     assert_gil_disabled()
 
     def worker(seed: int) -> int:
+        assert_gil_disabled()
         left = pl.DataFrame(
             {"k": [1, 2, 3, 4], "x": [seed + i for i in range(4)]}
         ).lazy()
@@ -92,6 +92,7 @@ def test_independent_lazyframes_from_multiple_threads() -> None:
         results = list(executor.map(worker, range(64)))
 
     assert results == [3 * seed + 96 for seed in range(64)]
+    assert_gil_disabled()
 
 
 def test_concat_df_from_multiple_threads() -> None:
@@ -100,6 +101,7 @@ def test_concat_df_from_multiple_threads() -> None:
     assert_gil_disabled()
 
     def worker(seed: int) -> int:
+        assert_gil_disabled()
         frames = [pl.DataFrame({"x": [seed + i]}) for i in range(16)]
         return int(pl.concat(frames)["x"].sum())
 
@@ -107,3 +109,4 @@ def test_concat_df_from_multiple_threads() -> None:
         results = list(executor.map(worker, range(64)))
 
     assert results == [16 * seed + 120 for seed in range(64)]
+    assert_gil_disabled()
