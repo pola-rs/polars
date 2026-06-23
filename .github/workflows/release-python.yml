@@ -224,7 +224,7 @@ jobs:
           Expand-Archive /cmake.zip -DestinationPath /
 
           Write-Output "> Download jq.exe (github.com/jqlang) (needed for tomlq / yq)"
-          Invoke-WebRequest https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-i386.exe -OutFile /jq.exe
+          Invoke-WebRequest https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-windows-arm64.exe -OutFile /jq.exe
 
           Write-Output "> Update GITHUB_PATH"
           [System.IO.File]::AppendAllText($Env:GITHUB_PATH, "`n" + "C:/git/bin/")
