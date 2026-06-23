@@ -484,8 +484,8 @@ def test_streaming_group_by_boolean_mean_15610(
 
     out = (
         pl.select(
-            a=pl.repeat([True, False, True], n_repeats).explode(),
-            b=pl.repeat([True, False, False], n_repeats).explode(),
+            a=pl.repeat([True, False, True], n_repeats).explode(empty_as_null=True),
+            b=pl.repeat([True, False, False], n_repeats).explode(empty_as_null=True),
         )
         .lazy()
         .group_by("a")

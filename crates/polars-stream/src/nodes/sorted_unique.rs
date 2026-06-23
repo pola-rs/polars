@@ -144,7 +144,7 @@ impl ComputeNode for SortedUnique {
                         df.filter_seq(mask.as_ref())
                     })?;
 
-                    if morsel.df().height() == 0 {
+                    if morsel.height() == 0 {
                         continue;
                     }
 

@@ -12,9 +12,7 @@ members = [
   "pyo3-polars/pyo3-polars",
   "pyo3-polars/pyo3-polars-derive",
 ]
-default-members = [
-  "crates/*",
-]
+default-members = ["crates/*"]
 
 [workspace.package]
 version = "0.54.4"

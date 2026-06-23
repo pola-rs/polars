@@ -471,3 +471,21 @@ def test_sinked_paths_callback(tmp_path: Path) -> None:
             ),
             _sinked_paths_callback=lambda _: None,
         )
+
+
+def test_sink_predicate_pushdown_streaming_flag_27922() -> None:
+    q = (
+        pl.LazyFrame({"role": ["ST"]})
+        .join(
+            pl.LazyFrame({"key": ["cb", "st"], "tags": [["CB"], ["ST"]]}), how="cross"
+        )
+        .filter(pl.col("tags").list.contains(pl.col("role")))
+    )
+
+    f = io.BytesIO()
+    q.sink_ipc(f)
+
+    assert_frame_equal(
+        pl.scan_ipc(f).collect(),
+        pl.DataFrame({"role": ["ST"], "key": ["st"], "tags": [["ST"]]}),
+    )
