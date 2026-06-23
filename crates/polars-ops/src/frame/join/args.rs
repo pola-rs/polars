@@ -160,6 +160,11 @@ impl JoinArgs {
         self
     }
 
+    pub fn with_maintain_order(mut self, maintain_order: MaintainOrderJoin) -> Self {
+        self.maintain_order = maintain_order;
+        self
+    }
+
     pub fn with_suffix(mut self, suffix: Option<PlSmallStr>) -> Self {
         self.suffix = suffix;
         self
