@@ -122,7 +122,7 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
 
             // * (offset + length) must be less than i32::MAX for compatibility with other arrow consumers.
             if let Ok(offset) = u32::try_from(offset)
-                && (offset.saturating_add(len) <= ARROW_MAX_OFFSET)
+                && (offset.saturating_add(len) <= ARROW_MAX_OFFSET || offset == 0)
             {
                 #[allow(clippy::unnecessary_cast)]
                 let offset = offset as u32;
