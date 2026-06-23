@@ -254,7 +254,9 @@ class SQLContext(Generic[FrameType]):
         Join a polars LazyFrame with a pandas DataFrame (note use of the preferred
         `pl.sql` method, which is equivalent to `SQLContext.execute_global`):
 
-        >>> pl.sql("SELECT df.*, c FROM df JOIN df_pandas USING(a)").collect()
+        >>> pl.sql(
+        ...     "SELECT df.*, c FROM df JOIN df_pandas USING(a) ORDER BY ALL"
+        ... ).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ a   ┆ b   ┆ c   │
