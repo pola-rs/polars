@@ -47,10 +47,10 @@ impl ShiftState {
                 if let Some(r) = &mut recv {
                     let Ok(morsel) = r.recv().await else { break };
                     source_token = morsel.source_token().clone();
-                    if morsel.df().height() == 0 {
+                    if morsel.height() == 0 {
                         continue;
                     }
-                    self.rows_received += morsel.df().height();
+                    self.rows_received += morsel.height();
                     self.frames
                         .push_back(SpillFrame::new(morsel.into_df(), &*self.spill_ctx).await);
                 }
@@ -96,18 +96,18 @@ impl ShiftState {
 
         while let Ok(mut morsel) = recv.recv().await {
             let shift_needed = shift.saturating_sub(self.rows_received);
-            self.rows_received += morsel.df().height();
+            self.rows_received += morsel.height();
             if shift_needed > 0 {
                 morsel =
                     morsel.map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()));
             }
-            if morsel.df().height() == 0 {
+            if morsel.height() == 0 {
                 continue;
             }
 
             morsel.set_seq(self.seq);
             self.seq = self.seq.successor();
-            self.rows_sent += morsel.df().height();
+            self.rows_sent += morsel.height();
             if send.send(morsel).await.is_err() {
                 break;
             }
