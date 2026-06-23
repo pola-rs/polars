@@ -1355,8 +1355,8 @@ class PyExpr:
         self,
         partition_by: Sequence[PyExpr] | None,
         order_by: Sequence[PyExpr] | None,
-        order_by_descending: bool,
-        order_by_nulls_last: bool,
+        order_by_descending: Sequence[bool],
+        order_by_nulls_last: Sequence[bool],
         mapping_strategy: Any,
     ) -> PyExpr: ...
     def rolling(

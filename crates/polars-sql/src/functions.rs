@@ -1961,7 +1961,7 @@ impl SQLFunctionVisitor<'_> {
             // Apply cumulative function; the forward-fill ensures we match SQL semantics
             let cumulative_expr = cumulative_fn(base_expr, false)
                 .fill_null_with_strategy(FillNullStrategy::Forward(None));
-            let sort_opts = SortOptions::default().with_order_descending(all_desc);
+            let sort_opts = SortMultipleOptions::default().with_order_descending(all_desc);
             cumulative_expr.over_with_options(
                 partition_by_exprs,
                 Some((order_by_exprs, sort_opts)),
@@ -2266,7 +2266,8 @@ impl SQLFunctionVisitor<'_> {
                                     .collect::<PolarsResult<Vec<_>>>()?,
                             )
                         };
-                        let sort_opts = SortOptions::default().with_order_descending(all_desc);
+                        let sort_opts =
+                            SortMultipleOptions::default().with_order_descending(all_desc);
                         let row_number = int_range(lit(0), len(), 1, DataType::Int64).add(lit(1)); // SQL is 1-indexed
 
                         return row_number.over_with_options(
@@ -2408,7 +2409,7 @@ impl SQLFunctionVisitor<'_> {
             None
         } else {
             let (order_exprs, all_desc) = self.parse_order_by_in_window(&window_spec.order_by)?;
-            let sort_opts = SortOptions::default().with_order_descending(all_desc);
+            let sort_opts = SortMultipleOptions::default().with_order_descending(all_desc);
             Some((order_exprs, sort_opts))
         };
 
