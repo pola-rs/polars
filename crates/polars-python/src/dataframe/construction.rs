@@ -104,19 +104,24 @@ fn update_schema_from_rows(
     rows: &[Row],
     infer_schema_length: Option<usize>,
 ) -> PyResult<()> {
-    let schema_is_complete = schema.iter_values().all(|dtype| dtype.is_known());
+    let unknown_dtypes: Vec<bool> = schema
+        .iter_values()
+        .map(|dtype| !dtype.is_known())
+        .collect();
+    let schema_is_complete = !unknown_dtypes.iter().any(|&x| x);
     if schema_is_complete {
         return Ok(());
     }
 
-    // TODO: Only infer dtypes for columns with an unknown dtype
-    let inferred_dtypes =
-        rows_to_supertypes(rows, infer_schema_length).map_err(PyPolarsErr::from)?;
-    let inferred_dtypes_slice = inferred_dtypes.as_slice();
+    // Only infer dtypes for columns with an unknown dtype
+    let inferred_dtypes = rows_to_supertypes(rows, infer_schema_length, Some(&unknown_dtypes))
+        .map_err(PyPolarsErr::from)?;
 
-    for (i, dtype) in schema.iter_values_mut().enumerate() {
+    let mut inferred_iter = inferred_dtypes.into_iter();
+    for dtype in schema.iter_values_mut() {
         if !dtype.is_known() {
-            *dtype = inferred_dtypes_slice.get(i).ok_or_else(|| {
+            let replacement = inferred_iter.next();
+            *dtype = replacement.ok_or_else(|| {
                 polars_err!(SchemaMismatch: "the number of columns in the schema does not match the data")
             })
             .map_err(PyPolarsErr::from)?
