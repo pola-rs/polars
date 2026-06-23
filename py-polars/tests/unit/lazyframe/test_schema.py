@@ -235,13 +235,15 @@ def test_lazy_explode_in_agg_schema_19562() -> None:
         q.collect(), new_df_check_schema({"a": [1], "b": [[[1]]]}, schema)
     )
 
-    q = lf.group_by("a").agg(pl.col("b").explode())
+    q = lf.group_by("a").agg(pl.col("b").explode(empty_as_null=True))
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
     assert q.collect_schema() == schema
     assert_frame_equal(q.collect(), new_df_check_schema({"a": [1], "b": [[1]]}, schema))
 
-    q = lf.group_by("a").agg(pl.col("b").explode().explode())
+    q = lf.group_by("a").agg(
+        pl.col("b").explode(empty_as_null=True).explode(empty_as_null=True)
+    )
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
     assert q.collect_schema() == schema
@@ -261,7 +263,7 @@ def test_lazy_explode_in_agg_schema_19562() -> None:
         q.collect(), new_df_check_schema({"a": [1], "b": [[[[1]]]]}, schema)
     )
 
-    q = lf.group_by("a").agg(pl.col("b").explode())
+    q = lf.group_by("a").agg(pl.col("b").explode(empty_as_null=True))
     schema = {"a": pl.Int64, "b": pl.List(pl.List(pl.Int64))}
 
     assert q.collect_schema() == schema
@@ -269,7 +271,9 @@ def test_lazy_explode_in_agg_schema_19562() -> None:
         q.collect(), new_df_check_schema({"a": [1], "b": [[[1]]]}, schema)
     )
 
-    q = lf.group_by("a").agg(pl.col("b").explode().explode())
+    q = lf.group_by("a").agg(
+        pl.col("b").explode(empty_as_null=True).explode(empty_as_null=True)
+    )
     schema = {"a": pl.Int64, "b": pl.List(pl.Int64)}
 
     assert q.collect_schema() == schema
@@ -324,7 +328,7 @@ def test_lazy_agg_lit_explode() -> None:
     q = (
         pl.LazyFrame({"k": [1]})
         .group_by("k")
-        .agg(pl.lit(1, dtype=pl.Int64).explode().alias("o"))
+        .agg(pl.lit(1, dtype=pl.Int64).explode(empty_as_null=True).alias("o"))
     )
 
     schema = {"k": pl.Int64, "o": pl.List(pl.Int64)}
@@ -386,18 +390,18 @@ def test_lazy_window_schema(expr: pl.Expr, mapping_strategy: str) -> None:
 def test_lazy_explode_schema() -> None:
     lf = pl.LazyFrame({"k": [1], "x": pl.Series([[1]], dtype=pl.Array(pl.Int64, 1))})
 
-    q = lf.select(pl.col("x").explode())
+    q = lf.select(pl.col("x").explode(empty_as_null=True))
     assert q.collect_schema() == {"x": pl.Int64}
 
-    q = lf.select(pl.col("x").arr.explode())
+    q = lf.select(pl.col("x").arr.explode(empty_as_null=True))
     assert q.collect_schema() == {"x": pl.Int64}
 
     lf = pl.LazyFrame({"k": [1], "x": pl.Series([[1]], dtype=pl.List(pl.Int64))})
 
-    q = lf.select(pl.col("x").explode())
+    q = lf.select(pl.col("x").explode(empty_as_null=True))
     assert q.collect_schema() == {"x": pl.Int64}
 
-    q = lf.select(pl.col("x").list.explode())
+    q = lf.select(pl.col("x").list.explode(empty_as_null=True))
     assert q.collect_schema() == {"x": pl.Int64}
 
     # `LazyFrame.explode()` goes through a different codepath than `Expr.expode`
@@ -406,10 +410,10 @@ def test_lazy_explode_schema() -> None:
         pl.Series([[1]], dtype=pl.Array(pl.Int64, 1)).alias("array"),
     )
 
-    q = lf.explode("*")
+    q = lf.explode("*", empty_as_null=True)
     assert q.collect_schema() == {"list": pl.Int64, "array": pl.Int64}
 
-    q = lf.explode("list")
+    q = lf.explode("list", empty_as_null=True)
     assert q.collect_schema() == {"list": pl.Int64, "array": pl.Array(pl.Int64, 1)}
 
 

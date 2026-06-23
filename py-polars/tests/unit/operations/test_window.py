@@ -766,7 +766,9 @@ def test_window_implode_explode() -> None:
             "y": [2, 2, 2, 3, 3, 3, 4, 4, 4],
         }
     ).select(
-        works=(pl.col.x * pl.col.x.implode().explode()).over(pl.col.y),
+        works=(pl.col.x * pl.col.x.implode().explode(empty_as_null=False)).over(
+            pl.col.y
+        ),
     ).to_dict(as_series=False) == {"works": [1, 4, 9, 1, 4, 9, 1, 4, 9]}
 
 

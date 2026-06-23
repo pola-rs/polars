@@ -502,7 +502,8 @@ def test_list_of_struct_unique() -> None:
     assert {"a": 1, "b": 11} in unique_el
 
 
-def test_nested_explode_4026() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_nested_explode_4026(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "data": [
@@ -515,7 +516,7 @@ def test_nested_explode_4026() -> None:
         }
     )
 
-    assert df.explode("data").to_dict(as_series=False) == {
+    assert df.explode("data", empty_as_null=empty_as_null).to_dict(as_series=False) == {
         "data": [
             {"account_id": 10, "values": [1, 2]},
             {"account_id": 11, "values": [10, 20]},
@@ -1346,7 +1347,8 @@ def test_zip_outer_validity_infinite_recursion_21267() -> None:
     )
 
 
-def test_struct_arithmetic_broadcast_21376() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_struct_arithmetic_broadcast_21376(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "struct1": [{"low": 1, "mid": 2, "up": 3}],
@@ -1362,7 +1364,7 @@ def test_struct_arithmetic_broadcast_21376() -> None:
     )
     out = (
         df.with_row_index()
-        .explode("list_struct")
+        .explode("list_struct", empty_as_null=empty_as_null)
         .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
     )
     assert_frame_equal(out, expected)

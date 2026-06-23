@@ -2481,20 +2481,15 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         return wrap_expr(self._pyexpr.str_tail(n_pyexpr))
 
     @deprecated(
-        '`str.explode` is deprecated; use `str.split("").explode()` instead.'
-        " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use a `pl.when...then...otherwise`"
-        " expression to handle the empty list before exploding."
+        '`str.explode` is deprecated; use `str.split("").explode(empty_as_null=False)` instead.'
     )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use the `.str.split("").explode()` method instead. Note that empty strings
-            will result in null instead of being preserved. To get the exact same
-            behavior, split first and then use a `pl.when...then...otherwise`
-            expression to handle the empty list before exploding.
+            '`str.explode` is deprecated; use
+            `str.split("").explode(empty_as_null=False)` instead.'
 
         Returns
         -------

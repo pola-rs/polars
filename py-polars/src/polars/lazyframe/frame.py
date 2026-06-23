@@ -54,6 +54,7 @@ from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _is_generator,
+    _Omitted,
     display_dot_graph,
     extend_bool,
     is_bool_sequence,
@@ -8126,7 +8127,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool = _Omitted,
         keep_nulls: bool = True,
     ) -> LazyFrame:
         """
@@ -8152,7 +8153,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
         ... )
-        >>> lf.explode("numbers").collect()
+        >>> lf.explode("numbers", empty_as_null=False).collect()
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -8169,6 +8170,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )

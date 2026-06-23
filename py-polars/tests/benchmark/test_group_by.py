@@ -103,7 +103,7 @@ def test_groupby_h2oai_q8(groupby_data: pl.DataFrame) -> None:
         .drop_nulls("v3")
         .group_by("id6")
         .agg(pl.col("v3").top_k(2).alias("largest2_v3"))
-        .explode("largest2_v3")
+        .explode("largest2_v3", empty_as_null=False)
         .collect()
     )
 
