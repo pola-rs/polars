@@ -9,6 +9,7 @@ use polars_core::datatypes::PlHashMap;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
+use polars_utils::with_drop::WithDrop;
 use recursive::recursive;
 use utils::*;
 
@@ -613,7 +614,19 @@ impl PredicatePushDown {
                     self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, true)?;
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
-            lp @ Sink { .. } | lp @ SinkMultiple { .. } => {
+            lp @ Sink { .. } => {
+                let orig_streaming = self.streaming;
+                self.streaming = true;
+
+                WithDrop::new(self, |slf| slf.streaming = orig_streaming).pushdown_and_continue(
+                    lp,
+                    acc_predicates,
+                    lp_arena,
+                    expr_arena,
+                    false,
+                )
+            },
+            lp @ SinkMultiple { .. } => {
                 self.pushdown_and_continue(lp, acc_predicates, lp_arena, expr_arena, false)
             },
             // Pushed down passed these nodes
