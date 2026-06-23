@@ -1,7 +1,5 @@
 use arrow::array::builder::StaticArrayBuilder;
-use arrow::array::{
-    BINVIEW_ARROW_BUFFER_LEN_LIMIT, BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGenericBuilder,
-};
+use arrow::array::{BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGenericBuilder};
 use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::DataType;
 use polars_core::series::Series;
