@@ -84,6 +84,7 @@ fn select_qualified_wildcard() {
     FROM test
     INNER JOIN test2
     USING(a)
+    ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     assert!(actual.equals(&expected));
@@ -117,6 +118,7 @@ fn select_qualified_column() {
     FROM test
     INNER JOIN test2
     USING(a)
+    ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     assert!(actual.equals(&expected));
@@ -144,6 +146,7 @@ fn test_union_all() {
     UNION ALL (
         SELECT * FROM test2
     )
+    ORDER BY b
     "#;
     let expected = polars_lazy::dsl::concat(
         vec![df1.lazy(), df2.lazy()],
@@ -181,7 +184,7 @@ fn iss_9560_join_as() {
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
     let sql = r#"
-        SELECT * FROM df1 AS t1 JOIN df2 AS t2 ON t1.id = t2.id
+        SELECT * FROM df1 AS t1 JOIN df2 AS t2 ON t1.id = t2.id ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -229,6 +232,7 @@ fn test_compound_join_basic() {
     let sql = r#"
         SELECT * FROM df1
         INNER JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+        ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -294,6 +298,7 @@ fn test_compound_join_three_tables() {
             ON df1.a = df2.a AND df1.b = df2.b
           INNER JOIN df3
             ON df3.a = df1.a AND df3.b = df1.b
+          ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     let expected = df! {
@@ -344,6 +349,7 @@ fn test_compound_join_nested_and() {
                     df1.b = df2.b AND
                     df1.c = df2.c AND
                     df1.d = df2.d
+            ORDER BY ALL
          "#
         );
         let actual = ctx.execute(sql.as_str()).unwrap().collect().unwrap();
@@ -434,6 +440,7 @@ fn test_compound_join_and_select_exclude_rename_replace() {
             INNER JOIN df2 ON df1.a = df2.a AND
               ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
         ) tbl
+        ORDER BY ALL
      "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     let expected = df! {
@@ -458,6 +465,7 @@ fn test_compound_join_and_select_exclude_rename_replace() {
             INNER JOIN df2 ON df1.a = df2.a AND
               ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
         ) tbl
+        ORDER BY ALL
      "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
