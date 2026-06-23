@@ -1188,3 +1188,25 @@ def test_projection_pushdown_with_columns_27914() -> None:
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
+
+
+def test_projection_pushdown_row_index_reorder_28015() -> None:
+    lf = pl.LazyFrame({"key": [10, 11], "value": [1, 2]}).with_row_index()
+    q1 = lf.join(lf.select("index"), on="index")
+    q2 = q1.drop("index").with_row_index()
+    q3 = q2.join(q2.join(q2.select("key"), on="key").select("index"), on="index")
+    out = q3.join(q3, on="key").collect(engine="streaming")
+
+    assert_frame_equal(
+        out.sort("index"),
+        pl.DataFrame(
+            {
+                "index": [0, 1],
+                "key": [10, 11],
+                "value": [1, 2],
+                "index_right": [0, 1],
+                "value_right": [1, 2],
+            },
+            schema=out.schema,
+        ),
+    )
