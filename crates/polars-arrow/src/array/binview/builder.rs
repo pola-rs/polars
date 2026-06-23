@@ -74,7 +74,9 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
             "strings longer than 2^32 - 2 are not supported"
         );
 
-        const _: () = assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
+        const {
+            assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
+        }
 
         // Allocate a new buffer and flush the old buffer.
         let new_capacity = usize::max(

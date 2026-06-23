@@ -12,7 +12,7 @@ use crate::array::binview::view::validate_views_utf8_only;
 use crate::array::binview::{
     BinaryViewArrayGeneric, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE, ViewType,
 };
-use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
+use crate::array::{Array, BINVIEW_ARROW_BUFFER_LEN_LIMIT, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
@@ -308,17 +308,23 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             // We want to make sure that we never have to memcopy between buffers. So if the
             // current buffer is not large enough, create a new buffer that is large enough and try
             // to anticipate the larger size.
-            let required_capacity = self.in_progress_buffer.len() + bytes.len();
-            let does_not_fit_in_buffer = self.in_progress_buffer.capacity() < required_capacity;
+            if self.in_progress_buffer.len() + bytes.len()
+                > usize::min(
+                    BINVIEW_ARROW_BUFFER_LEN_LIMIT,
+                    self.in_progress_buffer.capacity(),
+                )
+            {
+                const {
+                    assert!(MAX_EXP_BLOCK_SIZE < BINVIEW_ARROW_BUFFER_LEN_LIMIT);
+                }
 
-            // We can only save offsets that are below u32::MAX
-            let offset_will_not_fit = self.in_progress_buffer.len() > u32::MAX as usize;
+                // Allocate a new buffer and flush the old buffer.
+                let new_capacity = usize::max(
+                    bytes.len(),
+                    (self.in_progress_buffer.capacity() * 2)
+                        .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE),
+                );
 
-            if does_not_fit_in_buffer || offset_will_not_fit {
-                // Allocate a new buffer and flush the old buffer
-                let new_capacity = (self.in_progress_buffer.capacity() * 2)
-                    .clamp(DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE)
-                    .max(bytes.len());
                 let in_progress = Vec::with_capacity(new_capacity);
                 let flushed = std::mem::replace(&mut self.in_progress_buffer, in_progress);
                 if !flushed.is_empty() {
