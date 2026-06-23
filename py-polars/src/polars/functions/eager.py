@@ -140,7 +140,7 @@ def concat(
 
     >>> df_h1 = pl.DataFrame({"l1": [1, 2], "l2": [3, 4]})
     >>> df_h2 = pl.DataFrame({"r1": [5, 6], "r2": [7, 8], "r3": [9, 10]})
-    >>> pl.concat([df_h1, df_h2], how="horizontal")
+    >>> pl.concat([df_h1, df_h2], how="horizontal_extend")
     shape: (2, 5)
     ┌─────┬─────┬─────┬─────┬─────┐
     │ l1  ┆ l2  ┆ r1  ┆ r2  ┆ r3  │
@@ -455,7 +455,7 @@ def union(
 
     >>> df_h1 = pl.DataFrame({"l1": [1, 2], "l2": [3, 4]})
     >>> df_h2 = pl.DataFrame({"r1": [5, 6], "r2": [7, 8], "r3": [9, 10]})
-    >>> pl.union([df_h1, df_h2], how="horizontal")
+    >>> pl.union([df_h1, df_h2], how="horizontal_extend")
     shape: (2, 5)
     ┌─────┬─────┬─────┬─────┬─────┐
     │ l1  ┆ l2  ┆ r1  ┆ r2  ┆ r3  │

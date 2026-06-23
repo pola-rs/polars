@@ -72,7 +72,7 @@ else:
             Examples
             --------
             >>> df = pl.DataFrame({"a": [1, 1, 1]})
-            >>> pl.concat([df, df], how="horizontal")
+            >>> pl.concat([df, df], how="horizontal_extend")
             polars.exceptions.DuplicateError: unable to hstack, column with name "a" already exists
             """  # noqa: W505
 
