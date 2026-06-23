@@ -1,5 +1,6 @@
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
+use polars_ops::frame::MaintainOrderJoin;
 
 use super::*;
 
@@ -280,7 +281,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
 
     let out = base_df
         .clone()
-        .group_by([col("uid")])
+        .group_by_stable([col("uid")])
         .agg([
             col("day").alias("day"),
             col("cumcases")
@@ -298,7 +299,7 @@ fn test_lazy_query_4() -> PolarsResult<()> {
             base_df,
             [col("uid"), col("day")],
             [col("uid"), col("day")],
-            JoinType::Inner.into(),
+            JoinArgs::new(JoinType::Inner).with_maintain_order(MaintainOrderJoin::LeftRight),
         )
         .collect()
         .unwrap();
@@ -979,7 +980,12 @@ fn test_group_by_projection_pd_same_column() -> PolarsResult<()> {
     };
 
     let out = a()
-        .left_join(a(), col("foo"), col("foo"))
+        .join(
+            a(),
+            [col("foo")],
+            [col("foo")],
+            JoinArgs::new(JoinType::Left).with_maintain_order(MaintainOrderJoin::LeftRight),
+        )
         .select([col("bar")])
         .collect()?;
 

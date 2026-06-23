@@ -131,7 +131,7 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
 
     # Ensure the CSE can work with hive partitions.
     q = q.filter(pl.col("a").gt(2))
-    result = q.join(q, on="a", how="left").collect(
+    result = q.join(q, on="a", how="left", maintain_order="left").collect(
         optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
     expected = {
@@ -140,6 +140,8 @@ def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
         "d_right": [3, 4],
     }
     assert result.to_dict(as_series=False) == expected
+
+    capfd.readouterr()
 
 
 @pytest.mark.write_disk
