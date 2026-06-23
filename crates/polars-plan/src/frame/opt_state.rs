@@ -1,5 +1,10 @@
 use bitflags::bitflags;
 
+const DEFAULT_OPT_FLAGS: OptFlags = OptFlags::from_bits_truncate(
+    OptFlags::all().bits()
+        & !(OptFlags::STREAMING.bits() | OptFlags::EAGER.bits() | OptFlags::GPU.bits()),
+);
+
 bitflags! {
 #[derive(Copy, Clone, Debug)]
     /// Allowed optimizations.
@@ -92,7 +97,7 @@ impl OptFlags {
 
 impl Default for OptFlags {
     fn default() -> Self {
-        Self::from_bits_truncate(u32::MAX) & !Self::STREAMING & !Self::EAGER & !Self::GPU
+        DEFAULT_OPT_FLAGS
     }
 }
 
