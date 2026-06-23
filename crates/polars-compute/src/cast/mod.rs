@@ -548,21 +548,21 @@ pub fn cast(
                 Timestamp(_, None) => {
                     polars_bail!(
                         InvalidOperation:
-                        "casting from String to DateTime is not supported.\n\
+                        "casting from string to datetime is not supported.\n\
                         It was removed in Polars 2.0. Use `str.to_datetime()` instead."
                     );
                 },
                 Timestamp(_, Some(time_zone)) => {
                     polars_bail!(
                         InvalidOperation:
-                        "casting from String to DateTime is not supported.\n\
+                        "casting from string to datetime is not supported.\n\
                         It was removed in Polars 2.0. Use `str.to_datetime(..., \"time_zone={time_zone}\")` instead."
                     );
                 },
                 Date32 => {
                     polars_bail!(
                         InvalidOperation:
-                        "casting from String to Date is not supported.\n\
+                        "casting from string to date is not supported.\n\
                         It was removed in Polars 2.0. Use `str.to_date()` instead."
                     );
                 },
