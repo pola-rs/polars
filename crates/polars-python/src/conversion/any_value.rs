@@ -553,6 +553,13 @@ pub(crate) fn py_object_to_any_value(
             if ob.is_instance(DECIMAL_TYPE.import(py, "decimal", "Decimal")?)? {
                 return Ok(get_decimal as InitFn);
             }
+            // Check for pandas Timestamp (subclass of datetime not recognized by PyDateTime::type_check)
+            static PANDAS_TIMESTAMP_TYPE: PyOnceLock<Py<PyType>> = PyOnceLock::new();
+            if let Ok(ts_type) = PANDAS_TIMESTAMP_TYPE.import(py, "pandas", "Timestamp") {
+                if ob.is_instance(ts_type)? {
+                    return Ok(get_datetime as InitFn);
+                }
+            }
 
             // support NumPy scalars
             if ob.extract::<i64>().is_ok() || ob.extract::<u64>().is_ok() {
