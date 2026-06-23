@@ -168,7 +168,7 @@ jobs:
           -n auto
           -m "not release and not benchmark and not docs"
           -k 'not test_polars_import'
-          --cov --cov-report xml:main.xml --cov-fail-under=0
+          --cov --cov-report xml:in-memory.xml --cov-fail-under=0
 
       - name: Run Python tests - streaming
         working-directory: py-polars
@@ -216,6 +216,7 @@ jobs:
           path: |
             coverage-python.lcov
             py-polars/main.xml
+            py-polars/in-memory.xml
             py-polars/auto-streaming.xml
             py-polars/small-morsel.xml
             py-polars/async.xml
