@@ -308,7 +308,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             // We want to make sure that we never have to memcopy between buffers. So if the
             // current buffer is not large enough, create a new buffer that is large enough and try
             // to anticipate the larger size.
-            if self.in_progress_buffer.len() + bytes.len()
+            if self.in_progress_buffer.len().saturating_add(bytes.len())
                 > usize::min(
                     BINVIEW_ARROW_BUFFER_LEN_LIMIT,
                     self.in_progress_buffer.capacity(),

@@ -62,7 +62,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     fn reserve_active_buffer(&mut self, additional: usize) {
         let len = self.active_buffer.len();
         let cap = self.active_buffer.capacity();
-        if additional > usize::min(BINVIEW_ARROW_BUFFER_LEN_LIMIT, cap) - len {
+        if len.saturating_add(additional) > usize::min(BINVIEW_ARROW_BUFFER_LEN_LIMIT, cap) {
             self.reserve_active_buffer_slow(additional);
         }
     }
