@@ -18,7 +18,6 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_ldf
-from polars._warnings import issue_warning
 from polars.convert import from_arrow
 from polars.io._utils import (
     get_sources,
@@ -243,8 +242,7 @@ def read_parquet(
                 "\n\nHint: Pass `pyarrow_options` instead with a 'partitioning' entry."
             )
             raise TypeError(msg)
-
-        ret = _read_parquet_with_pyarrow(
+        return _read_parquet_with_pyarrow(
             source,
             columns=columns,
             storage_options=storage_options,
@@ -252,8 +250,6 @@ def read_parquet(
             memory_map=memory_map,
             rechunk=rechunk,
         )
-
-        return ret
 
     if allow_missing_columns is not None:
         issue_deprecation_warning(
@@ -486,7 +482,7 @@ def scan_parquet(
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     low_memory: bool = False,
     cache: bool = True,
     storage_options: StorageOptionsDict | None = None,
@@ -582,6 +578,9 @@ def scan_parquet(
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame
         into contiguous memory chunks.
+
+        .. deprecated:: 1.42.0
+            Collect into a DataFrame first, then call rechunk on the result.
     low_memory
         Reduce memory pressure at the expense of performance.
     cache
@@ -669,13 +668,15 @@ def scan_parquet(
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
-    if rechunk:
-        issue_warning(
-            "rechunk=True no longer has effect on scan_parquet(). "
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_parquet() will be removed. "
             "Consider first collecting the scan to a DataFrame, then calling "
             "df.rechunk() on the result.",
-            category=UserWarning,
+            version="1.42.0",
         )
+    else:
+        rechunk = False
 
     if schema is not None:
         msg = "the `schema` parameter of `scan_parquet` is considered unstable."

@@ -10,7 +10,6 @@ from polars._utils.deprecation import (
 )
 from polars._utils.various import is_path_or_str_sequence, normalize_filepath
 from polars._utils.wrap import wrap_ldf
-from polars._warnings import issue_warning
 from polars.datatypes import N_INFER_DEFAULT
 from polars.io._utils import parse_row_index_args
 from polars.io.cloud.credential_provider._builder import (
@@ -209,7 +208,7 @@ def scan_ndjson(
     batch_size: int | None = 1024,
     n_rows: int | None = None,
     low_memory: bool = False,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     ignore_errors: bool = False,
@@ -257,6 +256,9 @@ def scan_ndjson(
         Reduce memory pressure at the expense of performance.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.42.0
+            Collect into a DataFrame first, then call rechunk on the result.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -301,13 +303,15 @@ def scan_ndjson(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
     """
-    if rechunk:
-        issue_warning(
-            "rechunk=True no longer has effect on scan_ndjson(). "
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_parquet() will be removed. "
             "Consider first collecting the scan to a DataFrame, then calling "
             "df.rechunk() on the result.",
-            category=UserWarning,
+            version="1.42.0",
         )
+    else:
+        rechunk = False
 
     sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):

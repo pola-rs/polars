@@ -17,7 +17,6 @@ from polars._utils.various import (
     normalize_filepath,
 )
 from polars._utils.wrap import wrap_df, wrap_ldf
-from polars._warnings import issue_warning
 from polars.io._utils import (
     get_sources,
     is_glob_pattern,
@@ -387,7 +386,7 @@ def scan_ipc(
     *,
     n_rows: int | None = None,
     cache: bool | None = None,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     glob: bool = True,
@@ -427,6 +426,9 @@ def scan_ipc(
             File cache is no longer supported.
     rechunk
         Reallocate to contiguous memory when all chunks/ files are parsed.
+
+        .. deprecated:: 1.42.0
+            Collect into a DataFrame first, then call rechunk on the result.
     row_index_name
         If not None, this will insert a row index column with give name into the
         DataFrame
@@ -496,13 +498,15 @@ def scan_ipc(
     # Memory Mapping is now a no-op
     _ = memory_map
 
-    if rechunk:
-        issue_warning(
-            "rechunk=True no longer has effect on scan_ipc(). "
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_ipc() will be removed. "
             "Consider first collecting the scan to a DataFrame, then calling "
             "df.rechunk() on the result.",
-            category=UserWarning,
+            version="1.42.0",
         )
+    else:
+        rechunk = False
 
     sources = get_sources(source)
 
