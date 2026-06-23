@@ -2247,6 +2247,7 @@ def test_scan_iceberg_min_max_statistics_filter(
             coalesced_min_max_values.select(pl.struct(pl.all()).alias("coalesced")),
         ],
         how="horizontal",
+        strict=True,
     ).filter(pl.first() != pl.last())
 
     # Float statistics are available after coalescing from an identity partition field.

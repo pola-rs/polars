@@ -527,6 +527,7 @@ def test_hconcat_predicate() -> None:
             lf2.filter(pl.col("b1") > 0),
         ],
         how="horizontal",
+        strict=True,
     ).filter(pl.col("b2") < 9)
 
     expected = pl.DataFrame(
