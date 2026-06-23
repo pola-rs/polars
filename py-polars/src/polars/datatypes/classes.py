@@ -30,7 +30,6 @@ if TYPE_CHECKING:
 
     from polars import Series
     from polars._typing import (
-        CategoricalOrdering,
         PolarsDataType,
         PythonDataType,
         SchemaDict,
@@ -868,56 +867,20 @@ class Categorical(DataType):
         :py:class:`Categories`. If not provided, the global categories
         (`pl.Categories()`) are used.
 
-        For legacy reasons if the string is either `"physical"` or `"lexical"`,
-        it is ignored and a warning is issued. If you wish to use a `Categories`
-        named `"physical"` or `"lexical"`, please pass it using
-        :py:class:`Categories` explicitly.
-
-    ordering : {'lexical', 'physical'}
-        This used to specify how this type was ordered, but now does nothing.
-
-        .. deprecated:: 1.32.0
-            Parameter is now ignored. Always behaves as if `'lexical'` was passed.
-
     See Also
     --------
     Categories
     """
 
-    ordering: CategoricalOrdering | None
     categories: Categories
 
     def __init__(
         self,
         categories: Categories | str | None = None,
-        *,
-        ordering: CategoricalOrdering | None = None,
     ) -> None:
-        # Because we supported the positional 'ordering' arg in the past, we
-        # need to check for this in the categories argument.
         if isinstance(categories, str):
-            if categories == "physical" or categories == "lexical":
-                from polars._utils.deprecation import issue_deprecation_warning
-
-                msg = (
-                    "the ordering parameter on Categorical is deprecated. The ordering is now always lexical."
-                    "\n\nIf you meant to use a Categories named 'physical' or 'lexical', pass it using pl.Categories('physical') or pl.Categories('lexical')."
-                )
-                issue_deprecation_warning(msg, version="1.32.0")
-                categories = Categories()
-            else:
-                categories = Categories(name=categories)
-
-        if ordering is not None:
-            from polars._utils.deprecation import issue_deprecation_warning
-
-            issue_deprecation_warning(
-                "the ordering parameter on Categorical is deprecated. The ordering is now always lexical.",
-                version="1.32.0",
-            )
-
-        self.ordering = "lexical"
-        if categories is None:
+            self.categories = Categories(name=categories)
+        elif categories is None:
             self.categories = Categories()
         else:
             self.categories = categories
