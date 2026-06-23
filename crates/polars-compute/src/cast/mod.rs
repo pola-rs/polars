@@ -257,14 +257,18 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
 
     let mut all_views_inline = true;
 
-    // In a View for BinaryViewArray, both length and offset are u32.
-    #[cfg(not(test))]
-    const MAX_BUF_SIZE: usize = u32::MAX as usize;
-
-    // This allows us to test some invariants without using 4GB of RAM; see mod
-    // tests below.
-    #[cfg(test)]
-    const MAX_BUF_SIZE: usize = 15;
+    const MAX_BUF_SIZE: usize = if cfg!(test) {
+        // This allows us to test some invariants without using 4GB of RAM; see mod
+        // tests below.
+        15
+    } else {
+        BINVIEW_MAX_ROW_BYTE_LEN
+    };
+    const SPLIT_BUF_SIZE: usize = if cfg!(test) {
+        15
+    } else {
+        BINVIEW_ARROW_BUFFER_LEN_LIMIT
+    };
 
     for index in 0..list.len() {
         // Check if there's a null instead of a list:
@@ -303,7 +307,7 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             }
         }
 
-        if end - previous_buf_lengths > MAX_BUF_SIZE {
+        if end - previous_buf_lengths > SPLIT_BUF_SIZE {
             // View offsets must fit in u32 (or smaller value when running Rust
             // tests), and we've determined the end of the next view will be
             // past that.
