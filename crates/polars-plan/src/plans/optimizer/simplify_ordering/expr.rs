@@ -529,7 +529,7 @@ impl ExprOrderSimplifier<'_> {
 
                 let observable_in_offset = self.rec(offset, RS::NO_DEORDER);
                 let observable_in_length = self.rec(length, RS::NO_DEORDER);
-                let observable_in_input = self.rec(input, recursion);
+                let observable_in_input = self.rec(input, RS::NO_DEORDER);
 
                 let mut acc = ExprOrderAcc::default();
                 acc.add(observable_in_offset, offset);
