@@ -176,7 +176,12 @@ fn test_sorted_path_joins() -> PolarsResult<()> {
     let out = dfa
         .lazy()
         .with_column(col("a").set_sorted_flag(AExprSorted::default().with_desc(Some(false))))
-        .join(dfb.lazy(), [col("a")], [col("a")], JoinType::Left.into())
+        .join(
+            dfb.lazy(),
+            [col("a")],
+            [col("a")],
+            JoinArgs::new(JoinType::Left).with_maintain_order(MaintainOrderJoin::LeftRight),
+        )
         .collect()?;
 
     let s = out.column("a")?;

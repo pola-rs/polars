@@ -39,6 +39,8 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "cross_join")]
 fn test_cross_join_pd() -> PolarsResult<()> {
+    use polars_ops::frame::MaintainOrderJoin;
+
     let food = df![
         "name"=> ["Omelette", "Fried Egg"],
         "price" => [8, 5]
@@ -49,11 +51,21 @@ fn test_cross_join_pd() -> PolarsResult<()> {
         "price" => [5, 4]
     ]?;
 
-    let q = food.lazy().cross_join(drink.lazy(), None).select([
-        col("name").alias("food"),
-        col("name_right").alias("beverage"),
-        (col("price") + col("price_right")).alias("total"),
-    ]);
+    let q = food
+        .lazy()
+        .join(
+            drink.lazy(),
+            vec![],
+            vec![],
+            JoinArgs::new(JoinType::Cross)
+                .with_suffix(None)
+                .with_maintain_order(MaintainOrderJoin::LeftRight),
+        )
+        .select([
+            col("name").alias("food"),
+            col("name_right").alias("beverage"),
+            (col("price") + col("price_right")).alias("total"),
+        ]);
 
     let out = q.collect()?;
     let expected = df![
