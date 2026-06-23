@@ -5,6 +5,7 @@ use either::Either;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_io::RowIndex;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::*;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
@@ -521,7 +522,11 @@ pub async fn csv_file_info(
             // Collect metadata.
             let byte_source = ASYNC.block_on(async move {
                 source
-                    .to_dyn_byte_source(&DynByteSourceBuilder::ObjectStore, cloud_options, None)
+                    .to_dyn_byte_source(
+                        &DynByteSourceBuilder::ObjectStore(FetchConfig::streaming()),
+                        cloud_options,
+                        None,
+                    )
                     .await
             })?;
             let byte_source = Arc::new(byte_source);
@@ -782,7 +787,7 @@ pub async fn ndjson_file_info(
                 first_scan_source
                     .as_scan_source_ref()
                     .to_dyn_byte_source(
-                        &DynByteSourceBuilder::ObjectStore,
+                        &DynByteSourceBuilder::ObjectStore(FetchConfig::streaming()),
                         cloud_options.as_ref(),
                         None,
                     )

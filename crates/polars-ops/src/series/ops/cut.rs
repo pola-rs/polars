@@ -184,6 +184,11 @@ pub fn qcut(
 ) -> PolarsResult<Series> {
     polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
 
+    let s = s.cast(&DataType::Float64)?;
+    let s2 = s.sort(SortOptions::default())?;
+    let ca = s2.f64()?;
+    let ca = ca.set(&ca.is_nan(), None)?;
+
     if s.null_count() == s.len() {
         // If we only have nulls we don't have any breakpoints.
         return Ok(Series::full_null(
@@ -192,10 +197,6 @@ pub fn qcut(
             &DataType::from_categories(Categories::global()),
         ));
     }
-
-    let s = s.cast(&DataType::Float64)?;
-    let s2 = s.sort(SortOptions::default())?;
-    let ca = s2.f64()?;
 
     let mut qbreaks: Vec<_> = ca
         .quantiles(&probs, QuantileMethod::Linear)?

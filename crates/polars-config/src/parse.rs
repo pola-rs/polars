@@ -1,6 +1,6 @@
 use polars_error::polars_warn;
 
-use crate::{Engine, ResolveMode, SpillFormat, SpillPolicy};
+use crate::{Engine, ResolveMode, SpillFormat};
 
 pub fn parse_bool(var: &str, val: &str) -> Option<bool> {
     match val.trim_ascii() {
@@ -31,16 +31,6 @@ pub fn parse_f64(var: &str, val: &str) -> Option<f64> {
 
 pub fn parse_engine(var: &str, val: &str) -> Option<Engine> {
     match val.trim_ascii().parse::<Engine>() {
-        Ok(x) => Some(x),
-        Err(e) => {
-            polars_warn!("illegal value '{val}' found while parsing option '{var}' ({e})");
-            None
-        },
-    }
-}
-
-pub fn parse_spill_policy(var: &str, val: &str) -> Option<SpillPolicy> {
-    match val.trim_ascii().parse::<SpillPolicy>() {
         Ok(x) => Some(x),
         Err(e) => {
             polars_warn!("illegal value '{val}' found while parsing option '{var}' ({e})");

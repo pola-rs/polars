@@ -9,7 +9,7 @@ own APIs and limitations.
 
 Polars is bridging this gap with **Polars Cloud**. Build on top of the popular open source project,
 Polars Cloud enables you to write DataFrame code once and run it anywhere. The distributed engine
-available with Polars Cloud allows to scale your Polars queries beyond a single machine.
+available with Polars Cloud lets you scale your Polars queries beyond a single machine.
 
 ## Key Features of Polars Cloud
 
