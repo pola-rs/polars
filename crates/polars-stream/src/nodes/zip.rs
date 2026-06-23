@@ -48,7 +48,7 @@ impl InputHead {
     }
 
     async fn add_morsel(&mut self, mut morsel: Morsel, ctx: &MostRecentSpillContext) {
-        self.total_len += morsel.df().height();
+        self.total_len += morsel.height();
 
         if self.is_broadcast.is_none() {
             if self.total_len > 1 {
@@ -60,7 +60,7 @@ impl InputHead {
             }
         }
 
-        if morsel.df().height() > 0 {
+        if morsel.height() > 0 {
             // Zip is the exception: we keep the consume token alive until
             // the drain loop rather than dropping it before buffering.
             let consume_token = morsel.take_consume_token();
