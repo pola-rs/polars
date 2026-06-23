@@ -1,34 +1,14 @@
 use std::error::Error;
 use std::future::Future;
-use std::sync::LazyLock;
 
 use polars_buffer::Buffer;
-use polars_core::config::{self, verbose};
+use polars_core::config::verbose;
 use polars_core::runtime::RAYON;
 use polars_utils::relaxed_cell::RelaxedCell;
 use tokio::sync::Semaphore;
 
 static CONCURRENCY_BUDGET: std::sync::OnceLock<(Semaphore, u32)> = std::sync::OnceLock::new();
 pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
-
-/// Used to determine chunks when splitting large ranges, or combining small
-/// ranges.
-static DOWNLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-    let v: usize = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE")
-        .as_deref()
-        .map(|x| x.parse().expect("integer"))
-        .unwrap_or(64 * 1024 * 1024);
-
-    if config::verbose() {
-        eprintln!("async download_chunk_size: {v}")
-    }
-
-    v
-});
-
-pub(super) fn get_download_chunk_size() -> usize {
-    *DOWNLOAD_CHUNK_SIZE
-}
 
 pub trait GetSize {
     fn size(&self) -> u64;

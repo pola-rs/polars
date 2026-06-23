@@ -10,6 +10,7 @@ use polars_parquet::parquet::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAG
 use polars_parquet::write::FileMetadata;
 use polars_utils::pl_path::PlRefPath;
 
+use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
 use crate::cloud::{
     CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
@@ -44,7 +45,12 @@ impl ParquetObjectStore {
     /// Initialize the length property of the object, unless it has already been fetched.
     async fn length(&mut self) -> PolarsResult<usize> {
         if self.length.is_none() {
-            self.length = Some(self.store.head(&self.path).await?.size as usize);
+            self.length = Some(
+                self.store
+                    .head(&self.path, ConcurrencyStrategy::BytesBased)
+                    .await?
+                    .size as usize,
+            );
         }
         Ok(self.length.unwrap())
     }
@@ -123,6 +129,7 @@ async fn fetch_footer_bytes(
                 .checked_sub(prefetch_len)
                 .ok_or_else(|| out_of_spec("not enough bytes to contain parquet footer"))?
                 ..file_byte_length,
+            FetchConfig::random_access(),
         )
         .await?;
 
@@ -159,6 +166,7 @@ async fn fetch_footer_bytes(
                     .checked_sub(footer_len)
                     .ok_or_else(|| out_of_spec("not enough bytes to contain parquet footer"))?
                     ..file_byte_length,
+                FetchConfig::random_access(),
             )
             .await
     }

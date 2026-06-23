@@ -42,6 +42,7 @@ use crate::nodes::io_sources::multi_scan::reader_interface::{
     FileReader, FileReaderCallbacks, Projection, calc_row_position_after_slice,
 };
 use crate::nodes::io_sources::parquet::init::split_to_morsels;
+use crate::nodes::io_sources::shared::pipeline_budget::PipelineBudget;
 use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 pub mod builder;
@@ -69,8 +70,8 @@ struct IpcFileReader {
 }
 
 struct RecordBatchPrefetchSync {
-    prefetch_limit: usize,
-    prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Request throttling, by count and by memory.
+    pipeline_budget: PipelineBudget,
     shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
 
     /// Waits for the previous reader to finish spawning prefetches.
@@ -302,7 +303,8 @@ impl FileReader for IpcFileReader {
 
         let record_batch_prefetch_size = self
             .record_batch_prefetch_sync
-            .prefetch_limit
+            .pipeline_budget
+            .count_limit()
             .min(file_metadata.blocks.len())
             .max(1);
 
@@ -334,7 +336,8 @@ impl FileReader for IpcFileReader {
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(num_pipelines);
         let (mut morsel_send, morsel_recv) = FileReaderOutputSend::new_serial();
 
-        let rb_prefetch_semaphore = Arc::clone(&self.record_batch_prefetch_sync.prefetch_semaphore);
+        let pipeline_budget = self.record_batch_prefetch_sync.pipeline_budget.clone();
+
         let rb_prefetch_prev_all_spawned =
             Option::take(&mut self.record_batch_prefetch_sync.prev_all_spawned);
         let rb_prefetch_current_all_spawned =
@@ -442,7 +445,7 @@ impl FileReader for IpcFileReader {
                 prefetch_send,
                 base_rb_metadata_fetch_count,
 
-                rb_prefetch_semaphore,
+                pipeline_budget,
                 rb_prefetch_current_all_spawned,
             };
 

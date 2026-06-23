@@ -13,6 +13,7 @@ use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::RowIndex;
+use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
 use crate::cloud::{
     CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
@@ -85,7 +86,9 @@ impl IpcReaderAsync {
     }
 
     async fn object_metadata(&self) -> PolarsResult<ObjectMeta> {
-        self.store.head(&self.path).await
+        self.store
+            .head(&self.path, ConcurrencyStrategy::BytesBased)
+            .await
     }
 
     async fn file_size(&self) -> PolarsResult<usize> {
@@ -103,6 +106,7 @@ impl IpcReaderAsync {
                     file_size.checked_sub(FOOTER_METADATA_SIZE).ok_or_else(|| {
                         to_compute_err("ipc file size is smaller than the minimum")
                     })?..file_size,
+                    FetchConfig::legacy(),
                 )
                 .await?;
 
@@ -122,6 +126,7 @@ impl IpcReaderAsync {
                     .ok_or_else(|| {
                         to_compute_err("invalid ipc footer metadata: footer size too large")
                     })?..file_size,
+                FetchConfig::legacy(),
             )
             .await?;
 
