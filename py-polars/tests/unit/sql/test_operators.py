@@ -85,8 +85,8 @@ def test_equal_not_equal() -> None:
     [
         "values NOT IN ([0], [3,4], [7,8], [6,6,6])",
         "values IN ([0], [5,6], [1,2], [8,8,8,8])",
-        "dt NOT IN ('1950-12-24', '1997-07-05')",
-        "dt IN ('2020-10-10', '2077-03-18')",
+        "dt NOT IN (DATE '1950-12-24', DATE '1997-07-05')",
+        "dt IN (DATE '2020-10-10', DATE '2077-03-18')",
         "rowid NOT IN (1, 3)",
         "rowid IN (4, 2)",
     ],
@@ -186,7 +186,7 @@ def test_logical_not() -> None:
     }
 
     # expect failure when applying logical 'NOT' to an incompatible dtype
-    for invalid_literal in ("'foo'", "'2026-12-31'::date"):
+    for invalid_literal in ("'foo'", "DATE('2026-12-31')"):
         with pytest.raises(
             InvalidOperationError,
             match=r"cast.* to Boolean not supported",
