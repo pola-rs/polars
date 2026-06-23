@@ -20,7 +20,6 @@ use polars_plan::dsl::{CastColumnsPolicy, ScanSource, ScanSources};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::slice_enum::Slice;
 
 use crate::metrics::IOMetrics;
@@ -69,8 +68,7 @@ impl DeletionFilesProvider {
                         low_memory: false,
                         use_statistics: false,
                     }),
-                    prefetch_limit: RelaxedCell::new_usize(0),
-                    prefetch_semaphore: std::sync::OnceLock::new(),
+                    pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),
                     io_metrics: io_metrics.map(OnceLock::from).unwrap_or_default(),
                 };

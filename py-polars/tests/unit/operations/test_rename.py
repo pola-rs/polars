@@ -7,7 +7,7 @@ def test_rename_invalidate_cache_15884() -> None:
         pl.LazyFrame({"a": [1], "b": [1]})
         .rename({"b": "b1"})  # to cache schema
         .with_columns(
-            c=pl.col("b1").drop_nulls(), d=pl.col("b1").drop_nulls()
+            c=pl.col("b1").drop_nulls().first(), d=pl.col("b1").drop_nulls().last()
         )  # to trigger CSE
         .select("c", "d")  # to trigger project push down
     ).collect().to_dict(as_series=False) == {"c": [1], "d": [1]}

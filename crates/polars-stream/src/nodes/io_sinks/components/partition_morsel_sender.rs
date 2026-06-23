@@ -153,7 +153,7 @@ impl PartitionMorselSender {
 
             let mut morsel = SinkMorsel::new(df, morsel_permit);
 
-            let morsel_height: IdxSize = IdxSize::try_from(morsel.df().height()).unwrap();
+            let morsel_height: IdxSize = IdxSize::try_from(morsel.height()).unwrap();
 
             debug_assert!(
                 self.takeable_rows_provider.max_size.get().num_rows
@@ -165,7 +165,7 @@ impl PartitionMorselSender {
 
             if let Some(hstack_keys) = self.hstack_keys.as_ref() {
                 let columns = morsel.df().columns();
-                let height = morsel.df().height();
+                let height = morsel.height();
                 let new_columns = hstack_keys.hstack_columns_broadcast(
                     height,
                     columns,
