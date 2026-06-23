@@ -26,8 +26,10 @@ from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine import Connection
+    from sqlalchemy.orm.session import Session
+
     from polars._typing import (
-        ConnectionOrCursor,
         DbReadEngine,
         SchemaDefinition,
         SchemaDict,
@@ -503,8 +505,8 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
     # various flavours of alchemy connection
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     try:
-        alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
-        alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+        alchemy_session: Session = sessionmaker(bind=alchemy_engine)()
+        alchemy_conn: Connection = alchemy_engine.connect()
         try:
             t = Table("test_data", MetaData(), autoload_with=alchemy_engine)
 
@@ -546,8 +548,8 @@ def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
     # various flavours of alchemy connection
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     try:
-        alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
-        alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+        alchemy_session: Session = sessionmaker(bind=alchemy_engine)()
+        alchemy_conn: Connection = alchemy_engine.connect()
         try:
             # establish sqlalchemy "textclause" and validate usage
             textclause_query = text(
@@ -599,9 +601,9 @@ def test_read_database_parameterised(
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     try:
-        alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
-        alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
-        raw_conn: ConnectionOrCursor = sqlite3.connect(tmp_sqlite_db)
+        alchemy_conn: Connection = alchemy_engine.connect()
+        alchemy_session: Session = sessionmaker(bind=alchemy_engine)()
+        raw_conn: sqlite3.Connection = sqlite3.connect(tmp_sqlite_db)
         try:
             # establish parameterised queries and validate usage
             query = """
@@ -708,9 +710,9 @@ def test_read_database_parameterised_multiple(
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     try:
-        alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
-        alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
-        raw_conn: ConnectionOrCursor = sqlite3.connect(tmp_sqlite_db)
+        alchemy_conn: Connection = alchemy_engine.connect()
+        alchemy_session: Session = sessionmaker(bind=alchemy_engine)()
+        raw_conn: sqlite3.Connection = sqlite3.connect(tmp_sqlite_db)
         try:
             for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
                 if alchemy_session is conn and param_1 == "?":
