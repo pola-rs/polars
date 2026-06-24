@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import NO_DEFAULT, _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
@@ -347,11 +347,10 @@ class StringNameSpace(_NamespaceSuggestMixin):
                 .to_series()
             )
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
-        inference_length: int = 100,
         *,
+        inference_length: int = 100,
         scale: int | None = None,
     ) -> Series:
         """
@@ -359,9 +358,6 @@ class StringNameSpace(_NamespaceSuggestMixin):
 
         This method infers the needed parameters `precision` and `scale` if not
         given.
-
-        .. versionchanged:: 1.20.0
-            Parameter `inference_length` should now be passed as a keyword argument.
 
         Parameters
         ----------
