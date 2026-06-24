@@ -45,7 +45,6 @@ def test_repeat(
     expected = pl.Series("literal", [value] * n).cast(expected_dtype)
 
     result_eager = pl.repeat(value, n=n, dtype=dtype, eager=True)
-    print(result_eager)
     assert_series_equal(result_eager, expected)
 
     result_lazy = pl.select(pl.repeat(value, n=n, dtype=dtype, eager=False)).to_series()
