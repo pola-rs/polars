@@ -673,25 +673,40 @@ def test_join_concat_projection_pd_case_7071() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # legacy full join is not order-preserving whereas new-streaming is
-def test_join_sorted_fast_paths_null() -> None:
+def test_join_sorted_fast_paths_null_8269() -> None:
     df1 = pl.DataFrame({"x": [0, 1, 0]}).sort("x")
     df2 = pl.DataFrame({"x": [0, None], "y": [0, 1]})
-    assert df1.join(df2, on="x", how="inner").to_dict(as_series=False) == {
-        "x": [0, 0],
-        "y": [0, 0],
-    }
-    assert df1.join(df2, on="x", how="left").to_dict(as_series=False) == {
-        "x": [0, 0, 1],
-        "y": [0, 0, None],
-    }
-    assert df1.join(df2, on="x", how="anti").to_dict(as_series=False) == {"x": [1]}
-    assert df1.join(df2, on="x", how="semi").to_dict(as_series=False) == {"x": [0, 0]}
-    assert df1.join(df2, on="x", how="full").to_dict(as_series=False) == {
-        "x": [0, 0, 1, None],
-        "x_right": [0, 0, None, None],
-        "y": [0, 0, None, 1],
-    }
+    assert_frame_equal(
+        df1.join(df2, on="x", how="inner"),
+        pl.DataFrame({"x": [0, 0], "y": [0, 0]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="left"),
+        pl.DataFrame({"x": [0, 0, 1], "y": [0, 0, None]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="anti"),
+        pl.DataFrame({"x": [1]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="semi"),
+        pl.DataFrame({"x": [0, 0]}),
+        check_row_order=False,
+    )
+    assert_frame_equal(
+        df1.join(df2, on="x", how="full"),
+        pl.DataFrame(
+            {
+                "x": [0, 0, 1, None],
+                "x_right": [0, 0, None, None],
+                "y": [0, 0, None, 1],
+            }
+        ),
+        check_row_order=False,
+    )
 
 
 def test_full_outer_join_list_() -> None:
