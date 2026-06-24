@@ -196,11 +196,11 @@ fresh: clean requirements-all build  ## Clean everything, install all requiremen
 
 .PHONY: clean
 clean:  ## Clean up caches, build artifacts, and the venv
-	@$(MAKE) -s -C py-polars/ $@
-	@rm -rf .ruff_cache/
-	@rm -rf .hypothesis/
-	@rm -rf .venv/
-	@cargo clean
+	-@$(MAKE) -s -C py-polars/ $@
+	-@rm -rf .ruff_cache/
+	-@rm -rf .hypothesis/
+	-@rm -rf .venv/
+	-@cargo clean
 
 .PHONY: help
 help:  ## Display this help screen

@@ -3622,6 +3622,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-runtime-32-ft"
+version = "1.42.0"
+dependencies = [
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
 name = "polars-runtime-64"
 version = "1.42.0"
 dependencies = [
@@ -3633,7 +3644,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "polars-runtime-64-ft"
+version = "1.42.0"
+dependencies = [
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
 name = "polars-runtime-compat"
+version = "1.42.0"
+dependencies = [
+ "either",
+ "libc",
+ "polars-python",
+ "pyo3",
+ "rustflags",
+]
+
+[[package]]
+name = "polars-runtime-compat-ft"
 version = "1.42.0"
 dependencies = [
  "either",

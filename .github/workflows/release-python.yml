@@ -18,19 +18,21 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.10'
-  PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
+  PYTHON_VERSION: "3.10"
+  PYTHON_VERSION_WIN_ARM64: "3.11" # ARM64 Windows doesn't have older versions
+  PYTHON_VERSION_FREE_THREADED: "3.14t"
+
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
 
-  COMPAT_TUNE_CPU: ''
-  COMPAT_FEATURES: '+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b'
-  COMPAT_CC_FEATURES: '-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16'
+  COMPAT_TUNE_CPU: ""
+  COMPAT_FEATURES: "+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b"
+  COMPAT_CC_FEATURES: "-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16"
 
-  NONCOMPAT_TUNE_CPU: 'skylake'
-  NONCOMPAT_FEATURES: '+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe'
-  NONCOMPAT_CC_FEATURES: '-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe'
+  NONCOMPAT_TUNE_CPU: "skylake"
+  NONCOMPAT_FEATURES: "+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe"
+  NONCOMPAT_CC_FEATURES: "-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe"
 
 defaults:
   run:
@@ -39,8 +41,6 @@ defaults:
 jobs:
   base-package:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
 
     steps:
       - name: Checkout
@@ -67,6 +67,10 @@ jobs:
           CARGO_64_VERSION=$(tomlq '.package.version' py-polars/runtime/polars-runtime-64/Cargo.toml | tr -d '"')
           CARGO_COMPAT_VERSION=$(tomlq '.package.version' py-polars/runtime/polars-runtime-compat/Cargo.toml | tr -d '"')
 
+          CARGO_32_FT_VERSION=$(tomlq '.package.version' py-polars/runtime/polars-runtime-32-ft/Cargo.toml | tr -d '"')
+          CARGO_64_FT_VERSION=$(tomlq '.package.version' py-polars/runtime/polars-runtime-64-ft/Cargo.toml | tr -d '"')
+          CARGO_COMPAT_FT_VERSION=$(tomlq '.package.version' py-polars/runtime/polars-runtime-compat-ft/Cargo.toml | tr -d '"')
+
           RT32_VERSION=($(tomlq '.project.dependencies[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
           RT64_VERSION=($(tomlq '.project."optional-dependencies".rt64[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
           COMPAT_VERSION=($(tomlq '.project."optional-dependencies".rtcompat[0]' "$POLARS_PYPROJECT_TOML" | tr -d '"'))
@@ -74,6 +78,11 @@ jobs:
           [[ "$VERSION" == "$(echo $CARGO_32_VERSION | sed 's/-beta\./b/')" ]] || (echo "Incorrect cargo 32 version" && exit 1)
           [[ "$VERSION" == "$(echo $CARGO_64_VERSION | sed 's/-beta\./b/')" ]] || (echo "Incorrect cargo 64 version" && exit 1)
           [[ "$VERSION" == "$(echo $CARGO_COMPAT_VERSION | sed 's/-beta\./b/')" ]] || (echo "Incorrect cargo compat version" && exit 1)
+
+          [[ "$VERSION" == "$(echo $CARGO_32_FT_VERSION | sed 's/-beta\./b/')" ]] || (echo "Incorrect cargo 32-ft version" && exit 1)
+          [[ "$VERSION" == "$(echo $CARGO_64_FT_VERSION | sed 's/-beta\./b/')" ]] || (echo "Incorrect cargo 64-ft version" && exit 1)
+          [[ "$VERSION" == "$(echo $CARGO_COMPAT_FT_VERSION | sed 's/-beta\./b/')" ]] || (echo "Incorrect cargo compat-ft version" && exit 1)
+
           [[ "$VERSION" == "${RT32_VERSION[2]}" ]] || (echo "Incorrect rt32 version" && exit 1)
           [[ "$VERSION" == "${RT64_VERSION[2]}" ]] || (echo "Incorrect rt64 version" && exit 1)
           [[ "$VERSION" == "${COMPAT_VERSION[2]}" ]] || (echo "Incorrect rtcompat version" && exit 1)
@@ -96,7 +105,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
+        package:
+          [
+            polars-runtime-32,
+            polars-runtime-32-ft,
+            polars-runtime-64,
+            polars-runtime-64-ft,
+            polars-runtime-compat,
+            polars-runtime-compat-ft,
+          ]
 
     steps:
       - uses: actions/checkout@v6
@@ -116,9 +133,17 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
+        if: endsWith(matrix.package, '-ft') == false
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up Python (free-threaded)
+        if: endsWith(matrix.package, '-ft') == true
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION_FREE_THREADED }}
+          allow-prereleases: true
 
       - name: Install yq
         run: |
@@ -152,8 +177,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
-        job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
+        package:
+          [
+            polars-runtime-32,
+            polars-runtime-32-ft,
+            polars-runtime-64,
+            polars-runtime-64-ft,
+            polars-runtime-compat,
+            polars-runtime-compat-ft,
+          ]
+        job_config:
+          [
+            linux-x64,
+            linux-arm64,
+            linux-musl-x64,
+            linux-musl-arm64,
+            macos-x64,
+            macos-arm64,
+            win-x64,
+            win-arm64,
+          ]
         include:
           - job_config: linux-x64
             os: ubuntu-latest
@@ -267,16 +310,23 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        if: matrix.os != 'windows-11-arm'
+        if: matrix.os != 'windows-11-arm' && endsWith(matrix.package, '-ft') == false
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Set up Python (ARM64 Windows)
-        if: matrix.os == 'windows-11-arm'
+        if: matrix.os == 'windows-11-arm' && endsWith(matrix.package, '-ft') == false
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
+
+      - name: Set up Python (free-threaded)
+        if: endsWith(matrix.package, '-ft')
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION_FREE_THREADED }}
+          allow-prereleases: true
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
@@ -294,7 +344,7 @@ jobs:
         id: features
         if: matrix.architecture == 'x86-64'
         env:
-          IS_RT_COMPAT: ${{ matrix.package == 'polars-runtime-compat' }}
+          IS_RT_COMPAT: ${{ contains(matrix.package, 'compat') }}
         # IMPORTANT: All features enabled here should also be included in py-polars/polars/_cpu_check.py
         run: |
           if [[ "$IS_RT_COMPAT" = true ]]; then
@@ -316,7 +366,7 @@ jobs:
           FEATURES: ${{ steps.features.outputs.features }}
           TUNE_CPU: ${{ steps.features.outputs.tune_cpu }}
           CC_FEATURES: ${{ steps.features.outputs.cc_features }}
-          CFG: ${{ matrix.package == 'polars-runtime-compat' && '--cfg allocator="default"' || '' }}
+          CFG: ${{ contains(matrix.package, 'compat') && '--cfg allocator="default"' || '' }}
         run: |
           if [[ -z "$TUNE_CPU" ]]; then
             echo "RUSTFLAGS=-C target-feature=$FEATURES $CFG" >> $GITHUB_ENV
