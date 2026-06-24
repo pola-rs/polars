@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from typing import TYPE_CHECKING
 
 import pytest
@@ -107,7 +108,7 @@ def test_dtype_inference_from_invalid_string(value: str) -> None:
 
 def test_infer_schema_length(tmp_sqlite_inference_db: Path) -> None:
     # note: first row of this test database contains only NULL values
-    with sqlite3.connect(tmp_sqlite_inference_db) as conn:
+    with closing(sqlite3.connect(tmp_sqlite_inference_db)) as conn:
         for infer_len in (2, 100, None):
             df = pl.read_database(
                 connection=conn,
