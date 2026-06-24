@@ -1,10 +1,10 @@
-> [!WARNING]
-> Please only edit files in the `template*/` folders, then run the `template.py` script to regenerate them.
-> Do not edit the files in the generated `polars-runtime-*` folders directly.
+Please only edit files in the `template*/` folders, then run the `template.py` script to regenerate
+them. Do not edit the files in the generated `polars-runtime-*` folders directly.
 
-To test builds locally, run the following commands from the root of the repo.
-The `polars` package is a pure Python wheel, a wrapper around the chosen runtime; it is interpreter-agnostic (free-threaded or not).
-Keep in mind that currently the `rt32` is always required by the `polars` package.
+To test builds locally, run the following commands from the root of the repo. The `polars` package
+is a pure Python wheel, a wrapper around the chosen runtime; it is interpreter-agnostic
+(free-threaded or not). Keep in mind that currently the `rt32` is always required by the `polars`
+package.
 
 **Standard (GIL) build**
 
