@@ -347,11 +347,10 @@ class StringNameSpace(_NamespaceSuggestMixin):
                 .to_series()
             )
 
-    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
-        inference_length: int = 100,
         *,
+        inference_length: int = 100,
         scale: int | None = None,
     ) -> Series:
         """
@@ -359,9 +358,6 @@ class StringNameSpace(_NamespaceSuggestMixin):
 
         This method infers the needed parameters `precision` and `scale` if not
         given.
-
-        .. versionchanged:: 1.20.0
-            Parameter `inference_length` should now be passed as a keyword argument.
 
         Parameters
         ----------
