@@ -9195,7 +9195,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         require_same_type(self, other)
         keys = [key] if isinstance(key, str) else list(key)
-        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, keys, maintain_order))
+        return self._from_pyldf(
+            self._ldf.merge_sorted(other._ldf, keys, maintain_order)
+        )
 
     def set_sorted(
         self,

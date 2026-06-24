@@ -536,13 +536,13 @@ def test_merge_sorted_multiple_keys_maintain_order(streaming: bool) -> None:
         }
     )
 
-    out = left.merge_sorted(
-        right, key=["key_1", "key_2"], maintain_order=True
-    ).collect(engine="streaming" if streaming else "in-memory")
+    out = left.merge_sorted(right, key=["key_1", "key_2"], maintain_order=True).collect(
+        engine="streaming" if streaming else "in-memory"
+    )
 
-    expected = pl.concat([left, right]).sort(
-        ["key_1", "key_2"], maintain_order=True
-    ).collect()
+    expected = (
+        pl.concat([left, right]).sort(["key_1", "key_2"], maintain_order=True).collect()
+    )
 
     assert_frame_equal(out, expected)
 
