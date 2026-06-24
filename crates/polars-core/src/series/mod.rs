@@ -602,8 +602,8 @@ impl Series {
         }
     }
 
-    /// Get the sum of the Series as a new Series of length 1.
-    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    /// Get the sum of the Series as a `Scalar`.
+    /// Returns a `Scalar` with a zeroed value if self is an empty numeric series.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
     /// computed in an `Int64` accumulator and the result is returned as `Int64`
@@ -807,8 +807,8 @@ impl Series {
         std::ops::Mul::mul(self, other)?.sum::<f64>()
     }
 
-    /// Get the sum of the Series as a new Series of length 1.
-    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    /// Get the sum of the [`ChunkedArray`] as a `Scalar`.
+    /// Returns a `Scalar` with a single zeroed value if self is an empty numeric series.
     ///
     /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
     /// computed in an `Int64` accumulator and the result is returned as `Int64`

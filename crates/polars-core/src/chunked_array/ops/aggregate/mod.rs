@@ -52,7 +52,7 @@ impl_sum_cast!(i128);
 #[cfg(feature = "dtype-u128")]
 impl_sum_cast!(u128);
 
-pub fn out_dtype(in_dtype: &DataType) -> DataType {
+pub fn sum_output_dtype(in_dtype: &DataType) -> DataType {
     use DataType::*;
     match in_dtype {
         Boolean => IDX_DTYPE,
@@ -312,7 +312,7 @@ where
                 .map(wrapping_sum_arr_upcast)
                 .fold(Zero::zero(), |a, b| a.wrapping_add(&b))
         };
-        Scalar::new(out_dtype(&T::get_static_dtype()), v.into())
+        Scalar::new(sum_output_dtype(&T::get_static_dtype()), v.into())
     }
 
     fn max_reduce(&self) -> Scalar {

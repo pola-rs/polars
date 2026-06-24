@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use arrow::array::PrimitiveArray;
 use num_traits::Zero;
+use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
 
@@ -97,7 +98,11 @@ where
         assert!(m.is_none());
         let arr = Box::new(PrimitiveArray::from_vec(v));
         Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], &out_dtype(dtype))
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr],
+                &sum_output_dtype(dtype),
+            )
         })
     }
 }
