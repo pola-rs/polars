@@ -9497,7 +9497,7 @@ class DataFrame:
         │ b       ┆ [4, 5]    │
         │ c       ┆ [6, 7, 8] │
         └─────────┴───────────┘
-        >>> df.explode("numbers", empty_as_null=False)
+        >>> df.explode("numbers")
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │

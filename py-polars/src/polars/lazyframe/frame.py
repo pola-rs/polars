@@ -8158,7 +8158,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
         ... )
-        >>> lf.explode("numbers", empty_as_null=False).collect()
+        >>> lf.explode("numbers").collect()
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │

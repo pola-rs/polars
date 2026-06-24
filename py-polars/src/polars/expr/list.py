@@ -1136,7 +1136,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("a").list.explode(empty_as_null=False))
+        >>> df.select(pl.col("a").list.explode())
         shape: (6, 1)
         ┌─────┐
         │ a   │
