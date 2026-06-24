@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 import polars.functions as F
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import NO_DEFAULT, _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
