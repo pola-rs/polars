@@ -10,7 +10,8 @@ use rand::{Rng, RngExt};
 use rand_distr::Distribution;
 use thread_local::ThreadLocal;
 
-use crate::{DynSpillToken, SpillToken, Spillable, memory_manager};
+use crate::spill_token::DynSpillToken;
+use crate::{SpillToken, Spillable, memory_manager};
 
 #[derive(Default)]
 struct LocalSpillQueue {
@@ -81,10 +82,54 @@ impl LocalSpillQueue {
     }
 }
 
-pub trait SpillContext: Send + Sync + 'static {
-    fn stats(&self) -> &Arc<SpillContextStatistics>;
-    fn pop(&self) -> Vec<(Arc<dyn DynSpillToken>, u64)>;
-    fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64);
+enum SpillContextPolicy {
+    MostRecent,
+    LeastRecent,
+    Random,
+}
+
+pub(crate) struct SpillContextInner {
+    local: ThreadLocal<RwLock<LocalSpillQueue>>,
+    stats: Arc<SpillContextStatistics>,
+    policy: SpillContextPolicy,
+}
+
+impl SpillContextInner {
+    fn new(name: PlSmallStr, policy: SpillContextPolicy) -> Self {
+        Self {
+            local: ThreadLocal::default(),
+            stats: Arc::new(SpillContextStatistics::new(name)),
+            policy,
+        }
+    }
+
+    pub fn stats(&self) -> &Arc<SpillContextStatistics> {
+        &self.stats
+    }
+
+    pub fn pop(&self) -> Vec<(Arc<dyn DynSpillToken>, u64)> {
+        let mut out = Vec::new();
+        let mut rng = rand::rng();
+        for local_lock in self.local.iter() {
+            if let Ok(mut local) = local_lock.try_write() {
+                out.extend(match self.policy {
+                    SpillContextPolicy::MostRecent => local.pop_back(),
+                    SpillContextPolicy::LeastRecent => local.pop_front(),
+                    SpillContextPolicy::Random => local.pop_random(&mut rng),
+                });
+            }
+        }
+        out
+    }
+
+    pub fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64) {
+        let mut local = self.local.get_or_default().write().unwrap();
+        match self.policy {
+            SpillContextPolicy::MostRecent => local.push_front(token, id),
+            SpillContextPolicy::LeastRecent => local.push_back(token, id),
+            SpillContextPolicy::Random => local.push_back(token, id),
+        }
+    }
 }
 
 pub trait ParameterFreeSpillContext {
@@ -95,42 +140,33 @@ pub trait ParameterFreeSpillContext {
         Self: Sized;
 }
 
-/// A context that spills the most-recently registered spillable when asked.
-pub struct MostRecentSpillContext {
-    local: ThreadLocal<RwLock<LocalSpillQueue>>,
-    stats: Arc<SpillContextStatistics>,
+/// A generic handle to a context without knowing which kind it is.
+pub struct GenericSpillContext(pub(crate) Arc<SpillContextInner>);
+
+/// An opaque parameter passed into a spill context during registering.
+pub struct SpillContextParam(pub(crate) ());
+
+impl GenericSpillContext {
+    pub fn register<T, S>(&self, token: &T, _param: SpillContextParam)
+    where
+        T: AsRef<SpillToken<S>>,
+        S: Spillable,
+    {
+        let dyn_arc = token.as_ref().upcast();
+        let mut local = self.0.local.get_or_default().write().unwrap();
+        local.push_back(&dyn_arc, dyn_arc.register(&self.0));
+    }
 }
+
+/// A context that spills the most-recently registered spillable when asked.
+#[derive(Clone)]
+pub struct MostRecentSpillContext(Arc<SpillContextInner>);
 
 impl MostRecentSpillContext {
-    pub fn new(name: PlSmallStr) -> Arc<Self> {
-        let slf = Arc::new(Self {
-            local: ThreadLocal::default(),
-            stats: Arc::new(SpillContextStatistics::new(name)),
-        });
-        memory_manager().register_ctx(&slf);
-        slf
-    }
-}
-
-impl SpillContext for MostRecentSpillContext {
-    fn stats(&self) -> &Arc<SpillContextStatistics> {
-        &self.stats
-    }
-
-    fn pop(&self) -> Vec<(Arc<dyn DynSpillToken>, u64)> {
-        let mut out = Vec::new();
-        for local_lock in self.local.iter() {
-            if let Ok(mut local) = local_lock.try_write() {
-                out.extend(local.pop_back());
-            }
-        }
-        out
-    }
-
-    fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64) {
-        // Reinsertions always act like least recent, so we use push_front.
-        let mut local = self.local.get_or_default().write().unwrap();
-        local.push_front(token, id);
+    pub fn new(name: PlSmallStr) -> Self {
+        let ctx = Arc::new(SpillContextInner::new(name, SpillContextPolicy::MostRecent));
+        memory_manager().register_ctx(&ctx);
+        Self(ctx)
     }
 }
 
@@ -141,52 +177,31 @@ impl ParameterFreeSpillContext for MostRecentSpillContext {
         S: Spillable,
     {
         let dyn_arc = token.as_ref().upcast();
-        let mut local = self.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.new_registration_id());
+        let mut local = self.0.local.get_or_default().write().unwrap();
+        local.push_back(&dyn_arc, dyn_arc.register(&self.0));
     }
 }
 
 impl Debug for MostRecentSpillContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MostRecentSpillContext").finish()
+        f.debug_struct("MostRecentSpillContext")
+            .field("name", &self.0.stats.name)
+            .finish()
     }
 }
 
 /// A context that spills the least-recently registered spillable when asked.
-pub struct LeastRecentSpillContext {
-    local: ThreadLocal<RwLock<LocalSpillQueue>>,
-    stats: Arc<SpillContextStatistics>,
-}
+#[derive(Clone)]
+pub struct LeastRecentSpillContext(Arc<SpillContextInner>);
 
 impl LeastRecentSpillContext {
-    pub fn new(name: PlSmallStr) -> Arc<Self> {
-        let slf = Arc::new(Self {
-            local: ThreadLocal::default(),
-            stats: Arc::new(SpillContextStatistics::new(name)),
-        });
-        memory_manager().register_ctx(&slf);
-        slf
-    }
-}
-
-impl SpillContext for LeastRecentSpillContext {
-    fn stats(&self) -> &Arc<SpillContextStatistics> {
-        &self.stats
-    }
-
-    fn pop(&self) -> Vec<(Arc<dyn DynSpillToken>, u64)> {
-        let mut out = Vec::new();
-        for local_lock in self.local.iter() {
-            if let Ok(mut local) = local_lock.try_write() {
-                out.extend(local.pop_front());
-            }
-        }
-        out
-    }
-
-    fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64) {
-        let mut local = self.local.get_or_default().write().unwrap();
-        local.push_back(token, id);
+    pub fn new(name: PlSmallStr) -> Self {
+        let ctx = Arc::new(SpillContextInner::new(
+            name,
+            SpillContextPolicy::LeastRecent,
+        ));
+        memory_manager().register_ctx(&ctx);
+        Self(ctx)
     }
 }
 
@@ -197,53 +212,28 @@ impl ParameterFreeSpillContext for LeastRecentSpillContext {
         S: Spillable,
     {
         let dyn_arc = token.as_ref().upcast();
-        let mut local = self.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.new_registration_id());
+        let mut local = self.0.local.get_or_default().write().unwrap();
+        local.push_back(&dyn_arc, dyn_arc.register(&self.0));
     }
 }
 
 impl Debug for LeastRecentSpillContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LeastRecentSpillContext").finish()
+        f.debug_struct("LeastRecentSpillContext")
+            .field("name", &self.0.stats.name)
+            .finish()
     }
 }
 
 /// A context that spills a random registered spillable when asked.
-pub struct RandomSpillContext {
-    local: ThreadLocal<RwLock<LocalSpillQueue>>,
-    stats: Arc<SpillContextStatistics>,
-}
+#[derive(Clone)]
+pub struct RandomSpillContext(Arc<SpillContextInner>);
 
 impl RandomSpillContext {
-    pub fn new(name: PlSmallStr) -> Arc<Self> {
-        let slf = Arc::new(Self {
-            local: ThreadLocal::default(),
-            stats: Arc::new(SpillContextStatistics::new(name)),
-        });
-        memory_manager().register_ctx(&slf);
-        slf
-    }
-}
-
-impl SpillContext for RandomSpillContext {
-    fn stats(&self) -> &Arc<SpillContextStatistics> {
-        &self.stats
-    }
-
-    fn pop(&self) -> Vec<(Arc<dyn DynSpillToken>, u64)> {
-        let mut out = Vec::new();
-        let mut rng = rand::rng();
-        for local_lock in self.local.iter() {
-            if let Ok(mut local) = local_lock.try_write() {
-                out.extend(local.pop_random(&mut rng));
-            }
-        }
-        out
-    }
-
-    fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64) {
-        let mut local = self.local.get_or_default().write().unwrap();
-        local.push_back(token, id);
+    pub fn new(name: PlSmallStr) -> Self {
+        let ctx = Arc::new(SpillContextInner::new(name, SpillContextPolicy::Random));
+        memory_manager().register_ctx(&ctx);
+        Self(ctx)
     }
 }
 
@@ -254,14 +244,16 @@ impl ParameterFreeSpillContext for RandomSpillContext {
         S: Spillable,
     {
         let dyn_arc = token.as_ref().upcast();
-        let mut local = self.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.new_registration_id());
+        let mut local = self.0.local.get_or_default().write().unwrap();
+        local.push_back(&dyn_arc, dyn_arc.register(&self.0));
     }
 }
 
 impl Debug for RandomSpillContext {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RandomSpillContext").finish()
+        f.debug_struct("RandomSpillContext")
+            .field("name", &self.0.stats.name)
+            .finish()
     }
 }
 

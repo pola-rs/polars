@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::task::{Poll, Waker};
 use std::time::Instant;
@@ -10,8 +10,15 @@ use polars_async::ASYNC;
 use polars_utils::UnitVec;
 use polars_utils::with_drop::WithDrop;
 
-use crate::spill_context::SpillContextStatistics;
-use crate::{SpillContext, Spillable};
+use crate::spill_context::{SpillContextInner, SpillContextStatistics};
+use crate::{GenericSpillContext, SpillContextParam, Spillable};
+
+unsafe fn weak_from_raw<T>(raw: *mut T) -> Option<Weak<T>> {
+    if raw.is_null() {
+        return None;
+    }
+    Some(unsafe { Weak::from_raw(raw) })
+}
 
 // SpillTokenInner's state
 const SPILLED_BIT: u64 = 1; // Set when value = None and spilled is Some.
@@ -26,7 +33,7 @@ enum ValueSlot<T> {
     Spilled {
         n_bytes: usize,
         spill_ctx_stats: Arc<SpillContextStatistics>,
-        reinsert_ctx: Weak<dyn SpillContext>,
+        reinsert_ctx: Weak<SpillContextInner>,
         reinsert_id: u64,
         spill_time_ns: u64,
         spilled_start: Instant,
@@ -44,6 +51,11 @@ struct SpillTokenInner<T: Spillable> {
 
     // Lock should not be held for long, only used to register/wake waiters.
     waiters: Mutex<UnitVec<Waker>>,
+
+    // The current context this spill token is registered at. This is a raw
+    // Weak pointer, null if not assigned to anything. This is provided as a
+    // best effort, in the case of racy registers this field may be wrong.
+    cur_ctx: AtomicPtr<SpillContextInner>,
 
     // Used to register into contexts, and detect when a token has moved to a
     // different context.
@@ -302,6 +314,8 @@ impl<T: Spillable> SpillTokenInner<T> {
         self.wake_waiters(self.state.fetch_sub(LOCK_BIT, Ordering::AcqRel));
     }
 
+    /// # Safety
+    /// May only be called once, by the owning SpillToken.
     unsafe fn mark_as_dropped(&self) {
         unsafe {
             // The drop bit prevents new locks/pins from being acquired,
@@ -312,6 +326,8 @@ impl<T: Spillable> SpillTokenInner<T> {
                 self.spilled_value.get().replace(None);
             }
             self.registration_id.fetch_add(1, Ordering::Relaxed);
+            let ctx = self.cur_ctx.swap(core::ptr::null_mut(), Ordering::Acquire);
+            drop(weak_from_raw(ctx));
         }
     }
 }
@@ -321,11 +337,15 @@ pub enum TrySpillError {
     Pinned,
 }
 
-pub trait DynSpillToken: Send + Sync + 'static {
-    /// Assign a new context ID to this spill token, invalidating previous ids.
-    fn new_registration_id(&self) -> u64;
+pub(crate) trait DynSpillToken: Send + Sync + 'static {
+    /// Register this spill token at a new context, returning the registration ID.
+    fn register(&self, ctx: &Arc<SpillContextInner>) -> u64;
 
-    /// Returns the current context ID of this spill token without modifying it.
+    /// Unregisters this spill token from its current context, returning where
+    /// it was registered, if anywhere.
+    fn unregister(&self) -> Option<Weak<SpillContextInner>>;
+
+    /// Returns the current context registration ID of this spill token without modifying it.
     fn current_registration_id(&self) -> u64;
 
     /// Whether this token can be spilled. Returns false if pinned, dropped or
@@ -347,14 +367,25 @@ pub trait DynSpillToken: Send + Sync + 'static {
     fn try_spill(
         &self,
         stats: &Arc<SpillContextStatistics>,
-        context: Weak<dyn SpillContext>,
+        context: Weak<SpillContextInner>,
         registration_id: u64,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError>;
 }
 
 impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
-    fn new_registration_id(&self) -> u64 {
-        self.registration_id.fetch_add(1, Ordering::Relaxed) + 1
+    fn register(&self, ctx: &Arc<SpillContextInner>) -> u64 {
+        let weak = Arc::downgrade(ctx);
+        let old_ctx = self
+            .cur_ctx
+            .swap(Weak::into_raw(weak).cast_mut(), Ordering::AcqRel);
+        drop(unsafe { weak_from_raw(old_ctx) });
+        self.registration_id.fetch_add(1, Ordering::Release) + 1
+    }
+
+    fn unregister(&self) -> Option<Weak<SpillContextInner>> {
+        let old_ctx = self.cur_ctx.swap(core::ptr::null_mut(), Ordering::AcqRel);
+        self.registration_id.fetch_add(1, Ordering::Release);
+        unsafe { weak_from_raw(old_ctx) }
     }
 
     fn current_registration_id(&self) -> u64 {
@@ -377,7 +408,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
     fn try_spill(
         &self,
         stats: &Arc<SpillContextStatistics>,
-        context: Weak<dyn SpillContext>,
+        context: Weak<SpillContextInner>,
         registration_id: u64,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError> {
         // First, we try setting the lock bit. If anyone else has a pin we don't bother.
@@ -480,6 +511,7 @@ impl<T: Spillable> SpillToken<T> {
         let inner = Arc::new(SpillTokenInner {
             value_slot: UnsafeCell::new(ValueSlot::InMemory(value)),
             spilled_value: UnsafeCell::new(None),
+            cur_ctx: AtomicPtr::new(core::ptr::null_mut()),
             registration_id: AtomicU64::new(0),
             state: AtomicU64::new(0),
             waiters: Mutex::default(),
@@ -488,9 +520,16 @@ impl<T: Spillable> SpillToken<T> {
     }
 
     /// Upcast to DynSpillToken.
-    pub fn upcast(&self) -> Arc<dyn DynSpillToken> {
+    pub(crate) fn upcast(&self) -> Arc<dyn DynSpillToken> {
         let inner: Arc<SpillTokenInner<T>> = self.inner.clone();
         inner
+    }
+
+    /// Unregisters this spill token from its current context, if any, returning it.
+    pub fn unregister(&mut self) -> Option<(GenericSpillContext, SpillContextParam)> {
+        let ctx = self.inner.unregister()?.upgrade()?;
+        let param = SpillContextParam(()); // TODO: get this once we support contexts with parameters.
+        Some((GenericSpillContext(ctx), param))
     }
 
     /// Try to get a reference to the underlying value, returning None if it was spilled.

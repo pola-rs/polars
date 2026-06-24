@@ -14,9 +14,8 @@ const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
 
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
-use crate::spill_context::UNEXPLORED_SCORE;
-use crate::spill_token::TrySpillError;
-use crate::{DynSpillToken, SpillContext};
+use crate::spill_context::{SpillContextInner, UNEXPLORED_SCORE};
+use crate::spill_token::{DynSpillToken, TrySpillError};
 
 static MEMORY_MANAGER: LazyLock<MemoryManager> = LazyLock::new(MemoryManager::new);
 
@@ -26,7 +25,7 @@ pub fn memory_manager() -> &'static MemoryManager {
 }
 
 pub struct MemoryManager {
-    contexts: RwLock<Vec<Weak<dyn SpillContext>>>,
+    contexts: RwLock<Vec<Weak<SpillContextInner>>>,
     finding_spill_lock: AsyncMutex<()>,
     spill_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
@@ -54,7 +53,7 @@ impl MemoryManager {
         }
     }
 
-    pub fn register_ctx<C: SpillContext>(&self, ctx: &Arc<C>) {
+    pub(crate) fn register_ctx(&self, ctx: &Arc<SpillContextInner>) {
         let weak = Arc::downgrade(ctx);
         self.contexts.write().unwrap().push(weak);
     }
@@ -135,7 +134,7 @@ impl MemoryManager {
     async fn find_spillables(
         &self,
     ) -> Option<(
-        Arc<dyn SpillContext>,
+        Arc<SpillContextInner>,
         Vec<(Arc<dyn DynSpillToken>, u64, usize)>,
     )> {
         // TODO: don't block here under a certain memory threshold.
