@@ -370,9 +370,7 @@ pub(super) fn expand_datasets(
             _ => {},
         }
 
-        if let Some((physical, deleted)) = unified_scan_args.row_count
-            && let (None, _) = &file_info.row_estimation
-        {
+        if let Some((physical, deleted)) = unified_scan_args.row_count {
             let row_count = u64::saturating_sub(physical, deleted) as usize;
             file_info.row_estimation = (Some(row_count), row_count);
         }
