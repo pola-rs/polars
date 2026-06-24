@@ -87,7 +87,15 @@ macro_rules! push_expr {
             Function { input, .. } => input.$iter().rev().for_each(|e| $push_owned($c, e)),
             Explode { input, .. } => $push($c, input),
             #[cfg(feature = "dynamic_group_by")]
-            Rolling { function, .. } => $push($c, function),
+            Rolling {
+                function,
+                index_column,
+                ..
+            } => {
+                $push($c, index_column);
+                // latest, so that it is popped first
+                $push($c, function);
+            },
             Over {
                 function,
                 partition_by,

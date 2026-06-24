@@ -48,6 +48,21 @@ def test_root_and_output_names() -> None:
     )
 
 
+def test_rolling_index_column_in_root_names_27557() -> None:
+    # https://github.com/pola-rs/polars/issues/27557
+    # The `index_column` sub-expression was dropped by the expression node
+    # walker, so the rolling index column went missing from `root_names()`
+    # (regression introduced in 1.36.0).
+    expr = (pl.col("c").last() - pl.col("c").first()).rolling(
+        index_column="b", period="2i"
+    )
+    root_names = expr.meta.root_names()
+    assert "b" in root_names
+    assert set(root_names) == {"b", "c"}
+    # the output name must still be derived from the aggregated expression
+    assert expr.meta.output_name() == "c"
+
+
 def test_undo_aliases() -> None:
     e = pl.col("foo").alias("bar")
     assert e.meta.undo_aliases().meta == pl.col("foo")
