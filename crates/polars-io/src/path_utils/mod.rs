@@ -483,10 +483,7 @@ pub async fn expand_paths_hive(
                 if glob && has_glob(path.as_bytes()) {
                     hive_idx_tracker.update(0, path_idx)?;
 
-                    let iter = ASYNC.block_in_place_on(crate::async_glob(
-                        path.into_owned(),
-                        cloud_options.as_ref(),
-                    ))?;
+                    let iter = crate::async_glob(path.into_owned(), cloud_options.as_ref()).await?;
 
                     if first_path_has_scheme {
                         out_paths.extend(iter.into_iter().map(PlRefPath::new))
