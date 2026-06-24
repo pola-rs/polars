@@ -68,7 +68,7 @@ impl OptimizationRule for FlattenMergeSortedRule {
 
 fn collect_merge_sorted_inputs(
     root: Node,
-    key: &PlSmallStr,
+    key: &[PlSmallStr],
     maintain_order: bool,
     lp_arena: &Arena<IR>,
     out: &mut Vec<Node>,
@@ -84,7 +84,7 @@ fn collect_merge_sorted_inputs(
                 input_right,
                 key: merge_key,
                 maintain_order: merge_maintain_order,
-            } if merge_key == key && *merge_maintain_order == maintain_order => {
+            } if merge_key.as_ref() == key && *merge_maintain_order == maintain_order => {
                 traversal_stack.push(*input_right);
                 traversal_stack.push(*input_left);
             },
@@ -95,7 +95,7 @@ fn collect_merge_sorted_inputs(
 
 fn build_merge_sorted_subtree(
     inputs: &[Node],
-    key: &PlSmallStr,
+    key: &[PlSmallStr],
     maintain_order: bool,
     lp_arena: &mut Arena<IR>,
     optimized_nodes: &mut PlHashSet<Node>,
@@ -120,14 +120,14 @@ fn build_merge_sorted_subtree(
     IR::MergeSorted {
         input_left,
         input_right,
-        key: key.clone(),
+        key: key.into(),
         maintain_order,
     }
 }
 
 fn build_merge_sorted_subtree_node(
     inputs: &[Node],
-    key: &PlSmallStr,
+    key: &[PlSmallStr],
     maintain_order: bool,
     lp_arena: &mut Arena<IR>,
     optimized_nodes: &mut PlHashSet<Node>,
