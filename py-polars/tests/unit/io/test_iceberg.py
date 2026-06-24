@@ -73,9 +73,13 @@ from polars.io.iceberg._utils import (
 )
 from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
+from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
+    from tests.unit.io.test_scan_row_deletion import (
+        WritePositionDeletes,
+    )
 
     # Mypy does not understand the constructors and we can't construct the inputs
     # explicitly since they are abstract base classes.
@@ -2697,3 +2701,55 @@ def test_scan_iceberg_partial_and_pushdown(
     # Verify: correctness
     assert len(result) == 2
     assert result["a"].to_list() == [2, 3]
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_row_estimate(
+    tmp_path: Path,
+    write_position_deletes: WritePositionDeletes,  # noqa: F811
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
+
+    q = pl.scan_iceberg(tbl, use_metadata_statistics=True)
+    plan = q.explain()
+
+    assert "ESTIMATED ROWS: 5" in plan
+
+    file_paths = [
+        _normalize_windows_iceberg_file_uri(x.file.file_path)
+        for x in tbl.scan().plan_files()
+    ]
+
+    deletion_files = (
+        "iceberg-position-delete",
+        {
+            0: [
+                write_position_deletes(pl.Series([1, 2])),
+            ],
+        },
+    )
+
+    q = pl.scan_parquet(
+        file_paths,
+        _deletion_files=deletion_files,  # type: ignore[arg-type]
+        _row_count=(5, 2),
+    )
+    plan = q.explain()
+
+    assert "ESTIMATED ROWS: 3" in plan
+    assert q.select(pl.len()).collect().item() == 3
+    assert q.collect().height == 3
