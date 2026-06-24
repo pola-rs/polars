@@ -851,7 +851,6 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = ...,
-    ddof: int | None = ...,
     propagate_nans: bool = ...,
     eager: Literal[False] = ...,
 ) -> Expr: ...
@@ -863,7 +862,6 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = ...,
-    ddof: int | None = ...,
     propagate_nans: bool = ...,
     eager: Literal[True],
 ) -> Series: ...
@@ -874,7 +872,6 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = "pearson",
-    ddof: int | None = None,
     propagate_nans: bool = False,
     eager: bool = False,
 ) -> Expr | Series:
@@ -887,11 +884,6 @@ def corr(
         Column name or Expression.
     b
         Column name or Expression.
-    ddof
-        Has no effect, do not use.
-
-        .. deprecated:: 1.17.0
-
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans
@@ -953,12 +945,6 @@ def corr(
         0.5
     ]
     """
-    if ddof is not None:
-        issue_deprecation_warning(
-            "the `ddof` parameter has no effect. Do not use it.",
-            version="1.17.0",
-        )
-
     if eager:
         if not (isinstance(a, pl.Series) or isinstance(b, pl.Series)):
             msg = "expected at least one Series in 'corr' inputs if 'eager=True'"
