@@ -510,10 +510,11 @@ def test_merge_sorted_multiple_keys_string_and_int(streaming: bool) -> None:
 @pytest.mark.parametrize("streaming", [False, True])
 def test_merge_sorted_single_key_as_sequence(streaming: bool) -> None:
     # Passing a single key wrapped in a list should behave the same as a bare str.
-    engine = "streaming" if streaming else "in-memory"
-    as_str = lf.collect(engine=engine)
+    as_str = lf.collect(engine="streaming" if streaming else "in-memory")
     as_seq = (
-        left.lazy().merge_sorted(right.lazy(), ["b"]).collect(engine=engine)
+        left.lazy()
+        .merge_sorted(right.lazy(), ["b"])
+        .collect(engine="streaming" if streaming else "in-memory")
     )
     assert_frame_equal(as_str, as_seq)
 
