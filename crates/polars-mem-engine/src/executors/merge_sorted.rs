@@ -27,13 +27,8 @@ fn merge_key_series(df: &DataFrame, key: &[PlSmallStr]) -> PolarsResult<Series> 
         .collect::<PolarsResult<Vec<_>>>()?;
     let descending = vec![false; columns.len()];
     let nulls_last = vec![false; columns.len()];
-    let encoded = _get_rows_encoded_ca(
-        PlSmallStr::EMPTY,
-        &columns,
-        &descending,
-        &nulls_last,
-        false,
-    )?;
+    let encoded =
+        _get_rows_encoded_ca(PlSmallStr::EMPTY, &columns, &descending, &nulls_last, false)?;
     Ok(encoded.into_series())
 }
 

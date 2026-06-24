@@ -1035,7 +1035,10 @@ pub fn write_ir_non_recursive(
             "{:indent$}MERGE SORTED[maintain_order: {}] ON [{}]",
             "",
             maintain_order,
-            key.iter().map(|k| format!("'{k}'")).collect::<Vec<_>>().join(", "),
+            key.iter()
+                .map(|k| format!("'{k}'"))
+                .collect::<Vec<_>>()
+                .join(", "),
         ),
         IR::UnoptimizedDispatch {
             inputs: _,
