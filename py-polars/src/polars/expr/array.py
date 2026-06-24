@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from polars import functions as F
-from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
