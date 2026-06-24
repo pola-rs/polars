@@ -6,33 +6,19 @@ is a pure Python wheel, a wrapper around the chosen runtime; it is interpreter-a
 (free-threaded or not). Keep in mind that currently the `rt32` is always required by the `polars`
 package.
 
-**Standard (GIL) build**
+The `abi3t` wheels target the stable free-threaded ABI introduced in Python 3.15 and work on both
+GIL and free-threaded Python 3.15+. During build `maturin` selects the ABI automatically given the
+provided interpreter.
 
 ```sh
-$ uv venv --python 3.x
+$ uv venv --python 3.x  # or 3.xt for a free-threaded interpreter
 $ source .venv/bin/activate
+$ python -c "import sys; print(sys._is_gil_enabled())"
 $ uv pip install maturin
 $ uv build py-polars --out-dir dist
 $ maturin build \
   --interpreter python3.x \
   --manifest-path py-polars/runtime/polars-runtime-xx/Cargo.toml \
-  --out dist \
-  --profile dev
-$ uv pip install "polars[rtxx]" --find-links dist --no-index
-$ python -c "import polars; polars.show_versions()"
-```
-
-**Free-threaded build**
-
-```sh
-$ uv venv --python 3.xt
-$ source .venv/bin/activate
-$ python -c "import sys; print(sys._is_gil_enabled())"  # sanity check
-$ uv pip install maturin
-$ uv build py-polars --out-dir dist
-$ maturin build \
-  --interpreter python3.xt \
-  --manifest-path py-polars/runtime/polars-runtime-xx-ft/Cargo.toml \
   --out dist \
   --profile dev
 $ uv pip install "polars[rtxx]" --find-links dist --no-index

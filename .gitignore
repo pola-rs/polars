@@ -10,7 +10,6 @@
 .yarn/
 coverage.lcov
 coverage.xml
-dist/
 profile.json
 polars/vendor
 _polars_runtime*/
