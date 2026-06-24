@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ShapeError
+from polars.exceptions import InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1049,6 +1049,74 @@ def test_shape_mismatch_group_by_unique_slice() -> None:
         match="the length of the window expression did not match that of the group",
     ):
         q.collect()
+
+
+def test_over_descending_list_27076() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1, 2, 2, 2, 2],
+            "t": [1, 2, 3, 4, 4, 1, 2, 3],
+            "x": [10, 20, 30, 40, 10, 20, 30, 40],
+        }
+    )
+
+    # Reference: single bool (existing behavior)
+    expected = df.with_columns(
+        pl.col("x").shift(1).over("g", order_by="t", descending=True).alias("lag")
+    )["lag"].to_list()
+
+    # List with single element should produce identical results
+    result = df.with_columns(
+        pl.col("x").shift(1).over("g", order_by=["t"], descending=[True]).alias("lag")
+    )
+    assert result["lag"].to_list() == expected
+
+    # List matching multiple order_by columns (uniform values)
+    result = df.with_columns(
+        pl.col("x")
+        .shift(1)
+        .over("g", order_by=["t", "x"], descending=[True, True])
+        .alias("lag")
+    )
+    assert result["lag"].to_list() == expected
+
+    # nulls_last as list should match single-bool nulls_last
+    expected_nl = df.with_columns(
+        pl.col("x").shift(1).over("g", order_by="t", nulls_last=True).alias("lag")
+    )["lag"].to_list()
+    result = df.with_columns(
+        pl.col("x").shift(1).over("g", order_by="t", nulls_last=[True]).alias("lag")
+    )
+    assert result["lag"].to_list() == expected_nl
+
+
+def test_over_descending_list_mixed_raises_27076() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1],
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+            "x": [10, 20, 30],
+        }
+    )
+
+    # Mixed descending values should raise
+    with pytest.raises(InvalidOperationError, match="mixed per-column sort directions"):
+        df.with_columns(
+            pl.col("x")
+            .shift(1)
+            .over("g", order_by=["a", "b"], descending=[True, False])
+            .alias("lag")
+        )
+
+    # Mixed nulls_last values should raise
+    with pytest.raises(InvalidOperationError, match="mixed per-column null positions"):
+        df.with_columns(
+            pl.col("x")
+            .shift(1)
+            .over("g", order_by=["a", "b"], nulls_last=[True, False])
+            .alias("lag")
+        )
 
 
 def test_over_literal_cum_sum_26800() -> None:
