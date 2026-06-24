@@ -133,17 +133,9 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
-        if: endsWith(matrix.package, '-ft') == false
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Set up Python (free-threaded)
-        if: endsWith(matrix.package, '-ft') == true
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ env.PYTHON_VERSION_FREE_THREADED }}
-          allow-prereleases: true
+          python-version: ${{ endsWith(matrix.package, '-ft') && env.PYTHON_VERSION_FREE_THREADED || env.PYTHON_VERSION }}
 
       - name: Install yq
         run: |
@@ -326,7 +318,6 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION_FREE_THREADED }}
-          allow-prereleases: true
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
