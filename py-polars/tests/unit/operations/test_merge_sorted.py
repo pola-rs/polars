@@ -443,3 +443,148 @@ def test_merge_sorted_with_list_27563() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_multiple_keys(streaming: bool) -> None:
+    left = pl.LazyFrame(
+        {
+            "key_1": [1, 1, 3],
+            "key_2": [1, 4, 2],
+            "val": [10, 11, 12],
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "key_1": [1, 2, 3],
+            "key_2": [2, 1, 1],
+            "val": [20, 21, 22],
+        }
+    )
+
+    out = left.merge_sorted(right, key=["key_1", "key_2"]).collect(
+        engine="streaming" if streaming else "in-memory"
+    )
+
+    expected = pl.DataFrame(
+        {
+            "key_1": [1, 1, 1, 2, 3, 3],
+            "key_2": [1, 2, 4, 1, 1, 2],
+            "val": [10, 20, 11, 21, 22, 12],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_multiple_keys_string_and_int(streaming: bool) -> None:
+    left = pl.LazyFrame(
+        {
+            "grp": ["a", "a", "b"],
+            "idx": [1, 3, 2],
+            "val": [10, 11, 12],
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "grp": ["a", "b", "b"],
+            "idx": [2, 1, 5],
+            "val": [20, 21, 22],
+        }
+    )
+
+    out = left.merge_sorted(right, key=["grp", "idx"]).collect(
+        engine="streaming" if streaming else "in-memory"
+    )
+
+    expected = pl.DataFrame(
+        {
+            "grp": ["a", "a", "a", "b", "b", "b"],
+            "idx": [1, 2, 3, 1, 2, 5],
+            "val": [10, 20, 11, 21, 12, 22],
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_single_key_as_sequence(streaming: bool) -> None:
+    # Passing a single key wrapped in a list should behave the same as a bare str.
+    engine = "streaming" if streaming else "in-memory"
+    as_str = lf.collect(engine=engine)
+    as_seq = (
+        left.lazy().merge_sorted(right.lazy(), ["b"]).collect(engine=engine)
+    )
+    assert_frame_equal(as_str, as_seq)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_merge_sorted_multiple_keys_maintain_order(streaming: bool) -> None:
+    left = pl.LazyFrame(
+        {
+            "key_1": [1, 1, 2],
+            "key_2": [1, 1, 2],
+            "src": ["L0", "L1", "L2"],
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "key_1": [1, 2, 2],
+            "key_2": [1, 2, 2],
+            "src": ["R0", "R1", "R2"],
+        }
+    )
+
+    out = left.merge_sorted(
+        right, key=["key_1", "key_2"], maintain_order=True
+    ).collect(engine="streaming" if streaming else "in-memory")
+
+    expected = pl.concat([left, right]).sort(
+        ["key_1", "key_2"], maintain_order=True
+    ).collect()
+
+    assert_frame_equal(out, expected)
+
+
+def test_merge_sorted_empty_key_raises() -> None:
+    a = pl.LazyFrame({"x": [1, 2, 3]})
+    with pytest.raises(pl.exceptions.ComputeError, match="at least one key"):
+        a.merge_sorted(a, key=[])
+
+
+@given(
+    lhs_1=series(name="key_1", allowed_dtypes=[pl.Int32], allow_null=False),
+    lhs_2=series(name="key_2", allowed_dtypes=[pl.Int32], allow_null=False),
+    rhs_1=series(name="key_1", allowed_dtypes=[pl.Int32], allow_null=False),
+    rhs_2=series(name="key_2", allowed_dtypes=[pl.Int32], allow_null=False),
+)
+def test_merge_sorted_multiple_keys_parametric(
+    lhs_1: pl.Series, lhs_2: pl.Series, rhs_1: pl.Series, rhs_2: pl.Series
+) -> None:
+    n_left = min(lhs_1.len(), lhs_2.len())
+    n_right = min(rhs_1.len(), rhs_2.len())
+
+    left = (
+        pl.DataFrame([lhs_1.head(n_left), lhs_2.head(n_left)])
+        .sort(["key_1", "key_2"])
+        .with_columns(side=pl.lit(0, dtype=pl.UInt8))
+    )
+    right = (
+        pl.DataFrame([rhs_1.head(n_right), rhs_2.head(n_right)])
+        .sort(["key_1", "key_2"])
+        .with_columns(side=pl.lit(1, dtype=pl.UInt8))
+    )
+
+    merged = left.lazy().merge_sorted(
+        right.lazy(), key=["key_1", "key_2"], maintain_order=True
+    )
+
+    # The merge must agree between engines ...
+    assert_frame_equal(
+        merged.collect(engine="in-memory"),
+        merged.collect(engine="streaming"),
+    )
+
+    # ... and match a stable sort of the concatenation.
+    expected = pl.concat([left, right]).sort(["key_1", "key_2"], maintain_order=True)
+    assert_frame_equal(merged.collect(engine="in-memory"), expected)
