@@ -65,8 +65,8 @@ impl IRFunctionExpr {
                 use IRRollingFunction::*;
                 match function {
                     Min | Max => mapper.with_same_dtype(),
-                    Mean | Quantile | Std => mapper.moment_dtype(),
-                    Var => mapper.var_dtype(),
+                    Mean | Quantile => mapper.moment_dtype(),
+                    Std | Var => mapper.var_dtype(),
                     Sum => mapper.sum_dtype(),
                     Rank => match options.fn_params {
                         Some(RollingFnParams::Rank {
@@ -109,8 +109,8 @@ impl IRFunctionExpr {
                 use IRRollingFunctionBy::*;
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
-                    MeanBy | QuantileBy | StdBy => mapper.moment_dtype(),
-                    VarBy => mapper.var_dtype(),
+                    MeanBy | QuantileBy => mapper.moment_dtype(),
+                    StdBy | VarBy => mapper.var_dtype(),
                     SumBy => mapper.sum_dtype(),
                     RankBy => match options.fn_params {
                         Some(RollingFnParams::Rank {

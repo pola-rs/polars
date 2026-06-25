@@ -1086,10 +1086,6 @@ def test_agg_invalid_same_engines_behavior(
         # TODO: Remove this exception when #24509 is resolved
         pytest.skip("polars/#24509")
 
-    if isinstance(df.schema["a"], pl.Duration) and op in {"std", "var"}:
-        # TODO: Remove this exception when std & var are implemented for Duration
-        pytest.skip(f"'{op}' aggregation not yet implemented for Duration")
-
     inmemory_result, inmemory_error = None, None
     streaming_result, streaming_error = None, None
 
