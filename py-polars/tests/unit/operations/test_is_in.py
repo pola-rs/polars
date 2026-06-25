@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from datetime import date, datetime, timedelta
+from datetime import date
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
 

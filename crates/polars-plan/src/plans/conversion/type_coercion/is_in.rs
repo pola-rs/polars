@@ -8,34 +8,6 @@ pub(super) enum IsInTypeCoercionResult {
     Implode,
 }
 
-impl IsInTypeCoercionResult {
-    fn map_self<F: Fn(DataType) -> DataType>(self, f: F) -> Self {
-        use IsInTypeCoercionResult::*;
-        match self {
-            SuperType(dt1, dt2) => SuperType(f(dt1), dt2),
-            SelfCast { dtype, strict } => SelfCast {
-                dtype: f(dtype),
-                strict,
-            },
-            x @ OtherCast { .. } => x,
-            Implode => Implode,
-        }
-    }
-
-    fn map_other<F: Fn(DataType) -> DataType>(self, f: F) -> Self {
-        use IsInTypeCoercionResult::*;
-        match self {
-            SuperType(dt1, dt2) => SuperType(dt1, f(dt2)),
-            x @ SelfCast { .. } => x,
-            OtherCast { dtype, strict } => OtherCast {
-                dtype: f(dtype),
-                strict,
-            },
-            Implode => Implode,
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn resolve_is_in(
     input: &[ExprIR],
@@ -72,45 +44,23 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
         return Ok(Some(IsInTypeCoercionResult::Implode));
     }
 
-    // dbg!(&type_left);
-    // dbg!(&type_other);
-
-    let wrap_other = |resolved_type_other: DataType| match &type_other {
-        DataType::List(_) => DataType::List(Box::new(resolved_type_other)),
+    let wrap_other = |resolved_inner_type: DataType| match &type_other {
+        DataType::List(_) => DataType::List(Box::new(resolved_inner_type)),
         #[cfg(feature = "dtype-array")]
-        DataType::Array(_, width) => DataType::Array(Box::new(resolved_type_other), *width),
+        DataType::Array(_, width) => DataType::Array(Box::new(resolved_inner_type), *width),
         _ => unreachable!(),
     };
 
     let type_left_materialized = type_left.clone().materialize_unknown(false)?;
     let Some(type_other_inner) = type_other.inner_dtype() else {
+        panic!();
         polars_bail!(InvalidOperation: "'{op:?}' cannot check for {type_left:?} values in {type_other:?} data.\n\
         Hint: container dtype ({type_other:?}) must be nested");
     };
 
-    Ok((resolve_is_in_inner(
-        &type_left_materialized,
-        &type_other_inner,
-        &type_left,
-        &type_other,
-        op,
-    )?
-    .map(|r| r.map_other(wrap_other))))
-}
-
-fn resolve_is_in_inner(
-    type_left: &DataType,
-    type_other_inner: &DataType,
-    top_level_left_type: &DataType,
-    top_level_nested_type: &DataType,
-    op: &'static str,
-) -> PolarsResult<Option<IsInTypeCoercionResult>> {
-    // dbg!(type_left);
-    // dbg!(type_other_inner);
-
-    let casted_inner_expr = match (type_left, type_other_inner) {
+    let casted_inner_expr = match (&type_left_materialized, type_other_inner) {
         // Types are equal, do nothing
-        (a, b) if a == b => return Ok(None),
+        (dtml, dto) if dtml == dto => return Ok(None),
 
         // All-null can represent anything (and/or empty list), so cast to target dtype
         (DataType::Null, _) => IsInTypeCoercionResult::SelfCast {
@@ -118,13 +68,13 @@ fn resolve_is_in_inner(
             strict: false,
         },
         (_, DataType::Null) => IsInTypeCoercionResult::OtherCast {
-            dtype: type_left.clone(),
+            dtype: wrap_other(type_left_materialized),
             strict: false,
         },
 
         #[cfg(feature = "dtype-categorical")]
         (DataType::Enum(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
-            dtype: type_left.clone(),
+            dtype: wrap_other(type_left_materialized),
             strict: true,
         },
         #[cfg(feature = "dtype-categorical")]
@@ -139,20 +89,20 @@ fn resolve_is_in_inner(
         },
         #[cfg(feature = "dtype-categorical")]
         (DataType::Categorical(_, _), DataType::String) => IsInTypeCoercionResult::OtherCast {
-            dtype: type_left.clone(),
+            dtype: wrap_other(type_left_materialized),
             strict: false,
         },
 
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => {
             IsInTypeCoercionResult::OtherCast {
-                dtype: type_left.clone(),
+                dtype: wrap_other(type_left_materialized),
                 strict: false,
             }
         },
         #[cfg(feature = "dtype-decimal")]
         (DataType::Decimal(_, _), _) | (_, DataType::Decimal(_, _)) => {
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {top_level_left_type:?} values in {top_level_nested_type:?} data")
+            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
         },
         // can't check for more granular time_unit in less-granular time_unit data,
         // or we'll cast away valid/necessary precision (eg: nanosecs to millisecs)
@@ -173,24 +123,22 @@ fn resolve_is_in_inner(
 
         // Don't attempt to cast between obviously mismatched types. Only allow
         // to cast to a supertype if the cast is lossless.
-        (a, b) => {
-            if (a.is_primitive_numeric() && b.is_primitive_numeric()) || (a == &DataType::Null) {
-                if let Some(super_type) =
-                    get_numeric_upcast_supertype_lossless(&type_left, type_other_inner)
-                {
+        (dtml, dto) => {
+            if (dtml.is_primitive_numeric() && dto.is_primitive_numeric()) || dtml.is_null() {
+                if let Some(super_type) = get_numeric_upcast_supertype_lossless(dtml, dto) {
                     return Ok(Some(IsInTypeCoercionResult::SuperType(
                         super_type.clone(),
-                        super_type,
+                        wrap_other(super_type),
                     )));
                 } else {
                     // We disabled lossless coercion of the operands in 2.0.
-                    let lossy_supertype = try_get_supertype(&type_left, type_other_inner)?;
-                    polars_bail!(InvalidOperation: "'{op}' cannot check for {top_level_left_type:?} values in {top_level_nested_type:?} data.\n\
+                    let lossy_supertype = try_get_supertype(dtml, dto)?;
+                    polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data.\n\
                         Hint: Before version 2.0, Polars would perform this check by lossily coercing the operands to {lossy_supertype:?}. \
-                        However, since Polars 2.0 the is_in() it is required to explicitly cast (one of) the operands to a compatible type.")
+                        However, since Polars 2.0, for is_in() it is required to explicitly cast (one of) the operands to a compatible type.")
                 }
             }
-            polars_bail!(InvalidOperation: "'{op}' cannot check for {top_level_left_type:?} values in {top_level_nested_type:?} data")
+            polars_bail!(InvalidOperation: "'{op}' cannot check for {type_left:?} values in {type_other:?} data")
         },
     };
     Ok(Some(casted_inner_expr))
