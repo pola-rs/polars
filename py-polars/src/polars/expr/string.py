@@ -2480,16 +2480,14 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.str_tail(n_pyexpr))
 
-    @deprecated(
-        '`str.explode` is deprecated; use `str.split("").explode(empty_as_null=False)` instead.'
-    )
+    @deprecated('`str.explode` is deprecated; use `str.split("").explode()` instead.')
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
             '`str.explode` is deprecated; use
-            `str.split("").explode(empty_as_null=False)` instead.'
+            `str.split("").explode()` instead.'
 
         Returns
         -------
