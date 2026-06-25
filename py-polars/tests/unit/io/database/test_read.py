@@ -445,14 +445,14 @@ def test_read_database_iter_batches(
     if "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
         # externally instantiated adbc connections
         with connect_using(tmp_sqlite_db) as conn:
-            dfs = pl.read_database(
+            batch_iter = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data",
                 schema_overrides=schema_overrides,
                 iter_batches=True,
                 batch_size=batch_size,
             )
-            empty_dfs = pl.read_database(
+            empty_batch_iter = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
                 schema_overrides=schema_overrides,
@@ -460,27 +460,30 @@ def test_read_database_iter_batches(
                 batch_size=batch_size,
             )
             # must consume the iterators while the connection is open
-            dfs = iter(list(dfs))
-            empty_dfs = iter(list(empty_dfs))
+            batches = list(batch_iter)
+            empty_batches = list(empty_batch_iter)
     else:
         # other user-supplied connections
         with closing(connect_using(tmp_sqlite_db)) as conn:
-            dfs = pl.read_database(
+            batch_iter = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
                 schema_overrides=schema_overrides,
                 iter_batches=True,
                 batch_size=batch_size,
             )
-            empty_dfs = pl.read_database(
+            empty_batch_iter = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
                 schema_overrides=schema_overrides,
                 iter_batches=True,
                 batch_size=batch_size,
             )
+            # must consume the iterators while the connection is open
+            batches = list(batch_iter)
+            empty_batches = list(empty_batch_iter)
 
-    df: pl.DataFrame = pl.concat(dfs)
+    df: pl.DataFrame = pl.concat(batches)
     # validate the expected query return (data and schema)
     assert df.schema == expected_dtypes
     assert df.shape == (2, 4)
@@ -488,7 +491,7 @@ def test_read_database_iter_batches(
 
     # some drivers return an empty iterator when there is no result
     try:
-        df_empty: pl.DataFrame = pl.concat(empty_dfs)
+        df_empty: pl.DataFrame = pl.concat(empty_batches)
     except ValueError:
         return
     # # note: 'cursor.description' is not reliable when no query
