@@ -41,14 +41,14 @@ def _normalize_horizontal_concat(
                 "is deprecated and will require equal heights in the next breaking "
                 "release. "
                 "Use `how='horizontal_extend'` to keep the current behavior.",
-                version="1.42.0",
+                version="1.42.1",
             )
             return "horizontal_extend"
         elif strict is False:
             issue_deprecation_warning(
                 f"the `strict` parameter for `{function_name}` is deprecated. "
                 "Use `how='horizontal_extend'` instead.",
-                version="1.42.0",
+                version="1.42.1",
             )
             return "horizontal_extend"
         else:
@@ -106,7 +106,7 @@ def concat(
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
 
-        .. deprecated:: 1.42.0
+        .. deprecated:: 1.42.1
             Use `how='horizontal'` (equal heights) or
             `how='horizontal_extend'` (pad with null) instead.
 
@@ -421,7 +421,7 @@ def union(
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
 
-        .. deprecated:: 1.42.0
+        .. deprecated:: 1.42.1
             Use `how='horizontal'` (equal heights) or
             `how='horizontal_extend'` (pad with null) instead.
 
