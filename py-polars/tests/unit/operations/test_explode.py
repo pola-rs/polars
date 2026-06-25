@@ -15,15 +15,15 @@ def test_explode_multiple() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]], "b": [[5, 6], [7, 8]]})
 
     expected = pl.DataFrame({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
-    assert_frame_equal(df.explode(cs.all(), empty_as_null=False), expected)
-    assert_frame_equal(df.explode(["a", "b"], empty_as_null=False), expected)
-    assert_frame_equal(df.explode("a", "b", empty_as_null=False), expected)
+    assert_frame_equal(df.explode(cs.all()), expected)
+    assert_frame_equal(df.explode(["a", "b"]), expected)
+    assert_frame_equal(df.explode("a", "b"), expected)
 
 
 def test_group_by_flatten_list() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": [[1, 2], [2, 3], [4]]})
     result = df.group_by("group", maintain_order=True).agg(
-        pl.col("values").list.explode(keep_nulls=False, empty_as_null=False)
+        pl.col("values").list.explode(keep_nulls=False)
     )
 
     expected = pl.DataFrame({"group": ["a", "b"], "values": [[1, 2], [2, 3, 4]]})
@@ -81,12 +81,7 @@ def test_explode_empty_list_4107() -> None:
 
 def test_explode_correct_for_slice() -> None:
     df = pl.DataFrame({"b": [[1, 1], [2, 2], [3, 3], [4, 4]]})
-    assert df.slice(2, 2).explode(["b"], empty_as_null=False)["b"].to_list() == [
-        3,
-        3,
-        4,
-        4,
-    ]
+    assert df.slice(2, 2).explode(["b"])["b"].to_list() == [3, 3, 4, 4]
 
     df = (
         (
@@ -110,7 +105,7 @@ def test_explode_correct_for_slice() -> None:
         },
         schema_overrides={"index": pl.get_index_type()},
     )
-    assert_frame_equal(df.slice(0, 10).explode(["b"], empty_as_null=False), expected)
+    assert_frame_equal(df.slice(0, 10).explode(["b"]), expected)
 
 
 def test_sliced_null_explode() -> None:
@@ -151,9 +146,9 @@ def test_explode_in_agg_context(maintain_order: bool) -> None:
 
     assert_frame_equal(
         df.with_row_index()
-        .explode("idxs", empty_as_null=False)
+        .explode("idxs")
         .group_by("index", maintain_order=maintain_order)
-        .agg(pl.col("array").list.explode(keep_nulls=False, empty_as_null=False)),
+        .agg(pl.col("array").list.explode(keep_nulls=False)),
         pl.DataFrame(
             {
                 "index": [0, 1, 2],
@@ -229,7 +224,7 @@ def test_explode_invalid_element_count() -> None:
     with pytest.raises(
         ShapeError, match=r"exploded columns must have matching element counts"
     ):
-        df.explode(["col1", "col2"], empty_as_null=False)
+        df.explode(["col1", "col2"])
 
 
 def test_logical_explode() -> None:
@@ -240,7 +235,7 @@ def test_logical_explode() -> None:
         )
         .group_by(1)
         .agg(pl.struct("cats"))
-        .explode("cats", empty_as_null=False)
+        .explode("cats")
         .unnest("cats")
     )
     assert out["cats"].dtype == pl.Categorical
@@ -262,7 +257,7 @@ def test_explode_array() -> None:
     )
     expected = pl.DataFrame({"a": [1, 2, 2, 3], "b": [1, 1, 2, 2]})
     for ex in ("a", ~cs.integer()):
-        out = df.explode(ex, empty_as_null=False).collect()
+        out = df.explode(ex).collect()
         assert_frame_equal(out, expected)
 
 
@@ -475,7 +470,7 @@ def test_undefined_col_15852() -> None:
     lf = pl.LazyFrame({"foo": [1]})
 
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
-        lf.explode("bar", empty_as_null=False).join(lf, on="foo").collect()
+        lf.explode("bar").join(lf, on="foo").collect()
 
 
 def test_explode_17648() -> None:
@@ -483,7 +478,7 @@ def test_explode_17648() -> None:
     assert (
         df.slice(1, 2)
         .with_columns(pl.int_ranges(pl.col("a").list.len()).alias("count"))
-        .explode("a", "count", empty_as_null=False)
+        .explode("a", "count")
     ).to_dict(as_series=False) == {"a": [2, 6, 7, 3, 9, 2], "count": [0, 1, 2, 0, 1, 2]}
 
 
@@ -662,36 +657,10 @@ def test_explode_params() -> None:
         pl.DataFrame({"a": [1, 2, 3, None, 4, 5, 6], "b": [1, 1, 1, 2, 3, 3, 3]}),
     )
     assert_frame_equal(
-        df.explode("a", keep_nulls=False, empty_as_null=True),
+        df.explode("a", empty_as_null=True, keep_nulls=False),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 6, None], "b": [1, 1, 1, 3, 3, 3, 4]}),
     )
     assert_frame_equal(
         df.explode("a", empty_as_null=False, keep_nulls=False),
         pl.DataFrame({"a": [1, 2, 3, 4, 5, 6], "b": [1, 1, 1, 3, 3, 3]}),
     )
-
-
-def test_explode_empty_as_null_deprecation() -> None:
-    list_df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-    arr_df = pl.DataFrame(
-        {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
-    )
-    list_s = list_df.to_series()
-    arr_s = arr_df.to_series()
-
-    with pytest.warns(DeprecationWarning, match="empty_as_null"):
-        list_df.select(pl.col("a").explode())
-    with pytest.warns(DeprecationWarning, match="empty_as_null"):
-        list_df.select(pl.col("a").list.explode())
-    with pytest.warns(DeprecationWarning, match="empty_as_null"):
-        arr_df.select(pl.col("a").arr.explode())
-    with pytest.warns(DeprecationWarning, match="empty_as_null"):
-        list_s.explode()
-    with pytest.warns(DeprecationWarning, match="empty_as_null"):
-        list_s.list.explode()
-    with pytest.warns(DeprecationWarning, match="empty_as_null"):
-        arr_s.arr.explode()
-    with pytest.warns(DeprecationWarning, match="empty_as_null"):
-        list_df.explode("a")
-    with pytest.warns(DeprecationWarning, match="empty_as_null"):
-        list_df.lazy().explode("a").collect()
