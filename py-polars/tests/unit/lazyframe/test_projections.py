@@ -940,3 +940,24 @@ def test_projection_pushdown_select_non_column_height_27807() -> None:
     )
 
     assert_frame_equal(q.collect(), pl.Series("y", [10, 10, 10]).to_frame())
+
+
+def test_projection_pushdown_group_by_len_28094() -> None:
+    lf = pl.LazyFrame(
+        {
+            "key_a": ["x", "x", "y"],
+            "key_b": [1, 1, 2],
+            "flag": [True, False, True],
+        }
+    )
+    q = (
+        lf.group_by("key_a", "key_b")
+        .agg(any_flag=pl.col("flag").any())
+        .select(pl.len())
+    )
+
+    expected = pl.DataFrame({"len": [2]}, schema={"len": pl.UInt32})
+    assert_frame_equal(
+        q.collect(optimizations=pl.QueryOptFlags(projection_pushdown=False)), expected
+    )
+    assert_frame_equal(q.collect(), expected)

@@ -77,12 +77,19 @@ pub trait GetProjectionState {
                     return None;
                 }
 
-                if self.names().is_empty() {
-                    self.names_mut()
-                        .insert(min_dtype_size_col(input_schema.iter()).unwrap().clone());
-                } else {
-                    assert_eq!(self.names().len(), 1);
-                    assert!(input_schema.contains(self.names().first().unwrap()));
+                // We only need a single (cheapest) column to survive pushdown so
+                // that the row count for `len()` is preserved. A name chosen at a
+                // child node may not exist in this node's input schema (e.g. a
+                // `group_by` output column that is not an input column), so
+                // re-resolve it against `input_schema` whenever it no longer
+                // identifies a single column here.
+                let keep =
+                    self.names().len() == 1 && input_schema.contains(self.names().first().unwrap());
+                if !keep {
+                    let col = min_dtype_size_col(input_schema.iter()).unwrap().clone();
+                    let names = self.names_mut();
+                    names.clear();
+                    names.insert(col);
                 }
             },
             Projection::Names => {
