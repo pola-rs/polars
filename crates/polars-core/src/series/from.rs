@@ -574,6 +574,7 @@ impl Series {
         }
     }
 
+    #[cfg(feature = "dtype-categorical")]
     pub fn from_cats_and_dtype(
         cats: &Series,
         dtype: &DataType,

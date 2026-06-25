@@ -1596,6 +1596,7 @@ impl<'d, 'f> DtypeVisitor<'d, 'f> {
     }
 }
 
+#[cfg(feature = "dtype-categorical")]
 impl From<CategoricalPhysical> for DataType {
     fn from(phys: CategoricalPhysical) -> DataType {
         match phys {
