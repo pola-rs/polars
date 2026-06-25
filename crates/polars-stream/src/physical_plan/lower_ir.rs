@@ -1645,8 +1645,7 @@ pub fn lower_ir(
 
             return Ok(stream);
         },
-        // Cannot execute IR::ExtContext as the root node.
-        IR::ExtContext { .. } => panic!(),
+        IR::ExtContext { .. } => panic!("Cannot execute IR::ExtContext as the root node."),
         IR::UnoptimizedDispatch {
             inputs,
             arg_map,

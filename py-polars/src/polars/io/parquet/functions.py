@@ -243,7 +243,7 @@ def read_parquet(
             )
             raise TypeError(msg)
 
-        ret = _read_parquet_with_pyarrow(
+        return _read_parquet_with_pyarrow(
             source,
             columns=columns,
             storage_options=storage_options,
@@ -251,8 +251,6 @@ def read_parquet(
             memory_map=memory_map,
             rechunk=rechunk,
         )
-
-        return ret
 
     if allow_missing_columns is not None:
         issue_deprecation_warning(
