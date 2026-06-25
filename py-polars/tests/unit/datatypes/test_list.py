@@ -739,22 +739,20 @@ def test_list_std(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").list.std().name.suffix("_std"),
         pl.col("float").list.std().name.suffix("_std"),
-        pl.col("duration").list.std().name.suffix("_std"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
             pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
-            pl.Series(
-                "duration_std",
-                [timedelta(microseconds=1581)],
-                dtype=pl.Duration(time_unit="us"),
-            ),
         ]
     )
 
     assert_frame_equal(result, expected)
+
+    # `std` is not supported for Duration (see #23608).
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("duration").list.std())
 
 
 def test_list_median(data_dispersion: pl.DataFrame) -> None:
