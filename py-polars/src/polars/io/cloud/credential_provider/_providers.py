@@ -204,7 +204,8 @@ class CredentialProviderAWS(CachingCredentialProvider):
             raise self.EmptyCredentialError(msg)
 
         # Important: Do this before fetching expiry, `creds.*` property access
-        # might be needed for the expiry to be generated.
+        # might be needed for the expiry to be generated
+        # (e.g. DeferredRefreshableCredentials).
         creds_dict = {
             "aws_access_key_id": creds.access_key,
             "aws_secret_access_key": creds.secret_key,
