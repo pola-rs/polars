@@ -110,6 +110,8 @@ pub(super) fn convert_functions(
                 C::EndsWith(v) => IC::EndsWith(v),
                 #[cfg(feature = "strings")]
                 C::Slice(s, e) => IC::Slice(s, e),
+                C::To(dt, strict) => IC::To(dt.into_datatype(ctx.schema)?, strict),
+                C::Physical => IC::Physical,
             })
         },
         #[cfg(feature = "dtype-extension")]
