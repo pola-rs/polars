@@ -354,7 +354,7 @@ pub fn lower_ir(
             let key_dtypes = key
                 .iter()
                 .map(|k| left_schema.try_get(k.as_str()).cloned())
-                .collect::<PolarsResult<Vec<_>>>()?;
+                .try_collect_vec()?;
 
             let key_name = unique_column_name();
             use polars_plan::plans::{AExprBuilder, RowEncodingVariant};
