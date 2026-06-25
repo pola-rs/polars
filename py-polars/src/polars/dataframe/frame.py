@@ -71,6 +71,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     NO_DEFAULT,
     _in_notebook,
+    _Omitted,
     is_bool_sequence,
     normalize_filepath,
     parse_version,
@@ -1108,7 +1109,7 @@ class DataFrame:
 
         suffix = "__POLARS_CMP_OTHER"
         other_renamed = other.select(F.all().name.suffix(suffix))
-        combined = F.concat([self, other_renamed], how="horizontal")
+        combined = F.concat([self, other_renamed], how="horizontal", strict=True)
 
         if op == "eq":
             expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
@@ -1757,8 +1758,12 @@ class DataFrame:
         Parameters
         ----------
         compat_level
-            Use a specific compatibility level
-            when exporting Polars' internal data structures.
+            Compatibility level to use when exporting Polars data structures.
+            The default compatibility level is recommended for most users.
+            Use ``pl.CompatLevel.oldest()`` for the most compatible level.
+            ``pl.CompatLevel.newest()`` uses the highest supported compatibility
+            level, but is considered unstable and may change without it being
+            considered a breaking change.
 
         Examples
         --------
@@ -2484,7 +2489,9 @@ class DataFrame:
                 if features is not None
                 else self.drop(*label_frame.columns)
             ).cast(to_dtype)  # type: ignore[arg-type]
-            frame = F.concat([label_frame, features_frame], how="horizontal")
+            frame = F.concat(
+                [label_frame, features_frame], how="horizontal", strict=True
+            )
         else:
             label_frame = None
             features_frame = None
@@ -3892,7 +3899,7 @@ class DataFrame:
                     ws.set_row_pixels(idx, row_heights)
             elif isinstance(row_heights, dict):
                 for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
-                    ws.set_row_pixels(idx, height)
+                    ws.set_row_pixels(idx, height)  # pyrefly: ignore[bad-argument-type]
 
         if freeze_panes:
             if isinstance(freeze_panes, str):
@@ -7964,8 +7971,9 @@ class DataFrame:
                 (i.e., strictly less-than / strictly greater-than).
         check_sortedness
             Check the sortedness of the asof keys. If the keys are not sorted Polars
-            will error. Currently, sortedness cannot be checked if 'by' groups are
-            provided.
+            will error. Currently, the `in-memory` engine cannot check the sortedness
+            if 'by' groups are provided. The `streaming` engine will only check the
+            sortedness of the rows it processes.
 
         Examples
         --------
@@ -9450,7 +9458,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool = _Omitted,
         keep_nulls: bool = True,
     ) -> DataFrame:
         """
@@ -9492,7 +9500,7 @@ class DataFrame:
         │ b       ┆ [4, 5]    │
         │ c       ┆ [6, 7, 8] │
         └─────────┴───────────┘
-        >>> df.explode("numbers")
+        >>> df.explode("numbers", empty_as_null=False)
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -9816,9 +9824,11 @@ class DataFrame:
         └─────┴──────────┴───────┘
         """
         on = None if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        index_expanded = [] if index is None else _expand_selectors(self, index)
 
-        return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
+        return self._from_pydf(
+            self._df.unpivot(on, index_expanded, value_name, variable_name)
+        )
 
     def unstack(
         self,
@@ -10216,6 +10226,52 @@ class DataFrame:
             .shift(n, fill_value=fill_value)
             .collect(optimizations=QueryOptFlags._eager())
         )
+
+    @unstable()
+    def is_sorted(
+        self,
+        by: str | Iterable[str],
+        *more_by: str,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool | Sequence[bool] = False,
+    ) -> bool:
+        """
+        Check whether the DataFrame is sorted by the given columns.
+
+        Parameters
+        ----------
+        by
+            Column name(s) to check.
+        *more_by
+            Additional column names.
+        descending
+            Sort in descending order. When sorting by multiple columns, can be
+            specified per column by passing a sequence of booleans.
+        nulls_last
+            Place null values last. When sorting by multiple columns, can be
+            specified per column by passing a sequence of booleans.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [5, 4, 3]})
+        >>> df.is_sorted("a")
+        True
+        >>> df.is_sorted("b", descending=True)
+        True
+        >>> df.is_sorted("a", "b")
+        True
+        """
+        if isinstance(by, str):
+            by = [by]
+        else:
+            by = list(by)
+        by.extend(more_by)
+        n = len(by)
+        if isinstance(descending, bool):
+            descending = [descending] * n
+        if isinstance(nulls_last, bool):
+            nulls_last = [nulls_last] * n
+        return self._df.is_sorted(by, descending, nulls_last)
 
     def is_duplicated(self) -> Series:
         """

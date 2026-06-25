@@ -189,7 +189,7 @@ def expand_selector(
 
 # TODO: Don't use this as it collects a schema (can be very expensive for LazyFrame).
 #  This should move to IR conversion / Rust.
-def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> builtins.list[Any]:
+def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> builtins.list[str]:
     """
     Internal function that expands any selectors to column names in the given input.
 
@@ -214,7 +214,7 @@ def _expand_selectors(frame: DataFrame | LazyFrame, *items: Any) -> builtins.lis
     """
     items_iter = _parse_inputs_as_iterable(items)
 
-    expanded: builtins.list[Any] = []
+    expanded: builtins.list[str] = []
     for item in items_iter:
         if is_selector(item):
             selector_cols = expand_selector(frame, item)
@@ -232,7 +232,7 @@ def _expand_selector_dicts(
     expand_values: bool,
 ) -> dict[str, Any]:
     """Expand dict key/value selectors into their underlying column names."""
-    expanded = {}
+    expanded: dict[str, Any] = {}
     for key, value in (d or {}).items():
         if expand_values and is_selector(value):
             expanded[key] = expand_selector(df, selector=value)

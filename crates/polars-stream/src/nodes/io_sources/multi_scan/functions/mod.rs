@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::metrics::IOMetrics;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
 use polars_io::utils::compression::SupportedCompression;
@@ -58,7 +59,7 @@ pub async fn is_compressed_source(
 ) -> PolarsResult<bool> {
     let byte_source_builder = if scan_source.is_cloud_url() || polars_config::config().force_async()
     {
-        DynByteSourceBuilder::ObjectStore
+        DynByteSourceBuilder::ObjectStore(FetchConfig::legacy())
     } else {
         DynByteSourceBuilder::Mmap
     };

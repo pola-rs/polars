@@ -39,13 +39,6 @@ impl Default for RankOptions {
     }
 }
 
-#[cfg(feature = "random")]
-fn get_random_seed() -> u64 {
-    let mut rng = SmallRng::from_os_rng();
-
-    rng.next_u64()
-}
-
 unsafe fn rank_impl<F: FnMut(&mut [IdxSize])>(idxs: &IdxCa, neq: &BooleanArray, mut flush_ties: F) {
     let mut ties_indices = Vec::with_capacity(128);
     let mut idx_it = idxs.downcast_iter().flat_map(|arr| arr.values_iter());
@@ -134,7 +127,8 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         match method {
             #[cfg(feature = "random")]
             Random => unsafe {
-                let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_random_seed));
+                use polars_core::random::get_global_random_u64;
+                let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
                 let mut out = vec![0 as IdxSize; s.len()];
                 rank_impl(&sort_idx_ca, neq, |ties| {
                     ties.shuffle(&mut rng);

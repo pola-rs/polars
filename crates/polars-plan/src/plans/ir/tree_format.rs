@@ -1,7 +1,9 @@
 use std::fmt::{self, Write};
 
 use polars_core::error::*;
+use polars_utils::aliases::PlHashSet;
 use polars_utils::format_list_truncated;
+use polars_utils::unique_id::UniqueId;
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;
@@ -98,6 +100,21 @@ pub enum TreeFmtNodeContent<'a> {
     LogicalPlan(Node),
 }
 
+impl<'a> TreeFmtNodeContent<'a> {
+    pub fn cache_id(&self, arena: &Arena<IR>) -> Option<UniqueId> {
+        match self {
+            Self::Expression(_) => None,
+            Self::LogicalPlan(node) => {
+                if let IR::Cache { id, .. } = arena.get(*node) {
+                    Some(*id)
+                } else {
+                    None
+                }
+            },
+        }
+    }
+}
+
 struct TreeFmtNodeData<'a>(String, Vec<TreeFmtNode<'a>>);
 
 fn with_header(header: &Option<String>, text: &str) -> String {
@@ -158,8 +175,14 @@ impl<'a> TreeFmtNode<'a> {
         visitor.prev_depth = visitor.depth;
         visitor.depth += 1;
 
-        for child in &child_nodes {
-            child.traverse(visitor);
+        if self
+            .content
+            .cache_id(self.lp.lp_arena)
+            .is_none_or(|id| visitor.seen_caches.insert(id))
+        {
+            for child in &child_nodes {
+                child.traverse(visitor);
+            }
         }
 
         visitor.depth -= 1;
@@ -443,6 +466,7 @@ pub(crate) struct TreeFmtVisitor {
     prev_depth: usize,
     depth: usize,
     width: usize,
+    seen_caches: PlHashSet<UniqueId>,
     pub(crate) display: TreeFmtVisitorDisplay,
 }
 

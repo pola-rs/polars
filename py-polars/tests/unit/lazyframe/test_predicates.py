@@ -527,6 +527,7 @@ def test_hconcat_predicate() -> None:
             lf2.filter(pl.col("b1") > 0),
         ],
         how="horizontal",
+        strict=True,
     ).filter(pl.col("b2") < 9)
 
     expected = pl.DataFrame(
@@ -1549,3 +1550,26 @@ def test_filter_contradiction_fallible_error_handling(
     plmonkeypatch.setenv("POLARS_PUSHDOWN_OPT_MAINTAIN_ERRORS", "1")
     with pytest.raises(InvalidOperationError):
         lf.collect()
+
+
+def test_predicate_pushdown_after_collect_schema_26882() -> None:
+    # Resolving schema mid-build caches DSL->IR conversion with schema-only `opt_flags`
+    # (eg: no predicate pushdown); subsequent `collect` should NOT skip optimisations
+    left = pl.LazyFrame({"id": [1, 2, 3, 4], "status": ["A", "B", "A", "A"]})
+    right = pl.LazyFrame({"id": [1, 2, 3, 4], "category": [1, 2, 1, 2]})
+
+    def _build() -> pl.LazyFrame:
+        return left.join(right, on="id", how="inner").filter(
+            (pl.col("status") == "A") & (pl.col("category") == 1)
+        )
+
+    expected_plan = _build().explain()
+
+    cached = _build()
+    cached.collect_schema()
+    assert cached.explain() == expected_plan
+
+    # both filters pushed *below* the join
+    join_idx = expected_plan.index("INNER JOIN")
+    assert "FILTER" not in expected_plan[:join_idx]
+    assert_frame_equal(cached.collect(), _build().collect(), check_row_order=False)

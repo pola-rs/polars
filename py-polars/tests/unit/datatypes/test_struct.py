@@ -502,7 +502,8 @@ def test_list_of_struct_unique() -> None:
     assert {"a": 1, "b": 11} in unique_el
 
 
-def test_nested_explode_4026() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_nested_explode_4026(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "data": [
@@ -515,7 +516,7 @@ def test_nested_explode_4026() -> None:
         }
     )
 
-    assert df.explode("data").to_dict(as_series=False) == {
+    assert df.explode("data", empty_as_null=empty_as_null).to_dict(as_series=False) == {
         "data": [
             {"account_id": 10, "values": [1, 2]},
             {"account_id": 11, "values": [10, 20]},
@@ -1081,7 +1082,7 @@ def test_struct_chunked_zip_18119() -> None:
     b = pl.concat([b_dfs[4], b_dfs[1]])
     mask = pl.concat([mask_dfs[3], mask_dfs[2]])
 
-    df = pl.concat([a, b, mask], how="horizontal")
+    df = pl.concat([a, b, mask], how="horizontal", strict=True)
 
     assert_frame_equal(
         df.select(pl.when(pl.col.f).then(pl.col.a).otherwise(pl.col.b)),
@@ -1346,7 +1347,8 @@ def test_zip_outer_validity_infinite_recursion_21267() -> None:
     )
 
 
-def test_struct_arithmetic_broadcast_21376() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_struct_arithmetic_broadcast_21376(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "struct1": [{"low": 1, "mid": 2, "up": 3}],
@@ -1362,7 +1364,7 @@ def test_struct_arithmetic_broadcast_21376() -> None:
     )
     out = (
         df.with_row_index()
-        .explode("list_struct")
+        .explode("list_struct", empty_as_null=empty_as_null)
         .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
     )
     assert_frame_equal(out, expected)
@@ -1435,7 +1437,7 @@ def test_struct_equal_missing_null_25360() -> None:
     q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
     q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
 
-    q = pl.concat([q1, q2], how="horizontal").collect()
+    q = pl.concat([q1, q2], how="horizontal", strict=True).collect()
 
     result = q.select(
         eq=pl.col.a1.eq(pl.col.a2),
@@ -1918,6 +1920,8 @@ def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
         pl.col.s.struct.with_fields(fma=pl.field("x") * pl.lit(2) + pl.field("y"))
     )
     expected = pl.concat(
-        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})], how="horizontal"
+        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})],
+        how="horizontal",
+        strict=True,
     )
     assert_frame_equal(out.unnest("s"), expected)

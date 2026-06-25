@@ -19,20 +19,6 @@ ignore = [
 
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
-
-  # error[unsound]: Rand is unsound with a custom logger using `rand::rng()`
-  "RUSTSEC-2026-0097",
-
-  # error[vulnerability]: Name constraints for URI names were incorrectly accepted
-  "RUSTSEC-2026-0098",
-  # error[vulnerability]: Name constraints were accepted for certificates asserting a wildcard name
-  "RUSTSEC-2026-0099",
-
-  # error[vulnerability]: CRLs not considered authoritative by Distribution Point due to faulty matching logic
-  "RUSTSEC-2026-0049",
-
-  # error[yanked]: detected yanked crate (try `cargo update -p core2`)
-  { name = "core2", version = "0.4.0" },
 ]
 
 [licenses]
@@ -72,4 +58,5 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 unknown-git = "deny"
 allow-git = [
   "https://github.com/kdn36/arrow-rs-object-store",
+  "https://github.com/pola-rs/jemallocator",
 ]

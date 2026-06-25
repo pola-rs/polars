@@ -54,6 +54,7 @@ from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _is_generator,
+    _Omitted,
     display_dot_graph,
     extend_bool,
     is_bool_sequence,
@@ -998,7 +999,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Allows to alter the lazy frame during the plan stage with the resolved schema.
 
         In contrast to `pipe`, this method does not execute `function` immediately but
-        only during the plan stage. This allows to use the resolved schema of the input
+        only during the plan stage. This allows using the resolved schema of the input
         to dynamically alter the lazy frame. This also means that any exceptions raised
         by `function` will only be emitted during the plan stage.
 
@@ -3430,7 +3431,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if delta_write_options is None:
                 delta_write_options = {}
 
-            write_deltalake(
+            write_deltalake(  # pyrefly: ignore[no-matching-overload]
                 table_or_uri=target,
                 data=stream,  # type: ignore[call-overload]
                 mode=mode,
@@ -3570,8 +3571,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
         compat_level
-            Use a specific compatibility level
-            when exporting Polars' internal data structures.
+            Compatibility level to use when exporting Polars data structures.
+            The default compatibility level is recommended for most users.
+            Use ``pl.CompatLevel.oldest()`` for the most compatible level.
+            ``pl.CompatLevel.newest()`` uses the highest supported compatibility
+            level, but is considered unstable and may change without it being
+            considered a breaking change.
         record_batch_size
             Size of the record batches in number of rows.
 
@@ -6030,8 +6035,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (i.e., strictly less-than / strictly greater-than).
         check_sortedness
             Check the sortedness of the asof keys. If the keys are not sorted Polars
-            will error. Currently, sortedness cannot be checked if 'by' groups are
-            provided.
+            will error. Currently, the `in-memory` engine cannot check the sortedness
+            if 'by' groups are provided. The `streaming` engine will only check the
+            sortedness of the rows it processes.
 
         Notes
         -----
@@ -8121,7 +8127,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool = _Omitted,
         keep_nulls: bool = True,
     ) -> LazyFrame:
         """
@@ -8147,7 +8153,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
         ... )
-        >>> lf.explode("numbers").collect()
+        >>> lf.explode("numbers", empty_as_null=False).collect()
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -8164,6 +8170,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )

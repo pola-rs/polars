@@ -683,7 +683,7 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> O
 
     if frac_bytes.is_empty() && exp_bytes.is_empty() {
         // Integer-only fast path.
-        let n: i128 = atoi_simd::parse_skipped(int_bytes).ok()?;
+        let n: i128 = atoi_simd::parse::<_, true, true>(int_bytes).ok()?;
         return i128_to_dec128(n, p, s);
     }
 
@@ -706,7 +706,7 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> O
     }
 
     let exp_scale: i32 = if !exp_bytes.is_empty() {
-        atoi_simd::parse_skipped(&exp_bytes[1..]).ok()?
+        atoi_simd::parse::<_, true, true>(&exp_bytes[1..]).ok()?
     } else {
         0
     };
@@ -753,24 +753,16 @@ pub fn str_to_dec128(bytes: &[u8], p: usize, s: usize, decimal_comma: bool) -> O
     };
 
     // Parse parts.
-    // Workaround atoi_simd/issues/14.
-    while let Some((b'0', rest)) = int_bytes.split_first() {
-        int_bytes = rest;
-    }
-    while let Some((b'0', rest)) = frac_bytes.split_first() {
-        frac_bytes = rest;
-    }
-
-    let mut pint: i128 = if int_bytes.is_empty() {
+    let mut pint = if int_bytes.is_empty() {
         0
     } else {
-        atoi_simd::parse_pos(int_bytes).ok()?
+        atoi_simd::parse_pos::<i128, true>(int_bytes).ok()?
     };
 
-    let mut pfrac: i128 = if frac_bytes.is_empty() {
+    let mut pfrac = if frac_bytes.is_empty() {
         0
     } else {
-        atoi_simd::parse_pos(frac_bytes).ok()?
+        atoi_simd::parse_pos::<i128, true>(frac_bytes).ok()?
     };
 
     // Round-to-even.

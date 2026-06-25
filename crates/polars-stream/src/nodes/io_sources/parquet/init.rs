@@ -47,7 +47,15 @@ impl ParquetReadImpl {
         let ideal_morsel_size = get_ideal_morsel_size();
 
         if verbose {
-            eprintln!("[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}");
+            eprintln!(
+                "[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}, \
+                use_async_prefetch: {}, \
+                concurrency: {:?}, \
+                chunk_size: {:?}",
+                self.byte_source.is_cloud(),
+                self.byte_source.concurrency_strategy(),
+                self.byte_source.chunk_size(),
+            );
         }
 
         let metadata = self.metadata.clone();
@@ -55,12 +63,30 @@ impl ParquetReadImpl {
         let byte_source = self.byte_source.clone();
 
         // Prefetch loop (spawns prefetches on the tokio scheduler).
+
+        // Three concurrency limits bound the pipeline:
+        // (a) rg_prefetch_kbytes_semaphore: bounds possibly compressed projected bytes
+        //     in the pipeline. Primary memory bound, but does not account for decompression.
+        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Secondary
+        //     bound, only binding for degenerate cases (many tiny row groups where
+        //     (a) is not exhausted).
+        // (c) prefetch channel depth: sized >= (b) so it is never the binding constraint.
+        //     The channel is a handoff queue between the prefetch and decode tasks, not
+        //     a concurrency gate.
+        //
+        // Note: in-flight concurrency is separately controlled inside the object store using
+        // a combination of a bytes-based and count-based semaphore. These operate at the
+        // network layer and are independent of the pipeline limits above.
+        // The pipeline channel depth must be >= in-flight concurrency to avoid
+        // stalling the prefetch loop before the semaphores are exhausted.
+
         let (prefetch_send, mut prefetch_recv) =
             tokio::sync::mpsc::channel(row_group_prefetch_size);
 
         let row_index = self.row_index.clone();
 
-        let rg_prefetch_semaphore = Arc::clone(&self.rg_prefetch_semaphore);
+        let pipeline_budget = self.pipeline_budget.clone();
+
         let rg_prefetch_prev_all_spawned = Option::take(&mut self.rg_prefetch_prev_all_spawned);
         let rg_prefetch_current_all_spawned =
             Option::take(&mut self.rg_prefetch_current_all_spawned);
@@ -148,14 +174,20 @@ impl ParquetReadImpl {
                 rg_prefetch_prev_all_spawned.wait().await;
             }
 
-            loop {
-                let fetch_permit = rg_prefetch_semaphore.clone().acquire_owned().await.unwrap();
+            while let Some(fetch_length) = row_group_data_fetcher.peek_next_bytes() {
+                let fetch_length = usize::try_from(fetch_length)
+                    .expect("ParquetReadImpl: fetch_length too large for usize: {fetch_length}");
 
+                let permit = pipeline_budget.acquire(fetch_length).await;
+
+                // Budget reserved, spawn request
                 let Some(prefetch) = row_group_data_fetcher.next().await else {
+                    // Mask skipped all remaining row groups between peek and next — release permits
+                    drop(permit);
                     break;
                 };
 
-                if prefetch_send.send((prefetch?, fetch_permit)).await.is_err() {
+                if prefetch_send.send((prefetch?, permit)).await.is_err() {
                     break;
                 }
             }
@@ -168,13 +200,13 @@ impl ParquetReadImpl {
         // Decode loop (spawns decodes on the computational executor).
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
         let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
-            while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
+            while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
                 let row_group_data = prefetch_task.await.unwrap()?;
                 let row_group_decoder = row_group_decoder.clone();
                 let decode_fut = executor::spawn(TaskPriority::High, async move {
                     row_group_decoder.row_group_data_to_df(row_group_data).await
                 });
-                if decode_send.send((decode_fut, permit)).await.is_err() {
+                if decode_send.send((decode_fut, permits)).await.is_err() {
                     break;
                 }
             }
@@ -196,7 +228,7 @@ impl ParquetReadImpl {
             // Decode first non-empty morsel.
             let mut next = None;
             loop {
-                let Some((decode_fut, permit)) = decode_recv.recv().await else {
+                let Some((decode_fut, permits)) = decode_recv.recv().await else {
                     break;
                 };
                 let df = decode_fut.await?;
@@ -212,22 +244,22 @@ impl ParquetReadImpl {
                     {
                         return Ok(());
                     }
-                    drop(permit);
+                    drop(permits);
                     morsel_seq = morsel_seq.successor();
                     continue;
                 }
 
-                next = Some((df, permit));
+                next = Some((df, permits));
                 break;
             }
 
-            while let Some((df, permit)) = next.take() {
+            while let Some((df, permits)) = next.take() {
                 // Try to decode the next non-empty morsel first, so we know
                 // whether the df is the last morsel.
 
                 // Important: Drop this before awaiting the next one, or could
                 // deadlock if the permit limit is 1.
-                drop(permit);
+                drop(permits);
 
                 loop {
                     let Some((decode_fut, permit)) = decode_recv.recv().await else {

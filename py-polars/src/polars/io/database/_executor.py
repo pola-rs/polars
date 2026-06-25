@@ -4,7 +4,7 @@ import re
 from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 
 from polars import functions as F
 from polars._utils.various import parse_version, qualified_type_name
@@ -438,7 +438,9 @@ class ConnectionExecutor:
 
         elif hasattr(conn, "cursor"):
             # connection has a dedicated cursor; prefer over direct execute
-            cursor = cursor() if callable(cursor := conn.cursor) else cursor
+            cursor = (
+                cast("Cursor", cursor()) if callable(cursor := conn.cursor) else cursor
+            )
             self.can_close_cursor = True
             return cursor
 

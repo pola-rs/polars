@@ -210,10 +210,12 @@ volumes instead for more configuration flexibility; as an alternative, your own 
 storage can be used.
 
 Using S3-compatible storage might improve fault tolerance, since intermediate results are stored
-independently of the worker pods themselves. The performance trade-off depends on the latency and
-throughput characteristics of your storage backend relative to local volumes. As an example, on AWS,
-EBS offers lower latency than S3 but lower throughput. This makes EBS a better fit for workloads
-that produce many small shuffle files, while S3 will outperform it when shuffle files are large.
+independently of the worker pods themselves. It also keeps queries resilient to worker out-of-memory
+events on cgroup v2 clusters; see [Memory limits and OOM behavior](#memory-limits-and-oom-behavior).
+The performance trade-off depends on the latency and throughput characteristics of your storage
+backend relative to local volumes. As an example, on AWS, EBS offers lower latency than S3 but lower
+throughput. This makes EBS a better fit for workloads that produce many small shuffle files, while
+S3 will outperform it when shuffle files are large.
 
 Shuffle configuration is under the
 [`shuffleData` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#shuffle-data).
@@ -229,6 +231,30 @@ the cluster.
 
 Resource allocation and cluster topology configuration is under the
 [`worker.deployment` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#resource-allocation-and-node-selectors).
+
+#### Memory limits and OOM behavior
+
+Each Polars On-Prem worker runs two processes: a main process that supervises the worker and tracks
+completed work (including shuffle data), and an executor process that performs the actual
+computation. Only the executor needs to die when a worker runs out of memory: the main process can
+then report the failure, and the scheduler reschedules the affected stage. Polars On-Prem sets
+`oom_score_adj` on the executor so the kernel prefers to kill it first.
+
+!!! warning "cgroup v2 clusters kill the whole worker on OOM"
+
+    On clusters using cgroup v2, the kubelet sets `memory.oom.group=1` on each container
+    (Kubernetes 1.28 and later). The kernel then treats the container as a single unit: when the
+    memory limit is exceeded, **every** process in the worker is killed, not just the executor.
+    Polars On-Prem's `oom_score_adj` handling cannot prevent this.
+
+To stay resilient to worker out-of-memory events on cgroup v2, store shuffle data on shared storage
+(S3-compatible or a shared filesystem) rather than on worker-local disk. Because intermediate
+results then live independently of the worker pods, the scheduler can reschedule work onto another
+worker when one is killed, with no data loss. See [Shuffle data](#shuffle-data) above.
+
+If you control the kubelet configuration, setting `singleProcessOOMKill: true` (Kubernetes 1.32 and
+later) restores single-process OOM kills on cgroup v2. This is a node-level setting that is often
+unavailable on managed clusters, so prefer shared shuffle storage where possible.
 
 ## On-Prem Enterprise
 

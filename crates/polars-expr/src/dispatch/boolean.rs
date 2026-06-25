@@ -4,6 +4,7 @@ use std::sync::Arc;
 use polars_core::error::PolarsResult;
 use polars_core::prelude::{BooleanChunked, Column, DataType, IntoColumn, NamedFrom};
 use polars_core::runtime::RAYON;
+use polars_ops::prelude::SeriesMethods;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRBooleanFunction;
 use polars_utils::pl_str::PlSmallStr;
@@ -41,6 +42,10 @@ pub fn function_expr_to_udf(func: IRBooleanFunction) -> SpecialEq<Arc<dyn Column
             rel_tol,
             nans_equal,
         } => wrap!(is_close, abs_tol, rel_tol, nans_equal),
+        IsSorted {
+            descending,
+            nulls_last,
+        } => map!(is_sorted, descending, nulls_last),
         Not => map!(not),
         AllHorizontal => map_as_slice!(all_horizontal),
         AnyHorizontal => map_as_slice!(any_horizontal),
@@ -165,6 +170,16 @@ fn is_close(
         nans_equal,
     )
     .map(IntoColumn::into_column)
+}
+
+fn is_sorted(
+    s: &Column,
+    descending: Option<bool>,
+    nulls_last: Option<bool>,
+) -> PolarsResult<Column> {
+    let series = s.as_materialized_series();
+    let result = series.is_sorted_any(descending, nulls_last)?;
+    Ok(Column::new(s.name().clone(), [result]))
 }
 
 fn not(s: &Column) -> PolarsResult<Column> {

@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 import sys
 from functools import wraps
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import polars._reexport as pl
 from polars import functions as F
@@ -47,7 +47,7 @@ def expr_dispatch(cls: type[T]) -> type[T]:
         ):
             attr = getattr(cls, name)
             if callable(attr):
-                attr = _undecorated(attr)
+                attr = cast("Callable[..., Series]", _undecorated(attr))
                 # note: `co_varnames` starts with the function args, but needs to be
                 # constrained by `co_argcount` as it also includes function-level consts
                 args = attr.__code__.co_varnames[: attr.__code__.co_argcount]

@@ -75,7 +75,7 @@ impl ComputeNode for CumAggNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(mut m) = recv.recv().await {
                 assert_eq!(m.df().width(), 1);
-                if m.df().height() == 0 {
+                if m.height() == 0 {
                     continue;
                 }
 

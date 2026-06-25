@@ -64,7 +64,7 @@ impl PhysicalExpr for FieldExpr {
             },
             groups: ac.groups.clone(),
             update_groups: ac.update_groups,
-            original_len: ac.original_len,
+            original_groups: ac.original_groups,
         })
     }
 

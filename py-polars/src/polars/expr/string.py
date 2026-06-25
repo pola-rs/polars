@@ -11,6 +11,7 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
     NO_DEFAULT,
+    _NamespaceSuggestMixin,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
         from typing_extensions import deprecated  # noqa: TC004
 
 
-class ExprStringNameSpace:
+class ExprStringNameSpace(_NamespaceSuggestMixin):
     """Namespace for string related expressions."""
 
     _accessor = "str"
@@ -2480,20 +2481,15 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_tail(n_pyexpr))
 
     @deprecated(
-        '`str.explode` is deprecated; use `str.split("").explode()` instead.'
-        " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use a `pl.when...then...otherwise`"
-        " expression to handle the empty list before exploding."
+        '`str.explode` is deprecated; use `str.split("").explode(empty_as_null=False)` instead.'
     )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use the `.str.split("").explode()` method instead. Note that empty strings
-            will result in null instead of being preserved. To get the exact same
-            behavior, split first and then use a `pl.when...then...otherwise`
-            expression to handle the empty list before exploding.
+            '`str.explode` is deprecated; use
+            `str.split("").explode(empty_as_null=False)` instead.'
 
         Returns
         -------

@@ -28,7 +28,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           env-vars: ImageVersion
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Build Rust documentation
         env:

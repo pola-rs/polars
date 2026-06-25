@@ -19,6 +19,122 @@ fn new_null_count(input: &[ExprIR]) -> AExpr {
     }
 }
 
+fn integer_literal_value(ae: &AExpr) -> Option<i64> {
+    match ae {
+        AExpr::Literal(lv) => lv.extract_i64().ok(),
+        _ => None,
+    }
+}
+
+enum CountCmpInput {
+    Len(Node),
+    NullCount(Node),
+}
+
+fn maybe_negate(ae: AExpr, negate: bool, expr_arena: &mut Arena<AExpr>) -> AExpr {
+    if negate {
+        AExprBuilder::new_from_aexpr(ae, expr_arena)
+            .not(expr_arena)
+            .build(expr_arena)
+    } else {
+        ae
+    }
+}
+
+fn bool_literal(value: bool) -> AExpr {
+    AExpr::Literal(Scalar::from(value).into())
+}
+
+fn non_negative_count_cmp_literal(op: Operator, literal: i64) -> Option<AExpr> {
+    let value = match op {
+        Operator::Eq if literal < 0 => false,
+        Operator::NotEq if literal < 0 => true,
+        Operator::Gt if literal < 0 => true,
+        Operator::GtEq if literal <= 0 => true,
+        Operator::Lt if literal <= 0 => false,
+        Operator::LtEq if literal < 0 => false,
+        _ => return None,
+    };
+    Some(bool_literal(value))
+}
+
+fn optimize_len_or_null_count_cmp(
+    left: Node,
+    op: Operator,
+    right: Node,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<AExpr> {
+    let left_ae = expr_arena.get(left);
+    let right_ae = expr_arena.get(right);
+
+    let (count_expr_node, op, literal) = if let Some(value) = integer_literal_value(right_ae) {
+        (left, op, value)
+    } else if let Some(value) = integer_literal_value(left_ae) {
+        let op = match op {
+            Operator::Eq => Operator::Eq,
+            Operator::NotEq => Operator::NotEq,
+            Operator::Gt => Operator::Lt,
+            Operator::GtEq => Operator::LtEq,
+            Operator::Lt => Operator::Gt,
+            Operator::LtEq => Operator::GtEq,
+            _ => return None,
+        };
+        (right, op, value)
+    } else {
+        return None;
+    };
+
+    let input = match expr_arena.get(count_expr_node) {
+        AExpr::Agg(IRAggExpr::Count {
+            input,
+            include_nulls: true,
+        }) => CountCmpInput::Len(*input),
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::NullCount,
+            ..
+        } if input.len() == 1 => CountCmpInput::NullCount(input[0].node()),
+        _ => return None,
+    };
+
+    if let Some(out) = non_negative_count_cmp_literal(op, literal) {
+        return Some(out);
+    }
+
+    match input {
+        CountCmpInput::Len(input) => {
+            let is_empty = match op {
+                Operator::Eq if literal == 0 => true,
+                Operator::Lt if literal == 1 => true,
+                Operator::LtEq if literal == 0 => true,
+                Operator::NotEq | Operator::Gt if literal == 0 => false,
+                Operator::GtEq if literal == 1 => false,
+                _ => return None,
+            };
+
+            let out = AExprBuilder::new_from_node(input)
+                .is_empty(false, expr_arena)
+                .build(expr_arena);
+            Some(maybe_negate(out, !is_empty, expr_arena))
+        },
+        CountCmpInput::NullCount(input) => {
+            let has_nulls = match op {
+                Operator::Eq if literal == 0 => false,
+                Operator::Lt if literal == 1 => false,
+                Operator::LtEq if literal == 0 => false,
+                Operator::NotEq | Operator::Gt if literal == 0 => true,
+                Operator::GtEq if literal == 1 => true,
+                _ => return None,
+            };
+
+            let out = AExprBuilder::new_from_node(input)
+                .has_nulls(expr_arena)
+                .build(expr_arena);
+            Some(maybe_negate(out, !has_nulls, expr_arena))
+        },
+    }
+}
+
 macro_rules! eval_binary_same_type {
     ($lhs:expr, $rhs:expr, |$l: ident, $r: ident| $ret: expr) => {{
         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
@@ -412,6 +528,15 @@ impl OptimizationRule for SimplifyExprRule {
         schema: &Schema,
         ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
+        let expr = expr_arena.get(expr_node);
+
+        if let AExpr::BinaryExpr { left, op, right } = expr {
+            let (left, op, right) = (*left, *op, *right);
+            if let Some(out) = optimize_len_or_null_count_cmp(left, op, right, expr_arena) {
+                return Ok(Some(out));
+            }
+        }
+
         let expr = expr_arena.get(expr_node);
 
         let out = match &expr {

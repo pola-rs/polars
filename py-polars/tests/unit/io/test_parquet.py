@@ -1362,7 +1362,7 @@ def test_parquet_pyarrow_map() -> None:
         schema={"x": pl.Struct({"key": pl.Int32, "value": pl.Int32})},
     )
     f.seek(0)
-    assert_frame_equal(pl.read_parquet(f).explode(["x"]), expected)
+    assert_frame_equal(pl.read_parquet(f).explode(["x"], empty_as_null=False), expected)
 
     # Test for https://github.com/pola-rs/polars/issues/21317
     # Specifying schema/allow_missing_columns
@@ -1373,7 +1373,7 @@ def test_parquet_pyarrow_map() -> None:
                 f,
                 schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
                 missing_columns=missing_columns,  # type: ignore[arg-type]
-            ).explode(["x"]),
+            ).explode(["x"], empty_as_null=False),
             expected,
         )
 
@@ -3500,6 +3500,96 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
     assert "reading 1 / 1 row groups" in capfd.readouterr().err
 
     assert_frame_equal(out, pl.select(x=value).select(pl.first().cast(scan_dtype)))
+
+
+@pytest.mark.may_fail_cloud  # reason: looks at stdout
+@pytest.mark.parametrize(
+    ("df", "predicate", "reading"),
+    [
+        # Per-field pruning: `s.field("a")` uses field a's own min/max, so rg0 (a == 0)
+        # and rg2 (a == 2) are skipped even though sibling b varies within every group.
+        pytest.param(
+            pl.DataFrame(
+                {
+                    "s": [
+                        {"a": 0, "b": 100},
+                        {"a": 0, "b": 200},
+                        {"a": 1, "b": 300},
+                        {"a": 1, "b": 400},
+                        {"a": 2, "b": 500},
+                        {"a": 2, "b": 600},
+                    ]
+                }
+            ),
+            pl.col("s").struct.field("a") == 1,
+            "1 / 3",
+            id="field",
+        ),
+        # Whole-struct is_null via per-field null counts: a struct is null only where
+        # every field is null, so groups with no null struct are skipped (#26239).
+        pytest.param(
+            pl.DataFrame(
+                {
+                    "s": [
+                        None,
+                        None,
+                        {"x": 1, "y": 1},
+                        {"x": 2, "y": 2},
+                        {"x": 3, "y": 3},
+                        {"x": 4, "y": 4},
+                    ]
+                }
+            ),
+            pl.col("s").is_null(),
+            "1 / 3",
+            id="is_null_26239",
+        ),
+        # is_null needs only *one* never-null field to rule out a null struct (a null
+        # struct nulls every field), so rg0 is pruned via x despite y's field-null and
+        # rg2 is non-null. rg1's genuine null structs are matched (read). rg3's present
+        # all-null structs ({x: None, y: None}) are not null structs but bump x_nc/y_nc
+        # like one, so rg3 is read on its own merit and excluded by is_null.
+        pytest.param(
+            pl.DataFrame(
+                {
+                    "s": [
+                        {"x": 1, "y": None},
+                        {"x": 2, "y": 20},
+                        None,
+                        None,
+                        {"x": 3, "y": 30},
+                        {"x": 4, "y": 40},
+                        {"x": None, "y": None},
+                        {"x": None, "y": None},
+                    ]
+                }
+            ),
+            pl.col("s").is_null(),
+            "2 / 4",
+            id="is_null_field_null_pruned",
+        ),
+    ],
+)
+def test_scan_parquet_skip_row_groups_struct(
+    df: pl.DataFrame,
+    predicate: pl.Expr,
+    reading: str,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    # Struct statistics prune parquet row groups: only the groups that can match the
+    # predicate are read; the rest are skipped using the struct's per-field
+    # min/max/null-count statistics.
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=2, statistics="full")
+    f.seek(0)
+
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+    capfd.readouterr()
+    out = pl.scan_parquet(f).filter(predicate).collect()
+
+    assert_frame_equal(out, df.filter(predicate))
+    assert f"Predicate pushdown: reading {reading} row groups" in capfd.readouterr().err
 
 
 @pytest.mark.may_fail_cloud  # reason: looks at stdout
