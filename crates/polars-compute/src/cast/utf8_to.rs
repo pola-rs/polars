@@ -6,8 +6,6 @@ use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_utils::vec::PushUnchecked;
 
-pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
-
 pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
     from: &dyn Array,
     ordered: bool,
