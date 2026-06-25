@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
+use polars_testing::assert_dataframe_equal;
 
 fn create_ctx() -> SQLContext {
     let a = Column::new("a".into(), (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
@@ -161,7 +162,8 @@ fn test_union_all() {
     .unwrap();
 
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-    assert!(actual.equals(&expected));
+
+    assert_dataframe_equal!(&actual, &expected);
 }
 
 #[test]
@@ -610,10 +612,12 @@ fn test_implicit_join_basic() {
     let implicit_sql = r#"
         SELECT * FROM df1, df2
         WHERE df1.a = df2.a AND df1.b = df2.b
+        ORDER BY ALL
     "#;
     let explicit_sql = r#"
         SELECT * FROM df1
         INNER JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+        ORDER BY ALL
     "#;
 
     let actual = ctx.execute(implicit_sql).unwrap().collect().unwrap();

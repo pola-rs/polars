@@ -327,7 +327,7 @@ def test_rolling_kernels_group_by_dynamic_7548() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
+@pytest.mark.may_fail_auto_streaming  # Inconsistently fails in CI
 def test_rolling_dynamic_sortedness_check() -> None:
     # when the by argument is passed, the sortedness flag
     # will be unset as the take shuffles data, so we must explicitly

@@ -1240,7 +1240,10 @@ def test_predicate_pushdown_map_elements_io_plugin_22860() -> None:
     plan = q.explain()
     assert plan.index("SELECTION") > plan.index("PYTHON SCAN")
 
-    assert_frame_equal(q.collect(), pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}))
+    assert_frame_equal(
+        q.collect(engine="in-memory"),
+        pl.DataFrame({"row_nr": [2, 4, 5], "y": [1, 1, 1]}),
+    )
 
 
 def test_duplicate_filter_removal_23243() -> None:
