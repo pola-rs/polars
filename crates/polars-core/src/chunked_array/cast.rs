@@ -328,6 +328,21 @@ impl ChunkCast for StringChunked {
                     Series::try_from((self.name().clone(), result))
                 },
             },
+            #[cfg(feature = "dtype-categorical")]
+            DataType::List(inner)
+                if matches!(
+                    inner.as_ref(),
+                    DataType::Enum(_, _) | DataType::Categorical(_, _)
+                ) =>
+            {
+                let list_of_string = cast_impl(
+                    self.name().clone(),
+                    &self.chunks,
+                    &DataType::List(Box::new(DataType::String)),
+                    options,
+                )?;
+                list_of_string.cast_with_options(dtype, options)
+            },
             _ => cast_impl(self.name().clone(), &self.chunks, dtype, options),
         }
     }
