@@ -227,7 +227,10 @@ fn test_implicit_date_string() {
     }
     .unwrap()
     .lazy()
-    .select(vec![col("idx"), col("dt").cast(DataType::Date)])
+    .select(vec![
+        col("idx"),
+        col("dt").str().to_date(StrptimeOptions::default()),
+    ])
     .collect()
     .unwrap();
 
