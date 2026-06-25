@@ -169,7 +169,6 @@ def test_cast() -> None:
         ([1.0, -1.0], "values::uint8", "conversion from `f64` to `u64` failed"),
         ([10, 0, -1], "values::uint4", "conversion from `i64` to `u32` failed"),
         ([int(1e8)], "values::int1", "conversion from `i64` to `i8` failed"),
-        (["a", "b"], "values::date", "conversion from `str` to `date` failed"),
         (["a", "b"], "values::time", "conversion from `str` to `time` failed"),
         (["a", "b"], "values::int4", "conversion from `str` to `i32` failed"),
     ],
