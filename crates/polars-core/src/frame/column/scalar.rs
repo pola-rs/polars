@@ -305,6 +305,13 @@ impl ScalarColumn {
         self
     }
 
+    /// Packs every element into a single-element list.
+    pub fn to_unit_list(&self) -> Self {
+        let mut slf = self.clone();
+        slf.map_scalar(|s| Scalar::new_list(s.into_series(PlSmallStr::EMPTY)));
+        slf
+    }
+
     pub fn map_scalar(&mut self, map_scalar: impl Fn(Scalar) -> Scalar) {
         self.scalar = map_scalar(std::mem::take(&mut self.scalar));
         self.materialized.take();
