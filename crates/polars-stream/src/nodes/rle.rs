@@ -128,7 +128,7 @@ impl ComputeNode for RleNode {
                     let mut lengths = Vec::new();
                     while let Ok(mut m) = recv.recv().await {
                         self.seq = m.seq();
-                        if m.df().height() == 0 {
+                        if m.height() == 0 {
                             continue;
                         }
 

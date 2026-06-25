@@ -4532,7 +4532,9 @@ class Series:
         ]
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = True, keep_nulls: bool = True
+    ) -> Series:
         """
         Explode a list Series.
 

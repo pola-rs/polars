@@ -71,6 +71,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     NO_DEFAULT,
     _in_notebook,
+    _Omitted,
     is_bool_sequence,
     normalize_filepath,
     parse_version,
@@ -1108,7 +1109,7 @@ class DataFrame:
 
         suffix = "__POLARS_CMP_OTHER"
         other_renamed = other.select(F.all().name.suffix(suffix))
-        combined = F.concat([self, other_renamed], how="horizontal")
+        combined = F.concat([self, other_renamed], how="horizontal", strict=True)
 
         if op == "eq":
             expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
@@ -2488,7 +2489,9 @@ class DataFrame:
                 if features is not None
                 else self.drop(*label_frame.columns)
             ).cast(to_dtype)  # type: ignore[arg-type]
-            frame = F.concat([label_frame, features_frame], how="horizontal")
+            frame = F.concat(
+                [label_frame, features_frame], how="horizontal", strict=True
+            )
         else:
             label_frame = None
             features_frame = None
@@ -9455,7 +9458,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool = _Omitted,
         keep_nulls: bool = True,
     ) -> DataFrame:
         """
@@ -9497,7 +9500,7 @@ class DataFrame:
         │ b       ┆ [4, 5]    │
         │ c       ┆ [6, 7, 8] │
         └─────────┴───────────┘
-        >>> df.explode("numbers")
+        >>> df.explode("numbers", empty_as_null=False)
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │

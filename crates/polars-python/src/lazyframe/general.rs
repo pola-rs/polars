@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::num::NonZeroUsize;
 
 use arrow::ffi::export_iterator;
@@ -1632,8 +1631,7 @@ impl PyCollectBatches {
         let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), dtype.clone()));
         let field = ArrowField::new(PlSmallStr::EMPTY, dtype, false);
         let stream = export_iterator(iter, field);
-        let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-        PyCapsule::new(py, stream, Some(stream_capsule_name))
+        PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
     }
 }
 

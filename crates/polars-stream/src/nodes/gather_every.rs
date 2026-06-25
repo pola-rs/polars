@@ -57,7 +57,7 @@ impl ComputeNode for GatherEveryNode {
         // To figure out the correct offsets we need to be serial.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
-                let height = morsel.df().height();
+                let height = morsel.height();
                 if self.offset >= height {
                     self.offset -= height;
                     continue;
