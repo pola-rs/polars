@@ -43,13 +43,10 @@ impl IRCategoricalFunction {
         match self {
             C::GetCategories => FunctionOptions::groupwise(),
             #[cfg(feature = "strings")]
-            C::LenBytes
-            | C::LenChars
-            | C::StartsWith(_)
-            | C::EndsWith(_)
-            | C::Slice(_, _) => FunctionOptions::elementwise(),
-            C::To(_, _)
-            | C::Physical => FunctionOptions::elementwise(),
+            C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
+                FunctionOptions::elementwise()
+            },
+            C::To(_, _) | C::Physical => FunctionOptions::elementwise(),
         }
     }
 }
