@@ -523,9 +523,13 @@ def test_select_output_heights_20058_21084(filter_expr: str, order_expr: str) ->
 
 
 def test_select_explode_height_filter_order_by() -> None:
-    # Note: `unnest()` from SQL equates to `pl.Dataframe.explode()
-    # The ordering is applied after the explosion/unnest.
-    # `
+    # Note: `UNNEST()` in SQL equates to `pl.DataFrame.explode()`.
+    # The ordering is applied after the explode/unnest, at the dataframe level.
+
+    # Note: `ORDER BY` uses an unstable sort (matching the SQL standard), so the
+    # order of rows within a tied `sort_key` group is not guaranteed. Each tied
+    # `sort_key` group is therefore checked as an unordered set within its
+    # expected slice.
     df = pl.DataFrame(
         {
             "list_long": [[1, 2, 3], [4, 5, 6]],
@@ -536,39 +540,43 @@ def test_select_explode_height_filter_order_by() -> None:
     )
 
     # Unnest/explode is applied at the dataframe level, sort is applied afterward
-    assert_frame_equal(
-        df.sql("SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key"),
-        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
-    )
+    result = df.sql("SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key")[
+        "list"
+    ]
+    assert result.len() == 6
+    assert set(result[0:3].to_list()) == {4, 5, 6}
+    assert set(result[3:6].to_list()) == {1, 2, 3}
 
     # No NULLS: since order is applied after explode on the dataframe level
-    assert_frame_equal(
-        df.sql(
-            "SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST"
-        ),
-        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
-    )
+    result = df.sql(
+        "SELECT UNNEST(list_long) as list FROM self ORDER BY sort_key NULLS FIRST"
+    )["list"]
+    assert result.len() == 6
+    assert set(result[0:3].to_list()) == {4, 5, 6}
+    assert set(result[3:6].to_list()) == {1, 2, 3}
 
     # Literals are broadcasted to output height of UNNEST:
-    assert_frame_equal(
-        df.sql("SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key"),
-        pl.select(pl.Series("list", [4, 5, 6, 1, 2, 3]), x=1),
+    result = df.sql(
+        "SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key"
     )
+    assert result.height == 6
+    assert set(result["list"][0:3].to_list()) == {4, 5, 6}
+    assert set(result["list"][3:6].to_list()) == {1, 2, 3}
+    assert result["x"].to_list() == [1] * 6
 
     # Note: Filter applies before projections in SQL
-    assert_frame_equal(
-        df.sql(
-            "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key"
-        ),
-        pl.Series("list", [4, 5, 6]).to_frame(),
-    )
+    result = df.sql(
+        "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask ORDER BY sort_key"
+    )["list"]
+    assert result.len() == 3
+    assert set(result.to_list()) == {4, 5, 6}
 
-    assert_frame_equal(
-        df.sql(
-            "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key"
-        ),
-        pl.Series("list", [4, 5, 6, 1, 2, 3]).to_frame(),
-    )
+    result = df.sql(
+        "SELECT UNNEST(list_long) as list FROM self WHERE filter_mask_all_true ORDER BY sort_key"
+    )["list"]
+    assert result.len() == 6
+    assert set(result[0:3].to_list()) == {4, 5, 6}
+    assert set(result[3:6].to_list()) == {1, 2, 3}
 
 
 @pytest.mark.parametrize(
