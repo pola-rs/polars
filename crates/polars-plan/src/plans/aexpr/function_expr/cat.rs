@@ -47,8 +47,8 @@ impl IRCategoricalFunction {
             | C::LenChars
             | C::StartsWith(_)
             | C::EndsWith(_)
-            | C::Slice(_, _)
-            | C::To(_, _)
+            | C::Slice(_, _) => FunctionOptions::elementwise(),
+            C::To(_, _)
             | C::Physical => FunctionOptions::elementwise(),
         }
     }
