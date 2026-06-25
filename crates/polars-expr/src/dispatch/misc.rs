@@ -681,10 +681,8 @@ pub fn as_struct(cols: &[Column]) -> PolarsResult<Column> {
 }
 
 pub fn as_list(s: &mut [Column]) -> PolarsResult<Column> {
-    let wrap = |c: &Column| c.as_materialized_series().to_unit_list().into_column();
-
-    let first = wrap(&s[0]);
-    let other: Vec<Column> = s[1..].iter().map(wrap).collect();
+    let first = s[0].to_unit_list();
+    let other: Vec<Column> = s[1..].iter().map(Column::to_unit_list).collect();
 
     first
         .list()?
