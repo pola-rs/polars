@@ -115,7 +115,7 @@ impl MetaNameSpace {
 
 // Properties
 impl MetaNameSpace {
-    fn to_expr_ir(self) -> PolarsResult<(ExprIR, Arena<AExpr>)> {
+    fn into_expr_ir(self) -> PolarsResult<(ExprIR, Arena<AExpr>)> {
         let mut expr_arena = Arena::new();
         let schema = Default::default();
         let mut ctx = ExprToIRContext::new_no_verification(&mut expr_arena, &schema);
@@ -139,22 +139,22 @@ impl MetaNameSpace {
     }
 
     pub fn is_length_preserving(self) -> PolarsResult<bool> {
-        let (e_ir, expr_arena) = self.to_expr_ir()?;
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
         Ok(e_ir.is_length_preserving(&expr_arena))
     }
 
     pub fn is_scalar(self) -> PolarsResult<bool> {
-        let (e_ir, expr_arena) = self.to_expr_ir()?;
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
         Ok(e_ir.is_scalar(&expr_arena))
     }
 
     pub fn is_known_length(self) -> PolarsResult<bool> {
-        let (e_ir, expr_arena) = self.to_expr_ir()?;
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
         Ok(e_ir.is_known_length(&expr_arena))
     }
 
     pub fn is_row_separable(self) -> PolarsResult<bool> {
-        let (e_ir, expr_arena) = self.to_expr_ir()?;
+        let (e_ir, expr_arena) = self.into_expr_ir()?;
         let mut stack = polars_utils::unitvec![];
         let ae = expr_arena.get(e_ir.node());
         Ok(is_row_separable(&mut stack, ae, &expr_arena))
