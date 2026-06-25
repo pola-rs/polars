@@ -79,8 +79,11 @@ const ARROW_MAX_OFFSET: u32 = if cfg!(test) {
 // If we don't do this the GC of binview will trigger. As we will split up buffers into multiple
 // chunks so that we don't overflow the offset u32.
 fn truncate_buffer(buf: &Buffer<u8>) -> Buffer<u8> {
-    // * 2, as it must be able to hold u32::MAX offset + u32::MAX len.
-    let len = std::cmp::min(buf.len(), ((u32::MAX as u64) * 2) as usize);
+    let len = usize::min(
+        buf.len(),
+        // Maximum addressable is {offset: u32::MAX, len: u32::MAX} == 2 * u32::MAX
+        usize::checked_mul(u32::MAX as usize, 2).unwrap(),
+    );
     buf.clone().sliced(..len)
 }
 
