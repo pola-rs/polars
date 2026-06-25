@@ -557,13 +557,13 @@ def test_select_explode_height_filter_order_by() -> None:
     assert set(result[3:6].to_list()) == {1, 2, 3}
 
     # Literals are broadcasted to output height of UNNEST:
-    result = df.sql(
+    result_df = df.sql(
         "SELECT UNNEST(list_long) as list, 1 as x FROM self ORDER BY sort_key"
     )
-    assert result.height == 6
-    assert set(result["list"][0:3].to_list()) == {4, 5, 6}
-    assert set(result["list"][3:6].to_list()) == {1, 2, 3}
-    assert result["x"].to_list() == [1] * 6
+    assert result_df.height == 6
+    assert set(result_df["list"][0:3].to_list()) == {4, 5, 6}
+    assert set(result_df["list"][3:6].to_list()) == {1, 2, 3}
+    assert result_df["x"].to_list() == [1] * 6
 
     # Note: Filter applies before projections in SQL
     result = df.sql(
