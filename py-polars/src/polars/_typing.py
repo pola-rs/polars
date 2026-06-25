@@ -291,6 +291,7 @@ ConcatMethod = Literal[
     "diagonal",
     "diagonal_relaxed",
     "horizontal",
+    "horizontal_extend",
     "align",
     "align_full",
     "align_inner",

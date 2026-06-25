@@ -1082,7 +1082,7 @@ def test_struct_chunked_zip_18119() -> None:
     b = pl.concat([b_dfs[4], b_dfs[1]])
     mask = pl.concat([mask_dfs[3], mask_dfs[2]])
 
-    df = pl.concat([a, b, mask], how="horizontal")
+    df = pl.concat([a, b, mask], how="horizontal", strict=True)
 
     assert_frame_equal(
         df.select(pl.when(pl.col.f).then(pl.col.a).otherwise(pl.col.b)),
@@ -1437,7 +1437,7 @@ def test_struct_equal_missing_null_25360() -> None:
     q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
     q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
 
-    q = pl.concat([q1, q2], how="horizontal").collect()
+    q = pl.concat([q1, q2], how="horizontal", strict=True).collect()
 
     result = q.select(
         eq=pl.col.a1.eq(pl.col.a2),
@@ -1920,6 +1920,8 @@ def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
         pl.col.s.struct.with_fields(fma=pl.field("x") * pl.lit(2) + pl.field("y"))
     )
     expected = pl.concat(
-        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})], how="horizontal"
+        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})],
+        how="horizontal",
+        strict=True,
     )
     assert_frame_equal(out.unnest("s"), expected)
