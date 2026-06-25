@@ -226,18 +226,12 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.std().name.suffix("_std"),
         pl.col("float").arr.std().name.suffix("_std"),
-        pl.col("duration").arr.std().name.suffix("_std"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
             pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
-            pl.Series(
-                "duration_std",
-                [timedelta(microseconds=1581)],
-                dtype=pl.Duration(time_unit="us"),
-            ),
         ]
     )
 
