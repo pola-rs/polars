@@ -90,7 +90,7 @@ print(weather)
 # --8<-- [end:split]
 
 # --8<-- [start:explode]
-result = weather.explode("temperatures", empty_as_null=False)
+result = weather.explode("temperatures")
 print(result)
 # --8<-- [end:explode]
 
