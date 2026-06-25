@@ -10,7 +10,7 @@ from polars import functions as F
 from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import _NamespaceSuggestMixin, _Omitted
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_expr
 from polars._warnings import issue_warning
 
@@ -1114,9 +1114,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(
-        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
-    ) -> Expr:
+    def explode(self, *, empty_as_null: bool = False, keep_nulls: bool = True) -> Expr:
         """
         Returns a column with a separate row for every list element.
 
@@ -1139,7 +1137,7 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("a").list.explode(empty_as_null=False))
+        >>> df.select(pl.col("a").list.explode())
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -1154,13 +1152,6 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
         │ 6   │
         └─────┘
         """
-        if empty_as_null is _Omitted:
-            issue_deprecation_warning(
-                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
-                "To keep the current behavior, explicitly set `empty_as_null=True`."
-            )
-            empty_as_null = True
-
         return wrap_expr(
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
