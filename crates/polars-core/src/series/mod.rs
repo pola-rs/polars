@@ -1159,7 +1159,7 @@ mod test {
                     ArrowDataType::Int32,
                     true,
                 ))),
-                unsafe { Offsets::new_unchecked(vec![0, 1]) }.into(),
+                unsafe { arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
                 PrimitiveArray::new(ArrowDataType::Int32, vec![1i32].into(), None).to_boxed(),
                 None,
             )],
