@@ -83,20 +83,6 @@ impl MetaNameSpace {
         })
     }
 
-    /// Indicate if this expression represents a literal value (optionally aliased).
-    pub fn is_literal(&self, allow_aliasing: bool) -> bool {
-        self.0.into_iter().all(|e| match e {
-            Expr::Literal(_) => true,
-            Expr::Alias(_, _) => allow_aliasing,
-            Expr::Cast {
-                expr,
-                dtype,
-                options: CastOptions::Strict,
-            } if matches!(dtype.as_literal(), Some(DataType::Datetime(_, _))) && matches!(&**expr, Expr::Literal(LiteralValue::Scalar(sc)) if matches!(sc.as_any_value(), AnyValue::Datetime(..))) => true,
-            _ => false,
-        })
-    }
-
     /// Indicate if this expression expands to multiple expressions with regex expansion.
     pub fn is_regex_projection(&self) -> bool {
         self.0
@@ -124,5 +110,53 @@ impl MetaNameSpace {
         }
         AexprNode::new(node).visit(&mut visitor, &arena)?;
         Ok(visitor)
+    }
+}
+
+// Properties
+impl MetaNameSpace {
+    fn to_expr_ir(self) -> PolarsResult<(ExprIR, Arena<AExpr>)> {
+        let mut expr_arena = Arena::new();
+        let schema = Default::default();
+        let mut ctx = ExprToIRContext::new_no_verification(&mut expr_arena, &schema);
+        let e_ir = to_expr_ir(self.0, &mut ctx)?;
+
+        Ok((e_ir, expr_arena))
+    }
+
+    /// Indicate if this expression represents a literal value (optionally aliased).
+    pub fn is_literal(&self, allow_aliasing: bool) -> bool {
+        self.0.into_iter().all(|e| match e {
+            Expr::Literal(_) => true,
+            Expr::Alias(_, _) => allow_aliasing,
+            Expr::Cast {
+                expr,
+                dtype,
+                options: CastOptions::Strict,
+            } if matches!(dtype.as_literal(), Some(DataType::Datetime(_, _))) && matches!(&**expr, Expr::Literal(LiteralValue::Scalar(sc)) if matches!(sc.as_any_value(), AnyValue::Datetime(..))) => true,
+            _ => false,
+        })
+    }
+
+    pub fn is_length_preserving(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.to_expr_ir()?;
+        Ok(e_ir.is_length_preserving(&expr_arena))
+    }
+
+    pub fn is_scalar(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.to_expr_ir()?;
+        Ok(e_ir.is_scalar(&expr_arena))
+    }
+
+    pub fn is_known_length(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.to_expr_ir()?;
+        Ok(e_ir.is_known_length(&expr_arena))
+    }
+
+    pub fn is_row_separable(self) -> PolarsResult<bool> {
+        let (e_ir, expr_arena) = self.to_expr_ir()?;
+        let mut stack = polars_utils::unitvec![];
+        let ae = expr_arena.get(e_ir.node());
+        Ok(is_row_separable(&mut stack, ae, &expr_arena))
     }
 }
