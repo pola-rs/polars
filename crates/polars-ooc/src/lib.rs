@@ -9,7 +9,7 @@ pub use global_alloc::{Allocator, estimate_memory_usage};
 pub use memory_manager::memory_manager;
 use polars_utils::relaxed_cell::RelaxedCell;
 pub use spill_context::{
-    GenericSpillContext, LeastRecentSpillContext, MostRecentSpillContext,
+    WeakSpillContext, LeastRecentSpillContext, MostRecentSpillContext,
     ParameterFreeSpillContext, RandomSpillContext, SpillContextParam,
 };
 pub use spill_file::{flush_ooc_cleanup, init_ooc_cleaner};

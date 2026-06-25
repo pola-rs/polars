@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, LazyLock, RwLock, Weak};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use polars_async::ASYNC;
 use polars_async::executor::TaskPriority;
@@ -25,7 +25,7 @@ pub fn memory_manager() -> &'static MemoryManager {
 }
 
 pub struct MemoryManager {
-    contexts: RwLock<Vec<Weak<SpillContextInner>>>,
+    contexts: RwLock<Vec<&'static SpillContextInner>>,
     finding_spill_lock: AsyncMutex<()>,
     spill_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
@@ -49,13 +49,12 @@ impl MemoryManager {
 
     fn clean_contexts(&self) {
         if let Ok(mut ctxs) = self.contexts.try_write() {
-            ctxs.retain(|ctx| ctx.strong_count() > 0);
+            ctxs.retain(|ctx| !ctx.is_dead());
         }
     }
 
-    pub(crate) fn register_ctx(&self, ctx: &Arc<SpillContextInner>) {
-        let weak = Arc::downgrade(ctx);
-        self.contexts.write().unwrap().push(weak);
+    pub(crate) fn register_ctx(&self, ctx: &'static SpillContextInner) {
+        self.contexts.write().unwrap().push(ctx);
     }
 
     #[inline(always)]
@@ -99,11 +98,10 @@ impl MemoryManager {
                 let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
 
                 let successful_spill = successful_spill.clone();
-                let ctx = ctx.clone();
 
                 polars_async::executor::spawn(TaskPriority::High, async move {
                     // Spill, or reinsert if a failure.
-                    match spillable.try_spill(ctx.stats(), Arc::downgrade(&ctx), id) {
+                    match spillable.try_spill(ctx.stats(), ctx, id) {
                         Ok(spill_success) => {
                             if spill_success.await {
                                 if !successful_spill.0.swap(true, Ordering::Relaxed) {
@@ -134,7 +132,7 @@ impl MemoryManager {
     async fn find_spillables(
         &self,
     ) -> Option<(
-        Arc<SpillContextInner>,
+        &'static SpillContextInner,
         Vec<(Arc<dyn DynSpillToken>, u64, usize)>,
     )> {
         // TODO: don't block here under a certain memory threshold.
@@ -145,8 +143,8 @@ impl MemoryManager {
         let mut has_dead_context = false;
         let mut live_contexts = Vec::new();
         let mut rng = rand::rng();
-        for weak_ctx in contexts.iter() {
-            let Some(ctx) = weak_ctx.upgrade() else {
+        for ctx in contexts.iter() {
+            if ctx.is_dead() {
                 has_dead_context = true;
                 continue;
             };
@@ -154,7 +152,7 @@ impl MemoryManager {
             // Thompson sampling.
             let score_sample = ctx.stats().sample_score(&mut rng);
             assert!(!score_sample.is_nan());
-            live_contexts.push((ctx, score_sample));
+            live_contexts.push((*ctx, score_sample));
         }
         drop(contexts);
 

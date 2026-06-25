@@ -1,8 +1,9 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
+use std::ptr;
 use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 use std::time::Instant;
 
@@ -11,14 +12,8 @@ use polars_utils::UnitVec;
 use polars_utils::with_drop::WithDrop;
 
 use crate::spill_context::{SpillContextInner, SpillContextStatistics};
-use crate::{GenericSpillContext, SpillContextParam, Spillable};
+use crate::{SpillContextParam, Spillable, WeakSpillContext};
 
-unsafe fn weak_from_raw<T>(raw: *mut T) -> Option<Weak<T>> {
-    if raw.is_null() {
-        return None;
-    }
-    Some(unsafe { Weak::from_raw(raw) })
-}
 
 // SpillTokenInner's state
 const SPILLED_BIT: u64 = 1; // Set when value = None and spilled is Some.
@@ -33,7 +28,7 @@ enum ValueSlot<T> {
     Spilled {
         n_bytes: usize,
         spill_ctx_stats: Arc<SpillContextStatistics>,
-        reinsert_ctx: Weak<SpillContextInner>,
+        reinsert_ctx: &'static SpillContextInner,
         reinsert_id: u64,
         spill_time_ns: u64,
         spilled_start: Instant,
@@ -223,10 +218,8 @@ impl<T: Spillable> SpillTokenInner<T> {
 
             spill_ctx_stats.add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start);
             if reinsert_id == slf.registration_id.load(Ordering::Relaxed) {
-                if let Some(ctx) = reinsert_ctx.upgrade() {
-                    let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                    ctx.reinsert(&dyn_slf, reinsert_id);
-                }
+                let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
+                reinsert_ctx.reinsert(&dyn_slf, reinsert_id);
             }
 
             WithDrop::dismiss(lock_guard);
@@ -277,10 +270,8 @@ impl<T: Spillable> SpillTokenInner<T> {
                     unspill_start,
                 );
                 if *reinsert_id == slf.registration_id.load(Ordering::Relaxed) {
-                    if let Some(ctx) = reinsert_ctx.upgrade() {
-                        let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                        ctx.reinsert(&dyn_slf, *reinsert_id);
-                    }
+                    let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
+                    reinsert_ctx.reinsert(&dyn_slf, *reinsert_id);
                 }
 
                 *value_slot = ValueSlot::InMemory(value);
@@ -326,8 +317,7 @@ impl<T: Spillable> SpillTokenInner<T> {
                 self.spilled_value.get().replace(None);
             }
             self.registration_id.fetch_add(1, Ordering::Relaxed);
-            let ctx = self.cur_ctx.swap(core::ptr::null_mut(), Ordering::Acquire);
-            drop(weak_from_raw(ctx));
+            self.cur_ctx.store(core::ptr::null_mut(), Ordering::Release);
         }
     }
 }
@@ -339,11 +329,11 @@ pub enum TrySpillError {
 
 pub(crate) trait DynSpillToken: Send + Sync + 'static {
     /// Register this spill token at a new context, returning the registration ID.
-    fn register(&self, ctx: &Arc<SpillContextInner>) -> u64;
+    fn register(&self, ctx: &'static SpillContextInner) -> u64;
 
     /// Unregisters this spill token from its current context, returning where
     /// it was registered, if anywhere.
-    fn unregister(&self) -> Option<Weak<SpillContextInner>>;
+    fn unregister(&self) -> Option<&'static SpillContextInner>;
 
     /// Returns the current context registration ID of this spill token without modifying it.
     fn current_registration_id(&self) -> u64;
@@ -367,25 +357,21 @@ pub(crate) trait DynSpillToken: Send + Sync + 'static {
     fn try_spill(
         &self,
         stats: &Arc<SpillContextStatistics>,
-        context: Weak<SpillContextInner>,
+        context: &'static SpillContextInner,
         registration_id: u64,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError>;
 }
 
 impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
-    fn register(&self, ctx: &Arc<SpillContextInner>) -> u64 {
-        let weak = Arc::downgrade(ctx);
-        let old_ctx = self
-            .cur_ctx
-            .swap(Weak::into_raw(weak).cast_mut(), Ordering::AcqRel);
-        drop(unsafe { weak_from_raw(old_ctx) });
+    fn register(&self, ctx: &'static SpillContextInner) -> u64 {
+        self.cur_ctx.store(ptr::from_ref(ctx).cast_mut(), Ordering::Release);
         self.registration_id.fetch_add(1, Ordering::Release) + 1
     }
 
-    fn unregister(&self) -> Option<Weak<SpillContextInner>> {
+    fn unregister(&self) -> Option<&'static SpillContextInner> {
         let old_ctx = self.cur_ctx.swap(core::ptr::null_mut(), Ordering::AcqRel);
         self.registration_id.fetch_add(1, Ordering::Release);
-        unsafe { weak_from_raw(old_ctx) }
+        unsafe { old_ctx.as_ref() }
     }
 
     fn current_registration_id(&self) -> u64 {
@@ -408,7 +394,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
     fn try_spill(
         &self,
         stats: &Arc<SpillContextStatistics>,
-        context: Weak<SpillContextInner>,
+        context: &'static SpillContextInner,
         registration_id: u64,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError> {
         // First, we try setting the lock bit. If anyone else has a pin we don't bother.
@@ -453,7 +439,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                         .fetch_add(RO_PIN_COUNT_UNIT - LOCK_BIT, Ordering::AcqRel),
                 );
                 let pin_guard = PinnedRef { inner: self };
-                let spilled = pin_guard.spill(stats.name()).await;
+                let spilled = pin_guard.spill(&stats.name()).await;
                 core::mem::forget(pin_guard);
                 // We can simply re-acquire the lock here blindly, as we still hold
                 // our pin meaning no one else could've gotten the lock.
@@ -526,10 +512,10 @@ impl<T: Spillable> SpillToken<T> {
     }
 
     /// Unregisters this spill token from its current context, if any, returning it.
-    pub fn unregister(&mut self) -> Option<(GenericSpillContext, SpillContextParam)> {
-        let ctx = self.inner.unregister()?.upgrade()?;
+    pub fn unregister(&mut self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        let ctx = self.inner.unregister()?;
         let param = SpillContextParam(()); // TODO: get this once we support contexts with parameters.
-        Some((GenericSpillContext(ctx), param))
+        Some((WeakSpillContext(ctx), param))
     }
 
     /// Try to get a reference to the underlying value, returning None if it was spilled.
