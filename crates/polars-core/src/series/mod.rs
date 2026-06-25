@@ -35,7 +35,6 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
@@ -1049,23 +1048,6 @@ impl Series {
             .sum::<usize>();
 
         size
-    }
-
-    /// Packs every element into a list.
-    pub fn as_list(&self) -> ListChunked {
-        let s = self.rechunk();
-        // don't  use `to_arrow` as we need the physical types
-        let values = s.chunks()[0].clone();
-        let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
-        let offsets = unsafe { Offsets::new_unchecked(offsets) };
-
-        let dtype = LargeListArray::default_datatype(
-            s.dtype().to_physical().to_arrow(CompatLevel::newest()),
-        );
-        let new_arr = LargeListArray::new(dtype, offsets.into(), values, None);
-        let mut out = ListChunked::with_chunk(s.name().clone(), new_arr);
-        out.set_inner_dtype(s.dtype().clone());
-        out
     }
 
     pub fn row_encode_unordered(&self) -> PolarsResult<BinaryOffsetChunked> {
