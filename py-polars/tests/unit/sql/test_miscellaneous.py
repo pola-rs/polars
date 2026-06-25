@@ -526,7 +526,8 @@ def test_select_explode_height_filter_order_by() -> None:
     # Note: `UNNEST()` in SQL equates to `pl.DataFrame.explode()`.
     # The ordering is applied after the explode/unnest, at the dataframe level.
 
-    # Note: `ORDER BY` uses an unstable sort (matching the SQL standard), so the
+    # Note: This test was updated due to https://github.com/pola-rs/polars/issues/27976.
+    # `ORDER BY` uses an unstable sort (matching the SQL standard), so the
     # order of rows within a tied `sort_key` group is not guaranteed. Each tied
     # `sort_key` group is therefore checked as an unordered set within its
     # expected slice.
