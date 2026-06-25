@@ -210,9 +210,7 @@ def test_gather_len_19561() -> None:
     df = pl.DataFrame({"foo": ["baz"] * N, "bar": range(N)})
 
     idxs = (
-        pl.int_range(1, N)
-        .repeat_by(pl.int_range(1, N))
-        .list.explode(keep_nulls=False, empty_as_null=False)
+        pl.int_range(1, N).repeat_by(pl.int_range(1, N)).list.explode(keep_nulls=False)
     )
     gather = pl.col("bar").gather(idxs).alias("gather")
 
