@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
 
@@ -773,3 +773,146 @@ def test_null_propagate_all_paths_cat(nulls_equal: bool) -> None:
     missing_value = True if nulls_equal else None
     expected = pl.Series([True, False, missing_value])
     assert_series_equal(result, expected)
+
+
+# The tests below exercise the type-coercion branches in
+# `crates/polars-plan/src/plans/conversion/type_coercion/is_in.rs`.
+
+
+@pytest.mark.parametrize("dtype", [pl.List(pl.String), pl.Array(pl.String, 2)])
+def test_is_in_cat_str_collection(dtype: PolarsDataType) -> None:
+    # Categorical element checked against a List/Array of String: the String
+    # collection is cast to the categorical dtype (the `Categorical -> String`
+    # OtherCast arm, covering both the List and Array `cast_type` branches).
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(["a", "b", "x"], dtype=pl.Categorical),
+            "b": pl.Series([["a", "z"], ["q", "b"], ["m", "n"]], dtype=dtype),
+        }
+    )
+    result = df.select(pl.col("a").is_in("b")).to_series()
+    assert result.to_list() == [True, True, False]
+
+
+@pytest.mark.parametrize("unit", ["ns", "us"])
+def test_is_in_datetime_finer_in_coarser_unit(unit: str) -> None:
+    # Checking a finer (or equal) time-unit in coarser-unit data is allowed and
+    # performs no cast (`Datetime` arm, `lhs_unit <= rhs_unit` -> Ok(None)).
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [datetime(2022, 1, 1), datetime(2022, 1, 2)], dtype=pl.Datetime(unit)  # type: ignore[arg-type]
+            ),
+            "b": pl.Series(
+                [[datetime(2030, 1, 1)], [datetime(2030, 1, 3)]],
+                dtype=pl.List(pl.Datetime("ms")),
+            ),
+        }
+    )
+    # No cross-unit normalization happens, so disjoint instants are not matched.
+    result = df.select(pl.col("a").is_in("b")).to_series()
+    assert result.to_list() == [False, False]
+
+
+def test_is_in_datetime_coarser_in_finer_unit() -> None:
+    # The reverse (coarser values in finer-unit data) would discard precision
+    # and is rejected (`Datetime` arm, `lhs_unit > rhs_unit` -> bail).
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([datetime(2022, 1, 1)], dtype=pl.Datetime("ms")),
+            "b": pl.Series(
+                [[datetime(2022, 1, 1)]], dtype=pl.List(pl.Datetime("ns"))
+            ),
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"cannot check for Nanoseconds precision values in Milliseconds Datetime data",
+    ):
+        df.select(pl.col("a").is_in("b"))
+
+
+@pytest.mark.parametrize("unit", ["ns", "us"])
+def test_is_in_duration_finer_in_coarser_unit(unit: str) -> None:
+    # `Duration` arm, `lhs_unit <= rhs_unit` -> Ok(None) (no cast).
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [timedelta(seconds=1), timedelta(seconds=2)],
+                dtype=pl.Duration(unit),  # type: ignore[arg-type]
+            ),
+            "b": pl.Series(
+                [[timedelta(seconds=5)], [timedelta(seconds=9)]],
+                dtype=pl.List(pl.Duration("ms")),
+            ),
+        }
+    )
+    result = df.select(pl.col("a").is_in("b")).to_series()
+    assert result.to_list() == [False, False]
+
+
+def test_is_in_duration_coarser_in_finer_unit() -> None:
+    # `Duration` arm, `lhs_unit > rhs_unit` -> bail.
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([timedelta(seconds=1)], dtype=pl.Duration("ms")),
+            "b": pl.Series(
+                [[timedelta(seconds=1)]], dtype=pl.List(pl.Duration("ns"))
+            ),
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"cannot check for Nanoseconds precision values in Milliseconds Duration data",
+    ):
+        df.select(pl.col("a").is_in("b"))
+
+
+def test_is_in_nested_list_mismatch() -> None:
+    # A List element checked against a List-of-List collection whose inner type
+    # does not match (`(_, List(_))` arm -> bail).
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([[1, 2]], dtype=pl.List(pl.Int64)),
+            "b": pl.Series([[[1.0, 2.0]]], dtype=pl.List(pl.List(pl.Float64))),
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"'is_in' cannot check for List\(Int64\) values in List\(List\(Float64\)\) data",
+    ):
+        df.select(pl.col("a").is_in("b"))
+
+
+def test_is_in_nested_array_mismatch() -> None:
+    # An Array element checked against a List-of-Array collection whose inner
+    # type does not match (`(_, Array(_, _))` arm -> bail).
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([[1, 2]], dtype=pl.Array(pl.Int64, 2)),
+            "b": pl.Series(
+                [[[1.0, 2.0]]], dtype=pl.List(pl.Array(pl.Float64, 2))
+            ),
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"'is_in' cannot check for Array\(Int64, 2\) values in List\(Array\(Float64, 2\)\) data",
+    ):
+        df.select(pl.col("a").is_in("b"))
+
+
+def test_is_in_struct_mismatch() -> None:
+    # A Struct element checked against a collection of a non-matching type
+    # (`(Struct(_), _) | (_, Struct(_))` arm -> bail).
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([{"x": 1}], dtype=pl.Struct({"x": pl.Int64})),
+            "b": pl.Series([[1, 2]], dtype=pl.List(pl.Int64)),
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"'is_in' cannot check for Struct\(.*\) values in List\(Int64\) data",
+    ):
+        df.select(pl.col("a").is_in("b"))
