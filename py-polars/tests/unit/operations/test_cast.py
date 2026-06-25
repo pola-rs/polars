@@ -654,6 +654,18 @@ def test_invalid_inner_type_cast_list() -> None:
         s.cast(pl.List(pl.Categorical))
 
 
+def test_cast_string_to_list_enum_27336() -> None:
+    enum = pl.Enum(["cat1", "cat2"])
+    s = pl.Series(["cat1", "cat2", "cat1"])
+
+    out = s.cast(pl.List(enum))
+    assert out.dtype == pl.List(enum)
+    assert out.to_list() == [["cat1"], ["cat2"], ["cat1"]]
+
+    # Plain string -> List(String) wrapping is unaffected.
+    assert s.cast(pl.List(pl.String)).to_list() == [["cat1"], ["cat2"], ["cat1"]]
+
+
 @pytest.mark.parametrize(
     ("values", "result"),
     [
