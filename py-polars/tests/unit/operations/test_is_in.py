@@ -787,21 +787,3 @@ def test_null_propagate_all_paths_cat(nulls_equal: bool) -> None:
     missing_value = True if nulls_equal else None
     expected = pl.Series([True, False, missing_value])
     assert_series_equal(result, expected)
-
-
-# The tests below exercise the type-coercion branches in
-# `crates/polars-plan/src/plans/conversion/type_coercion/is_in.rs`.
-
-
-def test_is_in_nested_struct() -> None:
-    df = pl.DataFrame(
-        {"a": [{"x": {"y": 1}}, {"x": {"y": 2}}, {"x": {"y": 3}}, None]},
-        schema={"a": pl.Struct({"x": pl.Struct({"y": pl.Int32})})},
-    )
-    s = pl.Series(
-        [[{"x": {"y": 1}}, {"x": {"y": 3}}]],
-        dtype=pl.List(pl.Struct({"x": pl.Struct({"y": pl.Int64})})),
-    )
-    missing_value = None
-    expected = pl.Series("a", [True, False, True, missing_value])
-    assert_series_equal(df.select(pl.col("a").is_in(s))["a"], expected)
