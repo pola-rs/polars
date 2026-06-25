@@ -53,7 +53,6 @@ See https://github.com/pola-rs/polars/issues/22149 for more information."
 
     let type_left_materialized = type_left.clone().materialize_unknown(false)?;
     let Some(type_other_inner) = type_other.inner_dtype() else {
-        panic!();
         polars_bail!(InvalidOperation: "'{op:?}' cannot check for {type_left:?} values in {type_other:?} data.\n\
         Hint: container dtype ({type_other:?}) must be nested");
     };

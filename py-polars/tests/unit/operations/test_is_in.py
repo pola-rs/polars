@@ -787,3 +787,18 @@ def test_null_propagate_all_paths_cat(nulls_equal: bool) -> None:
     missing_value = True if nulls_equal else None
     expected = pl.Series([True, False, missing_value])
     assert_series_equal(result, expected)
+
+
+def test_is_in_non_nested_container() -> None:
+    # The right-hand side (the container) must be a nested dtype.
+    df = pl.DataFrame(
+        {
+            "a": pl.Series([[1, 2], [3, 4]], dtype=pl.List(pl.Int64)),
+            "b": pl.Series([1, 3], dtype=pl.Int64),
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"(?s)cannot check for List\(Int64\) values in Int64 data.*container dtype \(Int64\) must be nested",
+    ):
+        df.select(pl.col("a").is_in(pl.col("b")))
