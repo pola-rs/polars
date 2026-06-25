@@ -74,9 +74,11 @@ prices:
 --8<-- "python/user-guide/transformations/joins.py:equi-join"
 ```
 
-The result has four rows but both dataframes used in the operation had five rows. Polars uses a
-joining strategy to determine what happens with rows that have multiple matches or with rows that
-have no match at all. By default, Polars computes an “inner join” but there are
+The result has five rows and both dataframes used in the operation also have five rows. This happens 
+because each `property_name` appears exactly once in both dataframes, and every key has a matching 
+counterpart. But, join operations can produce different row counts when keys are missing, duplicated, 
+or unmatched. Polars uses a joining strategy to determine what happens with rows that have multiple 
+matches or with rows that have no match at all. By default, Polars computes an “inner join” but there are
 [other join strategies that we show next](#join-strategies).
 
 In the example above, the two dataframes conveniently had the column we wish to use as key with the
