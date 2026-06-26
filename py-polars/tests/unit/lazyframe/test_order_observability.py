@@ -119,8 +119,8 @@ def test_sort_agg_with_nested_windowing_22918(func: pl.Expr, result: int) -> Non
 
 def test_remove_sorts_on_unordered() -> None:
     lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").sort("a").sort("a")
-    explain = lf.explain()
-    assert explain.count("SORT") == 1
+    plan = lf.explain()
+    assert plan.count("SORT") == 1
 
     lf = (
         pl.LazyFrame({"a": [1, 2, 3]})
@@ -134,20 +134,20 @@ def test_remove_sorts_on_unordered() -> None:
         .group_by("a")
         .agg([])
     )
-    explain = lf.explain()
-    assert explain.count("SORT") == 0
+    plan = lf.explain()
+    assert plan.count("SORT") == 0
 
     lf = (
         pl.LazyFrame({"a": [1, 2, 3]})
         .sort("a")
         .join(pl.LazyFrame({"b": [1, 2, 3]}), on=pl.lit(1))
     )
-    explain = lf.explain()
-    assert explain.count("SORT") == 0
+    plan = lf.explain(engine="streaming")
+    assert plan.count("SORT") == 0
 
     lf = pl.LazyFrame({"a": [1, 2, 3]}).sort("a").unique()
-    explain = lf.explain()
-    assert explain.count("SORT") == 0
+    plan = lf.explain()
+    assert plan.count("SORT") == 0
 
 
 def test_merge_sorted_to_union() -> None:

@@ -743,7 +743,6 @@ def test_cse_and_schema_update_projection_pd() -> None:
 
 
 @pytest.mark.debug
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("use_custom_io_source", [True, False])
 def test_cse_predicate_self_join(
     capfd: Any, plmonkeypatch: PlMonkeyPatch, use_custom_io_source: bool
@@ -758,8 +757,13 @@ def test_cse_predicate_self_join(
 
     y_xf_c = y_xf.select("a", "b")
     assert y_xf_c.collect().to_dict(as_series=False) == {"a": [1], "b": [2]}
-    captured = capfd.readouterr().err
-    assert "CACHE HIT" in captured
+
+    capture = capfd.readouterr().err
+
+    assert {
+        "CACHE HIT" in capture,
+        re.search(r"multiplexer.*[\w+] [\w+, \w+]", capture) is not None,
+    } == {True, False}
 
 
 def test_cse_manual_cache_15688() -> None:
