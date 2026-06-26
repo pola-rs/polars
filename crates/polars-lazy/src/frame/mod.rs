@@ -635,7 +635,13 @@ impl LazyFrame {
         let engine = match engine {
             Engine::Streaming => Engine::Streaming,
             _ if std::env::var("POLARS_FORCE_STREAMING").as_deref() == Ok("1") => Engine::Streaming,
-            Engine::Auto => Engine::InMemory,
+            Engine::Auto => {
+                if self.opt_state.eager() {
+                    Engine::InMemory
+                } else {
+                    Engine::Streaming
+                }
+            },
             v => v,
         };
 
