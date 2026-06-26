@@ -125,6 +125,7 @@ bad-return = false
 
 [tool.mypy]
 files = ["src/polars", "tests"]
+num_workers = 4
 strict = true
 enable_error_code = [
   "redundant-expr",
