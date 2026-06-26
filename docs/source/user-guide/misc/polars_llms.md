@@ -9,9 +9,9 @@ please raise a [pull request](https://github.com/pola-rs/polars/pulls).
 
 ## Polars skill
 
-The official [Polars skill for Agents](https://github.com/polars-inc/skills) loads Polars
-expertise directly into the agent so it writes more idiomatic Polars code and can translate pandas
-code to Polars. See the repository for installation instructions.
+The official [Polars skill for Agents](https://github.com/polars-inc/skills) loads Polars expertise
+directly into the agent so it writes more idiomatic Polars code and can translate pandas code to
+Polars. See the repository for installation instructions.
 
 ## Polars MCP server
 
