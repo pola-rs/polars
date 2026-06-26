@@ -253,106 +253,243 @@ pub(super) async fn parquet_file_info(
     let n_sources = sources.len();
     let first_scan_source = sources.iter().next().expect("at least one source");
 
-    // First file: schema + num_rows + full metadata. Schema comes from
-    // file 0 only (no cross-file schema evolution).
-    let (reader_schema, first_num_rows, first_metadata) = {
+    // File 0: schema + num_rows + full metadata (schema comes from file 0 only;
+    // no cross-file schema evolution). Built as a future so it runs concurrently
+    // with the other-source reads below. File 0's schema is not borrowed by the
+    // other-source reads, so they are independent and share a single concurrency
+    // wave.
+    let first_fut = async move {
         if first_scan_source.is_cloud_url() {
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
                 let mut reader =
                     ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None).await?;
-
-                (
+                PolarsResult::Ok((
                     reader.schema().await?,
                     reader.num_rows().await?,
                     reader.get_metadata().await?.clone(),
-                )
+                ))
             })
         } else {
             let memslice = first_scan_source.to_memslice()?;
             let mut reader = ParquetReader::new(Cursor::new(memslice));
-            (
+            PolarsResult::Ok((
                 reader.schema()?,
                 reader.num_rows()?,
                 reader.get_metadata()?.clone(),
-            )
+            ))
         }
     };
 
-    let schema =
-        prepare_output_schema(Schema::from_arrow_schema(reader_schema.as_ref()), row_index)?;
-
     // Resolve metadata for sources past the first, dispatched by
     // `POLARS_RESOLVE_METADATA_LEVEL`:
-    // - `None`: extrapolate `first_num_rows * n_sources`.
-    // - `RowCounts` (OSS default): per-source thrift field 3 only.
-    // - `Full` (cloud default): per-source footer, populates
-    //   `metadata_per_source` for the distributed scheduler.
+    // - `None` (default): extrapolate `first_num_rows * n_sources`, no extra reads.
+    // - `RowCounts`: per-source thrift field 3 only, exact total.
+    // - `Sampled`: read one concurrency wave of footers and extrapolate (exact
+    //   when the whole set fits in the wave).
+    // - `Full`: per-source footer, populates `metadata_per_source` for the
+    //   distributed scheduler.
+    //
+    // Every multi-source arm reads file 0 concurrently with the other sources
+    // via `try_join`, so the schema read does not cost an extra serial round
+    // trip; a file-0 error short-circuits and cancels the other reads.
+    // Per-scan size resolution. `reader_schema`/`first_metadata` always come
+    // from file 0; only the size fields vary by mode.
+    struct Resolution {
+        reader_schema: ArrowSchemaRef,
+        first_metadata: FileMetadataRef,
+        metadata_per_source: Option<Arc<[FileMetadataRef]>>,
+        known_size: Option<usize>,
+        estimated_size: usize,
+    }
+
     let mode = polars_config::config().resolve_metadata_level();
-    let (metadata_per_source, known_size, estimated_size) = if n_sources == 1 {
-        (None, Some(first_num_rows), first_num_rows)
+    let resolved = if n_sources == 1 {
+        // Only file 0, so its count is exact and there is nothing to join.
+        let (reader_schema, first_num_rows, first_metadata) = first_fut.await?;
+        Resolution {
+            reader_schema,
+            first_metadata,
+            metadata_per_source: None,
+            known_size: Some(first_num_rows),
+            estimated_size: first_num_rows,
+        }
     } else {
         use polars_config::ResolveMode;
         match mode {
-            ResolveMode::None => (None, None, first_num_rows * n_sources),
+            ResolveMode::None => {
+                // No other-source reads; extrapolate from file 0 alone.
+                let (reader_schema, first_num_rows, first_metadata) = first_fut.await?;
+                Resolution {
+                    reader_schema,
+                    first_metadata,
+                    metadata_per_source: None,
+                    known_size: None,
+                    estimated_size: first_num_rows.saturating_mul(n_sources),
+                }
+            },
             ResolveMode::RowCounts => {
-                let mut futures =
-                    (1..n_sources)
+                // Every other file's row count (thrift field 3 only), read
+                // concurrently with file 0.
+                let rest_fut = async move {
+                    let mut futures = (1..n_sources)
                         .map(|i| async move {
                             read_parquet_num_rows(sources.at(i), cloud_options).await
                         })
                         .collect::<FuturesUnordered<_>>();
 
-                // Best-effort: a file that fails to decode at plan time (e.g.
-                // an invalid file in a hive partition not yet pruned) simply
-                // contributes 0 to the estimate. If execution needs the file
-                // it will error then; if predicate pushdown prunes it first,
-                // it never matters.
-                let mut total: usize = first_num_rows;
-                while let Some(res) = futures.next().await {
-                    if let Ok(n) = res {
-                        total = total.saturating_add(n as usize);
+                    // Best-effort: a file that fails to decode at plan time
+                    // (e.g. an invalid file in a hive partition not yet pruned)
+                    // simply contributes 0. If execution needs the file it
+                    // errors then; if predicate pushdown prunes it first, it
+                    // never matters.
+                    let mut total = 0usize;
+                    while let Some(res) = futures.next().await {
+                        if let Ok(n) = res {
+                            total = total.saturating_add(n as usize);
+                        }
                     }
+                    PolarsResult::Ok(total)
+                };
+                let ((reader_schema, first_num_rows, first_metadata), others) =
+                    futures::future::try_join(first_fut, rest_fut).await?;
+                let total = first_num_rows.saturating_add(others);
+                Resolution {
+                    reader_schema,
+                    first_metadata,
+                    metadata_per_source: None,
+                    known_size: Some(total),
+                    estimated_size: total,
                 }
-                (None, Some(total), total)
+            },
+            ResolveMode::Sampled => {
+                // One round trip of latency regardless of footer count, so
+                // fill the wave: read up to `concurrency_limit` footers (file
+                // 0, joined below, plus an even stride over `1..n_sources`).
+                // Exact when the whole set fits; otherwise extrapolate the
+                // per-file mean (`estimated_size`, not `known_size`).
+                //
+                // TODO: byte-weight (`rows_per_byte * total_bytes`,
+                // skew-robust) once per-file LIST sizes reach plan time.
+                let limit = polars_io::pl_async::get_concurrency_limit() as usize;
+                let sample = sampled_source_indices(n_sources, limit);
+                // file 0 plus the sample; if that spans every file we read all.
+                let read_all = sample.len() + 1 == n_sources;
+                let rest_fut = async move {
+                    let mut futures = sample
+                        .iter()
+                        .map(|&i| async move {
+                            read_parquet_num_rows(sources.at(i), cloud_options).await
+                        })
+                        .collect::<FuturesUnordered<_>>();
+                    let mut rows = 0usize;
+                    let mut read = 0usize;
+                    while let Some(res) = futures.next().await {
+                        if let Ok(n) = res {
+                            rows = rows.saturating_add(n as usize);
+                            read += 1;
+                        }
+                    }
+                    PolarsResult::Ok((rows, read))
+                };
+                let ((reader_schema, first_num_rows, first_metadata), (other_rows, other_read)) =
+                    futures::future::try_join(first_fut, rest_fut).await?;
+                // file 0 always counts toward the sample.
+                let sampled_rows = first_num_rows.saturating_add(other_rows);
+                let n_read = 1 + other_read;
+                // Extrapolate the per-file mean across all sources. `n_read` is
+                // always >= 1 (file 0), so the division is safe; when every file
+                // was read successfully this is exact, so report it as known.
+                let estimated =
+                    ((sampled_rows as u128 * n_sources as u128) / n_read as u128) as usize;
+                let known = (read_all && n_read == n_sources).then_some(estimated);
+                Resolution {
+                    reader_schema,
+                    first_metadata,
+                    metadata_per_source: None,
+                    known_size: known,
+                    estimated_size: estimated,
+                }
             },
             ResolveMode::Full => {
-                // Each file decoded with its own schema: per-file schemas
-                // may differ in columns, dtypes, or column order.
-                let mut futures = (1..n_sources)
-                    .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
-                    .collect::<FuturesOrdered<_>>();
+                // Each file decoded with its own schema: per-file schemas may
+                // differ in columns, dtypes, or column order. Read concurrently
+                // with file 0; `None` marks a file that failed to decode.
+                let rest_fut = async move {
+                    let mut futures = (1..n_sources)
+                        .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
+                        .collect::<FuturesOrdered<_>>();
+                    let mut rest: Vec<Option<FileMetadataRef>> = Vec::with_capacity(n_sources - 1);
+                    while let Some(file_result) = futures.next().await {
+                        rest.push(file_result.ok());
+                    }
+                    PolarsResult::Ok(rest)
+                };
+                let ((reader_schema, first_num_rows, first_metadata), rest) =
+                    futures::future::try_join(first_fut, rest_fut).await?;
 
-                // Push slot 0 (satisfying the `metadata_per_source[0] ==
-                // first_metadata` invariant), then push each future result.
-                // Best-effort: on error push `first_metadata.clone()`; the
-                // cloud scheduler re-fetches if it needs accurate row_groups
-                // for that file.
+                // Slot 0 satisfies the `metadata_per_source[0] == first_metadata`
+                // invariant; a failed read falls back to file 0's metadata (the
+                // cloud scheduler re-fetches if it needs accurate row_groups).
                 let mut per_file: Vec<FileMetadataRef> = Vec::with_capacity(n_sources);
                 per_file.push(first_metadata.clone());
                 let mut total: usize = first_num_rows;
-                while let Some(file_result) = futures.next().await {
-                    match file_result {
-                        Ok(m) => {
+                for slot in rest {
+                    match slot {
+                        Some(m) => {
                             total = total.saturating_add(m.num_rows);
                             per_file.push(m);
                         },
-                        Err(_) => per_file.push(first_metadata.clone()),
+                        None => per_file.push(first_metadata.clone()),
                     }
                 }
                 let dense: Arc<[FileMetadataRef]> = per_file.into();
-                (Some(dense), Some(total), total)
+                Resolution {
+                    reader_schema,
+                    first_metadata,
+                    metadata_per_source: Some(dense),
+                    known_size: Some(total),
+                    estimated_size: total,
+                }
             },
         }
     };
 
+    let schema = prepare_output_schema(
+        Schema::from_arrow_schema(resolved.reader_schema.as_ref()),
+        row_index,
+    )?;
+
     let file_info = FileInfo::new(
         schema,
-        Some(Either::Left(reader_schema)),
-        (known_size, estimated_size),
+        Some(Either::Left(resolved.reader_schema)),
+        (resolved.known_size, resolved.estimated_size),
     );
 
-    Ok((file_info, Some(first_metadata), metadata_per_source))
+    Ok((
+        file_info,
+        Some(resolved.first_metadata),
+        resolved.metadata_per_source,
+    ))
+}
+
+/// Pick an evenly-strided sample of source indices in `1..n_sources` for
+/// [`ResolveMode::Sampled`]. File 0 is read separately, so this returns the
+/// remaining sample: up to `limit` footers total (one concurrency wave) minus
+/// file 0. When `n_sources <= limit` it returns every index `1..n_sources`, so
+/// the whole set is read and the count comes out exact.
+#[cfg(feature = "parquet")]
+fn sampled_source_indices(n_sources: usize, limit: usize) -> Vec<usize> {
+    // `k` = total footers read this wave, including file 0.
+    let k = n_sources.min(limit.max(1));
+    if k <= 1 {
+        return Vec::new();
+    }
+    // `k - 1` more files, evenly strided over the `n_sources - 1` candidate
+    // indices `1..n_sources`.
+    let extra = k - 1;
+    let span = n_sources - 1;
+    (0..extra).map(|j| 1 + (j * span) / extra).collect()
 }
 
 /// Fetch one source's full footer. Used by [`parquet_file_info`] in
