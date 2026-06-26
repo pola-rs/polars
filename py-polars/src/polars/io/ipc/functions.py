@@ -143,7 +143,6 @@ def read_ipc(
             storage_options=storage_options,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
-            rechunk=rechunk,
         )
 
         if columns:
@@ -153,6 +152,9 @@ def read_ipc(
                 lf = lf.select(columns)
 
         df = lf.collect()
+
+        if rechunk:
+            df = df.rechunk()
 
         return df
 
@@ -211,7 +213,6 @@ def _read_ipc_impl(
         scan = scan_ipc(
             source,
             n_rows=n_rows,
-            rechunk=rechunk,
             row_index_name=row_index_name,
             row_index_offset=row_index_offset,
         )
@@ -225,6 +226,10 @@ def _read_ipc_impl(
                 "\n\nUse columns: List[str]"
             )
             raise TypeError(msg)
+
+        if rechunk:
+            df = df.rechunk()
+
         return df
 
     projection, columns = parse_columns_arg(columns)
