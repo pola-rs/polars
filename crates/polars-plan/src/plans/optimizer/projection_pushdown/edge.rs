@@ -82,7 +82,13 @@ pub trait GetProjectionState {
                         .insert(min_dtype_size_col(input_schema.iter()).unwrap().clone());
                 } else {
                     assert_eq!(self.names().len(), 1);
-                    assert!(input_schema.contains(self.names().first().unwrap()));
+                    if self
+                        .names()
+                        .first()
+                        .is_none_or(|name| !input_schema.contains(name))
+                    {
+                        panic!("{:?}, {:?}", input_schema, self.names().first())
+                    }
                 }
             },
             Projection::Names => {
