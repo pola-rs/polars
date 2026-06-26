@@ -4,15 +4,13 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from sqlalchemy.pool import NullPool
 
 import polars as pl
 from polars._utils.various import parse_version
 from polars.io.database._utils import _open_adbc_connection
 from polars.testing import assert_frame_equal
-from tests.unit.io.database.conftest import close_connections
+from tests.unit.io.database.conftest import close_connections, create_sqlite_engine
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -22,7 +20,7 @@ if TYPE_CHECKING:
 
 def _read_via_uri(query: str, uri: str) -> pl.DataFrame:
     """Read a query result via a throwaway engine, disposing it afterwards."""
-    engine = create_engine(uri)
+    engine = create_sqlite_engine(uri)
     try:
         return pl.read_database(query=query, connection=engine)
     finally:
@@ -61,7 +59,7 @@ class TestWriteDatabase:
         if uri_connection:
             return uri
         elif engine == "sqlalchemy":
-            return create_engine(uri)
+            return create_sqlite_engine(uri)
         else:
             return _open_adbc_connection(uri)
 
@@ -300,7 +298,7 @@ def test_write_database_using_sa_session(tmp_path: str) -> None:
     )
     table_name = "test_sa_session"
     test_db_uri = f"sqlite:///{tmp_path}/test_sa_session.db"
-    engine = create_engine(test_db_uri, poolclass=NullPool)
+    engine = create_sqlite_engine(test_db_uri)
     with Session(engine) as session:
         df.write_database(table_name, session)
         session.commit()
@@ -325,7 +323,7 @@ def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> Non
     )
     table_name = "test_sa_rollback"
     test_db_uri = f"sqlite:///{tmp_path}/test_sa_rollback.db"
-    engine = create_engine(test_db_uri, poolclass=NullPool)
+    engine = create_sqlite_engine(test_db_uri)
     with Session(engine) as session:
         if pass_connection:
             conn = session.connection()
@@ -355,7 +353,7 @@ def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
     )
     table_name = "test_sa_commit"
     test_db_uri = f"sqlite:///{tmp_path}/test_sa_commit.db"
-    engine = create_engine(test_db_uri, poolclass=NullPool)
+    engine = create_sqlite_engine(test_db_uri)
     with Session(engine) as session:
         if pass_connection:
             conn = session.connection()

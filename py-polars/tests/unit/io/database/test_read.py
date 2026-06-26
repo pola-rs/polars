@@ -15,9 +15,8 @@ with suppress(ModuleNotFoundError):  # not available on windows
 import pyarrow as pa
 import pytest
 import sqlalchemy
-from sqlalchemy import Integer, MetaData, Table, create_engine, func, select, text
+from sqlalchemy import Integer, MetaData, Table, func, select, text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import NullPool
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
@@ -25,8 +24,11 @@ from polars._utils.various import parse_version
 from polars.exceptions import DuplicateError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.io.database.conftest import create_sqlite_engine
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
+
     from polars._typing import (
         DbReadEngine,
         SchemaDefinition,
@@ -230,10 +232,9 @@ class ExceptionTestParams(NamedTuple):
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
-                connect_using=lambda path: create_engine(
-                    f"sqlite:///{path}",
+                connect_using=lambda path: create_sqlite_engine(
+                    path,
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
-                    poolclass=NullPool,
                 ).connect(),
                 expected_dtypes={
                     "id": pl.Int64,
@@ -381,10 +382,9 @@ def test_read_database(
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
-                connect_using=lambda path: create_engine(
-                    f"sqlite:///{path}",
+                connect_using=lambda path: create_sqlite_engine(
+                    path,
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
-                    poolclass=NullPool,
                 ).connect(),
                 expected_dtypes={
                     "id": pl.Int64,
@@ -504,14 +504,13 @@ def test_read_database_iter_batches(
     assert df_empty["date"].to_list() == []
 
 
-def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
+def test_read_database_alchemy_selectable(sqlite_engine: Engine) -> None:
     # various flavours of alchemy connection
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     with (
-        sessionmaker(bind=alchemy_engine)() as alchemy_session,
-        alchemy_engine.connect() as alchemy_conn,
+        sessionmaker(bind=sqlite_engine)() as alchemy_session,
+        sqlite_engine.connect() as alchemy_conn,
     ):
-        t = Table("test_data", MetaData(), autoload_with=alchemy_engine)
+        t = Table("test_data", MetaData(), autoload_with=sqlite_engine)
 
         # establish sqlalchemy "selectable" and validate usage
         selectable_query = select(
@@ -522,7 +521,7 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
 
         expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
 
-        for conn in (alchemy_session, alchemy_engine, alchemy_conn):
+        for conn in (alchemy_session, sqlite_engine, alchemy_conn):
             assert_frame_equal(
                 pl.read_database(selectable_query, connection=conn),
                 expected,
@@ -540,12 +539,11 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
             assert_frame_equal(batches[0], expected)
 
 
-def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
+def test_read_database_alchemy_textclause(sqlite_engine: Engine) -> None:
     # various flavours of alchemy connection
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     with (
-        sessionmaker(bind=alchemy_engine)() as alchemy_session,
-        alchemy_engine.connect() as alchemy_conn,
+        sessionmaker(bind=sqlite_engine)() as alchemy_session,
+        sqlite_engine.connect() as alchemy_conn,
     ):
         # establish sqlalchemy "textclause" and validate usage
         textclause_query = text(
@@ -558,7 +556,7 @@ def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
 
         expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
 
-        for conn in (alchemy_session, alchemy_engine, alchemy_conn):
+        for conn in (alchemy_session, sqlite_engine, alchemy_conn):
             assert_frame_equal(
                 pl.read_database(textclause_query, connection=conn),
                 expected,
@@ -585,13 +583,12 @@ def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
     ],
 )
 def test_read_database_parameterised(
-    param: str, param_value: Any, tmp_sqlite_db: Path
+    param: str, param_value: Any, tmp_sqlite_db: Path, sqlite_engine: Engine
 ) -> None:
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     with (
-        alchemy_engine.connect() as alchemy_conn,
-        sessionmaker(bind=alchemy_engine)() as alchemy_session,
+        sqlite_engine.connect() as alchemy_conn,
+        sessionmaker(bind=sqlite_engine)() as alchemy_session,
         closing(sqlite3.connect(tmp_sqlite_db)) as raw_conn,
     ):
         # establish parameterised queries and validate usage
@@ -604,7 +601,7 @@ def test_read_database_parameterised(
             {"year": [2021], "name": ["other"], "value": [-99.5]}
         )
 
-        for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
+        for conn in (alchemy_session, sqlite_engine, alchemy_conn, raw_conn):
             if conn is alchemy_session and param == "?":
                 continue  # alchemy session.execute() doesn't support positional params
             if parse_version(sqlalchemy.__version__) < (2, 0) and param == ":n":
@@ -679,7 +676,7 @@ def test_read_database_parameterised_adbc(
     ],
 )
 def test_read_database_parameterised_multiple(
-    params: list[str], param_value: Any, tmp_sqlite_db: Path
+    params: list[str], param_value: Any, tmp_sqlite_db: Path, sqlite_engine: Engine
 ) -> None:
     param_1, param_2 = params
     # establish parameterised queries and validate usage
@@ -691,13 +688,12 @@ def test_read_database_parameterised_multiple(
     expected_frame = pl.DataFrame({"year": [2020], "name": ["misc"], "value": [100.0]})
 
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     with (
-        alchemy_engine.connect() as alchemy_conn,
-        sessionmaker(bind=alchemy_engine)() as alchemy_session,
+        sqlite_engine.connect() as alchemy_conn,
+        sessionmaker(bind=sqlite_engine)() as alchemy_session,
         closing(sqlite3.connect(tmp_sqlite_db)) as raw_conn,
     ):
-        for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
+        for conn in (alchemy_session, sqlite_engine, alchemy_conn, raw_conn):
             if alchemy_session is conn and param_1 == "?":
                 continue  # alchemy session.execute() doesn't support positional params
             if parse_version(sqlalchemy.__version__) < (2, 0) and isinstance(
@@ -789,7 +785,7 @@ def test_read_database_parameterised_multiple_adbc(
 def test_read_database_uri_parameterised(
     param: str, param_value: Any, tmp_sqlite_db: Path
 ) -> None:
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_sqlite_engine(tmp_sqlite_db)
     uri = alchemy_engine.url.render_as_string(hide_password=False)
     query = """
         SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
@@ -847,7 +843,7 @@ def test_read_database_uri_parameterised_multiple(
     params: list[str], param_value: Any, tmp_sqlite_db: Path
 ) -> None:
     param_1, param_2 = params
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_sqlite_engine(tmp_sqlite_db)
     uri = alchemy_engine.url.render_as_string(hide_password=False)
     query = """
         SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
@@ -1146,11 +1142,11 @@ def test_read_database_exceptions(
         'SELECT name, value AS "name" FROM test_data',
     ],
 )
-def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -> None:
+def test_read_database_duplicate_column_error(
+    sqlite_engine: Engine, query: str
+) -> None:
     with (
-        create_engine(
-            f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool
-        ).connect() as alchemy_conn,
+        sqlite_engine.connect() as alchemy_conn,
         pytest.raises(
             DuplicateError,
             match=r"column .+ appears more than once in the query/result cursor",
@@ -1171,7 +1167,7 @@ def test_read_database_cx_credentials(uri: str) -> None:
         pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
-def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
+def test_sqlalchemy_row_init(sqlite_engine: Engine) -> None:
     expected_frame = pl.DataFrame(
         {
             "id": [1, 2],
@@ -1180,10 +1176,9 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
             "date": ["2020-01-01", "2021-12-31"],
         }
     )
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     query = text("SELECT * FROM test_data ORDER BY name")
 
-    with alchemy_engine.connect() as conn:
+    with sqlite_engine.connect() as conn:
         # note: sqlalchemy `Row` is a NamedTuple-like object; it additionally has
         # a `_mapping` attribute that returns a `RowMapping` dict-like object. we
         # validate frame/series init from each flavour of query result.
