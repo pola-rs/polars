@@ -1215,4 +1215,14 @@ def test_projection_pushdown_row_index_reorder_28015() -> None:
 
 
 def test_projection_pushdown_groupby_len_28094() -> None:
-    pass
+    q = (
+        pl.LazyFrame(
+            {"i128": [1], "u128": [1], "bool": [True]},
+            schema={"i128": pl.Int128, "u128": pl.UInt128, "bool": pl.Boolean},
+        )
+        .group_by("i128", "u128")
+        .agg(pl.first("bool"))
+        .select(pl.len())
+    )
+
+    assert q.collect().item() == 1
