@@ -1136,9 +1136,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
-                'remove_aggs: {
+                'prune_aggs: {
                     if aggs.is_empty() {
-                        break 'remove_aggs;
+                        break 'prune_aggs;
                     }
 
                     let removed_names = if is_len {
@@ -1165,7 +1165,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
 
                         removed_names
                     } else {
-                        break 'remove_aggs;
+                        break 'prune_aggs;
                     };
 
                     if !removed_names.is_empty() {
