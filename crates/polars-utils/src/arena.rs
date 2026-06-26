@@ -1,4 +1,4 @@
-#[cfg(any(feature = "ir_serde", feature = "serde"))]
+#[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::error::*;
