@@ -1212,3 +1212,7 @@ def test_projection_pushdown_row_index_reorder_28015() -> None:
             schema=out.schema,
         ),
     )
+
+
+def test_projection_pushdown_groupby_len_28094() -> None:
+    pass
