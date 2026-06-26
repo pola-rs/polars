@@ -378,7 +378,7 @@ class GroupBy:
         return (
             self._lgb()
             .agg(*aggs, **named_aggs)
-            .collect(optimizations=QueryOptFlags.none())
+            .collect(optimizations=QueryOptFlags._eager())
         )
 
     def map_groups(self, function: Callable[[DataFrame], DataFrame]) -> DataFrame:
@@ -1060,7 +1060,7 @@ class RollingGroupBy:
             group_by = group_by.having(self.predicates)
 
         return group_by.agg(*aggs, **named_aggs).collect(
-            optimizations=QueryOptFlags.none()
+            optimizations=QueryOptFlags._eager()
         )
 
     def map_groups(
@@ -1258,7 +1258,7 @@ class DynamicGroupBy:
             group_by = group_by.having(self.predicates)
 
         return group_by.agg(*aggs, **named_aggs).collect(
-            optimizations=QueryOptFlags.none()
+            optimizations=QueryOptFlags._eager()
         )
 
     def map_groups(
