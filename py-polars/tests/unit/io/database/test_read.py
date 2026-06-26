@@ -17,6 +17,7 @@ import pytest
 import sqlalchemy
 from sqlalchemy import Integer, MetaData, Table, create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
 import polars as pl
@@ -232,6 +233,7 @@ class ExceptionTestParams(NamedTuple):
                 connect_using=lambda path: create_engine(
                     f"sqlite:///{path}",
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
+                    poolclass=NullPool,
                 ).connect(),
                 expected_dtypes={
                     "id": pl.Int64,
@@ -382,6 +384,7 @@ def test_read_database(
                 connect_using=lambda path: create_engine(
                     f"sqlite:///{path}",
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
+                    poolclass=NullPool,
                 ).connect(),
                 expected_dtypes={
                     "id": pl.Int64,
@@ -503,7 +506,7 @@ def test_read_database_iter_batches(
 
 def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
     # various flavours of alchemy connection
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     with (
         sessionmaker(bind=alchemy_engine)() as alchemy_session,
         alchemy_engine.connect() as alchemy_conn,
@@ -539,7 +542,7 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
 
 def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
     # various flavours of alchemy connection
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     with (
         sessionmaker(bind=alchemy_engine)() as alchemy_session,
         alchemy_engine.connect() as alchemy_conn,
@@ -585,7 +588,7 @@ def test_read_database_parameterised(
     param: str, param_value: Any, tmp_sqlite_db: Path
 ) -> None:
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     with (
         alchemy_engine.connect() as alchemy_conn,
         sessionmaker(bind=alchemy_engine)() as alchemy_session,
@@ -688,7 +691,7 @@ def test_read_database_parameterised_multiple(
     expected_frame = pl.DataFrame({"year": [2020], "name": ["misc"], "value": [100.0]})
 
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     with (
         alchemy_engine.connect() as alchemy_conn,
         sessionmaker(bind=alchemy_engine)() as alchemy_session,
@@ -1145,7 +1148,9 @@ def test_read_database_exceptions(
 )
 def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -> None:
     with (
-        create_engine(f"sqlite:///{tmp_sqlite_db}").connect() as alchemy_conn,
+        create_engine(
+            f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool
+        ).connect() as alchemy_conn,
         pytest.raises(
             DuplicateError,
             match=r"column .+ appears more than once in the query/result cursor",
@@ -1175,7 +1180,7 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
             "date": ["2020-01-01", "2021-12-31"],
         }
     )
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}", poolclass=NullPool)
     query = text("SELECT * FROM test_data ORDER BY name")
 
     with alchemy_engine.connect() as conn:

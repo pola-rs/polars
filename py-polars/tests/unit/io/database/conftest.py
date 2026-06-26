@@ -2,12 +2,29 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def close_connections(*connections: Any) -> None:
+    """Fully release the underlying DB-API connection for each given object."""
+    from sqlalchemy.engine import Connection, Engine
+
+    for conn in connections:
+        if isinstance(conn, str):
+            continue  # eg: connection URI, nothing to close
+        elif isinstance(conn, Engine):
+            conn.dispose()
+        elif isinstance(conn, Connection):
+            engine = conn.engine
+            conn.close()
+            engine.dispose()
+        elif hasattr(conn, "close"):
+            conn.close()
 
 
 @pytest.fixture

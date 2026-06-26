@@ -12,11 +12,21 @@ import polars as pl
 from polars._utils.various import parse_version
 from polars.io.database._utils import _open_adbc_connection
 from polars.testing import assert_frame_equal
+from tests.unit.io.database.conftest import close_connections
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import DbWriteEngine
+
+
+def _read_via_uri(query: str, uri: str) -> pl.DataFrame:
+    """Read a query result via a throwaway engine, disposing it afterwards."""
+    engine = create_engine(uri)
+    try:
+        return pl.read_database(query=query, connection=engine)
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.write_disk
@@ -80,14 +90,10 @@ class TestWriteDatabase:
             )
             == 2
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
         assert_frame_equal(result, df)
 
-        if hasattr(conn, "close"):
-            conn.close()
+        close_connections(conn)
 
     def test_write_database_append_replace(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
@@ -131,10 +137,7 @@ class TestWriteDatabase:
             )
             == 3
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
         assert_frame_equal(result, df)
 
         assert (
@@ -146,17 +149,13 @@ class TestWriteDatabase:
             )
             == 2
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
         assert_frame_equal(result, pl.concat([df, df[:2]]))
 
         if engine == "adbc" and not uri_connection:
             assert conn._closed is False
 
-        if hasattr(conn, "close"):
-            conn.close()
+        close_connections(conn)
 
     def test_write_database_append_creates_missing_table(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
@@ -193,14 +192,10 @@ class TestWriteDatabase:
             )
             == 3
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
         assert_frame_equal(result, df)
 
-        if hasattr(conn, "close"):
-            conn.close()
+        close_connections(conn)
 
     def test_write_database_create_quoted_tablename(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
@@ -237,17 +232,13 @@ class TestWriteDatabase:
             )
             == 3
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {qualified_table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {qualified_table_name}", test_db_uri)
         assert_frame_equal(result, df)
 
         if engine == "adbc" and not uri_connection:
             assert conn._closed is False
 
-        if hasattr(conn, "close"):
-            conn.close()
+        close_connections(conn)
 
     def test_write_database_errors(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
@@ -410,5 +401,4 @@ def test_write_database_adbc_temporary_table() -> None:
     actual_temp_table_create_sql = temp_tbl_sql_df["sql"][0]
     assert expected_temp_table_create_sql == actual_temp_table_create_sql
 
-    if hasattr(conn, "close"):
-        conn.close()
+    close_connections(conn)
