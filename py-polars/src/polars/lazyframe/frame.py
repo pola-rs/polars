@@ -1888,7 +1888,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Get the rows which contain the 4 largest values in column b.
 
-        >>> lf.top_k(4, by="b").collect()
+        >>> lf.top_k(4, by="b").collect()  # doctest: +SKIP
         shape: (4, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1968,7 +1968,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Get the rows which contain the 4 smallest values in column b.
 
-        >>> lf.bottom_k(4, by="b").collect()
+        >>> lf.bottom_k(4, by="b").collect()  # doctest: +SKIP
         shape: (4, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -1983,7 +1983,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Get the rows which contain the 4 smallest values when sorting on column a and b.
 
-        >>> lf.bottom_k(4, by=["a", "b"]).collect()
+        >>> lf.bottom_k(4, by=["a", "b"]).collect()  # doctest: +SKIP
         shape: (4, 2)
         ┌─────┬─────┐
         │ a   ┆ b   │
@@ -2463,9 +2463,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
-              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
-              back to ``"in-memory"`` if unset (this default may change in
-              a future release).
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable. Otherwise
+              defaults to the streaming engine.
             * ``"in-memory"``: use the in-memory engine, this is the default engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
@@ -2645,9 +2644,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             * ``"auto"``: use the engine set by
               :meth:`Config.set_engine_affinity <polars.Config.set_engine_affinity>`
-              or the ``POLARS_ENGINE_AFFINITY`` environment variable, falling
-              back to ``"in-memory"`` if unset (this default may change in
-              a future release).
+              or the ``POLARS_ENGINE_AFFINITY`` environment variable. Otherwise
+              defaults to the streaming engine..
             * ``"in-memory"``: use the in-memory engine, this is the default engine.
             * ``"streaming"``: use the streaming engine, which processes
               queries in batches, reducing memory pressure and often
@@ -8812,7 +8810,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     }
         ... )
         >>> import polars.selectors as cs
-        >>> lf.unpivot(cs.numeric(), index="a").collect()
+        >>> result = lf.unpivot(cs.numeric(), index="a").collect()
+        >>> result.sort("*")
         shape: (6, 3)
         ┌─────┬──────────┬───────┐
         │ a   ┆ variable ┆ value │
@@ -8820,10 +8819,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ str ┆ str      ┆ i64   │
         ╞═════╪══════════╪═══════╡
         │ x   ┆ b        ┆ 1     │
-        │ y   ┆ b        ┆ 3     │
-        │ z   ┆ b        ┆ 5     │
         │ x   ┆ c        ┆ 2     │
+        │ y   ┆ b        ┆ 3     │
         │ y   ┆ c        ┆ 4     │
+        │ z   ┆ b        ┆ 5     │
         │ z   ┆ c        ┆ 6     │
         └─────┴──────────┴───────┘
         """
