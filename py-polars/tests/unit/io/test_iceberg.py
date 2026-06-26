@@ -2781,3 +2781,30 @@ def test_scan_iceberg_row_estimate(
     assert "ESTIMATED ROWS: 3" in plan
     assert q.select(pl.len()).collect().item() == 3
     assert q.collect().height == 3
+
+
+def test_convert_iceberg_storage_options_dot_filtering() -> None:
+    from polars.io.iceberg._dataset import (
+        _convert_iceberg_to_object_store_storage_options,
+    )
+
+    result = _convert_iceberg_to_object_store_storage_options(
+        {
+            "user": "foo",
+            "hdfs.host": "localhost",
+            "hdfs.port": "9005",
+            # "dfs.replication": "3",
+            # "write.parquet.compression": "zstd",
+            "other.foo": "bar",
+        }
+    )
+
+    # keep
+    assert result["user"] == "foo"
+    assert result["hdfs.host"] == "localhost"
+    assert result["hdfs.port"] == "9005"
+
+    # drop
+    assert "dfs.replication" not in result
+    assert "write.parquet.compression" not in result
+    assert "other.foo" not in result
