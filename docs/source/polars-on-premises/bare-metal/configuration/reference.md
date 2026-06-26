@@ -82,6 +82,7 @@ together.
 | `shuffle_service.public_addr.ip`            | string  | IP address for the task service public address.<br>e.g. `192.168.1.2`.                                                                                                                                                                                   |
 | `shuffle_service.public_addr.port`          | integer | Port for the task service public address.<br>e.g. `5053`.                                                                                                                                                                                                |
 | `shuffle_service.public_addr.hostname`      | string  | Alternative to `ip`, resolved once at startup.<br>e.g. `my-host-2`.                                                                                                                                                                                      |
+| `hdfs.enabled`                              | boolean | Enable HDFS support.                                                                                                                                                                                                                                     |
 
 ### `[observatory]` section
 
