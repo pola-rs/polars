@@ -245,6 +245,7 @@ def read_parquet(
                 "\n\nHint: Pass `pyarrow_options` instead with a 'partitioning' entry."
             )
             raise TypeError(msg)
+
         return _read_parquet_with_pyarrow(
             source,
             columns=columns,

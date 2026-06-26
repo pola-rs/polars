@@ -411,7 +411,7 @@ def test_parse_apply_raw_functions() -> None:
         # ...but we ARE still able to warn
         with pytest.warns(
             PolarsInefficientMapWarning,
-            match=rf"(?s)Expr\.map_elements.*Replace this expression.*np\.{func_name}",
+            match=rf"(?s)\.map_elements.*Replace this expression.*np\.{func_name}",
         ):
             df1 = lf.select(
                 pl.col("a").map_elements(func, return_dtype=pl.self_dtype())
@@ -424,7 +424,7 @@ def test_parse_apply_raw_functions() -> None:
     expr_native = pl.col("value").str.json_decode(json_dtype)
     with pytest.warns(
         PolarsInefficientMapWarning,
-        match=r"(?s)Expr\.map_elements.*with this one instead:.*\.str\.json_decode",
+        match=r"(?s)\.map_elements.*with this one instead:.*\.str\.json_decode",
     ):
         expr_pyfunc = pl.col("value").map_elements(json.loads, return_dtype=json_dtype)
 
