@@ -288,10 +288,7 @@ pub enum PartitionStrategy {
     FileSize,
 }
 
-#[cfg_attr(
-    any(feature = "ir_serde", feature = "serde"),
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq, strum_macros::IntoStaticStr)]
 pub enum PartitionStrategyIR {
     Keyed {
@@ -368,10 +365,7 @@ impl SinkTypeIR {
     }
 }
 
-#[cfg_attr(
-    any(feature = "ir_serde", feature = "serde"),
-    derive(serde::Serialize, serde::Deserialize)
-)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartitionedSinkOptionsIR {
     pub base_path: PlRefPath,
