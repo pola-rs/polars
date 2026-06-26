@@ -1517,6 +1517,21 @@ def test_filter_contradiction_collapses() -> None:
         lf.filter(
             (pl.col("a") > pl.col("b")) & (pl.col("a") < pl.col("b"))
         ),  # disjoint comparisons on two columns (a > b AND a < b)
+        lf.filter(~(pl.col("a") < 3)).filter(
+            pl.col("a") < 2
+        ),  # negated bound: NOT(a < 3) is a >= 3, disjoint with a < 2
+        lf.filter(pl.col("a") == 2).filter(
+            ~pl.col("a").is_in([1, 2])
+        ),  # point range ruled out by negated is_in
+        lf.filter(pl.col("a").is_null()).filter(
+            pl.col("a") > 1
+        ),  # is_null but a comparison requires non-null
+        lf.filter(pl.col("a").is_null()).filter(
+            pl.col("a").is_not_null()
+        ),  # is_null AND is_not_null
+        lf.filter(
+            (pl.col("a") == pl.col("b")) & pl.col("a").is_null()
+        ),  # a == b makes both non-null, contradicting a.is_null()
     ]
     for q in collapsing:
         # The FILTER node is gone from the optimized plan and the result is empty;
@@ -1536,6 +1551,17 @@ def test_filter_contradiction_collapses() -> None:
     q = lf.filter(pl.col("a").is_in([1, 2, 3])).filter(pl.col("a") >= 2)
     assert "FILTER" in q.explain()
     assert_frame_equal(q.select("a").collect(), pl.DataFrame({"a": [2, 3]}))
+
+    # `is_not_null` alongside a comparison is consistent (both drop nulls): not a
+    # contradiction, the filter is kept and the comparison's rows survive.
+    q = lf.filter(pl.col("a").is_not_null()).filter(pl.col("a") > 1)
+    assert "FILTER" in q.explain()
+    assert_frame_equal(q.select("a").collect(), pl.DataFrame({"a": [2, 3]}))
+
+    # `is_null` alone is satisfiable in general (no value constraint to conflict),
+    # so it is not collapsed even when this data happens to have no null rows.
+    q = lf.filter(pl.col("a").is_null())
+    assert "FILTER" in q.explain()
 
 
 def test_filter_contradiction_fallible_error_handling(
@@ -1593,6 +1619,36 @@ def test_filter_range_tightening() -> None:
         (
             lf.filter(pl.col("a") <= 3).filter(pl.col("a") != 9),
             lf.filter(pl.col("a") <= 3),
+        ),
+        # A negated comparison folds to its complement (`!(a > 3)` is `a <= 3`).
+        (
+            lf.filter(~(pl.col("a") > 3)),
+            lf.filter(pl.col("a") <= 3),
+        ),
+        (
+            lf.filter(~(pl.col("a") >= 3)),
+            lf.filter(pl.col("a") < 3),
+        ),
+        # A negated `is_in` folds to a `!=` per haystack member.
+        (
+            lf.filter(~pl.col("a").is_in([2, 4])),
+            lf.filter((pl.col("a") != 2) & (pl.col("a") != 4)),
+        ),
+        # A negated empty `is_in` is always true, so the whole filter drops away
+        # (the rebuilt `AND` chain is empty). The length-1 Series haystack is the
+        # SQL `IN (..)` shape, which reaches the rule directly; DSL `is_in([])`
+        # would instead fold to `false` at conversion.
+        (
+            lf.filter(~pl.col("a").is_in(pl.Series("", [[]], dtype=pl.List(pl.Int64)))),
+            lf,
+        ),
+        # The same always-true conjunct simply drops out alongside a real bound.
+        (
+            lf.filter(
+                (~pl.col("a").is_in(pl.Series("", [[]], dtype=pl.List(pl.Int64))))
+                & (pl.col("a") > 3)
+            ),
+            lf.filter(pl.col("a") > 3),
         ),
     ]
     for redundant, minimal in cases:
