@@ -63,7 +63,9 @@ def test_defer_validate_false() -> None:
         schema={"a": pl.Boolean},
         validate_schema=False,
     )
-    assert lf.collect().to_dict(as_series=False) == {"a": [1.0, 1.0, 1.0]}
+    assert lf.collect(engine="in-memory").to_dict(as_series=False) == {
+        "a": [1.0, 1.0, 1.0]
+    }
 
 
 def test_empty_iterator_io_plugin() -> None:
@@ -135,16 +137,17 @@ This allows it to read into multiple rows.
 
 
 @pytest.mark.may_fail_cloud
-@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_datetime_io_predicate_pushdown_21790() -> None:
     recorded: dict[str, pl.Expr | None] = {"predicate": None}
+    schema = {"timestamp": pl.Datetime(time_unit="ns")}
     df = pl.DataFrame(
         {
             "timestamp": [
                 datetime.datetime(2024, 1, 1, 0),
                 datetime.datetime(2024, 1, 3, 0),
             ]
-        }
+        },
+        schema=schema,
     )
 
     def _source(
@@ -163,7 +166,6 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
 
         yield inner_df
 
-    schema = {"timestamp": pl.Datetime(time_unit="ns")}
     lf = register_io_source(io_source=_source, schema=schema)
 
     cutoff = datetime.datetime(2024, 1, 4)

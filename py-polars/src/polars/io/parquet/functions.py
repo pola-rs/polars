@@ -242,6 +242,7 @@ def read_parquet(
                 "\n\nHint: Pass `pyarrow_options` instead with a 'partitioning' entry."
             )
             raise TypeError(msg)
+
         return _read_parquet_with_pyarrow(
             source,
             columns=columns,
@@ -273,7 +274,6 @@ def read_parquet(
         schema=schema,
         hive_schema=hive_schema,
         try_parse_hive_dates=try_parse_hive_dates,
-        rechunk=rechunk,
         low_memory=low_memory,
         cache=False,
         storage_options=storage_options,
@@ -290,7 +290,12 @@ def read_parquet(
         else:
             lf = lf.select(columns)
 
-    return lf.collect()
+    ret = lf.collect()
+
+    if rechunk:
+        ret = ret.rechunk()
+
+    return ret
 
 
 def _read_parquet_with_pyarrow(
