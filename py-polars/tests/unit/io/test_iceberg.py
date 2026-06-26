@@ -123,6 +123,33 @@ with warnings.catch_warnings():
     from pyiceberg.io.pyarrow import schema_to_pyarrow
 
 
+@pytest.fixture(autouse=True)
+def sqlcatalog_uses_null_pool_connections(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    # note: SqlCatalog is sqlite-backed, and pyiceberg builds its engine with
+    # a SingletonThreadPool that can raise a ResourceWarning on test shutdown;
+    # we ensure it uses a NullPool instead, resolving the connection "leak"
+    import pyiceberg.catalog.sql as pyiceberg_sql
+    from sqlalchemy.pool import NullPool
+
+    tmp_path = tmp_path_factory.mktemp("iceberg_catalogs")
+    original_create_engine = pyiceberg_sql.create_engine
+    counter = itertools.count()
+
+    def create_engine(url: str, **kwargs: Any) -> Any:
+        if url == "sqlite:///:memory:":
+            # need to use a file-backed catalog, otherwise NullPool connections
+            # will be working with different in-memory databases on each call
+            url = f"sqlite:///{tmp_path}/catalog_{next(counter)}.db"
+
+        kwargs["poolclass"] = NullPool
+        return original_create_engine(url, **kwargs)
+
+    monkeypatch.setattr(pyiceberg_sql, "create_engine", create_engine)
+
+
 def new_iceberg_scan_resolver(
     source: str | pyiceberg.table.Table,
 ) -> IcebergScanResolver:

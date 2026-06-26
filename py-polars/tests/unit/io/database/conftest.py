@@ -13,9 +13,6 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Engine
 
 
-
-
-
 def close_connections(*connections: Any) -> None:
     """Fully release the underlying DB-API connection for each given object."""
     from sqlalchemy.engine import Connection, Engine
@@ -32,14 +29,17 @@ def close_connections(*connections: Any) -> None:
         elif hasattr(conn, "close"):
             conn.close()
 
+
 def create_sqlite_engine(target: str | Path, **kwargs: Any) -> Engine:
-    """Create a sqlite SQLAlchemy ``Engine`` that uses NullPool connections."""
+    """Create a SQLite Engine that uses NullPool connections."""
     from sqlalchemy import create_engine
     from sqlalchemy.pool import NullPool
 
     if not (uri := str(target)).startswith("sqlite:"):
         uri = f"sqlite:///{uri}"
     return create_engine(uri, poolclass=NullPool, **kwargs)
+
+
 @pytest.fixture
 def sqlite_engine(tmp_sqlite_db: Path) -> Iterator[Engine]:
     """A NullPool SQLAlchemy engine bound to the standard test database."""
