@@ -33,6 +33,11 @@ Here is a curated (non-exhaustive) list of community-implemented plugins.
   the H3 discrete global grid system, so you can index points and geometries to hexagons directly in
   Polars.
 
+### Bioinformatics
+
+- [polars-bio](https://github.com/biodatageeks/polars-bio) Blazing-fast genomic interval operations
+  on Polars DataFrames, with support for overlap, closest, and window-based joins using Apache Arrow.
+
 ## Other material
 
 - [Ritchie Vink - Keynote on Polars Plugins](https://youtu.be/jKW-CBV7NUM)
