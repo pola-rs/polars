@@ -2374,6 +2374,35 @@ def test_redundant_join_key_filter_semi_join_nulls_equal_21710(
     _assert_matches_without_predicate_pushdown(q)
 
 
+@pytest.mark.parametrize(
+    ("nulls_equal", "expected_filter"),
+    [
+        (False, 'FILTER [(col("x")) == (col("y"))]'),
+        (True, 'FILTER [(col("x")) ==v (col("y"))]'),
+    ],
+)
+def test_redundant_join_key_filter_semi_join_duplicate_left_nulls_equal_21710(
+    nulls_equal: bool, expected_filter: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, None, 2]})
+    right = pl.LazyFrame({"x": [1, None, 2], "y": [1, None, 3]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="semi",
+        nulls_equal=nulls_equal,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        expected_filter,
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
 def test_redundant_join_key_filter_does_not_filter_anti_join_21710() -> None:
     left = pl.LazyFrame(
         {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
