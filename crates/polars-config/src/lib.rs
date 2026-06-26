@@ -45,13 +45,6 @@ const PRUNE_PARQUET_METADATA: &str = "POLARS_PRUNE_PARQUET_METADATA";
 const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
 
 const RESOLVE_METADATA_LEVEL: &str = "POLARS_RESOLVE_METADATA_LEVEL";
-// Default lives on the enum (`ResolveMode::default()` == `None`) so the
-// documented and runtime defaults are a single source of truth and cannot
-// drift. `None` is correct for OSS: nothing consumes the row estimate except
-// `.explain()`, so reading every file's footer at plan time is pure cost.
-// Cloud opts into a non-`None` mode explicitly: `Sampled` for a cheap total
-// estimate (CBO), or `Full` when it needs per-file metadata (scheduler /
-// distribution).
 
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";

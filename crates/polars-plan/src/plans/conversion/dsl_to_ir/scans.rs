@@ -363,14 +363,12 @@ pub(super) async fn parquet_file_info(
                 }
             },
             ResolveMode::Sampled => {
-                // One round trip of latency regardless of footer count, so
-                // fill the wave: read up to `concurrency_limit` footers (file
-                // 0, joined below, plus an even stride over `1..n_sources`).
-                // Exact when the whole set fits; otherwise extrapolate the
-                // per-file mean (`estimated_size`, not `known_size`).
+                // Sample `sqrt(n)` footers (`sampled_source_indices`) and
+                // extrapolate the per-file mean. Exact when the sample spans
+                // every file; otherwise `estimated_size` only, not `known_size`.
                 //
-                // TODO: byte-weight (`rows_per_byte * total_bytes`,
-                // skew-robust) once per-file LIST sizes reach plan time.
+                // TODO: byte-weight (`rows_per_byte * total_bytes`, skew-robust)
+                // once per-file LIST sizes reach plan time.
                 let limit = polars_io::pl_async::get_concurrency_limit() as usize;
                 let sample = sampled_source_indices(n_sources, limit);
                 // file 0 plus the sample; if that spans every file we read all.
@@ -473,20 +471,24 @@ pub(super) async fn parquet_file_info(
     ))
 }
 
-/// Pick an evenly-strided sample of source indices in `1..n_sources` for
-/// [`ResolveMode::Sampled`]. File 0 is read separately, so this returns the
-/// remaining sample: up to `limit` footers total (one concurrency wave) minus
-/// file 0. When `n_sources <= limit` it returns every index `1..n_sources`, so
-/// the whole set is read and the count comes out exact.
+/// Pick an evenly-strided sample of indices in `1..n_sources` for
+/// [`ResolveMode::Sampled`] (file 0 is read separately). Size is `sqrt(n)`,
+/// floored at `SAMPLE_FLOOR`, capped at `limit` (the shared concurrency budget)
+/// so one scan does not starve others, never above the file count.
 #[cfg(feature = "parquet")]
 fn sampled_source_indices(n_sources: usize, limit: usize) -> Vec<usize> {
-    // `k` = total footers read this wave, including file 0.
-    let k = n_sources.min(limit.max(1));
+    // Minimum sample so a small scan still extrapolates from enough files.
+    const SAMPLE_FLOOR: usize = 16;
+    // `k` = total footers this wave (incl. file 0); `limit` last so it stays a
+    // hard ceiling.
+    let k = ((n_sources as f64).sqrt().ceil() as usize)
+        .max(SAMPLE_FLOOR)
+        .min(limit.max(1))
+        .min(n_sources);
     if k <= 1 {
         return Vec::new();
     }
-    // `k - 1` more files, evenly strided over the `n_sources - 1` candidate
-    // indices `1..n_sources`.
+    // `k - 1` more, evenly strided over `1..n_sources`.
     let extra = k - 1;
     let span = n_sources - 1;
     (0..extra).map(|j| 1 + (j * span) / extra).collect()
