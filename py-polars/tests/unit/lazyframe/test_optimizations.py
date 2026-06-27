@@ -1109,6 +1109,7 @@ def test_hconcat_reorder_projection_push_to_inputs() -> None:
             pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
         ],
         how="horizontal",
+        strict=True,
     )
 
     q = hconcat.select("b", "a", "d", "c")
@@ -1144,6 +1145,7 @@ def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
             ),
         ],
         how="horizontal",
+        strict=True,
     ).select("B", "C")
 
     f = io.BytesIO()
@@ -1210,3 +1212,17 @@ def test_projection_pushdown_row_index_reorder_28015() -> None:
             schema=out.schema,
         ),
     )
+
+
+def test_projection_pushdown_groupby_len_28094() -> None:
+    q = (
+        pl.LazyFrame(
+            {"i128": [1], "u128": [1], "bool": [True]},
+            schema={"i128": pl.Int128, "u128": pl.UInt128, "bool": pl.Boolean},
+        )
+        .group_by("i128", "u128")
+        .agg(pl.first("bool"))
+        .select(pl.len())
+    )
+
+    assert q.collect().item() == 1

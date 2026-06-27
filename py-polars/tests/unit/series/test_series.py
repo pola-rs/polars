@@ -2505,6 +2505,23 @@ def test_series_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
     else:
         assert len(result) == 2
         assert set(result).issubset({1, 2, 3, 4})
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ([pl.lit(1)], [2]),
+        ([1], [pl.lit(2)]),
+        ([pl.lit(1)], [pl.lit(2)]),
+    ],
+)
+
+
+def test_replace_with_expr_raises_22591(old: list[Any], new: list[Any]) -> None:
+    s = pl.Series([1])
+    with pytest.raises(
+        InvalidOperationError,
+        match="`replace` does not support `old`/`new` values of object dtype",
+    ):
+        s.replace(old, new)
 
 
 def test_is_sorted_struct_27613() -> None:

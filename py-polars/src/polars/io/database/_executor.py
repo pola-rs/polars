@@ -595,13 +595,8 @@ class ConnectionExecutor:
             )
             if frame is not None:
                 if defer_cursor_close:
-                    frame = (
-                        df
-                        for df in CloseAfterFrameIter(
-                            frame,
-                            cursor=self.result,
-                        )
-                    )
+                    frame_cursor = CloseAfterFrameIter(frame, cursor=self.cursor)
+                    frame = (df for df in frame_cursor)
                 return frame
 
         msg = (
