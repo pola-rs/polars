@@ -1136,19 +1136,37 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
-                if let Some(projected_names) =
-                    out_edge.compute_projected_names_subset(output_schema_arc)
-                {
-                    let removed_names = self.names_set_scratch.get();
-                    aggs.retain(|e| {
-                        let remove = !projected_names.contains(e.output_name()) || is_len;
+                'prune_aggs: {
+                    if aggs.is_empty() {
+                        break 'prune_aggs;
+                    }
 
-                        if remove {
-                            removed_names.insert(e.output_name().clone());
-                        }
+                    let removed_names = if is_len {
+                        let removed_names = self.names_set_scratch.get();
 
-                        !remove
-                    });
+                        removed_names.extend(
+                            aggs.drain(..)
+                                .map(|eir| eir.into_inner().1.into_inner().unwrap()),
+                        );
+
+                        removed_names
+                    } else if let Some(projected_names) =
+                        out_edge.compute_projected_names_subset(output_schema_arc)
+                    {
+                        let removed_names = self.names_set_scratch.get();
+
+                        aggs.retain(|e| {
+                            let keep = projected_names.contains(e.output_name());
+                            if !keep {
+                                removed_names.insert(e.output_name().clone());
+                            }
+                            keep
+                        });
+
+                        removed_names
+                    } else {
+                        break 'prune_aggs;
+                    };
 
                     if !removed_names.is_empty() {
                         Arc::make_mut(output_schema_arc)

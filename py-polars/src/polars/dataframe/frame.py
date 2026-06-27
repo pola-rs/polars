@@ -136,6 +136,7 @@ if TYPE_CHECKING:
     import jax
     import pyiceberg
     from great_tables import GT
+    from sqlalchemy.engine import Engine
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
@@ -1109,7 +1110,7 @@ class DataFrame:
 
         suffix = "__POLARS_CMP_OTHER"
         other_renamed = other.select(F.all().name.suffix(suffix))
-        combined = F.concat([self, other_renamed], how="horizontal")
+        combined = F.concat([self, other_renamed], how="horizontal", strict=True)
 
         if op == "eq":
             expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
@@ -2489,7 +2490,9 @@ class DataFrame:
                 if features is not None
                 else self.drop(*label_frame.columns)
             ).cast(to_dtype)  # type: ignore[arg-type]
-            frame = F.concat([label_frame, features_frame], how="horizontal")
+            frame = F.concat(
+                [label_frame, features_frame], how="horizontal", strict=True
+            )
         else:
             label_frame = None
             features_frame = None
@@ -4672,9 +4675,13 @@ class DataFrame:
             from sqlalchemy.engine import Connectable, create_engine
             from sqlalchemy.orm import Session
 
+            # note: we can only dispose of engines that we create ourselves;
+            # caller-supplied connectables remain the caller's responsibility
+            engine_to_dispose: Engine | None = None
             sa_object: Connectable
+
             if isinstance(connection, str):
-                sa_object = create_engine(connection)
+                sa_object = engine_to_dispose = create_engine(connection)
             elif isinstance(connection, Session):
                 sa_object = connection.connection()
             elif isinstance(connection, Connectable):
@@ -4690,18 +4697,23 @@ class DataFrame:
                 msg = f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
                 raise ValueError(msg)
 
-            # ensure conversion to pandas uses the pyarrow extension array option
-            # so that we can make use of the sql/db export *without* copying data
-            res: int | None = self.to_pandas(
-                use_pyarrow_extension_array=True,
-            ).to_sql(
-                name=unpacked_table_name,
-                schema=db_schema,
-                con=sa_object,
-                if_exists=if_table_exists,
-                index=False,
-                **(engine_options or {}),
-            )
+            try:
+                # ensure conversion to pandas uses the pyarrow extension array option
+                # so that we can make use of the sql/db export *without* copying data
+                res: int | None = self.to_pandas(
+                    use_pyarrow_extension_array=True,
+                ).to_sql(
+                    name=unpacked_table_name,
+                    schema=db_schema,
+                    con=sa_object,
+                    if_exists=if_table_exists,
+                    index=False,
+                    **(engine_options or {}),
+                )
+            finally:
+                if engine_to_dispose is not None:
+                    engine_to_dispose.dispose()
+
             return -1 if res is None else res
 
         elif isinstance(engine, str):

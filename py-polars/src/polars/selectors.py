@@ -393,7 +393,7 @@ class Selector(Expr):
                     concrete_dtypes += [pldt.String()]
                 elif dt is bytes:
                     concrete_dtypes += [pldt.Binary()]
-                elif dt is object:
+                elif dt is builtins.object:
                     selectors += [object()]
                 elif dt is NoneType:
                     concrete_dtypes += [pldt.Null()]
