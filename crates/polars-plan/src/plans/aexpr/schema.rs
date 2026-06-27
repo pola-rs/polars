@@ -864,7 +864,6 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (UInt8 | Int8, Float32) => Float32,
         #[cfg(feature = "dtype-u16")]
         (UInt16 | Int16, Float32) => Float32,
-        (dt, _) if dt.is_primitive_numeric() => Float64,
         #[cfg(feature = "dtype-duration")]
         (Duration(_), Duration(_)) => Float64,
         #[cfg(feature = "dtype-duration")]
@@ -881,6 +880,23 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Time, _) => polars_bail!(InvalidOperation: "division of 'Time' datatype is not allowed"),
         #[cfg(feature = "dtype-date")]
         (Date, _) => polars_bail!(InvalidOperation: "division of 'Date' datatype is not allowed"),
+        #[cfg(feature = "dtype-duration")]
+        (_, Duration(_)) => {
+            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_dtype, right_dtype)
+        },
+        #[cfg(feature = "dtype-datetime")]
+        (_, Datetime(_, _)) => {
+            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_dtype, right_dtype)
+        },
+        #[cfg(feature = "dtype-time")]
+        (_, Time) => {
+            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_dtype, right_dtype)
+        },
+        #[cfg(feature = "dtype-date")]
+        (_, Date) => {
+            polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_dtype, right_dtype)
+        },
+        (dt, _) if dt.is_primitive_numeric() => Float64,
         // we don't know what to do here, best return the dtype
         (dt, _) => dt.clone(),
     };
