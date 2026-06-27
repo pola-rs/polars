@@ -5,6 +5,7 @@ use either::Either;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_io::RowIndex;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::*;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
@@ -521,7 +522,11 @@ pub async fn csv_file_info(
             // Collect metadata.
             let byte_source = ASYNC.block_on(async move {
                 source
-                    .to_dyn_byte_source(&DynByteSourceBuilder::ObjectStore, cloud_options, None)
+                    .to_dyn_byte_source(
+                        &DynByteSourceBuilder::ObjectStore(FetchConfig::streaming()),
+                        cloud_options,
+                        None,
+                    )
                     .await
             })?;
             let byte_source = Arc::new(byte_source);
@@ -782,7 +787,7 @@ pub async fn ndjson_file_info(
                 first_scan_source
                     .as_scan_source_ref()
                     .to_dyn_byte_source(
-                        &DynByteSourceBuilder::ObjectStore,
+                        &DynByteSourceBuilder::ObjectStore(FetchConfig::streaming()),
                         cloud_options.as_ref(),
                         None,
                     )
@@ -941,6 +946,12 @@ impl SourcesToFileInfo {
             )
         };
 
+        let exact_row_estimation = unified_scan_args.row_count.map(|(total, deleted)| {
+            let n: usize = (total - deleted) as usize;
+            ((Some(n)), n)
+        });
+        const DEFAULT_ROW_ESTIMATION: (Option<usize>, usize) = (None, usize::MAX);
+
         let cloud_options = unified_scan_args.cloud_options.as_ref();
 
         Ok(match scan_type {
@@ -956,7 +967,7 @@ impl SourcesToFileInfo {
                             reader_schema: Some(either::Either::Left(Arc::new(
                                 schema.to_arrow(CompatLevel::newest()),
                             ))),
-                            row_estimation: (None, usize::MAX),
+                            row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                         },
                         FileScanIR::Parquet {
                             options,
@@ -989,9 +1000,8 @@ this scan to succeed with an empty DataFrame.",
                             )
                             .await?;
 
-                        if let Some((total, deleted)) = unified_scan_args.row_count {
-                            let size = (total - deleted) as usize;
-                            file_info.row_estimation = (Some(size), size);
+                        if let Some(exact_row_estimation) = exact_row_estimation {
+                            file_info.row_estimation = exact_row_estimation;
                         }
 
                         if self.inner.read().unwrap().len() > max_metadata_scan_cached() {
@@ -1026,12 +1036,16 @@ this scan to succeed with an empty DataFrame.",
                     )
                 }
 
-                let (file_info, md) = scans::ipc_file_info(
+                let (mut file_info, md) = scans::ipc_file_info(
                     first_scan_source,
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
                 )
                 .await?;
+
+                if let Some(exact_row_estimation) = exact_row_estimation {
+                    file_info.row_estimation = exact_row_estimation;
+                }
 
                 PolarsResult::Ok((
                     file_info,
@@ -1044,11 +1058,11 @@ this scan to succeed with an empty DataFrame.",
             .map_err(|e| e.context(failed_here!(ipc scan)))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
-                let file_info = if let Some(schema) = options.schema.clone() {
+                let mut file_info = if let Some(schema) = options.schema.clone() {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema)),
-                        row_estimation: (None, usize::MAX),
+                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                     }
                 } else {
                     let first_scan_source =
@@ -1072,16 +1086,20 @@ this scan to succeed with an empty DataFrame.",
                     .await?
                 };
 
+                if let Some(exact_row_estimation) = exact_row_estimation {
+                    file_info.row_estimation = exact_row_estimation;
+                }
+
                 PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
             }
             .map_err(|e| e.context(failed_here!(csv scan)))?,
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => {
-                let file_info = if let Some(schema) = options.schema.clone() {
+                let mut file_info = if let Some(schema) = options.schema.clone() {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema)),
-                        row_estimation: (None, usize::MAX),
+                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                     }
                 } else {
                     let first_scan_source =
@@ -1104,6 +1122,10 @@ this scan to succeed with an empty DataFrame.",
                     .await?
                 };
 
+                if let Some(exact_row_estimation) = exact_row_estimation {
+                    file_info.row_estimation = exact_row_estimation;
+                }
+
                 PolarsResult::Ok((file_info, FileScanIR::NDJson { options }))
             }
             .map_err(|e| e.context(failed_here!(ndjson scan)))?,
@@ -1124,7 +1146,7 @@ this scan to succeed with an empty DataFrame.",
                     FileInfo {
                         schema,
                         reader_schema: Some(either::Either::Right(reader_schema)),
-                        row_estimation: (None, usize::MAX),
+                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                     },
                     FileScanIR::PythonDataset {
                         dataset_object,
@@ -1141,7 +1163,7 @@ this scan to succeed with an empty DataFrame.",
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema.clone())),
-                        row_estimation: (None, usize::MAX),
+                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                     },
                     FileScanIR::Lines { name },
                 )
@@ -1159,10 +1181,16 @@ this scan to succeed with an empty DataFrame.",
                 )
             },
             FileScanDsl::Anonymous {
-                file_info,
+                mut file_info,
                 options,
                 function,
-            } => (file_info, FileScanIR::Anonymous { options, function }),
+            } => {
+                if let Some(exact_row_estimation) = exact_row_estimation {
+                    file_info.row_estimation = exact_row_estimation;
+                }
+
+                (file_info, FileScanIR::Anonymous { options, function })
+            },
         })
     }
 

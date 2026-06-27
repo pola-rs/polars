@@ -1,11 +1,20 @@
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, RwLock, Weak};
 
 use polars_async::ASYNC;
+use polars_async::executor::TaskPriority;
 use polars_config::config;
 use polars_utils::total_ord::TotalOrd;
-use tokio::sync::Mutex as AsyncMutex;
+use polars_utils::with_drop::WithDrop;
+use tokio::sync::{Mutex as AsyncMutex, Semaphore as AsyncSemaphore};
 
+// How much worse than the best achieved (sample) score are we willing to look
+// for spillables.
+const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
+
+const MAX_PARALLEL_SPILL_TASKS: usize = 64;
+
+use crate::spill_context::UNEXPLORED_SCORE;
 use crate::spill_token::TrySpillError;
 use crate::{DynSpillToken, SpillContext};
 
@@ -19,6 +28,7 @@ pub fn memory_manager() -> &'static MemoryManager {
 pub struct MemoryManager {
     contexts: RwLock<Vec<Weak<dyn SpillContext>>>,
     finding_spill_lock: AsyncMutex<()>,
+    spill_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
 }
 
@@ -27,6 +37,7 @@ impl MemoryManager {
         Self {
             contexts: RwLock::new(Vec::new()),
             finding_spill_lock: AsyncMutex::new(()),
+            spill_semaphore: Arc::new(AsyncSemaphore::new(MAX_PARALLEL_SPILL_TASKS)),
             est_spill_in_progress: AtomicU64::new(0),
         }
     }
@@ -76,22 +87,45 @@ impl MemoryManager {
                 return;
             };
 
-            for (spillable, id, sz) in spillables {
-                // Spill, or reinsert if a failure.
-                match spillable.try_spill(ctx.stats(), Arc::downgrade(&ctx), id) {
-                    Ok(spill_success) => {
-                        if !spill_success.await {
-                            ctx.reinsert(&spillable, id);
-                        }
-                    },
-                    Err(TrySpillError::Pinned) => {
-                        ctx.reinsert(&spillable, id);
-                    },
-                    Err(TrySpillError::AlreadySpilled) => {},
-                }
+            let successful_spill = Arc::new(WithDrop::new(
+                (AtomicBool::new(false), ctx.stats().clone()),
+                |(success, stats)| {
+                    if !success.load(Ordering::Relaxed) {
+                        stats.finish_exploration_event(false);
+                    }
+                },
+            ));
 
-                self.est_spill_in_progress
-                    .fetch_sub(sz as u64, Ordering::Relaxed);
+            for (spillable, id, sz) in spillables {
+                let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
+
+                let successful_spill = successful_spill.clone();
+                let ctx = ctx.clone();
+
+                polars_async::executor::spawn(TaskPriority::High, async move {
+                    // Spill, or reinsert if a failure.
+                    match spillable.try_spill(ctx.stats(), Arc::downgrade(&ctx), id) {
+                        Ok(spill_success) => {
+                            if spill_success.await {
+                                if !successful_spill.0.swap(true, Ordering::Relaxed) {
+                                    ctx.stats().finish_exploration_event(true);
+                                }
+                            } else {
+                                ctx.reinsert(&spillable, id);
+                            }
+                        },
+                        Err(TrySpillError::Pinned) => {
+                            ctx.reinsert(&spillable, id);
+                        },
+                        Err(TrySpillError::AlreadySpilled) => {},
+                    }
+
+                    MEMORY_MANAGER
+                        .est_spill_in_progress
+                        .fetch_sub(sz as u64, Ordering::Relaxed);
+
+                    drop(permit);
+                });
             }
         }
     }
@@ -120,6 +154,7 @@ impl MemoryManager {
 
             // Thompson sampling.
             let score_sample = ctx.stats().sample_score(&mut rng);
+            assert!(!score_sample.is_nan());
             live_contexts.push((ctx, score_sample));
         }
         drop(contexts);
@@ -127,11 +162,26 @@ impl MemoryManager {
         // Find the best context and loop over its candidates. For each
         // candidate we check if it can be spilled else we reinsert it.
         let min_spill = config().ooc_spill_min_bytes();
-        let best_ctx = live_contexts.into_iter().max_by(|a, b| a.1.tot_cmp(&b.1));
-        let out = if let Some((best_ctx, _score)) = best_ctx {
+        live_contexts.sort_by(|a, b| a.1.tot_cmp(&b.1).reverse());
+        let best_explored_score = live_contexts
+            .iter()
+            .map(|(_ctx, score)| *score)
+            .find(|s| *s < UNEXPLORED_SCORE)
+            .unwrap_or_default();
+
+        let mut out = None;
+        for (ctx, score) in live_contexts {
+            // Refuse to consider contexts which are significantly worse than
+            // the best already-explored one.
+            if score * EXPLORE_BEYOND_BEST_SCORE_THRESHOLD < best_explored_score {
+                break;
+            }
+
+            ctx.stats().start_exploration_event();
+
             let mut total_est_spill = 0;
             let mut candidates = Vec::new();
-            for (cand, id) in best_ctx.pop() {
+            for (cand, id) in ctx.pop() {
                 if cand.can_spill()
                     && let Some(sz) = cand.estimate_byte_size()
                     && sz as u64 >= min_spill
@@ -140,21 +190,21 @@ impl MemoryManager {
                     candidates.push((cand, id, sz));
                 } else {
                     if !cand.is_spilled_or_dropped() {
-                        best_ctx.reinsert(&cand, id);
+                        ctx.reinsert(&cand, id);
                     }
                 }
             }
 
-            // Increment the spill-in-progress to avoid eager over-spilling.
-            self.est_spill_in_progress
-                .fetch_add(total_est_spill, Ordering::Relaxed);
-
-            // TODO: penalize context also for time spent finding candidates, so an all-pinned
-            // context or all-tiny frame context doesn't keep being chosen.
-            Some((best_ctx, candidates))
-        } else {
-            None
-        };
+            if candidates.is_empty() {
+                ctx.stats().finish_exploration_event(false);
+            } else {
+                // Increment the spill-in-progress to avoid eager over-spilling.
+                self.est_spill_in_progress
+                    .fetch_add(total_est_spill, Ordering::Relaxed);
+                out = Some((ctx, candidates));
+                break;
+            }
+        }
 
         drop(finding_spill_guard);
         if has_dead_context {

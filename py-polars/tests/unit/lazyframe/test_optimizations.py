@@ -1109,6 +1109,7 @@ def test_hconcat_reorder_projection_push_to_inputs() -> None:
             pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
         ],
         how="horizontal",
+        strict=True,
     )
 
     q = hconcat.select("b", "a", "d", "c")
@@ -1144,6 +1145,7 @@ def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
             ),
         ],
         how="horizontal",
+        strict=True,
     ).select("B", "C")
 
     f = io.BytesIO()
@@ -1188,3 +1190,39 @@ def test_projection_pushdown_with_columns_27914() -> None:
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
+
+
+def test_projection_pushdown_row_index_reorder_28015() -> None:
+    lf = pl.LazyFrame({"key": [10, 11], "value": [1, 2]}).with_row_index()
+    q1 = lf.join(lf.select("index"), on="index")
+    q2 = q1.drop("index").with_row_index()
+    q3 = q2.join(q2.join(q2.select("key"), on="key").select("index"), on="index")
+    out = q3.join(q3, on="key").collect(engine="streaming")
+
+    assert_frame_equal(
+        out.sort("index"),
+        pl.DataFrame(
+            {
+                "index": [0, 1],
+                "key": [10, 11],
+                "value": [1, 2],
+                "index_right": [0, 1],
+                "value_right": [1, 2],
+            },
+            schema=out.schema,
+        ),
+    )
+
+
+def test_projection_pushdown_groupby_len_28094() -> None:
+    q = (
+        pl.LazyFrame(
+            {"i128": [1], "u128": [1], "bool": [True]},
+            schema={"i128": pl.Int128, "u128": pl.UInt128, "bool": pl.Boolean},
+        )
+        .group_by("i128", "u128")
+        .agg(pl.first("bool"))
+        .select(pl.len())
+    )
+
+    assert q.collect().item() == 1

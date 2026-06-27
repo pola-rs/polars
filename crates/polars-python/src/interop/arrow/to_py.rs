@@ -1,5 +1,3 @@
-use std::ffi::CString;
-
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi;
 use arrow::record_batch::RecordBatch;
@@ -77,8 +75,7 @@ pub(crate) fn series_to_stream<'py>(
     ) as _;
 
     let stream = ffi::export_iterator(iter, field);
-    let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-    PyCapsule::new(py, stream, Some(stream_capsule_name))
+    PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
 }
 
 pub(crate) fn dataframe_to_stream<'py>(
@@ -88,8 +85,7 @@ pub(crate) fn dataframe_to_stream<'py>(
     let iter = Box::new(DataFrameStreamIterator::new(df));
     let field = iter.field();
     let stream = ffi::export_iterator(iter, field);
-    let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-    PyCapsule::new(py, stream, Some(stream_capsule_name))
+    PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
 }
 
 #[cfg(feature = "c_api")]
@@ -111,8 +107,7 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
         false,
     ));
 
-    let capsule_name = CString::new("arrow_schema").unwrap();
-    PyCapsule::new(py, schema, Some(capsule_name))
+    PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }
 
 pub struct DataFrameStreamIterator {
