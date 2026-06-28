@@ -76,7 +76,9 @@ impl ComputeNode for MultiScan {
             // Refresh first - in case there is an error we end here instead of ending when we go
             // into spawn.
             executor::task_scope(|s| {
-                ASYNC.block_on(s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)))
+                ASYNC.block_in_place_on(
+                    s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)),
+                )
             })?;
 
             match self.state {

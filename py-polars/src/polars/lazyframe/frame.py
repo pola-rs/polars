@@ -54,18 +54,18 @@ from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _is_generator,
+    _Omitted,
     display_dot_graph,
     extend_bool,
-    find_stacklevel,
     is_bool_sequence,
     is_sequence,
-    issue_warning,
     normalize_filepath,
     parse_percentiles,
     qualified_type_name,
     require_same_type,
 )
 from polars._utils.wrap import wrap_df, wrap_expr
+from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -212,9 +212,7 @@ def _to_sink_target(
 def _gpu_engine_callback(
     engine: EngineType,
     *,
-    streaming: bool,
     background: bool,
-    new_streaming: bool,
     _eager: bool,
 ) -> Callable[[Any, int | None], None] | None:
     is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
@@ -223,10 +221,9 @@ def _gpu_engine_callback(
     ):
         msg = f"Invalid engine argument {engine=}"
         raise ValueError(msg)
-    if (streaming or background or new_streaming) and is_gpu:
+    if background and is_gpu:
         issue_warning(
-            "GPU engine does not support streaming or background collection, "
-            "disabling GPU engine.",
+            "GPU engine does not support background collection, disabling GPU engine.",
             category=UserWarning,
         )
         is_gpu = False
@@ -270,6 +267,11 @@ class LazyFrame:
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        The order of the schema determines the column order of the frame.
+        When passing a dict, its insertion order is respected. To override specific
+        column data types by name without changing column order, use
+        ``schema_overrides`` instead.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
@@ -997,7 +999,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Allows to alter the lazy frame during the plan stage with the resolved schema.
 
         In contrast to `pipe`, this method does not execute `function` immediately but
-        only during the plan stage. This allows to use the resolved schema of the input
+        only during the plan stage. This allows using the resolved schema of the input
         to dynamically alter the lazy frame. This also means that any exceptions raised
         by `function` will only be emitted during the plan stage.
 
@@ -2209,9 +2211,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         callback = _gpu_engine_callback(
             engine,
-            streaming=False,
             background=False,
-            new_streaming=False,
             _eager=False,
         )
         if _kwargs.get("post_opt_callback") is not None:
@@ -2604,7 +2604,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         for k in _kwargs:
             if k not in (  # except "private" kwargs
-                "new_streaming",
                 "post_opt_callback",
             ):
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
@@ -2612,18 +2611,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         engine = _select_engine(engine)
 
-        new_streaming = (
-            _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"
-        )
-
-        if new_streaming:
-            engine = "streaming"
-
         callback = _gpu_engine_callback(
             engine,
-            streaming=False,
             background=background,
-            new_streaming=new_streaming,
             _eager=optimizations._pyoptflags.eager,
         )
 
@@ -3441,7 +3431,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if delta_write_options is None:
                 delta_write_options = {}
 
-            write_deltalake(
+            write_deltalake(  # pyrefly: ignore[no-matching-overload]
                 table_or_uri=target,
                 data=stream,  # type: ignore[call-overload]
                 mode=mode,
@@ -3581,8 +3571,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
         compat_level
-            Use a specific compatibility level
-            when exporting Polars' internal data structures.
+            Compatibility level to use when exporting Polars data structures.
+            The default compatibility level is recommended for most users.
+            Use ``pl.CompatLevel.oldest()`` for the most compatible level.
+            ``pl.CompatLevel.newest()`` uses the highest supported compatibility
+            level, but is considered unstable and may change without it being
+            considered a breaking change.
         record_batch_size
             Size of the record batches in number of rows.
 
@@ -6041,8 +6035,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (i.e., strictly less-than / strictly greater-than).
         check_sortedness
             Check the sortedness of the asof keys. If the keys are not sorted Polars
-            will error. Currently, sortedness cannot be checked if 'by' groups are
-            provided.
+            will error. Currently, the `in-memory` engine cannot check the sortedness
+            if 'by' groups are provided. The `streaming` engine will only check the
+            sortedness of the rows it processes.
 
         Notes
         -----
@@ -8132,7 +8127,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool = _Omitted,
         keep_nulls: bool = True,
     ) -> LazyFrame:
         """
@@ -8158,7 +8153,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
         ... )
-        >>> lf.explode("numbers").collect()
+        >>> lf.explode("numbers", empty_as_null=False).collect()
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -8175,6 +8170,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )
@@ -9099,8 +9100,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by that key otherwise
-        the output will not make sense.
+        are sorted in ascending order by the key, with null
+        keys at the end, otherwise the order of the output
+        will not make sense.
 
         The schemas of both LazyFrames must be equal.
 
@@ -9375,11 +9377,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             msg = f"`how` must be one of {{'left', 'inner', 'full'}}; found {how!r}"
             raise ValueError(msg)
 
-        row_index_used = False
+        row_index_name = None
         if on is None:
             if left_on is None and right_on is None:
                 # no keys provided--use row index
-                row_index_used = True
                 row_index_name = "__POLARS_ROW_INDEX"
                 self = self.with_row_index(row_index_name)
                 other = other.with_row_index(row_index_name)
@@ -9414,7 +9415,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # no need to join if *only* join columns are in other (inner/left update only)
         if how != "full" and len(right_schema) == len(right_on):
-            if row_index_used:
+            if row_index_name is not None:
                 return self.drop(row_index_name)
             return self
 
@@ -9456,7 +9457,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             .drop(drop_columns)
         )
-        if row_index_used:
+        if row_index_name is not None:
             result = result.drop(row_index_name)
 
         return self._from_pyldf(result._ldf)

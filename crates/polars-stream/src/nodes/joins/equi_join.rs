@@ -220,11 +220,11 @@ fn estimate_cardinality(
     let mut total_height = 0;
     let mut to_process_end = 0;
     while to_process_end < morsels.len() && total_height < sample_limit {
-        total_height += morsels[to_process_end].df().height();
+        total_height += morsels[to_process_end].height();
         to_process_end += 1;
     }
     let last_morsel_idx = to_process_end - 1;
-    let last_morsel_len = morsels[last_morsel_idx].df().height();
+    let last_morsel_len = morsels[last_morsel_idx].height();
     let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
 
     RAYON.install(|| {
@@ -259,7 +259,7 @@ fn estimate_size_per_row(morsels: &[Morsel]) -> f64 {
     let mut total_height = 0;
     for m in morsels {
         total_size += m.df().estimated_size();
-        total_height += m.df().height();
+        total_height += m.height();
     }
     total_size as f64 / total_height as f64
 }
@@ -282,7 +282,7 @@ impl SampleState {
         join_sample_limit: usize,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
-            *len += morsel.df().height();
+            *len += morsel.height();
             if *len >= join_sample_limit
                 || *len
                     >= other_final_len
@@ -381,10 +381,16 @@ impl SampleState {
 
         // Transition to building state.
         params.left_is_build = Some(left_is_build);
-        let mut sampled_build_morsels =
-            BufferedStream::new(core::mem::take(&mut self.left), MorselSeq::default());
-        let mut sampled_probe_morsels =
-            BufferedStream::new(core::mem::take(&mut self.right), MorselSeq::default());
+        let mut sampled_build_morsels = BufferedStream::new(
+            "equi-join-left-sample".into(),
+            core::mem::take(&mut self.left),
+            MorselSeq::default(),
+        );
+        let mut sampled_probe_morsels = BufferedStream::new(
+            "equi-join-right-sample".into(),
+            core::mem::take(&mut self.right),
+            MorselSeq::default(),
+        );
         if !left_is_build {
             core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
         }
@@ -418,7 +424,7 @@ impl SampleState {
                     ));
                 }
 
-                ASYNC.block_on(async move {
+                ASYNC.block_in_place_on(async move {
                     for handle in join_handles {
                         handle.await?;
                     }
@@ -738,7 +744,7 @@ impl BuildState {
             drop(arc_morsels_per_local_builder);
             drop(morsel_drop_q_send);
 
-            ASYNC.block_on(async move {
+            ASYNC.block_in_place_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }
@@ -1296,7 +1302,7 @@ impl EquiJoinNode {
                 sample_limit,
             },
             table: new_idx_table(unique_key_schema),
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("equi-join".into()),
         })
     }
 }

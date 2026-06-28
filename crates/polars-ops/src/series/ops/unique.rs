@@ -52,15 +52,15 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
         DataType::Null => unreachable!("handled before"),
         DataType::BinaryOffset => {
             let ca = s.binary_offset()?;
-            Ok(unique_counts_helper(ca.into_iter()).into_series())
+            Ok(unique_counts_helper(ca.iter()).into_series())
         },
         DataType::Binary => {
             let ca = s.binary()?;
-            Ok(unique_counts_helper(ca.into_iter()).into_series())
+            Ok(unique_counts_helper(ca.iter()).into_series())
         },
         DataType::String => {
             let ca = s.str()?.as_binary();
-            Ok(unique_counts_helper(ca.into_iter()).into_series())
+            Ok(unique_counts_helper(ca.iter()).into_series())
         },
         DataType::Boolean => {
             let ca = s.bool()?;

@@ -6,7 +6,7 @@ import polars._reexport as pl
 import polars.functions as F
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
-from polars._utils.various import NO_DEFAULT
+from polars._utils.various import NO_DEFAULT, _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
 from polars.datatypes import Int64
 from polars.datatypes.classes import Datetime
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-class StringNameSpace:
+class StringNameSpace(_NamespaceSuggestMixin):
     """Series.str namespace."""
 
     _accessor = "str"

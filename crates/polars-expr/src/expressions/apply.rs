@@ -184,7 +184,7 @@ impl ApplyExpr {
         } else {
             agg.list()
                 .unwrap()
-                .into_iter()
+                .series_iter()
                 .map(f)
                 .collect::<PolarsResult<_>>()?
         };

@@ -6,15 +6,19 @@ use arrow::io::ipc::read::{Dictionaries, read_dictionary_block};
 use async_trait::async_trait;
 use polars_async::executor::{self, JoinHandle, TaskPriority};
 use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
+use polars_buffer::Buffer;
+use polars_config::config;
 use polars_core::prelude::DataType;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::io::ipc::read::{
     BlockReader, FileMetadata, ProjectionInfo, prepare_projection, read_file_metadata,
 };
-use polars_error::{ErrString, PolarsError, PolarsResult};
+use polars_error::constants::LENGTH_LIMIT_MSG;
+use polars_error::{ErrString, PolarsError, PolarsResult, polars_err, to_compute_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
+use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
 use polars_io::utils::byte_source::{
     BufferByteSource, ByteSource, DynByteSource, DynByteSourceBuilder,
 };
@@ -23,6 +27,7 @@ use polars_plan::dsl::ScanSource;
 use polars_utils::IdxSize;
 use polars_utils::bool::UnsafeBool;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
+use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::slice_enum::Slice;
 use record_batch_data_fetch::RecordBatchDataFetcher;
 use record_batch_decode::RecordBatchDecoder;
@@ -34,9 +39,10 @@ use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::ipc::metadata::read_ipc_metadata_bytes;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::multi_scan::reader_interface::{
-    FileReader, FileReaderCallbacks, Projection,
+    FileReader, FileReaderCallbacks, Projection, calc_row_position_after_slice,
 };
 use crate::nodes::io_sources::parquet::init::split_to_morsels;
+use crate::nodes::io_sources::shared::pipeline_budget::PipelineBudget;
 use crate::utils::tokio_handle_ext::AbortOnDropHandle;
 
 pub mod builder;
@@ -64,8 +70,8 @@ struct IpcFileReader {
 }
 
 struct RecordBatchPrefetchSync {
-    prefetch_limit: usize,
-    prefetch_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Request throttling, by count and by memory.
+    pipeline_budget: PipelineBudget,
     shared_prefetch_wait_group_slot: Arc<std::sync::Mutex<Option<WaitGroup>>>,
 
     /// Waits for the previous reader to finish spawning prefetches.
@@ -77,6 +83,7 @@ struct RecordBatchPrefetchSync {
 #[derive(Clone)]
 struct InitializedState {
     file_metadata: Arc<FileMetadata>,
+    file_pl_metadata: Option<Arc<PlIpcMetadata>>,
     byte_source: Arc<DynByteSource>,
     dictionaries: Arc<Option<Dictionaries>>,
 }
@@ -144,10 +151,20 @@ impl FileReader for IpcFileReader {
             Arc::new(Some(dictionaries))
         };
 
+        let file_pl_metadata = file_metadata
+            .custom_metadata
+            .as_ref()
+            .and_then(|md| md.get(POLARS_IPC_METADATA_KEY))
+            .map(|md_str| serde_json::from_str::<PlIpcMetadata>(md_str))
+            .transpose()
+            .map_err(to_compute_err)?
+            .map(Arc::new);
+
         self.init_data = Some(InitializedState {
             file_metadata,
             byte_source,
             dictionaries,
+            file_pl_metadata,
         });
 
         Ok(())
@@ -179,6 +196,7 @@ impl FileReader for IpcFileReader {
         // Initialize.
         let InitializedState {
             file_metadata,
+            file_pl_metadata,
             byte_source,
             dictionaries,
         } = self.init_data.clone().unwrap();
@@ -195,8 +213,8 @@ impl FileReader for IpcFileReader {
             callbacks:
                 FileReaderCallbacks {
                     file_schema_tx,
-                    n_rows_in_file_tx,
-                    row_position_on_end_tx,
+                    mut n_rows_in_file_tx,
+                    mut row_position_on_end_tx,
                 },
         } = args
         else {
@@ -214,43 +232,31 @@ impl FileReader for IpcFileReader {
             _ = file_schema_tx.send(file_schema_pl.clone());
         }
 
-        // @NOTE. Negative slicing takes a 2-pass approach. The first pass gets the total row count
-        // by setting slice.len to 0, and uses this to convert the negative slice into a positive slice.
-        // The second pass uses the positive slice to fetch and slice the data.
-        let fetch_metadata_only = pre_slice_arg.as_ref().is_some_and(|x| x.len() == 0);
-
         // Always create a slice. If no slice was given, just make the biggest slice possible.
         let slice_range: Range<usize> = pre_slice_arg
             .clone()
             .map_or(0..usize::MAX, Range::<usize>::from);
-        let n_rows_limit = if pre_slice_arg.is_some() {
-            Some(slice_range.end)
-        } else {
-            None
-        };
 
         // Avoid materializing projection info if we are projecting all the columns of this file.
-        let projection_indices: Option<Vec<usize>> = if let Some(first_mismatch_idx) =
-            (0..file_metadata.schema.len().min(projected_schema.len())).find(|&i| {
+        let projection_indices: Option<Arc<[usize]>> = if let Some(first_mismatch_idx) =
+            (0..usize::min(file_metadata.schema.len(), projected_schema.len())).find(|&i| {
                 file_metadata.schema.get_at_index(i).unwrap().0
                     != projected_schema.get_at_index(i).unwrap().0
             }) {
-            let mut out = Vec::with_capacity(file_metadata.schema.len());
-
-            out.extend(0..first_mismatch_idx);
-
-            out.extend(
-                (first_mismatch_idx..projected_schema.len()).filter_map(|i| {
-                    file_metadata
-                        .schema
-                        .index_of(projected_schema.get_at_index(i).unwrap().0)
-                }),
-            );
-
-            Some(out)
+            Some(
+                (0..first_mismatch_idx)
+                    .chain(
+                        (first_mismatch_idx..projected_schema.len()).filter_map(|i| {
+                            file_metadata
+                                .schema
+                                .index_of(projected_schema.get_at_index(i).unwrap().0)
+                        }),
+                    )
+                    .collect(),
+            )
         } else if file_metadata.schema.len() > projected_schema.len() {
             // Names match up to projected schema len.
-            Some((0..projected_schema.len()).collect::<Vec<_>>())
+            Some((0..projected_schema.len()).collect())
         } else {
             // Name order matches up to `file_metadata.schema.len()`, we are projecting all columns
             // in this file.
@@ -276,8 +282,9 @@ impl FileReader for IpcFileReader {
             )
         }
 
-        let projection_info: Option<ProjectionInfo> =
-            projection_indices.map(|indices| prepare_projection(&file_metadata.schema, indices));
+        let projection_info: Option<ProjectionInfo> = projection_indices
+            .as_deref()
+            .map(|indices| prepare_projection(&file_metadata.schema, indices.to_vec()));
         let projection_info = Arc::new(projection_info);
 
         let schema = projection_info.as_ref().as_ref().map_or(
@@ -296,7 +303,8 @@ impl FileReader for IpcFileReader {
 
         let record_batch_prefetch_size = self
             .record_batch_prefetch_sync
-            .prefetch_limit
+            .pipeline_budget
+            .count_limit()
             .min(file_metadata.blocks.len())
             .max(1);
 
@@ -328,7 +336,8 @@ impl FileReader for IpcFileReader {
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(num_pipelines);
         let (mut morsel_send, morsel_recv) = FileReaderOutputSend::new_serial();
 
-        let rb_prefetch_semaphore = Arc::clone(&self.record_batch_prefetch_sync.prefetch_semaphore);
+        let pipeline_budget = self.record_batch_prefetch_sync.pipeline_budget.clone();
+
         let rb_prefetch_prev_all_spawned =
             Option::take(&mut self.record_batch_prefetch_sync.prev_all_spawned);
         let rb_prefetch_current_all_spawned =
@@ -336,19 +345,107 @@ impl FileReader for IpcFileReader {
 
         // Task: Prefetch.
         let byte_source = byte_source.clone();
-        let metadata = file_metadata.clone();
+        let mut base_rb_metadata_fetch_count: u64 = 0;
+
         let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
-            let mut record_batch_data_fetcher = RecordBatchDataFetcher {
-                memory_prefetch_func,
-                metadata,
+            let record_batch_cum_len = if let Some(file_pl_metadata) = file_pl_metadata {
+                struct CumLenWrap(Arc<PlIpcMetadata>);
+
+                impl AsRef<[IdxSize]> for CumLenWrap {
+                    fn as_ref(&self) -> &[IdxSize] {
+                        self.0.record_batch_cum_len.as_slice()
+                    }
+                }
+
+                Some(Buffer::from_owner(CumLenWrap(file_pl_metadata)))
+            } else if pre_slice_arg.is_some()
+                || n_rows_in_file_tx.is_some()
+                || row_position_on_end_tx.is_some()
+            {
+                let mut metadata_ranges: Vec<Range<usize>> = file_metadata
+                    .blocks
+                    .iter()
+                    .map(|block| {
+                        block.offset as usize
+                            ..block.offset as usize + block.meta_data_length as usize
+                    })
+                    .collect();
+
+                base_rb_metadata_fetch_count += metadata_ranges.len() as u64;
+
+                if config().verbose() {
+                    eprintln!(
+                        "[IpcFileReader]: Read all record batch metadata (num_batches: {})",
+                        metadata_ranges.len()
+                    )
+                }
+
+                let record_batch_metadata_map = byte_source
+                    .get_ranges(metadata_ranges.as_mut_slice())
+                    .await?;
+
+                let mut message_scratch = ScratchVec::default();
+
+                Some(
+                    file_metadata
+                        .blocks
+                        .iter()
+                        .map(|block| {
+                            let fetched_bytes = record_batch_metadata_map
+                                .get(&(block.offset as usize))
+                                .unwrap();
+
+                            let mut reader =
+                                BlockReader::new(Cursor::new(fetched_bytes.as_slice()));
+                            reader
+                                .record_batch_num_rows(message_scratch.get())?
+                                .try_into()
+                                .map_err(|_| polars_err!(ComputeError: LENGTH_LIMIT_MSG))
+                        })
+                        .scan(0, |offset: &mut IdxSize, v: PolarsResult<IdxSize>| {
+                            Some(v.and_then(|num_rows_this_batch| {
+                                *offset = offset
+                                    .checked_add(num_rows_this_batch)
+                                    .ok_or_else(|| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?;
+
+                                Ok(*offset)
+                            }))
+                        })
+                        .collect::<PolarsResult<_>>()?,
+                )
+            } else {
+                None
+            };
+
+            if let Some(record_batch_cum_len) = record_batch_cum_len.as_deref() {
+                let n_rows_in_file = record_batch_cum_len.last().copied().unwrap_or(0);
+
+                if let Some(n_rows_in_file_tx) = n_rows_in_file_tx.take() {
+                    _ = n_rows_in_file_tx.send(n_rows_in_file);
+                }
+
+                if let Some(row_position_on_end_tx) = row_position_on_end_tx.take() {
+                    _ = row_position_on_end_tx.send(calc_row_position_after_slice(
+                        n_rows_in_file,
+                        pre_slice_arg.clone(),
+                    ));
+                }
+            }
+
+            let record_batch_data_fetcher = RecordBatchDataFetcher {
+                file_metadata,
+                record_batch_cum_len,
+
                 byte_source,
-                record_batch_idx: 0,
-                fetch_metadata_only,
-                n_rows_limit,
-                n_rows_in_file_tx,
-                row_position_on_end_tx,
+                memory_prefetch_func,
+
+                subset_projection_idxs: projection_indices,
+                pre_slice: pre_slice_arg,
+
                 prefetch_send,
-                rb_prefetch_semaphore,
+                base_rb_metadata_fetch_count,
+
+                pipeline_budget,
                 rb_prefetch_current_all_spawned,
             };
 
@@ -356,18 +453,20 @@ impl FileReader for IpcFileReader {
                 rb_prefetch_prev_all_spawned.wait().await;
             }
 
-            record_batch_data_fetcher.run().await?;
-
-            PolarsResult::Ok(())
+            record_batch_data_fetcher.run().await
         }));
 
-        // Task: Decode.
-        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
+        // Receives fetched record batches and synchronizes row position, then calls decode.
+        let decode_dispatch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             let mut current_row_offset: IdxSize = 0;
 
             while let Some((prefetch_task, permit)) = prefetch_recv.recv().await {
                 let mut record_batch_data = prefetch_task.await.unwrap()?;
-                record_batch_data.row_offset = Some(current_row_offset);
+
+                match record_batch_data.row_offset {
+                    Some(row_offset) => current_row_offset = row_offset,
+                    None => record_batch_data.row_offset = Some(current_row_offset),
+                };
 
                 // Fetch every record batch so we can track the total row count.
                 let rb_num_rows = record_batch_data.num_rows;
@@ -485,7 +584,7 @@ impl FileReader for IpcFileReader {
         // Orchestration.
         let join_task = ASYNC.spawn(async move {
             prefetch_task.await.unwrap()?;
-            decode_task.await.unwrap()?;
+            decode_dispatch_task.await.unwrap()?;
             distribute_task.await?;
             Ok(())
         });

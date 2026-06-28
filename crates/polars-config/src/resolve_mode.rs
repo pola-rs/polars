@@ -3,45 +3,49 @@ use std::str::FromStr;
 
 #[repr(u8)]
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
-pub enum SpillPolicy {
+pub enum ResolveMode {
     #[default]
-    NoSpill = 0,
-    Spill = 1,
+    None = 0,
+    RowCounts = 1,
+    Full = 2,
 }
 
-impl fmt::Display for SpillPolicy {
+impl fmt::Display for ResolveMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_static_str())
     }
 }
 
-impl FromStr for SpillPolicy {
+impl FromStr for ResolveMode {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "no_spill" => Ok(Self::NoSpill),
-            "spill" => Ok(Self::Spill),
+            "none" => Ok(Self::None),
+            "row_counts" => Ok(Self::RowCounts),
+            "full" => Ok(Self::Full),
             v => Err(format!(
-                "`spill_policy` must be one of {{'no_spill', 'spill'}}, got {v}",
+                "`resolve_metadata_level` must be one of {{'none', 'row_counts', 'full'}}, got {v}",
             )),
         }
     }
 }
 
-impl SpillPolicy {
+impl ResolveMode {
     pub(crate) fn from_discriminant(d: u8) -> Self {
         match d {
-            0 => Self::NoSpill,
-            1 => Self::Spill,
+            0 => Self::None,
+            1 => Self::RowCounts,
+            2 => Self::Full,
             _ => unreachable!(),
         }
     }
 
     pub fn as_static_str(&self) -> &'static str {
         match self {
-            Self::NoSpill => "no_spill",
-            Self::Spill => "spill",
+            Self::None => "none",
+            Self::RowCounts => "row_counts",
+            Self::Full => "full",
         }
     }
 }

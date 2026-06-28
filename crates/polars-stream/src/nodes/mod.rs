@@ -23,6 +23,7 @@ pub mod io_sinks;
 pub mod io_sources;
 #[cfg(feature = "is_first_distinct")]
 pub mod is_first_distinct;
+pub mod is_sorted;
 pub mod joins;
 pub mod map;
 #[cfg(feature = "merge_sorted")]

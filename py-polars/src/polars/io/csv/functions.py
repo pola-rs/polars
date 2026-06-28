@@ -230,9 +230,9 @@ def read_csv(
         .. deprecated:: 1.10.0
             This parameter is now a no-op.
     eol_char
-        Single byte end of line character (default: `\n`). When encountering a file
-        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
-        `\r` will be removed when processed.
+        Single byte end of line character (default: ``\n``). When encountering a file
+        with windows line endings (``\r\n``), one can go with the default ``\n``. The
+        extra ``\r`` will be removed when processed.
     raise_if_empty
         When there is no data in the source, `NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -491,12 +491,12 @@ def read_csv(
     schema_overrides_is_list = isinstance(schema_overrides, Sequence)
     encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
 
-    new_streaming = (
-        os.getenv("POLARS_FORCE_NEW_STREAMING") == "1"
-        or os.getenv("POLARS_AUTO_NEW_STREAMING") == "1"
+    streaming = (
+        os.getenv("POLARS_FORCE_STREAMING") == "1"
+        or os.getenv("POLARS_AUTO_STREAMING") == "1"
     )
 
-    if new_streaming or (
+    if streaming or (
         # Check that it is not a BytesIO object
         isinstance(v := source, (str, Path))
         and (
@@ -515,15 +515,18 @@ def read_csv(
             #   fsspec and object_store (would require a breaking change)
         )
     ):
+        source_normalized: str | list[str] | IO[str] | IO[bytes] | bytes | bytearray
         if isinstance(source, (str, Path)):
-            source = normalize_filepath(source, check_not_directory=False)
+            source_normalized = normalize_filepath(source, check_not_directory=False)
         elif is_path_or_str_sequence(source, allow_str=False):
-            source = [  # type: ignore[assignment]
+            source_normalized = [
                 normalize_filepath(source, check_not_directory=False)
                 for source in source
             ]
+        else:
+            source_normalized = source
 
-        if not new_streaming:
+        if not streaming:
             if schema_overrides_is_list:
                 msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
                 raise ValueError(msg)
@@ -532,7 +535,7 @@ def read_csv(
                 raise ValueError(msg)
 
         lf = _scan_csv_impl(
-            source,
+            source_normalized,
             has_header=has_header,
             separator=separator,
             comment_prefix=comment_prefix,
@@ -914,9 +917,9 @@ def read_csv_batched(
         .. deprecated:: 1.10.0
             Is a no-op.
     eol_char
-        Single byte end of line character (default: `\n`). When encountering a file
-        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
-        `\r` will be removed when processed.
+        Single byte end of line character (default: ``\n``). When encountering a file
+        with windows line endings (``\r\n``), one can go with the default ``\n``. The
+        extra ``\r`` will be removed when processed.
     raise_if_empty
         When there is no data in the source,`NoDataError` is raised. If this parameter
         is set to False, `None` will be returned from `next_batches(n)` instead.
@@ -1249,9 +1252,9 @@ def scan_csv(
         can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type `pl.String`.
     eol_char
-        Single byte end of line character (default: `\n`). When encountering a file
-        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
-        `\r` will be removed when processed.
+        Single byte end of line character (default: ``\n``). When encountering a file
+        with windows line endings (``\r\n``), one can go with the default ``\n``. The
+        extra ``\r`` will be removed when processed.
     new_columns
         Provide an explicit list of string column names to use (for example, when
         scanning a headerless CSV file). If the given list is shorter than the width of

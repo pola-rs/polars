@@ -354,7 +354,7 @@ fn aexpr_slice_pushdown_top(
     )
     .unwrap();
 
-    if let AExpr::Column(_) = ae {
+    if let AExpr::Column(_) | AExpr::Len = ae {
         *col_hit_count = col_hit_count.map(|x| x + 1);
     }
 

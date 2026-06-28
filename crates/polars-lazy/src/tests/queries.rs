@@ -1173,7 +1173,7 @@ fn test_ternary_null() -> PolarsResult<()> {
         .collect()?;
 
     assert_eq!(
-        out.column("foo")?.is_null().into_iter().collect::<Vec<_>>(),
+        out.column("foo")?.is_null().iter().collect::<Vec<_>>(),
         &[Some(false), Some(false), Some(true)]
     );
     Ok(())

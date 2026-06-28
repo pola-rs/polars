@@ -10,6 +10,7 @@ mod count;
 mod cov;
 mod first_last;
 mod first_last_nonnull;
+mod has_nulls;
 mod implode;
 mod is_empty;
 mod mean;

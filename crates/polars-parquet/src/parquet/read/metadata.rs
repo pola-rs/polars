@@ -6,7 +6,7 @@ use polars_buffer::Buffer;
 use super::super::metadata::FileMetadata;
 use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::handwritten_thrift::decode_file_metadata;
+use crate::parquet::handwritten_thrift::{decode_file_metadata, decode_num_rows};
 
 pub(super) fn metadata_len(buffer: &[u8]) -> u32 {
     let len = buffer.len();
@@ -39,57 +39,8 @@ pub fn read_metadata_with_size<R: Read + Seek>(
     reader: &mut R,
     file_size: u64,
 ) -> ParquetResult<FileMetadata> {
-    if file_size < HEADER_SIZE + FOOTER_SIZE {
-        return Err(ParquetError::oos(
-            "A Parquet file must contain a header and footer with at least 12 bytes",
-        ));
-    }
-
-    // read and cache up to DEFAULT_FOOTER_READ_SIZE bytes from the end and process the footer
-    let default_end_len = min(DEFAULT_FOOTER_READ_SIZE, file_size) as usize;
-    reader.seek(SeekFrom::End(-(default_end_len as i64)))?;
-
-    let mut buffer = vec![];
-    buffer.try_reserve(default_end_len)?;
-    reader
-        .take(default_end_len as u64)
-        .read_to_end(&mut buffer)?;
-
-    // check this is indeed a parquet file
-    if buffer[default_end_len - 4..] != PARQUET_MAGIC {
-        return Err(ParquetError::oos("The file must end with PAR1"));
-    }
-
-    let metadata_len: u32 = metadata_len(&buffer);
-    let metadata_len: u64 = metadata_len as u64;
-
-    let footer_len = FOOTER_SIZE + metadata_len;
-    if footer_len > file_size {
-        return Err(ParquetError::oos(
-            "The footer size must be smaller or equal to the file's size",
-        ));
-    }
-
-    // Footer bytes need to outlive the FileMetadata so stats `ByteRange`s
-    // stay resolvable, wrap in a `Buffer`. Both branches end with a
-    // zero-copy move from the source `Vec<u8>` into the buffer.
-    let footer_buf: Buffer<u8> = if (footer_len as usize) <= buffer.len() {
-        // The full footer is already in the bytes we prefetched, slice into
-        // the existing buffer.
-        let remaining = buffer.len() - footer_len as usize;
-        Buffer::from_vec(buffer).sliced(remaining..)
-    } else {
-        // the end of file read by default is not long enough, read again
-        // including the metadata.
-        reader.seek(SeekFrom::End(-(footer_len as i64)))?;
-
-        buffer.clear();
-        buffer.try_reserve(footer_len as usize)?;
-        reader.take(footer_len).read_to_end(&mut buffer)?;
-
-        Buffer::from_vec(buffer)
-    };
-    deserialize_metadata(footer_buf)
+    let footer = fetch_footer_buf(reader, file_size)?;
+    deserialize_metadata(footer)
 }
 
 /// Parse loaded metadata bytes via the hand-written Thrift compact decoder.
@@ -100,4 +51,77 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 pub fn deserialize_metadata(footer: Buffer<u8>) -> ParquetResult<FileMetadata> {
     let compact = decode_file_metadata(footer)?;
     FileMetadata::from_compact(compact)
+}
+
+/// Decode only `FileMetaData.num_rows` (thrift field 3) from `footer`.
+/// Used by Polars multi-file scans in `RowCounts` resolve mode. See
+/// [`crate::parquet::handwritten_thrift::decode_num_rows`].
+pub fn deserialize_num_rows(footer: Buffer<u8>) -> ParquetResult<i64> {
+    decode_num_rows(footer)
+}
+
+/// Sync variant of [`deserialize_num_rows`] that owns the reader.
+pub fn read_num_rows<R: Read + Seek>(reader: &mut R) -> ParquetResult<i64> {
+    let file_size = stream_len(reader)?;
+    read_num_rows_with_size(reader, file_size)
+}
+
+/// As [`read_num_rows`] but with a pre-fetched file size.
+pub(crate) fn read_num_rows_with_size<R: Read + Seek>(
+    reader: &mut R,
+    file_size: u64,
+) -> ParquetResult<i64> {
+    let footer = fetch_footer_buf(reader, file_size)?;
+    decode_num_rows(footer)
+}
+
+/// Fetch the trailing footer bytes from a [`Read`] + [`Seek`]. Returns a
+/// [`Buffer<u8>`] (not a `Vec<u8>`) because [`FileMetadata`] holds the buffer
+/// for the lifetime of the metadata; column-chunk statistics store
+/// `ByteRange`s into it instead of allocating per-stat byte vecs.
+fn fetch_footer_buf<R: Read + Seek>(reader: &mut R, file_size: u64) -> ParquetResult<Buffer<u8>> {
+    if file_size < HEADER_SIZE + FOOTER_SIZE {
+        return Err(ParquetError::oos(
+            "A Parquet file must contain a header and footer with at least 12 bytes",
+        ));
+    }
+
+    // Read and cache up to DEFAULT_FOOTER_READ_SIZE bytes from the end.
+    let default_end_len = min(DEFAULT_FOOTER_READ_SIZE, file_size) as usize;
+    reader.seek(SeekFrom::End(-(default_end_len as i64)))?;
+
+    let mut buffer = vec![];
+    buffer.try_reserve(default_end_len)?;
+    reader
+        .take(default_end_len as u64)
+        .read_to_end(&mut buffer)?;
+
+    // Check this is indeed a parquet file.
+    if buffer[default_end_len - 4..] != PARQUET_MAGIC {
+        return Err(ParquetError::oos("The file must end with PAR1"));
+    }
+
+    let metadata_len = metadata_len(&buffer) as u64;
+    let footer_len = FOOTER_SIZE + metadata_len;
+    if footer_len > file_size {
+        return Err(ParquetError::oos(
+            "The footer size must be smaller or equal to the file's size",
+        ));
+    }
+
+    // Both branches end with a zero-copy move from `Vec<u8>` into `Buffer`.
+    let footer_buf: Buffer<u8> = if (footer_len as usize) <= buffer.len() {
+        // Full footer already in the prefetched bytes; slice the tail.
+        let remaining = buffer.len() - footer_len as usize;
+        Buffer::from_vec(buffer).sliced(remaining..)
+    } else {
+        // Prefetch wasn't long enough; re-read the whole footer.
+        reader.seek(SeekFrom::End(-(footer_len as i64)))?;
+        buffer.clear();
+        buffer.try_reserve(footer_len as usize)?;
+        reader.take(footer_len).read_to_end(&mut buffer)?;
+        Buffer::from_vec(buffer)
+    };
+
+    Ok(footer_buf)
 }

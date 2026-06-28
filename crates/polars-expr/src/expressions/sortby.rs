@@ -391,6 +391,11 @@ impl PhysicalExpr for SortByExpr {
 
             groups?
         } else {
+            let groups_in = ac_in.groups();
+            for ac in ac_sort_by.iter() {
+                check_groups(groups_in.as_ref().as_ref(), ac.groups.as_ref().as_ref())?;
+            }
+
             let groups = ac_sort_by[0].groups();
 
             let groups = RAYON.install(|| {

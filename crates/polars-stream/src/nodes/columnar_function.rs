@@ -108,11 +108,11 @@ impl ComputeNode for ColumnarFunctionNode {
                 send[0] = PortState::Blocked;
             },
             Self::Source(source_node) => {
-                recv[0] = PortState::Done;
+                recv.fill(PortState::Done);
                 source_node.update_state(&mut [], send, state)?;
             },
             Self::Done => {
-                recv[0] = PortState::Done;
+                recv.fill(PortState::Done);
                 send[0] = PortState::Done;
             },
         }

@@ -13,10 +13,7 @@ extend-exclude = [
 ignore-hidden = false
 
 [default]
-extend-ignore-re = [
-  '"Theatre": \[.+\],',
-  'HashiCorp',
-]
+extend-ignore-re = ['"Theatre": \[.+\],', 'HashiCorp']
 
 [default.extend-words]
 arange = "arange"
@@ -24,6 +21,9 @@ ser = "ser"
 splitted = "splitted"
 strat = "strat"
 typ = "typ"
+
+[default.extend-identifiers]
+AKS = "AKS"
 
 [type.py.extend-identifiers]
 ba = "ba"

@@ -28,6 +28,7 @@ pub mod functions;
 pub mod hashing;
 pub mod idx_map;
 pub mod idx_vec;
+pub mod levenshtein;
 pub mod live_timer;
 pub mod marked_usize;
 pub mod mem;

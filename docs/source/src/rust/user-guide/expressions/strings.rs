@@ -89,6 +89,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{result}");
     // --8<-- [end:replace]
 
+    // --8<-- [start:concat]
+    let df = df! (
+        "first_name" => ["Ada", "Grace", "Edsger"],
+        "last_name" => ["Lovelace", "Hopper", "Dijkstra"],
+    )?;
+
+    let result = df
+        .lazy()
+        .with_columns([(col("first_name") + lit(" ") + col("last_name")).alias("full_name")])
+        .collect()?;
+
+    println!("{result}");
+    // --8<-- [end:concat]
+
     // --8<-- [start:casing]
     let addresses = df! (
         "addresses" => [

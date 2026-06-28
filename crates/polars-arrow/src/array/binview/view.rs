@@ -72,7 +72,7 @@ impl View {
     #[inline]
     pub unsafe fn new_inline_unchecked(bytes: &[u8]) -> Self {
         debug_assert!(bytes.len() <= u32::MAX as usize);
-        debug_assert!(bytes.len() as u32 <= Self::MAX_INLINE_SIZE);
+        debug_assert!(bytes.len() <= Self::MAX_INLINE_SIZE as usize);
 
         let mut view = Self {
             length: bytes.len() as u32,
@@ -101,7 +101,7 @@ impl View {
     /// Panics if the `bytes.len() > View::MAX_INLINE_SIZE`.
     #[inline]
     pub fn new_inline(bytes: &[u8]) -> Self {
-        assert!(bytes.len() as u32 <= Self::MAX_INLINE_SIZE);
+        assert!(bytes.len() <= Self::MAX_INLINE_SIZE as usize);
         unsafe { Self::new_inline_unchecked(bytes) }
     }
 
@@ -113,7 +113,7 @@ impl View {
     #[inline]
     pub unsafe fn new_noninline_unchecked(bytes: &[u8], buffer_idx: u32, offset: u32) -> Self {
         debug_assert!(bytes.len() <= u32::MAX as usize);
-        debug_assert!(bytes.len() as u32 > View::MAX_INLINE_SIZE);
+        debug_assert!(bytes.len() > View::MAX_INLINE_SIZE as usize);
 
         // SAFETY: The invariant of this function guarantees that this is safe.
         let prefix = unsafe { u32::from_le_bytes(bytes[0..4].try_into().unwrap_unchecked()) };
@@ -131,7 +131,7 @@ impl View {
 
         // SAFETY: We verify the invariant with the outer if statement
         unsafe {
-            if bytes.len() as u32 <= Self::MAX_INLINE_SIZE {
+            if bytes.len() <= Self::MAX_INLINE_SIZE as usize {
                 Self::new_inline_unchecked(bytes)
             } else {
                 Self::new_noninline_unchecked(bytes, buffer_idx, offset)

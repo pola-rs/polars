@@ -248,7 +248,7 @@ impl BuildState {
             drop(arc_keys_per_local_builder);
             drop(key_drop_q_send);
 
-            ASYNC.block_on(async move {
+            ASYNC.block_in_place_on(async move {
                 for handle in join_handles {
                     handle.await;
                 }

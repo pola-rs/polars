@@ -5,6 +5,7 @@ use either::Either;
 use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_io::RowIndex;
+use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::*;
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
@@ -238,14 +239,23 @@ fn prepare_schemas(
 
 #[cfg(feature = "parquet")]
 pub(super) async fn parquet_file_info(
-    first_scan_source: ScanSourceRef<'_>,
+    sources: &ScanSources,
     row_index: Option<&RowIndex>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
-    n_sources: usize,
-) -> PolarsResult<(FileInfo, Option<FileMetadataRef>)> {
+) -> PolarsResult<(
+    FileInfo,
+    Option<FileMetadataRef>,
+    Option<Arc<[FileMetadataRef]>>,
+)> {
+    use futures::stream::{FuturesOrdered, FuturesUnordered, StreamExt};
     use polars_core::error::feature_gated;
 
-    let (reader_schema, num_rows, metadata) = {
+    let n_sources = sources.len();
+    let first_scan_source = sources.iter().next().expect("at least one source");
+
+    // First file: schema + num_rows + full metadata. Schema comes from
+    // file 0 only (no cross-file schema evolution).
+    let (reader_schema, first_num_rows, first_metadata) = {
         if first_scan_source.is_cloud_url() {
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
@@ -260,7 +270,7 @@ pub(super) async fn parquet_file_info(
             })
         } else {
             let memslice = first_scan_source.to_memslice()?;
-            let mut reader = ParquetReader::new(std::io::Cursor::new(memslice));
+            let mut reader = ParquetReader::new(Cursor::new(memslice));
             (
                 reader.schema()?,
                 reader.num_rows()?,
@@ -272,15 +282,125 @@ pub(super) async fn parquet_file_info(
     let schema =
         prepare_output_schema(Schema::from_arrow_schema(reader_schema.as_ref()), row_index)?;
 
-    let known_size = if n_sources == 1 { Some(num_rows) } else { None };
+    // Resolve metadata for sources past the first, dispatched by
+    // `POLARS_RESOLVE_METADATA_LEVEL`:
+    // - `None`: extrapolate `first_num_rows * n_sources`.
+    // - `RowCounts` (OSS default): per-source thrift field 3 only.
+    // - `Full` (cloud default): per-source footer, populates
+    //   `metadata_per_source` for the distributed scheduler.
+    let mode = polars_config::config().resolve_metadata_level();
+    let (metadata_per_source, known_size, estimated_size) = if n_sources == 1 {
+        (None, Some(first_num_rows), first_num_rows)
+    } else {
+        use polars_config::ResolveMode;
+        match mode {
+            ResolveMode::None => (None, None, first_num_rows * n_sources),
+            ResolveMode::RowCounts => {
+                let mut futures =
+                    (1..n_sources)
+                        .map(|i| async move {
+                            read_parquet_num_rows(sources.at(i), cloud_options).await
+                        })
+                        .collect::<FuturesUnordered<_>>();
+
+                // Best-effort: a file that fails to decode at plan time (e.g.
+                // an invalid file in a hive partition not yet pruned) simply
+                // contributes 0 to the estimate. If execution needs the file
+                // it will error then; if predicate pushdown prunes it first,
+                // it never matters.
+                let mut total: usize = first_num_rows;
+                while let Some(res) = futures.next().await {
+                    if let Ok(n) = res {
+                        total = total.saturating_add(n as usize);
+                    }
+                }
+                (None, Some(total), total)
+            },
+            ResolveMode::Full => {
+                // Each file decoded with its own schema: per-file schemas
+                // may differ in columns, dtypes, or column order.
+                let mut futures = (1..n_sources)
+                    .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
+                    .collect::<FuturesOrdered<_>>();
+
+                // Push slot 0 (satisfying the `metadata_per_source[0] ==
+                // first_metadata` invariant), then push each future result.
+                // Best-effort: on error push `first_metadata.clone()`; the
+                // cloud scheduler re-fetches if it needs accurate row_groups
+                // for that file.
+                let mut per_file: Vec<FileMetadataRef> = Vec::with_capacity(n_sources);
+                per_file.push(first_metadata.clone());
+                let mut total: usize = first_num_rows;
+                while let Some(file_result) = futures.next().await {
+                    match file_result {
+                        Ok(m) => {
+                            total = total.saturating_add(m.num_rows);
+                            per_file.push(m);
+                        },
+                        Err(_) => per_file.push(first_metadata.clone()),
+                    }
+                }
+                let dense: Arc<[FileMetadataRef]> = per_file.into();
+                (Some(dense), Some(total), total)
+            },
+        }
+    };
 
     let file_info = FileInfo::new(
         schema,
         Some(Either::Left(reader_schema)),
-        (known_size, num_rows * n_sources),
+        (known_size, estimated_size),
     );
 
-    Ok((file_info, Some(metadata)))
+    Ok((file_info, Some(first_metadata), metadata_per_source))
+}
+
+/// Fetch one source's full footer. Used by [`parquet_file_info`] in
+/// `Full` resolve mode.
+#[cfg(feature = "parquet")]
+async fn read_parquet_metadata(
+    source: ScanSourceRef<'_>,
+    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+) -> PolarsResult<FileMetadataRef> {
+    use polars_core::error::feature_gated;
+
+    if source.is_cloud_url() {
+        let path = source.as_path().unwrap();
+        feature_gated!("cloud", {
+            let mut reader =
+                ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
+            reader.get_metadata().await.cloned()
+        })
+    } else {
+        let memslice = source.to_memslice()?;
+        let mut cursor = Cursor::new(memslice);
+        let md = polars_parquet::parquet::read::read_metadata(&mut cursor)?;
+        Ok(Arc::new(md))
+    }
+}
+
+/// Fetch one source's `num_rows` (thrift field 3 only); skips
+/// schema, row_groups, and the rest. Used by [`parquet_file_info`]
+/// in `RowCounts` resolve mode.
+#[cfg(feature = "parquet")]
+async fn read_parquet_num_rows(
+    source: ScanSourceRef<'_>,
+    #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+) -> PolarsResult<i64> {
+    use polars_core::error::feature_gated;
+
+    if source.is_cloud_url() {
+        let path = source.as_path().unwrap();
+        feature_gated!("cloud", {
+            let mut reader =
+                ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
+            reader.num_rows_only().await
+        })
+    } else {
+        let memslice = source.to_memslice()?;
+        let mut cursor = Cursor::new(memslice);
+        polars_parquet::parquet::read::read_num_rows(&mut cursor).map_err(Into::into)
+    }
 }
 
 pub fn max_metadata_scan_cached() -> usize {
@@ -402,7 +522,11 @@ pub async fn csv_file_info(
             // Collect metadata.
             let byte_source = ASYNC.block_on(async move {
                 source
-                    .to_dyn_byte_source(&DynByteSourceBuilder::ObjectStore, cloud_options, None)
+                    .to_dyn_byte_source(
+                        &DynByteSourceBuilder::ObjectStore(FetchConfig::streaming()),
+                        cloud_options,
+                        None,
+                    )
                     .await
             })?;
             let byte_source = Arc::new(byte_source);
@@ -663,7 +787,7 @@ pub async fn ndjson_file_info(
                 first_scan_source
                     .as_scan_source_ref()
                     .to_dyn_byte_source(
-                        &DynByteSourceBuilder::ObjectStore,
+                        &DynByteSourceBuilder::ObjectStore(FetchConfig::streaming()),
                         cloud_options.as_ref(),
                         None,
                     )
@@ -822,7 +946,12 @@ impl SourcesToFileInfo {
             )
         };
 
-        let n_sources = sources.len();
+        let exact_row_estimation = unified_scan_args.row_count.map(|(total, deleted)| {
+            let n: usize = (total - deleted) as usize;
+            ((Some(n)), n)
+        });
+        const DEFAULT_ROW_ESTIMATION: (Option<usize>, usize) = (None, usize::MAX);
+
         let cloud_options = unified_scan_args.cloud_options.as_ref();
 
         Ok(match scan_type {
@@ -838,11 +967,13 @@ impl SourcesToFileInfo {
                             reader_schema: Some(either::Either::Left(Arc::new(
                                 schema.to_arrow(CompatLevel::newest()),
                             ))),
-                            row_estimation: (None, usize::MAX),
+                            row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                         },
                         FileScanIR::Parquet {
                             options,
-                            metadata: None,
+                            // Schema was passed in; no footer was resolved.
+                            first_metadata: None,
+                            metadata_per_source: None,
                         },
                     )
                 } else {
@@ -861,24 +992,34 @@ this scan to succeed with an empty DataFrame.",
                             )
                         }
 
-                        let (mut file_info, mut metadata) = scans::parquet_file_info(
-                            first_scan_source,
-                            unified_scan_args.row_index.as_ref(),
-                            cloud_options,
-                            n_sources,
-                        )
-                        .await?;
+                        let (mut file_info, mut first_metadata, mut metadata_per_source) =
+                            scans::parquet_file_info(
+                                sources,
+                                unified_scan_args.row_index.as_ref(),
+                                cloud_options,
+                            )
+                            .await?;
 
-                        if let Some((total, deleted)) = unified_scan_args.row_count {
-                            let size = (total - deleted) as usize;
-                            file_info.row_estimation = (Some(size), size);
+                        if let Some(exact_row_estimation) = exact_row_estimation {
+                            file_info.row_estimation = exact_row_estimation;
                         }
 
                         if self.inner.read().unwrap().len() > max_metadata_scan_cached() {
-                            _ = metadata.take();
+                            // Cache pressure: drop both pre-decoded slots so
+                            // we don't blow memory. Streaming readers fall
+                            // back to fetching footers at scan time.
+                            first_metadata = None;
+                            metadata_per_source = None;
                         }
 
-                        PolarsResult::Ok((file_info, FileScanIR::Parquet { options, metadata }))
+                        PolarsResult::Ok((
+                            file_info,
+                            FileScanIR::Parquet {
+                                options,
+                                first_metadata,
+                                metadata_per_source,
+                            },
+                        ))
                     }
                     .map_err(|e| e.context(failed_here!(parquet scan)))?
                 }
@@ -895,12 +1036,16 @@ this scan to succeed with an empty DataFrame.",
                     )
                 }
 
-                let (file_info, md) = scans::ipc_file_info(
+                let (mut file_info, md) = scans::ipc_file_info(
                     first_scan_source,
                     unified_scan_args.row_index.as_ref(),
                     cloud_options,
                 )
                 .await?;
+
+                if let Some(exact_row_estimation) = exact_row_estimation {
+                    file_info.row_estimation = exact_row_estimation;
+                }
 
                 PolarsResult::Ok((
                     file_info,
@@ -913,11 +1058,11 @@ this scan to succeed with an empty DataFrame.",
             .map_err(|e| e.context(failed_here!(ipc scan)))?,
             #[cfg(feature = "csv")]
             FileScanDsl::Csv { mut options } => {
-                let file_info = if let Some(schema) = options.schema.clone() {
+                let mut file_info = if let Some(schema) = options.schema.clone() {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema)),
-                        row_estimation: (None, usize::MAX),
+                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                     }
                 } else {
                     let first_scan_source =
@@ -941,16 +1086,20 @@ this scan to succeed with an empty DataFrame.",
                     .await?
                 };
 
+                if let Some(exact_row_estimation) = exact_row_estimation {
+                    file_info.row_estimation = exact_row_estimation;
+                }
+
                 PolarsResult::Ok((file_info, FileScanIR::Csv { options }))
             }
             .map_err(|e| e.context(failed_here!(csv scan)))?,
             #[cfg(feature = "json")]
             FileScanDsl::NDJson { options } => {
-                let file_info = if let Some(schema) = options.schema.clone() {
+                let mut file_info = if let Some(schema) = options.schema.clone() {
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema)),
-                        row_estimation: (None, usize::MAX),
+                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                     }
                 } else {
                     let first_scan_source =
@@ -973,6 +1122,10 @@ this scan to succeed with an empty DataFrame.",
                     .await?
                 };
 
+                if let Some(exact_row_estimation) = exact_row_estimation {
+                    file_info.row_estimation = exact_row_estimation;
+                }
+
                 PolarsResult::Ok((file_info, FileScanIR::NDJson { options }))
             }
             .map_err(|e| e.context(failed_here!(ndjson scan)))?,
@@ -993,7 +1146,7 @@ this scan to succeed with an empty DataFrame.",
                     FileInfo {
                         schema,
                         reader_schema: Some(either::Either::Right(reader_schema)),
-                        row_estimation: (None, usize::MAX),
+                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                     },
                     FileScanIR::PythonDataset {
                         dataset_object,
@@ -1010,7 +1163,7 @@ this scan to succeed with an empty DataFrame.",
                     FileInfo {
                         schema: schema.clone(),
                         reader_schema: Some(either::Either::Right(schema.clone())),
-                        row_estimation: (None, usize::MAX),
+                        row_estimation: exact_row_estimation.unwrap_or(DEFAULT_ROW_ESTIMATION),
                     },
                     FileScanIR::Lines { name },
                 )
@@ -1028,10 +1181,16 @@ this scan to succeed with an empty DataFrame.",
                 )
             },
             FileScanDsl::Anonymous {
-                file_info,
+                mut file_info,
                 options,
                 function,
-            } => (file_info, FileScanIR::Anonymous { options, function }),
+            } => {
+                if let Some(exact_row_estimation) = exact_row_estimation {
+                    file_info.row_estimation = exact_row_estimation;
+                }
+
+                (file_info, FileScanIR::Anonymous { options, function })
+            },
         })
     }
 

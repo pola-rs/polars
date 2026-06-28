@@ -363,6 +363,6 @@ where
     T: PolarsObject,
 {
     fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        Ok(group_by(self.into_iter(), sorted))
+        Ok(group_by(self.iter(), sorted))
     }
 }

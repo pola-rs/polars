@@ -190,7 +190,7 @@ cloud = ["polars/cloud", "polars/aws", "polars/gcp", "polars/azure", "polars/htt
 peaks = ["polars/peaks"]
 hist = ["polars/hist"]
 find_many = ["polars/find_many"]
-new_streaming = ["polars-lazy/new_streaming"]
+streaming = ["polars-lazy/streaming"]
 bitwise = ["polars/bitwise"]
 approx_unique = ["polars/approx_unique"]
 string_normalize = ["polars/string_normalize"]
@@ -294,7 +294,7 @@ full_functionality = [
   "binary_encoding",
   "ffi_plugin",
   "polars_cloud_client",
-  "new_streaming",
+  "streaming",
 ]
 
 full = ["full_functionality", "fast_alloc"]

@@ -96,7 +96,7 @@ impl ComputeNode for IOSinkNode {
                         );
                     }
                     drop(phase_channel_tx);
-                    ASYNC.block_on(task_handle)?;
+                    ASYNC.block_in_place_on(task_handle)?;
                 },
                 IOSinkNodeState::Finished => {},
                 IOSinkNodeState::Uninitialized { .. } => unreachable!(),

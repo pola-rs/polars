@@ -18,14 +18,11 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Max => map!(max),
         Sum => map!(sum),
         ToList => map!(to_list),
-        Unique(stable) => map!(unique, stable),
-        NUnique => map!(n_unique),
         Std(ddof) => map!(std, ddof),
         Var(ddof) => map!(var, ddof),
         Mean => map!(mean),
         Median => map!(median),
         Sort(options) => map!(sort, options),
-        Reverse => map!(reverse),
         ArgMin => map!(arg_min),
         ArgMax => map!(arg_max),
         Get(null_on_oob) => map_as_slice!(get, null_on_oob),
@@ -93,20 +90,6 @@ pub(super) fn median(s: &Column) -> PolarsResult<Column> {
     s.array()?.array_median().map(Column::from)
 }
 
-pub(super) fn unique(s: &Column, stable: bool) -> PolarsResult<Column> {
-    let ca = s.array()?;
-    let out = if stable {
-        ca.array_unique_stable()
-    } else {
-        ca.array_unique()
-    };
-    out.map(|ca| ca.into_column())
-}
-
-pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
-    Ok(s.array()?.array_n_unique()?.into_column())
-}
-
 pub(super) fn to_list(s: &Column) -> PolarsResult<Column> {
     if let DataType::Array(inner, _) = s.dtype() {
         s.cast(&DataType::List(inner.clone()))
@@ -117,10 +100,6 @@ pub(super) fn to_list(s: &Column) -> PolarsResult<Column> {
 
 pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
     Ok(s.array()?.array_sort(options)?.into_column())
-}
-
-pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
-    Ok(s.array()?.array_reverse().into_column())
 }
 
 pub(super) fn arg_min(s: &Column) -> PolarsResult<Column> {

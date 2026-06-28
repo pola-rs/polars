@@ -14,6 +14,7 @@ use polars_core::utils::arrow::io::ipc::write::{
     EncodedData, WriteOptions, commit_encoded_arrays, encode_array, schema,
 };
 use polars_error::PolarsResult;
+use polars_utils::IdxSize;
 use polars_utils::concat_vec::ConcatVec as _;
 
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
@@ -168,7 +169,11 @@ impl RecordBatchEncoder {
                 }));
 
             if ipc_batch_tx
-                .send(IpcBatch::Record(array_combine_handle, permit))
+                .send(IpcBatch::Record {
+                    encoded_data: array_combine_handle,
+                    morsel_permit: permit,
+                    num_rows: height as IdxSize,
+                })
                 .await
                 .is_err()
             {

@@ -51,8 +51,10 @@ refactoring is often required by engineers to deploy data scientists' data proce
 Polars offers a single syntax that, due to vertical scaling, works in local environments and on a
 single machine in the cloud.
 
-The choice between Polars and Spark often depends on the scale of data and the specific requirements
-of the processing task. If you need to process TBs of data, Spark is a better choice.
+For data below a TB, single node with Polars processing might be the most optimal choice considering
+speed and complexity. Once you go into multiple TB's, distributed compute is often required.
+Historically this was Sparks area. Nowadays you can also use
+[Polars Distributed](https://cloud.pola.rs/).
 
 ### DuckDB
 

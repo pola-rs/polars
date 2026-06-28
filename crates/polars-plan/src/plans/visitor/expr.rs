@@ -71,7 +71,6 @@ impl TreeWalker for Expr {
                 Mean(x) => Mean(am(x, f)?),
                 Implode { input, maintain_order } => Implode { input: am(input, f)?, maintain_order },
                 Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
-                Quantile { expr, quantile, method: interpol } => Quantile { expr: am(expr, &mut f)?, quantile: am(quantile, f)?, method: interpol },
                 Sum(x) => Sum(am(x, f)?),
                 AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),

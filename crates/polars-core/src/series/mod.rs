@@ -101,7 +101,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// let mask = s.equal(1).unwrap();
 /// let valid = [true, false, false].iter();
 /// assert!(mask
-///     .into_iter()
+///     .iter()
 ///     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
 ///     .zip(valid)
 ///     .all(|(a, b)| a == *b))
@@ -123,7 +123,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// let s = Series::new("angle".into(), [2f32 * pi, pi, 1.5 * pi].as_ref());
 /// let s_cos: Series = s.f32()
 ///                     .expect("series was not an f32 dtype")
-///                     .into_iter()
+///                     .iter()
 ///                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
 ///                     .collect();
 /// ```
@@ -602,12 +602,12 @@ impl Series {
         }
     }
 
-    /// Compute the sum of all values in this Series.
-    /// Returns `Some(0)` if the array is empty, and `None` if the array only
-    /// contains null values.
+    /// Get the sum of the Series as a `Scalar`.
+    /// Returns a `Scalar` with a zeroed value if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum<T>(&self) -> PolarsResult<T>
     where
         T: NumCast + IsFloat,
@@ -807,17 +807,14 @@ impl Series {
         std::ops::Mul::mul(self, other)?.sum::<f64>()
     }
 
-    /// Get the sum of the Series as a new Series of length 1.
-    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    /// Get the sum of the [`ChunkedArray`] as a `Scalar`.
+    /// Returns a `Scalar` with a single zeroed value if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
-        use DataType::*;
-        match self.dtype() {
-            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
-            _ => self.0.sum_reduce(),
-        }
+        self.0.sum_reduce()
     }
 
     /// Get the mean of the Series as a new Series of length 1.

@@ -190,3 +190,25 @@ def test_ext_to_mismatched_storage_raises_27519() -> None:
         match=r"column dtype must match",
     ):
         s.to_frame().select(pl.col("x").ext.to(Ext))
+
+
+def test_ext_concat_27512() -> None:
+    ExtensionA = pl.Extension(name="extension.a", storage=pl.Int64)
+    ExtensionAFloat = pl.Extension(name="extension.a", storage=pl.Float64)
+    ExtensionB = pl.Extension(name="extension.b", storage=pl.Int64)
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.concat(
+            [
+                pl.DataFrame(range(2), schema={"col": ExtensionA}),
+                pl.DataFrame(range(2), schema={"col": ExtensionB}),
+            ]
+        )
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.concat(
+            [
+                pl.DataFrame(range(2), schema={"col": ExtensionA}),
+                pl.DataFrame(range(2), schema={"col": ExtensionAFloat}),
+            ]
+        )

@@ -246,6 +246,11 @@ pub fn decode<T: NativeType>(chunk: &[u8]) -> T {
 /// This is safe if the length is properly checked.
 #[inline]
 pub unsafe fn decode_unchecked<T: NativeType>(chunk: &[u8]) -> T {
-    let chunk: <T as NativeType>::Bytes = unsafe { chunk.try_into().unwrap_unchecked() };
+    let chunk: <T as NativeType>::Bytes = unsafe {
+        chunk
+            .get_unchecked(..size_of::<T>())
+            .try_into()
+            .unwrap_unchecked()
+    };
     T::from_le_bytes(chunk)
 }

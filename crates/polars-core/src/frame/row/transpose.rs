@@ -125,10 +125,7 @@ impl DataFrame {
                     let new_names = self.column(name.as_str()).and_then(|x| x.str())?;
                     polars_ensure!(new_names.null_count() == 0, ComputeError: "Column with new names can't have null values");
                     df = Cow::Owned(self.drop(name.as_str())?);
-                    new_names
-                        .into_no_null_iter()
-                        .map(PlSmallStr::from_str)
-                        .collect()
+                    new_names.no_null_iter().map(PlSmallStr::from_str).collect()
                 },
                 Either::Right(names) => {
                     polars_ensure!(names.len() == self.height(), ShapeMismatch: "Length of new column names must be the same as the row count");

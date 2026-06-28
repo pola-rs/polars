@@ -998,7 +998,10 @@ def test_list_sum_bool_schema() -> None:
 
 def test_list_concat_struct_19279() -> None:
     df = pl.select(
-        pl.struct(s=pl.lit("abcd").str.split("").explode(), i=pl.int_range(0, 4))
+        pl.struct(
+            s=pl.lit("abcd").str.split("").explode(empty_as_null=True),
+            i=pl.int_range(0, 4),
+        )
     )
     df = pl.concat([df[:2], df[-2:]])
     assert df.select(pl.concat_list("s")).to_dict(as_series=False) == {
@@ -1096,14 +1099,17 @@ def test_list_sample_fraction_unequal_lengths_22018() -> None:
 
 
 def test_list_sample_n_self_broadcast() -> None:
-    assert pl.Series("a", [[1, 2]]).list.sample(pl.Series([1, 2, 1])).len() == 3
+    result = pl.Series("a", [[1, 2, 3, 4]]).list.sample(pl.Series([1, 2, 3]), seed=0)
+    assert result.len() == 3
+    assert [len(row) for row in result] == [1, 2, 3]
 
 
 def test_list_sample_fraction_self_broadcast() -> None:
-    assert (
-        pl.Series("a", [[1, 2]]).list.sample(fraction=pl.Series([0.5, 0.2, 0.4])).len()
-        == 3
+    result = pl.Series("a", [[1, 2, 3, 4]]).list.sample(
+        fraction=pl.Series([0.25, 0.5, 1.0]), seed=0
     )
+    assert result.len() == 3
+    assert [len(row) for row in result] == [1, 2, 4]
 
 
 def test_list_shift_unequal_lengths_22018() -> None:
@@ -1112,7 +1118,20 @@ def test_list_shift_unequal_lengths_22018() -> None:
 
 
 def test_list_shift_self_broadcast() -> None:
-    assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3
+    assert_series_equal(
+        pl.Series("a", [[1, 2]]).list.shift(pl.Series([-5, -1, 0, 1, 5, None])),
+        pl.Series(
+            "a",
+            [
+                [None, None],
+                [2, None],
+                [1, 2],
+                [None, 1],
+                [None, None],
+                None,
+            ],
+        ),
+    )
 
 
 def test_list_filter_simple() -> None:
@@ -1160,7 +1179,6 @@ def test_list_filter_null() -> None:
     ]
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:

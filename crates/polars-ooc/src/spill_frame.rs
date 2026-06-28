@@ -1,12 +1,79 @@
 use std::fmt::Debug;
+use std::io::Write;
 use std::ops::{Deref, DerefMut};
 
+use polars_async::ASYNC;
 use polars_core::frame::DataFrame;
+use polars_io::ipc::{IpcCompression, IpcReader, IpcWriter};
+use polars_io::{SerReader, SerWriter};
+use polars_utils::compression::ZstdLevel;
 
 use crate::spill_context::ParameterFreeSpillContext;
+use crate::spill_file::SpillFile;
 use crate::{PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
 
-impl Spillable for DataFrame {}
+impl Spillable for DataFrame {
+    // TODO: just a dummy spill for now. Boxed to reduce size.
+    type Spilled = SpillFile;
+
+    fn estimate_byte_size(&self) -> usize {
+        self.estimated_size()
+    }
+
+    async fn spill(&self, context_id: &str) -> Self::Spilled {
+        let mut df = self.clone();
+        let context_id = context_id.to_owned();
+
+        // Encode in the current task (on computational executor).
+        let mut buf = Vec::new();
+
+        let mut writer = IpcWriter::new(&mut buf).with_parallel(false);
+        let clvl = polars_config::config().ooc_spill_compression_level();
+        if clvl > 0 {
+            let zstd_lvl = ZstdLevel::try_new(clvl.try_into().unwrap()).unwrap();
+            writer = writer.with_compression(Some(IpcCompression::ZSTD(zstd_lvl)));
+        }
+        writer
+            .finish(&mut df)
+            .unwrap_or_else(|e| panic!("failed to encode spill file for '{context_id}': {e}",));
+
+        // Do file creation / writing on tokio.
+        ASYNC
+            .spawn_blocking(move || {
+                let spill_file = SpillFile::new(&context_id, "ipc");
+                let mut file = std::fs::File::create(spill_file.path()).unwrap_or_else(|e| {
+                    panic!(
+                        "failed to create spill file '{}': {e}",
+                        spill_file.path().display()
+                    )
+                });
+                file.write_all(&buf).unwrap_or_else(|e| {
+                    panic!(
+                        "failed to write to spill file '{}': {e}",
+                        spill_file.path().display()
+                    )
+                });
+                spill_file
+            })
+            .await
+            .unwrap()
+    }
+
+    async fn unspill(location: &Self::Spilled) -> Self {
+        let path = location.path().to_owned();
+        ASYNC
+            .spawn_blocking(move || {
+                let file = std::fs::File::open(&path).unwrap_or_else(|e| {
+                    panic!("failed to open spill file {:?}: {e}", path.display())
+                });
+                IpcReader::new(file).finish().unwrap_or_else(|e| {
+                    panic!("failed to read spill file {:?}: {e}", path.display())
+                })
+            })
+            .await
+            .unwrap()
+    }
+}
 
 pub struct SpillFrame {
     token: SpillToken<DataFrame>,

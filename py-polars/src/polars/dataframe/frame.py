@@ -71,6 +71,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     NO_DEFAULT,
     _in_notebook,
+    _Omitted,
     is_bool_sequence,
     normalize_filepath,
     parse_version,
@@ -133,9 +134,9 @@ if TYPE_CHECKING:
 
     import deltalake
     import jax
-    import numpy.typing as npt
     import pyiceberg
     from great_tables import GT
+    from sqlalchemy.engine import Engine
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
@@ -222,6 +223,11 @@ class DataFrame:
         * As a dict of {name:type} pairs; if type is None, it will be auto-inferred.
         * As a list of column names; in this case types are automatically inferred.
         * As a list of (name,type) pairs; this is equivalent to the dictionary form.
+
+        The order of the schema determines the column order of the frame.
+        When passing a dict, its insertion order is respected. To override specific
+        column data types by name without changing column order, use
+        ``schema_overrides`` instead.
 
         If you supply a list of column names that does not match the names in the
         underlying data, the names given here will overwrite them. The number
@@ -992,7 +998,7 @@ class DataFrame:
 
     def __array__(
         self,
-        dtype: npt.DTypeLike | None = None,
+        dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
@@ -1104,7 +1110,7 @@ class DataFrame:
 
         suffix = "__POLARS_CMP_OTHER"
         other_renamed = other.select(F.all().name.suffix(suffix))
-        combined = F.concat([self, other_renamed], how="horizontal")
+        combined = F.concat([self, other_renamed], how="horizontal", strict=True)
 
         if op == "eq":
             expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
@@ -1753,8 +1759,12 @@ class DataFrame:
         Parameters
         ----------
         compat_level
-            Use a specific compatibility level
-            when exporting Polars' internal data structures.
+            Compatibility level to use when exporting Polars data structures.
+            The default compatibility level is recommended for most users.
+            Use ``pl.CompatLevel.oldest()`` for the most compatible level.
+            ``pl.CompatLevel.newest()`` uses the highest supported compatibility
+            level, but is considered unstable and may change without it being
+            considered a breaking change.
 
         Examples
         --------
@@ -2480,8 +2490,12 @@ class DataFrame:
                 if features is not None
                 else self.drop(*label_frame.columns)
             ).cast(to_dtype)  # type: ignore[arg-type]
-            frame = F.concat([label_frame, features_frame], how="horizontal")
+            frame = F.concat(
+                [label_frame, features_frame], how="horizontal", strict=True
+            )
         else:
+            label_frame = None
+            features_frame = None
             frame = (self.select(features) if features is not None else self).cast(
                 to_dtype  # type: ignore[arg-type]
             )
@@ -2494,7 +2508,7 @@ class DataFrame:
             return torch.from_numpy(arr)
 
         elif return_type == "dict":
-            if label is not None:
+            if label_frame is not None and features_frame is not None:
                 # return a {"label": tensor(s), "features": tensor(s)} dict
                 return {
                     "label": label_frame.to_torch(),
@@ -2508,7 +2522,7 @@ class DataFrame:
             # return a torch Dataset object
             from polars.ml.torch import PolarsDataset
 
-            pds_label = None if label is None else label_frame.columns
+            pds_label = None if label_frame is None else label_frame.columns
             return PolarsDataset(frame, label=pds_label, features=features)
         else:
             valid_torch_types = ", ".join(get_args(TorchExportType))
@@ -3886,7 +3900,7 @@ class DataFrame:
                     ws.set_row_pixels(idx, row_heights)
             elif isinstance(row_heights, dict):
                 for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
-                    ws.set_row_pixels(idx, height)
+                    ws.set_row_pixels(idx, height)  # pyrefly: ignore[bad-argument-type]
 
         if freeze_panes:
             if isinstance(freeze_panes, str):
@@ -4661,9 +4675,13 @@ class DataFrame:
             from sqlalchemy.engine import Connectable, create_engine
             from sqlalchemy.orm import Session
 
+            # note: we can only dispose of engines that we create ourselves;
+            # caller-supplied connectables remain the caller's responsibility
+            engine_to_dispose: Engine | None = None
             sa_object: Connectable
+
             if isinstance(connection, str):
-                sa_object = create_engine(connection)
+                sa_object = engine_to_dispose = create_engine(connection)
             elif isinstance(connection, Session):
                 sa_object = connection.connection()
             elif isinstance(connection, Connectable):
@@ -4679,18 +4697,23 @@ class DataFrame:
                 msg = f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
                 raise ValueError(msg)
 
-            # ensure conversion to pandas uses the pyarrow extension array option
-            # so that we can make use of the sql/db export *without* copying data
-            res: int | None = self.to_pandas(
-                use_pyarrow_extension_array=True,
-            ).to_sql(
-                name=unpacked_table_name,
-                schema=db_schema,
-                con=sa_object,
-                if_exists=if_table_exists,
-                index=False,
-                **(engine_options or {}),
-            )
+            try:
+                # ensure conversion to pandas uses the pyarrow extension array option
+                # so that we can make use of the sql/db export *without* copying data
+                res: int | None = self.to_pandas(
+                    use_pyarrow_extension_array=True,
+                ).to_sql(
+                    name=unpacked_table_name,
+                    schema=db_schema,
+                    con=sa_object,
+                    if_exists=if_table_exists,
+                    index=False,
+                    **(engine_options or {}),
+                )
+            finally:
+                if engine_to_dispose is not None:
+                    engine_to_dispose.dispose()
+
             return -1 if res is None else res
 
         elif isinstance(engine, str):
@@ -7958,8 +7981,9 @@ class DataFrame:
                 (i.e., strictly less-than / strictly greater-than).
         check_sortedness
             Check the sortedness of the asof keys. If the keys are not sorted Polars
-            will error. Currently, sortedness cannot be checked if 'by' groups are
-            provided.
+            will error. Currently, the `in-memory` engine cannot check the sortedness
+            if 'by' groups are provided. The `streaming` engine will only check the
+            sortedness of the rows it processes.
 
         Examples
         --------
@@ -8083,7 +8107,7 @@ class DataFrame:
         - date `2016-03-01` from `population` is matched with `2016-01-01` from `gdp`;
         - date `2018-08-01` from `population` is matched with `2019-01-01` from `gdp`.
 
-        They `by` argument allows joining on another column first, before the asof join.
+        The `by` argument allows joining on another column first, before the asof join.
         In this example we join by `country` first, then asof join by date, as above.
 
         >>> gdp_dates = pl.date_range(  # fmt: skip
@@ -9444,7 +9468,7 @@ class DataFrame:
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool = _Omitted,
         keep_nulls: bool = True,
     ) -> DataFrame:
         """
@@ -9486,7 +9510,7 @@ class DataFrame:
         │ b       ┆ [4, 5]    │
         │ c       ┆ [6, 7, 8] │
         └─────────┴───────────┘
-        >>> df.explode("numbers")
+        >>> df.explode("numbers", empty_as_null=False)
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -9810,9 +9834,11 @@ class DataFrame:
         └─────┴──────────┴───────┘
         """
         on = None if on is None else _expand_selectors(self, on)
-        index = [] if index is None else _expand_selectors(self, index)
+        index_expanded = [] if index is None else _expand_selectors(self, index)
 
-        return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
+        return self._from_pydf(
+            self._df.unpivot(on, index_expanded, value_name, variable_name)
+        )
 
     def unstack(
         self,
@@ -10210,6 +10236,52 @@ class DataFrame:
             .shift(n, fill_value=fill_value)
             .collect(optimizations=QueryOptFlags._eager())
         )
+
+    @unstable()
+    def is_sorted(
+        self,
+        by: str | Iterable[str],
+        *more_by: str,
+        descending: bool | Sequence[bool] = False,
+        nulls_last: bool | Sequence[bool] = False,
+    ) -> bool:
+        """
+        Check whether the DataFrame is sorted by the given columns.
+
+        Parameters
+        ----------
+        by
+            Column name(s) to check.
+        *more_by
+            Additional column names.
+        descending
+            Sort in descending order. When sorting by multiple columns, can be
+            specified per column by passing a sequence of booleans.
+        nulls_last
+            Place null values last. When sorting by multiple columns, can be
+            specified per column by passing a sequence of booleans.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [5, 4, 3]})
+        >>> df.is_sorted("a")
+        True
+        >>> df.is_sorted("b", descending=True)
+        True
+        >>> df.is_sorted("a", "b")
+        True
+        """
+        if isinstance(by, str):
+            by = [by]
+        else:
+            by = list(by)
+        by.extend(more_by)
+        n = len(by)
+        if isinstance(descending, bool):
+            descending = [descending] * n
+        if isinstance(nulls_last, bool):
+            nulls_last = [nulls_last] * n
+        return self._df.is_sorted(by, descending, nulls_last)
 
     def is_duplicated(self) -> Series:
         """
@@ -12530,8 +12602,9 @@ class DataFrame:
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by that key otherwise
-        the output will not make sense.
+        are sorted in ascending order by the key, with null
+        keys at the end, otherwise the order of the output
+        will not make sense.
 
         The schemas of both DataFrames must be equal.
 

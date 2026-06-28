@@ -348,6 +348,12 @@ pub enum PhysNodeKind {
         input: PhysStream,
         is_peak_max: bool,
     },
+    IsSorted {
+        input: PhysStream,
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+        output_name: PlSmallStr,
+    },
 
     OrderedUnion {
         inputs: Vec<PhysStream>,
@@ -586,7 +592,8 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::SortedUnique { input, .. }
-            | PhysNodeKind::PeakMinMax { input, .. } => {
+            | PhysNodeKind::PeakMinMax { input, .. }
+            | PhysNodeKind::IsSorted { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -771,7 +778,7 @@ fn visit_node_inputs_mut(
 }
 
 fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
-    let mut refcount: PlHashMap<_, usize> = PlHashMap::new();
+    let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
     });

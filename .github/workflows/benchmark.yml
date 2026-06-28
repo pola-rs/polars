@@ -10,6 +10,7 @@ on:
   push:
     branches:
       - main
+      - "2.0"
     paths:
       - crates/**
       - Cargo.toml
@@ -30,6 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -63,7 +67,8 @@ jobs:
         with:
           env-vars: ImageVersion
           workspaces: py-polars
-          save-if: ${{ github.ref_name == 'main' }}
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.9
@@ -87,7 +92,7 @@ jobs:
 
       - name: Comment wheel size
         uses: actions/github-script@v8
-        if: github.ref_name != 'main'
+        if: github.event_name == 'pull_request'
         with:
           script: |
               const currentSize = process.env.LIB_SIZE || 'Unknown';
@@ -127,12 +132,6 @@ jobs:
               }
         continue-on-error: true
 
-      # - name: Run benchmark tests
-      #   uses: CodSpeedHQ/action@v3
-      #   with:
-      #     working-directory: py-polars
-      #     run: pytest -m benchmark --codspeed -v
-
       - name: Run non-benchmark tests
         working-directory: py-polars
         run: pytest -m 'not benchmark and not debug' -n auto
@@ -142,6 +141,6 @@ jobs:
       - name: Run non-benchmark tests on new streaming engine
         working-directory: py-polars
         env:
-          POLARS_AUTO_NEW_STREAMING: 1
+          POLARS_AUTO_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"

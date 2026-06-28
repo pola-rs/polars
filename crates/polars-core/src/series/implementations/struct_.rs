@@ -37,16 +37,6 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.set_flags(flags);
     }
 
-    // TODO! remove this. Very slow. Asof join should use row-encoding.
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let other = other.struct_().unwrap();
-        self.0
-            .fields_as_series()
-            .iter()
-            .zip(other.fields_as_series())
-            .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
-    }
-
     fn vec_hash(
         &self,
         build_hasher: PlSeedableRandomStateQuality,
@@ -268,6 +258,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         Ok(IdxCa::from_vec(self.name().clone(), first))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
         ChunkUnique::unique_id(&ca)

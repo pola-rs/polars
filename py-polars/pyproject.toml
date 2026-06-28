@@ -10,7 +10,7 @@ authors = [
   { name = "Ritchie Vink", email = "ritchie46@gmail.com" },
 ]
 # example: 1.35.0b1
-version = "1.40.1"
+version = "1.42.0"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 
@@ -33,7 +33,7 @@ classifiers = [
   "Typing :: Typed",
 ]
 # example: 1.35.0b1
-dependencies = ["polars-runtime-32 == 1.40.1"]
+dependencies = ["polars-runtime-32 == 1.42.0"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -44,8 +44,8 @@ Changelog = "https://github.com/pola-rs/polars/releases"
 [project.optional-dependencies]
 # Runtimes
 # example: 1.35.0b1
-rt64 = ["polars-runtime-64 == 1.40.1"]
-rtcompat = ["polars-runtime-compat == 1.40.1"]
+rt64 = ["polars-runtime-64 == 1.42.0"]
+rtcompat = ["polars-runtime-compat == 1.42.0"]
 
 # NOTE: keep this list in sync with show_versions() and requirements-dev.txt
 polars_cloud = ["polars_cloud >= 0.4.0"]
@@ -72,7 +72,7 @@ database = ["polars[adbc,connectorx,sqlalchemy]"]
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 1.0.0"]
+deltalake = ["deltalake >= 1.0.0, != 1.5.*"]
 iceberg = ["pyiceberg >= 0.7.1"]
 
 # Other
@@ -92,7 +92,7 @@ all = [
 ]
 
 [tool.pyrefly]
-project-includes = ["tests"]
+project-includes = ["src/polars", "tests"]
 search-path = ["./src", "."]
 ignore-missing-imports = [
   "_polars_runtime_32.*",
@@ -105,12 +105,27 @@ ignore-missing-imports = [
 ]
 # pyrefly equivalent of mypy's `follow_imports = "skip"`
 replace-imports-with-any = [
+  "arrow_odbc.*",
+  "jax.*",
+  "marimo.*",
   "pyarrow.*",
   "pyiceberg.*",
+  "torch.*",
 ]
+# Pyrefly equivalent of mypy ignoring `no-any-return`
+# We exclude the polars module from warn_return_any, because the PyO3 api does not have Python
+# type annotations. See https://github.com/PyO3/pyo3/issues/1112 for a discussion on adding
+# this capability. We could add a stub file for polars._plr (the PyO3 api), but that
+# amounts to duplicating almost all type annotations on our api, as the Python api itself is a
+# thin wrapper around the PyO3 api to start with.
+[[tool.pyrefly.sub-config]]
+matches = "src/polars/**"
+[tool.pyrefly.sub-config.errors]
+bad-return = false
 
 [tool.mypy]
 files = ["src/polars", "tests"]
+num_workers = 4
 strict = true
 enable_error_code = [
   "redundant-expr",
@@ -280,6 +295,7 @@ markers = [
   "write_disk: Tests that write to disk",
   "may_fail_auto_streaming: Test that may fail when automatically using the streaming engine for all lazy queries.",
   "may_fail_cloud: Test that may fail when automatically using the cloud distributed engine for all lazy queries.",
+  "may_fail_strict: Test that may fail strict mode.",
 ]
 filterwarnings = [
   # Fail on warnings
@@ -294,9 +310,6 @@ filterwarnings = [
   # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
   "ignore:the argument `return_as_string` for `DataFrame.glimpse` is deprecated",
-  # TODO: Database tests lead to unclosed database warnings
-  # https://github.com/pola-rs/polars/issues/20296
-  "ignore:unclosed database.*:ResourceWarning",
   # Ignore invalid warnings when running earlier versions of SQLAlchemy (we
   # know they are invalid because our standard tests run the latest version)
   "ignore:Deprecated API features detected.*:DeprecationWarning",

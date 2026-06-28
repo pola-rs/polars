@@ -16,6 +16,7 @@ pub enum BooleanFunction {
     IsEmpty {
         ignore_nulls: bool,
     },
+    HasNulls,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -44,6 +45,10 @@ pub enum BooleanFunction {
         rel_tol: TotalOrdWrap<f64>,
         nans_equal: bool,
     },
+    IsSorted {
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
@@ -66,6 +71,7 @@ impl Display for BooleanFunction {
                 ignore_nulls: false,
             } => "is_empty",
             IsEmpty { ignore_nulls: true } => "is_empty_ignore_nulls",
+            HasNulls => "has_nulls",
             IsNull => "is_null",
             IsNotNull => "is_not_null",
             IsFinite => "is_finite",
@@ -86,6 +92,7 @@ impl Display for BooleanFunction {
             IsIn { .. } => "is_in",
             #[cfg(feature = "is_close")]
             IsClose { .. } => "is_close",
+            IsSorted { .. } => "is_sorted",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",

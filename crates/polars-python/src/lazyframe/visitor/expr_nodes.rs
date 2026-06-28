@@ -1,7 +1,7 @@
 #[cfg(feature = "iejoin")]
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
-use polars_compute::rolling::QuantileMethod;
+use polars_compute::rolling::{QuantileMethod, RollingFnParams};
 use polars_core::chunked_array::ops::FillNullStrategy;
 #[cfg(feature = "string_normalize")]
 use polars_ops::chunked_array::UnicodeForm;
@@ -10,8 +10,8 @@ use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
 use polars_plan::plans::{
-    DynLiteralValue, IRBooleanFunction, IRFunctionExpr, IRPowFunction, IRRollingFunctionBy,
-    IRStringFunction, IRStructFunction, IRTemporalFunction,
+    DynLiteralValue, FusedOperator, IRBooleanFunction, IRFunctionExpr, IRPowFunction,
+    IRRollingFunction, IRRollingFunctionBy, IRStringFunction, IRStructFunction, IRTemporalFunction,
 };
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping,
@@ -192,6 +192,7 @@ pub enum PyBooleanFunction {
     Any,
     All,
     IsEmpty,
+    HasNulls,
     IsNull,
     IsNotNull,
     IsFinite,
@@ -205,6 +206,7 @@ pub enum PyBooleanFunction {
     IsBetween,
     IsIn,
     IsClose,
+    IsSorted,
     AllHorizontal,
     AnyHorizontal,
     Not,
@@ -288,6 +290,28 @@ pub enum PyStructFunction {
 
 #[pymethods]
 impl PyStructFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pyclass(name = "RollingFunction", eq, frozen, skip_from_py_object)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyRollingFunction {
+    Min,
+    Max,
+    Mean,
+    Sum,
+    Quantile,
+    Var,
+    Std,
+    Rank,
+    Skew,
+    Kurtosis,
+}
+
+#[pymethods]
+impl PyRollingFunction {
     fn __hash__(&self) -> isize {
         *self as isize
     }
@@ -1122,6 +1146,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     IRBooleanFunction::IsEmpty { ignore_nulls } => {
                         (PyBooleanFunction::IsEmpty, *ignore_nulls).into_py_any(py)
                     },
+                    IRBooleanFunction::HasNulls => (PyBooleanFunction::HasNulls,).into_py_any(py),
                     IRBooleanFunction::IsNull => (PyBooleanFunction::IsNull,).into_py_any(py),
                     IRBooleanFunction::IsNotNull => (PyBooleanFunction::IsNotNull,).into_py_any(py),
                     IRBooleanFunction::IsFinite => (PyBooleanFunction::IsFinite,).into_py_any(py),
@@ -1153,6 +1178,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         nans_equal,
                     } => (PyBooleanFunction::IsClose, abs_tol.0, rel_tol.0, nans_equal)
                         .into_py_any(py),
+                    IRBooleanFunction::IsSorted {
+                        descending,
+                        nulls_last,
+                    } => (PyBooleanFunction::IsSorted, *descending, *nulls_last).into_py_any(py),
                     IRBooleanFunction::AllHorizontal => {
                         (PyBooleanFunction::AllHorizontal,).into_py_any(py)
                     },
@@ -1220,8 +1249,51 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 #[cfg(feature = "sign")]
                 IRFunctionExpr::Sign => ("sign",).into_py_any(py),
                 IRFunctionExpr::FillNull => ("fill_null",).into_py_any(py),
-                IRFunctionExpr::RollingExpr { function, .. } => {
-                    return Err(PyNotImplementedError::new_err(format!("{function}")));
+                IRFunctionExpr::RollingExpr { function, options } => {
+                    let py_function = match function {
+                        IRRollingFunction::Min => PyRollingFunction::Min,
+                        IRRollingFunction::Max => PyRollingFunction::Max,
+                        IRRollingFunction::Mean => PyRollingFunction::Mean,
+                        IRRollingFunction::Sum => PyRollingFunction::Sum,
+                        IRRollingFunction::Quantile => PyRollingFunction::Quantile,
+                        IRRollingFunction::Var => PyRollingFunction::Var,
+                        IRRollingFunction::Std => PyRollingFunction::Std,
+                        IRRollingFunction::Rank => PyRollingFunction::Rank,
+                        IRRollingFunction::Skew => PyRollingFunction::Skew,
+                        IRRollingFunction::Kurtosis => PyRollingFunction::Kurtosis,
+                        IRRollingFunction::CorrCov { .. } => {
+                            return Err(PyNotImplementedError::new_err("rolling corr/cov"));
+                        },
+                        IRRollingFunction::Map(_) => {
+                            return Err(PyNotImplementedError::new_err("rolling map"));
+                        },
+                    };
+                    let fn_params: Py<PyAny> = match &options.fn_params {
+                        None => ().into_py_any(py)?,
+                        Some(RollingFnParams::Quantile(q)) => {
+                            (q.prob, Into::<&str>::into(q.method)).into_py_any(py)?
+                        },
+                        Some(RollingFnParams::Var(v)) => (v.ddof,).into_py_any(py)?,
+                        Some(RollingFnParams::Rank { method, seed }) => {
+                            let method = Into::<&str>::into(method);
+                            (method, *seed).into_py_any(py)?
+                        },
+                        Some(RollingFnParams::Skew { bias }) => (*bias,).into_py_any(py)?,
+                        Some(RollingFnParams::Kurtosis { fisher, bias }) => {
+                            (*fisher, *bias).into_py_any(py)?
+                        },
+                    };
+                    // Tuple consumed by external engines (e.g., cudf-polars):
+                    // (RollingFunction, window_size, min_periods, weights, center, fn_params)
+                    (
+                        py_function,
+                        options.window_size,
+                        options.min_periods,
+                        &options.weights,
+                        options.center,
+                        fn_params,
+                    )
+                        .into_py_any(py)
                 },
                 IRFunctionExpr::RollingExprBy { function_by, .. } => match function_by {
                     IRRollingFunctionBy::MinBy => {
@@ -1355,7 +1427,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Truncate { decimals } => ("truncate", decimals).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
                 IRFunctionExpr::Ceil => ("ceil",).into_py_any(py),
-                IRFunctionExpr::Fused(_) => return Err(PyNotImplementedError::new_err("fused")),
+                IRFunctionExpr::Fused(op) => {
+                    let op_name = match op {
+                        FusedOperator::MultiplyAdd => "fma",
+                        FusedOperator::SubMultiply => "fsm",
+                        FusedOperator::MultiplySub => "fms",
+                    };
+                    ("fused", op_name).into_py_any(py)
+                },
                 IRFunctionExpr::ConcatExpr { .. } => {
                     return Err(PyNotImplementedError::new_err("concat expr"));
                 },
@@ -1464,8 +1543,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::RowDecode(..) => {
                     return Err(PyNotImplementedError::new_err("row_decode"));
                 },
-                IRFunctionExpr::DynamicPred { .. } => {
-                    return Err(PyNotImplementedError::new_err("dynamic_pred"));
+                IRFunctionExpr::DynamicPred { pred } => {
+                    ("dynamic_pred", pred.id().map(|u| u.as_u128())).into_py_any(py)
                 },
             }?,
             options: py.None(),

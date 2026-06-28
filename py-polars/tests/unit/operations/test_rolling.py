@@ -914,3 +914,53 @@ def test_rolling_positive_offset_window_26717(period: int, offset: int) -> None:
     )
 
     assert_frame_equal(out_base, out_over)
+
+
+def test_rolling_by_temporal_null_min_samples_27661() -> None:
+    df = pl.DataFrame(
+        {
+            "timestamp": pl.datetime_range(
+                datetime(year=2026, month=1, day=9, hour=5, minute=23, second=37),
+                datetime(year=2026, month=1, day=9, hour=5, minute=23, second=39),
+                interval="1s",
+                time_unit="ms",
+                eager=True,
+            ),
+            "power": [303, 498, None],
+        },
+    ).with_columns(
+        avg_power_2s=pl.col("power").rolling_mean_by(
+            "timestamp",
+            window_size="2s",
+            min_samples=2,
+        ),
+        avg_power_2i=pl.col("power").rolling_mean(
+            window_size=2,
+            min_samples=2,
+        ),
+    )
+    assert_series_equal(df["avg_power_2s"].alias("avg_power_2i"), df["avg_power_2i"])
+
+
+@pytest.mark.parametrize(
+    ("method", "expected"),
+    [
+        ("rolling_sum", [0.0, 0.0, 0.0]),
+        ("rolling_mean", [None, None, None]),
+        ("rolling_min", [None, None, None]),
+        ("rolling_max", [None, None, None]),
+        ("rolling_std", [None, None, None]),
+        ("rolling_var", [None, None, None]),
+        ("rolling_median", [None, None, None]),
+        ("rolling_skew", [None, None, None]),
+    ],
+)
+def test_rolling_window_size_zero_23434(
+    method: str, expected: list[float | None]
+) -> None:
+    """window_size=0 should match the aggregation of an empty series."""
+    s = pl.Series([1.0, 2.0, 3.0], dtype=pl.Float64)
+    assert_series_equal(
+        getattr(s, method)(window_size=0),
+        pl.Series(expected, dtype=pl.Float64),
+    )

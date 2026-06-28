@@ -98,7 +98,7 @@ impl AExpr {
             Column(name) => ctx
                 .schema
                 .get_field(name)
-                .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
+                .ok_or_else(|| ctx.schema.column_not_found_err(name)),
             #[cfg(feature = "dtype-struct")]
             StructField(name) => {
                 let struct_field = ctx

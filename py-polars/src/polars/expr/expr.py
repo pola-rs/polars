@@ -38,13 +38,14 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
+    _Omitted,
     extend_bool,
-    find_stacklevel,
     normalize_filepath,
     sphinx_accessor,
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_expr, wrap_s
+from polars._warnings import find_stacklevel
 from polars.datatypes import (
     Decimal as PolarsDecimal,
 )
@@ -55,7 +56,6 @@ from polars.datatypes import (
 from polars.exceptions import (
     CustomUFuncWarning,
     OutOfBoundsError,
-    PolarsInefficientMapWarning,
 )
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
@@ -3756,7 +3756,7 @@ class Expr:
         │ true ┆ true ┆ false │
         └──────┴──────┴───────┘
         """
-        return self.null_count() > 0
+        return wrap_expr(self._pyexpr.has_nulls())
 
     def arg_unique(self) -> Expr:
         """
@@ -5259,24 +5259,27 @@ Consider using {self}.implode() instead"""
                 def inner(s: Series | Any) -> Series:  # pragma: no cover
                     if isinstance(s, pl.Series):
                         s = s.alias(x.name)
+
                     return function(s)
 
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
-                    return x.map_elements(
-                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.map_elements(
+                    inner,
+                    return_dtype=return_dtype,
+                    skip_nulls=skip_nulls,
+                    _disable_inefficient_map_warning=True,
+                )
 
         else:
 
             def wrap_f(x: Series, **kwargs: Any) -> Series:  # pragma: no cover
                 return_dtype = kwargs["return_dtype"]
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
 
-                    return x.map_elements(
-                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.map_elements(
+                    function,
+                    return_dtype=return_dtype,
+                    skip_nulls=skip_nulls,
+                    _disable_inefficient_map_warning=True,
+                )
 
         if strategy == "thread_local":
             return self.map_batches(
@@ -5375,7 +5378,9 @@ Consider using {self}.implode() instead"""
         """
         return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
+    ) -> Expr:
         """
         Explode a list expression.
 
@@ -5421,6 +5426,13 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
@@ -6662,6 +6674,77 @@ Consider using {self}.implode() instead"""
             self._pyexpr.is_close(other_pyexpr, abs_tol, rel_tol, nans_equal)
         )
 
+    def is_sorted(
+        self,
+        *,
+        descending: bool | None = False,
+        nulls_last: bool | None = False,
+    ) -> Expr:
+        """
+        Checks if an expression is sorted.
+
+        If `descending` and/or `nulls_last` are None, it will check `True` and `False`
+        for the unspecified option(s), and return `True` if the expression is sorted
+        under any combination of those settings.
+
+        Parameters
+        ----------
+        descending
+            Checks if the expression is sorted in descending order.
+            Defaults to False.
+        nulls_last
+            Consider null values as being ordered last when checking sortedness.
+            Defaults to False.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        Check if a column is sorted in ascending order.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df.select(pl.col("a").is_sorted())
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        Check if a column is sorted in descending order.
+
+        >>> df = pl.DataFrame({"a": [4, 3, 2, 1]})
+        >>> df.select(pl.col("a").is_sorted(descending=True))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        Check if a column is sorted in either direction.
+
+        >>> df = pl.DataFrame({"a": [4, 3, 2, 1]})
+        >>> df.select(pl.col("a").is_sorted(descending=None))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        """
+        return wrap_expr(self._pyexpr.is_sorted(descending, nulls_last))
+
     def hash(
         self,
         seed: int = 0,
@@ -7369,7 +7452,7 @@ Consider using {self}.implode() instead"""
         by: IntoExpr,
         window_size: timedelta | str_,
         *,
-        min_samples: int = 1,
+        min_samples: int = 0,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """

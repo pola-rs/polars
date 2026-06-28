@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from typing import cast
 
 from polars._utils.deprecation import issue_deprecation_warning
 
@@ -326,14 +327,14 @@ def forward_old_opt_flags() -> IdentityFunction:
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            optflags: QueryOptFlags = kwargs.get(
-                "optimizations", DEFAULT_QUERY_OPT_FLAGS
-            )  # type: ignore[assignment]
+            optflags = cast(
+                "QueryOptFlags", kwargs.get("optimizations", DEFAULT_QUERY_OPT_FLAGS)
+            )
             optflags = optflags.__copy__()
             for key in list(kwargs.keys()):
                 cb = OLD_OPT_PARAMETERS_MAPPING.get(key)
                 if cb is not None:
-                    from polars._utils.various import issue_warning
+                    from polars._warnings import issue_warning
 
                     message = f"optimization flag `{key}` is deprecated. Please use `optimizations` parameter\n(Deprecated in version 1.30.0)"
                     issue_warning(message, DeprecationWarning)
