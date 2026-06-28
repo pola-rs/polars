@@ -211,6 +211,8 @@ def read_csv(
         this function determines if it is possible to use pyarrow's
         native parser. Note that pyarrow and polars may have a
         different strategy regarding type inference.
+        Some Polars-specific parsing options, such as `schema`,
+        may not be applied when using the PyArrow parser.
     storage_options
         Extra options that make sense for `fsspec.open()` or a
         particular storage connection.
