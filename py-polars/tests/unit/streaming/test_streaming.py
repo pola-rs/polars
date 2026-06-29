@@ -333,7 +333,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     lf1 = pl.scan_parquet(tmp_path / "df1.parquet")
     lf2 = pl.scan_parquet(tmp_path / "df2.parquet")
     query = (
-        pl.concat([lf1, lf2], how="horizontal", strict=True)
+        pl.concat([lf1, lf2], how="horizontal")
         .group_by("id")
         .agg(pl.all().mean())
         .sort(pl.col("id"))
