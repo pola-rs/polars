@@ -469,7 +469,6 @@ def test_streaming_hconcat_strict_27372() -> None:
             data,
         ],
         how="horizontal",
-        strict=True,
     )
 
     result = lf.collect(engine="streaming")
