@@ -112,8 +112,8 @@ impl MutableFixedSizeBinaryArray {
                 if self.size != bytes.len() {
                     polars_bail!(
                         ComputeError:
-                        "FixedSizeBinaryArray requires every item to be of its length \
-                        (self.size: {}, bytes.len(): {})",
+                        "MutableFixedSizeBinaryArray(row_width: {}): attempted to push \
+                        row with {} bytes",
                         self.size, bytes.len(),
                     )
                 }
