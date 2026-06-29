@@ -308,6 +308,8 @@ pub(super) fn process_binary(
 
     // Coerce types:
     let st = unpack!(get_supertype(&type_left, &type_right));
+
+    dbg!(&st);
     let mut st = modify_supertype(st, left, right, &type_left, &type_right);
 
     if is_cat_str_binary(&type_left, &type_right) {
