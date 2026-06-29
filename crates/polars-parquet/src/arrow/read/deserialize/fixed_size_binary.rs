@@ -556,7 +556,7 @@ impl Decoder for BinaryDecoder {
         // dyn Array of type ArrowDataType::FixedSizeBinary(_) (via Series::from_chunk_and_dtype
         // in predicate.evaluate_mut()).
         //
-        // Performant fix would involve refactoring this (BinaryDecoder) to also store Views
+        // TODO: Performant fix would involve refactoring this (BinaryDecoder) to also store Views
         // in the intermediate state, and only when a predicate is being applied on this column.
         unimplemented!("parquet: fixed-size binary prefilter");
     }
