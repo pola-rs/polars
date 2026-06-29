@@ -1,7 +1,11 @@
 pub mod infer;
 use chrono::DateTime;
+#[cfg(feature = "dtype-duration")]
+mod parse_duration;
 mod patterns;
 mod strptime;
+#[cfg(feature = "dtype-duration")]
+use parse_duration::parse_duration_string;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
 use polars_core::chunked_array::temporal::time_to_time64ns;
@@ -341,6 +345,34 @@ pub trait StringMethods: AsString {
                 _ => Ok(dt),
             }
         }
+    }
+
+    #[cfg(feature = "dtype-duration")]
+    /// Parse string values into a [`DurationChunked`] using a stopwatch-style
+    /// colon format such as `"104:00:00"` or `"-80:00.500"`.
+    ///
+    /// `fmt` uses the specifiers documented on `parse_duration_string`
+    /// (`%d`, `%H`, `%M`, `%S`, `%f`, `%.f`). Unlike time parsing, the fields
+    /// are not range-checked, so values such as `80` minutes or `104` hours are
+    /// accepted.
+    fn as_duration(
+        &self,
+        fmt: Option<&str>,
+        tu: TimeUnit,
+        use_cache: bool,
+    ) -> PolarsResult<DurationChunked> {
+        let string_ca = self.as_string();
+        let Some(fmt) = fmt else {
+            polars_bail!(ComputeError: "`format` must be provided when parsing strings to Duration")
+        };
+        let use_cache = use_cache && string_ca.len() > 50;
+
+        let mut convert = LruCachedFunc::new(
+            |s: &str| parse_duration_string(s, fmt, tu),
+            (string_ca.len() as f64).sqrt() as usize,
+        );
+        let ca = unary_elementwise(string_ca, |opt_s| convert.eval(opt_s?, use_cache));
+        Ok(ca.with_name(string_ca.name().clone()).into_duration(tu))
     }
 }
 
