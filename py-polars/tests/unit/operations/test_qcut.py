@@ -109,6 +109,36 @@ def test_qcut_full_null_with_labels() -> None:
     assert_series_equal(result, expected, categorical_as_str=True)
 
 
+def test_qcut_empty_include_breaks_27284() -> None:
+    # https://github.com/pola-rs/polars/issues/27284
+    empty = pl.Series("x", [], dtype=pl.Float64)
+    result = empty.qcut(3, include_breaks=True)
+
+    expected_dtype = pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical})
+    assert result.dtype == expected_dtype
+    assert len(result) == 0
+
+
+def test_qcut_empty_include_breaks_lazy_27284() -> None:
+    # https://github.com/pola-rs/polars/issues/27284
+    frame = pl.LazyFrame({"x": pl.Series([], dtype=pl.Float64)})
+    expr = pl.col("x").qcut(3, include_breaks=True).struct.field("breakpoint")
+    result = frame.select(expr).collect()
+
+    assert result.schema == {"breakpoint": pl.Float64}
+    assert len(result) == 0
+
+
+def test_qcut_full_null_include_breaks() -> None:
+    # Variant: all-null (not just empty) with include_breaks
+    s = pl.Series("x", [None, None, None], dtype=pl.Float64)
+    result = s.qcut([0.25, 0.50], include_breaks=True)
+
+    expected_dtype = pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical})
+    assert result.dtype == expected_dtype
+    assert len(result) == 3
+
+
 def test_qcut_allow_duplicates() -> None:
     s = pl.Series([1, 2, 2, 3])
 
