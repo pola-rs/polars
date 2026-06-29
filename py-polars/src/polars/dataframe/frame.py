@@ -2489,9 +2489,7 @@ class DataFrame:
                 if features is not None
                 else self.drop(*label_frame.columns)
             ).cast(to_dtype)  # type: ignore[arg-type]
-            frame = F.concat(
-                [label_frame, features_frame], how="horizontal"
-            )
+            frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
             label_frame = None
             features_frame = None

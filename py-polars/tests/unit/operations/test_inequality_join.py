@@ -781,9 +781,7 @@ def test_range_join_dtypes(
     # 50 samples should ensure that this join will have plenty of matches
     lo_df = point_df.sample(50, with_replacement=True, seed=0).rename({"point": "lo"})
     hi_df = point_df.sample(50, with_replacement=True, seed=1).rename({"point": "hi"})
-    interval_lf = (
-        pl.concat([lo_df, hi_df], how="horizontal").with_row_index().lazy()
-    )
+    interval_lf = pl.concat([lo_df, hi_df], how="horizontal").with_row_index().lazy()
     point_lf = point_df.with_row_index().lazy()
     predicates = [
         _inequality_expression_col("point", op, col)
