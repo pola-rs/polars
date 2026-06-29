@@ -25,7 +25,7 @@ impl ProjectionExec {
         // Vertical and horizontal parallelism.
         let df = if self.allow_vertical_parallelism
             && df.first_col_n_chunks() > 1
-            && df.height() > POOL.current_num_threads() * 2
+            && df.height() > RAYON.current_num_threads() * 2
             && self.options.run_parallel
         {
             let chunks = df.split_chunks().collect::<Vec<_>>();
@@ -37,10 +37,16 @@ impl ProjectionExec {
                     self.has_windows,
                     self.options.run_parallel,
                 )?;
-                check_expand_literals(&df, &self.expr, selected_cols, df.is_empty(), self.options)
+                check_expand_literals(
+                    &df,
+                    &self.expr,
+                    selected_cols,
+                    df.shape_has_zero(),
+                    self.options,
+                )
             });
 
-            let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let df = RAYON.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             accumulate_dataframes_vertical_unchecked(df)
         }
         // Only horizontal parallelism.
@@ -53,7 +59,13 @@ impl ProjectionExec {
                 self.has_windows,
                 self.options.run_parallel,
             )?;
-            check_expand_literals(&df, &self.expr, selected_cols, df.is_empty(), self.options)?
+            check_expand_literals(
+                &df,
+                &self.expr,
+                selected_cols,
+                df.shape_has_zero(),
+                self.options,
+            )?
         };
 
         // this only runs during testing and check if the runtime type matches the predicted schema
@@ -61,7 +73,7 @@ impl ProjectionExec {
         #[allow(unused_must_use)]
         {
             // TODO: also check the types.
-            for (l, r) in df.iter().zip(self.schema.iter_names()) {
+            for (l, r) in df.columns().iter().zip(self.schema.iter_names()) {
                 assert_eq!(l.name(), r);
             }
         }

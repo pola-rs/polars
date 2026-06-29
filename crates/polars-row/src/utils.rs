@@ -7,6 +7,7 @@ macro_rules! with_match_arrow_primitive_type {(
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use arrow::datatypes::ArrowDataType::*;
+    use polars_utils::float16::pf16;
     match $key_type {
         Int8 => __with_ty__! { i8 },
         Int16 => __with_ty__! { i16 },
@@ -17,6 +18,8 @@ macro_rules! with_match_arrow_primitive_type {(
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
+        UInt128 => __with_ty__! { u128 },
+        Float16 => __with_ty__! { pf16 },
         Float32 => __with_ty__! { f32 },
         Float64 => __with_ty__! { f64 },
         _ => unreachable!(),

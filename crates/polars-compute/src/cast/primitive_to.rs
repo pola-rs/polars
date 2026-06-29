@@ -5,14 +5,20 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::arity::unary;
 use arrow::datatypes::{ArrowDataType, TimeUnit};
 use arrow::offset::{Offset, Offsets};
-use arrow::types::{NativeType, f16};
-use num_traits::{AsPrimitive, Float, ToPrimitive};
+use arrow::types::NativeType;
+use num_traits::AsPrimitive;
+#[cfg(feature = "dtype-decimal")]
+use num_traits::{Float, ToPrimitive};
 use polars_error::PolarsResult;
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::vec::PushUnchecked;
 
 use super::CastOptionsImpl;
 use super::temporal::*;
+use crate::comparisons::TotalEqKernel;
+#[cfg(feature = "dtype-decimal")]
+use crate::decimal::{dec128_verify_prec_scale, f64_to_dec128, i128_to_dec128};
 
 pub trait SerPrimitive {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
@@ -45,13 +51,23 @@ impl_ser_primitive!(u8);
 impl_ser_primitive!(u16);
 impl_ser_primitive!(u32);
 impl_ser_primitive!(u64);
+impl_ser_primitive!(u128);
+
+impl SerPrimitive for pf16 {
+    fn write(f: &mut Vec<u8>, val: Self) -> usize
+    where
+        Self: Sized,
+    {
+        f32::write(f, AsPrimitive::<f32>::as_(val))
+    }
+}
 
 impl SerPrimitive for f32 {
     fn write(f: &mut Vec<u8>, val: Self) -> usize
     where
         Self: Sized,
     {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(val);
         f.extend_from_slice(value.as_bytes());
         value.len()
@@ -63,7 +79,7 @@ impl SerPrimitive for f64 {
     where
         Self: Sized,
     {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(val);
         f.extend_from_slice(value.as_bytes());
         value.len()
@@ -149,10 +165,11 @@ fn primitive_to_values_and_offsets<T: NativeType + SerPrimitive, O: Offset>(
 pub fn primitive_to_boolean<T: NativeType>(
     from: &PrimitiveArray<T>,
     to_type: ArrowDataType,
-) -> BooleanArray {
-    let iter = from.values().iter().map(|v| *v != T::default());
-    let values = Bitmap::from_trusted_len_iter(iter);
-
+) -> BooleanArray
+where
+    PrimitiveArray<T>: TotalEqKernel<Scalar = T>,
+{
+    let values = from.tot_ne_kernel_broadcast(&T::default());
     BooleanArray::new(to_type, values, from.validity().cloned())
 }
 
@@ -162,6 +179,7 @@ pub(super) fn primitive_to_boolean_dyn<T>(
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: NativeType,
+    PrimitiveArray<T>: TotalEqKernel<Scalar = T>,
 {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(primitive_to_boolean::<T>(from, to_type)))
@@ -224,88 +242,54 @@ where
 }
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
-pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
+#[cfg(feature = "dtype-decimal")]
+pub fn integer_to_decimal<T: NativeType + ToPrimitive>(
     from: &PrimitiveArray<T>,
     to_precision: usize,
     to_scale: usize,
 ) -> PrimitiveArray<i128> {
-    assert!(to_precision <= 38);
-    assert!(to_scale <= 38);
-
-    let multiplier = 10_i128.pow(to_scale as u32);
-    let max_for_precision = 10_i128.pow(to_precision as u32) - 1;
-    let min_for_precision = -max_for_precision;
-
-    let values = from.iter().map(|x| {
-        x.and_then(|x| {
-            x.as_().checked_mul(multiplier).and_then(|x| {
-                if x > max_for_precision || x < min_for_precision {
-                    None
-                } else {
-                    Some(x)
-                }
-            })
-        })
-    });
-
+    assert!(dec128_verify_prec_scale(to_precision, to_scale).is_ok());
+    let values = from
+        .iter()
+        .map(|x| i128_to_dec128(x?.to_i128()?, to_precision, to_scale));
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
+#[cfg(feature = "dtype-decimal")]
 pub(super) fn integer_to_decimal_dyn<T>(
     from: &dyn Array,
     precision: usize,
     scale: usize,
 ) -> PolarsResult<Box<dyn Array>>
 where
-    T: NativeType + AsPrimitive<i128>,
+    T: NativeType + ToPrimitive,
 {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(integer_to_decimal::<T>(from, precision, scale)))
 }
 
 /// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
-pub fn float_to_decimal<T>(
+#[cfg(feature = "dtype-decimal")]
+pub fn float_to_decimal<T: NativeType + Float + AsPrimitive<f64>>(
     from: &PrimitiveArray<T>,
     to_precision: usize,
     to_scale: usize,
-) -> PrimitiveArray<i128>
-where
-    T: NativeType + Float + ToPrimitive,
-    f64: AsPrimitive<T>,
-{
-    assert!(to_precision <= 38);
-    assert!(to_scale <= 38);
-
-    // 1.2 => 12
-    let multiplier: T = (10_f64).powi(to_scale as i32).as_();
-    let max_for_precision = 10_i128.pow(to_precision as u32) - 1;
-    let min_for_precision = -max_for_precision;
-
-    let values = from.iter().map(|x| {
-        x.and_then(|x| {
-            let x = (*x * multiplier).to_i128()?;
-            if x > max_for_precision || x < min_for_precision {
-                None
-            } else {
-                Some(x)
-            }
-        })
-    });
-
+) -> PrimitiveArray<i128> {
+    assert!(dec128_verify_prec_scale(to_precision, to_scale).is_ok());
+    let values = from
+        .iter()
+        .map(|x| f64_to_dec128(x?.as_(), to_precision, to_scale));
     PrimitiveArray::<i128>::from_trusted_len_iter(values)
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
-pub(super) fn float_to_decimal_dyn<T>(
+#[cfg(feature = "dtype-decimal")]
+pub(super) fn float_to_decimal_dyn<T: NativeType + Float + AsPrimitive<f64>>(
     from: &dyn Array,
     precision: usize,
     scale: usize,
-) -> PolarsResult<Box<dyn Array>>
-where
-    T: NativeType + Float + ToPrimitive,
-    f64: AsPrimitive<T>,
-{
+) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
     Ok(Box::new(float_to_decimal::<T>(from, precision, scale)))
 }
@@ -354,9 +338,10 @@ where
 
 pub(super) fn primitive_to_dictionary_dyn<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &dyn Array,
+    ordered: bool,
 ) -> PolarsResult<Box<dyn Array>> {
     let from = from.as_any().downcast_ref().unwrap();
-    primitive_to_dictionary::<T, K>(from).map(|x| Box::new(x) as Box<dyn Array>)
+    primitive_to_dictionary::<T, K>(from, ordered).map(|x| Box::new(x) as Box<dyn Array>)
 }
 
 /// Cast [`PrimitiveArray`] to [`DictionaryArray`]. Also known as packing.
@@ -365,11 +350,13 @@ pub(super) fn primitive_to_dictionary_dyn<T: NativeType + Eq + Hash, K: Dictiona
 /// in the array.
 pub fn primitive_to_dictionary<T: NativeType + Eq + Hash, K: DictionaryKey>(
     from: &PrimitiveArray<T>,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
     let iter = from.iter().map(|x| x.copied());
-    let mut array = MutableDictionaryArray::<K, _>::try_empty(MutablePrimitiveArray::<T>::from(
-        from.dtype().clone(),
-    ))?;
+    let mut array = MutableDictionaryArray::<K, _>::try_empty(
+        MutablePrimitiveArray::<T>::from(from.dtype().clone()),
+        ordered,
+    )?;
     array.reserve(from.len());
     array.try_extend(iter)?;
 
@@ -436,7 +423,7 @@ pub fn int64_to_time64us(from: &PrimitiveArray<i64>) -> PrimitiveArray<i64> {
         primitive_map_is_valid(
             from,
             |v| (0..MICROSECONDS_IN_DAY).contains(&v),
-            ArrowDataType::Time32(TimeUnit::Microsecond),
+            ArrowDataType::Time64(TimeUnit::Microsecond),
         )
     }
 }
@@ -587,11 +574,6 @@ pub fn timestamp_to_timestamp(
             to_type,
         )
     }
-}
-
-/// Casts f16 into f32
-pub fn f16_to_f32(from: &PrimitiveArray<f16>) -> PrimitiveArray<f32> {
-    unary(from, |x| x.to_f32(), ArrowDataType::Float32)
 }
 
 /// Returns a [`Utf8Array`] where every element is the utf8 representation of the number.

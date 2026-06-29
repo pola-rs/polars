@@ -1,13 +1,16 @@
 //! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
+
 use arrow::array::{
     Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray,
     MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray,
     PrimitiveArray, Utf8ViewArray,
 };
 use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
-use arrow::types::{NativeType, days_ms, f16, i256};
+use arrow::types::{days_ms, i256};
 use ethnum::I256;
+use num_traits::{AsPrimitive, FromBytes};
 use polars_utils::IdxSize;
+use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ParquetTimeUnit, RowGroupMetadata};
@@ -41,14 +44,6 @@ pub struct ColumnStatistics {
 
     /// Statistics of the leaf array of the column
     statistics: ParquetStatistics,
-}
-
-#[derive(Debug, PartialEq)]
-pub enum ColumnPathSegment {
-    List { is_large: bool },
-    FixedSizeList { width: usize },
-    Dictionary { key: IntegerType, is_sorted: bool },
-    Struct { column_idx: usize },
 }
 
 /// Arrow-deserialized parquet statistics of a leaf-column
@@ -131,7 +126,7 @@ impl ColumnStatistics {
                     $expect,
                     |x: Option<$from>| {
                         $(
-                        let x = x.map(|x| x as $to);
+                        let x = x.map(|x| AsPrimitive::<$to>::as_(x));
                         )?
                         $(
                         let x = x.map($map);
@@ -168,7 +163,8 @@ impl ColumnStatistics {
             }};
         }
 
-        use {ArrowDataType as D, ParquetPhysicalType as PPT};
+        use ArrowDataType as D;
+        use ParquetPhysicalType as PPT;
         let (min_value, max_value) = match (self.field.dtype(), &self.physical_type) {
             (D::Null, _) => (None, None),
 
@@ -208,7 +204,7 @@ impl ColumnStatistics {
 
             (D::Timestamp(time_unit, _), PPT::Int96) => {
                 rmap!(expect_int96, @prim [u32; 3], |x| {
-                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                    timestamp(self.logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
                 })
             },
             (D::Timestamp(time_unit, _), PPT::Int64) => {
@@ -217,14 +213,13 @@ impl ColumnStatistics {
                 })
             },
 
-            // Read Float16, since we don't have a f16 type in Polars we read it to a Float32.
-            (_, PPT::FixedLenByteArray(2))
+            (D::Float16, PPT::FixedLenByteArray(2))
                 if matches!(
                     self.logical_type.as_ref(),
                     Some(PrimitiveLogicalType::Float16)
                 ) =>
             {
-                rmap!(expect_fixedlen, @prim Vec<u8>, |v| f16::from_le_bytes([v[0], v[1]]).to_f32())
+                rmap!(expect_fixedlen, @prim Vec<u8>, |v| pf16::from_le_bytes(&[v[0], v[1]]))
             },
             (D::Float32, _) => rmap!(expect_float, @prim f32),
             (D::Float64, _) => rmap!(expect_double, @prim f64),
@@ -297,6 +292,7 @@ pub fn deserialize_all(
     field: &Field,
     row_groups: &[RowGroupMetadata],
     field_idx: usize,
+    footer_buf: &[u8],
 ) -> ParquetResult<Option<ArrowColumnStatisticsArrays>> {
     assert!(!row_groups.is_empty());
     use ArrowDataType as D;
@@ -327,7 +323,7 @@ pub fn deserialize_all(
 
                     for rg in row_groups {
                         let column = &rg.parquet_columns()[field_idx];
-                        let s = column.statistics().transpose()?;
+                        let s = column.statistics(footer_buf).transpose()?;
 
                         let (v_min, v_max, v_null_count, v_distinct_count) = match s {
                             None => (None, None, None, None),
@@ -362,7 +358,7 @@ pub fn deserialize_all(
                         $expect,
                         |x: Option<$from>| {
                             $(
-                            let x = x.map(|x| x as $to);
+                            let x = x.map(|x| AsPrimitive::<$to>::as_(x));
                             )?
                             $(
                             let x = x.map($map);
@@ -398,12 +394,19 @@ pub fn deserialize_all(
                 }};
             }
 
-            use {ArrowDataType as D, ParquetPhysicalType as PPT};
+            use ArrowDataType as D;
+            use ParquetPhysicalType as PPT;
             let (min_value, max_value) = match (field.dtype(), physical_type) {
-                (D::Null, _) => (
-                    NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                    NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
-                ),
+                (D::Null, _) => {
+                    for rg in row_groups {
+                        null_count.push(Some(rg.num_rows() as IdxSize));
+                        distinct_count.push(Some(0));
+                    }
+                    (
+                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                        NullArray::new(ArrowDataType::Null, row_groups.len()).to_boxed(),
+                    )
+                },
 
                 (D::Boolean, _) => rmap!(
                     expect_boolean,
@@ -459,7 +462,7 @@ pub fn deserialize_all(
 
                 (D::Timestamp(time_unit, _), PPT::Int96) => {
                     rmap!(expect_int96, MutablePrimitiveArray::<i64>, @prim [u32; 3], |x| {
-                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                        timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x).unwrap_or(i64::MAX))
                     })
                 },
                 (D::Timestamp(time_unit, _), PPT::Int64) => {
@@ -468,11 +471,11 @@ pub fn deserialize_all(
                     })
                 },
 
-                // Read Float16, since we don't have a f16 type in Polars we read it to a Float32.
-                (_, PPT::FixedLenByteArray(2))
-                    if matches!(logical_type.as_ref(), Some(PrimitiveLogicalType::Float16)) =>
-                {
-                    rmap!(expect_fixedlen, MutablePrimitiveArray::<f32>, @prim Vec<u8>, |v| f16::from_le_bytes([v[0], v[1]]).to_f32())
+                (D::Float16, _) => {
+                    rmap!(expect_fixedlen, MutablePrimitiveArray::<pf16>, @prim Vec<u8>, |v| {
+                        let le_bytes: [u8; 2] = [v[0], v[1]];
+                        pf16::from_le_bytes(&le_bytes)
+                    })
                 },
                 (D::Float32, _) => rmap!(expect_float, MutablePrimitiveArray::<f32>, @prim f32),
                 (D::Float64, _) => rmap!(expect_double, MutablePrimitiveArray::<f64>, @prim f64),
@@ -549,47 +552,52 @@ pub fn deserialize_all(
 pub fn deserialize<'a>(
     field: &Field,
     columns: &mut impl ExactSizeIterator<Item = &'a ColumnChunkMetadata>,
+    footer_buf: &[u8],
 ) -> ParquetResult<Option<Statistics>> {
     use ArrowDataType as D;
     match field.dtype() {
         D::List(field) | D::LargeList(field) => Ok(Some(Statistics::List(
-            deserialize(field.as_ref(), columns)?.map(Box::new),
+            deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
         ))),
-        D::Dictionary(key, dtype, is_sorted) => Ok(Some(Statistics::Dictionary(
+        D::Dictionary(key, dtype, ordered) => Ok(Some(Statistics::Dictionary(
             *key,
             deserialize(
                 &Field::new(PlSmallStr::EMPTY, dtype.as_ref().clone(), true),
                 columns,
+                footer_buf,
             )?
             .map(Box::new),
-            *is_sorted,
+            *ordered,
         ))),
         D::FixedSizeList(field, width) => Ok(Some(Statistics::FixedSizeList(
-            deserialize(field.as_ref(), columns)?.map(Box::new),
+            deserialize(field.as_ref(), columns, footer_buf)?.map(Box::new),
             *width,
         ))),
         D::Struct(fields) => {
             let field_columns = fields
                 .iter()
-                .map(|f| deserialize(f, columns))
+                .map(|f| deserialize(f, columns, footer_buf))
                 .collect::<ParquetResult<_>>()?;
             Ok(Some(Statistics::Struct(field_columns)))
         },
         _ => {
             let column = columns.next().unwrap();
 
-            Ok(column.statistics().transpose()?.map(|statistics| {
-                let primitive_type = &column.descriptor().descriptor.primitive_type;
+            Ok(column
+                .statistics(footer_buf)
+                .transpose()?
+                .map(|statistics| {
+                    let primitive_type = &column.descriptor().descriptor.primitive_type;
 
-                Statistics::Column(Box::new(ColumnStatistics {
-                    field: field.clone(),
+                    Statistics::Column(Box::new(ColumnStatistics {
+                        field: field.clone(),
 
-                    logical_type: primitive_type.logical_type,
-                    physical_type: primitive_type.physical_type,
+                        logical_type: primitive_type.logical_type,
+                        physical_type: primitive_type.physical_type,
 
-                    statistics,
+                        statistics,
+                    }))
                 }))
-            }))
         },
     }
 }

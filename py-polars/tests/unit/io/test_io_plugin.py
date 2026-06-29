@@ -63,7 +63,9 @@ def test_defer_validate_false() -> None:
         schema={"a": pl.Boolean},
         validate_schema=False,
     )
-    assert lf.collect().to_dict(as_series=False) == {"a": [1.0, 1.0, 1.0]}
+    assert lf.collect(engine="in-memory").to_dict(as_series=False) == {
+        "a": [1.0, 1.0, 1.0]
+    }
 
 
 def test_empty_iterator_io_plugin() -> None:
@@ -82,7 +84,7 @@ def test_empty_iterator_io_plugin() -> None:
 
 def test_scan_lines() -> None:
     def scan_lines(f: io.BytesIO) -> pl.LazyFrame:
-        schema = pl.Schema({"lines": pl.String()})
+        schema = pl.Schema({"line": pl.String()})
 
         def generator(
             with_columns: list[str] | None,
@@ -103,13 +105,10 @@ def test_scan_lines() -> None:
                     n_rows -= remaining_rows
 
                 while remaining_rows != 0 and (line := x.readline().rstrip()):
-                    if isinstance(line, str):
-                        batch_lines += [batch_lines]
-                    else:
-                        batch_lines += [line.decode()]
+                    batch_lines += [line.decode()]
                     remaining_rows -= 1
 
-                df = pl.Series("lines", batch_lines, pl.String()).to_frame()
+                df = pl.Series("line", batch_lines, pl.String()).to_frame()
 
                 if with_columns is not None:
                     df = df.select(with_columns)
@@ -133,21 +132,22 @@ This allows it to read into multiple rows.
 
     assert_series_equal(
         scan_lines(f).collect().to_series(),
-        pl.Series("lines", text.splitlines(), pl.String()),
+        pl.Series("line", text.splitlines(), pl.String()),
     )
 
 
 @pytest.mark.may_fail_cloud
-@pytest.mark.may_fail_auto_streaming  # IO plugin validate=False schema mismatch
 def test_datetime_io_predicate_pushdown_21790() -> None:
     recorded: dict[str, pl.Expr | None] = {"predicate": None}
+    schema = {"timestamp": pl.Datetime(time_unit="ns")}
     df = pl.DataFrame(
         {
             "timestamp": [
                 datetime.datetime(2024, 1, 1, 0),
                 datetime.datetime(2024, 1, 3, 0),
             ]
-        }
+        },
+        schema=schema,
     )
 
     def _source(
@@ -166,7 +166,6 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
 
         yield inner_df
 
-    schema = {"timestamp": pl.Datetime(time_unit="ns")}
     lf = register_io_source(io_source=_source, schema=schema)
 
     cutoff = datetime.datetime(2024, 1, 4)
@@ -178,12 +177,11 @@ def test_datetime_io_predicate_pushdown_21790() -> None:
     assert_series_equal(filtered_df.to_series(), df.filter(expr).to_series())
 
     # check the expression directly
-    dt_val, column_cast = pushed_predicate.meta.pop()
+    dt_val, column = pushed_predicate.meta.pop()
     # Extract the datetime value from the expression
     assert pl.DataFrame({}).select(dt_val).item() == cutoff
 
-    column = column_cast.meta.pop()[0]
-    assert column.meta == pl.col("timestamp")
+    assert str(column) == str(pl.col("timestamp"))
 
 
 @pytest.mark.parametrize(("validate"), [(True), (False)])
@@ -305,3 +303,12 @@ def test_io_plugin_categorical_24172() -> None:
         register_io_source(lambda *_: iter([df]), schema=df.schema).collect(),
         df,
     )
+
+
+def test_io_plugin_object_dtype_25740() -> None:
+    dummy = object()
+    df = pl.DataFrame({"a": [dummy, None]}, schema={"a": pl.Object})
+    lf = pl.defer(lambda: df, schema=df.schema)
+    out = lf.collect()
+    assert out.schema == df.schema
+    assert out.to_dict(as_series=False) == {"a": [dummy, None]}

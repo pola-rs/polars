@@ -23,7 +23,7 @@ impl Div for Expr {
     type Output = Expr;
 
     fn div(self, rhs: Self) -> Self::Output {
-        binary_expr(self, Operator::Divide, rhs)
+        binary_expr(self, Operator::RustDivide, rhs)
     }
 }
 
@@ -55,6 +55,11 @@ impl Expr {
     /// Floor divide `self` by `rhs`.
     pub fn floor_div(self, rhs: Self) -> Self {
         binary_expr(self, Operator::FloorDivide, rhs)
+    }
+
+    /// True divide `self` by `rhs`
+    pub fn true_div(self, rhs: Self) -> Self {
+        binary_expr(self, Operator::TrueDivide, rhs)
     }
 
     /// Raise expression to the power `exponent`

@@ -18,6 +18,7 @@ The following methods are available under the `Series.dt` attribute.
     Series.dt.date
     Series.dt.datetime
     Series.dt.day
+    Series.dt.days_in_month
     Series.dt.dst_offset
     Series.dt.epoch
     Series.dt.hour

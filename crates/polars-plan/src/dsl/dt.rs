@@ -10,16 +10,13 @@ impl DateLikeNameSpace {
         self,
         n: Expr,
         week_mask: [bool; 7],
-        holidays: Vec<i32>,
+        holidays: Expr,
         roll: Roll,
     ) -> Expr {
-        self.0.map_binary(
-            FunctionExpr::Business(BusinessFunction::AddBusinessDay {
-                week_mask,
-                holidays,
-                roll,
-            }),
+        self.0.map_ternary(
+            FunctionExpr::Business(BusinessFunction::AddBusinessDay { week_mask, roll }),
             n,
+            holidays,
         )
     }
 
@@ -85,12 +82,11 @@ impl DateLikeNameSpace {
 
     /// Determine whether days are business days.
     #[cfg(feature = "business")]
-    pub fn is_business_day(self, week_mask: [bool; 7], holidays: Vec<i32>) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::Business(BusinessFunction::IsBusinessDay {
-                week_mask,
-                holidays,
-            }))
+    pub fn is_business_day(self, week_mask: [bool; 7], holidays: Expr) -> Expr {
+        self.0.map_binary(
+            FunctionExpr::Business(BusinessFunction::IsBusinessDay { week_mask }),
+            holidays,
+        )
     }
 
     // Compute whether the year of a Date/Datetime is a leap year.
@@ -289,53 +285,61 @@ impl DateLikeNameSpace {
 
     /// Express a Duration in terms of its total number of integer days.
     #[cfg(feature = "dtype-duration")]
-    pub fn total_days(self) -> Expr {
+    pub fn total_days(self, fractional: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalDays))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalDays {
+                fractional,
+            }))
     }
 
     /// Express a Duration in terms of its total number of integer hours.
     #[cfg(feature = "dtype-duration")]
-    pub fn total_hours(self) -> Expr {
+    pub fn total_hours(self, fractional: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalHours))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalHours {
+                fractional,
+            }))
     }
 
     /// Express a Duration in terms of its total number of integer minutes.
     #[cfg(feature = "dtype-duration")]
-    pub fn total_minutes(self) -> Expr {
+    pub fn total_minutes(self, fractional: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalMinutes))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalMinutes {
+                fractional,
+            }))
     }
 
     /// Express a Duration in terms of its total number of integer seconds.
     #[cfg(feature = "dtype-duration")]
-    pub fn total_seconds(self) -> Expr {
+    pub fn total_seconds(self, fractional: bool) -> Expr {
         self.0
-            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalSeconds))
+            .map_unary(FunctionExpr::TemporalExpr(TemporalFunction::TotalSeconds {
+                fractional,
+            }))
     }
 
     /// Express a Duration in terms of its total number of milliseconds.
     #[cfg(feature = "dtype-duration")]
-    pub fn total_milliseconds(self) -> Expr {
+    pub fn total_milliseconds(self, fractional: bool) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
-            TemporalFunction::TotalMilliseconds,
+            TemporalFunction::TotalMilliseconds { fractional },
         ))
     }
 
     /// Express a Duration in terms of its total number of microseconds.
     #[cfg(feature = "dtype-duration")]
-    pub fn total_microseconds(self) -> Expr {
+    pub fn total_microseconds(self, fractional: bool) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
-            TemporalFunction::TotalMicroseconds,
+            TemporalFunction::TotalMicroseconds { fractional },
         ))
     }
 
     /// Express a Duration in terms of its total number of nanoseconds.
     #[cfg(feature = "dtype-duration")]
-    pub fn total_nanoseconds(self) -> Expr {
+    pub fn total_nanoseconds(self, fractional: bool) -> Expr {
         self.0.map_unary(FunctionExpr::TemporalExpr(
-            TemporalFunction::TotalNanoseconds,
+            TemporalFunction::TotalNanoseconds { fractional },
         ))
     }
 

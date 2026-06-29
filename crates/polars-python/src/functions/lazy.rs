@@ -115,6 +115,11 @@ pub fn col(name: &str) -> PyExpr {
     dsl::col(name).into()
 }
 
+#[pyfunction]
+pub fn element() -> PyExpr {
+    dsl::element().into()
+}
+
 fn lfs_to_plans(lfs: Vec<PyLazyFrame>) -> Vec<DslPlan> {
     lfs.into_iter()
         .map(|lf| lf.ldf.into_inner().logical_plan)
@@ -136,6 +141,25 @@ pub fn collect_all(
 }
 
 #[pyfunction]
+pub fn collect_all_lazy(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags) -> PyResult<PyLazyFrame> {
+    let plans = lfs_to_plans(lfs);
+
+    for plan in &plans {
+        if !matches!(plan, DslPlan::Sink { .. }) {
+            return Err(PyValueError::new_err(
+                "all LazyFrames must end with a sink to use 'collect_all(lazy=True)'",
+            ));
+        }
+    }
+
+    Ok(LazyFrame::from_logical_plan(
+        DslPlan::SinkMultiple { inputs: plans },
+        optflags.inner.into_inner(),
+    )
+    .into())
+}
+
+#[pyfunction]
 pub fn explain_all(lfs: Vec<PyLazyFrame>, optflags: PyOptFlags, py: Python) -> PyResult<String> {
     let plans = lfs_to_plans(lfs);
     let explained =
@@ -148,7 +172,7 @@ pub fn collect_all_with_callback(
     lfs: Vec<PyLazyFrame>,
     engine: Wrap<Engine>,
     optflags: PyOptFlags,
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     py: Python<'_>,
 ) {
     let plans = lfs
@@ -165,7 +189,7 @@ pub fn collect_all_with_callback(
                 .collect::<Vec<PyDataFrame>>()
         });
 
-    Python::with_gil(|py| match result {
+    Python::attach(|py| match result {
         Ok(dfs) => {
             lambda.call1(py, (dfs,)).map_err(|err| err.restore(py)).ok();
         },
@@ -184,6 +208,7 @@ pub fn concat_lf(
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
+    maintain_order: bool,
 ) -> PyResult<PyLazyFrame> {
     let len = seq.len()?;
     let mut lfs = Vec::with_capacity(len);
@@ -200,6 +225,7 @@ pub fn concat_lf(
             rechunk,
             parallel,
             to_supertypes,
+            maintain_order,
             ..Default::default()
         },
     )
@@ -246,7 +272,7 @@ pub fn arctan2(y: PyExpr, x: PyExpr) -> PyExpr {
 #[pyfunction]
 pub fn cum_fold(
     acc: PyExpr,
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
     return_dtype: Option<PyDataTypeExpr>,
@@ -267,7 +293,7 @@ pub fn cum_fold(
 
 #[pyfunction]
 pub fn cum_reduce(
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
     return_dtype: Option<PyDataTypeExpr>,
@@ -320,6 +346,7 @@ pub fn concat_lf_diagonal(
     rechunk: bool,
     parallel: bool,
     to_supertypes: bool,
+    maintain_order: bool,
 ) -> PyResult<PyLazyFrame> {
     let iter = lfs.try_iter()?;
 
@@ -336,6 +363,7 @@ pub fn concat_lf_diagonal(
             rechunk,
             parallel,
             to_supertypes,
+            maintain_order,
             ..Default::default()
         },
     )
@@ -344,7 +372,11 @@ pub fn concat_lf_diagonal(
 }
 
 #[pyfunction]
-pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<PyLazyFrame> {
+pub fn concat_lf_horizontal(
+    lfs: &Bound<'_, PyAny>,
+    parallel: bool,
+    strict: bool,
+) -> PyResult<PyLazyFrame> {
     let iter = lfs.try_iter()?;
 
     let lfs = iter
@@ -354,13 +386,15 @@ pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<
         })
         .collect::<PyResult<Vec<_>>>()?;
 
-    let args = UnionArgs {
-        rechunk: false, // No need to rechunk with horizontal concatenation
-        parallel,
-        to_supertypes: false,
-        ..Default::default()
-    };
-    let lf = dsl::functions::concat_lf_horizontal(lfs, args).map_err(PyPolarsErr::from)?;
+    let lf = dsl::functions::concat_lf_horizontal(
+        lfs,
+        HConcatOptions {
+            parallel,
+            strict,
+            broadcast_unit_length: Default::default(),
+        },
+    )
+    .map_err(PyPolarsErr::from)?;
     Ok(lf.into())
 }
 
@@ -411,7 +445,7 @@ pub fn duration(
 #[pyfunction]
 pub fn fold(
     acc: PyExpr,
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
     return_dtype: Option<PyDataTypeExpr>,
@@ -434,16 +468,16 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
     if value.is_instance_of::<PyBool>() {
         let val = value.extract::<bool>()?;
         Ok(dsl::lit(val).into())
-    } else if let Ok(int) = value.downcast::<PyInt>() {
+    } else if let Ok(int) = value.cast::<PyInt>() {
         let v = int
             .extract::<i128>()
             .map_err(|e| polars_err!(InvalidOperation: "integer too large for Polars: {e}"))
             .map_err(PyPolarsErr::from)?;
         Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(v))).into())
-    } else if let Ok(float) = value.downcast::<PyFloat>() {
+    } else if let Ok(float) = value.cast::<PyFloat>() {
         let val = float.extract::<f64>()?;
         Ok(Expr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(val))).into())
-    } else if let Ok(pystr) = value.downcast::<PyString>() {
+    } else if let Ok(pystr) = value.cast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
     } else if let Ok(series) = value.extract::<PySeries>() {
         let s = series.series.into_inner();
@@ -458,25 +492,34 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         }
     } else if value.is_none() {
         Ok(dsl::lit(Null {}).into())
-    } else if let Ok(value) = value.downcast::<PyBytes>() {
+    } else if let Ok(value) = value.cast::<PyBytes>() {
         Ok(dsl::lit(value.as_bytes()).into())
     } else {
-        let av = py_object_to_any_value(value, true, allow_object).map_err(|_| {
-            PyTypeError::new_err(
-                format!(
-                    "cannot create expression literal for value of type {}.\
+        let raise = || {
+            PyTypeError::new_err(format!(
+                "cannot create expression literal for value of type {}.\
                     \n\nHint: Pass `allow_object=True` to accept any value and create a literal of type Object.",
-                    value.get_type().qualname().map(|s|s.to_string()).unwrap_or("unknown".to_owned()),
-                )
-            )
-        })?;
+                value
+                    .get_type()
+                    .qualname()
+                    .map(|s| s.to_string())
+                    .unwrap_or("unknown".to_owned()),
+            ))
+        };
+
+        let av = py_object_to_any_value(value, true, allow_object).map_err(|_| raise())?;
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
-                let s = PySeries::new_object(py, "", vec![value.extract()?], false)
-                    .series
-                    .into_inner();
-                Ok(dsl::lit(s).into())
+                // Check again for object allowance as for cached addresses this is not checked.
+                if allow_object {
+                    let s = PySeries::new_object(py, "", vec![value.extract()?], false)
+                        .series
+                        .into_inner();
+                    Ok(dsl::lit(s).into())
+                } else {
+                    Err(raise())
+                }
             },
             _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
         }
@@ -487,7 +530,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
 #[pyo3(signature = (pyexpr, lambda, output_type, is_elementwise, returns_scalar))]
 pub fn map_expr(
     pyexpr: Vec<PyExpr>,
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     output_type: Option<PyDataTypeExpr>,
     is_elementwise: bool,
     returns_scalar: bool,
@@ -502,7 +545,7 @@ pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
 
 #[pyfunction]
 pub fn reduce(
-    lambda: PyObject,
+    lambda: Py<PyAny>,
     exprs: Vec<PyExpr>,
     returns_scalar: bool,
     return_dtype: Option<PyDataTypeExpr>,

@@ -7,17 +7,18 @@ pub mod reader_interface;
 use std::sync::{Arc, Mutex};
 
 use pipeline::initialization::initialize_multi_scan_pipeline;
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_io::pl_async;
+use polars_io::metrics::IOMetrics;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::async_primitives::connector;
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
-use crate::morsel::Morsel;
+use crate::metrics::NodeMetricsRegistrator;
 use crate::nodes::ComputeNode;
 use crate::nodes::io_sources::multi_scan::components::bridge::BridgeState;
 use crate::nodes::io_sources::multi_scan::config::MultiScanConfig;
@@ -25,10 +26,12 @@ use crate::nodes::io_sources::multi_scan::functions::{
     calc_max_concurrent_scans, calc_n_readers_pre_init,
 };
 use crate::nodes::io_sources::multi_scan::pipeline::models::InitializedPipelineState;
+use crate::pipe::PortSender;
 
 pub struct MultiScan {
     name: PlSmallStr,
     state: MultiScanState,
+    metrics_registrator: Option<NodeMetricsRegistrator>,
     verbose: bool,
 }
 
@@ -40,6 +43,7 @@ impl MultiScan {
         MultiScan {
             name,
             state: MultiScanState::Uninitialized { config },
+            metrics_registrator: None,
             verbose,
         }
     }
@@ -48,6 +52,10 @@ impl MultiScan {
 impl ComputeNode for MultiScan {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn set_phase_metrics_registrator(&mut self, metrics_registrator: NodeMetricsRegistrator) {
+        self.metrics_registrator = Some(metrics_registrator);
     }
 
     fn update_state(
@@ -67,9 +75,10 @@ impl ComputeNode for MultiScan {
         } else {
             // Refresh first - in case there is an error we end here instead of ending when we go
             // into spawn.
-            async_executor::task_scope(|s| {
-                pl_async::get_runtime()
-                    .block_on(s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)))
+            executor::task_scope(|s| {
+                ASYNC.block_in_place_on(
+                    s.spawn_task(TaskPriority::High, self.state.refresh(self.verbose)),
+                )
             })?;
 
             match self.state {
@@ -83,11 +92,11 @@ impl ComputeNode for MultiScan {
 
     fn spawn<'env, 's>(
         &'env mut self,
-        scope: &'s crate::async_executor::TaskScope<'s, 'env>,
+        scope: &'s executor::TaskScope<'s, 'env>,
         recv_ports: &mut [Option<crate::pipe::RecvPort<'_>>],
         send_ports: &mut [Option<crate::pipe::SendPort<'_>>],
         state: &'s StreamingExecutionState,
-        join_handles: &mut Vec<crate::async_executor::JoinHandle<polars_error::PolarsResult<()>>>,
+        join_handles: &mut Vec<executor::JoinHandle<polars_error::PolarsResult<()>>>,
     ) {
         assert!(recv_ports.is_empty() && send_ports.len() == 1);
 
@@ -97,7 +106,15 @@ impl ComputeNode for MultiScan {
         join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
             use MultiScanState::*;
 
-            self.state.initialize(state);
+            self.state
+                .initialize(state.clone(), self.metrics_registrator.is_some());
+
+            if let Some(metrics_registrator) = &self.metrics_registrator
+                && let Initialized { io_metrics, .. } = &self.state
+            {
+                metrics_registrator.register_io_metrics(io_metrics.clone().unwrap());
+            }
+
             self.state.refresh(verbose).await?;
 
             match &mut self.state {
@@ -110,7 +127,7 @@ impl ComputeNode for MultiScan {
                     wait_group,
                     ..
                 } => {
-                    use crate::async_primitives::connector::SendError;
+                    use polars_async::primitives::connector::SendError;
 
                     match phase_channel_tx.try_send((phase_morsel_tx, wait_group.token())) {
                         Ok(_) => wait_group.wait().await,
@@ -150,12 +167,13 @@ enum MultiScanState {
     },
 
     Initialized {
-        phase_channel_tx: connector::Sender<(connector::Sender<Morsel>, WaitToken)>,
+        phase_channel_tx: connector::Sender<(PortSender, WaitToken)>,
         /// Wait group sent to the bridge, only dropped when a disconnect happens at the bridge.
         wait_group: WaitGroup,
         bridge_state: Arc<Mutex<BridgeState>>,
         /// Single join handle for all background tasks. Note, this does not include the bridge.
         task_handle: AbortOnDropHandle<PolarsResult<()>>,
+        io_metrics: Option<Arc<IOMetrics>>,
     },
 
     Finished,
@@ -163,19 +181,26 @@ enum MultiScanState {
 
 impl MultiScanState {
     /// Initialize state if not yet initialized.
-    fn initialize(&mut self, execution_state: &StreamingExecutionState) {
+    fn initialize(&mut self, execution_state: StreamingExecutionState, track_io_metrics: bool) {
         use MultiScanState::*;
 
-        let slf = std::mem::replace(self, Finished);
-
-        let Uninitialized { config } = slf else {
-            *self = slf;
+        if !matches!(self, Self::Uninitialized { .. }) {
             return;
+        }
+
+        let Uninitialized { config } = std::mem::replace(self, Finished) else {
+            unreachable!()
         };
 
         config
             .file_reader_builder
-            .set_execution_state(execution_state);
+            .set_execution_state(&execution_state);
+
+        let io_metrics: Option<Arc<IOMetrics>> = track_io_metrics.then(Default::default);
+
+        if let Some(io_metrics) = io_metrics.clone() {
+            config.file_reader_builder.set_io_metrics(io_metrics);
+        }
 
         let num_pipelines = execution_state.num_pipelines;
 
@@ -196,7 +221,7 @@ impl MultiScanState {
             task_handle,
             phase_channel_tx,
             bridge_state,
-        } = initialize_multi_scan_pipeline(config);
+        } = initialize_multi_scan_pipeline(config, execution_state, io_metrics.clone());
 
         let wait_group = WaitGroup::default();
 
@@ -205,6 +230,7 @@ impl MultiScanState {
             wait_group,
             bridge_state,
             task_handle,
+            io_metrics,
         };
     }
 
@@ -225,12 +251,14 @@ impl MultiScanState {
                 wait_group,
                 bridge_state,
                 task_handle,
+                io_metrics,
             } => match { *bridge_state.lock().unwrap() } {
                 BridgeState::NotYetStarted | BridgeState::Running => Initialized {
                     phase_channel_tx,
                     wait_group,
                     bridge_state,
                     task_handle,
+                    io_metrics,
                 },
 
                 // Never the case: holding `phase_channel_tx` guarantees this.

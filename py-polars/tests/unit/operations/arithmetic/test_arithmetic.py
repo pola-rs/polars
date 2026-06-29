@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -23,9 +23,11 @@ from polars import (
 )
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
+from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES, UNSIGNED_INTEGER_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsIntegerType
 
 
@@ -186,7 +188,7 @@ def test_fused_arithm() -> None:
     )
     # the extra aliases are because the fma does operation reordering
     assert (
-        """col("c").fma([col("a"), col("b")]).alias("a"), col("a").fma([col("b"), col("c")]).alias("2")"""
+        """col("a").fma([col("b"), col("c")]), col("b").fma([col("c"), col("a")]).alias("2")"""
         in q.explain()
     )
     assert q.collect().to_dict(as_series=False) == {
@@ -332,16 +334,6 @@ def test_null_column_arithmetic(op: Any) -> None:
     # test broadcast left
     output_df = df.select(op(pl.Series("a", [None]), pl.col("a")))
     assert_frame_equal(expected_df, output_df)
-
-
-def test_bool_floordiv() -> None:
-    df = pl.DataFrame({"x": [True]})
-
-    with pytest.raises(
-        InvalidOperationError,
-        match="floor_div operation not supported for dtype `bool`",
-    ):
-        df.with_columns(pl.col("x").floordiv(2))
 
 
 def test_arithmetic_in_aggregation_3739() -> None:
@@ -662,7 +654,7 @@ def test_literal_subtract_schema_13284() -> None:
         .with_columns(pl.col("a") - pl.lit(1))
         .group_by("a")
         .len()
-    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.UInt32)])
+    ).collect_schema() == OrderedDict([("a", pl.UInt8), ("len", pl.get_index_type())])
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
@@ -896,6 +888,32 @@ def test_arithmetic_i128_nonint() -> None:
     assert_series_equal(s128 + s, pl.Series("a", [1], dtype=pl.Int128))
 
 
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_arithmetic_u128(dtype: PolarsIntegerType) -> None:
+    s = pl.Series("a", [0, 1, 127], dtype=dtype, strict=False)
+    s128 = pl.Series("a", [0, 0, 0], dtype=pl.UInt128)
+    expected_dtype = pl.UInt128 if dtype in UNSIGNED_INTEGER_DTYPES else pl.Int128
+    expected = pl.Series("a", [0, 1, 127], dtype=expected_dtype)
+    assert_series_equal(s + s128, expected)
+    assert_series_equal(s128 + s, expected)
+
+
+def test_arithmetic_u128_nonint() -> None:
+    s128 = pl.Series("a", [0], dtype=pl.UInt128)
+
+    s = pl.Series("a", [1.0], dtype=pl.Float32)
+    assert_series_equal(s + s128, pl.Series("a", [1.0], dtype=pl.Float64))
+    assert_series_equal(s128 + s, pl.Series("a", [1.0], dtype=pl.Float64))
+
+    s = pl.Series("a", [1.0], dtype=pl.Float64)
+    assert_series_equal(s + s128, s)
+    assert_series_equal(s128 + s, s)
+
+    s = pl.Series("a", [True], dtype=pl.Boolean)
+    assert_series_equal(s + s128, pl.Series("a", [1], dtype=pl.UInt128))
+    assert_series_equal(s128 + s, pl.Series("a", [1], dtype=pl.UInt128))
+
+
 def test_float_truediv_output_type() -> None:
     lf = pl.LazyFrame(schema={"f32": pl.Float32, "f64": pl.Float64})
     assert lf.select(x=pl.col("f32") / pl.col("f32")).collect_schema() == pl.Schema(
@@ -965,20 +983,3 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
         pl.Series("a", [81], dtype=dtype).log(b),
         pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
     )
-
-
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Float32,
-        pl.Int32,
-        pl.Int64,
-    ],
-)
-def test_log_broadcast_upcasting(dtype: pl.DataType) -> None:
-    a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
-    b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
-    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=Float64)
-
-    assert_series_equal(a.log(b.cast(Float64)), expected)
-    assert_series_equal(a.cast(Float64).log(b), expected)

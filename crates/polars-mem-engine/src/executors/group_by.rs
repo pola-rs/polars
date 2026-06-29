@@ -8,7 +8,7 @@ pub(super) fn evaluate_aggs(
     groups: &GroupPositions,
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
-    POOL.install(|| {
+    RAYON.install(|| {
         aggs.par_iter()
             .map(|expr| {
                 let agg = expr.evaluate_on_groups(df, groups, state)?.finalize();
@@ -27,6 +27,7 @@ pub struct GroupByExec {
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     maintain_order: bool,
     input_schema: SchemaRef,
+    output_schema: SchemaRef,
     slice: Option<(i64, usize)>,
 }
 
@@ -39,6 +40,7 @@ impl GroupByExec {
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         input_schema: SchemaRef,
+        output_schema: SchemaRef,
         slice: Option<(i64, usize)>,
     ) -> Self {
         Self {
@@ -48,6 +50,7 @@ impl GroupByExec {
             apply,
             maintain_order,
             input_schema,
+            output_schema,
             slice,
         }
     }
@@ -61,13 +64,14 @@ pub(super) fn group_by_helper(
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     state: &ExecutionState,
     maintain_order: bool,
+    output_schema: &SchemaRef,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-    df.as_single_chunk_par();
+    df.rechunk_mut_par();
     let gb = df.group_by_with_series(keys, true, maintain_order)?;
 
     if let Some(f) = apply {
-        return gb.sliced(slice).apply(move |df| f.call(df));
+        return gb.apply_sliced(slice, move |df| f.call(df), Some(output_schema));
     }
 
     let mut groups = gb.get_groups();
@@ -81,7 +85,7 @@ pub(super) fn group_by_helper(
         groups = sliced_groups.as_ref().unwrap();
     }
 
-    let (mut columns, agg_columns) = POOL.install(|| {
+    let (mut columns, agg_columns) = RAYON.install(|| {
         let get_columns = || gb.keys_sliced(slice);
 
         let get_agg = || evaluate_aggs(&df, aggs, groups, state);
@@ -90,7 +94,7 @@ pub(super) fn group_by_helper(
     });
 
     columns.extend(agg_columns?);
-    DataFrame::new(columns)
+    DataFrame::new_infer_height(columns)
 }
 
 impl GroupByExec {
@@ -107,6 +111,7 @@ impl GroupByExec {
             self.apply.take(),
             state,
             self.maintain_order,
+            &self.output_schema,
             self.slice,
         )
     }

@@ -1,6 +1,37 @@
 use std::sync::{LazyLock, Mutex};
 
-use sysinfo::System;
+use sysinfo::{MemoryRefreshKind, System};
+
+use crate::config::verbose;
+
+/// Return the total system memory in bytes.
+pub fn total_memory() -> u64 {
+    return *TOTAL_MEMORY;
+
+    static TOTAL_MEMORY: LazyLock<u64> = LazyLock::new(|| {
+        let mut sys = System::new();
+
+        sys.refresh_memory_specifics(MemoryRefreshKind::nothing().with_ram());
+
+        let mut v: u64 = match sys.cgroup_limits() {
+            Some(limits) => limits.total_memory,
+            None => sys.total_memory(),
+        };
+
+        if let Ok(s) = std::env::var("POLARS_OVERRIDE_TOTAL_MEMORY") {
+            v = s
+                .parse::<u64>()
+                .unwrap_or_else(|_| panic!("invalid value for POLARS_OVERRIDE_TOTAL_MEMORY: {s}"))
+        }
+
+        if verbose() {
+            let gib = (v as f64) / (1024.0 * 1024.0 * 1024.0);
+            eprintln!("total memory: {gib:.3} GiB ({v} bytes)")
+        }
+
+        v
+    });
+}
 
 /// Startup system is expensive, so we do it once
 pub struct MemInfo {
@@ -22,3 +53,19 @@ impl MemInfo {
 pub static MEMINFO: LazyLock<MemInfo> = LazyLock::new(|| MemInfo {
     sys: Mutex::new(System::new()),
 });
+
+/// Check whether a process with the given PID is currently alive.
+///
+/// Used by `polars_ooc::cleaner::cleanup_stale_dirs` to remove spill
+/// directories left behind by dead processes on startup.
+pub fn is_process_alive(pid: u32) -> bool {
+    use sysinfo::{Pid, ProcessRefreshKind, System, UpdateKind};
+    let pid = Pid::from_u32(pid);
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Never),
+    );
+    sys.process(pid).is_some()
+}

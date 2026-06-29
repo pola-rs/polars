@@ -1,35 +1,91 @@
+use std::fmt::Display;
 use std::ops::Range;
+use std::sync::Arc;
+use std::time::Instant;
 
-use bytes::Bytes;
-use futures::{StreamExt, TryStreamExt};
+use futures::{Stream, StreamExt as _, TryStreamExt as _};
 use hashbrown::hash_map::RawEntryMut;
 use object_store::path::Path;
-use object_store::{ObjectMeta, ObjectStore};
+use object_store::{ObjectMeta, ObjectStore, ObjectStoreExt};
+use polars_buffer::Buffer;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::{PolarsError, PolarsResult};
-use polars_utils::mmap::MemSlice;
-use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+use polars_utils::pl_path::PlRefPath;
+use tokio::io::AsyncWriteExt;
 
+use super::concurrency::IoSample;
+use super::concurrency_config::{ConcurrencyStrategy, FetchConfig, get_download_chunk_size};
 use crate::pl_async::{
-    self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, get_download_chunk_size,
-    tune_with_concurrency_budget, with_concurrency_budget,
+    self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, tune_with_concurrency_budget,
+    with_concurrency_budget,
 };
 
+#[derive(Debug)]
+pub struct PolarsObjectStoreError {
+    pub base_url: PlRefPath,
+    pub source: object_store::Error,
+}
+
+impl PolarsObjectStoreError {
+    pub fn from_url(base_url: &PlRefPath) -> impl FnOnce(object_store::Error) -> Self {
+        |error| Self {
+            base_url: base_url.clone(),
+            source: error,
+        }
+    }
+}
+
+impl Display for PolarsObjectStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "object-store error: {} (path: {})",
+            self.source, &self.base_url
+        )
+    }
+}
+
+impl std::error::Error for PolarsObjectStoreError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
+
+impl From<PolarsObjectStoreError> for std::io::Error {
+    fn from(value: PolarsObjectStoreError) -> Self {
+        std::io::Error::other(value)
+    }
+}
+
+impl From<PolarsObjectStoreError> for PolarsError {
+    fn from(value: PolarsObjectStoreError) -> Self {
+        PolarsError::IO {
+            error: Arc::new(value.into()),
+            msg: None,
+        }
+    }
+}
+
 mod inner {
+
+    use std::borrow::Cow;
     use std::future::Future;
     use std::sync::Arc;
 
     use object_store::ObjectStore;
     use polars_core::config;
-    use polars_error::PolarsResult;
+    use polars_error::{PolarsError, PolarsResult};
     use polars_utils::relaxed_cell::RelaxedCell;
 
-    use crate::cloud::PolarsObjectStoreBuilder;
+    use crate::cloud::concurrency::{ConcurrencyController, ControllerConfig};
+    use crate::cloud::{ObjectStoreErrorContext, PolarsObjectStoreBuilder};
+    use crate::metrics::{IOMetrics, OptIOMetrics};
 
     #[derive(Debug)]
     struct Inner {
-        store: tokio::sync::Mutex<Arc<dyn ObjectStore>>,
+        store: tokio::sync::RwLock<Arc<dyn ObjectStore>>,
         builder: PolarsObjectStoreBuilder,
+        rebuilt: RelaxedCell<bool>,
     }
 
     /// Polars wrapper around [`ObjectStore`] functionality. This struct is cheaply cloneable.
@@ -38,9 +94,9 @@ mod inner {
         inner: Arc<Inner>,
         /// Avoid contending the Mutex `lock()` until the first re-build.
         initial_store: std::sync::Arc<dyn ObjectStore>,
-        /// Used for interior mutability. Doesn't need to be shared with other threads so it's not
-        /// inside `Arc<>`.
-        rebuilt: RelaxedCell<bool>,
+        io_metrics: OptIOMetrics,
+        /// In-flight concurrency control using the (new) BDP model.
+        concurrency: Arc<std::sync::OnceLock<Arc<ConcurrencyController>>>,
     }
 
     impl PolarsObjectStore {
@@ -51,20 +107,36 @@ mod inner {
             let initial_store = store.clone();
             Self {
                 inner: Arc::new(Inner {
-                    store: tokio::sync::Mutex::new(store),
+                    store: tokio::sync::RwLock::new(store),
                     builder,
+                    rebuilt: RelaxedCell::from(false),
                 }),
                 initial_store,
-                rebuilt: RelaxedCell::from(false),
+                io_metrics: OptIOMetrics(None),
+                concurrency: Arc::new(std::sync::OnceLock::new()), // Arc::new(ConcurrencyController::new(ControllerConfig::default())),
             }
         }
 
+        pub fn set_io_metrics(&mut self, io_metrics: Option<Arc<IOMetrics>>) -> &mut Self {
+            self.io_metrics = OptIOMetrics(io_metrics);
+            self
+        }
+
+        pub fn io_metrics(&self) -> &OptIOMetrics {
+            &self.io_metrics
+        }
+
+        pub fn get_or_init_concurrency(&self) -> &Arc<ConcurrencyController> {
+            self.concurrency
+                .get_or_init(|| Arc::new(ConcurrencyController::new(ControllerConfig::default())))
+        }
+
         /// Gets the underlying [`ObjectStore`] implementation.
-        pub async fn to_dyn_object_store(&self) -> Arc<dyn ObjectStore> {
-            if !self.rebuilt.load() {
-                self.initial_store.clone()
+        pub async fn to_dyn_object_store(&self) -> Cow<'_, Arc<dyn ObjectStore>> {
+            if !self.inner.rebuilt.load() {
+                Cow::Borrowed(&self.initial_store)
             } else {
-                self.inner.store.lock().await.clone()
+                Cow::Owned(self.inner.store.read().await.clone())
             }
         }
 
@@ -72,7 +144,7 @@ mod inner {
             &self,
             from_version: &Arc<dyn ObjectStore>,
         ) -> PolarsResult<Arc<dyn ObjectStore>> {
-            let mut current_store = self.inner.store.lock().await;
+            let mut current_store = self.inner.store.write().await;
 
             // If this does not eq, then `inner` was already re-built by another thread.
             if Arc::ptr_eq(&*current_store, from_version) {
@@ -87,19 +159,22 @@ mod inner {
                         })?;
             }
 
-            self.rebuilt.store(true);
+            self.inner.rebuilt.store(true);
 
             Ok((*current_store).clone())
         }
 
-        pub async fn try_exec_rebuild_on_err<Fn, Fut, O>(&self, mut func: Fn) -> PolarsResult<O>
+        pub async fn exec_with_rebuild_retry_on_err<'s, 'f, Fn, Fut, O>(
+            &'s self,
+            mut func: Fn,
+        ) -> PolarsResult<O>
         where
-            Fn: FnMut(&Arc<dyn ObjectStore>) -> Fut,
-            Fut: Future<Output = PolarsResult<O>>,
+            Fn: FnMut(Cow<'s, Arc<dyn ObjectStore>>) -> Fut + 'f,
+            Fut: Future<Output = object_store::Result<O>>,
         {
             let store = self.to_dyn_object_store().await;
 
-            let out = func(&store).await;
+            let out = func(store.clone()).await;
 
             let orig_err = match out {
                 Ok(v) => return Ok(v),
@@ -108,7 +183,7 @@ mod inner {
 
             if config::verbose() {
                 eprintln!(
-                    "[PolarsObjectStore]: got error: {}, will attempt re-build",
+                    "[PolarsObjectStore]: got error: {}, will rebuild store and retry",
                     &orig_err
                 );
             }
@@ -118,7 +193,9 @@ mod inner {
                 .await
                 .map_err(|e| e.wrap_msg(|e| format!("{e}; original error: {orig_err}")))?;
 
-            func(&store).await.map_err(|e| {
+            func(Cow::Owned(store)).await.map_err(|e| {
+                let e: PolarsError = self.error_context().attach_err_info(e).into();
+
                 if self.inner.builder.is_azure()
                     && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref()
                         != Ok("1")
@@ -137,6 +214,30 @@ and use the storage account keys from Azure CLI to authenticate"
                 }
             })
         }
+
+        pub fn error_context(&self) -> ObjectStoreErrorContext {
+            ObjectStoreErrorContext::new(self.inner.builder.path().clone())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ObjectStoreErrorContext {
+    path: PlRefPath,
+}
+
+impl ObjectStoreErrorContext {
+    pub fn new(path: PlRefPath) -> Self {
+        Self { path }
+    }
+
+    pub fn attach_err_info(self, err: object_store::Error) -> PolarsObjectStoreError {
+        let ObjectStoreErrorContext { path } = self;
+
+        PolarsObjectStoreError {
+            base_url: path,
+            source: err,
+        }
     }
 }
 
@@ -145,85 +246,165 @@ pub use inner::PolarsObjectStore;
 pub type ObjectStorePath = object_store::path::Path;
 
 impl PolarsObjectStore {
-    /// Returns a buffered stream that downloads concurrently up to the concurrency limit.
-    fn get_buffered_ranges_stream<'a, T: Iterator<Item = Range<usize>>>(
-        store: &'a dyn ObjectStore,
+    pub fn build_buffered_ranges_stream<'a, T: Iterator<Item = Range<usize>>>(
+        &'a self,
         path: &'a Path,
         ranges: T,
-    ) -> impl StreamExt<Item = PolarsResult<Bytes>>
-    + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
-    + use<'a, T> {
-        futures::stream::iter(ranges.map(move |range| async move {
-            if range.is_empty() {
-                return Ok(Bytes::new());
-            }
+        strategy: ConcurrencyStrategy,
+    ) -> impl Stream<Item = PolarsResult<Buffer<u8>>> + use<'a, T> {
+        let controller = match strategy {
+            ConcurrencyStrategy::BytesBased => Some(self.get_or_init_concurrency().clone()),
+            ConcurrencyStrategy::Unbounded | ConcurrencyStrategy::Legacy => None,
+        };
 
-            let out = store
-                .get_range(path, range.start as u64..range.end as u64)
-                .await?;
-            Ok(out)
-        }))
-        // Add a limit locally as this gets run inside a single `tune_with_concurrency_budget`.
-        .buffered(get_concurrency_limit() as usize)
-    }
+        let n_buffered = match strategy {
+            // In case of bytes-based concurrency, the concurrency is controlled by the
+            // admission semaphore in the pipeline.
+            // The buffered size is set to a large constant as a backstop. Once all
+            // callsites are verified to pass finite, metadata-derived ranges, this can be
+            // set to usize::MAX.
+            ConcurrencyStrategy::BytesBased => 4096,
+            ConcurrencyStrategy::Unbounded | ConcurrencyStrategy::Legacy => {
+                get_concurrency_limit() as usize
+            },
+        };
 
-    pub async fn get_range(&self, path: &Path, range: Range<usize>) -> PolarsResult<Bytes> {
-        if range.is_empty() {
-            return Ok(Bytes::new());
-        }
-
-        self.try_exec_rebuild_on_err(move |store| {
-            let range = range.clone();
-            let st = store.clone();
-
+        futures::stream::iter(ranges.map(move |range| {
+            let controller = controller.clone();
             async move {
-                let store = st;
-                let parts = split_range(range.clone());
+                if range.is_empty() {
+                    return Ok(Buffer::new());
+                }
+                let bytes_req = range.len() as u64;
 
-                if parts.len() == 1 {
-                    let out = tune_with_concurrency_budget(1, move || async move {
-                        store
-                            .get_range(path, range.start as u64..range.end as u64)
-                            .await
-                    })
-                    .await?;
+                // Held until end of block to bound in-flight bytes.
+                let _permit = match &controller {
+                    Some(controller) => Some(controller.acquire(bytes_req).await),
+                    None => None,
+                };
 
-                    Ok(out)
-                } else {
-                    let parts = tune_with_concurrency_budget(
-                        parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
-                        || {
-                            Self::get_buffered_ranges_stream(&store, path, parts)
-                                .try_collect::<Vec<Bytes>>()
-                        },
+                let (out, ttfb) = self
+                    .io_metrics()
+                    .record_io_read(
+                        bytes_req,
+                        self.exec_with_rebuild_retry_on_err(|s| async move {
+                            let t0 = Instant::now();
+                            let response = s
+                                .get_opts(
+                                    path,
+                                    object_store::GetOptions {
+                                        range: Some((range.start as u64..range.end as u64).into()),
+                                        ..Default::default()
+                                    },
+                                )
+                                .await?;
+                            let ttfb = t0.elapsed();
+                            let out = response.bytes().await?;
+
+                            Ok((out, ttfb))
+                        }),
                     )
                     .await?;
 
-                    let mut combined = Vec::with_capacity(range.len());
-
-                    for part in parts {
-                        combined.extend_from_slice(&part)
-                    }
-
-                    assert_eq!(combined.len(), range.len());
-
-                    PolarsResult::Ok(Bytes::from(combined))
+                if let Some(controller) = &controller {
+                    controller.record_io(IoSample {
+                        n_bytes: out.len() as u64,
+                        ttfb,
+                        completion_time: Instant::now(),
+                    });
                 }
+
+                Ok(Buffer::from_owner(out))
             }
-        })
-        .await
+        }))
+        .buffered(n_buffered)
     }
 
-    /// Fetch byte ranges into a HashMap keyed by the range start. This will mutably sort the
-    /// `ranges` slice for coalescing.
-    ///
-    /// # Panics
-    /// Panics if the same range start is used by more than 1 range.
+    pub async fn get_range(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+        config: FetchConfig,
+    ) -> PolarsResult<Buffer<u8>> {
+        if range.is_empty() {
+            return Ok(Buffer::new());
+        }
+
+        let parts = split_range(range.clone(), Some(config.chunk_size));
+
+        match config.strategy {
+            ConcurrencyStrategy::Legacy => self.get_range_legacy(path, range).await,
+            ConcurrencyStrategy::Unbounded | ConcurrencyStrategy::BytesBased => self
+                .build_buffered_ranges_stream(path, parts, config.strategy)
+                .try_collect::<Vec<_>>()
+                .await
+                .map(|parts| {
+                    if parts.len() == 1 {
+                        return parts.into_iter().next().unwrap();
+                    }
+                    let mut combined = Vec::with_capacity(range.len());
+                    for part in parts {
+                        combined.extend_from_slice(&part);
+                    }
+                    assert_eq!(combined.len(), range.len());
+                    Buffer::from_vec(combined)
+                }),
+        }
+    }
+
+    async fn get_range_legacy(&self, path: &Path, range: Range<usize>) -> PolarsResult<Buffer<u8>> {
+        if range.is_empty() {
+            return Ok(Buffer::new());
+        }
+
+        let parts = split_range(range.clone(), None);
+
+        if parts.len() == 1 {
+            let out = tune_with_concurrency_budget(1, move || async move {
+                let bytes = self
+                    .io_metrics()
+                    .record_io_read(
+                        range.len() as u64,
+                        self.exec_with_rebuild_retry_on_err(|s| async move {
+                            s.get_range(path, range.start as u64..range.end as u64)
+                                .await
+                        }),
+                    )
+                    .await?;
+
+                PolarsResult::Ok(Buffer::from_owner(bytes))
+            })
+            .await?;
+
+            Ok(out)
+        } else {
+            let parts = tune_with_concurrency_budget(
+                parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
+                || {
+                    self.build_buffered_ranges_stream(path, parts, ConcurrencyStrategy::Legacy)
+                        .try_collect::<Vec<Buffer<u8>>>()
+                },
+            )
+            .await?;
+
+            let mut combined = Vec::with_capacity(range.len());
+
+            for part in parts {
+                combined.extend_from_slice(&part)
+            }
+
+            assert_eq!(combined.len(), range.len());
+
+            PolarsResult::Ok(Buffer::from_vec(combined))
+        }
+    }
+
     pub async fn get_ranges_sort(
         &self,
         path: &Path,
         ranges: &mut [Range<usize>],
-    ) -> PolarsResult<PlHashMap<usize, MemSlice>> {
+        config: FetchConfig,
+    ) -> PolarsResult<PlHashMap<usize, Buffer<u8>>> {
         if ranges.is_empty() {
             return Ok(Default::default());
         }
@@ -231,177 +412,154 @@ impl PolarsObjectStore {
         ranges.sort_unstable_by_key(|x| x.start);
 
         let ranges_len = ranges.len();
-        let (merged_ranges, merged_ends): (Vec<_>, Vec<_>) = merge_ranges(ranges).unzip();
+        let (merged_ranges, merged_ends): (Vec<_>, Vec<_>) =
+            merge_ranges(ranges, Some(config.chunk_size)).unzip();
 
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
+        let mut out = PlHashMap::with_capacity(ranges_len);
 
-            async {
-                let store = st;
-                let mut out = PlHashMap::with_capacity(ranges_len);
+        // Build an inflight admission-aware stream over the merged ranges.
+        let mut stream =
+            self.build_buffered_ranges_stream(path, merged_ranges.iter().cloned(), config.strategy);
 
-                let mut stream =
-                    Self::get_buffered_ranges_stream(&store, path, merged_ranges.iter().cloned());
+        let mut current_offset = 0;
+        let mut ends_iter = merged_ends.iter();
+        let mut splitted_parts: Vec<Buffer<u8>> = vec![];
 
-                tune_with_concurrency_budget(
-                    merged_ranges.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
-                    || async {
-                        let mut len = 0;
-                        let mut current_offset = 0;
-                        let mut ends_iter = merged_ends.iter();
+        while let Some(bytes) = stream.try_next().await? {
+            let end = *ends_iter.next().unwrap();
 
-                        let mut splitted_parts = vec![];
-
-                        while let Some(bytes) = stream.try_next().await? {
-                            len += bytes.len();
-                            let end = *ends_iter.next().unwrap();
-
-                            if end == 0 {
-                                splitted_parts.push(bytes);
-                                continue;
-                            }
-
-                            let full_range = ranges[current_offset..end]
-                                .iter()
-                                .cloned()
-                                .reduce(|l, r| l.start.min(r.start)..l.end.max(r.end))
-                                .unwrap();
-
-                            let bytes = if splitted_parts.is_empty() {
-                                bytes
-                            } else {
-                                let mut out = Vec::with_capacity(full_range.len());
-
-                                for x in splitted_parts.drain(..) {
-                                    out.extend_from_slice(&x);
-                                }
-
-                                out.extend_from_slice(&bytes);
-                                Bytes::from(out)
-                            };
-
-                            assert_eq!(bytes.len(), full_range.len());
-
-                            let bytes = MemSlice::from_bytes(bytes);
-
-                            for range in &ranges[current_offset..end] {
-                                let mem_slice = bytes.slice(
-                                    range.start - full_range.start..range.end - full_range.start,
-                                );
-
-                                match out.raw_entry_mut().from_key(&range.start) {
-                                    RawEntryMut::Vacant(slot) => {
-                                        slot.insert(range.start, mem_slice);
-                                    },
-                                    RawEntryMut::Occupied(mut slot) => {
-                                        if slot.get_mut().len() < mem_slice.len() {
-                                            *slot.get_mut() = mem_slice;
-                                        }
-                                    },
-                                }
-                            }
-
-                            current_offset = end;
-                        }
-
-                        assert!(splitted_parts.is_empty());
-
-                        PolarsResult::Ok(pl_async::Size::from(len as u64))
-                    },
-                )
-                .await?;
-
-                Ok(out)
+            if end == 0 {
+                splitted_parts.push(bytes);
+                continue;
             }
-        })
-        .await
+
+            let full_range = ranges[current_offset..end]
+                .iter()
+                .cloned()
+                .reduce(|l, r| l.start.min(r.start)..l.end.max(r.end))
+                .unwrap();
+
+            let bytes = if splitted_parts.is_empty() {
+                bytes
+            } else {
+                let mut out = Vec::with_capacity(full_range.len());
+                for x in splitted_parts.drain(..) {
+                    out.extend_from_slice(&x);
+                }
+                out.extend_from_slice(&bytes);
+                Buffer::from(out)
+            };
+
+            assert_eq!(bytes.len(), full_range.len());
+
+            for range in &ranges[current_offset..end] {
+                let slice = bytes
+                    .clone()
+                    .sliced(range.start - full_range.start..range.end - full_range.start);
+
+                match out.raw_entry_mut().from_key(&range.start) {
+                    RawEntryMut::Vacant(slot) => {
+                        slot.insert(range.start, slice);
+                    },
+                    RawEntryMut::Occupied(mut slot) => {
+                        if slot.get_mut().len() < slice.len() {
+                            *slot.get_mut() = slice;
+                        }
+                    },
+                }
+            }
+
+            current_offset = end;
+        }
+
+        assert!(splitted_parts.is_empty());
+
+        Ok(out)
     }
 
+    // TODO: Refactor for updated concurrency strategy.
     pub async fn download(&self, path: &Path, file: &mut tokio::fs::File) -> PolarsResult<()> {
-        let opt_size = self.head(path).await.ok().map(|x| x.size);
+        let size = self.head(path, ConcurrencyStrategy::Unbounded).await?.size;
+        let parts = split_range(0..size as usize, None);
 
-        let initial_pos = file.stream_position().await?;
+        // TODO: Replace the legacy concurrency_budget call and switch to BytesBased inflight
+        // admission control.
+        tune_with_concurrency_budget(
+            parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
+            || async {
+                let mut stream =
+                    self.build_buffered_ranges_stream(path, parts, ConcurrencyStrategy::Unbounded);
+                let mut len = 0;
+                while let Some(bytes) = stream.try_next().await? {
+                    len += bytes.len();
+                    file.write_all(&bytes).await?;
+                }
 
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
+                assert_eq!(len, size as usize);
 
-            // Workaround for "can't move captured variable".
-            let file: &mut tokio::fs::File = unsafe { std::mem::transmute_copy(&file) };
+                PolarsResult::Ok(pl_async::Size::from(len as u64))
+            },
+        )
+        .await?;
 
-            async {
-                file.set_len(initial_pos).await?; // Reset if this function was called again.
+        // Dropping is delayed for tokio async files so we need to explicitly
+        // flush here (https://github.com/tokio-rs/tokio/issues/2307#issuecomment-596336451).
+        file.sync_all().await.map_err(PolarsError::from)?;
 
-                let store = st;
-                let parts = opt_size
-                    .map(|x| split_range(0..x as usize))
-                    .filter(|x| x.len() > 1);
-
-                if let Some(parts) = parts {
-                    tune_with_concurrency_budget(
-                        parts.len().clamp(0, MAX_BUDGET_PER_REQUEST) as u32,
-                        || async {
-                            let mut stream = Self::get_buffered_ranges_stream(&store, path, parts);
-                            let mut len = 0;
-                            while let Some(bytes) = stream.try_next().await? {
-                                len += bytes.len();
-                                file.write_all(&bytes).await?;
-                            }
-
-                            assert_eq!(len, opt_size.unwrap() as usize);
-
-                            PolarsResult::Ok(pl_async::Size::from(len as u64))
-                        },
-                    )
-                    .await?
-                } else {
-                    tune_with_concurrency_budget(1, || async {
-                        let mut stream = store.get(path).await?.into_stream();
-
-                        let mut len = 0;
-                        while let Some(bytes) = stream.try_next().await? {
-                            len += bytes.len();
-                            file.write_all(&bytes).await?;
-                        }
-
-                        PolarsResult::Ok(pl_async::Size::from(len as u64))
-                    })
-                    .await?
-                };
-
-                // Dropping is delayed for tokio async files so we need to explicitly
-                // flush here (https://github.com/tokio-rs/tokio/issues/2307#issuecomment-596336451).
-                file.sync_all().await.map_err(PolarsError::from)?;
-
-                Ok(())
-            }
-        })
-        .await
+        Ok(())
     }
 
     /// Fetch the metadata of the parquet file, do not memoize it.
-    pub async fn head(&self, path: &Path) -> PolarsResult<ObjectMeta> {
-        self.try_exec_rebuild_on_err(|store| {
-            let st = store.clone();
-
-            async {
-                with_concurrency_budget(1, || async {
-                    let store = st;
-                    let head_result = store.head(path).await;
+    pub async fn head(
+        &self,
+        path: &Path,
+        strategy: ConcurrencyStrategy,
+    ) -> PolarsResult<ObjectMeta> {
+        // TODO: Refactor for updated concurrency strategy.
+        // For now, we fall back to 'Legacy' which is fine for metadata.
+        // Since this carries an early signal, the IO Sample is of interest regardless of
+        // the strategy in use.
+        with_concurrency_budget(1, || {
+            self.exec_with_rebuild_retry_on_err(|s| {
+                async move {
+                    let t0 = Instant::now();
+                    let head_result = self.io_metrics().record_io_read(0, s.head(path)).await;
+                    if let ConcurrencyStrategy::BytesBased = strategy {
+                        // self.get_or_init_concurrency().record_ttfb(ttfb);
+                        self.get_or_init_concurrency().record_io(IoSample {
+                            n_bytes: 0,
+                            ttfb: t0.elapsed(),
+                            completion_time: Instant::now(),
+                        });
+                    }
 
                     if head_result.is_err() {
+                        let t0 = Instant::now();
                         // Pre-signed URLs forbid the HEAD method, but we can still retrieve the header
-                        // information with a range 0-0 request.
-                        let get_range_0_0_result = store
-                            .get_opts(
-                                path,
-                                object_store::GetOptions {
-                                    range: Some((0..1).into()),
-                                    ..Default::default()
-                                },
+                        // information with a range 0-1 request.
+                        let get_range_0_1_result = self
+                            .io_metrics()
+                            .record_io_read(
+                                0,
+                                s.get_opts(
+                                    path,
+                                    object_store::GetOptions {
+                                        range: Some((0..1).into()),
+                                        ..Default::default()
+                                    },
+                                ),
                             )
                             .await;
 
-                        if let Ok(v) = get_range_0_0_result {
+                        if let ConcurrencyStrategy::BytesBased = strategy {
+                            self.get_or_init_concurrency().record_io(IoSample {
+                                n_bytes: 0,
+                                ttfb: t0.elapsed(),
+                                completion_time: Instant::now(),
+                            });
+                        }
+
+                        if let Ok(v) = get_range_0_1_result {
                             return Ok(v.meta);
                         }
                     }
@@ -409,9 +567,8 @@ impl PolarsObjectStore {
                     let out = head_result?;
 
                     Ok(out)
-                })
-                .await
-            }
+                }
+            })
         })
         .await
     }
@@ -419,8 +576,11 @@ impl PolarsObjectStore {
 
 /// Splits a single range into multiple smaller ranges, which can be downloaded concurrently for
 /// much higher throughput.
-fn split_range(range: Range<usize>) -> impl ExactSizeIterator<Item = Range<usize>> {
-    let chunk_size = get_download_chunk_size();
+fn split_range(
+    range: Range<usize>,
+    chunk_size: Option<usize>,
+) -> impl ExactSizeIterator<Item = Range<usize>> {
+    let chunk_size = chunk_size.unwrap_or_else(get_download_chunk_size);
 
     // Calculate n_parts such that we are as close as possible to the `chunk_size`.
     let n_parts = [
@@ -461,8 +621,11 @@ fn split_range(range: Range<usize>) -> impl ExactSizeIterator<Item = Range<usize
 /// * etc..
 ///
 /// Note that if an end value is 0, it means the range is a splitted part and should be combined.
-fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, usize)> + '_ {
-    let chunk_size = get_download_chunk_size();
+fn merge_ranges(
+    ranges: &[Range<usize>],
+    chunk_size: Option<usize>,
+) -> impl Iterator<Item = (Range<usize>, usize)> + '_ {
+    let chunk_size = chunk_size.unwrap_or_else(get_download_chunk_size);
 
     let mut current_merged_range = ranges.first().map_or(0..0, Clone::clone);
     // Number of fetched bytes excluding excess.
@@ -524,10 +687,10 @@ fn merge_ranges(ranges: &[Range<usize>]) -> impl Iterator<Item = (Range<usize>, 
                 }
             }
         })
-        .flat_map(|x| {
+        .flat_map(move |x| {
             // Split large individual ranges within the list of ranges.
             let (range, end) = x;
-            let split = split_range(range);
+            let split = split_range(range, Some(chunk_size));
             let len = split.len();
 
             split
@@ -550,8 +713,8 @@ mod tests {
         #[allow(clippy::single_range_in_vec_init)]
         {
             // Round-trip empty ranges.
-            assert_eq!(split_range(0..0).collect::<Vec<_>>(), [0..0]);
-            assert_eq!(split_range(3..3).collect::<Vec<_>>(), [3..3]);
+            assert_eq!(split_range(0..0, None).collect::<Vec<_>>(), [0..0]);
+            assert_eq!(split_range(3..3, None).collect::<Vec<_>>(), [3..3]);
         }
 
         // Threshold to start splitting to 2 ranges
@@ -564,11 +727,11 @@ mod tests {
 
         #[allow(clippy::single_range_in_vec_init)]
         {
-            assert_eq!(split_range(0..n).collect::<Vec<_>>(), [0..89478485]);
+            assert_eq!(split_range(0..n, None).collect::<Vec<_>>(), [0..89478485]);
         }
 
         assert_eq!(
-            split_range(0..n + 1).collect::<Vec<_>>(),
+            split_range(0..n + 1, None).collect::<Vec<_>>(),
             [0..44739243, 44739243..89478486]
         );
 
@@ -581,12 +744,12 @@ mod tests {
         let n = 12 * chunk_size / 5;
 
         assert_eq!(
-            split_range(0..n).collect::<Vec<_>>(),
+            split_range(0..n, None).collect::<Vec<_>>(),
             [0..80530637, 80530637..161061273]
         );
 
         assert_eq!(
-            split_range(0..n + 1).collect::<Vec<_>>(),
+            split_range(0..n + 1, None).collect::<Vec<_>>(),
             [0..53687092, 53687092..107374183, 107374183..161061274]
         );
     }
@@ -600,44 +763,47 @@ mod tests {
         assert_eq!(chunk_size, 64 * 1024 * 1024);
 
         // Round-trip empty slice
-        assert_eq!(merge_ranges(&[]).collect::<Vec<_>>(), []);
+        assert_eq!(merge_ranges(&[], None).collect::<Vec<_>>(), []);
 
         // We have 1 tiny request followed by 1 huge request. They are combined as it reduces the
         // `abs_diff()` to the `chunk_size`, but afterwards they are split to 2 evenly sized
         // requests.
         assert_eq!(
-            merge_ranges(&[0..1, 1..127 * 1024 * 1024]).collect::<Vec<_>>(),
+            merge_ranges(&[0..1, 1..127 * 1024 * 1024], None).collect::<Vec<_>>(),
             [(0..66584576, 0), (66584576..133169152, 2)]
         );
 
         // <= 1MiB gap, merge
         assert_eq!(
-            merge_ranges(&[0..1, 1024 * 1024 + 1..1024 * 1024 + 2]).collect::<Vec<_>>(),
+            merge_ranges(&[0..1, 1024 * 1024 + 1..1024 * 1024 + 2], None).collect::<Vec<_>>(),
             [(0..1048578, 2)]
         );
 
         // > 1MiB gap, do not merge
         assert_eq!(
-            merge_ranges(&[0..1, 1024 * 1024 + 2..1024 * 1024 + 3]).collect::<Vec<_>>(),
+            merge_ranges(&[0..1, 1024 * 1024 + 2..1024 * 1024 + 3], None).collect::<Vec<_>>(),
             [(0..1, 1), (1048578..1048579, 2)]
         );
 
         // <= 12.5% gap, merge
         assert_eq!(
-            merge_ranges(&[0..8, 10..11]).collect::<Vec<_>>(),
+            merge_ranges(&[0..8, 10..11], None).collect::<Vec<_>>(),
             [(0..11, 2)]
         );
 
         // <= 12.5% gap relative to RHS, merge
         assert_eq!(
-            merge_ranges(&[0..1, 3..11]).collect::<Vec<_>>(),
+            merge_ranges(&[0..1, 3..11], None).collect::<Vec<_>>(),
             [(0..11, 2)]
         );
 
         // Overlapping range, merge
         assert_eq!(
-            merge_ranges(&[0..80 * 1024 * 1024, 10 * 1024 * 1024..70 * 1024 * 1024])
-                .collect::<Vec<_>>(),
+            merge_ranges(
+                &[0..80 * 1024 * 1024, 10 * 1024 * 1024..70 * 1024 * 1024],
+                None
+            )
+            .collect::<Vec<_>>(),
             [(0..80 * 1024 * 1024, 2)]
         );
     }

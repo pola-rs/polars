@@ -39,6 +39,8 @@ fn test_join_suffix_and_drop() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "cross_join")]
 fn test_cross_join_pd() -> PolarsResult<()> {
+    use polars_ops::frame::MaintainOrderJoin;
+
     let food = df![
         "name"=> ["Omelette", "Fried Egg"],
         "price" => [8, 5]
@@ -49,11 +51,21 @@ fn test_cross_join_pd() -> PolarsResult<()> {
         "price" => [5, 4]
     ]?;
 
-    let q = food.lazy().cross_join(drink.lazy(), None).select([
-        col("name").alias("food"),
-        col("name_right").alias("beverage"),
-        (col("price") + col("price_right")).alias("total"),
-    ]);
+    let q = food
+        .lazy()
+        .join(
+            drink.lazy(),
+            vec![],
+            vec![],
+            JoinArgs::new(JoinType::Cross)
+                .with_suffix(None)
+                .with_maintain_order(MaintainOrderJoin::LeftRight),
+        )
+        .select([
+            col("name").alias("food"),
+            col("name_right").alias("beverage"),
+            (col("price") + col("price_right")).alias("total"),
+        ]);
 
     let out = q.collect()?;
     let expected = df![
@@ -92,7 +104,7 @@ fn test_row_number_pd() -> PolarsResult<()> {
 #[test]
 #[cfg(feature = "cse")]
 fn scan_join_same_file() -> PolarsResult<()> {
-    let lf = LazyCsvReader::new(PlPath::new(FOODS_CSV)).finish()?;
+    let lf = LazyCsvReader::new(PlRefPath::new(FOODS_CSV)).finish()?;
 
     for cse in [true, false] {
         let partial = lf.clone().select([col("category")]).limit(5);
@@ -170,6 +182,53 @@ fn test_coalesce_toggle_projection_pushdown() -> PolarsResult<()> {
         IR::Join { options, .. } => options.args.should_coalesce(),
         _ => true,
     }));
+
+    Ok(())
+}
+
+#[test]
+fn test_select_hconcat_pushdown_non_strict_25263() -> PolarsResult<()> {
+    let df_a = df![
+        "a" => [1, 2, 2],
+        "b" => [4, 5, 6],
+    ]?
+    .lazy();
+
+    let df_b = df![
+        "d" => [1, 2],
+    ]?
+    .lazy();
+
+    // not strict: we read a single column from `df_a` to ensure that the concat output
+    // has the correct height
+    let lf = concat_lf_horizontal([df_a, df_b], Default::default())?.select([col("d")]);
+    let plan = lf.clone().to_alp_optimized()?;
+
+    let node = plan.lp_top;
+    let lp_arena = plan.lp_arena;
+
+    assert!(lp_arena.iter(node).all(|(_, plan)| match plan {
+        IR::DataFrameScan {
+            schema,
+            output_schema,
+            ..
+        } => {
+            // make sure that for `df_a` we apply a projection pushdown to only read a single column
+            if schema.contains("a") {
+                assert_eq!(output_schema.as_ref().unwrap().len(), 1);
+            }
+            true
+        },
+        _ => true,
+    }));
+
+    let out = lf.collect()?;
+    assert_eq!(
+        out,
+        df![
+            "d" => [Some(1), Some(2), None]
+        ]?
+    );
 
     Ok(())
 }

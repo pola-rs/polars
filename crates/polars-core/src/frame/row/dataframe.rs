@@ -54,7 +54,7 @@ impl DataFrame {
         if schema.is_empty() {
             let height = rows.count();
             let columns = Vec::new();
-            return Ok(unsafe { DataFrame::new_no_checks(height, columns) });
+            return Ok(unsafe { DataFrame::new_unchecked(height, columns) });
         }
 
         let capacity = rows.size_hint().0;
@@ -75,22 +75,24 @@ impl DataFrame {
             }
             Ok(())
         })?;
+
         let v = buffers
             .into_iter()
             .zip(schema.iter_names())
             .map(|(b, name)| {
-                let mut c = b.into_series().into_column();
+                let mut c = b.into_series()?.into_column();
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
                 if c.is_empty() {
-                    Column::full_null(name.clone(), expected_len, c.dtype())
+                    Ok(Column::full_null(name.clone(), expected_len, c.dtype()))
                 } else {
                     c.rename(name.clone());
-                    c
+                    Ok(c)
                 }
             })
-            .collect();
-        DataFrame::new(v)
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        DataFrame::new(expected_len, v)
     }
 
     /// Create a new [`DataFrame`] from an iterator over rows. This should only be used when you have row wise data,
@@ -121,18 +123,19 @@ impl DataFrame {
             .into_iter()
             .zip(schema.iter_names())
             .map(|(b, name)| {
-                let mut c = b.into_series().into_column();
+                let mut c = b.into_series()?.into_column();
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
                 if c.is_empty() {
-                    Column::full_null(name.clone(), expected_len, c.dtype())
+                    Ok(Column::full_null(name.clone(), expected_len, c.dtype()))
                 } else {
                     c.rename(name.clone());
-                    c
+                    Ok(c)
                 }
             })
-            .collect();
-        DataFrame::new(v)
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        DataFrame::new(expected_len, v)
     }
 
     /// Create a new [`DataFrame`] from rows. This should only be used when you have row wise data,

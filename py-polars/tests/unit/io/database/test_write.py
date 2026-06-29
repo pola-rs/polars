@@ -4,18 +4,27 @@ import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
-from sqlalchemy.pool import NullPool
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars.io.database._utils import _open_adbc_connection
 from polars.testing import assert_frame_equal
+from tests.unit.io.database.conftest import close_connections, create_sqlite_engine
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import DbWriteEngine
+
+
+def _read_via_uri(query: str, uri: str) -> pl.DataFrame:
+    """Read a query result via a throwaway engine, disposing it afterwards."""
+    engine = create_sqlite_engine(uri)
+    try:
+        return pl.read_database(query=query, connection=engine)
+    finally:
+        engine.dispose()
 
 
 @pytest.mark.write_disk
@@ -50,7 +59,7 @@ class TestWriteDatabase:
         if uri_connection:
             return uri
         elif engine == "sqlalchemy":
-            return create_engine(uri)
+            return create_sqlite_engine(uri)
         else:
             return _open_adbc_connection(uri)
 
@@ -79,14 +88,10 @@ class TestWriteDatabase:
             )
             == 2
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
         assert_frame_equal(result, df)
 
-        if hasattr(conn, "close"):
-            conn.close()
+        close_connections(conn)
 
     def test_write_database_append_replace(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
@@ -130,10 +135,7 @@ class TestWriteDatabase:
             )
             == 3
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
         assert_frame_equal(result, df)
 
         assert (
@@ -145,17 +147,53 @@ class TestWriteDatabase:
             )
             == 2
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
         assert_frame_equal(result, pl.concat([df, df[:2]]))
 
         if engine == "adbc" and not uri_connection:
             assert conn._closed is False
 
-        if hasattr(conn, "close"):
-            conn.close()
+        close_connections(conn)
+
+    def test_write_database_append_creates_missing_table(
+        self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
+    ) -> None:
+        """`append` should create table when one does not already exist."""
+        if engine == "adbc":
+            adbc_driver_manager = pytest.importorskip("adbc_driver_manager")
+            if parse_version(getattr(adbc_driver_manager, "__version__", "0.0")) < (
+                0,
+                7,
+            ):
+                pytest.skip("adbc-driver-manager < 0.7.0 has no create_append mode")
+
+        df = pl.DataFrame(
+            {
+                "id": [1, 2, 3],
+                "name": ["a", "b", "c"],
+            }
+        )
+        tmp_path.mkdir(exist_ok=True)
+        test_db_uri = (
+            f"sqlite:///{tmp_path}/test_append_create_{int(uri_connection)}.db"
+        )
+
+        table_name = "test_append_create"
+        conn = self._get_connection(test_db_uri, engine, uri_connection)
+
+        assert (
+            df.write_database(
+                table_name=table_name,
+                connection=conn,
+                if_table_exists="append",
+                engine=engine,
+            )
+            == 3
+        )
+        result = _read_via_uri(f"SELECT * FROM {table_name}", test_db_uri)
+        assert_frame_equal(result, df)
+
+        close_connections(conn)
 
     def test_write_database_create_quoted_tablename(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
@@ -192,17 +230,13 @@ class TestWriteDatabase:
             )
             == 3
         )
-        result = pl.read_database(
-            query=f"SELECT * FROM {qualified_table_name}",
-            connection=create_engine(test_db_uri),
-        )
+        result = _read_via_uri(f"SELECT * FROM {qualified_table_name}", test_db_uri)
         assert_frame_equal(result, df)
 
         if engine == "adbc" and not uri_connection:
             assert conn._closed is False
 
-        if hasattr(conn, "close"):
-            conn.close()
+        close_connections(conn)
 
     def test_write_database_errors(
         self, engine: DbWriteEngine, uri_connection: bool, tmp_path: Path
@@ -211,7 +245,7 @@ class TestWriteDatabase:
         df = pl.DataFrame({"colx": [1, 2, 3]})
 
         with pytest.raises(
-            ValueError, match="`table_name` appears to be invalid: 'w.x.y.z'"
+            ValueError, match=r"`table_name` appears to be invalid: 'w.x.y.z'"
         ):
             df.write_database(
                 connection="sqlite:///:memory:",
@@ -221,7 +255,7 @@ class TestWriteDatabase:
 
         with pytest.raises(
             ValueError,
-            match="`if_table_exists` must be one of .* got 'do_something'",
+            match=r"`if_table_exists` must be one of .* got 'do_something'",
         ):
             df.write_database(
                 connection="sqlite:///:memory:",
@@ -232,7 +266,7 @@ class TestWriteDatabase:
 
         with pytest.raises(
             TypeError,
-            match="unrecognised connection type.*",
+            match=r"unrecognised connection type.*",
         ):
             df.write_database(connection=True, table_name="misc", engine=engine)  # type: ignore[arg-type]
 
@@ -244,7 +278,7 @@ class TestWriteDatabase:
             return
         df = pl.DataFrame({"colx": [1, 2, 3]})
         with pytest.raises(
-            ModuleNotFoundError, match="ADBC 'adbc_driver_mysql' driver not detected."
+            ModuleNotFoundError, match=r"ADBC 'adbc_driver_mysql' driver not detected."
         ):
             df.write_database(
                 table_name="my_schema.my_table",
@@ -264,7 +298,7 @@ def test_write_database_using_sa_session(tmp_path: str) -> None:
     )
     table_name = "test_sa_session"
     test_db_uri = f"sqlite:///{tmp_path}/test_sa_session.db"
-    engine = create_engine(test_db_uri, poolclass=NullPool)
+    engine = create_sqlite_engine(test_db_uri)
     with Session(engine) as session:
         df.write_database(table_name, session)
         session.commit()
@@ -289,7 +323,7 @@ def test_write_database_sa_rollback(tmp_path: str, pass_connection: bool) -> Non
     )
     table_name = "test_sa_rollback"
     test_db_uri = f"sqlite:///{tmp_path}/test_sa_rollback.db"
-    engine = create_engine(test_db_uri, poolclass=NullPool)
+    engine = create_sqlite_engine(test_db_uri)
     with Session(engine) as session:
         if pass_connection:
             conn = session.connection()
@@ -319,7 +353,7 @@ def test_write_database_sa_commit(tmp_path: str, pass_connection: bool) -> None:
     )
     table_name = "test_sa_commit"
     test_db_uri = f"sqlite:///{tmp_path}/test_sa_commit.db"
-    engine = create_engine(test_db_uri, poolclass=NullPool)
+    engine = create_sqlite_engine(test_db_uri)
     with Session(engine) as session:
         if pass_connection:
             conn = session.connection()
@@ -365,5 +399,4 @@ def test_write_database_adbc_temporary_table() -> None:
     actual_temp_table_create_sql = temp_tbl_sql_df["sql"][0]
     assert expected_temp_table_create_sql == actual_temp_table_create_sql
 
-    if hasattr(conn, "close"):
-        conn.close()
+    close_connections(conn)

@@ -26,7 +26,7 @@ fn debug(pydf: PyDataFrame) -> PyResult<PyDataFrame> {
 
 #[pyfunction]
 fn empty_df() -> PyResult<PyDataFrame> {
-    Ok(PyDataFrame(DataFrame::new(vec![]).unwrap()))
+    Ok(PyDataFrame(DataFrame::empty()))
 }
 
 #[pyfunction]

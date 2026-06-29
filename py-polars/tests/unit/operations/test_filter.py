@@ -148,7 +148,7 @@ def test_predicate_order_explode_5950() -> None:
 
     assert (
         df.lazy()
-        .explode("i")
+        .explode("i", empty_as_null=True)
         .filter(pl.len().over(["i"]) == 2)
         .filter(pl.col("n").is_not_null())
     ).collect().to_dict(as_series=False) == {"i": [1], "n": [0]}
@@ -262,7 +262,7 @@ def test_filter_logical_type_13194() -> None:
 def test_filter_horizontal_selector_15428() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
-    df = df.filter(pl.all_horizontal((cs.by_name("^.*$") & cs.integer()) <= 2))
+    df = df.filter(pl.all_horizontal((cs.matches("^.*$") & cs.integer()) <= 2))
     expected_df = pl.DataFrame({"a": [1, 2]})
 
     assert_frame_equal(df, expected_df)

@@ -1,4 +1,6 @@
 use polars_error::{PolarsResult, polars_bail};
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 
 use super::{AnyValue, DataType, Scalar};
 
@@ -53,6 +55,16 @@ impl_into_scalar! {
     // Struct(usize, &'a StructArray, &'a [Field]),
     // #[cfg(feature = "dtype-struct")]
     // StructOwned(Box<(Vec<AnyValue<'a>>, Vec<Field>)>),
+}
+
+#[cfg(feature = "dtype-f16")]
+impl_into_scalar! {
+    pf16: (T::Float16),
+}
+
+#[cfg(feature = "dtype-u128")]
+impl_into_scalar! {
+    u128: (T::UInt128),
 }
 
 #[cfg(feature = "dtype-i128")]

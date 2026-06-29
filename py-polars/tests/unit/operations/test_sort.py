@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from hypothesis import given
@@ -11,6 +11,8 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes, series
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType
 
 
@@ -34,9 +36,7 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
             pl.Object,  # Unsortable type
             pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
             pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
-            pl.Categorical(
-                ordering="lexical"
-            ),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
+            pl.Categorical(),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
         ],
     )
 )
@@ -393,7 +393,7 @@ def test_sorted_join_and_dtypes(dtype: PolarsDataType) -> None:
                 "index": [1, 2, 3, 5],
                 "a": [-2, 3, 3, 10],
             },
-            schema={"index": pl.UInt32, "a": dtype},
+            schema={"index": pl.get_index_type(), "a": dtype},
         ),
         check_row_order=False,
     )
@@ -406,7 +406,7 @@ def test_sorted_join_and_dtypes(dtype: PolarsDataType) -> None:
                 "index": [0, 1, 2, 3, 4, 5],
                 "a": [-5, -2, 3, 3, 9, 10],
             },
-            schema={"index": pl.UInt32, "a": dtype},
+            schema={"index": pl.get_index_type(), "a": dtype},
         ),
         check_row_order=False,
     )
@@ -831,7 +831,9 @@ def test_sort_by_descending() -> None:
 def test_arg_sort_by_descending() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
     result = df.select(pl.arg_sort_by(["a", "b"], descending=True))
-    expected = pl.DataFrame({"a": [2, 1, 0]}).select(pl.col("a").cast(pl.UInt32))
+    expected = pl.DataFrame({"a": [2, 1, 0]}).select(
+        pl.col("a").cast(pl.get_index_type())
+    )
     assert_frame_equal(result, expected)
     result = df.select(pl.arg_sort_by(["a", "b"], descending=[True, True]))
     assert_frame_equal(result, expected)
@@ -884,6 +886,30 @@ def test_sort_by_11653() -> None:
         .sum()
         .alias("sort_by"),
     ).sort("id").to_dict(as_series=False) == {"id": [0, 1], "sort_by": [1.0, 1.0]}
+
+
+def test_sort_by_nulls_last_agg_map_batches() -> None:
+    df = pl.DataFrame(
+        {
+            "g": ["a", "a", "a", "b", "b", "b"],
+            "val": [10, 20, 30, 40, 50, 60],
+            "order": [None, 2.0, 1.0, 3.0, None, 1.0],
+        }
+    )
+
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("val")
+        .map_batches(lambda s: s, return_dtype=pl.Int64)
+        .sort_by("order", nulls_last=True)
+    )
+    assert result["val"].to_list() == [[30, 20, 10], [60, 40, 50]]
+
+    result = df.group_by("g", maintain_order=True).agg(
+        pl.col("val")
+        .map_batches(lambda s: s, return_dtype=pl.Int64)
+        .sort_by("order", nulls_last=False)
+    )
+    assert result["val"].to_list() == [[10, 30, 20], [50, 60, 40]]
 
 
 @pytest.mark.parametrize(
@@ -1172,7 +1198,7 @@ def test_sort_bool_nulls_last() -> None:
     "dtype",
     [
         pl.Enum(["a", "b"]),
-        pl.Categorical(ordering="lexical"),
+        pl.Categorical(),
     ],
 )
 def test_sort_cat_nulls_last(dtype: PolarsDataType) -> None:
@@ -1255,3 +1281,104 @@ def test_sort_by_dynamic_24057(expr: pl.Expr, result: list[list[int]]) -> None:
     out = q.collect()
     expected = pl.DataFrame({"time": [0, 5, 10], "sorted": result})
     assert_frame_equal(out, expected)
+
+
+def test_sort_by_empty_list_eval_25433() -> None:
+    some_list = [2, 1, 3]
+    df = pl.DataFrame({"a": [some_list, []]})
+    out = df.select(pl.col.a.list.eval(pl.element().sort_by(pl.element())))
+    expected = pl.DataFrame({"a": [sorted(some_list), []]})
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_sort_already_sorted_no_rechunk_25733() -> None:
+    df1 = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    df2 = pl.DataFrame({"a": [3, 4], "b": [5, 6]})
+    df = pl.concat([df1, df2], rechunk=False).with_columns(pl.col("a").set_sorted())
+    assert df.n_chunks() == 2
+
+    result = df.sort("a")
+    assert result.n_chunks() == 2  # No rechunk happened
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sort_maintain_order_all_nulls_27514(
+    descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame(
+        {"a": [None, None, None, None]}, schema={"a": pl.Int32}
+    ).with_row_index()
+    result = (
+        df.lazy()
+        .sort("a", descending=descending, nulls_last=nulls_last, maintain_order=True)
+        .collect()
+    )
+    assert_frame_equal(result, df)
+
+
+def test_sort_by_multiple_length_mismatch_27759() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [0, 0],
+            "b": ["foo", "blah"],
+            "c": [False, True],
+            "d": [0, 0],
+            "e": [0, 0],
+        }
+    )
+    with pytest.raises(pl.exceptions.ShapeError):
+        df.group_by("a").agg(pl.col("b").filter("c").sort_by(["d", "e"]))
+
+
+def test_sort_reverse_head_returns_top_values_not_nulls_27917() -> None:
+    df = pl.DataFrame({"x": [10, None, 30, 20, None, 40]})
+
+    assert df.select(pl.col("x").sort().reverse().head(3))["x"].to_list() == [
+        40,
+        30,
+        20,
+    ]
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_sort_reverse_preserves_null_placement_27917(
+    descending: bool, nulls_last: bool
+) -> None:
+    df = pl.DataFrame({"x": [10, None, 30, 20, None, 40]})
+    expr = pl.col("x").sort(descending=descending, nulls_last=nulls_last).reverse()
+
+    assert_frame_equal(
+        df.lazy().select(expr).collect(),
+        df.lazy().select(expr).collect(optimizations=pl.QueryOptFlags.none()),
+    )
+
+
+@pytest.mark.parametrize(
+    "descending", [[False, False], [True, False], [False, True], [True, True]]
+)
+@pytest.mark.parametrize(
+    "nulls_last", [[False, False], [True, False], [False, True], [True, True]]
+)
+def test_sort_by_reverse_preserves_null_placement_27917(
+    descending: list[bool], nulls_last: list[bool]
+) -> None:
+    df = pl.DataFrame(
+        {
+            "v": [10, 20, 30, 40, 50],
+            "a": [1, 1, 2, 2, 1],
+            "b": [None, 2, None, 3, 1],
+        }
+    )
+    expr = (
+        pl.col("v")
+        .sort_by(["a", "b"], descending=descending, nulls_last=nulls_last)
+        .reverse()
+    )
+
+    assert_frame_equal(
+        df.lazy().select(expr).collect(),
+        df.lazy().select(expr).collect(optimizations=pl.QueryOptFlags.none()),
+    )

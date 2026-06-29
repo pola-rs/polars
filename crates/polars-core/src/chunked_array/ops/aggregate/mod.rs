@@ -3,11 +3,15 @@ mod quantile;
 mod var;
 
 use arrow::types::NativeType;
-use num_traits::{Float, One, ToPrimitive, Zero};
+use num_traits::{AsPrimitive, Float, One, ToPrimitive, Zero};
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::DEC128_MAX_PREC;
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
-use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
+use polars_compute::sum::{WrappingAdd, WrappingSum, wrapping_sum_arr, wrapping_sum_arr_upcast};
+use polars_utils::float::IsFloat;
+use polars_utils::float16::pf16;
 use polars_utils::min_max::MinMax;
 pub use quantile::*;
 pub use var::*;
@@ -15,10 +19,49 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
-use crate::chunked_array::ChunkedArray;
+use crate::chunked_array::{ChunkedArray, arg_max_binary, arg_min_binary};
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
 use crate::series::IsSorted;
+
+pub trait SumCast: Sized {
+    type Sum: NumericNative + From<Self>;
+}
+
+macro_rules! impl_sum_cast {
+    ($($x:ty),*) => {
+        $(impl SumCast for $x { type Sum = $x; })*
+    };
+    ($($from:ty as $to:ty),*) => {
+        $(impl SumCast for $from { type Sum = $to; })*
+    };
+}
+
+impl_sum_cast!(
+    bool as IdxSize,
+    u8 as i64,
+    u16 as i64,
+    i8 as i64,
+    i16 as i64
+);
+impl_sum_cast!(u32, u64, i32, i64, f32, f64);
+#[cfg(feature = "dtype-f16")]
+impl_sum_cast!(pf16);
+#[cfg(feature = "dtype-i128")]
+impl_sum_cast!(i128);
+#[cfg(feature = "dtype-u128")]
+impl_sum_cast!(u128);
+
+pub fn sum_output_dtype(in_dtype: &DataType) -> DataType {
+    use DataType::*;
+    match in_dtype {
+        Boolean => IDX_DTYPE,
+        Int8 | UInt8 | Int16 | UInt16 => Int64,
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(_, scale) => Decimal(DEC128_MAX_PREC, *scale),
+        dt => dt.clone(),
+    }
+}
 
 /// Aggregations that return [`Series`] of unit length. Those can be used in broadcasting operations.
 pub trait ChunkAggSeries {
@@ -50,7 +93,13 @@ where
 
     if T::is_float() {
         unsafe {
-            if T::is_f32() {
+            if T::is_f16() {
+                let f16_arr =
+                    std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<pf16>>(array);
+                // We do not trust the numerical accuracy of f16 summation
+                let sum: pf16 = float_sum::sum_arr_as_f32(f16_arr).as_();
+                std::mem::transmute_copy::<pf16, T>(&sum)
+            } else if T::is_f32() {
                 let f32_arr =
                     std::mem::transmute::<&PrimitiveArray<T>, &PrimitiveArray<f32>>(array);
                 let sum = float_sum::sum_arr_as_f32(f32_arr);
@@ -61,7 +110,7 @@ where
                 let sum = float_sum::sum_arr_as_f64(f64_arr);
                 std::mem::transmute_copy::<f64, T>(&sum)
             } else {
-                unreachable!("only supported float types are f32 and f64");
+                unreachable!("only supported float types are f16, f32 and f64");
             }
         }
     } else {
@@ -251,12 +300,19 @@ impl BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
-    T::Native: WrappingSum,
+    T::Native: WrappingSum + SumCast,
+    <T::Native as SumCast>::Sum: WrappingAdd,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
 {
     fn sum_reduce(&self) -> Scalar {
-        let v: Option<T::Native> = self.sum();
-        Scalar::new(T::get_static_dtype(), v.into())
+        let v: <T::Native as SumCast>::Sum = if T::Native::is_float() {
+            self.sum().map(Into::into).unwrap_or_else(Zero::zero)
+        } else {
+            self.downcast_iter()
+                .map(wrapping_sum_arr_upcast)
+                .fold(Zero::zero(), |a, b| a.wrapping_add(&b))
+        };
+        Scalar::new(sum_output_dtype(&T::get_static_dtype()), v.into())
     }
 
     fn max_reduce(&self) -> Scalar {
@@ -297,6 +353,19 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
+impl VarAggSeries for Float16Chunked {
+    fn var_reduce(&self, ddof: u8) -> Scalar {
+        let v = self.var(ddof).map(AsPrimitive::<pf16>::as_);
+        Scalar::new(DataType::Float16, v.into())
+    }
+
+    fn std_reduce(&self, ddof: u8) -> Scalar {
+        let v = self.std(ddof).map(AsPrimitive::<pf16>::as_);
+        Scalar::new(DataType::Float16, v.into())
+    }
+}
+
 impl VarAggSeries for Float32Chunked {
     fn var_reduce(&self, ddof: u8) -> Scalar {
         let v = self.var(ddof).map(|v| v as f32);
@@ -331,9 +400,40 @@ where
         Ok(Scalar::new(DataType::Float64, v.into()))
     }
 
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        let s =
+            Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
+    }
+
     fn median_reduce(&self) -> Scalar {
         let v = self.median();
         Scalar::new(DataType::Float64, v.into())
+    }
+}
+
+#[cfg(feature = "dtype-f16")]
+impl QuantileAggSeries for Float16Chunked {
+    fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantile(quantile, method)?;
+        Ok(Scalar::new(DataType::Float16, v.into()))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        let s =
+            Float16Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
+    }
+
+    fn median_reduce(&self) -> Scalar {
+        let v = self.median();
+        Scalar::new(DataType::Float16, v.into())
     }
 }
 
@@ -341,6 +441,15 @@ impl QuantileAggSeries for Float32Chunked {
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float32, v.into()))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        let s =
+            Float32Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
     }
 
     fn median_reduce(&self) -> Scalar {
@@ -353,6 +462,15 @@ impl QuantileAggSeries for Float64Chunked {
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;
         Ok(Scalar::new(DataType::Float64, v.into()))
+    }
+
+    fn quantiles_reduce(&self, quantiles: &[f64], method: QuantileMethod) -> PolarsResult<Scalar> {
+        let v = self.quantiles(quantiles, method)?;
+        let s =
+            Float64Chunked::from_iter_options(PlSmallStr::from_static("quantiles"), v.into_iter())
+                .into_series();
+        let dtype = DataType::List(Box::new(s.dtype().clone()));
+        Ok(Scalar::new(dtype, AnyValue::List(s)))
     }
 
     fn median_reduce(&self) -> Scalar {
@@ -558,6 +676,29 @@ impl BinaryChunked {
                 .reduce(MinMax::min_ignore_nan),
         }
     }
+    pub fn arg_min_binary(&self) -> Option<usize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => self.first_non_null(),
+            IsSorted::Descending => self.last_non_null(),
+            IsSorted::Not => arg_min_binary(self),
+        }
+    }
+
+    pub fn arg_max_binary(&self) -> Option<usize> {
+        if self.is_empty() || self.null_count() == self.len() {
+            return None;
+        }
+
+        match self.is_sorted_flag() {
+            IsSorted::Ascending => self.last_non_null(),
+            IsSorted::Descending => self.first_non_null(),
+            IsSorted::Not => arg_max_binary(self),
+        }
+    }
 }
 
 impl ChunkAggSeries for BinaryChunked {
@@ -665,6 +806,7 @@ mod test {
         assert_eq!(
             ca.into_series()
                 .mean_reduce()
+                .unwrap()
                 .value()
                 .extract::<f32>()
                 .unwrap(),
@@ -674,7 +816,11 @@ mod test {
         let ca = Float32Chunked::full_null(PlSmallStr::EMPTY, 3);
         assert_eq!(ca.mean(), None);
         assert_eq!(
-            ca.into_series().mean_reduce().value().extract::<f32>(),
+            ca.into_series()
+                .mean_reduce()
+                .unwrap()
+                .value()
+                .extract::<f32>(),
             None
         );
     }

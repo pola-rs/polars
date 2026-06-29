@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+pub use super::pl_ref_str::PlRefStr;
 use crate::relaxed_cell::RelaxedCell;
 
 #[macro_export]
@@ -26,17 +27,17 @@ pub struct PlSmallStr(Inner);
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for PlSmallStr {
-    fn is_referenceable() -> bool {
-        false
+    fn inline_schema() -> bool {
+        String::inline_schema()
     }
 
-    fn schema_name() -> std::string::String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         String::schema_name()
     }
     fn schema_id() -> std::borrow::Cow<'static, str> {
         String::schema_id()
     }
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         String::json_schema(generator)
     }
 }
@@ -134,7 +135,7 @@ impl AsRef<std::path::Path> for PlSmallStr {
 impl AsRef<[u8]> for PlSmallStr {
     #[inline(always)]
     fn as_ref(&self) -> &[u8] {
-        self.as_str().as_bytes()
+        self.as_bytes()
     }
 }
 
@@ -158,6 +159,13 @@ impl From<String> for PlSmallStr {
     #[inline(always)]
     fn from(value: String) -> Self {
         Self::from_string(value)
+    }
+}
+
+impl From<PlSmallStr> for String {
+    #[inline(always)]
+    fn from(value: PlSmallStr) -> Self {
+        value.to_string()
     }
 }
 
@@ -305,4 +313,43 @@ pub fn unique_column_name() -> PlSmallStr {
     static COUNTER: RelaxedCell<u64> = RelaxedCell::new_u64(0);
     let idx = COUNTER.fetch_add(1);
     format_pl_smallstr!("_POLARS_TMP_{idx}")
+}
+
+#[cfg(feature = "python")]
+mod _python_impl {
+    use std::convert::Infallible;
+
+    use pyo3::pybacked::PyBackedStr;
+    use pyo3::types::PyString;
+    use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, PyAny, PyErr, PyResult};
+
+    use super::PlSmallStr;
+
+    impl<'py> IntoPyObject<'py> for PlSmallStr {
+        type Target = PyString;
+        type Output = Bound<'py, Self::Target>;
+        type Error = Infallible;
+
+        fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+            self.as_str().into_pyobject(py)
+        }
+    }
+
+    impl<'py> IntoPyObject<'py> for &PlSmallStr {
+        type Target = PyString;
+        type Output = Bound<'py, Self::Target>;
+        type Error = Infallible;
+
+        fn into_pyobject(self, py: pyo3::Python<'py>) -> Result<Self::Output, Self::Error> {
+            self.as_str().into_pyobject(py)
+        }
+    }
+
+    impl<'a, 'py> FromPyObject<'a, 'py> for PlSmallStr {
+        type Error = PyErr;
+
+        fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+            Ok((&*ob.extract::<PyBackedStr>()?).into())
+        }
+    }
 }

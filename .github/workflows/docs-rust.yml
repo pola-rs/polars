@@ -19,7 +19,7 @@ jobs:
   build-rust-docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up Rust
         run: rustup component add rust-docs
@@ -27,7 +27,9 @@ jobs:
       - name: Cache Rust
         uses: Swatinem/rust-cache@v2
         with:
-          save-if: ${{ github.ref_name == 'main' }}
+          env-vars: ImageVersion
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
 
       - name: Build Rust documentation
         env:

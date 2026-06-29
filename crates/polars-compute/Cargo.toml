@@ -15,20 +15,23 @@ bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
 either = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
+half = { workspace = true, optional = true, features = ["num-traits", "bytemuck"] }
 hashbrown = { workspace = true }
 itoa = { workspace = true, optional = true }
 num-traits = { workspace = true }
+polars-buffer = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 rand = { workspace = true }
-ryu = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
-skiplist = { workspace = true }
 strength_reduce = { workspace = true }
 strum_macros = { workspace = true }
+zmij = { workspace = true, optional = true }
 
 [dev-dependencies]
+bigdecimal = { workspace = true }
+num-bigint = { workspace = true }
 rand = { workspace = true }
 
 arrow = { workspace = true, features = ["proptest"] }
@@ -45,7 +48,7 @@ cast = [
   "dep:chrono",
   "dep:fast-float2",
   "dep:itoa",
-  "dep:ryu",
+  "dep:zmij",
 ]
 gather = []
 nightly = []
@@ -54,6 +57,8 @@ approx_unique = []
 dtype-array = []
 dtype-decimal = ["arrow/dtype-decimal", "dtype-i128"]
 dtype-i128 = []
+dtype-u128 = []
+dtype-f16 = ["dep:half"]
 dsl-schema = ["dep:schemars"]
 
 [lints]

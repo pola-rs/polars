@@ -11,8 +11,11 @@ use polars_core::prelude::{PolarsError, PolarsResult, polars_bail};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
 use polars_lazy::prelude::LazyFrame;
-use polars_utils::plpath::PlPath;
-use sqlparser::ast::{FunctionArg, FunctionArgExpr};
+use polars_utils::pl_path::PlRefPath;
+use sqlparser::ast::{
+    Expr as SQLExpr, FunctionArg as SQLFunctionArg, FunctionArgExpr as SQLFunctionArgExpr,
+    Value as SQLValue, ValueWithSpan as SQLValueWithSpan,
+};
 
 /// Table functions that are supported by Polars
 #[allow(clippy::enum_variant_names)]
@@ -48,7 +51,7 @@ impl FromStr for PolarsTableFunctions {
 
     #[allow(unreachable_code)]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s {
+        Ok(match s.to_lowercase().as_str() {
             #[cfg(feature = "csv")]
             "read_csv" => PolarsTableFunctions::ReadCsv,
             #[cfg(feature = "parquet")]
@@ -64,7 +67,7 @@ impl FromStr for PolarsTableFunctions {
 
 impl PolarsTableFunctions {
     #[allow(unused_variables, unreachable_patterns)]
-    pub(crate) fn execute(&self, args: &[FunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    pub(crate) fn execute(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         match self {
             #[cfg(feature = "csv")]
             PolarsTableFunctions::ReadCsv => self.read_csv(args),
@@ -79,7 +82,7 @@ impl PolarsTableFunctions {
     }
 
     #[cfg(feature = "csv")]
-    fn read_csv(&self, args: &[FunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    fn read_csv(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_csv` expects a single file path; found {:?} arguments", args.len());
 
         use polars_lazy::frame::LazyFileListReader;
@@ -92,7 +95,7 @@ impl PolarsTableFunctions {
     }
 
     #[cfg(feature = "parquet")]
-    fn read_parquet(&self, args: &[FunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    fn read_parquet(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_parquet` expects a single file path; found {:?} arguments", args.len());
 
         let path = self.get_file_path_from_arg(&args[0])?;
@@ -101,15 +104,15 @@ impl PolarsTableFunctions {
     }
 
     #[cfg(feature = "ipc")]
-    fn read_ipc(&self, args: &[FunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    fn read_ipc(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_ipc` expects a single file path; found {:?} arguments", args.len());
 
         let path = self.get_file_path_from_arg(&args[0])?;
-        let lf = LazyFrame::scan_ipc(path.clone(), Default::default())?;
+        let lf = LazyFrame::scan_ipc(path.clone(), Default::default(), Default::default())?;
         Ok((path, lf))
     }
     #[cfg(feature = "json")]
-    fn read_ndjson(&self, args: &[FunctionArg]) -> PolarsResult<(PlPath, LazyFrame)> {
+    fn read_ndjson(&self, args: &[SQLFunctionArg]) -> PolarsResult<(PlRefPath, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_ndjson` expects a single file path; found {:?} arguments", args.len());
 
         use polars_lazy::frame::LazyFileListReader;
@@ -121,12 +124,14 @@ impl PolarsTableFunctions {
     }
 
     #[allow(dead_code)]
-    fn get_file_path_from_arg(&self, arg: &FunctionArg) -> PolarsResult<PlPath> {
-        use sqlparser::ast::{Expr as SQLExpr, Value as SQLValue};
+    fn get_file_path_from_arg(&self, arg: &SQLFunctionArg) -> PolarsResult<PlRefPath> {
         match arg {
-            FunctionArg::Unnamed(FunctionArgExpr::Expr(SQLExpr::Value(
-                SQLValue::SingleQuotedString(s),
-            ))) => Ok(PlPath::from_str(s)),
+            SQLFunctionArg::Unnamed(SQLFunctionArgExpr::Expr(SQLExpr::Value(
+                SQLValueWithSpan {
+                    value: SQLValue::SingleQuotedString(s),
+                    ..
+                },
+            ))) => Ok(PlRefPath::new(s)),
             _ => polars_bail!(
                 SQLSyntax:
                 "expected a valid file path as a single-quoted string; found: {}", arg,

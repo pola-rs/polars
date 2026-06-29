@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import pytest
 
 import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from tests.conftest import PlMonkeyPatch
 
 READ_WRITE_FUNC_PARAM = [
     (pl.read_parquet, pl.DataFrame.write_parquet),
@@ -35,19 +41,19 @@ READ_WRITE_FUNC_PARAM = [
 )
 @pytest.mark.write_disk
 def test_write_async(
-    read_func: Callable[[Path], pl.DataFrame],
-    write_func: Callable[[pl.DataFrame, Path], None],
+    read_func: Callable[[str], pl.DataFrame],
+    write_func: Callable[[pl.DataFrame, str], None],
     tmp_path: Path,
 ) -> None:
     tmp_path.mkdir(exist_ok=True)
     path = (tmp_path / "1").absolute()
-    path = f"file://{path}"  # type: ignore[assignment]
+    path_str = format_file_uri(path)
 
     df = pl.DataFrame({"x": 1})
 
-    write_func(df, path)
+    write_func(df, path_str)
 
-    assert_frame_equal(read_func(path), df)
+    assert_frame_equal(read_func(path_str), df)
 
 
 @pytest.mark.parametrize(
@@ -61,16 +67,15 @@ def test_write_async_force_async(
     write_func: Callable[[pl.DataFrame, Path], None],
     opt_absolute_fn: Callable[[Path], Path],
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    plmonkeypatch: PlMonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     tmp_path.mkdir(exist_ok=True)
     path = opt_absolute_fn(tmp_path / "1")
 
     df = pl.DataFrame({"x": 1})
 
     write_func(df, path)
-
     assert_frame_equal(read_func(path), df)
 
 
@@ -92,7 +97,7 @@ def test_write_with_storage_options_22873(tmp_path: Path) -> None:
             with pytest.raises(
                 TypeError, match="unexpected keyword argument 'storage_options'"
             ):
-                func(df, path, storage_options={"test": "1"})  # type: ignore[operator]
+                func(df, path, storage_options={"test": "1"})  # type: ignore[call-overload]
 
             continue
 

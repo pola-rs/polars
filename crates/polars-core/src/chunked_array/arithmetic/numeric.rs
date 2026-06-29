@@ -48,7 +48,7 @@ macro_rules! impl_op_overload {
 impl_op_overload!(Add, add, wrapping_add, wrapping_add_scalar);
 impl_op_overload!(Sub, sub, wrapping_sub, wrapping_sub_scalar);
 impl_op_overload!(Mul, mul, wrapping_mul, wrapping_mul_scalar);
-impl_op_overload!(Div, div, legacy_div, legacy_div_scalar); // FIXME: replace this with true division.
+impl_op_overload!(Div, div, legacy_div, legacy_div_scalar); // TODO: replace this with true division.
 impl_op_overload!(Rem, rem, wrapping_mod, wrapping_mod_scalar);
 
 pub trait ArithmeticChunked {

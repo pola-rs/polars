@@ -1,12 +1,13 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_sql::*;
+use polars_testing::assert_dataframe_equal;
 
 fn create_ctx() -> SQLContext {
     let a = Column::new("a".into(), (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
     let b = Column::new("b".into(), 1..10i64);
-    let df = DataFrame::new(vec![a, b]).unwrap().lazy();
-    let mut ctx = SQLContext::new();
+    let df = DataFrame::new_infer_height(vec![a, b]).unwrap().lazy();
+    let ctx = SQLContext::new();
     ctx.register("df", df);
     ctx
 }
@@ -84,6 +85,7 @@ fn select_qualified_wildcard() {
     FROM test
     INNER JOIN test2
     USING(a)
+    ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     assert!(actual.equals(&expected));
@@ -117,6 +119,7 @@ fn select_qualified_column() {
     FROM test
     INNER JOIN test2
     USING(a)
+    ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     assert!(actual.equals(&expected));
@@ -144,6 +147,7 @@ fn test_union_all() {
     UNION ALL (
         SELECT * FROM test2
     )
+    ORDER BY b
     "#;
     let expected = polars_lazy::dsl::concat(
         vec![df1.lazy(), df2.lazy()],
@@ -158,7 +162,8 @@ fn test_union_all() {
     .unwrap();
 
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
-    assert!(actual.equals(&expected));
+
+    assert_dataframe_equal!(&actual, &expected);
 }
 
 #[test]
@@ -181,7 +186,7 @@ fn iss_9560_join_as() {
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
     let sql = r#"
-        SELECT * FROM df1 AS t1 JOIN df2 AS t2 ON t1.id = t2.id
+        SELECT * FROM df1 AS t1 JOIN df2 AS t2 ON t1.id = t2.id ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -216,7 +221,7 @@ fn prepare_compound_join_context() -> SQLContext {
         "c" => [1, 3, 4, 5, 7]
     }
     .unwrap();
-    let mut ctx = SQLContext::new();
+    let ctx = SQLContext::new();
     ctx.register("df1", df1.lazy());
     ctx.register("df2", df2.lazy());
     ctx.register("df3", df3.lazy());
@@ -229,6 +234,7 @@ fn test_compound_join_basic() {
     let sql = r#"
         SELECT * FROM df1
         INNER JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+        ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -294,6 +300,7 @@ fn test_compound_join_three_tables() {
             ON df1.a = df2.a AND df1.b = df2.b
           INNER JOIN df3
             ON df3.a = df1.a AND df3.b = df1.b
+          ORDER BY ALL
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     let expected = df! {
@@ -344,6 +351,7 @@ fn test_compound_join_nested_and() {
                     df1.b = df2.b AND
                     df1.c = df2.c AND
                     df1.d = df2.d
+            ORDER BY ALL
          "#
         );
         let actual = ctx.execute(sql.as_str()).unwrap().collect().unwrap();
@@ -434,6 +442,7 @@ fn test_compound_join_and_select_exclude_rename_replace() {
             INNER JOIN df2 ON df1.a = df2.a AND
               ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
         ) tbl
+        ORDER BY ALL
      "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
     let expected = df! {
@@ -458,6 +467,7 @@ fn test_compound_join_and_select_exclude_rename_replace() {
             INNER JOIN df2 ON df1.a = df2.a AND
               ((df1.b = df2.b AND df1.c = df2.c) AND df1.d = df2.d)
         ) tbl
+        ORDER BY ALL
      "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
 
@@ -518,7 +528,7 @@ fn test_join_multi_consecutive() {
     let sql = r#"
         SELECT tbl_a.a, tbl_a.b, tbl_b.c, tbl_c.d FROM tbl_a
         INNER JOIN tbl_b ON tbl_a.a = tbl_b.a AND tbl_a.b = tbl_b.b
-        INNER JOIN tbl_c ON tbl_a.c = tbl_c.c
+        INNER JOIN tbl_c ON tbl_b.c = tbl_c.c
         ORDER BY a DESC
     "#;
     let actual = ctx.execute(sql).unwrap().collect().unwrap();
@@ -590,14 +600,69 @@ fn test_compound_invalid_1() {
 #[should_panic]
 fn test_compound_invalid_2() {
     let mut ctx = prepare_compound_join_context();
-    let sql = "SELECT * FROM df1 LEFT JOIN df2 ON df1.a = df2.a AND b = b";
+    let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
     let _ = ctx.execute(sql).unwrap();
 }
 
 #[test]
-#[should_panic]
-fn test_compound_invalid_3() {
+fn test_implicit_join_basic() {
     let mut ctx = prepare_compound_join_context();
-    let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
-    let _ = ctx.execute(sql).unwrap();
+
+    // Implicit join: equivalent to INNER JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+    let implicit_sql = r#"
+        SELECT * FROM df1, df2
+        WHERE df1.a = df2.a AND df1.b = df2.b
+        ORDER BY ALL
+    "#;
+    let explicit_sql = r#"
+        SELECT * FROM df1
+        INNER JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+        ORDER BY ALL
+    "#;
+
+    let actual = ctx.execute(implicit_sql).unwrap().collect().unwrap();
+    let expected = ctx.execute(explicit_sql).unwrap().collect().unwrap();
+
+    assert!(
+        actual.equals(&expected),
+        "implicit join should match explicit join\nimplicit={actual:?}\nexplicit={expected:?}"
+    );
+}
+
+#[test]
+fn test_join_non_equi_range() {
+    // Range join (two inequalities resolved via `join_where`): amount in [lo, hi]
+    let orders = df! {
+        "id" => [1, 2, 3, 4, 5],
+        "amount" => [50, 100, 200, 150, 300],
+    }
+    .unwrap();
+    let ranges = df! {
+        "label" => ["low", "mid", "high"],
+        "lo" => [0, 100, 200],
+        "hi" => [99, 199, 500],
+    }
+    .unwrap();
+    let mut ctx = SQLContext::new();
+    ctx.register("orders", orders.lazy());
+    ctx.register("ranges", ranges.lazy());
+
+    let sql = r#"
+        SELECT orders.id, orders.amount, ranges.label
+        FROM orders
+        INNER JOIN ranges ON orders.amount >= ranges.lo AND orders.amount <= ranges.hi
+        ORDER BY orders.id
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+    let expected = df! {
+        "id" => [1, 2, 3, 4, 5],
+        "amount" => [50, 100, 200, 150, 300],
+        "label" => ["low", "mid", "high", "mid", "high"],
+    }
+    .unwrap();
+
+    assert!(
+        actual.equals(&expected),
+        "expected = {expected:?}\nactual={actual:?}"
+    );
 }

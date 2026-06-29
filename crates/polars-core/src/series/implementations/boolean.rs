@@ -1,5 +1,4 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -19,10 +18,6 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     }
     fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
-    }
-
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
     }
 
     #[cfg(feature = "zip_with")]
@@ -65,6 +60,16 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.agg_arg_max(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         self.0.agg_sum(groups)
     }
@@ -90,15 +95,15 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 
     #[cfg(feature = "bitwise")]
     unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
-        self.0.agg_and(groups)
+        self.0.agg_and(groups).into_series()
     }
     #[cfg(feature = "bitwise")]
     unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
-        self.0.agg_or(groups)
+        self.0.agg_or(groups).into_series()
     }
     #[cfg(feature = "bitwise")]
     unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
-        self.0.agg_xor(groups)
+        self.0.agg_xor(groups).into_series()
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -192,12 +197,20 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
 
     fn rechunk(&self) -> Series {
         self.0.rechunk().into_owned().into_series()
+    }
+
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0.clone().with_validity(validity).into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -244,6 +257,11 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         ChunkUnique::arg_unique(&self.0)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(&self.0)
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -272,6 +290,9 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         Ok(ChunkAggSeries::min_reduce(&self.0))
+    }
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::new(DataType::Float64, self.mean().into()))
     }
     fn median_reduce(&self) -> PolarsResult<Scalar> {
         let ca = self

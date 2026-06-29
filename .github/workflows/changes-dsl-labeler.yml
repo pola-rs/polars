@@ -1,0 +1,38 @@
+name: 'changes-dsl labeler'
+on:
+  - pull_request_target
+
+jobs:
+  changes-dsl-labeler:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch PR merge commit
+        run: |
+          git fetch origin refs/pull/${{ github.event.number }}/merge:pr-merge-commit
+
+      - name: Update label
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          PR_NUMBER: ${{ github.event.number }}
+          REPO: ${{ github.repository }}
+          TOKEN: ${{ github.token }}
+        run: |
+          if [ "$(git diff "origin/$BASE_REF"..pr-merge-commit crates/polars-plan/dsl-schema-hashes.json)" ]; then
+            curl -s -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: token $TOKEN" \
+              "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/labels" \
+              -d '{"labels":["changes-dsl"]}' \
+              || true
+          else
+            curl -s -X DELETE \
+              -H 'Accept: application/vnd.github.v3+json' \
+              -H "Authorization: token $TOKEN" \
+              "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/labels/changes-dsl" \
+              || true
+          fi

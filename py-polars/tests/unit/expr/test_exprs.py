@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
@@ -9,6 +10,9 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars._plr import InvalidOperationError
+from polars.exceptions import ChronoFormatWarning
+from polars.expr.string import _validate_format_argument
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import (
     DATETIME_DTYPES,
@@ -23,10 +27,16 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
+def assert_expression_repr_matches(expression: pl.Expr, match: str) -> None:
+    """Assert that the `repr` of a given Expression matches expectation."""
+    pattern = rf"<Expr \['{re.escape(match)}'\] at 0x[\dA-Fa-f]+>$"
+    assert re.search(pattern, repr(expression)) is not None
+
+
 def test_arg_true() -> None:
     df = pl.DataFrame({"a": [1, 1, 2, 1]})
     res = df.select((pl.col("a") == 1).arg_true())
-    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.UInt32)])
+    expected = pl.DataFrame([pl.Series("a", [0, 1, 3], dtype=pl.get_index_type())])
     assert_frame_equal(res, expected)
 
 
@@ -101,7 +111,7 @@ def test_len_expr() -> None:
 
     out = df.select(pl.len())
     assert out.shape == (1, 1)
-    assert cast(int, out.item()) == 5
+    assert cast("int", out.item()) == 5
 
     out = df.group_by("b", maintain_order=True).agg(pl.len())
     assert out["b"].to_list() == ["a", "b"]
@@ -140,10 +150,7 @@ def test_entropy() -> None:
 
 @pytest.mark.parametrize(
     "dtype",
-    [
-        pl.Float64,
-        pl.Float32,
-    ],
+    FLOAT_DTYPES,
 )
 def test_log_broadcast(dtype: pl.DataType) -> None:
     a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
@@ -161,32 +168,45 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
 
 
 @pytest.mark.parametrize(
-    "dtype",
+    ("dtype", "expected_dtype"),
     [
-        pl.Float32,
-        pl.Int32,
-        pl.Int64,
+        (pl.Float64, pl.Float64),
+        (pl.Float32, pl.Float32),
+        (pl.Float16, pl.Float16),
+        (pl.Int32, pl.Float64),
+        (pl.Int64, pl.Float64),
     ],
 )
-def test_log_broadcast_upcasting(dtype: pl.DataType) -> None:
+def test_log_broadcast_upcasting(
+    dtype: pl.DataType, expected_dtype: pl.DataType
+) -> None:
     a = pl.Series("a", [1, 3, 9, 27, 81], dtype=dtype)
     b = pl.Series("a", [3, 3, 9, 3, 9], dtype=dtype)
-    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=pl.Float64)
+    expected = pl.Series("a", [0, 1, 1, 3, 2], dtype=expected_dtype)
 
-    assert_series_equal(a.log(b.cast(pl.Float64)), expected)
-    assert_series_equal(a.cast(pl.Float64).log(b), expected)
+    assert_series_equal(a.log(b), expected)
 
 
 @pytest.mark.parametrize(
     ("dtype_a", "dtype_base", "dtype_out"),
     [
-        (pl.UInt8, pl.UInt8, pl.Float64),
-        (pl.Int32, pl.Int32, pl.Float64),
-        (pl.Decimal(21, 3), pl.Decimal(21, 3), pl.Float64),
+        (pl.Float16, pl.Float16, pl.Float16),
+        (pl.Float16, pl.Float32, pl.Float16),
+        (pl.Float16, pl.Float64, pl.Float16),
+        (pl.Float32, pl.Float16, pl.Float32),
         (pl.Float32, pl.Float32, pl.Float32),
-        (pl.Float32, pl.Float64, pl.Float64),
+        (pl.Float32, pl.Float64, pl.Float32),
+        (pl.Float64, pl.Float16, pl.Float64),
         (pl.Float64, pl.Float32, pl.Float64),
         (pl.Float64, pl.Float64, pl.Float64),
+        (pl.Float16, pl.Int32, pl.Float16),
+        (pl.Float32, pl.Int32, pl.Float32),
+        (pl.Float64, pl.Int32, pl.Float64),
+        (pl.Int32, pl.Float16, pl.Float16),
+        (pl.Int32, pl.Float32, pl.Float32),
+        (pl.Int32, pl.Float64, pl.Float64),
+        (pl.Decimal(21, 3), pl.Decimal(21, 3), pl.Float64),
+        (pl.Int32, pl.Int32, pl.Float64),
     ],
 )
 def test_log(
@@ -198,18 +218,20 @@ def test_log(
     base = pl.Series("base", [3, 3, 9, 3, 9], dtype=dtype_base)
     lf = pl.LazyFrame([a, base])
 
-    # log
-    result = lf.select(pl.col("a").log("base"))
+    result = lf.select(pl.col("a").log(pl.col("base")))
     expected = pl.DataFrame({"a": pl.Series([0, 1, 1, 3, 2], dtype=dtype_out)})
 
     assert_frame_equal(result.collect(), expected)
-    assert result.collect_schema() == expected.schema
+    assert result.collect_schema() == expected.schema, (
+        f"{result.collect_schema()} != {expected.schema}"
+    )
 
 
 @pytest.mark.parametrize(
     ("dtype_in", "dtype_out"),
     [
         (pl.Int32, pl.Float64),
+        (pl.Float16, pl.Float16),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
     ],
@@ -271,6 +293,7 @@ def test_dtype_col_selection() -> None:
             "l": pl.UInt16,
             "m": pl.UInt32,
             "n": pl.UInt64,
+            "o": pl.Float16,
         },
     )
     assert df.select(pl.col(INTEGER_DTYPES)).columns == [
@@ -283,7 +306,7 @@ def test_dtype_col_selection() -> None:
         "m",
         "n",
     ]
-    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j"]
+    assert df.select(pl.col(FLOAT_DTYPES)).columns == ["i", "j", "o"]
     assert df.select(pl.col(NUMERIC_DTYPES)).columns == [
         "e",
         "f",
@@ -295,6 +318,7 @@ def test_dtype_col_selection() -> None:
         "l",
         "m",
         "n",
+        "o",
     ]
     assert df.select(pl.col(TEMPORAL_DTYPES)).columns == [
         "a1",
@@ -467,7 +491,9 @@ def test_lit_dtypes() -> None:
             "dur_ms": lit_series(td, pl.Duration("ms")),
             "dur_us": lit_series(td, pl.Duration("us")),
             "dur_ns": lit_series(td, pl.Duration("ns")),
+            "f16": lit_series(0, pl.Float16),
             "f32": lit_series(0, pl.Float32),
+            "f64": lit_series(0, pl.Float64),
             "u16": lit_series(0, pl.UInt16),
             "i16": lit_series(0, pl.Int16),
             "i64": lit_series(pl.Series([8]), None),
@@ -485,7 +511,9 @@ def test_lit_dtypes() -> None:
         pl.Duration("ms"),
         pl.Duration("us"),
         pl.Duration("ns"),
+        pl.Float16,
         pl.Float32,
+        pl.Float64,
         pl.UInt16,
         pl.Int16,
         pl.Int64,
@@ -502,6 +530,8 @@ def test_lit_dtypes() -> None:
         td_ms,
         td,
         td,
+        0,
+        0,
         0,
         0,
         0,
@@ -676,32 +706,39 @@ def test_tail() -> None:
 
 def test_repr_short_expression() -> None:
     expr = pl.functions.all().len().name.prefix("length-long:")
-    # we cut off the last ten characters because that includes the
-    # memory location which will vary between runs
-    result = repr(expr).split("0x")[0]
-
-    expected = "<Expr ['cs.all().len().prefix(length-l…'] at "
-    assert result == expected
+    assert_expression_repr_matches(
+        expression=expr,
+        match="cs.all().len().name.prefix(len…",
+    )
 
 
 def test_repr_long_expression() -> None:
     expr = pl.functions.col(pl.String).str.count_matches("")
-
-    # we cut off the last ten characters because that includes the
-    # memory location which will vary between runs
-    result = repr(expr).split("0x")[0]
-
-    # note the … denoting that there was truncated text
-    expected = "<Expr ['cs.string().str.count_matches(…'] at "
-    assert result == expected
-    assert repr(expr).endswith(">")
+    assert_expression_repr_matches(
+        expression=expr,
+        match="cs.string().str.count_matches(…",
+    )
 
 
 def test_repr_gather() -> None:
-    result = repr(pl.col("a").gather(0))
-    assert 'col("a").gather(dyn int: 0)' in result
-    result = repr(pl.col("a").get(0))
-    assert 'col("a").get(dyn int: 0)' in result
+    assert_expression_repr_matches(
+        expression=pl.col("a").gather(0),
+        match='col("a").gather(dyn int: 0)',
+    )
+    assert_expression_repr_matches(
+        expression=pl.col("a").get(0),
+        match='col("a").get(dyn int: 0)',
+    )
+
+
+def test_repr_miscellaneous() -> None:
+    expr = pl.struct("x", pl.col("y"), pl.col("z").sin() ** 2)
+    assert_expression_repr_matches(
+        expression=expr,
+        match='as_struct("x", "y", col("z").s…',
+    )
+    full_repr = expr._pyexpr.to_str()
+    assert full_repr == 'as_struct("x", "y", col("z").sin().pow([dyn int: 2]))'
 
 
 def test_replace_no_cse() -> None:
@@ -742,7 +779,10 @@ def test_slice() -> None:
 @pytest.mark.may_fail_cloud  # reason: shrink_dtype
 def test_function_expr_scalar_identification_18755() -> None:
     # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"use `Series\.shrink_dtype` instead",
+    ):
         assert_frame_equal(
             pl.DataFrame({"a": [1, 2]}).with_columns(
                 pl.lit(5, pl.Int64).shrink_dtype().alias("b")
@@ -751,8 +791,94 @@ def test_function_expr_scalar_identification_18755() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("format", "bad_pattern"),
+    [
+        ("%Y-%m-%d %H:%M:%S.%f", ".%f"),
+        ("%Y-%m-%d %H:%M:%S%f", "%f"),
+    ],
+)
+def test_validate_format_argument_raises_chrono_format_warning(
+    format: str, bad_pattern: str
+) -> None:
+    with pytest.raises(
+        ChronoFormatWarning,
+        match=rf"Detected the pattern `{re.escape(bad_pattern)}`",
+    ):
+        _validate_format_argument(format)
+
+
 def test_concat_deprecation() -> None:
-    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
         pl.Series(["foo"]).str.concat()
-    with pytest.deprecated_call(match="`str.concat` is deprecated."):
+    with pytest.deprecated_call(match=r"`str\.concat` is deprecated."):
         pl.DataFrame({"foo": ["bar"]}).select(pl.all().str.concat())
+
+
+@pytest.mark.parametrize(
+    ("compatible_set"),
+    [
+        [pl.UInt8, pl.Int8],
+        [pl.UInt16, pl.Int16, pl.Float16],
+        [pl.UInt32, pl.Int32, pl.Float32],
+        [pl.UInt64, pl.Int64, pl.Float64],
+        [pl.UInt128, pl.Int128],
+    ],
+)
+def test_reinterpret_numeric_dtype_13659(compatible_set: list[pl.DataType]) -> None:
+    for source_dtype, target_dtype in permutations(compatible_set, 2):
+        q = (
+            pl.DataFrame({"a": pl.Series([0, 1, 2]).cast(source_dtype)})
+            .lazy()
+            .select(pl.col("a").reinterpret(dtype=target_dtype))
+        )
+
+        assert q.collect_schema().dtypes() == [target_dtype]
+
+        expect = (
+            pl.DataFrame({"a": pl.Series([0, 1, 2]).cast(target_dtype)})
+            if source_dtype.is_integer() and target_dtype.is_integer()
+            else pl.DataFrame(
+                {
+                    "a": pl.Series([0, 1, 2])
+                    .cast(source_dtype)
+                    .to_numpy()
+                    .view(pl.Series([1]).cast(target_dtype).to_numpy().dtype)
+                }
+            )
+        )
+
+        assert_frame_equal(q.collect(), expect)
+
+
+def test_reinterpret_errors_13659() -> None:
+    with pytest.raises(
+        ValueError,
+        match="reinterpret requires exactly one of `signed` or `dtype` to be specified",
+    ):
+        pl.element().reinterpret()
+
+    q = pl.LazyFrame(schema={"a": pl.String}).select(
+        pl.first().reinterpret(dtype=pl.Int8)
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot reinterpret non-numeric input dtype 'String'",
+    ):
+        q.collect_schema()
+
+    q = pl.LazyFrame(schema={"a": pl.Int8}).select(
+        pl.first().reinterpret(dtype=pl.Int16)
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="cannot reinterpret from Int8 to Int16",
+    ):
+        q.collect_schema()
+
+
+def test_append_no_upcast_27345() -> None:
+    with pytest.raises(pl.exceptions.SchemaError):
+        pl.select(pl.lit("Bob").append(1, upcast=False))

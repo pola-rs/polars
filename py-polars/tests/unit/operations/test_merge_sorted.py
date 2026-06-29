@@ -72,8 +72,8 @@ def test_merge_sorted_categorical() -> None:
 
 
 def test_merge_sorted_categorical_lexical() -> None:
-    left = pl.Series("a", ["b", "a"], pl.Categorical("lexical")).sort().to_frame()
-    right = pl.Series("a", ["b", "b", "a"], pl.Categorical("lexical")).sort().to_frame()
+    left = pl.Series("a", ["b", "a"], pl.Categorical()).sort().to_frame()
+    right = pl.Series("a", ["b", "b", "a"], pl.Categorical()).sort().to_frame()
     result = left.merge_sorted(right, "a").get_column("a")
     expected = left.get_column("a").append(right.get_column("a")).sort()
     assert_series_equal(result, expected)
@@ -205,11 +205,6 @@ def test_merge_sorted_parametric_struct(lhs: pl.Series, rhs: pl.Series) -> None:
 @given(
     s=series(
         name="a",
-        excluded_dtypes=[
-            pl.Categorical(
-                ordering="lexical"
-            ),  # Bug. See https://github.com/pola-rs/polars/issues/21025
-        ],
         allow_null=False,  # See: https://github.com/pola-rs/polars/issues/20991
     ),
 )
@@ -231,17 +226,13 @@ def test_merge_time() -> None:
 
 
 def test_merge_sorted_categorical_global_lexical() -> None:
-    df1 = pl.DataFrame(
-        {"a": pl.Series(["a", "e", "f"], dtype=pl.Categorical("lexical"))}
-    )
-    df2 = pl.DataFrame(
-        {"a": pl.Series(["a", "c", "d"], dtype=pl.Categorical("lexical"))}
-    )
+    df1 = pl.DataFrame({"a": pl.Series(["a", "e", "f"], dtype=pl.Categorical())})
+    df2 = pl.DataFrame({"a": pl.Series(["a", "c", "d"], dtype=pl.Categorical())})
     expected = pl.DataFrame(
         {
             "a": pl.Series(
                 (["a", "a", "c", "d", "e", "f"]),
-                dtype=pl.Categorical("lexical"),
+                dtype=pl.Categorical(),
             )
         }
     )
@@ -250,8 +241,8 @@ def test_merge_sorted_categorical_global_lexical() -> None:
 
 
 def test_merge_sorted_categorical_21952() -> None:
-    df1 = pl.DataFrame({"a": ["a", "b", "c"]}).cast(pl.Categorical("lexical"))
-    df2 = pl.DataFrame({"a": ["a", "b", "d"]}).cast(pl.Categorical("lexical"))
+    df1 = pl.DataFrame({"a": ["a", "b", "c"]}).cast(pl.Categorical())
+    df2 = pl.DataFrame({"a": ["a", "b", "d"]}).cast(pl.Categorical())
     df = df1.merge_sorted(df2, key="a")
     assert repr(df) == (
         "shape: (6, 1)\n"
@@ -312,3 +303,143 @@ def test_merge_sorted_chain_streaming_21789_b(streaming: bool) -> None:
     out = pq.collect(engine="streaming" if streaming else "in-memory")
 
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("n_dfs", [3, 4, 5])  # balanced tree +/- 1
+@pytest.mark.parametrize("lazy", [True, False])
+def test_merge_sorted_multiple_associativity(n_dfs: int, lazy: bool) -> None:
+    dfs = [
+        pl.DataFrame({"foo": ["a1", "a2"], "n": [10, 20]}),
+        pl.DataFrame({"foo": ["b1", "b2"], "n": [11, 21]}),
+        pl.DataFrame({"foo": ["c1", "c2"], "n": [12, 22]}),
+        pl.DataFrame({"foo": ["d1", "d2"], "n": [13, 23]}),
+        pl.DataFrame({"foo": ["e1", "e2"], "n": [14, 24]}),
+    ][:n_dfs]
+
+    if lazy:
+        lfs = [df.lazy() for df in dfs]
+        full = pl.merge_sorted(lfs, key="n").collect()
+
+        chained_from_left = lfs[0]
+        for lf in lfs[1:]:
+            chained_from_left = chained_from_left.merge_sorted(lf, key="n")
+
+        assert_frame_equal(chained_from_left.collect(), full)
+
+        chained_from_right = lfs[-1]
+        for lf in reversed(lfs[:-1]):
+            chained_from_right = lf.merge_sorted(chained_from_right, key="n")
+
+        assert_frame_equal(chained_from_right.collect(), full)
+    else:
+        df_full: pl.DataFrame = pl.merge_sorted(dfs, key="n")
+
+        df_chained_from_left: pl.DataFrame = dfs[0]
+        for df in dfs[1:]:
+            df_chained_from_left = df_chained_from_left.merge_sorted(df, key="n")
+
+        assert_frame_equal(df_chained_from_left, df_full)
+
+        df_chained_from_right: pl.DataFrame = dfs[-1]
+        for df in reversed(dfs[:-1]):
+            df_chained_from_right = df.merge_sorted(df_chained_from_right, key="n")
+
+        assert_frame_equal(df_chained_from_right, df_full)
+
+
+@given(
+    lhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+    rhs=series(name="key", allowed_dtypes=[pl.Int32], allow_null=False),
+)
+def test_merge_sorted_maintain_order_parametric(lhs: pl.Series, rhs: pl.Series) -> None:
+    left = (
+        pl.DataFrame([lhs.sort()])
+        .with_row_index("left_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("right_idx"),
+            pl.lit(0, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+    right = (
+        pl.DataFrame([rhs.sort()])
+        .with_row_index("right_idx")
+        .with_columns(
+            pl.lit(None, dtype=pl.UInt32).alias("left_idx"),
+            pl.lit(1, dtype=pl.UInt8).alias("df"),
+        )
+        .select("key", "left_idx", "right_idx", "df")
+    )
+
+    actual = (
+        left.lazy().merge_sorted(right.lazy(), key="key", maintain_order=True).collect()
+    )
+    expected = pl.concat([left, right]).sort(["key", "df"], maintain_order=True)
+
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_maintain_order(n_frames: int) -> None:
+    dfs = [
+        pl.DataFrame(
+            {
+                "key": [0, 0, 1, 1],
+                "src": [i, i, i, i],
+                "pos": [0, 1, 0, 1],
+            }
+        )
+        for i in range(n_frames)
+    ]
+
+    chained = dfs[0].lazy()
+    for df in dfs[1:]:
+        chained = chained.merge_sorted(df.lazy(), key="key", maintain_order=True)
+
+    expected = pl.concat(dfs).sort(["key", "src", "pos"], maintain_order=True)
+
+    assert_frame_equal(chained.collect(), expected)
+
+
+@pytest.mark.parametrize("n_frames", [4, 5])
+def test_merge_sorted_deep_chain_with_sort_collect(n_frames: int) -> None:
+    dfs = [
+        pl.DataFrame(
+            {
+                "foo": [f"lazy-bear-{i}", f"eager-bear-{i}"],
+                "n": [10 + i, 110 + i],
+            }
+        )
+        for i in range(n_frames)
+    ]
+    lfs = [df.lazy() for df in dfs]
+
+    chained = lfs[0]
+    for lf in lfs[1:]:
+        chained = chained.merge_sorted(lf, key="n")
+
+    expected = pl.DataFrame(
+        {
+            "foo": [f"lazy-bear-{i}" for i in range(n_frames)]
+            + [f"eager-bear-{i}" for i in range(n_frames)],
+            "n": [10 + i for i in range(n_frames)] + [110 + i for i in range(n_frames)],
+        }
+    )
+    result = chained.sort("n", "foo").collect()
+
+    assert_frame_equal(result, expected)
+
+
+def test_merge_sorted_with_list_27563() -> None:
+    df1 = pl.DataFrame({"key": ["a", "c"], "list": [[1, 2], [5, 6]]})
+    df2 = pl.DataFrame({"key": ["b", "d"], "list": [[3, 4], [7, 8]]})
+
+    result = df1.merge_sorted(df2, key="key")
+
+    expected = pl.DataFrame(
+        {
+            "key": ["a", "b", "c", "d"],
+            "list": [[1, 2], [3, 4], [5, 6], [7, 8]],
+        }
+    )
+    assert_frame_equal(result, expected)

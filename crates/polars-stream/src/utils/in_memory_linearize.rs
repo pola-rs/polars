@@ -1,8 +1,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use polars_core::POOL;
-use polars_core::frame::DataFrame;
+use polars_core::runtime::RAYON;
 use polars_utils::priority::Priority;
 use polars_utils::sync::SyncPtr;
 
@@ -11,10 +10,10 @@ use crate::morsel::MorselSeq;
 /// Amount of morsels we need to consider spawning a thread during linearization.
 const MORSELS_PER_THREAD: usize = 256;
 
-/// Given a Vec<Morsel> for each pipe, it will output a vec of the contained dataframes.
-/// If the morsels are ordered by their sequence ids within each vec, and no
+/// Given a Vec<(MorselSeq, T)> for each pipe, it will output a linearized vec.
+/// If the items are ordered by their sequence ids within each vec, and no
 /// sequence ID occurs in multiple vecs, the output will follow the same order globally.
-pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<DataFrame> {
+pub fn linearize<T: Send + Sync>(mut morsels_per_pipe: Vec<Vec<(MorselSeq, T)>>) -> Vec<T> {
     let num_morsels: usize = morsels_per_pipe.iter().map(|p| p.len()).sum();
     if num_morsels == 0 {
         return vec![];
@@ -22,7 +21,7 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<
 
     let n_threads = num_morsels
         .div_ceil(MORSELS_PER_THREAD)
-        .min(POOL.current_num_threads()) as u64;
+        .min(RAYON.current_num_threads()) as u64;
 
     // Partitioning based on sequence number.
     let max_seq = morsels_per_pipe
@@ -33,9 +32,9 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<
     let seqs_per_thread = (max_seq + 1).div_ceil(n_threads);
 
     let morsels_per_p = &morsels_per_pipe;
-    let mut dataframes: Vec<DataFrame> = Vec::with_capacity(num_morsels);
-    let dataframes_ptr = unsafe { SyncPtr::new(dataframes.as_mut_ptr()) };
-    POOL.scope(|s| {
+    let mut out: Vec<T> = Vec::with_capacity(num_morsels);
+    let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
+    RAYON.scope(|s| {
         let mut out_offset = 0;
         let mut stop_idx_per_pipe = vec![0; morsels_per_p.len()];
         for t in 0..n_threads {
@@ -62,29 +61,29 @@ pub fn linearize(mut morsels_per_pipe: Vec<Vec<(MorselSeq, DataFrame)>>) -> Vec<
                         morsels_per_p,
                         cur_idx_per_pipe,
                         &stop_idx_per_pipe,
-                        dataframes_ptr.get().add(this_thread_out_offset),
+                        out_ptr.get().add(this_thread_out_offset),
                     )
                 });
             }
         }
     });
 
-    // SAFETY: all partitions were handled, so dataframes is full filled and
+    // SAFETY: all partitions were handled, so out is fully filled and
     // morsels_per_pipe fully consumed.
     unsafe {
         for morsels in morsels_per_pipe.iter_mut() {
             morsels.set_len(0);
         }
-        dataframes.set_len(num_morsels);
+        out.set_len(num_morsels);
     }
-    dataframes
+    out
 }
 
-unsafe fn fill_partition(
-    morsels_per_pipe: &[Vec<(MorselSeq, DataFrame)>],
+unsafe fn fill_partition<T>(
+    morsels_per_pipe: &[Vec<(MorselSeq, T)>],
     mut cur_idx_per_pipe: Vec<usize>,
     stop_idx_per_pipe: &[usize],
-    mut out_ptr: *mut DataFrame,
+    mut out_ptr: *mut T,
 ) {
     // K-way merge, initialize priority queue with one element per pipe.
     let mut kmerge = BinaryHeap::with_capacity(morsels_per_pipe.len());

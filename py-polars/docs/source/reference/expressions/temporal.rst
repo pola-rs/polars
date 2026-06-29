@@ -18,6 +18,7 @@ The following methods are available under the `expr.dt` attribute.
     Expr.dt.date
     Expr.dt.datetime
     Expr.dt.day
+    Expr.dt.days_in_month
     Expr.dt.dst_offset
     Expr.dt.epoch
     Expr.dt.hour

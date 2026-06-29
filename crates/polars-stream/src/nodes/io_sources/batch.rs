@@ -1,13 +1,13 @@
 //! Reads batches from a `dyn Fn`
 
 use async_trait::async_trait;
+use polars_async::executor::{JoinHandle, TaskPriority, spawn};
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::{PolarsResult, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{JoinHandle, TaskPriority, spawn};
 use crate::execute::StreamingExecutionState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::{
@@ -84,7 +84,7 @@ pub type GetBatchFn =
 pub use get_batch_state::GetBatchState;
 
 mod get_batch_state {
-    use polars_io::pl_async::get_runtime;
+    use polars_core::runtime::ASYNC;
 
     use super::{DataFrame, GetBatchFn, PolarsResult, StreamingExecutionState};
 
@@ -99,7 +99,7 @@ mod get_batch_state {
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            get_runtime()
+            ASYNC
                 .spawn_blocking({
                     move || unsafe { slf.next_impl(&execution_state).map(|x| (slf, x)) }
                 })
@@ -111,7 +111,7 @@ mod get_batch_state {
             mut slf: Self,
             execution_state: StreamingExecutionState,
         ) -> PolarsResult<(Self, Option<DataFrame>)> {
-            get_runtime()
+            ASYNC
                 .spawn_blocking({
                     move || unsafe { slf.peek_impl(&execution_state).map(|x| (slf, x)) }
                 })
@@ -180,6 +180,8 @@ impl FileReader for BatchFnReader {
             predicate: None,
             cast_columns_policy: _,
             num_pipelines: _,
+            disable_morsel_split: _,
+            last_morsel_pipelines: _,
             callbacks:
                 FileReaderCallbacks {
                     mut file_schema_tx,
@@ -197,7 +199,7 @@ impl FileReader for BatchFnReader {
             _ = file_schema_tx
                 .take()
                 .unwrap()
-                .try_send(self.output_schema.clone().unwrap());
+                .send(self.output_schema.clone().unwrap());
         }
 
         let mut get_batch_state = self
@@ -215,14 +217,13 @@ impl FileReader for BatchFnReader {
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
 
         let handle = spawn(TaskPriority::Low, async move {
-            if let Some(mut file_schema_tx) = file_schema_tx {
+            if let Some(file_schema_tx) = file_schema_tx {
                 let opt_df;
 
                 (get_batch_state, opt_df) =
                     GetBatchState::peek(get_batch_state, execution_state.clone()).await?;
 
-                _ = file_schema_tx
-                    .try_send(opt_df.map(|df| df.schema().clone()).unwrap_or_default())
+                _ = file_schema_tx.send(opt_df.map(|df| df.schema().clone()).unwrap_or_default())
             }
 
             let mut seq: u64 = 0;
@@ -253,14 +254,14 @@ impl FileReader for BatchFnReader {
                 seq = seq.saturating_add(1);
             }
 
-            if let Some(mut row_position_on_end_tx) = row_position_on_end_tx {
+            if let Some(row_position_on_end_tx) = row_position_on_end_tx {
                 let n_rows_seen = IdxSize::try_from(n_rows_seen)
                     .map_err(|_| polars_err!(bigidx, ctx = "batch reader", size = n_rows_seen))?;
 
-                _ = row_position_on_end_tx.try_send(n_rows_seen)
+                _ = row_position_on_end_tx.send(n_rows_seen)
             }
 
-            if let Some(mut n_rows_in_file_tx) = n_rows_in_file_tx {
+            if let Some(n_rows_in_file_tx) = n_rows_in_file_tx {
                 if verbose {
                     eprintln!("[BatchFnReader]: read to end for full row count");
                 }
@@ -281,7 +282,7 @@ impl FileReader for BatchFnReader {
                 let n_rows_seen = IdxSize::try_from(n_rows_seen)
                     .map_err(|_| polars_err!(bigidx, ctx = "batch reader", size = n_rows_seen))?;
 
-                _ = n_rows_in_file_tx.try_send(n_rows_seen)
+                _ = n_rows_in_file_tx.send(n_rows_seen)
             }
 
             Ok(())

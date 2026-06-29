@@ -9,7 +9,6 @@ pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
 }
 
 impl<
-    'a,
     T: NativeType
         + IsFloat
         + Float
@@ -23,30 +22,37 @@ impl<
         + SealedRolling
         + PartialOrd
         + Sub<Output = T>,
-> RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
+> RollingAggWindowNulls<T> for QuantileWindow<'_, T>
 {
-    unsafe fn new(
+    type This<'a> = QuantileWindow<'a, T>;
+
+    fn new<'a>(
         slice: &'a [T],
         validity: &'a Bitmap,
         start: usize,
         end: usize,
         params: Option<RollingFnParams>,
         window_size: Option<usize>,
-    ) -> Self {
+    ) -> Self::This<'a> {
         let params = params.unwrap();
         let RollingFnParams::Quantile(params) = params else {
             unreachable!("expected Quantile params");
         };
-        Self {
+        QuantileWindow {
             sorted: SortedBufNulls::new(slice, validity, start, end, window_size),
             prob: params.prob,
             method: params.method,
         }
     }
 
-    unsafe fn update(&mut self, start: usize, end: usize) -> Option<T> {
-        let null_count = self.sorted.update(start, end);
+    unsafe fn update(&mut self, new_start: usize, new_end: usize) {
+        self.sorted.update(new_start, new_end);
+    }
+
+    fn get_agg(&self, _idx: usize) -> Option<T> {
         let mut length = self.sorted.len();
+        let null_count = self.sorted.null_count;
+
         // The min periods_issue will be taken care of when actually rolling
         if null_count == length {
             return None;
@@ -73,11 +79,8 @@ impl<
 
                 debug_assert!(idx <= top_idx);
                 let v = if idx != top_idx {
-                    let mut vals = self
-                        .sorted
-                        .index_range(idx + null_count..top_idx + null_count + 1);
-                    let low = vals.next().unwrap().unwrap();
-                    let high = vals.next().unwrap().unwrap();
+                    let low = self.sorted.get(idx + null_count).unwrap();
+                    let high = self.sorted.get(idx + null_count + 1).unwrap();
                     (low + high) / T::from::<f64>(2.0f64).unwrap()
                 } else {
                     self.sorted.get(idx + null_count).unwrap()
@@ -92,12 +95,8 @@ impl<
                 if top_idx == idx {
                     Some(self.sorted.get(idx + null_count).unwrap())
                 } else {
-                    let mut vals = self
-                        .sorted
-                        .index_range(idx + null_count..top_idx + null_count + 1);
-                    let low = vals.next().unwrap().unwrap();
-                    let high = vals.next().unwrap().unwrap();
-
+                    let low = self.sorted.get(idx + null_count).unwrap();
+                    let high = self.sorted.get(top_idx + null_count).unwrap();
                     let proportion = T::from(float_idx - idx as f64).unwrap();
                     Some(proportion * (high - low) + low)
                 }
@@ -108,6 +107,10 @@ impl<
 
     fn is_valid(&self, min_periods: usize) -> bool {
         self.sorted.is_valid(min_periods)
+    }
+
+    fn slice_len(&self) -> usize {
+        self.sorted.slice_len()
     }
 }
 
@@ -161,7 +164,7 @@ where
         return Box::new(out);
     }
     */
-    rolling_apply_agg_window::<QuantileWindow<_>, _, _>(
+    rolling_apply_agg_window::<QuantileWindow<T>, _, _, _>(
         arr.values().as_slice(),
         arr.validity().as_ref().unwrap(),
         window_size,
@@ -173,8 +176,8 @@ where
 
 #[cfg(test)]
 mod test {
-    use arrow::buffer::Buffer;
     use arrow::datatypes::ArrowDataType;
+    use polars_buffer::Buffer;
 
     use super::*;
 

@@ -1,1 +1,1 @@
-maturin
+maturin<=1.12.4  # https://github.com/PyO3/maturin/issues/3106

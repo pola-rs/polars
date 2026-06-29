@@ -3,7 +3,8 @@ use arrow::array::{
     ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array, Utf8ViewArray,
 };
 use arrow::bitmap::Bitmap;
-use arrow::types::{days_ms, f16, i256, months_days_ns};
+use arrow::types::{days_ms, i256, months_days_ns};
+use polars_utils::float16::pf16;
 
 use crate::comparisons::TotalEqKernel;
 
@@ -37,7 +38,7 @@ macro_rules! compare {
             PH::Primitive(PR::UInt32) => call_binary!(PrimitiveArray<u32>, lhs, rhs, $op),
             PH::Primitive(PR::UInt64) => call_binary!(PrimitiveArray<u64>, lhs, rhs, $op),
             PH::Primitive(PR::UInt128) => call_binary!(PrimitiveArray<u128>, lhs, rhs, $op),
-            PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<f16>, lhs, rhs, $op),
+            PH::Primitive(PR::Float16) => call_binary!(PrimitiveArray<pf16>, lhs, rhs, $op),
             PH::Primitive(PR::Float32) => call_binary!(PrimitiveArray<f32>, lhs, rhs, $op),
             PH::Primitive(PR::Float64) => call_binary!(PrimitiveArray<f64>, lhs, rhs, $op),
             PH::Primitive(PR::Int256) => call_binary!(PrimitiveArray<i256>, lhs, rhs, $op),
@@ -45,6 +46,7 @@ macro_rules! compare {
             PH::Primitive(PR::MonthDayNano) => {
                 call_binary!(PrimitiveArray<months_days_ns>, lhs, rhs, $op)
             },
+            PH::Primitive(PR::MonthDayMillis) => unimplemented!(),
 
             #[cfg(feature = "dtype-array")]
             PH::FixedSizeList => call_binary!(arrow::array::FixedSizeListArray, lhs, rhs, $op),
@@ -73,6 +75,7 @@ macro_rules! compare {
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>, lhs, rhs, $op),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>, lhs, rhs, $op),
             PH::Dictionary(I::UInt64) => call_binary!(DictionaryArray<u64>, lhs, rhs, $op),
+            PH::Dictionary(I::UInt128) => call_binary!(DictionaryArray<u128>, lhs, rhs, $op),
         }
     }};
 }

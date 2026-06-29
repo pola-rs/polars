@@ -54,26 +54,28 @@ fn test_full_outer_join_with_column_2988() -> PolarsResult<()> {
             ldf2,
             [col("key1"), col("key2")],
             [col("key1"), col("key2")],
-            JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            JoinArgs::new(JoinType::Full)
+                .with_maintain_order(MaintainOrderJoin::LeftRight)
+                .with_coalesce(JoinCoalesce::CoalesceColumns),
         )
         .with_columns([col("key1")])
         .collect()?;
     assert_eq!(out.get_column_names(), &["key1", "key2", "val1", "val2"]);
     assert_eq!(
         Vec::from(out.column("key1")?.str()?),
-        &[Some("bar"), Some("baz"), Some("foo")]
+        &[Some("foo"), Some("bar"), Some("baz")]
     );
     assert_eq!(
         Vec::from(out.column("key2")?.str()?),
-        &[Some("bar"), Some("baz"), Some("foo")]
+        &[Some("foo"), Some("bar"), Some("baz")]
     );
     assert_eq!(
         Vec::from(out.column("val1")?.i32()?),
-        &[Some(1), None, Some(3)]
+        &[Some(3), Some(1), None]
     );
     assert_eq!(
         Vec::from(out.column("val2")?.i32()?),
-        &[Some(6), Some(8), None]
+        &[None, Some(6), Some(8)]
     );
 
     Ok(())
@@ -119,15 +121,16 @@ fn test_projection_5086() -> PolarsResult<()> {
         .select([
             col("a"),
             col("b")
-                .gather("c")
+                .gather("c", false)
                 .cum_sum(false)
                 .over([col("a")])
+                .unwrap()
                 .gt(lit(0)),
         ])
         .select([
             col("a"),
             col("b")
-                .xor(col("b").shift(lit(1)).over([col("a")]))
+                .xor(col("b").shift(lit(1)).over([col("a")]).unwrap())
                 .fill_null(lit(true))
                 .alias("keep"),
         ])
@@ -153,8 +156,14 @@ fn test_unnest_pushdown() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .explode(by_name(["users"], true))
-        .unnest(by_name(["users"], true))
+        .explode(
+            by_name(["users"], true, false),
+            ExplodeOptions {
+                empty_as_null: true,
+                keep_nulls: true,
+            },
+        )
+        .unnest(by_name(["users"], true, false), None)
         .select([col("email")])
         .collect()?;
 

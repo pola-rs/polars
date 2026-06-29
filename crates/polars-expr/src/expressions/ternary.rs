@@ -1,6 +1,7 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_plan::prelude::*;
+use recursive::recursive;
 
 use super::*;
 use crate::expressions::{AggregationContext, PhysicalExpr};
@@ -67,7 +68,10 @@ fn finish_as_iters<'a>(
         // Exploded list should be equal to groups length.
         list_vals_len == ac_truthy.groups.len()
     {
-        out = out.explode(false)?
+        out = out.explode(ExplodeOptions {
+            empty_as_null: true,
+            keep_nulls: true,
+        })?
     }
 
     ac_truthy.with_agg_state(AggState::AggregatedList(out));
@@ -81,7 +85,8 @@ impl PhysicalExpr for TernaryExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+    #[recursive]
+    fn evaluate_impl(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let mut state = state.split();
         // Don't cache window functions as they run in parallel.
         state.remove_cache_window_flag();
@@ -91,7 +96,7 @@ impl PhysicalExpr for TernaryExpr {
         let op_truthy = || self.truthy.evaluate(df, &state);
         let op_falsy = || self.falsy.evaluate(df, &state);
         let (truthy, falsy) = if self.run_par {
-            POOL.install(|| rayon::join(op_truthy, op_falsy))
+            RAYON.install(|| rayon::join(op_truthy, op_falsy))
         } else {
             (op_truthy(), op_falsy())
         };
@@ -106,7 +111,8 @@ impl PhysicalExpr for TernaryExpr {
     }
 
     #[allow(clippy::ptr_arg)]
-    fn evaluate_on_groups<'a>(
+    #[recursive]
+    fn evaluate_on_groups_impl<'a>(
         &self,
         df: &DataFrame,
         groups: &'a GroupPositions,
@@ -116,7 +122,7 @@ impl PhysicalExpr for TernaryExpr {
         let op_truthy = || self.truthy.evaluate_on_groups(df, groups, state);
         let op_falsy = || self.falsy.evaluate_on_groups(df, groups, state);
         let (ac_mask, (ac_truthy, ac_falsy)) = if self.run_par {
-            POOL.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)))
+            RAYON.install(|| rayon::join(op_mask, || rayon::join(op_truthy, op_falsy)))
         } else {
             (op_mask(), (op_truthy(), op_falsy()))
         };
@@ -132,9 +138,8 @@ impl PhysicalExpr for TernaryExpr {
         // - AggregatedScalar or AggregatedList
         let mut has_non_unit_literal = false;
         let mut has_aggregated = false;
-        // If the length has changed then we must not apply on the flat values
-        // as ternary broadcasting is length-sensitive.
-        let mut non_aggregated_len_modified = false;
+        // Unknown groups (rows and their positions do not match initial groups).
+        let mut non_aggregated_unknown_groups = false;
 
         for ac in [&ac_mask, &ac_truthy, &ac_falsy].into_iter() {
             match ac.agg_state() {
@@ -146,7 +151,7 @@ impl PhysicalExpr for TernaryExpr {
                     }
                 },
                 NotAggregated(_) => {
-                    non_aggregated_len_modified |= !ac.original_len;
+                    non_aggregated_unknown_groups |= !ac.original_groups;
                 },
                 AggregatedScalar(_) | AggregatedList(_) => {
                     has_aggregated = true;
@@ -163,7 +168,7 @@ impl PhysicalExpr for TernaryExpr {
             return finish_as_iters(ac_truthy, ac_falsy, ac_mask);
         }
 
-        if !has_aggregated && !non_aggregated_len_modified {
+        if !has_aggregated && !non_aggregated_unknown_groups {
             // Everything is flat (either NotAggregated or a unit literal).
             if state.verbose() {
                 eprintln!("ternary agg: finish all not-aggregated or unit literal");
@@ -181,7 +186,7 @@ impl PhysicalExpr for TernaryExpr {
                         state: NotAggregated(out),
                         groups: ac_target.groups.clone(),
                         update_groups: ac_target.update_groups,
-                        original_len: ac_target.original_len,
+                        original_groups: ac_target.original_groups,
                     });
                 }
             }
@@ -323,43 +328,11 @@ impl PhysicalExpr for TernaryExpr {
             state: agg_state_out,
             groups: ac_target.groups.clone(),
             update_groups: ac_target.update_groups,
-            original_len: ac_target.original_len,
+            original_groups: ac_target.original_groups,
         })
-    }
-    fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
-        Some(self)
     }
 
     fn is_scalar(&self) -> bool {
         self.returns_scalar
-    }
-}
-
-impl PartitionedAggregation for TernaryExpr {
-    fn evaluate_partitioned(
-        &self,
-        df: &DataFrame,
-        groups: &GroupPositions,
-        state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        let truthy = self.truthy.as_partitioned_aggregator().unwrap();
-        let falsy = self.falsy.as_partitioned_aggregator().unwrap();
-        let mask = self.predicate.as_partitioned_aggregator().unwrap();
-
-        let truthy = truthy.evaluate_partitioned(df, groups, state)?;
-        let falsy = falsy.evaluate_partitioned(df, groups, state)?;
-        let mask = mask.evaluate_partitioned(df, groups, state)?;
-        let mask = mask.bool()?.clone();
-
-        truthy.zip_with(&mask, &falsy)
-    }
-
-    fn finalize(
-        &self,
-        partitioned: Column,
-        _groups: &GroupPositions,
-        _state: &ExecutionState,
-    ) -> PolarsResult<Column> {
-        Ok(partitioned)
     }
 }

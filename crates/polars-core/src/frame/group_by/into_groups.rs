@@ -24,7 +24,7 @@ pub trait IntoGroupsType {
 
 fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     // TODO! change to something sensible
-    ca.len() > 1000 && POOL.current_num_threads() > 1
+    ca.len() > 1000 && RAYON.current_num_threads() > 1
 }
 
 fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsType
@@ -90,7 +90,7 @@ where
             values = &values[..length - null_count];
         };
 
-        let n_threads = POOL.current_num_threads();
+        let n_threads = RAYON.current_num_threads();
         if multithreaded && n_threads > 1 {
             let parts =
                 create_clean_partitions(values, n_threads, self.is_sorted_descending_flag());
@@ -121,7 +121,7 @@ where
                     partition_to_groups(part, 0, false, offset)
                 }
             });
-            let groups = POOL.install(|| groups.collect::<Vec<_>>());
+            let groups = RAYON.install(|| groups.collect::<Vec<_>>());
             flatten_par(&groups)
         } else {
             partition_to_groups(values, null_count as IdxSize, nulls_first, 0)
@@ -149,13 +149,19 @@ where
         // sorted path
         if self.is_sorted_ascending_flag() || self.is_sorted_descending_flag() {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
-            return Ok(GroupsType::Slice {
-                groups: self.rechunk().create_groups_from_sorted(multithreaded),
-                rolling: false,
-            });
+            let groups = self.rechunk().create_groups_from_sorted(multithreaded);
+            return Ok(GroupsType::new_slice(groups, false, true));
         }
 
         let out = match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => {
+                // Convince the compiler that we are this type.
+                let ca: &Float16Chunked = unsafe {
+                    &*(self as *const ChunkedArray<T> as *const ChunkedArray<Float16Type>)
+                };
+                num_groups_proxy(ca, multithreaded, sorted)
+            },
             DataType::Float32 => {
                 // Convince the compiler that we are this type.
                 let ca: &Float32Chunked = unsafe {
@@ -175,8 +181,8 @@ where
                 BitRepr::U16(ca) => num_groups_proxy(&ca, multithreaded, sorted),
                 BitRepr::U32(ca) => num_groups_proxy(&ca, multithreaded, sorted),
                 BitRepr::U64(ca) => num_groups_proxy(&ca, multithreaded, sorted),
-                #[cfg(feature = "dtype-i128")]
-                BitRepr::I128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
+                #[cfg(feature = "dtype-u128")]
+                BitRepr::U128(ca) => num_groups_proxy(&ca, multithreaded, sorted),
             },
         };
         try_raise_keyboard_interrupt();
@@ -185,7 +191,7 @@ where
 }
 impl IntoGroupsType for BooleanChunked {
     fn group_tuples(&self, mut multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= RAYON.current_num_threads() > 1;
 
         #[cfg(feature = "performant")]
         {
@@ -225,13 +231,10 @@ impl IntoGroupsType for BinaryChunked {
             let values = arr.values_iter();
             let mut out = Vec::with_capacity(values.len() / 30);
             partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
-            return Ok(GroupsType::Slice {
-                groups: out,
-                rolling: false,
-            });
+            return Ok(GroupsType::new_slice(out, false, true));
         }
 
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= RAYON.current_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
         let out = if multithreaded {
@@ -259,12 +262,47 @@ impl IntoGroupsType for BinaryOffsetChunked {
             let values = arr.values_iter();
             let mut out = Vec::with_capacity(values.len() / 30);
             partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
-            return Ok(GroupsType::Slice {
-                groups: out,
-                rolling: false,
-            });
+            return Ok(GroupsType::new_slice(out, false, true));
+        } else if self.is_sorted_any() {
+            let mut groups = Vec::new();
+
+            let Some(y) = self.chunks().iter().position(|k| !k.as_ref().is_empty()) else {
+                return Ok(GroupsType::new_slice(groups, false, true));
+            };
+
+            let mut start_idx = 0;
+            let mut i = 1;
+            let mut x = 1;
+            let mut start_value = self.downcast_chunks().get(y).unwrap().get(0);
+
+            for keys in self.downcast_iter().skip(y) {
+                if keys.has_nulls() {
+                    for k in keys.iter().skip(x) {
+                        if k != start_value {
+                            groups.push([start_idx, i - start_idx]);
+                            start_idx = i;
+                            start_value = k;
+                        }
+                        i += 1;
+                    }
+                } else {
+                    for k in keys.values_iter().skip(x) {
+                        if Some(k) != start_value {
+                            groups.push([start_idx, i - start_idx]);
+                            start_idx = i;
+                            start_value = Some(k);
+                        }
+                        i += 1;
+                    }
+                }
+                x = 0;
+            }
+
+            groups.push([start_idx, i - start_idx]);
+            return Ok(GroupsType::new_slice(groups, false, true));
         }
-        multithreaded &= POOL.current_num_threads() > 1;
+
+        multithreaded &= RAYON.current_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
         let out = if multithreaded {
@@ -287,7 +325,7 @@ impl IntoGroupsType for ListChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= RAYON.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
             encode_rows_vertical_par_unordered(by).unwrap()
@@ -308,7 +346,7 @@ impl IntoGroupsType for ArrayChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= RAYON.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
             encode_rows_vertical_par_unordered(by).unwrap()
@@ -325,6 +363,6 @@ where
     T: PolarsObject,
 {
     fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        Ok(group_by(self.into_iter(), sorted))
+        Ok(group_by(self.iter(), sorted))
     }
 }

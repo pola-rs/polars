@@ -102,12 +102,16 @@ impl<'a> IRDotDisplay<'a> {
 
         use IR::*;
         match root {
-            Union { inputs, .. } => {
+            Union {
+                inputs, options, ..
+            } => {
                 for input in inputs {
                     recurse!(*input);
                 }
 
-                write_label(f, id, |f| f.write_str("UNION"))?;
+                write_label(f, id, |f| {
+                    write!(f, "UNION[maintain_order: {0}]", options.maintain_order)
+                })?;
             },
             HConcat { inputs, .. } => {
                 for input in inputs {
@@ -139,7 +143,10 @@ impl<'a> IRDotDisplay<'a> {
             PythonScan { options } => {
                 let predicate = match &options.predicate {
                     PythonPredicate::Polars(e) => format!("{}", self.display_expr(e)),
-                    PythonPredicate::PyArrow(s) => s.clone(),
+                    PythonPredicate::PyArrow {
+                        predicate,
+                        has_residual,
+                    } => format!("predicate: {predicate}, has_residual: {has_residual}"),
                     PythonPredicate::None => "none".to_string(),
                 };
                 let with_columns = NumColumns(options.with_columns.as_ref().map(|s| s.as_ref()));
@@ -225,6 +232,7 @@ impl<'a> IRDotDisplay<'a> {
                 file_info,
                 hive_parts: _,
                 predicate,
+                predicate_file_skip_applied: _,
                 scan_type,
                 unified_scan_args,
                 output_schema: _,
@@ -275,6 +283,15 @@ impl<'a> IRDotDisplay<'a> {
                     Ok(())
                 })?;
             },
+            Gather {
+                input,
+                idxs,
+                null_on_oob,
+            } => {
+                recurse!(*input);
+                recurse!(*idxs);
+                write_label(f, id, |f| write!(f, "GATHER[null_on_oob: {null_on_oob}]"))?;
+            },
             MapFunction {
                 input, function, ..
             } => {
@@ -291,8 +308,9 @@ impl<'a> IRDotDisplay<'a> {
                 write_label(f, id, |f| {
                     f.write_str(match payload {
                         SinkTypeIR::Memory => "SINK (MEMORY)",
+                        SinkTypeIR::Callback { .. } => "SINK (CALLBACK)",
                         SinkTypeIR::File { .. } => "SINK (FILE)",
-                        SinkTypeIR::Partition { .. } => "SINK (PARTITION)",
+                        SinkTypeIR::Partitioned { .. } => "SINK (PARTITION)",
                     })
                 })?;
             },
@@ -318,11 +336,27 @@ impl<'a> IRDotDisplay<'a> {
                 input_left,
                 input_right,
                 key,
+                maintain_order,
             } => {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
-                write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
+                write_label(f, id, |f| {
+                    write!(
+                        f,
+                        "MERGE_SORTED[maintain_order: {maintain_order}] ON '{key}'",
+                    )
+                })?;
+            },
+            UnoptimizedDispatch {
+                inputs,
+                operation,
+                arg_map,
+            } => {
+                for input in arg_map.iter().map(|(i, _c, _n)| &inputs[i]) {
+                    recurse!(*input);
+                }
+                write_label(f, id, |f| write!(f, "DISPATCH {operation}"))?;
             },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
@@ -340,7 +374,7 @@ struct NumColumnsSchema<'a>(Option<&'a Schema>);
 impl fmt::Display for ScanSourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ScanSourceRef::Path(addr) => addr.display().fmt(f),
+            ScanSourceRef::Path(path) => path.fmt(f),
             ScanSourceRef::File(_) => f.write_str("open-file"),
             ScanSourceRef::Buffer(buff) => write!(f, "{} in-mem bytes", buff.len()),
         }
@@ -405,12 +439,11 @@ impl fmt::Write for EscapeLabel<'_> {
         loop {
             let mut char_indices = s.char_indices();
 
-            // This escapes quotes and new lines
-            // @NOTE: I am aware this does not work for \" and such. I am ignoring that fact as we
-            // are not really using such strings.
+            // This escapes quotes, new lines, and backslashes
             let f = char_indices.find_map(|(i, c)| match c {
                 '"' => Some((i, r#"\""#)),
                 '\n' => Some((i, r#"\n"#)),
+                '\\' => Some((i, r"\\")),
                 _ => None,
             });
 

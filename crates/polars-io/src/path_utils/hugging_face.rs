@@ -1,19 +1,26 @@
 // Hugging Face path resolution support
 
 use std::borrow::Cow;
-use std::collections::VecDeque;
 
 use polars_error::{PolarsResult, polars_bail, to_compute_err};
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 
 use crate::cloud::{
-    CloudConfig, CloudOptions, Matcher, extract_prefix_expansion,
+    CloudConfig, CloudOptions, Matcher, USER_AGENT, extract_prefix_expansion,
     try_build_http_header_map_from_items_slice,
 };
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;
-use crate::prelude::URL_ENCODE_CHAR_SET;
-use crate::utils::decode_json_response;
+use crate::utils::{URL_ENCODE_CHARSET, decode_json_response};
+
+/// Percent-encoding character set for HF Hub paths.
+///
+/// This is URL_ENCODE_CHARSET with slashes preserved - by not encoding slashes,
+/// the API request will be counted under a higher "resolvers" ratelimit of (3000/5min)
+/// compared to the default "pages" limit of (100/5min limit).
+///
+/// ref <https://github.com/pola-rs/polars/issues/25389>
+const HF_PATH_ENCODE_CHARSET: &percent_encoding::AsciiSet = &URL_ENCODE_CHARSET.remove(b'/');
 
 #[derive(Debug, PartialEq)]
 struct HFPathParts {
@@ -31,17 +38,20 @@ struct HFRepoLocation {
 
 impl HFRepoLocation {
     fn new(bucket: &str, repository: &str, revision: &str) -> Self {
-        let bucket = percent_encode(bucket.as_bytes());
-        let repository = percent_encode(repository.as_bytes());
-
-        // "https://huggingface.co/api/ [datasets | spaces] / {username} / {reponame} / tree / {revision} / {path from root}"
+        // * Don't percent-encode bucket/repository - they are path segments where
+        //   slashes are separators. E.g. "HuggingFaceFW/fineweb-2" must stay as-is.
+        // * DO encode revision - slashes in revisions like "refs/convert/parquet"
+        //   are part of the revision name, not path separators.
+        //   See: https://github.com/pola-rs/polars/issues/25389
+        let encoded_revision =
+            percent_encoding::percent_encode(revision.as_bytes(), URL_ENCODE_CHARSET);
         let api_base_path = format!(
-            "{}{}{}{}{}{}{}",
-            "https://huggingface.co/api/", bucket, "/", repository, "/tree/", revision, "/"
+            "https://huggingface.co/api/{}/{}/tree/{}/",
+            bucket, repository, encoded_revision
         );
         let download_base_path = format!(
-            "{}{}{}{}{}{}{}",
-            "https://huggingface.co/", bucket, "/", repository, "/resolve/", revision, "/"
+            "https://huggingface.co/{}/{}/resolve/{}/",
+            bucket, repository, encoded_revision
         );
 
         Self {
@@ -54,7 +64,7 @@ impl HFRepoLocation {
         format!(
             "{}{}",
             self.download_base_path,
-            percent_encode(rel_path.as_bytes())
+            percent_encoding::percent_encode(rel_path.as_bytes(), HF_PATH_ENCODE_CHARSET)
         )
     }
 
@@ -62,7 +72,7 @@ impl HFRepoLocation {
         format!(
             "{}{}",
             self.api_base_path,
-            percent_encode(rel_path.as_bytes())
+            percent_encoding::percent_encode(rel_path.as_bytes(), HF_PATH_ENCODE_CHARSET)
         )
     }
 }
@@ -143,10 +153,6 @@ impl HFAPIResponse {
     fn is_file(&self) -> bool {
         self.type_ == "file"
     }
-
-    fn is_directory(&self) -> bool {
-        self.type_ == "directory"
-    }
 }
 
 /// API response is paginated with a `link` header.
@@ -213,14 +219,17 @@ impl GetPages<'_> {
 }
 
 pub(super) async fn expand_paths_hf(
-    paths: &[PlPath],
+    paths: &[PlRefPath],
     check_directory_level: bool,
-    cloud_options: Option<&CloudOptions>,
+    cloud_options: &Option<CloudOptions>,
     glob: bool,
-) -> PolarsResult<(usize, Vec<PlPath>)> {
+) -> PolarsResult<(usize, Vec<PlRefPath>)> {
     assert!(!paths.is_empty());
 
-    let client = reqwest::ClientBuilder::new().http1_only().https_only(true);
+    let client = reqwest::ClientBuilder::new()
+        .user_agent(USER_AGENT)
+        .http1_only()
+        .https_only(true);
 
     let client = if let Some(CloudOptions {
         config: Some(CloudConfig::Http { headers }),
@@ -237,8 +246,6 @@ pub(super) async fn expand_paths_hf(
     let client = &client.build().unwrap();
 
     let mut out_paths = vec![];
-    let mut stack = VecDeque::new();
-    let mut entries = vec![];
     let mut hive_idx_tracker = HiveIdxTracker {
         idx: usize::MAX,
         paths,
@@ -246,7 +253,7 @@ pub(super) async fn expand_paths_hf(
     };
 
     for (path_idx, path) in paths.iter().enumerate() {
-        let path_parts = &HFPathParts::try_from_uri(path.to_str())?;
+        let path_parts = &HFPathParts::try_from_uri(path.as_str())?;
         let repo_location = &HFRepoLocation::new(
             &path_parts.bucket,
             &path_parts.repository,
@@ -277,60 +284,48 @@ pub(super) async fn expand_paths_hf(
                 == 200
             {
                 hive_idx_tracker.update(0, path_idx)?;
-                out_paths.push(PlPath::from_string(file_uri));
+                out_paths.push(PlRefPath::new(file_uri));
                 continue;
             }
         }
 
         hive_idx_tracker.update(file_uri.len(), path_idx)?;
 
-        assert!(stack.is_empty());
-        stack.push_back(prefix.into_owned());
+        let uri = format!("{}?recursive=true", repo_location.get_api_uri(&prefix));
+        let mut gp = GetPages {
+            uri: Some(uri),
+            client,
+        };
 
-        while let Some(rel_path) = stack.pop_front() {
-            assert!(entries.is_empty());
+        let sort_start_idx = out_paths.len();
 
-            let uri = repo_location.get_api_uri(rel_path.as_str());
-            let mut gp = GetPages {
-                uri: Some(uri),
-                client,
-            };
+        while let Some(bytes) = gp.next().await {
+            let bytes = bytes?;
+            let response: Vec<HFAPIResponse> = decode_json_response(bytes.as_ref())?;
 
-            if let Some(matcher) = expansion_matcher {
-                while let Some(bytes) = gp.next().await {
-                    let bytes = bytes?;
-                    let bytes = bytes.as_ref();
-                    let response: Vec<HFAPIResponse> = decode_json_response(bytes)?;
-                    entries.extend(response.into_iter().filter(|x| {
-                        !x.is_file() || (x.size > 0 && matcher.is_matching(x.path.as_str()))
-                    }));
-                }
-            } else {
-                while let Some(bytes) = gp.next().await {
-                    let bytes = bytes?;
-                    let bytes = bytes.as_ref();
-                    let response: Vec<HFAPIResponse> = decode_json_response(bytes)?;
-                    entries.extend(response.into_iter().filter(|x| !x.is_file() || x.size > 0));
+            for entry in response {
+                // Only include files with size > 0
+                if entry.is_file() && entry.size > 0 {
+                    // If we have a glob pattern, filter by it; otherwise include all files
+                    let matches = if let Some(matcher) = expansion_matcher {
+                        matcher.is_matching(entry.path.as_str())
+                    } else {
+                        true
+                    };
+
+                    if matches {
+                        out_paths.push(PlRefPath::new(repo_location.get_file_uri(&entry.path)));
+                    }
                 }
             }
+        }
 
-            entries.sort_unstable_by(|a, b| a.path.as_str().partial_cmp(b.path.as_str()).unwrap());
-
-            for e in entries.drain(..) {
-                if e.is_file() {
-                    out_paths.push(PlPath::from_string(repo_location.get_file_uri(&e.path)));
-                } else if e.is_directory() {
-                    stack.push_back(e.path);
-                }
-            }
+        if let Some(mut_slice) = out_paths.get_mut(sort_start_idx..) {
+            <[PlRefPath]>::sort_unstable(mut_slice);
         }
     }
 
     Ok((hive_idx_tracker.idx, out_paths))
-}
-
-fn percent_encode(bytes: &[u8]) -> percent_encoding::PercentEncode<'_> {
-    percent_encoding::percent_encode(bytes, URL_ENCODE_CHAR_SET)
 }
 
 mod tests {
@@ -406,6 +401,63 @@ mod tests {
         assert_eq!(
             GetPages::find_link(link, "non-existent".as_bytes()).map(Result::unwrap),
             None,
+        );
+    }
+
+    #[test]
+    fn test_hf_url_encoding() {
+        // Verify URLs preserve slashes (don't encode as %2F) but encode special chars.
+        // Slashes must remain for correct rate limit classification by HF Hub.
+        // Special chars (spaces, colons) must be encoded for file downloads to work.
+        // See: https://github.com/pola-rs/polars/issues/25389
+        use super::HFRepoLocation;
+
+        let loc = HFRepoLocation::new("datasets", "HuggingFaceFW/fineweb-2", "main");
+
+        // Check base paths don't encode slashes
+        assert_eq!(
+            loc.api_base_path,
+            "https://huggingface.co/api/datasets/HuggingFaceFW/fineweb-2/tree/main/"
+        );
+        assert_eq!(
+            loc.download_base_path,
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/"
+        );
+
+        // Check file URIs preserve slashes in paths
+        let file_uri = loc.get_file_uri("data/aai_Latn/train/000_00000.parquet");
+        assert_eq!(
+            file_uri,
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/data/aai_Latn/train/000_00000.parquet"
+        );
+
+        // Check that special characters ARE encoded (spaces -> %20, colons -> %3A)
+        // This is needed for hive-partitioned paths like "date2=2023-01-01 00:00:00.000000"
+        let file_uri = loc.get_file_uri(
+            "hive_dates/date1=2024-01-01/date2=2023-01-01 00:00:00.000000/00000000.parquet",
+        );
+        assert_eq!(
+            file_uri,
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/hive_dates/date1%3D2024-01-01/date2%3D2023-01-01%2000%3A00%3A00.000000/00000000.parquet"
+        );
+
+        // Check that brackets are encoded ([ -> %5B, ] -> %5D)
+        let file_uri = loc.get_file_uri("special-chars/[*.parquet");
+        assert_eq!(
+            file_uri,
+            "https://huggingface.co/datasets/HuggingFaceFW/fineweb-2/resolve/main/special-chars/%5B%2A.parquet"
+        );
+
+        // Check that revision slashes ARE encoded (they're part of the revision name)
+        // e.g. "refs/convert/parquet" -> "refs%2Fconvert%2Fparquet"
+        let loc = HFRepoLocation::new("datasets", "user/repo", "refs/convert/parquet");
+        assert_eq!(
+            loc.api_base_path,
+            "https://huggingface.co/api/datasets/user/repo/tree/refs%2Fconvert%2Fparquet/"
+        );
+        assert_eq!(
+            loc.download_base_path,
+            "https://huggingface.co/datasets/user/repo/resolve/refs%2Fconvert%2Fparquet/"
         );
     }
 }

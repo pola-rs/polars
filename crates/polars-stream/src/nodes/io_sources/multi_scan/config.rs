@@ -5,7 +5,9 @@ use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_plan::dsl::deletion::DeletionFilesList;
-use polars_plan::dsl::{CastColumnsPolicy, MissingColumnsPolicy, ScanSources};
+use polars_plan::dsl::{
+    CastColumnsPolicy, MissingColumnsPolicy, PredicateFileSkip, ScanSources, TableStatistics,
+};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
@@ -32,6 +34,7 @@ pub struct MultiScanConfig {
     pub row_index: Option<RowIndex>,
     pub pre_slice: Option<Slice>,
     pub predicate: Option<ScanIOPredicate>,
+    pub predicate_file_skip_applied: Option<PredicateFileSkip>,
 
     pub hive_parts: Option<Arc<HivePartitionsDf>>,
     pub include_file_paths: Option<PlSmallStr>,
@@ -39,12 +42,14 @@ pub struct MultiScanConfig {
     pub cast_columns_policy: CastColumnsPolicy,
     pub forbid_extra_columns: Option<ForbidExtraColumns>,
     pub deletion_files: Option<DeletionFilesList>,
+    pub table_statistics: Option<TableStatistics>,
 
     pub num_pipelines: RelaxedCell<usize>,
     /// Number of readers to initialize concurrently. e.g. Parquet will want to fetch metadata in this
     /// step.
     pub n_readers_pre_init: RelaxedCell<usize>,
     pub max_concurrent_scans: RelaxedCell<usize>,
+    pub disable_morsel_split: bool,
 
     pub verbose: bool,
 }

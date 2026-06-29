@@ -8,7 +8,7 @@ import re
 import sys
 from datetime import date
 from textwrap import dedent
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -19,6 +19,9 @@ from polars.exceptions import (
 )
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 if sys.version_info >= (3, 11):
     from enum import StrEnum
@@ -150,13 +153,6 @@ def test_nested_enum_creation() -> None:
     s = pl.Series([[None, "a"], ["b", "c"]], dtype=dtype)
     assert s.len() == 2
     assert s.dtype == dtype
-
-
-def test_enum_union() -> None:
-    e1 = pl.Enum(["a", "b"])
-    e2 = pl.Enum(["b", "c"])
-    assert e1 | e2 == pl.Enum(["a", "b", "c"])
-    assert e1.union(e2) == pl.Enum(["a", "b", "c"])
 
 
 def test_nested_enum_concat() -> None:
@@ -687,3 +683,13 @@ def test_read_enum_from_csv() -> None:
     read = pl.read_csv(f, schema=schema)
     assert read.schema == schema
     assert_frame_equal(df.cast(schema), read)  # type: ignore[arg-type]
+
+
+def test_enum_struct_slice_25821() -> None:
+    df = pl.select(
+        x=pl.concat_list(
+            pl.struct(y=pl.lit("a", pl.Enum(["a", "b", "c"]))),
+        ),
+    )
+    res = df.select(pl.col.x.list.head(1))
+    assert res.to_dict(as_series=False) == {"x": [[{"y": "a"}]]}

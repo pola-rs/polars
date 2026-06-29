@@ -281,21 +281,21 @@ pub fn parse_offset(offset: &str) -> PolarsResult<FixedOffset> {
     if offset == "UTC" {
         return Ok(FixedOffset::east_opt(0).expect("FixedOffset::east out of bounds"));
     }
-    let error = "timezone offset must be of the form [-]00:00";
+    static ERR_MSG: &str = "timezone offset must be of the form [-]00:00";
 
     let mut a = offset.split(':');
     let first: &str = a
         .next()
-        .ok_or_else(|| polars_err!(InvalidOperation: error))?;
+        .ok_or_else(|| polars_err!(InvalidOperation: ERR_MSG))?;
     let last = a
         .next()
-        .ok_or_else(|| polars_err!(InvalidOperation: error))?;
+        .ok_or_else(|| polars_err!(InvalidOperation: ERR_MSG))?;
     let hours: i32 = first
         .parse()
-        .map_err(|_| polars_err!(InvalidOperation: error))?;
+        .map_err(|_| polars_err!(InvalidOperation: ERR_MSG))?;
     let minutes: i32 = last
         .parse()
-        .map_err(|_| polars_err!(InvalidOperation: error))?;
+        .map_err(|_| polars_err!(InvalidOperation: ERR_MSG))?;
 
     Ok(FixedOffset::east_opt(hours * 60 * 60 + minutes * 60)
         .expect("FixedOffset::east out of bounds"))

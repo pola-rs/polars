@@ -2,7 +2,7 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
-use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType};
+use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, LIST_ELEMENT_DEFAULT_ID};
 use polars_core::series::{IntoSeries, Series};
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
 use polars_error::{PolarsResult, feature_gated, polars_bail};
@@ -229,8 +229,7 @@ impl ColumnSelectorBuilder {
         }
 
         // Eq here should be cheap as we have intercepted all nested types above.
-
-        debug_assert!(!target_dtype.is_nested());
+        debug_assert!(!target_dtype.is_nested() || target_dtype.is_extension());
 
         if target_dtype == incoming_dtype {
             return Ok(input_selector);
@@ -265,24 +264,24 @@ impl ColumnSelectorBuilder {
         let target_dtype = target_dtype.as_ref();
 
         if target_dtype.is_integer() && incoming_dtype.is_integer() {
-            if !self.cast_columns_policy.integer_upcast {
-                return mismatch_err(
-                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')",
-                );
-            }
-
-            return match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
-                Some(ref v) if v == target_dtype => {
-                    // Use overflowing on lossless cast to elide validation.
-                    attach_cast(CastOptions::Overflowing)
-                },
-                _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
+            return if self.cast_columns_policy.integer_upcast {
+                match get_numeric_upcast_supertype_lossless(incoming_dtype, target_dtype) {
+                    Some(ref v) if v == target_dtype => {
+                        // Use overflowing on lossless cast to elide validation.
+                        attach_cast(CastOptions::Overflowing)
+                    },
+                    _ => mismatch_err("incoming dtype cannot safely cast to target dtype"),
+                }
+            } else {
+                mismatch_err("hint: pass cast_options=pl.ScanCastOptions(integer_cast='upcast')")
             };
         }
 
         if target_dtype.is_float() && incoming_dtype.is_float() {
             match (target_dtype, incoming_dtype) {
-                (DataType::Float64, DataType::Float32) => {
+                (DataType::Float64, DataType::Float32)
+                | (DataType::Float64, DataType::Float16)
+                | (DataType::Float32, DataType::Float16) => {
                     if !self.cast_columns_policy.float_upcast {
                         return mismatch_err(
                             "hint: pass cast_options=pl.ScanCastOptions(float_cast='upcast')",
@@ -290,7 +289,9 @@ impl ColumnSelectorBuilder {
                     }
                 },
 
-                (DataType::Float32, DataType::Float64) => {
+                (DataType::Float16, DataType::Float32)
+                | (DataType::Float16, DataType::Float64)
+                | (DataType::Float32, DataType::Float64) => {
                     if !self.cast_columns_policy.float_downcast {
                         return mismatch_err(
                             "hint: pass cast_options=pl.ScanCastOptions(float_cast='downcast')",
@@ -302,6 +303,16 @@ impl ColumnSelectorBuilder {
             };
 
             return attach_cast(CastOptions::NonStrict);
+        }
+
+        if target_dtype.is_float() && incoming_dtype.is_integer() {
+            return if self.cast_columns_policy.integer_to_float_cast {
+                attach_cast(CastOptions::Overflowing)
+            } else {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(integer_cast='allow-float')",
+                )
+            };
         }
 
         if let (
@@ -346,6 +357,16 @@ impl ColumnSelectorBuilder {
 
             // Dtype differs and we are allowed to coerce
             return attach_cast(CastOptions::NonStrict);
+        }
+
+        if target_dtype.is_string() && incoming_dtype.is_categorical() {
+            return if self.cast_columns_policy.categorical_to_string {
+                attach_cast(CastOptions::NonStrict)
+            } else {
+                mismatch_err(
+                    "hint: pass cast_options=pl.ScanCastOptions(categorical_to_string='allow')",
+                )
+            };
         }
 
         mismatch_err("")
@@ -472,7 +493,10 @@ impl ColumnSelectorBuilder {
                         return mismatch_err("");
                     };
 
-                    if incoming_inner.physical_id != target_inner.physical_id {
+                    if incoming_inner.physical_id != target_inner.physical_id
+                        && incoming_inner.physical_id != LIST_ELEMENT_DEFAULT_ID
+                        && target_inner.physical_id != LIST_ELEMENT_DEFAULT_ID
+                    {
                         return mismatch_err("physical ID mismatch for list values column");
                     }
 
@@ -499,7 +523,10 @@ impl ColumnSelectorBuilder {
                             return mismatch_err("");
                         }
 
-                        if incoming_inner.physical_id != target_inner.physical_id {
+                        if incoming_inner.physical_id != target_inner.physical_id
+                            && incoming_inner.physical_id != LIST_ELEMENT_DEFAULT_ID
+                            && target_inner.physical_id != LIST_ELEMENT_DEFAULT_ID
+                        {
                             return mismatch_err(
                                 "physical ID mismatch for fixed size list values column",
                             );

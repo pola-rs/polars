@@ -26,7 +26,7 @@ fn test_ipc_compression_variadic_buffers() {
 pub(crate) fn create_df() -> DataFrame {
     let s0 = Column::new("days".into(), [0, 1, 2, 3, 4].as_ref());
     let s1 = Column::new("temp".into(), [22.1, 19.9, 7., 2., 3.].as_ref());
-    DataFrame::new(vec![s0, s1]).unwrap()
+    DataFrame::new_infer_height(vec![s0, s1]).unwrap()
 }
 
 #[test]
@@ -120,7 +120,11 @@ fn test_read_ipc_with_columns() {
 fn test_write_with_compression() {
     let mut df = create_df();
 
-    let compressions = vec![None, Some(IpcCompression::LZ4), Some(IpcCompression::ZSTD)];
+    let compressions = vec![
+        None,
+        Some(IpcCompression::LZ4),
+        Some(IpcCompression::ZSTD(Default::default())),
+    ];
 
     for compression in compressions.into_iter() {
         let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
@@ -141,7 +145,7 @@ fn test_write_with_compression() {
 fn write_and_read_ipc_empty_series() {
     let mut buf: Cursor<Vec<u8>> = Cursor::new(Vec::new());
     let chunked_array = Float64Chunked::new("empty".into(), &[0_f64; 0]);
-    let mut df = DataFrame::new(vec![chunked_array.into_column()]).unwrap();
+    let mut df = DataFrame::new_infer_height(vec![chunked_array.into_column()]).unwrap();
     IpcWriter::new(&mut buf)
         .finish(&mut df)
         .expect("ipc writer");

@@ -3,7 +3,7 @@ from __future__ import annotations
 import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -15,17 +15,9 @@ from polars.testing.asserts.series import assert_series_equal
 from tests.unit.conftest import INTEGER_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import PolarsDataType, PythonDataType
-
-
-@pytest.mark.parametrize("dtype", [pl.Date(), pl.Date, date])
-def test_string_date(dtype: PolarsDataType | PythonDataType) -> None:
-    df = pl.DataFrame({"x1": ["2021-01-01"]}).with_columns(
-        **{"x1-date": pl.col("x1").cast(dtype)}
-    )
-    expected = pl.DataFrame({"x1-date": [date(2021, 1, 1)]})
-    out = df.select(pl.col("x1-date"))
-    assert_frame_equal(expected, out)
 
 
 def test_invalid_string_date() -> None:
@@ -35,90 +27,12 @@ def test_invalid_string_date() -> None:
         df.with_columns(**{"x1-date": pl.col("x1").cast(pl.Date)})
 
 
-def test_string_datetime() -> None:
-    df = pl.DataFrame(
-        {"x1": ["2021-12-19T00:39:57", "2022-12-19T16:39:57"]}
-    ).with_columns(
-        **{
-            "x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns")),
-            "x1-datetime-ms": pl.col("x1").cast(pl.Datetime(time_unit="ms")),
-            "x1-datetime-us": pl.col("x1").cast(pl.Datetime(time_unit="us")),
-        }
-    )
-    first_row = datetime(year=2021, month=12, day=19, hour=00, minute=39, second=57)
-    second_row = datetime(year=2022, month=12, day=19, hour=16, minute=39, second=57)
-    expected = pl.DataFrame(
-        {
-            "x1-datetime-ns": [first_row, second_row],
-            "x1-datetime-ms": [first_row, second_row],
-            "x1-datetime-us": [first_row, second_row],
-        }
-    ).select(
-        pl.col("x1-datetime-ns").dt.cast_time_unit("ns"),
-        pl.col("x1-datetime-ms").dt.cast_time_unit("ms"),
-        pl.col("x1-datetime-us").dt.cast_time_unit("us"),
-    )
-
-    out = df.select(
-        pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
-    )
-    assert_frame_equal(expected, out)
-
-
 def test_invalid_string_datetime() -> None:
     df = pl.DataFrame({"x1": ["2021-12-19 00:39:57", "2022-12-19 16:39:57"]})
     with pytest.raises(InvalidOperationError):
         df.with_columns(
             **{"x1-datetime-ns": pl.col("x1").cast(pl.Datetime(time_unit="ns"))}
         )
-
-
-def test_string_datetime_timezone() -> None:
-    ccs_tz = "America/Caracas"
-    stg_tz = "America/Santiago"
-    utc_tz = "UTC"
-    df = pl.DataFrame(
-        {"x1": ["1996-12-19T16:39:57 +00:00", "2022-12-19T00:39:57 +00:00"]}
-    ).with_columns(
-        **{
-            "x1-datetime-ns": pl.col("x1").cast(
-                pl.Datetime(time_unit="ns", time_zone=ccs_tz)
-            ),
-            "x1-datetime-ms": pl.col("x1").cast(
-                pl.Datetime(time_unit="ms", time_zone=stg_tz)
-            ),
-            "x1-datetime-us": pl.col("x1").cast(
-                pl.Datetime(time_unit="us", time_zone=utc_tz)
-            ),
-        }
-    )
-
-    expected = pl.DataFrame(
-        {
-            "x1-datetime-ns": [
-                datetime(year=1996, month=12, day=19, hour=12, minute=39, second=57),
-                datetime(year=2022, month=12, day=18, hour=20, minute=39, second=57),
-            ],
-            "x1-datetime-ms": [
-                datetime(year=1996, month=12, day=19, hour=13, minute=39, second=57),
-                datetime(year=2022, month=12, day=18, hour=21, minute=39, second=57),
-            ],
-            "x1-datetime-us": [
-                datetime(year=1996, month=12, day=19, hour=16, minute=39, second=57),
-                datetime(year=2022, month=12, day=19, hour=00, minute=39, second=57),
-            ],
-        }
-    ).select(
-        pl.col("x1-datetime-ns").dt.cast_time_unit("ns").dt.replace_time_zone(ccs_tz),
-        pl.col("x1-datetime-ms").dt.cast_time_unit("ms").dt.replace_time_zone(stg_tz),
-        pl.col("x1-datetime-us").dt.cast_time_unit("us").dt.replace_time_zone(utc_tz),
-    )
-
-    out = df.select(
-        pl.col("x1-datetime-ns"), pl.col("x1-datetime-ms"), pl.col("x1-datetime-us")
-    )
-
-    assert_frame_equal(expected, out)
 
 
 @pytest.mark.parametrize(("dtype"), [pl.Int8, pl.Int16, pl.Int32, pl.Int64])
@@ -623,16 +537,16 @@ def test_invalid_cast_float_to_decimal(value: float) -> None:
     s = pl.Series([value], dtype=pl.Float64)
     with pytest.raises(
         InvalidOperationError,
-        match=r"conversion from `f64` to `decimal\[\*,0\]` failed",
+        match=r"conversion from `f64` to `decimal\[10,2\]` failed",
     ):
-        s.cast(pl.Decimal)
+        s.cast(pl.Decimal(10, 2))
 
 
 def test_err_on_time_datetime_cast() -> None:
     s = pl.Series([time(10, 0, 0), time(11, 30, 59)])
     with pytest.raises(
         InvalidOperationError,
-        match="casting from Time to Datetime\\('μs'\\) not supported; consider using `dt.combine`",
+        match=r"casting from Time to Datetime\('μs'\) not supported; consider using `dt\.combine`",
     ):
         s.cast(pl.Datetime)
 
@@ -925,7 +839,8 @@ def test_nested_struct_cast_22744() -> None:
 
     assert_series_equal(
         s.cast(
-            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})})
+            pl.Struct({"attrs": pl.Struct({"class": pl.String, "other": pl.String})}),
+            strict=False,
         ),
         expected.to_series(),
     )
@@ -935,7 +850,8 @@ def test_nested_struct_cast_22744() -> None:
                 "x": pl.Struct(
                     {"attrs": pl.Struct({"class": pl.String, "other": pl.String})}
                 )
-            }
+            },
+            strict=False,
         ),
         expected,
     )
@@ -1036,14 +952,51 @@ def test_lit_cast_arithmetic_23677() -> None:
     assert q.collect().schema == expected
 
 
-@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES)
-@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize("col_dtype", NUMERIC_DTYPES + [pl.Unknown])
+@pytest.mark.parametrize("lit_dtype", NUMERIC_DTYPES + [pl.Unknown])
 @pytest.mark.parametrize("op", [operator.mul, operator.truediv])
 def test_lit_cast_arithmetic_matrix_schema(
     col_dtype: PolarsDataType,
     lit_dtype: PolarsDataType,
     op: Callable[[pl.Expr, pl.Expr], pl.Expr],
 ) -> None:
-    df = pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
-    q = df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    # Note (hacky): simply casting to 'pl.Unknown' would create
+    # `Unknown(UnknownKind::Any())` which is not what we want: the
+    # default maps to `Unknown(UnknownKind::Int(_)))` so we adjust
+    df = (
+        pl.DataFrame({"a": [1]})
+        if col_dtype == pl.Unknown
+        else pl.DataFrame({"a": [1]}, schema={"a": col_dtype})
+    )
+    q = (
+        df.lazy().select(op(pl.col("a"), pl.lit(1)))
+        if lit_dtype == pl.Unknown
+        else df.lazy().select(op(pl.col("a"), pl.lit(1, lit_dtype)))
+    )
     assert q.collect_schema() == q.collect().schema
+
+
+def test_strict_cast_nested() -> None:
+    df = pl.DataFrame({"a": ["42", "10a"]})
+    struct = pl.Struct({"x": pl.Int32})
+    with pytest.raises(InvalidOperationError):
+        df.cast(struct, strict=True)
+
+    assert_frame_equal(
+        df.cast(struct, strict=False),
+        pl.DataFrame({"a": [{"x": 42}, {"x": None}]}, schema={"a": struct}),
+    )
+
+
+def test_strict_struct_cast_field_count_mismatch() -> None:
+    # strict=True should raise when the number of struct fields differs
+    s = pl.Series("x", [{"a": 1, "b": 2}])
+    with pytest.raises(InvalidOperationError, match="same number of fields"):
+        s.cast(pl.Struct({"a": pl.Int64}), strict=True)
+
+
+def test_strict_struct_cast_field_name_mismatch() -> None:
+    # strict=True should raise when struct field names do not match
+    s = pl.Series("x", [{"a": 1}])
+    with pytest.raises(InvalidOperationError, match="field name mismatch"):
+        s.cast(pl.Struct({"b": pl.Int64}), strict=True)

@@ -12,7 +12,9 @@ Descriptive
     DataFrame.glimpse
     DataFrame.is_duplicated
     DataFrame.is_empty
+    DataFrame.is_sorted
     DataFrame.is_unique
     DataFrame.n_chunks
     DataFrame.n_unique
     DataFrame.null_count
+    DataFrame.show

@@ -64,7 +64,8 @@ impl<'a> IRBuilder<'a> {
             self
         } else {
             let input_schema = self.schema();
-            let schema = expr_irs_to_schema(&exprs, &input_schema, self.expr_arena);
+            let schema = expr_irs_to_schema(&exprs, &input_schema, self.expr_arena)
+                .expect("no valid schema can be derived for the query");
 
             let lp = IR::Select {
                 expr: exprs,
@@ -183,7 +184,7 @@ impl<'a> IRBuilder<'a> {
         let ir = IR::Sort {
             input: self.root,
             by_column,
-            slice,
+            slice: slice.map(|t| (t.0, t.1, None)),
             sort_options,
         };
         let node = self.lp_arena.add(ir);
@@ -210,7 +211,8 @@ impl<'a> IRBuilder<'a> {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
-        let hstack_schema = expr_irs_to_schema(&exprs, &schema, self.expr_arena);
+        let hstack_schema = expr_irs_to_schema(&exprs, &schema, self.expr_arena)
+            .expect("no valid schema can be derived for the query");
         new_schema.merge(hstack_schema);
 
         let lp = IR::HStack {
@@ -236,7 +238,7 @@ impl<'a> IRBuilder<'a> {
             let field = self
                 .expr_arena
                 .get(node)
-                .to_field(&schema, self.expr_arena)
+                .to_field(&ToFieldContext::new(self.expr_arena, &schema))
                 .unwrap();
 
             expr_irs.push(
@@ -256,11 +258,12 @@ impl<'a> IRBuilder<'a> {
     }
 
     // call this if the schema needs to be updated
-    pub fn explode(self, columns: Arc<[PlSmallStr]>) -> Self {
+    pub fn explode(self, columns: Arc<[PlSmallStr]>, options: ExplodeOptions) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
             function: FunctionIR::Explode {
                 columns,
+                options,
                 schema: Default::default(),
             },
         };
@@ -270,13 +273,13 @@ impl<'a> IRBuilder<'a> {
     pub fn group_by(
         self,
         keys: Vec<ExprIR>,
-        aggs: Vec<ExprIR>,
+        mut aggs: Vec<ExprIR>,
         apply: Option<PlanCallback<DataFrame, DataFrame>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
-    ) -> Self {
+    ) -> PolarsResult<Self> {
         let current_schema = self.schema();
-        let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena);
+        let mut schema = expr_irs_to_schema(&keys, &current_schema, self.expr_arena)?;
 
         #[cfg(feature = "dynamic_group_by")]
         {
@@ -295,12 +298,16 @@ impl<'a> IRBuilder<'a> {
             }
         }
 
-        let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena);
+        let mut aggs_schema = expr_irs_to_schema(&aggs, &current_schema, self.expr_arena)?;
 
         // Coerce aggregation column(s) into List unless not needed (auto-implode)
-        debug_assert!(aggs_schema.len() == aggs.len());
-        for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(&aggs) {
+        assert!(aggs_schema.len() == aggs.len());
+        for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(aggs.iter_mut()) {
             if !expr.is_scalar(self.expr_arena) {
+                expr.set_node(self.expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
+                    input: expr.node(),
+                    maintain_order: true,
+                })));
                 *dtype = dtype.clone().implode();
             }
         }
@@ -316,7 +323,7 @@ impl<'a> IRBuilder<'a> {
             maintain_order,
             options,
         };
-        self.add_alp(lp)
+        Ok(self.add_alp(lp))
     }
 
     pub fn join(
@@ -371,6 +378,14 @@ impl<'a> IRBuilder<'a> {
                 offset,
                 schema: Default::default(),
             },
+        };
+        self.add_alp(lp)
+    }
+
+    pub fn hint(self, hint: HintIR) -> Self {
+        let lp = IR::MapFunction {
+            input: self.root,
+            function: FunctionIR::Hint(hint),
         };
         self.add_alp(lp)
     }

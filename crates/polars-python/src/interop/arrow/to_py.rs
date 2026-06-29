@@ -1,5 +1,3 @@
-use std::ffi::CString;
-
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi;
 use arrow::record_batch::RecordBatch;
@@ -18,7 +16,7 @@ pub(crate) fn to_py_array(
     array: ArrayRef,
     field: &ArrowField,
     pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let schema = Box::new(ffi::export_field_to_c(field));
     let array = Box::new(ffi::export_array_to_c(array));
 
@@ -38,7 +36,7 @@ pub(crate) fn to_py_rb(
     rb: &RecordBatch,
     py: Python<'_>,
     pyarrow: &Bound<PyModule>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let mut arrays = Vec::with_capacity(rb.width());
 
     for (array, field) in rb.columns().iter().zip(rb.schema().iter_values()) {
@@ -77,8 +75,7 @@ pub(crate) fn series_to_stream<'py>(
     ) as _;
 
     let stream = ffi::export_iterator(iter, field);
-    let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-    PyCapsule::new(py, stream, Some(stream_capsule_name))
+    PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
 }
 
 pub(crate) fn dataframe_to_stream<'py>(
@@ -88,8 +85,29 @@ pub(crate) fn dataframe_to_stream<'py>(
     let iter = Box::new(DataFrameStreamIterator::new(df));
     let field = iter.field();
     let stream = ffi::export_iterator(iter, field);
-    let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-    PyCapsule::new(py, stream, Some(stream_capsule_name))
+    PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
+}
+
+#[cfg(feature = "c_api")]
+#[pyfunction]
+pub(crate) fn polars_schema_to_pycapsule<'py>(
+    py: Python<'py>,
+    schema: crate::prelude::Wrap<polars::prelude::Schema>,
+    compat_level: crate::prelude::PyCompatLevel,
+) -> PyResult<Bound<'py, PyCapsule>> {
+    let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
+        PlSmallStr::EMPTY,
+        ArrowDataType::Struct(
+            schema
+                .0
+                .iter_fields()
+                .map(|x| x.to_arrow(compat_level.0))
+                .collect(),
+        ),
+        false,
+    ));
+
+    PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }
 
 pub struct DataFrameStreamIterator {
@@ -97,22 +115,29 @@ pub struct DataFrameStreamIterator {
     dtype: ArrowDataType,
     idx: usize,
     n_chunks: usize,
+    height: usize,
 }
 
 impl DataFrameStreamIterator {
     fn new(df: &DataFrame) -> Self {
         let schema = df.schema().to_arrow(CompatLevel::newest());
         let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
+        let n_chunks = if df.width() == 0 {
+            usize::from(df.height() > 0)
+        } else {
+            df.first_col_n_chunks()
+        };
 
         Self {
             columns: df
-                .get_columns()
+                .columns()
                 .iter()
                 .map(|v| v.as_materialized_series().clone())
                 .collect(),
             dtype,
             idx: 0,
-            n_chunks: df.first_col_n_chunks(),
+            n_chunks,
+            height: df.height(),
         }
     }
 
@@ -136,12 +161,9 @@ impl Iterator for DataFrameStreamIterator {
                 .collect::<Vec<_>>();
             self.idx += 1;
 
-            let array = arrow::array::StructArray::new(
-                self.dtype.clone(),
-                batch_cols[0].len(),
-                batch_cols,
-                None,
-            );
+            let col_len = batch_cols.first().map_or(self.height, |c| c.len());
+            let array =
+                arrow::array::StructArray::new(self.dtype.clone(), col_len, batch_cols, None);
             Some(Ok(Box::new(array)))
         }
     }

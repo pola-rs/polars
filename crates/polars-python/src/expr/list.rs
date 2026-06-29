@@ -9,16 +9,6 @@ use crate::conversion::Wrap;
 
 #[pymethods]
 impl PyExpr {
-    #[cfg(feature = "list_any_all")]
-    fn list_all(&self) -> Self {
-        self.inner.clone().list().all().into()
-    }
-
-    #[cfg(feature = "list_any_all")]
-    fn list_any(&self) -> Self {
-        self.inner.clone().list().any().into()
-    }
-
     fn list_arg_max(&self) -> Self {
         self.inner.clone().list().arg_max().into()
     }
@@ -47,6 +37,10 @@ impl PyExpr {
 
     fn list_eval(&self, expr: PyExpr, _parallel: bool) -> Self {
         self.inner.clone().list().eval(expr.inner).into()
+    }
+
+    fn list_agg(&self, expr: PyExpr) -> Self {
+        self.inner.clone().list().agg(expr.inner).into()
     }
 
     #[cfg(feature = "list_filter")]
@@ -100,10 +94,6 @@ impl PyExpr {
 
     fn list_min(&self) -> Self {
         self.inner.clone().list().min().into()
-    }
-
-    fn list_reverse(&self) -> Self {
-        self.inner.clone().list().reverse().into()
     }
 
     fn list_shift(&self, periods: PyExpr) -> Self {
@@ -211,20 +201,6 @@ impl PyExpr {
                     .collect::<PyResult<Arc<[_]>>>()?,
             )
             .into())
-    }
-
-    fn list_n_unique(&self) -> Self {
-        self.inner.clone().list().n_unique().into()
-    }
-
-    fn list_unique(&self, maintain_order: bool) -> Self {
-        let e = self.inner.clone();
-
-        if maintain_order {
-            e.list().unique_stable().into()
-        } else {
-            e.list().unique().into()
-        }
     }
 
     #[cfg(feature = "list_sets")]

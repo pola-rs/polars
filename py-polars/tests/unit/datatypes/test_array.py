@@ -1,6 +1,6 @@
 import datetime
 from datetime import timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pytest
@@ -8,6 +8,9 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 
 def test_cast_list_array() -> None:
@@ -27,6 +30,7 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
+@pytest.mark.filterwarnings("ignore::DeprecationWarning")
 def test_array_in_group_by_iter() -> None:
     df = pl.DataFrame(
         [
@@ -222,18 +226,30 @@ def test_arr_std(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").arr.std().name.suffix("_std"),
         pl.col("float").arr.std().name.suffix("_std"),
-        pl.col("duration").arr.std().name.suffix("_std"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
             pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
-            pl.Series(
-                "duration_std",
-                [timedelta(microseconds=1581)],
-                dtype=pl.Duration(time_unit="us"),
-            ),
+        ]
+    )
+
+    assert_frame_equal(result, expected)
+
+
+def test_arr_sum(data_dispersion: pl.DataFrame) -> None:
+    df = data_dispersion
+
+    result = df.select(
+        pl.col("int").arr.sum().name.suffix("_sum"),
+        pl.col("float").arr.sum().name.suffix("_sum"),
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("int_sum", [15], dtype=pl.Int64),
+            pl.Series("float_sum", [15.0], dtype=pl.Float64),
         ]
     )
 
@@ -291,7 +307,7 @@ def test_arr_median(data_dispersion: pl.DataFrame) -> None:
 def test_array_repeat() -> None:
     dtype = pl.Array(pl.UInt8, shape=1)
     s = pl.repeat([42], n=3, dtype=dtype, eager=True)
-    expected = pl.Series("repeat", [[42], [42], [42]], dtype=dtype)
+    expected = pl.Series("literal", [[42], [42], [42]], dtype=dtype)
     assert s.dtype == dtype
     assert_series_equal(s, expected)
 
@@ -390,7 +406,7 @@ def test_zero_width_array(fn: str) -> None:
     series_f = getattr(pl.Series, fn)
     expr_f = getattr(pl.Expr, fn)
 
-    values = [
+    values: Sequence[Sequence[list[list[Any] | None]]] = [
         [
             [[]],
             [None],
@@ -411,7 +427,9 @@ def test_zero_width_array(fn: str) -> None:
 
                 series_f(a, b)
 
-                df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
+                df = pl.concat(
+                    [a.to_frame(), b.to_frame()], how="horizontal", strict=True
+                )
                 df.select(c=expr_f(pl.col.a, pl.col.b))
 
 
@@ -427,3 +445,24 @@ def test_sort() -> None:
     tc([[2], [1]], [[1], [2]], 1)
     tc([[2, 1]], [[2, 1]], 2)
     tc([[2, 1], [1, 2]], [[1, 2], [2, 1]], 2)
+
+
+def test_array_sum_with_nulls() -> None:
+    for dt_in, dt_out in [
+        (pl.Int8, pl.Int64),
+        (pl.Int16, pl.Int64),
+        (pl.Int32, pl.Int32),
+        (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
+        (pl.UInt8, pl.Int64),
+        (pl.UInt16, pl.Int64),
+        (pl.UInt32, pl.UInt32),
+        (pl.UInt64, pl.UInt64),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ]:
+        s = pl.Series("a", [[1, 2, 3], None, [4, None, 6]], pl.Array(dt_in, 3))
+        result = s.arr.sum()
+        expected = pl.Series("a", [6, None, 10], dt_out)
+        assert_series_equal(result, expected)

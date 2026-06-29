@@ -102,13 +102,13 @@ def test_extend_bad_input_type() -> None:
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'Series'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'Series'",
     ):
         a.extend(pl.Series(b))  # type: ignore[arg-type]
 
     with pytest.raises(
         TypeError,
-        match="expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
+        match=r"expected `other` .*to be a 'DataFrame'.* not 'LazyFrame'",
     ):
         a.extend(b.lazy())  # type: ignore[arg-type]
 
@@ -118,3 +118,11 @@ def test_extend_bad_input_type() -> None:
     b = DummyDataFrameSubclass({"x": [4, 5, 6]})
 
     a.extend(b)
+
+
+def test_extend_nested_mismatch() -> None:
+    s = pl.Series([1.0])
+    assert s.extend_constant(1, 2).to_list() == [1.0, 1.0, 1.0]
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        s.extend_constant([True], 2)

@@ -8,11 +8,11 @@ use polars_python::PyDataType;
 use pyo3::{pyclass, pyfunction};
 use pyo3_polars::export::polars_core::datatypes::{DataType, PolarsDataType};
 use pyo3_polars::export::polars_core::prelude::Series;
-use rand::distributions::uniform::SampleUniform;
-use rand::distributions::{Bernoulli, Uniform};
+use rand::distr::uniform::SampleUniform;
+use rand::distr::{Bernoulli, Uniform};
 use rand::prelude::*;
 
-#[pyclass]
+#[pyclass(from_py_object)]
 #[derive(Clone)]
 pub struct PySampler(pub Arc<Mutex<Box<dyn Sampler>>>);
 
@@ -39,7 +39,7 @@ fn new_uniform_impl<T: NumericNative + SampleUniform>(
     UniformSampler {
         name,
         rng: StdRng::seed_from_u64(seed),
-        d: Uniform::new(low, high),
+        d: Uniform::new(low, high).unwrap(),
     }
 }
 

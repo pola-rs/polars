@@ -120,7 +120,7 @@ impl HashPartitioner {
     }
 }
 
-// FIXME: use Hasher interface and support a random state.
+// TODO: use Hasher interface and support a random state.
 pub trait DirtyHash {
     // A quick and dirty hash. Only the top bits of the hash are decent, such as
     // used in hash_to_partition.
@@ -150,6 +150,14 @@ impl_hash_partition_as_u64!(i16);
 impl_hash_partition_as_u64!(i32);
 impl_hash_partition_as_u64!(i64);
 
+impl DirtyHash for u128 {
+    fn dirty_hash(&self) -> u64 {
+        (*self as u64)
+            .wrapping_mul(RANDOM_ODD)
+            .wrapping_add((*self >> 64) as u64)
+    }
+}
+
 impl DirtyHash for i128 {
     fn dirty_hash(&self) -> u64 {
         (*self as u64)
@@ -170,7 +178,7 @@ impl<T: DirtyHash + ?Sized> DirtyHash for &T {
     }
 }
 
-// FIXME: we should probably encourage explicit null handling, but for now we'll
+// TODO: we should probably encourage explicit null handling, but for now we'll
 // allow directly getting a partition from a nullable value.
 impl<T: DirtyHash> DirtyHash for Option<T> {
     fn dirty_hash(&self) -> u64 {

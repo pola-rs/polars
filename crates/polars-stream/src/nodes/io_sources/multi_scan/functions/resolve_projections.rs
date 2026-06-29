@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use polars_core::frame::DataFrame;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_plan::plans::hive::HivePartitionsDf;
 
@@ -25,16 +24,7 @@ pub fn resolve_projections(
     include_file_paths: Option<&str>,
 ) -> (SchemaRef, SchemaRef) {
     if let Some(hive_parts) = hive_parts.as_mut() {
-        let projected_hive_parts: HivePartitionsDf = hive_parts
-            .df()
-            .get_columns()
-            .iter()
-            .filter(|c| final_output_schema.contains(c.name()))
-            .cloned()
-            .collect::<DataFrame>()
-            .into();
-
-        *hive_parts = projected_hive_parts;
+        *hive_parts = hive_parts.filter_columns(final_output_schema)
     }
 
     let hive_schema = hive_parts.as_ref().map(|x| x.schema().as_ref());

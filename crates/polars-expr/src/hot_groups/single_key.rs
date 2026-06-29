@@ -79,7 +79,7 @@ where
             HashKeys::Single(SingleKeys {
                 keys: s,
                 null_is_valid: self.null_idx < IdxSize::MAX,
-                random_state: self.random_state,
+                random_state: self.random_state.clone(),
             })
         }
     }
@@ -112,7 +112,7 @@ where
 
         // Preserve random state if non-empty.
         if !hash_keys.keys.is_empty() {
-            self.random_state = hash_keys.random_state;
+            self.random_state = hash_keys.random_state.clone();
         }
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();

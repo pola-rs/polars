@@ -5,12 +5,15 @@ use object_store::ObjectMeta;
 use object_store::path::Path;
 use polars_core::datatypes::IDX_DTYPE;
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::mmap::MMapSemaphore;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::RowIndex;
+use crate::cloud::concurrency_config::{ConcurrencyStrategy, FetchConfig};
 use crate::cloud::{
     CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
@@ -65,11 +68,11 @@ impl IpcReadOptions {
 
 impl IpcReaderAsync {
     pub async fn from_uri(
-        uri: &str,
+        uri: PlRefPath,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<IpcReaderAsync> {
         let cache_entry =
-            init_entries_from_uri_list([Arc::from(uri)].into_iter(), cloud_options)?[0].clone();
+            init_entries_from_uri_list([uri.clone()].into_iter(), cloud_options).await?[0].clone();
         let (CloudLocation { prefix, .. }, store) =
             build_object_store(uri, cloud_options, false).await?;
 
@@ -83,7 +86,9 @@ impl IpcReaderAsync {
     }
 
     async fn object_metadata(&self) -> PolarsResult<ObjectMeta> {
-        self.store.head(&self.path).await
+        self.store
+            .head(&self.path, ConcurrencyStrategy::BytesBased)
+            .await
     }
 
     async fn file_size(&self) -> PolarsResult<usize> {
@@ -101,6 +106,7 @@ impl IpcReaderAsync {
                     file_size.checked_sub(FOOTER_METADATA_SIZE).ok_or_else(|| {
                         to_compute_err("ipc file size is smaller than the minimum")
                     })?..file_size,
+                    FetchConfig::legacy(),
                 )
                 .await?;
 
@@ -120,6 +126,7 @@ impl IpcReaderAsync {
                     .ok_or_else(|| {
                         to_compute_err("invalid ipc footer metadata: footer size too large")
                     })?..file_size,
+                FetchConfig::legacy(),
             )
             .await?;
 
@@ -137,7 +144,7 @@ impl IpcReaderAsync {
     ) -> PolarsResult<DataFrame> {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
-        let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
+        let file = ASYNC.block_in_place(|| self.cache_entry.try_open_check_latest())?;
         let bytes = MMapSemaphore::new_from_file(&file).unwrap();
 
         let projection = match options.projection.as_deref() {
@@ -186,7 +193,7 @@ impl IpcReaderAsync {
     pub async fn count_rows(&self, _metadata: Option<&FileMetadata>) -> PolarsResult<i64> {
         // TODO: Only download what is needed rather than the entire file by
         // making use of the projection, row limit, predicate and such.
-        let file = tokio::task::block_in_place(|| self.cache_entry.try_open_check_latest())?;
+        let file = ASYNC.block_in_place(|| self.cache_entry.try_open_check_latest())?;
         let bytes = MMapSemaphore::new_from_file(&file).unwrap();
         get_row_count(&mut std::io::Cursor::new(bytes.as_ref()))
     }

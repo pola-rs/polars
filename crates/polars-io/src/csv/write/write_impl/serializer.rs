@@ -33,7 +33,7 @@
 use std::fmt::LowerExp;
 use std::io::Write;
 
-use arrow::array::{Array, BooleanArray, NullArray, PrimitiveArray, Utf8ViewArray};
+use arrow::array::{Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray};
 use arrow::legacy::time_zone::Tz;
 use arrow::types::NativeType;
 #[cfg(feature = "timezones")]
@@ -41,6 +41,7 @@ use chrono::TimeZone;
 use memchr::{memchr_iter, memchr3};
 use num_traits::NumCast;
 use polars_core::prelude::*;
+use polars_utils::float16::pf16;
 
 use crate::csv::write::{QuoteStyle, SerializeOptions};
 
@@ -57,27 +58,22 @@ impl std::fmt::Write for IgnoreFmt {
 
 pub(super) trait Serializer<'a> {
     fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions);
-    // Updates the array without changing the configuration.
-    fn update_array(&mut self, array: &'a dyn Array);
 }
 
 fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: bool>(
     f: impl FnMut(T, &mut Vec<u8>, &SerializeOptions),
     iter: I,
-    update_array: impl FnMut(&'a dyn Array) -> I,
 ) -> impl Serializer<'a> {
-    struct SerializerImpl<F, I, Update, const QUOTE_NON_NULL: bool> {
+    struct SerializerImpl<F, I, const QUOTE_NON_NULL: bool> {
         f: F,
         iter: I,
-        update_array: Update,
     }
 
-    impl<'a, T, F, I, Update, const QUOTE_NON_NULL: bool> Serializer<'a>
-        for SerializerImpl<F, I, Update, QUOTE_NON_NULL>
+    impl<'a, T, F, I, const QUOTE_NON_NULL: bool> Serializer<'a>
+        for SerializerImpl<F, I, QUOTE_NON_NULL>
     where
         F: FnMut(T, &mut Vec<u8>, &SerializeOptions),
         I: Iterator<Item = Option<T>>,
-        Update: FnMut(&'a dyn Array) -> I,
     {
         fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
             let item = self.iter.next().expect(TOO_MANY_MSG);
@@ -94,17 +90,9 @@ fn make_serializer<'a, T, I: Iterator<Item = Option<T>>, const QUOTE_NON_NULL: b
                 None => buf.extend_from_slice(options.null.as_bytes()),
             }
         }
-
-        fn update_array(&mut self, array: &'a dyn Array) {
-            self.iter = (self.update_array)(array);
-        }
     }
 
-    SerializerImpl::<_, _, _, QUOTE_NON_NULL> {
-        f,
-        iter,
-        update_array,
-    }
+    SerializerImpl::<_, _, QUOTE_NON_NULL> { f, iter }
 }
 
 fn integer_serializer<I: NativeType + itoa::Integer>(
@@ -116,52 +104,79 @@ fn integer_serializer<I: NativeType + itoa::Integer>(
         buf.extend_from_slice(value.as_bytes());
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
-fn float_serializer_no_precision_autoformat<I: NativeType + ryu::Float>(
+fn float_serializer_no_precision_autoformat_f16(array: &Float16Array) -> impl Serializer<'_> {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let mut buffer = zmij::Buffer::new();
+        let cast: f32 = NumCast::from(item).unwrap();
+        let value = buffer.format(cast);
+        buf.extend_from_slice(value.as_bytes());
+    };
+    float_serializer_no_precision_autoformat_(array, f)
+}
+
+fn float_serializer_no_precision_autoformat<I: NativeType + zmij::Float>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer<'_> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(item);
         buf.extend_from_slice(value.as_bytes());
     };
-
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    float_serializer_no_precision_autoformat_(array, f)
 }
 
-fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + ryu::Float>(
+fn float_serializer_no_precision_autoformat_<
+    'a,
+    I: NativeType,
+    F: Fn(&'a I, &mut Vec<u8>, &SerializeOptions),
+>(
+    array: &'a PrimitiveArray<I>,
+    f: F,
+) -> impl Serializer<'a> {
+    make_serializer::<_, _, false>(f, array.iter())
+}
+
+fn float_serializer_no_precision_autoformat_decimal_comma_f16(
+    array: &Float16Array,
+) -> impl Serializer<'_> {
+    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
+        let mut buffer = zmij::Buffer::new();
+        let cast: f32 = NumCast::from(item).unwrap();
+        let value = buffer.format(cast);
+
+        for ch in value.as_bytes() {
+            buf.push(if *ch == b'.' { b',' } else { *ch });
+        }
+    };
+    float_serializer_no_precision_autoformat_decimal_comma_(array, f)
+}
+
+fn float_serializer_no_precision_autoformat_decimal_comma<I: NativeType + zmij::Float>(
     array: &PrimitiveArray<I>,
 ) -> impl Serializer<'_> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let mut buffer = ryu::Buffer::new();
+        let mut buffer = zmij::Buffer::new();
         let value = buffer.format(item).as_bytes();
 
         for ch in value {
             buf.push(if *ch == b'.' { b',' } else { *ch });
         }
     };
+    float_serializer_no_precision_autoformat_decimal_comma_(array, f)
+}
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+fn float_serializer_no_precision_autoformat_decimal_comma_<
+    'a,
+    I: NativeType,
+    F: Fn(&'a I, &mut Vec<u8>, &SerializeOptions),
+>(
+    array: &'a PrimitiveArray<I>,
+    f: F,
+) -> impl Serializer<'a> {
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
@@ -172,13 +187,7 @@ fn float_serializer_no_precision_scientific<I: NativeType + LowerExp>(
         let _ = write!(buf, "{item:.e}");
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_no_precision_scientific_decimal_comma<I: NativeType + LowerExp>(
@@ -198,13 +207,7 @@ fn float_serializer_no_precision_scientific_decimal_comma<I: NativeType + LowerE
         buf.extend_from_slice(&scratch);
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
@@ -215,13 +218,7 @@ fn float_serializer_no_precision_positional<I: NativeType + NumCast>(
         let _ = write!(buf, "{v}");
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_no_precision_positional_decimal_comma<I: NativeType + NumCast>(
@@ -242,13 +239,7 @@ fn float_serializer_no_precision_positional_decimal_comma<I: NativeType + NumCas
         buf.extend_from_slice(&scratch);
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_with_precision_scientific<I: NativeType + LowerExp>(
@@ -260,13 +251,7 @@ fn float_serializer_with_precision_scientific<I: NativeType + LowerExp>(
         let _ = write!(buf, "{item:.precision$e}");
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_with_precision_scientific_decimal_comma<I: NativeType + LowerExp>(
@@ -288,13 +273,7 @@ fn float_serializer_with_precision_scientific_decimal_comma<I: NativeType + Lowe
         buf.extend_from_slice(&scratch);
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_with_precision_positional<I: NativeType>(
@@ -306,13 +285,7 @@ fn float_serializer_with_precision_positional<I: NativeType>(
         let _ = write!(buf, "{item:.precision$}");
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn float_serializer_with_precision_positional_decimal_comma<I: NativeType>(
@@ -333,13 +306,7 @@ fn float_serializer_with_precision_positional_decimal_comma<I: NativeType>(
         buf.extend_from_slice(&scratch);
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<I>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 fn null_serializer(_array: &NullArray) -> impl Serializer<'_> {
@@ -348,7 +315,6 @@ fn null_serializer(_array: &NullArray) -> impl Serializer<'_> {
         fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
             buf.extend_from_slice(options.null.as_bytes());
         }
-        fn update_array(&mut self, _array: &'a dyn Array) {}
     }
     NullSerializer
 }
@@ -359,31 +325,23 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
         buf.extend_from_slice(s.as_bytes());
     };
 
-    make_serializer::<_, _, QUOTE_NON_NULL>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<BooleanArray>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, QUOTE_NON_NULL>(f, array.iter())
 }
 
 #[cfg(feature = "dtype-decimal")]
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer<'_> {
     let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
-    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
-    let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        buf.extend_from_slice(fmt_buf.format(item, scale, trim_zeros).as_bytes());
+    let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
+    let f = move |&item, buf: &mut Vec<u8>, options: &SerializeOptions| {
+        buf.extend_from_slice(
+            fmt_buf
+                .format_dec128(item, scale, trim_zeros, options.decimal_comma)
+                .as_bytes(),
+        );
     };
 
-    make_serializer::<_, _, false>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<i128>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, false>(f, array.iter())
 }
 
 #[cfg(any(
@@ -399,13 +357,7 @@ fn callback_serializer<'a, T: NativeType, const QUOTE_NON_NULL: bool>(
         callback(item, buf);
     };
 
-    make_serializer::<_, _, QUOTE_NON_NULL>(f, array.iter(), |array| {
-        array
-            .as_any()
-            .downcast_ref::<PrimitiveArray<T>>()
-            .expect(ARRAY_MISMATCH_MSG)
-            .iter()
-    })
+    make_serializer::<_, _, QUOTE_NON_NULL>(f, array.iter())
 }
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-time"))]
@@ -413,7 +365,7 @@ type ChronoFormatIter<'a, 'b> = std::slice::Iter<'a, chrono::format::Item<'b>>;
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-time"))]
 fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
-    format_str: &'a Option<String>,
+    format_str: Option<&'a str>,
     description: &str,
     array: &'a dyn Array,
     sample_value: T,
@@ -485,23 +437,17 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
     const LF: u8 = b'\n';
     const CR: u8 = b'\r';
 
-    struct StringSerializer<F, Iter, Update> {
+    struct StringSerializer<F, Iter> {
         serialize: F,
-        update: Update,
         iter: Iter,
     }
 
-    impl<'a, F, Iter, Update> Serializer<'a> for StringSerializer<F, Iter, Update>
+    impl<'a, F, Iter> Serializer<'a> for StringSerializer<F, Iter>
     where
         F: FnMut(&mut Iter, &mut Vec<u8>, &SerializeOptions),
-        Update: FnMut(&'a dyn Array) -> Iter,
     {
         fn serialize(&mut self, buf: &mut Vec<u8>, options: &SerializeOptions) {
             (self.serialize)(&mut self.iter, buf, options);
-        }
-
-        fn update_array(&mut self, array: &'a dyn Array) {
-            self.iter = (self.update)(array);
         }
     }
 
@@ -551,11 +497,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                     buf.push(quote_char);
                 };
-            Box::new(StringSerializer {
-                serialize,
-                update,
-                iter,
-            })
+            Box::new(StringSerializer { serialize, iter })
         },
         QuoteStyle::NonNumeric => {
             let serialize =
@@ -569,11 +511,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     serialize_str_escaped(buf, s.as_bytes(), quote_char, true);
                     buf.push(quote_char);
                 };
-            Box::new(StringSerializer {
-                serialize,
-                update,
-                iter,
-            })
+            Box::new(StringSerializer { serialize, iter })
         },
         QuoteStyle::Necessary => {
             let serialize =
@@ -597,11 +535,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                         buf.push(quote_char);
                     }
                 };
-            Box::new(StringSerializer {
-                serialize,
-                update,
-                iter,
-            })
+            Box::new(StringSerializer { serialize, iter })
         },
         QuoteStyle::Never => {
             let serialize =
@@ -612,11 +546,7 @@ pub(super) fn string_serializer<'a, Iter: Send + 'a>(
                     };
                     buf.extend_from_slice(s.as_bytes());
                 };
-            Box::new(StringSerializer {
-                serialize,
-                update,
-                iter,
-            })
+            Box::new(StringSerializer { serialize, iter })
         },
     }
 }
@@ -628,10 +558,6 @@ fn quote_serializer<'a>(serializer: impl Serializer<'a>) -> impl Serializer<'a> 
             buf.push(options.quote_char);
             self.0.serialize(buf, options);
             buf.push(options.quote_char);
-        }
-
-        fn update_array(&mut self, array: &'a dyn Array) {
-            self.0.update_array(array);
         }
     }
     QuoteSerializer(serializer)
@@ -647,7 +573,7 @@ pub(super) fn serializer_for<'a>(
     // The needs_quotes flag captures the quote logic for the quote_wrapper! macro
     // It is targeted at numerical types primarily; other types may required additional logic
     let needs_quotes = match dtype {
-        DataType::Float32 | DataType::Float64 => {
+        DataType::Float16 | DataType::Float32 | DataType::Float64 => {
             // When comma is used as both the field separator and decimal separator, quoting
             // may be required. Specifically, when:
             // - quote_style is Always, or
@@ -662,6 +588,17 @@ pub(super) fn serializer_for<'a>(
             if let Some(precision) = options.float_precision {
                 should_quote &= precision > 0;
             }
+
+            match options.quote_style {
+                QuoteStyle::Always => true,
+                QuoteStyle::Necessary | QuoteStyle::NonNumeric => should_quote,
+                QuoteStyle::Never => false,
+            }
+        },
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, scale) => {
+            // Similar to logic for float data-types, but need to consider scale rather than precision
+            let should_quote = options.decimal_comma && options.separator == b',' && *scale > 0;
 
             match options.quote_style {
                 QuoteStyle::Always => true,
@@ -694,6 +631,56 @@ pub(super) fn serializer_for<'a>(
         DataType::Int64 => quote_wrapper!(integer_serializer::<i64>),
         DataType::UInt64 => quote_wrapper!(integer_serializer::<u64>),
         DataType::Int128 => quote_wrapper!(integer_serializer::<i128>),
+        DataType::UInt128 => quote_wrapper!(integer_serializer::<u128>),
+        DataType::Float16 => {
+            match (
+                options.decimal_comma,
+                options.float_precision,
+                options.float_scientific,
+            ) {
+                // standard decimal separator (period)
+                (false, Some(precision), Some(true)) => {
+                    quote_wrapper!(
+                        float_serializer_with_precision_scientific::<pf16>,
+                        precision
+                    )
+                },
+                (false, Some(precision), _) => {
+                    quote_wrapper!(
+                        float_serializer_with_precision_positional::<pf16>,
+                        precision
+                    )
+                },
+                (false, None, Some(true)) => {
+                    quote_wrapper!(float_serializer_no_precision_scientific::<pf16>)
+                },
+                (false, None, Some(false)) => {
+                    quote_wrapper!(float_serializer_no_precision_positional::<pf16>)
+                },
+                (false, None, None) => {
+                    quote_wrapper!(float_serializer_no_precision_autoformat_f16)
+                },
+
+                // comma as the decimal separator
+                (true, Some(precision), Some(true)) => quote_wrapper!(
+                    float_serializer_with_precision_scientific_decimal_comma::<pf16>,
+                    precision
+                ),
+                (true, Some(precision), _) => quote_wrapper!(
+                    float_serializer_with_precision_positional_decimal_comma::<pf16>,
+                    precision
+                ),
+                (true, None, Some(true)) => {
+                    quote_wrapper!(float_serializer_no_precision_scientific_decimal_comma::<pf16>)
+                },
+                (true, None, Some(false)) => {
+                    quote_wrapper!(float_serializer_no_precision_positional_decimal_comma::<pf16>)
+                },
+                (true, None, None) => {
+                    quote_wrapper!(float_serializer_no_precision_autoformat_decimal_comma_f16)
+                },
+            }
+        },
         DataType::Float32 => {
             match (
                 options.decimal_comma,
@@ -792,7 +779,7 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-date")]
         DataType::Date => date_and_time_serializer(
-            &options.date_format,
+            options.date_format.as_deref(),
             "NaiveDate",
             array,
             chrono::NaiveDate::MAX,
@@ -802,7 +789,7 @@ pub(super) fn serializer_for<'a>(
         )?,
         #[cfg(feature = "dtype-time")]
         DataType::Time => date_and_time_serializer(
-            &options.time_format,
+            Some(options.time_format.as_deref().unwrap_or("%T%.9f")),
             "NaiveTime",
             array,
             chrono::NaiveTime::MIN,
@@ -906,7 +893,7 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
-            quote_wrapper!(decimal_serializer, scale.unwrap_or(0))
+            quote_wrapper!(decimal_serializer, *scale)
         },
         _ => {
             polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or a binary format.")

@@ -81,6 +81,8 @@ pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
             DataType::UInt16 => Box::new(SKIT::<UInt16Type>::new()),
             DataType::UInt32 => Box::new(SKIT::<UInt32Type>::new()),
             DataType::UInt64 => Box::new(SKIT::<UInt64Type>::new()),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => Box::new(SKIT::<UInt128Type>::new()),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => Box::new(SKIT::<Int8Type>::new()),
             #[cfg(feature = "dtype-i16")]
@@ -89,6 +91,8 @@ pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
             DataType::Int64 => Box::new(SKIT::<Int64Type>::new()),
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => Box::new(SKIT::<Int128Type>::new()),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Box::new(SKIT::<Float16Type>::new()),
             DataType::Float32 => Box::new(SKIT::<Float32Type>::new()),
             DataType::Float64 => Box::new(SKIT::<Float64Type>::new()),
 

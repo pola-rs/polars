@@ -73,6 +73,7 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerTy
         (64, true) => IntegerType::Int64,
         (64, false) => IntegerType::UInt64,
         (128, true) => IntegerType::Int128,
+        (128, false) => IntegerType::UInt128,
         _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32, 64 or 128."),
     })
 }
@@ -242,6 +243,19 @@ fn get_dtype(
     extension: Extension,
     may_be_dictionary: bool,
 ) -> PolarsResult<(ArrowDataType, IpcField)> {
+    if let Some(extension) = extension {
+        let (name, metadata) = extension;
+        let (dtype, fields) = get_dtype(field, None, may_be_dictionary)?;
+        return Ok((
+            ArrowDataType::Extension(Box::new(ExtensionType {
+                name,
+                inner: dtype,
+                metadata,
+            })),
+            fields,
+        ));
+    }
+
     if let Some(dictionary) = field.dictionary()? {
         if may_be_dictionary {
             let int = dictionary
@@ -255,19 +269,6 @@ fn get_dtype(
                 ipc_field,
             ));
         }
-    }
-
-    if let Some(extension) = extension {
-        let (name, metadata) = extension;
-        let (dtype, fields) = get_dtype(field, None, false)?;
-        return Ok((
-            ArrowDataType::Extension(Box::new(ExtensionType {
-                name,
-                inner: dtype,
-                metadata,
-            })),
-            fields,
-        ));
     }
 
     let type_ = field
@@ -413,7 +414,7 @@ pub(super) fn fb_to_schema(
             let metadata: Metadata = metadata
                 .into_iter()
                 .filter_map(|kv_result| {
-                    // FIXME: silently hiding errors here
+                    // TODO: silently hiding errors here
                     let kv_ref = kv_result.ok()?;
                     Some((kv_ref.key().ok()??.into(), kv_ref.value().ok()??.into()))
                 })

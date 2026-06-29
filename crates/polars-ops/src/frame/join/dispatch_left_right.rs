@@ -1,3 +1,5 @@
+use polars_core::utils::Container;
+
 use super::*;
 use crate::prelude::*;
 
@@ -52,27 +54,21 @@ pub fn materialize_left_join_from_series(
     }
 
     // Ensure that the chunks are aligned otherwise we go OOB.
-    let mut right = Cow::Borrowed(right_);
-    let mut s_right = s_right.clone();
-    if left.should_rechunk() {
-        left.as_single_chunk_par();
-        s_left = s_left.rechunk();
-    }
-    if right.should_rechunk() {
-        let mut other = right_.clone();
-        other.as_single_chunk_par();
-        right = Cow::Owned(other);
-        s_right = s_right.rechunk();
-    }
-
-    // The current sort_or_hash_left implementation preserves the Left DataFrame order so skip left for now.
     let requires_ordering = matches!(
         args.maintain_order,
         MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft
     );
-    if requires_ordering {
-        // When ordering we rechunk the series so we don't get ChunkIds as output
+
+    let mut right = Cow::Borrowed(right_);
+    let mut s_right = s_right.clone();
+    if left.should_rechunk() || requires_ordering || left.n_chunks() != s_left.n_chunks() {
+        left.rechunk_mut_par();
         s_left = s_left.rechunk();
+    }
+    if right.should_rechunk() || requires_ordering || right.n_chunks() != s_right.n_chunks() {
+        let mut other = right_.clone();
+        other.rechunk_mut_par();
+        right = Cow::Owned(other);
         s_right = s_right.rechunk();
     }
 
@@ -103,21 +99,21 @@ pub fn materialize_left_join_from_series(
                     args,
                 ))
             } else {
-                Ok(POOL.join(
+                Ok(RAYON.join(
                     || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
                     || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
                 ))
             }
         },
-        (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_chunked_right(&right, right_idx.as_slice(), args),
         )),
-        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_chunked_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_chunked_right(&right, right_idx.as_slice(), args),
         )),
-        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Left(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Left(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_chunked_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
         )),
@@ -133,7 +129,7 @@ pub fn materialize_left_join_from_series(
             args,
         ))
     } else {
-        Ok(POOL.join(
+        Ok(RAYON.join(
             || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
         ))
@@ -151,7 +147,12 @@ fn maintain_order_idx(
         // SAFETY: left_idx and right_idx are continuous memory that outlive the memory mapped slices
         let left = unsafe { IdxCa::mmap_slice("a".into(), left_idx) };
         let right = unsafe { IdxCa::mmap_slice("b".into(), bytemuck::cast_slice(right_idx)) };
-        DataFrame::new(vec![left.into_series().into(), right.into_series().into()]).unwrap()
+        unsafe {
+            DataFrame::new_unchecked(
+                left_idx.len(),
+                vec![left.into_series().into(), right.into_series().into()],
+            )
+        }
     };
 
     let options = SortMultipleOptions::new()
@@ -188,7 +189,7 @@ fn maintain_order_idx(
         .cont_slice()
         .unwrap();
 
-    POOL.join(
+    RAYON.join(
         || materialize_left_join_idx_left(left, join_tuples_left, args),
         || materialize_left_join_idx_right(other, bytemuck::cast_slice(join_tuples_right), args),
     )

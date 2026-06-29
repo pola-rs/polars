@@ -1,4 +1,7 @@
-from typing import Callable
+from __future__ import annotations
+
+import re
+from typing import TYPE_CHECKING, Protocol
 
 import pytest
 from hypothesis import given
@@ -9,6 +12,24 @@ import polars.selectors as cs
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Sequence
+
+    from polars._typing import IntoExpr
+
+    class TopKFunction(Protocol):
+        """Function signature of `DataFrame.top_k` / `DataFrame.bottom_k`."""
+
+        def __call__(
+            self,
+            df: pl.DataFrame,
+            /,
+            k: int,
+            *,
+            by: IntoExpr | Iterable[IntoExpr],
+            reverse: bool | Sequence[bool] = False,
+        ) -> pl.DataFrame: ...
 
 
 def test_top_k() -> None:
@@ -486,12 +507,13 @@ def test_sorted_top_k_20719(descending: bool) -> None:
     # Note: Output stability is guaranteed by the input sortedness as an
     # implementation detail.
 
+    func: TopKFunction
     for func, reverse in [
-        [pl.DataFrame.top_k, False],
-        [pl.DataFrame.bottom_k, True],
+        (pl.DataFrame.top_k, False),
+        (pl.DataFrame.bottom_k, True),
     ]:
         assert_frame_equal(
-            df.pipe(func, 2, by="a", reverse=reverse),  # type: ignore[arg-type]
+            df.pipe(func, 2, by="a", reverse=reverse),
             pl.DataFrame(
                 [
                     {"a": 10, "b": 20},
@@ -501,11 +523,11 @@ def test_sorted_top_k_20719(descending: bool) -> None:
         )
 
     for func, reverse in [
-        [pl.DataFrame.top_k, True],
-        [pl.DataFrame.bottom_k, False],
+        (pl.DataFrame.top_k, True),
+        (pl.DataFrame.bottom_k, False),
     ]:
         assert_frame_equal(
-            df.pipe(func, 2, by="a", reverse=reverse),  # type: ignore[arg-type]
+            df.pipe(func, 2, by="a", reverse=reverse),
             pl.DataFrame(
                 [
                     {"a": 1, "b": 1},
@@ -526,13 +548,13 @@ def test_sorted_top_k_20719(descending: bool) -> None:
 )
 @pytest.mark.parametrize("descending", [True, False])
 def test_sorted_top_k_duplicates(
-    func: Callable[[pl.DataFrame], pl.DataFrame],
+    func: TopKFunction,
     reverse: bool,
     expect: pl.DataFrame,
     descending: bool,
 ) -> None:
     assert_frame_equal(
-        pl.DataFrame({"a": [1, 2, 2]})  # type: ignore[call-arg]
+        pl.DataFrame({"a": [1, 2, 2]})
         .sort("a", descending=descending)
         .pipe(func, 2, by="a", reverse=reverse),
         expect,
@@ -594,3 +616,36 @@ def test_top_k_non_elementwise_by_24163() -> None:
 
     expected = pl.DataFrame({"a": [7, 8]})
     assert_frame_equal(expected, query.collect(), check_row_order=False)
+
+
+def test_top_k_by_non_uniq_name_25072() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    result = df.sort(by=[pl.col.a, pl.col.a]).head(2)
+    expected = pl.DataFrame({"a": [1, 2], "b": [4, 5]})
+    assert_frame_equal(result, expected)
+
+
+def test_top_k_union_null() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3]}, schema={"a": pl.Int64})
+    df2 = pl.DataFrame({"a": [None, None, None]}, schema={"a": pl.Null})
+    out = (
+        pl.concat([df1.lazy().join(df1.lazy(), on="a"), df2.lazy()])
+        .bottom_k(5, by="a")
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(
+        out,
+        pl.DataFrame({"a": [1, 2, 3, None, None]}, schema={"a": pl.Int64}),
+        check_row_order=False,
+    )
+
+
+def test_top_k_dyn_pred_pushdown() -> None:
+    df = pl.DataFrame({"x": [1], "y": [1]})
+    plan = df.lazy().with_columns(pl.col.x * pl.col.x).sort("y").head(3).explain()
+
+    pred = re.search(r"FILTER.*dynamic_predicate", plan)
+    with_cols = re.search(r"WITH_COLUMNS", plan)
+    assert pred is not None
+    assert with_cols is not None
+    assert pred.start() > with_cols.start()

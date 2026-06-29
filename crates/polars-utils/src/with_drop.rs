@@ -25,7 +25,7 @@ where
     }
 
     #[inline]
-    pub fn into_inner(guard: Self) -> T {
+    pub fn dismiss(guard: Self) -> T {
         // First we ensure that dropping the guard will not trigger
         // its destructor
         let mut guard = ManuallyDrop::new(guard);

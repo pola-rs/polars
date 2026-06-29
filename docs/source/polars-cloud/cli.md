@@ -5,22 +5,29 @@ with polars cloud resources from the terminal.
 
 ```bash
 pc --help
+```
 
-usage: pc [-h] [-v] [-V] {authenticate,setup,login,organization,workspace,compute} ...
+```
+Command line interface for Polars Cloud
 
-positional arguments:
-  {authenticate,setup,login,organization,workspace,compute}
-    authenticate        Authenticate with Polars Cloud by loading stored credentials or otherwise logging in through the browser.
-    setup               Set up an organization and workspace to quickly run queries. Ideal to get started with Polars Cloud.
-    login               Authenticate with Polars Cloud by logging in through the browser.
-    organization        Manage Polars Cloud organizations.
-    workspace           Manage Polars Cloud workspaces.
-    compute             Manage Polars Cloud compute clusters.
+Usage: pc [OPTIONS] [COMMAND]
 
-optional arguments:
-  -h, --help            show this help message and exit.
-  -v, --verbose         Output debug logging messages.
-  -V, --version         Display the version of the Polars Cloud client.
+Commands:
+  authenticate     Authenticate with Polars Cloud
+  login            Login through the browser
+  setup            Set up organization and workspace
+  organization     Manage Polars Cloud organizations
+  workspace        Manage Polars Cloud workspaces
+  compute          Manage Polars Cloud compute clusters
+  service-account  Manage Polars Cloud service accounts
+  help             Print this message or the help of the given subcommand(s)
+
+Options:
+  -v, --verbose                  Output debug logging messages.
+  -t, --token <TOKEN>            Authentication token to override other auth methods
+  -p, --token-path <TOKEN_PATH>  Path to authentication token file
+  -h, --help                     Print help
+  -V, --version                  Print version
 ```
 
 If you're just starting out with Polars Cloud then `pc setup` will guide you through setting up your

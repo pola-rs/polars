@@ -6,7 +6,9 @@ pub(crate) use arrow::array::*;
 pub use arrow::datatypes::{ArrowSchema, Field as ArrowField};
 pub use arrow::legacy::prelude::*;
 pub(crate) use arrow::trusted_len::TrustedLen;
-pub use polars_compute::rolling::{QuantileMethod, RollingFnParams, RollingVarParams};
+pub use polars_compute::rolling::{
+    QuantileMethod, RollingFnParams, RollingRankMethod, RollingVarParams,
+};
 pub use polars_row::RowEncodingOptions;
 pub use polars_utils::aliases::*;
 pub use polars_utils::index::{ChunkId, IdxSize, NullableIdxSize};
@@ -24,7 +26,6 @@ pub use crate::chunked_array::builder::{
     ListStringChunkedBuilder, NewChunkedArray, PrimitiveChunkedBuilder, StringChunkedBuilder,
 };
 pub use crate::chunked_array::collect::{ChunkedCollectInferIterExt, ChunkedCollectIterExt};
-pub use crate::chunked_array::iterator::PolarsIterator;
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::*;
 #[cfg(feature = "ndarray")]

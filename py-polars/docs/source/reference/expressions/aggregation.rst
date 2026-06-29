@@ -17,13 +17,17 @@ Aggregation
     Expr.bitwise_xor
     Expr.count
     Expr.first
+    Expr.has_nulls
     Expr.implode
+    Expr.is_empty
     Expr.last
     Expr.len
     Expr.max
+    Expr.max_by
     Expr.mean
     Expr.median
     Expr.min
+    Expr.min_by
     Expr.n_unique
     Expr.nan_max
     Expr.nan_min

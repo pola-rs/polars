@@ -10,7 +10,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 def test_cum_count_single_arg(reverse: bool, output: list[int]) -> None:
     df = pl.DataFrame({"a": [5, 5, None]})
     result = df.select(pl.cum_count("a", reverse=reverse))
-    expected = pl.Series("a", output, dtype=pl.UInt32).to_frame()
+    expected = pl.Series("a", output, dtype=pl.get_index_type()).to_frame()
     assert_frame_equal(result, expected)
     assert result.to_series().flags[("SORTED_ASC", "SORTED_DESC")[reverse]]
 
@@ -28,11 +28,11 @@ def test_cum_count_multi_arg() -> None:
     result = df.select(pl.cum_count("a", "b", "c", "d", "e"))
     expected = pl.DataFrame(
         [
-            pl.Series("a", [1, 2, 3], dtype=pl.UInt32),
-            pl.Series("b", [0, 1, 2], dtype=pl.UInt32),
-            pl.Series("c", [1, 1, 2], dtype=pl.UInt32),
-            pl.Series("d", [1, 2, 2], dtype=pl.UInt32),
-            pl.Series("e", [0, 0, 0], dtype=pl.UInt32),
+            pl.Series("a", [1, 2, 3], dtype=pl.get_index_type()),
+            pl.Series("b", [0, 1, 2], dtype=pl.get_index_type()),
+            pl.Series("c", [1, 1, 2], dtype=pl.get_index_type()),
+            pl.Series("d", [1, 2, 2], dtype=pl.get_index_type()),
+            pl.Series("e", [0, 0, 0], dtype=pl.get_index_type()),
         ]
     )
     assert_frame_equal(result, expected)
@@ -51,11 +51,11 @@ def test_cum_count_multi_arg_reverse() -> None:
     result = df.select(pl.cum_count("a", "b", "c", "d", "e", reverse=True))
     expected = pl.DataFrame(
         [
-            pl.Series("a", [3, 2, 1], dtype=pl.UInt32),
-            pl.Series("b", [2, 2, 1], dtype=pl.UInt32),
-            pl.Series("c", [2, 1, 1], dtype=pl.UInt32),
-            pl.Series("d", [2, 1, 0], dtype=pl.UInt32),
-            pl.Series("e", [0, 0, 0], dtype=pl.UInt32),
+            pl.Series("a", [3, 2, 1], dtype=pl.get_index_type()),
+            pl.Series("b", [2, 2, 1], dtype=pl.get_index_type()),
+            pl.Series("c", [2, 1, 1], dtype=pl.get_index_type()),
+            pl.Series("d", [2, 1, 0], dtype=pl.get_index_type()),
+            pl.Series("e", [0, 0, 0], dtype=pl.get_index_type()),
         ]
     )
     assert_frame_equal(result, expected)
@@ -77,5 +77,5 @@ def test_cum_count() -> None:
 def test_series_cum_count() -> None:
     s = pl.Series(["x", "k", None, "d"])
     result = s.cum_count()
-    expected = pl.Series([1, 2, 2, 3], dtype=pl.UInt32)
+    expected = pl.Series([1, 2, 2, 3], dtype=pl.get_index_type())
     assert_series_equal(result, expected)

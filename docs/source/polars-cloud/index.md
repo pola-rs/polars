@@ -9,7 +9,7 @@ own APIs and limitations.
 
 Polars is bridging this gap with **Polars Cloud**. Build on top of the popular open source project,
 Polars Cloud enables you to write DataFrame code once and run it anywhere. The distributed engine
-available with Polars Cloud allows to scale your Polars queries beyond a single machine.
+available with Polars Cloud lets you scale your Polars queries beyond a single machine.
 
 ## Key Features of Polars Cloud
 
@@ -44,5 +44,5 @@ Polars Cloud is available to try with a 30 day free trial. You can sign up on
 
 ![AWS logo](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/aws-logo.svg)
 
-Polars Cloud is available on AWS. Other cloud providers and on-premise solutions are on the roadmap
+Polars Cloud is available on AWS. Other cloud providers and on-premises solutions are on the roadmap
 and will become available in the upcoming months.

@@ -80,6 +80,7 @@ def test_is_first_last_distinct_list(data: list[list[Any] | None]) -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_is_first_last_distinct_list_inner_nested() -> None:
     df = pl.DataFrame({"a": [[[1, 2]], [[1, 2]]]})
     err_msg = "only allowed if the inner type is not nested"

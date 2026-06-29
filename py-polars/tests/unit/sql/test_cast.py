@@ -41,6 +41,7 @@ def test_cast() -> None:
               b::bigint AS b_i64,
               d::tinyint AS d_i8,
               d::hugeint AS d_i128,
+              d::uhugeint as d_u128,
               a::int1 AS a_i8,
               a::int2 AS a_i16,
               a::int4 AS a_i32,
@@ -84,6 +85,7 @@ def test_cast() -> None:
         "b_i64": pl.Int64,
         "d_i8": pl.Int8,
         "d_i128": pl.Int128,
+        "d_u128": pl.UInt128,
         "a_i8": pl.Int8,
         "a_i16": pl.Int16,
         "a_i32": pl.Int32,
@@ -124,11 +126,11 @@ def test_cast() -> None:
         (5.0, 5.5, 2.0),
     ]
     assert res.select(cs.integer()).rows() == [
-        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
-        (2, 2, 2, 0, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 0),
-        (3, 3, 3, 1, 1, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 1),
-        (4, 4, 4, 0, 0, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 4, 0),
-        (5, 5, 5, 1, 1, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 1),
+        (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
+        (2, 2, 2, 0, 0, 0, 2, 2, 2, 2, 2, 0, 2, 2, 2, 2, 2, 2, 2, 0),
+        (3, 3, 3, 1, 1, 1, 3, 3, 3, 3, 3, 1, 3, 3, 3, 3, 3, 3, 3, 1),
+        (4, 4, 4, 0, 0, 0, 4, 4, 4, 4, 4, 0, 4, 4, 4, 4, 4, 4, 4, 0),
+        (5, 5, 5, 1, 1, 1, 5, 5, 5, 5, 5, 1, 5, 5, 5, 5, 5, 5, 5, 1),
     ]
     assert res.select(cs.string()).rows() == [
         ("1", "1.1", "true"),
@@ -167,7 +169,6 @@ def test_cast() -> None:
         ([1.0, -1.0], "values::uint8", "conversion from `f64` to `u64` failed"),
         ([10, 0, -1], "values::uint4", "conversion from `i64` to `u32` failed"),
         ([int(1e8)], "values::int1", "conversion from `i64` to `i8` failed"),
-        (["a", "b"], "values::date", "conversion from `str` to `date` failed"),
         (["a", "b"], "values::time", "conversion from `str` to `time` failed"),
         (["a", "b"], "values::int4", "conversion from `str` to `i32` failed"),
     ],

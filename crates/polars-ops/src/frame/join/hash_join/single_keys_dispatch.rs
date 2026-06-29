@@ -111,8 +111,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     (B::U64(lhs), B::U64(rhs)) => {
                         num_group_join_left(&lhs, &rhs, validate, nulls_equal)
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(lhs), B::I128(rhs)) => {
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), B::U128(rhs)) => {
                         num_group_join_left(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
@@ -214,8 +214,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     (B::U64(lhs), B::U64(rhs)) => {
                         num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(lhs), B::I128(rhs)) => {
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), B::U128(rhs)) => {
                         num_group_join_anti_semi(&lhs, &rhs, anti, nulls_equal)
                     },
                     _ => {
@@ -328,19 +328,21 @@ pub trait SeriesJoin: SeriesSealed + Sized {
 
                 use BitRepr as B;
                 match (lhs, rhs) {
-                    (B::U8(lhs), B::U8(rhs)) => group_join_inner(&lhs, &rhs, validate, nulls_equal),
+                    (B::U8(lhs), B::U8(rhs)) => {
+                        group_join_inner::<UInt8Type>(&lhs, &rhs, validate, nulls_equal)
+                    },
                     (B::U16(lhs), B::U16(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt16Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::U32(lhs), B::U32(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt32Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     (B::U64(lhs), BitRepr::U64(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                        group_join_inner::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(lhs), BitRepr::I128(rhs)) => {
-                        group_join_inner(&lhs, &rhs, validate, nulls_equal)
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), BitRepr::U128(rhs)) => {
+                        group_join_inner::<UInt128Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
                         polars_bail!(
@@ -428,8 +430,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     (B::U64(lhs), B::U64(rhs)) => {
                         hash_join_outer(&lhs, &rhs, validate, nulls_equal)
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(lhs), B::I128(rhs)) => {
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(lhs), B::U128(rhs)) => {
                         hash_join_outer(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
@@ -473,7 +475,7 @@ where
     for<'a> <T::Physical<'a> as ToTotalOrd>::TotalOrdItem:
         Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let (a, b, swapped) = det_hash_prone_order!(left, right);
     let splitted_a = split(a, n_threads);
     let splitted_b = split(b, n_threads);
@@ -561,7 +563,7 @@ fn create_mappings(
         }
     };
 
-    POOL.join(mapping_left, mapping_right)
+    RAYON.join(mapping_left, mapping_right)
 }
 
 #[cfg(not(feature = "chunked_ids"))]
@@ -587,7 +589,7 @@ where
     T::Native: DirtyHash + Copy + ToTotalOrd,
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let splitted_a = split(left, n_threads);
     let splitted_b = split(right, n_threads);
     match (
@@ -701,8 +703,8 @@ where
         (ca, other, false)
     };
     let hb = PlRandomState::default();
-    let bh_a = a.to_bytes_hashes(true, hb);
-    let bh_b = b.to_bytes_hashes(true, hb);
+    let bh_a = a.to_bytes_hashes(true, hb.clone());
+    let bh_b = b.to_bytes_hashes(true, hb.clone());
 
     (bh_a, bh_b, swapped, hb)
 }
@@ -720,7 +722,7 @@ where
     <T::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     <Option<T::Native> as ToTotalOrd>::TotalOrdItem: Send + Sync + DirtyHash + IsNull,
 {
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     let splitted_a = split(left, n_threads);
     let splitted_b = split(right, n_threads);
     match (

@@ -155,6 +155,12 @@ fn from_byte_array(
     converted_type: &Option<PrimitiveConvertedType>,
 ) -> ArrowDataType {
     match (logical_type, converted_type) {
+        (Some(PrimitiveLogicalType::Decimal(precision, scale)), _) => {
+            ArrowDataType::Decimal(*precision, *scale)
+        },
+        (None, Some(PrimitiveConvertedType::Decimal(precision, scale))) => {
+            ArrowDataType::Decimal(*precision, *scale)
+        },
         (Some(PrimitiveLogicalType::String), _) => ArrowDataType::Utf8View,
         (Some(PrimitiveLogicalType::Json), _) => ArrowDataType::BinaryView,
         (Some(PrimitiveLogicalType::Bson), _) => ArrowDataType::BinaryView,
@@ -180,10 +186,7 @@ fn from_fixed_len_byte_array(
             ArrowDataType::Decimal(precision, scale)
         },
         (None, Some(PrimitiveConvertedType::Interval)) => {
-            // There is currently no reliable way of determining which IntervalUnit
-            // to return. Thus without the original Arrow schema, the results
-            // would be incorrect if all 12 bytes of the interval are populated
-            ArrowDataType::Interval(IntervalUnit::DayTime)
+            ArrowDataType::Interval(IntervalUnit::MonthDayMillis)
         },
         _ => ArrowDataType::FixedSizeBinary(length),
     }
@@ -269,11 +272,27 @@ fn to_struct(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option
     }
 }
 
-/// Converts a parquet group type to an arrow [`ArrowDataType::Struct`].
-/// Returns [`None`] if all its fields are empty
+/// Converts a parquet `MAP` / `MAP_KEY_VALUE` group to an arrow
+/// [`ArrowDataType::Map`].
+///
+/// The parquet `MAP` group has a single repeated `key_value` child with `key`
+/// and `value` fields. We build the arrow `Map`'s inner `Field` from those
+/// as `Struct([key, value])`.
 fn to_map(fields: &[ParquetType], options: &SchemaInferenceOptions) -> Option<ArrowDataType> {
-    let inner = to_field(&fields[0], options)?;
-    Some(ArrowDataType::Map(Box::new(inner), false))
+    let Some(ParquetType::GroupType {
+        field_info,
+        fields: kv_fields,
+        ..
+    }) = fields.first()
+    else {
+        return None;
+    };
+    let entry = Field::new(
+        field_info.name.clone(),
+        to_struct(kv_fields, options)?,
+        false,
+    );
+    Some(ArrowDataType::Map(Box::new(entry), false))
 }
 
 /// Entry point for converting parquet group type.

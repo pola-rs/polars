@@ -4,6 +4,9 @@ use polars_core::prelude::*;
 
 pub trait DataFrameUdf: Send + Sync {
     fn call_udf(&self, df: DataFrame) -> PolarsResult<DataFrame>;
+    fn display_str(&self) -> PlSmallStr {
+        PlSmallStr::from_static("dyn DataFrameUdf")
+    }
 }
 
 impl<F> DataFrameUdf for F
@@ -30,7 +33,7 @@ where
 
 impl Debug for dyn DataFrameUdf {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "dyn DataFrameUdf")
+        self.display_str().fmt(f)
     }
 }
 impl Debug for dyn DataFrameUdfMut {

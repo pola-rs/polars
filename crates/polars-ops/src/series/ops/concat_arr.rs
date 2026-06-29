@@ -109,15 +109,16 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         let inner_arr = unsafe { horizontal_flatten_unchecked(&arrays, &widths, 1) };
 
         let arr = FixedSizeListArray::new(
-            dtype.to_arrow(CompatLevel::newest()),
+            FixedSizeListArray::default_datatype(inner_arr.dtype().clone(), width),
             1,
             inner_arr,
             outer_validity,
         );
 
-        return Ok(ArrayChunked::with_chunk(args[0].name().clone(), arr)
-            .into_column()
-            .new_from_index(0, output_height));
+        let mut out = ArrayChunked::with_chunk(args[0].name().clone(), arr);
+        unsafe { out.to_logical(inner_dtype.clone()) };
+
+        return Ok(out.into_column().new_from_index(0, output_height));
     } else {
         let inner_arr = if width == 0 {
             Series::new_empty(PlSmallStr::EMPTY, inner_dtype)
@@ -130,12 +131,16 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         };
 
         let arr = FixedSizeListArray::new(
-            dtype.to_arrow(CompatLevel::newest()),
+            FixedSizeListArray::default_datatype(inner_arr.dtype().clone(), width),
             output_height,
             inner_arr,
             outer_validity,
         );
-        ArrayChunked::with_chunk(args[0].name().clone(), arr).into_column()
+
+        let mut out = ArrayChunked::with_chunk(args[0].name().clone(), arr);
+        unsafe { out.to_logical(inner_dtype.clone()) };
+
+        out.into_column()
     };
 
     Ok(out)

@@ -86,9 +86,7 @@ mod inner_mod {
             check_input(options.window_size, options.min_periods)?;
 
             let ca = self.rechunk();
-            if options.weights.is_some()
-                && !matches!(self.dtype(), DataType::Float64 | DataType::Float32)
-            {
+            if options.weights.is_some() && !self.dtype().is_float() {
                 let s = self.cast_with_options(&DataType::Float64, CastOptions::NonStrict)?;
                 return s.rolling_map(f, options);
             }

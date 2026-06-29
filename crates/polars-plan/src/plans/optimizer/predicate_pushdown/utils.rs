@@ -73,73 +73,22 @@ pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<PlSmallStr, ExprIR
     PlSmallStr::from_string(out_key)
 }
 
-pub(super) fn combine_predicates<I>(iter: I, arena: &mut Arena<AExpr>) -> ExprIR
+pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
 where
-    I: Iterator<Item = ExprIR>,
+    I: IntoIterator<Item = ExprIR>,
 {
-    let mut single_pred = None;
+    let mut iter = iter.into_iter();
+    let mut out = iter.next()?.node();
+
     for e in iter {
-        single_pred = match single_pred {
-            None => Some(e.node()),
-            Some(left) => Some(arena.add(AExpr::BinaryExpr {
-                left,
-                op: Operator::And,
-                right: e.node(),
-            })),
-        };
+        out = expr_arena.add(AExpr::BinaryExpr {
+            left: out,
+            op: Operator::And,
+            right: e.node(),
+        });
     }
-    single_pred
-        .map(|node| ExprIR::from_node(node, arena))
-        .expect("an empty iterator was passed")
-}
 
-pub(super) fn predicate_at_scan(
-    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
-    predicate: Option<ExprIR>,
-    expr_arena: &mut Arena<AExpr>,
-) -> Option<ExprIR> {
-    if !acc_predicates.is_empty() {
-        let mut new_predicate = combine_predicates(acc_predicates.into_values(), expr_arena);
-        if let Some(pred) = predicate {
-            new_predicate.set_node(combine_by_and(
-                new_predicate.node(),
-                pred.node(),
-                expr_arena,
-            ));
-        }
-        Some(new_predicate)
-    } else {
-        None
-    }
-}
-
-/// Evaluates a condition on the column name inputs of every predicate, where if
-/// the condition evaluates to true on any column name the predicate is
-/// transferred to local.
-pub(super) fn transfer_to_local_by_expr_ir<F>(
-    expr_arena: &Arena<AExpr>,
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
-    mut condition: F,
-) -> Vec<ExprIR>
-where
-    F: FnMut(&ExprIR) -> bool,
-{
-    let mut remove_keys = Vec::with_capacity(acc_predicates.len());
-
-    for predicate in acc_predicates.values() {
-        if condition(predicate) {
-            if let Some(name) = aexpr_to_leaf_names_iter(predicate.node(), expr_arena).next() {
-                remove_keys.push(name);
-            }
-        }
-    }
-    let mut local_predicates = Vec::with_capacity(remove_keys.len());
-    for key in remove_keys {
-        if let Some(pred) = acc_predicates.remove(&*key) {
-            local_predicates.push(pred)
-        }
-    }
-    local_predicates
+    Some(ExprIR::from_node(out, expr_arena))
 }
 
 /// Evaluates a condition on the column name inputs of every predicate, where if
@@ -158,7 +107,7 @@ where
     for (key, predicate) in &*acc_predicates {
         let root_names = aexpr_to_leaf_names_iter(predicate.node(), expr_arena);
         for name in root_names {
-            if condition(&name) {
+            if condition(name) {
                 remove_keys.push(key.clone());
                 break;
             }
@@ -241,19 +190,14 @@ pub fn pushdown_eligibility(
             let ae = expr_arena.get(node);
 
             match ae {
-                AExpr::Window {
+                #[cfg(feature = "dynamic_group_by")]
+                AExpr::Rolling { .. } => return ExprPushdownGroup::Barrier,
+                AExpr::Over {
+                    function: _,
                     partition_by,
-                    #[cfg(feature = "dynamic_group_by")]
-                    options,
-                    // The function is not checked for groups-sensitivity because
-                    // it is applied over the windows.
-                    ..
+                    order_by: _,
+                    mapping: _,
                 } => {
-                    #[cfg(feature = "dynamic_group_by")]
-                    if matches!(options, WindowType::Rolling(..)) {
-                        return ExprPushdownGroup::Barrier;
-                    };
-
                     partition_by_names.clear();
                     partition_by_names.reserve(partition_by.len());
 
@@ -470,10 +414,6 @@ pub fn pushdown_eligibility(
 pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
     use IR::*;
 
-    // NOTE
-    // At time of writing predicate pushdown runs before slice pushdown, so
-    // some of the below checks for slice may never be hit.
-
     match ir {
         DataFrameScan { .. }
         | SimpleProjection { .. }
@@ -497,6 +437,8 @@ pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
         Scan {
             unified_scan_args, ..
         } => unified_scan_args.pre_slice.is_some(),
+
+        Union { options, .. } => options.slice.is_some(),
 
         _ => true,
     }

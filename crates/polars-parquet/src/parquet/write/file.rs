@@ -151,7 +151,11 @@ impl<W: Write> FileWriter<W> {
     /// Writes a row group to the file.
     ///
     /// This call is IO-bounded
-    pub fn write<E>(&mut self, row_group: RowGroupIterColumns<'_, E>) -> ParquetResult<()>
+    pub fn write<E>(
+        &mut self,
+        num_rows: u64,
+        row_group: RowGroupIterColumns<'_, E>,
+    ) -> ParquetResult<()>
     where
         ParquetError: From<E>,
         E: std::error::Error,
@@ -162,6 +166,7 @@ impl<W: Write> FileWriter<W> {
         let ordinal = self.row_groups.len();
         let (group, specs, size) = write_row_group(
             &mut self.writer,
+            num_rows,
             self.offset,
             self.schema.columns(),
             row_group,

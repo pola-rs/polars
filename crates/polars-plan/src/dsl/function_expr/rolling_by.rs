@@ -11,6 +11,7 @@ pub enum RollingFunctionBy {
     QuantileBy,
     VarBy,
     StdBy,
+    RankBy,
 }
 
 impl Display for RollingFunctionBy {
@@ -25,6 +26,7 @@ impl Display for RollingFunctionBy {
             QuantileBy => "rolling_quantile_by",
             VarBy => "rolling_var_by",
             StdBy => "rolling_std_by",
+            RankBy => "rolling_rank_by",
         };
 
         write!(f, "{name}")

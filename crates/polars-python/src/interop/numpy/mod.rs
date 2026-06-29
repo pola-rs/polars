@@ -16,6 +16,8 @@ macro_rules! with_match_physical_numpy_polars_type {(
         D::UInt16 => __with_ty__! { UInt16Type },
         D::UInt32 => __with_ty__! { UInt32Type },
         D::UInt64 => __with_ty__! { UInt64Type },
+        #[cfg(feature = "dtype-f16")]
+        D::Float16 => __with_ty__! { Float16Type },
         D::Float32 => __with_ty__! { Float32Type },
         D::Float64 => __with_ty__! { Float64Type },
         dt => panic!("not implemented for dtype {:?}", dt),

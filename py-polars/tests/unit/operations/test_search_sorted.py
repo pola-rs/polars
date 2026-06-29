@@ -30,6 +30,11 @@ def test_search_sorted() -> None:
     assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
     assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
 
+    a = pl.Series([1, 1, 4, 4], dtype=pl.Decimal(3))
+    b = pl.Series([0, 1, 2, 4, 5], dtype=pl.Decimal(3))
+    assert a.search_sorted(b, side="left").to_list() == [0, 0, 2, 2, 4]
+    assert a.search_sorted(b, side="right").to_list() == [0, 2, 2, 4, 4]
+
 
 @pytest.mark.parametrize("descending", [False, True])
 def test_search_sorted_descending_order(descending: bool) -> None:
@@ -89,3 +94,11 @@ def test_raise_literal_numeric_search_sorted_18096() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(idx=pl.col("foo").search_sorted("bar"))
+
+
+def test_search_sorted_list_ambiguous_22058() -> None:
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.Series([1, 2, 3]).search_sorted([1, 2])  # type: ignore[call-overload]
+
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.DataFrame({"a": [1, 2, 3]}).select(pl.col("a").search_sorted([1, 2]))

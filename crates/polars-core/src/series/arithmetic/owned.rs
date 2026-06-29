@@ -67,6 +67,10 @@ macro_rules! impl_operation {
                             UInt16 => apply_operation_mut::<UInt16Type, _>(lhs, rhs, $function),
                             UInt32 => apply_operation_mut::<UInt32Type, _>(lhs, rhs, $function),
                             UInt64 => apply_operation_mut::<UInt64Type, _>(lhs, rhs, $function),
+                            #[cfg(feature = "dtype-u128")]
+                            UInt128 => apply_operation_mut::<UInt128Type, _>(lhs, rhs, $function),
+                            #[cfg(feature = "dtype-f16")]
+                            Float16 => apply_operation_mut::<Float16Type, _>(lhs, rhs, $function),
                             Float32 => apply_operation_mut::<Float32Type, _>(lhs, rhs, $function),
                             Float64 => apply_operation_mut::<Float64Type, _>(lhs, rhs, $function),
                             _ => unreachable!(),

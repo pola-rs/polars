@@ -19,9 +19,9 @@ type IdAndExpression = (u32, Arc<dyn PhysicalExpr>);
 fn rolling_evaluate(
     df: &DataFrame,
     state: &ExecutionState,
-    rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>>,
+    rolling: PlHashMap<RollingGroupOptions, Vec<IdAndExpression>>,
 ) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
-    POOL.install(|| {
+    RAYON.install(|| {
         rolling
             .par_iter()
             .map(|(options, partition)| {
@@ -52,7 +52,7 @@ fn window_evaluate(
     if window.is_empty() {
         return Ok(vec![]);
     }
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
 
     let max_hor = window.values().map(|v| v.len()).max().unwrap_or(0);
     let vert = window.len();
@@ -79,7 +79,13 @@ fn window_evaluate(
                 e.as_expression()
                     .unwrap()
                     .into_iter()
-                    .filter(|e| matches!(e, Expr::Window { .. }))
+                    .filter(|e| {
+                        #[cfg(feature = "dynamic_group_by")]
+                        if matches!(e, Expr::Rolling { .. }) {
+                            return true;
+                        }
+                        matches!(e, Expr::Over { .. })
+                    })
                     .count()
                     == 1
             });
@@ -119,7 +125,7 @@ fn window_evaluate(
     };
 
     if par_vertical {
-        POOL.install(|| window.par_iter().map(|t| apply(t.1)).collect())
+        RAYON.install(|| window.par_iter().map(|t| apply(t.1)).collect())
     } else {
         window.iter().map(|t| apply(t.1)).collect()
     }
@@ -142,7 +148,7 @@ fn execute_projection_cached_window_fns(
     // u32: index,
     let mut windows: PlHashMap<String, Vec<IdAndExpression>> = PlHashMap::default();
     #[cfg(feature = "dynamic_group_by")]
-    let mut rolling: PlHashMap<&RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
+    let mut rolling: PlHashMap<RollingGroupOptions, Vec<IdAndExpression>> = PlHashMap::default();
     let mut other = Vec::with_capacity(exprs.len());
 
     // first we partition the window function by the values they group over.
@@ -151,34 +157,49 @@ fn execute_projection_cached_window_fns(
         let mut is_window = false;
         if let Some(e) = phys.as_expression() {
             for e in e.into_iter() {
-                if let Expr::Window {
-                    partition_by,
-                    options,
-                    order_by,
-                    ..
-                } = e
-                {
-                    let entry = match options {
-                        WindowType::Over(g) => {
-                            let g: &str = g.into();
-                            let mut key = format!("{:?}_{}", partition_by.as_slice(), g);
-                            if let Some((e, k)) = order_by {
-                                polars_expr::prelude::window_function_format_order_by(
-                                    &mut key,
-                                    e.as_ref(),
-                                    k,
-                                )
-                            }
-                            windows.entry(key).or_insert_with(Vec::new)
-                        },
-                        #[cfg(feature = "dynamic_group_by")]
-                        WindowType::Rolling(options) => {
-                            rolling.entry(options).or_insert_with(Vec::new)
-                        },
-                    };
-                    entry.push((index, phys.clone()));
-                    is_window = true;
-                    break;
+                match e {
+                    #[cfg(feature = "dynamic_group_by")]
+                    Expr::Rolling {
+                        function: _,
+                        index_column,
+                        period,
+                        offset,
+                        closed_window,
+                    } => {
+                        if let Expr::Column(index_column) = index_column.as_ref() {
+                            let options = RollingGroupOptions {
+                                index_column: index_column.clone(),
+                                period: *period,
+                                offset: *offset,
+                                closed_window: *closed_window,
+                            };
+                            let entry = rolling.entry(options).or_default();
+                            entry.push((index, phys.clone()));
+                            is_window = true;
+                            break;
+                        }
+                    },
+                    Expr::Over {
+                        function: _,
+                        partition_by,
+                        order_by,
+                        mapping,
+                    } => {
+                        let mapping: &str = mapping.into();
+                        let mut key = format!("{:?}_{mapping}", partition_by.as_slice());
+                        if let Some((e, k)) = order_by {
+                            polars_expr::prelude::window_function_format_order_by(
+                                &mut key,
+                                e.as_ref(),
+                                k,
+                            )
+                        }
+                        let entry = windows.entry(key).or_insert_with(Vec::new);
+                        entry.push((index, phys.clone()));
+                        is_window = true;
+                        break;
+                    },
+                    _ => {},
                 }
             }
         } else {
@@ -190,7 +211,7 @@ fn execute_projection_cached_window_fns(
         }
     });
 
-    let mut selected_columns = POOL.install(|| {
+    let mut selected_columns = RAYON.install(|| {
         other
             .par_iter()
             .map(|(idx, expr)| expr.evaluate(df, state).map(|s| (*idx, s)))
@@ -202,7 +223,7 @@ fn execute_projection_cached_window_fns(
     // The rolling expression knows how to fetch the groups.
     #[cfg(feature = "dynamic_group_by")]
     {
-        let (a, b) = POOL.join(
+        let (a, b) = RAYON.join(
             || rolling_evaluate(df, state, rolling),
             || window_evaluate(df, state, windows),
         );
@@ -234,7 +255,7 @@ fn run_exprs_par(
     exprs: &[Arc<dyn PhysicalExpr>],
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
-    POOL.install(|| {
+    RAYON.install(|| {
         exprs
             .par_iter()
             .map(|expr| expr.evaluate(df, state))
@@ -278,7 +299,7 @@ pub(super) fn check_expand_literals(
     df: &DataFrame,
     phys_expr: &[Arc<dyn PhysicalExpr>],
     mut selected_columns: Vec<Column>,
-    zero_length: bool,
+    is_empty: bool,
     options: ProjectionOptions,
 ) -> PolarsResult<DataFrame> {
     let Some(first_len) = selected_columns.first().map(|s| s.len()) else {
@@ -288,8 +309,8 @@ pub(super) fn check_expand_literals(
     let should_broadcast = options.should_broadcast;
 
     // When we have CSE we cannot verify scalars yet.
-    let verify_scalar = if !df.get_columns().is_empty() {
-        !df.get_columns()[df.width() - 1]
+    let verify_scalar = if !df.columns().is_empty() {
+        !df.columns()[df.width() - 1]
             .name()
             .starts_with(CSE_REPLACED)
     } else {
@@ -372,12 +393,12 @@ pub(super) fn check_expand_literals(
     // @scalar-opt
     let selected_columns = selected_columns.into_iter().collect::<Vec<_>>();
 
-    let df = unsafe { DataFrame::new_no_checks_height_from_first(selected_columns) };
+    let df = unsafe { DataFrame::new_unchecked_infer_height(selected_columns) };
 
     // a literal could be projected to a zero length dataframe.
     // This prevents a panic.
-    let df = if zero_length {
-        let min = df.get_columns().iter().map(|s| s.len()).min();
+    let df = if is_empty {
+        let min = df.columns().iter().map(|s| s.len()).min();
         if min.is_some() { df.head(min) } else { df }
     } else {
         df

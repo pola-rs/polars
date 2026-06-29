@@ -1,5 +1,6 @@
-use std::num::TryFromIntError;
 use std::ops::Range;
+
+use crate::IdxSize;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -103,6 +104,17 @@ impl Slice {
             },
         }
     }
+
+    pub fn to_signed_offset_len(&self) -> (i64, IdxSize) {
+        let (offset, len) = match self {
+            Slice::Positive { offset, len } => (i64::try_from(*offset).unwrap(), *len),
+            Slice::Negative {
+                offset_from_end,
+                len,
+            } => (-i64::try_from(*offset_from_end).unwrap(), *len),
+        };
+        (offset, len.min(IdxSize::MAX as usize) as IdxSize)
+    }
 }
 
 impl From<(usize, usize)> for Slice {
@@ -127,16 +139,20 @@ impl From<(i64, usize)> for Slice {
     }
 }
 
-impl TryFrom<Slice> for (i64, usize) {
-    type Error = TryFromIntError;
-
-    fn try_from(value: Slice) -> Result<Self, Self::Error> {
+impl From<Slice> for (i128, i128) {
+    fn from(value: Slice) -> Self {
         match value {
-            Slice::Positive { offset, len } => Ok((i64::try_from(offset)?, len)),
+            Slice::Positive { offset, len } => (
+                i128::try_from(offset).unwrap(),
+                i128::try_from(len).unwrap(),
+            ),
             Slice::Negative {
                 offset_from_end,
                 len,
-            } => Ok((-i64::try_from(offset_from_end)?, len)),
+            } => (
+                -i128::try_from(offset_from_end).unwrap(),
+                i128::try_from(len).unwrap(),
+            ),
         }
     }
 }
@@ -144,7 +160,14 @@ impl TryFrom<Slice> for (i64, usize) {
 impl From<Slice> for Range<usize> {
     fn from(value: Slice) -> Self {
         match value {
-            Slice::Positive { offset, len } => offset..offset.checked_add(len).unwrap(),
+            Slice::Positive { offset, len } => {
+                offset
+                    ..offset
+                        .checked_add(len)
+                        // Infer if no len was specified, in which case we set to range end to the max possible.
+                        .or((len == usize::MAX).then_some(usize::MAX))
+                        .unwrap()
+            },
             Slice::Negative { .. } => panic!("cannot convert negative slice into range"),
         }
     }
@@ -187,15 +210,31 @@ mod tests {
         assert_eq!(
             Slice::Negative {
                 offset_from_end: 3,
-                len: 1
+                len: 2
             }
             .restrict_to_bounds(4),
-            Slice::Positive { offset: 1, len: 1 },
+            Slice::Positive { offset: 1, len: 2 },
         );
         assert_eq!(
             Slice::Negative {
                 offset_from_end: 3,
-                len: 1
+                len: 2
+            }
+            .restrict_to_bounds(3),
+            Slice::Positive { offset: 0, len: 2 },
+        );
+        assert_eq!(
+            Slice::Negative {
+                offset_from_end: 3,
+                len: 2
+            }
+            .restrict_to_bounds(2),
+            Slice::Positive { offset: 0, len: 1 },
+        );
+        assert_eq!(
+            Slice::Negative {
+                offset_from_end: 3,
+                len: 2
             }
             .restrict_to_bounds(1),
             Slice::Positive { offset: 0, len: 0 },

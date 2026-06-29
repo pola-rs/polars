@@ -1,8 +1,8 @@
 use arrow::array::Utf8Array;
 use arrow::bitmap::Bitmap;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
+use polars_buffer::Buffer;
 
 #[test]
 fn not_shared() {

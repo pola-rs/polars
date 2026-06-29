@@ -78,6 +78,15 @@ impl Series {
             FillNullStrategy::Forward(None) if !physical_type.is_primitive_numeric() => {
                 fill_forward_gather(self)
             },
+
+            // Fast path to remove limit.
+            FillNullStrategy::Forward(Some(limit)) if limit >= nc as IdxSize => {
+                self.fill_null(FillNullStrategy::Forward(None))
+            },
+            FillNullStrategy::Backward(Some(limit)) if limit >= nc as IdxSize => {
+                self.fill_null(FillNullStrategy::Backward(None))
+            },
+
             FillNullStrategy::Forward(Some(limit)) => fill_forward_gather_limit(self, limit),
             FillNullStrategy::Backward(None) if !physical_type.is_primitive_numeric() => {
                 fill_backward_gather(self)
@@ -85,10 +94,14 @@ impl Series {
             FillNullStrategy::Backward(Some(limit)) => fill_backward_gather_limit(self, limit),
             #[cfg(feature = "dtype-decimal")]
             FillNullStrategy::One if self.dtype().is_decimal() => {
+                use polars_compute::decimal::i128_to_dec128;
+
                 let ca = self.decimal().unwrap();
                 let precision = ca.precision();
                 let scale = ca.scale();
-                let fill_value = 10i128.pow(scale as u32);
+                let fill_value = i128_to_dec128(1, precision, scale).ok_or_else(|| {
+                    polars_err!(ComputeError: "value '1' is out of range for Decimal({precision}, {scale})")
+                })?;
                 let phys = ca.physical().fill_null_with_values(fill_value)?;
                 Ok(phys.into_decimal_unchecked(precision, scale).into_series())
             },
@@ -123,19 +136,18 @@ impl Series {
     }
 }
 
-fn fill_forward_numeric<'a, T, I>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
+fn fill_forward_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
-    I: TrustedLen + Iterator<Item = Option<T::Physical<'a>>>,
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
+    let mut last = T::ZeroablePhysical::zeroed();
     let values: Vec<T::ZeroablePhysical<'a>> = ca
-        .into_iter()
-        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
-            *prev = v.map(|v| v.into()).unwrap_or(*prev);
-            Some(*prev)
+        .iter()
+        .map(|v| {
+            last = v.map(|v| v.into()).unwrap_or(last);
+            last
         })
         .collect_trusted();
 
@@ -153,20 +165,19 @@ where
     )
 }
 
-fn fill_backward_numeric<'a, T, I>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
+fn fill_backward_numeric<'a, T>(ca: &'a ChunkedArray<T>) -> ChunkedArray<T>
 where
     T: PolarsDataType,
-    &'a ChunkedArray<T>: IntoIterator<IntoIter = I>,
-    I: TrustedLen + Iterator<Item = Option<T::Physical<'a>>> + DoubleEndedIterator,
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
+    let mut last = T::ZeroablePhysical::zeroed();
     let values: Vec<T::ZeroablePhysical<'a>> = ca
-        .into_iter()
+        .iter()
         .rev()
-        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
-            *prev = v.map(|v| v.into()).unwrap_or(*prev);
-            Some(*prev)
+        .map(|v| {
+            last = v.map(|v| v.into()).unwrap_or(last);
+            last
         })
         .collect_reversed();
 

@@ -1,8 +1,7 @@
 use super::*;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
-use crate::prelude::row_encode::_get_rows_encoded_ca_unordered;
+use crate::prelude::row_encode::{_get_rows_encoded_ca_unordered, encode_rows_unordered};
 use crate::prelude::*;
 
 impl private::PrivateSeries for SeriesWrap<ListChunked> {
@@ -20,10 +19,6 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     }
     fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
-    }
-
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
     }
 
     fn vec_hash(
@@ -166,12 +161,20 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
 
     fn rechunk(&self) -> Series {
         self.0.rechunk().into_owned().into_series()
+    }
+
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0.clone().with_validity(validity).into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -207,14 +210,11 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
-        if !self.inner_dtype().is_primitive_numeric() {
-            polars_bail!(opq = unique, self.dtype());
-        }
         // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() < 2 {
             return Ok(self.0.clone().into_series());
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
         // SAFETY:
         // groups are in bounds
@@ -228,7 +228,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
             0 => Ok(0),
             1 => Ok(1),
             _ => {
-                let main_thread = POOL.current_thread_index().is_none();
+                let main_thread = RAYON.current_thread_index().is_none();
                 let groups = self.group_tuples(main_thread, false)?;
                 Ok(groups.len())
             },
@@ -237,18 +237,21 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        if !self.inner_dtype().is_primitive_numeric() {
-            polars_bail!(opq = arg_unique, self.dtype());
-        }
         // this can be called in aggregation, so this fast path can be worth a lot
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         // arg_unique requires a stable order
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name().clone(), first))
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
+        ChunkUnique::unique_id(&ca)
     }
 
     fn is_null(&self) -> BooleanChunked {

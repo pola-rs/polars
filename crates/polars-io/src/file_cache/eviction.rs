@@ -1,26 +1,25 @@
-use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use fs4::fs_std::FileExt;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsError, PolarsResult};
+use polars_utils::pl_path::PlRefPath;
 
 use super::cache_lock::{GLOBAL_FILE_CACHE_LOCK, GlobalFileCacheGuardExclusive};
 use super::metadata::EntryMetadata;
-use crate::pl_async;
 
 #[derive(Debug, Clone)]
 pub(super) struct EvictionCandidate {
-    path: PathBuf,
-    metadata_path: PathBuf,
+    path: PlRefPath,
+    metadata_path: PlRefPath,
     metadata_last_modified: SystemTime,
     ttl: u64,
 }
 
 pub(super) struct EvictionManager {
-    pub(super) data_dir: Box<Path>,
-    pub(super) metadata_dir: Box<Path>,
+    pub(super) data_dir: PlRefPath,
+    pub(super) metadata_dir: PlRefPath,
     pub(super) files_to_remove: Option<Vec<EvictionCandidate>>,
     pub(super) min_ttl: Arc<AtomicU64>,
     pub(super) notify_ttl_updated: Arc<tokio::sync::Notify>,
@@ -80,11 +79,11 @@ impl EvictionCandidate {
         self.update_ttl();
         let path = &self.path;
 
-        if !path.exists() {
+        if !path.as_std_path().exists() {
             if verbose {
                 eprintln!(
                     "[EvictionManager] evict_files: skipping {} (path no longer exists)",
-                    path.to_str().unwrap()
+                    path
                 );
             }
             return;
@@ -102,7 +101,7 @@ impl EvictionCandidate {
                 if verbose {
                     eprintln!(
                         "[EvictionManager] evict_files: skipping {} (last accessed time was updated)",
-                        path.to_str().unwrap()
+                        path
                     );
                 }
                 return;
@@ -113,7 +112,7 @@ impl EvictionCandidate {
             if verbose {
                 eprintln!(
                     "[EvictionManager] evict_files: skipping {} (last accessed time was updated)",
-                    path.to_str().unwrap()
+                    path
                 );
             }
             return;
@@ -122,11 +121,11 @@ impl EvictionCandidate {
         {
             let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
 
-            if file.try_lock_exclusive().is_err() {
+            if file.try_lock().is_err() {
                 if verbose {
                     eprintln!(
                         "[EvictionManager] evict_files: skipping {} (file is locked)",
-                        self.path.to_str().unwrap()
+                        self.path
                     );
                 }
                 return;
@@ -137,15 +136,11 @@ impl EvictionCandidate {
             if verbose {
                 eprintln!(
                     "[EvictionManager] evict_files: error removing file: {} ({})",
-                    path.to_str().unwrap(),
-                    err
+                    path, err
                 );
             }
         } else if verbose {
-            eprintln!(
-                "[EvictionManager] evict_files: removed file at {}",
-                path.to_str().unwrap()
-            );
+            eprintln!("[EvictionManager] evict_files: removed file at {}", path);
         }
     }
 }
@@ -165,7 +160,7 @@ impl EvictionManager {
             );
         }
 
-        pl_async::get_runtime().spawn(async move {
+        ASYNC.spawn(async move {
             // Give some time at startup for other code to run.
             tokio::time::sleep(Duration::from_secs(3)).await;
             let mut last_eviction_time;
@@ -173,7 +168,8 @@ impl EvictionManager {
             loop {
                 let this: &'static mut Self = unsafe { std::mem::transmute(&mut self) };
 
-                let result = tokio::task::spawn_blocking(|| this.update_file_list())
+                let result = ASYNC
+                    .spawn_blocking(|| this.update_file_list())
                     .await
                     .unwrap();
 
@@ -190,7 +186,7 @@ impl EvictionManager {
                                 );
                             }
 
-                            tokio::task::block_in_place(|| self.evict_files(&guard));
+                            ASYNC.block_in_place(|| self.evict_files(&guard));
                             break;
                         }
                         tokio::time::sleep(Duration::from_secs(7)).await;
@@ -234,7 +230,7 @@ impl EvictionManager {
     }
 
     fn update_file_list(&mut self) -> PolarsResult<()> {
-        let data_files_iter = match std::fs::read_dir(self.data_dir.as_ref()) {
+        let data_files_iter = match std::fs::read_dir(self.data_dir.as_std_path()) {
             Ok(v) => v,
             Err(e) => {
                 let msg = format!("failed to read data directory: {e}");
@@ -246,7 +242,7 @@ impl EvictionManager {
             },
         };
 
-        let metadata_files_iter = match std::fs::read_dir(self.metadata_dir.as_ref()) {
+        let metadata_files_iter = match std::fs::read_dir(self.metadata_dir.as_std_path()) {
             Ok(v) => v,
             Err(e) => {
                 let msg = format!("failed to read metadata directory: {e}");
@@ -273,7 +269,7 @@ impl EvictionManager {
 
         for file in data_files_iter {
             let file = file?;
-            let path = file.path();
+            let path = PlRefPath::try_from_pathbuf(file.path())?;
 
             let hash = path
                 .file_name()
@@ -299,7 +295,7 @@ impl EvictionManager {
 
         for file in metadata_files_iter {
             let file = file?;
-            let path = file.path();
+            let path = PlRefPath::try_from_pathbuf(file.path())?;
             let metadata_path = path.clone();
 
             let mut eviction_candidate = EvictionCandidate {

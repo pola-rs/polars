@@ -1,12 +1,12 @@
-use polars::prelude::ColumnMapping;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
 use polars::prelude::deletion::DeletionFilesList;
 use polars::prelude::python_dsl::PythonScanSource;
+use polars::prelude::{ColumnMapping, PredicateFileSkip};
 use polars_core::prelude::IdxSize;
 use polars_io::cloud::CloudOptions;
 use polars_ops::prelude::JoinType;
-use polars_plan::plans::IR;
+use polars_plan::plans::{HintIR, IR};
 use polars_plan::prelude::{FileScanIR, FunctionIR, PythonPredicate, UnifiedScanArgs};
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
@@ -21,7 +21,7 @@ fn scan_type_to_pyobject(
     py: Python<'_>,
     scan_type: &FileScanIR,
     cloud_options: &Option<CloudOptions>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     match scan_type {
         #[cfg(feature = "csv")]
         FileScanIR::Csv { options } => {
@@ -47,6 +47,11 @@ fn scan_type_to_pyobject(
                 .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
             Ok(("ndjson", options).into_py_any(py)?)
         },
+        #[cfg(feature = "scan_lines")]
+        FileScanIR::Lines { name } => Ok(("lines", name.as_str()).into_py_any(py)?),
+        FileScanIR::ExpandedPaths { name } => {
+            Ok(("expanded-paths", name.as_str()).into_py_any(py)?)
+        },
         FileScanIR::PythonDataset { .. } => {
             Err(PyNotImplementedError::new_err("python dataset scan"))
         },
@@ -58,7 +63,7 @@ fn scan_type_to_pyobject(
 /// Scan a table with an optional predicate from a python function
 pub struct PythonScan {
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -81,7 +86,7 @@ pub struct Filter {
     predicate: PyExprIR,
 }
 
-#[pyclass(frozen)]
+#[pyclass(frozen, skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyFileOptions {
     inner: UnifiedScanArgs,
@@ -90,11 +95,11 @@ pub struct PyFileOptions {
 #[pymethods]
 impl PyFileOptions {
     #[getter]
-    fn n_rows(&self) -> Option<(i64, usize)> {
+    fn n_rows(&self) -> Option<(i64, IdxSize)> {
         self.inner
             .pre_slice
             .clone()
-            .map(|slice| <(i64, usize)>::try_from(slice).unwrap())
+            .map(|slice| slice.to_signed_offset_len())
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {
@@ -122,7 +127,7 @@ impl PyFileOptions {
         self.inner.rechunk
     }
     #[getter]
-    fn hive_options(&self, _py: Python<'_>) -> PyResult<PyObject> {
+    fn hive_options(&self, _py: Python<'_>) -> PyResult<Py<PyAny>> {
         Err(PyNotImplementedError::new_err("hive options"))
     }
     #[getter]
@@ -134,18 +139,21 @@ impl PyFileOptions {
     /// * None
     /// * ("iceberg-position-delete", dict[int, list[str]])
     #[getter]
-    fn deletion_files(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn deletion_files(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.deletion_files {
             None => py.None().into_any(),
-
             Some(DeletionFilesList::IcebergPositionDelete(paths)) => {
                 let out = PyDict::new(py);
-
                 for (k, v) in paths.iter() {
                     out.set_item(*k, v.as_ref())?;
                 }
-
                 ("iceberg-position-delete", out)
+                    .into_pyobject(py)?
+                    .into_any()
+                    .unbind()
+            },
+            Some(DeletionFilesList::Delta(provider)) => {
+                ("delta-deletion-vector", provider.callback().0.clone_ref(py))
                     .into_pyobject(py)?
                     .into_any()
                     .unbind()
@@ -157,7 +165,7 @@ impl PyFileOptions {
     /// * None
     /// * ("iceberg-column-mapping", <unimplemented>)
     #[getter]
-    fn column_mapping(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn column_mapping(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match &self.inner.column_mapping {
             None => py.None().into_any(),
 
@@ -170,15 +178,17 @@ impl PyFileOptions {
 /// Scan a table from file
 pub struct Scan {
     #[pyo3(get)]
-    paths: PyObject,
+    paths: Py<PyAny>,
     #[pyo3(get)]
-    file_info: PyObject,
+    file_info: Py<PyAny>,
+    #[pyo3(get)]
+    hive_parts: Option<PyDataFrame>,
     #[pyo3(get)]
     predicate: Option<PyExprIR>,
     #[pyo3(get)]
     file_options: PyFileOptions,
     #[pyo3(get)]
-    scan_type: PyObject,
+    scan_type: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -187,7 +197,7 @@ pub struct DataFrameScan {
     #[pyo3(get)]
     df: PyDataFrame,
     #[pyo3(get)]
-    projection: PyObject,
+    projection: Py<PyAny>,
     #[pyo3(get)]
     selection: Option<PyExprIR>,
 }
@@ -220,7 +230,7 @@ pub struct Sort {
     #[pyo3(get)]
     sort_options: (bool, Vec<bool>, Vec<bool>),
     #[pyo3(get)]
-    slice: Option<(i64, usize)>,
+    slice: Option<(i64, usize, Option<u128>)>,
 }
 
 #[pyclass(frozen)]
@@ -246,7 +256,7 @@ pub struct GroupBy {
     #[pyo3(get)]
     maintain_order: bool,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 
 #[pyclass(frozen)]
@@ -261,7 +271,18 @@ pub struct Join {
     #[pyo3(get)]
     right_on: Vec<PyExprIR>,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
+}
+
+#[pyclass(frozen)]
+/// Join operation
+pub struct Gather {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    idxs: usize,
+    #[pyo3(get)]
+    null_on_oob: bool,
 }
 
 #[pyclass(frozen)]
@@ -273,6 +294,8 @@ pub struct MergeSorted {
     input_right: usize,
     #[pyo3(get)]
     key: String,
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 
 #[pyclass(frozen)]
@@ -301,7 +324,7 @@ pub struct Distinct {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    options: PyObject,
+    options: Py<PyAny>,
 }
 #[pyclass(frozen)]
 /// A (User Defined) Function
@@ -309,14 +332,18 @@ pub struct MapFunction {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    function: PyObject,
+    function: Py<PyAny>,
 }
 #[pyclass(frozen)]
 pub struct Union {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: Option<(i64, usize)>,
+    slice: Option<(i64, usize)>,
+    #[pyo3(get)]
+    rows: (Option<usize>, usize),
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 #[pyclass(frozen)]
 /// Horizontal concatenation of multiple plans
@@ -324,7 +351,7 @@ pub struct HConcat {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: (),
+    options: Py<PyAny>,
 }
 #[pyclass(frozen)]
 /// This allows expressions to access other tables
@@ -340,10 +367,10 @@ pub struct Sink {
     #[pyo3(get)]
     input: usize,
     #[pyo3(get)]
-    payload: PyObject,
+    payload: Py<PyAny>,
 }
 
-pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
+pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
     match plan {
         IR::PythonScan { options } => {
             let python_src = match options.python_source {
@@ -370,7 +397,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     python_src,
                     match &options.predicate {
                         PythonPredicate::None => py.None(),
-                        PythonPredicate::PyArrow(s) => ("pyarrow", s).into_py_any(py)?,
+                        PythonPredicate::PyArrow {
+                            predicate,
+                            has_residual,
+                        } => {
+                            ("pyarrow", predicate, "has_residual", has_residual).into_py_any(py)?
+                        },
                         PythonPredicate::Polars(e) => ("polars", e.node().0).into_py_any(py)?,
                     },
                     options
@@ -393,16 +425,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         }
         .into_py_any(py),
         IR::Scan {
-            hive_parts: Some(_),
-            ..
-        } => Err(PyNotImplementedError::new_err(
-            "scan with hive partitioning",
-        )),
-        IR::Scan {
             sources,
             file_info: _,
-            hive_parts: _,
+            hive_parts,
             predicate,
+            predicate_file_skip_applied,
             output_schema: _,
             scan_type,
             unified_scan_args,
@@ -418,14 +445,28 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     // Manual conversion to preserve `uri://...` - converting Rust `Path` to `PosixPath`
                     // will corrupt to `uri:/...`
                     for path in paths.iter() {
-                        out.append(path.to_str())?;
+                        out.append(path.as_str())?;
                     }
 
                     out.into_py_any(py)?
                 },
                 // TODO: file info
                 file_info: py.None(),
-                predicate: predicate.as_ref().map(|e| e.into()),
+                hive_parts: hive_parts
+                    .as_ref()
+                    .map(|h| PyDataFrame::new(h.df().clone())),
+                predicate: predicate
+                    .as_ref()
+                    .filter(|_| {
+                        !matches!(
+                            predicate_file_skip_applied,
+                            Some(PredicateFileSkip {
+                                no_residual_predicate: true,
+                                original_len: _,
+                            })
+                        )
+                    })
+                    .map(|e| e.into()),
                 file_options: PyFileOptions {
                     inner: (**unified_scan_args).clone(),
                 },
@@ -478,7 +519,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: *slice,
+            slice: slice
+                .as_ref()
+                .map(|t| (t.0, t.1, t.2.as_ref().map(|p| p.id().as_u128()))),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {
@@ -561,6 +604,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             },
         }
         .into_py_any(py),
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => Gather {
+            input: input.0,
+            idxs: idxs.0,
+            null_on_oob: *null_on_oob,
+        }
+        .into_py_any(py),
         IR::HStack {
             input,
             exprs,
@@ -605,15 +658,22 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     streamable: _,
                     fmt_str: _,
                 } => return Err(PyNotImplementedError::new_err("opaque rust mapfunction")),
-                FunctionIR::Unnest { columns } => (
+                FunctionIR::Unnest { columns, separator } => (
                     "unnest",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    separator.as_ref().map(|s| s.to_string()),
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
-                FunctionIR::Explode { columns, schema: _ } => (
+                FunctionIR::Explode {
+                    columns,
+                    options,
+                    schema: _,
+                } => (
                     "explode",
                     columns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+                    options.empty_as_null,
+                    options.keep_nulls,
                 )
                     .into_py_any(py)?,
                 #[cfg(feature = "pivot")]
@@ -621,12 +681,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     "unpivot",
                     args.index.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
                     args.on.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
-                    args.variable_name
-                        .as_ref()
-                        .map_or_else(|| Ok(py.None()), |s| s.as_str().into_py_any(py))?,
-                    args.value_name
-                        .as_ref()
-                        .map_or_else(|| Ok(py.None()), |s| s.as_str().into_py_any(py))?,
+                    args.variable_name.as_str().into_py_any(py)?,
+                    args.value_name.as_str().into_py_any(py)?,
                 )
                     .into_py_any(py)?,
                 FunctionIR::RowIndex {
@@ -637,8 +693,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 FunctionIR::FastCount {
                     sources,
                     scan_type,
-                    cloud_options,
                     alias,
+                    ..
                 } => {
                     let sources = sources
                         .into_paths()
@@ -646,11 +702,14 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                             PyNotImplementedError::new_err("FastCount with BytesIO sources")
                         })?
                         .iter()
-                        .map(|p| p.to_str())
+                        .map(|p| p.as_str())
                         .collect::<Vec<_>>()
                         .into_py_any(py)?;
 
-                    let scan_type = scan_type_to_pyobject(py, scan_type, cloud_options)?;
+                    // FastCount does not support cloud options.
+                    let cloud_options = None;
+
+                    let scan_type = scan_type_to_pyobject(py, scan_type, &cloud_options)?;
 
                     let alias = alias
                         .as_ref()
@@ -659,22 +718,38 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
 
                     ("fast_count", sources, scan_type, alias).into_py_any(py)?
                 },
+                FunctionIR::Hint(hint) => match hint {
+                    HintIR::Sorted(sorted_vec) => {
+                        let sorted_info: Vec<_> = sorted_vec
+                            .iter()
+                            .map(|s| (s.column.as_str(), s.descending, s.nulls_last))
+                            .collect();
+                        ("hint_sorted", sorted_info).into_py_any(py)?
+                    },
+                },
             },
         }
         .into_py_any(py),
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            // TODO: rest of options
-            options: options.slice,
+            // Remaining options are implementation detail, not logical
+            slice: options.slice,
+            rows: options.rows,
+            maintain_order: options.maintain_order,
         }
         .into_py_any(py),
         IR::HConcat {
             inputs,
             schema: _,
-            options: _,
+            options,
         } => HConcat {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            options: (),
+            options: (
+                options.parallel,
+                options.strict,
+                options.broadcast_unit_length,
+            )
+                .into_py_any(py)?,
         }
         .into_py_any(py),
         IR::ExtContext {
@@ -704,12 +779,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input_left,
             input_right,
             key,
+            maintain_order,
         } => MergeSorted {
             input_left: input_left.0,
             input_right: input_right.0,
             key: key.to_string(),
+            maintain_order: *maintain_order,
         }
         .into_py_any(py),
+        IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a UnoptimizedDispatch node",
+        )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

@@ -69,7 +69,7 @@ impl PolarsAllocator {
         self.0.get_or_init(|| {
             let r = (unsafe { Py_IsInitialized() } != 0)
                 .then(|| {
-                    Python::with_gil(|_| unsafe {
+                    Python::attach(|_| unsafe {
                         let capsule =
                             (PyCapsule_Import(ALLOCATOR_CAPSULE_NAME.as_ptr() as *const c_char, 0)
                                 as *const AllocatorCapsule)

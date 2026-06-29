@@ -20,6 +20,7 @@ Manipulation/selection
     LazyFrame.fill_null
     LazyFrame.filter
     LazyFrame.first
+    LazyFrame.gather
     LazyFrame.gather_every
     LazyFrame.group_by
     LazyFrame.group_by_dynamic
@@ -34,6 +35,7 @@ Manipulation/selection
     LazyFrame.match_to_schema
     LazyFrame.melt
     LazyFrame.merge_sorted
+    LazyFrame.pivot
     LazyFrame.remove
     LazyFrame.rename
     LazyFrame.reverse

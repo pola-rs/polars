@@ -100,8 +100,19 @@ pub trait Utf8JsonPathImpl: AsString {
         let ca = self.as_string();
         // Ignore extra fields instead of erroring if the dtype was explicitly given.
         let allow_extra_fields_in_struct = dtype.is_some();
-        let dtype = match dtype {
-            Some(dt) => dt,
+        let mut needs_cast = false;
+        let decode_dtype = match &dtype {
+            Some(dt) => dt.clone().map_leaves(&mut |leaf_dt| {
+                match leaf_dt {
+                    #[cfg(feature = "dtype-categorical")]
+                    DataType::Enum(..) | DataType::Categorical(..) => {
+                        // Decode enums and categoricals as string, will cast later.
+                        needs_cast = true;
+                        DataType::String
+                    },
+                    leaf_dt => leaf_dt,
+                }
+            }),
             None => ca.json_infer(infer_schema_len)?,
         };
         let buf_size = ca.get_values_size() + ca.null_count() * "null".len();
@@ -109,13 +120,18 @@ pub trait Utf8JsonPathImpl: AsString {
 
         let array = polars_json::ndjson::deserialize::deserialize_iter(
             iter,
-            dtype.to_arrow(CompatLevel::newest()),
+            decode_dtype.to_arrow(CompatLevel::newest()),
             buf_size,
             ca.len(),
             allow_extra_fields_in_struct,
         )
         .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
-        Series::try_from((PlSmallStr::EMPTY, array))
+        let s = Series::try_from((PlSmallStr::EMPTY, array))?;
+        if needs_cast {
+            s.strict_cast(&dtype.unwrap())
+        } else {
+            Ok(s)
+        }
     }
 
     fn json_path_select(&self, json_path: &str) -> PolarsResult<StringChunked> {

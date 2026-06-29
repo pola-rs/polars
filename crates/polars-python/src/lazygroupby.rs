@@ -19,6 +19,15 @@ pub struct PyLazyGroupBy {
 
 #[pymethods]
 impl PyLazyGroupBy {
+    fn having(&self, predicates: Vec<PyExpr>) -> PyLazyGroupBy {
+        let mut lgb = self.lgb.clone().unwrap();
+        let predicates = predicates.to_exprs();
+        for predicate in predicates.into_iter() {
+            lgb = lgb.having(predicate);
+        }
+        PyLazyGroupBy { lgb: Some(lgb) }
+    }
+
     fn agg(&self, aggs: Vec<PyExpr>) -> PyLazyFrame {
         let lgb = self.lgb.clone().unwrap();
         let aggs = aggs.to_exprs();
@@ -36,7 +45,7 @@ impl PyLazyGroupBy {
     }
 
     #[pyo3(signature = (lambda, schema))]
-    fn map_groups(&self, lambda: PyObject, schema: Option<Wrap<Schema>>) -> PyResult<PyLazyFrame> {
+    fn map_groups(&self, lambda: Py<PyAny>, schema: Option<Wrap<Schema>>) -> PyResult<PyLazyFrame> {
         let lgb = self.lgb.clone().unwrap();
         let schema = match schema {
             Some(schema) => Arc::new(schema.0),

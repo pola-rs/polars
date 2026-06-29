@@ -1,36 +1,39 @@
 mod builder;
+mod determinism;
 mod equality;
 mod evaluate;
 mod function_expr;
-#[cfg(feature = "cse")]
 mod hash;
 mod minterm_iter;
+pub(crate) mod or_factoring;
 pub mod predicates;
+pub(crate) mod range_merge;
 mod scalar;
 mod schema;
 mod traverse;
 
 use std::hash::{Hash, Hasher};
 
+pub use determinism::{is_inherently_nondeterministic, is_inherently_nondeterministic_top_level};
 pub use function_expr::*;
-#[cfg(feature = "cse")]
-pub(super) use hash::traverse_and_hash_aexpr;
+pub(crate) use hash::traverse_and_hash_aexpr;
 pub use minterm_iter::MintermIter;
-use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
 use polars_utils::arena::{Arena, Node};
-pub use scalar::is_scalar_ae;
+pub use scalar::{is_known_length_ae, is_length_preserving_ae, is_scalar_ae};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
+pub mod projection_height;
 mod properties;
 pub use aexpr::function_expr::schema::FieldsMapper;
 pub use builder::AExprBuilder;
+pub use evaluate::{constant_evaluate, into_column};
 pub use properties::*;
+pub use schema::ToFieldContext;
 
 use crate::constants::LEN;
-use crate::plans::Context;
 use crate::prelude::*;
 
 #[derive(Clone, Debug, IntoStaticStr)]
@@ -46,14 +49,19 @@ pub enum IRAggExpr {
     },
     Median(Node),
     NUnique(Node),
+    Item {
+        input: Node,
+        /// Return a missing value if there are no values.
+        allow_empty: bool,
+    },
     First(Node),
+    FirstNonNull(Node),
     Last(Node),
+    LastNonNull(Node),
     Mean(Node),
-    Implode(Node),
-    Quantile {
-        expr: Node,
-        quantile: Node,
-        method: QuantileMethod,
+    Implode {
+        input: Node,
+        maintain_order: bool,
     },
     Sum(Node),
     Count {
@@ -77,9 +85,6 @@ impl Hash for IRAggExpr {
                 input: _,
                 propagate_nans,
             } => propagate_nans.hash(state),
-            Self::Quantile {
-                method: interpol, ..
-            } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             Self::Count {
                 input: _,
@@ -110,7 +115,6 @@ impl IRAggExpr {
                     propagate_nans: r, ..
                 },
             ) => l == r,
-            (Quantile { method: l, .. }, Quantile { method: r, .. }) => l == r,
             (Std(_, l), Std(_, r)) => l == r,
             (Var(_, l), Var(_, r)) => l == r,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
@@ -145,9 +149,12 @@ impl From<IRAggExpr> for GroupByMethod {
             Median(_) => GroupByMethod::Median,
             NUnique(_) => GroupByMethod::NUnique,
             First(_) => GroupByMethod::First,
+            FirstNonNull(_) => GroupByMethod::FirstNonNull,
             Last(_) => GroupByMethod::Last,
+            LastNonNull(_) => GroupByMethod::LastNonNull,
+            Item { allow_empty, .. } => GroupByMethod::Item { allow_empty },
             Mean(_) => GroupByMethod::Mean,
-            Implode(_) => GroupByMethod::Implode,
+            Implode { maintain_order, .. } => GroupByMethod::Implode { maintain_order },
             Sum(_) => GroupByMethod::Sum,
             Count {
                 input: _,
@@ -156,7 +163,6 @@ impl From<IRAggExpr> for GroupByMethod {
             Std(_, ddof) => GroupByMethod::Std(ddof),
             Var(_, ddof) => GroupByMethod::Var(ddof),
             AggGroups(_) => GroupByMethod::Groups,
-            Quantile { .. } => unreachable!(),
         }
     }
 }
@@ -165,11 +171,20 @@ impl From<IRAggExpr> for GroupByMethod {
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AExpr {
+    /// Values in a `eval` context.
+    ///
+    /// Equivalent of `pl.element()`.
+    Element,
     Explode {
         expr: Node,
-        skip_empty: bool,
+        options: ExplodeOptions,
     },
     Column(PlSmallStr),
+    /// Struct field value in a `struct.with_fields` context.
+    ///
+    /// Equivalent of `pl.field(name)`.
+    #[cfg(feature = "dtype-struct")]
+    StructField(PlSmallStr),
     Literal(LiteralValue),
     BinaryExpr {
         left: Node,
@@ -189,6 +204,7 @@ pub enum AExpr {
         expr: Node,
         idx: Node,
         returns_scalar: bool,
+        null_on_oob: bool,
     },
     SortBy {
         expr: Node,
@@ -204,6 +220,11 @@ pub enum AExpr {
         predicate: Node,
         truthy: Node,
         falsy: Node,
+    },
+    AnonymousAgg {
+        input: Vec<ExprIR>,
+        fmt_str: Box<PlSmallStr>,
+        function: OpaqueStreamingAgg,
     },
     AnonymousFunction {
         input: Vec<ExprIR>,
@@ -223,6 +244,11 @@ pub enum AExpr {
 
         variant: EvalVariant,
     },
+    #[cfg(feature = "dtype-struct")]
+    StructEval {
+        expr: Node,
+        evaluation: Vec<ExprIR>,
+    },
     Function {
         /// Function arguments
         /// Some functions rely on aliases,
@@ -233,11 +259,19 @@ pub enum AExpr {
         function: IRFunctionExpr,
         options: FunctionOptions,
     },
-    Window {
+    Over {
         function: Node,
         partition_by: Vec<Node>,
         order_by: Option<(Node, SortOptions)>,
-        options: WindowType,
+        mapping: WindowMapping,
+    },
+    #[cfg(feature = "dynamic_group_by")]
+    Rolling {
+        function: Node,
+        index_column: Node,
+        period: Duration,
+        offset: Duration,
+        closed_window: ClosedWindow,
     },
     Slice {
         input: Node,
@@ -254,53 +288,79 @@ impl AExpr {
         AExpr::Column(name)
     }
 
-    /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
-    pub fn get_dtype(&self, schema: &Schema, arena: &Arena<AExpr>) -> PolarsResult<DataType> {
-        self.to_field(schema, arena).map(|f| f.dtype().clone())
-    }
-
-    #[recursive::recursive]
-    pub fn is_scalar(&self, arena: &Arena<AExpr>) -> bool {
+    /// Is the top-level expression fallible based on the data values.
+    pub fn is_fallible_top_level(&self, arena: &Arena<AExpr>) -> bool {
+        #[allow(clippy::collapsible_match, clippy::match_like_matches_macro)]
         match self {
-            AExpr::Literal(lv) => lv.is_scalar(),
-            AExpr::Function { options, input, .. }
-            | AExpr::AnonymousFunction { options, input, .. } => {
-                if options.flags.contains(FunctionFlags::RETURNS_SCALAR) {
-                    true
-                } else if options.is_elementwise()
-                    || options.flags.contains(FunctionFlags::LENGTH_PRESERVING)
-                {
-                    input.iter().all(|e| e.is_scalar(arena))
-                } else {
-                    false
-                }
+            AExpr::Function {
+                input, function, ..
+            } => match function {
+                IRFunctionExpr::ListExpr(f) => match f {
+                    IRListFunction::Get(false) => true,
+                    #[cfg(feature = "list_gather")]
+                    IRListFunction::Gather(false) => true,
+                    _ => false,
+                },
+                #[cfg(feature = "dtype-array")]
+                IRFunctionExpr::ArrayExpr(f) => match f {
+                    IRArrayFunction::Get(false) => true,
+                    _ => false,
+                },
+                #[cfg(feature = "replace")]
+                IRFunctionExpr::ReplaceStrict { .. } => true,
+                #[cfg(all(feature = "strings", feature = "temporal"))]
+                IRFunctionExpr::StringExpr(f) => match f {
+                    IRStringFunction::Strptime(_, strptime_options) => {
+                        debug_assert!(input.len() <= 2);
+
+                        let ambiguous_arg_is_infallible_scalar = input
+                            .get(1)
+                            .map(|x| arena.get(x.node()))
+                            .is_some_and(|ae| match ae {
+                                AExpr::Literal(lv) => {
+                                    lv.extract_str().is_some_and(|ambiguous| match ambiguous {
+                                        "earliest" | "latest" | "null" => true,
+                                        "raise" => false,
+                                        v => {
+                                            if cfg!(debug_assertions) {
+                                                panic!("unhandled parameter to ambiguous: {v}")
+                                            }
+                                            false
+                                        },
+                                    })
+                                },
+                                _ => false,
+                            });
+
+                        let ambiguous_is_fallible = !ambiguous_arg_is_infallible_scalar;
+
+                        !matches!(arena.get(input[0].node()), AExpr::Literal(_))
+                            && (strptime_options.strict || ambiguous_is_fallible)
+                    },
+                    _ => false,
+                },
+                _ => false,
             },
-            AExpr::BinaryExpr { left, right, .. } => {
-                is_scalar_ae(*left, arena) && is_scalar_ae(*right, arena)
-            },
-            AExpr::Ternary {
-                predicate,
-                truthy,
-                falsy,
-            } => {
-                is_scalar_ae(*predicate, arena)
-                    && is_scalar_ae(*truthy, arena)
-                    && is_scalar_ae(*falsy, arena)
-            },
-            AExpr::Agg(_) | AExpr::Len => true,
-            AExpr::Cast { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Eval { expr, variant, .. } => match variant {
-                EvalVariant::List => is_scalar_ae(*expr, arena),
-                EvalVariant::Cumulative { .. } => is_scalar_ae(*expr, arena),
-            },
-            AExpr::Sort { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Gather { returns_scalar, .. } => *returns_scalar,
-            AExpr::SortBy { expr, .. } => is_scalar_ae(*expr, arena),
-            AExpr::Window { function, .. } => is_scalar_ae(*function, arena),
-            AExpr::Explode { .. }
-            | AExpr::Column(_)
-            | AExpr::Filter { .. }
-            | AExpr::Slice { .. } => false,
+            AExpr::Cast {
+                expr,
+                dtype: _,
+                options: CastOptions::Strict,
+            } => !matches!(arena.get(*expr), AExpr::Literal(_)),
+            _ => false,
         }
     }
+}
+
+#[recursive::recursive]
+pub fn deep_clone_ae(ae: Node, arena: &mut Arena<AExpr>) -> Node {
+    let slf = arena.get(ae).clone();
+
+    let mut children = vec![];
+    slf.children_rev(&mut children);
+    for child in &mut children {
+        *child = deep_clone_ae(*child, arena);
+    }
+    children.reverse();
+
+    arena.add(slf.replace_children(&children))
 }

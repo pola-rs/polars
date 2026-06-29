@@ -143,7 +143,7 @@ where
     let offsets = probe_to_offsets(&probe);
 
     // next we probe the other relation
-    let result: Vec<LeftJoinIds> = POOL.install(move || {
+    let result: Vec<LeftJoinIds> = RAYON.install(move || {
         probe
             .into_par_iter()
             .zip(offsets)

@@ -1,33 +1,15 @@
-use arrow::array::Array;
+use arrow::array::{Array, PrimitiveArray};
 use arrow::ffi;
 use arrow::ffi::{ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema};
 use polars::prelude::*;
 use polars_ffi::version_0::SeriesExport;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::{PyCapsule, PyTuple, PyType};
 
 use super::PySeries;
 use crate::error::PyPolarsErr;
-
-/// Validate PyCapsule has provided name
-fn validate_pycapsule_name(capsule: &Bound<PyCapsule>, expected_name: &str) -> PyResult<()> {
-    let capsule_name = capsule.name()?;
-    if let Some(capsule_name) = capsule_name {
-        let capsule_name = capsule_name.to_str()?;
-        if capsule_name != expected_name {
-            return Err(PyValueError::new_err(format!(
-                "Expected name '{expected_name}' in PyCapsule, instead got '{capsule_name}'"
-            )));
-        }
-    } else {
-        return Err(PyValueError::new_err(
-            "Expected schema PyCapsule to have name set.",
-        ));
-    }
-
-    Ok(())
-}
 
 /// Import `__arrow_c_array__` across Python boundary
 pub(crate) fn call_arrow_c_array<'py>(
@@ -46,8 +28,8 @@ pub(crate) fn call_arrow_c_array<'py>(
         ));
     }
 
-    let schema_capsule = tuple.get_item(0)?.downcast_into()?;
-    let array_capsule = tuple.get_item(1)?.downcast_into()?;
+    let schema_capsule = tuple.get_item(0)?.cast_into()?;
+    let array_capsule = tuple.get_item(1)?.cast_into()?;
     Ok((schema_capsule, array_capsule))
 }
 
@@ -57,13 +39,16 @@ pub(crate) fn import_array_pycapsules(
 ) -> PyResult<(arrow::datatypes::Field, Box<dyn Array>)> {
     let field = import_schema_pycapsule(schema_capsule)?;
 
-    validate_pycapsule_name(array_capsule, "arrow_array")?;
-
     // # Safety
     // array_capsule holds a valid C ArrowArray pointer, as defined by the Arrow PyCapsule
     // Interface
     unsafe {
-        let array_ptr = std::ptr::replace(array_capsule.pointer() as _, ArrowArray::empty());
+        let array_ptr = std::ptr::replace(
+            array_capsule
+                .pointer_checked(Some(c"arrow_array"))?
+                .as_ptr() as _,
+            ArrowArray::empty(),
+        );
         let array = ffi::import_array_from_c(array_ptr, field.dtype().clone()).unwrap();
 
         Ok((field, array))
@@ -73,13 +58,14 @@ pub(crate) fn import_array_pycapsules(
 pub(crate) fn import_schema_pycapsule(
     schema_capsule: &Bound<PyCapsule>,
 ) -> PyResult<arrow::datatypes::Field> {
-    validate_pycapsule_name(schema_capsule, "arrow_schema")?;
-
     // # Safety
     // schema_capsule holds a valid C ArrowSchema pointer, as defined by the Arrow PyCapsule
     // Interface
     unsafe {
-        let schema_ptr = schema_capsule.reference::<ArrowSchema>();
+        let schema_ptr = schema_capsule
+            .pointer_checked(Some(c"arrow_schema"))?
+            .cast::<ArrowSchema>()
+            .as_ref();
         let field = ffi::import_field_from_c(schema_ptr).unwrap();
 
         Ok(field)
@@ -94,21 +80,19 @@ fn call_arrow_c_stream<'py>(ob: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyCap
         ));
     }
 
-    let capsule = ob.getattr("__arrow_c_stream__")?.call0()?.downcast_into()?;
+    let capsule = ob.getattr("__arrow_c_stream__")?.call0()?.cast_into()?;
     Ok(capsule)
 }
 
 pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<PySeries> {
-    validate_pycapsule_name(capsule, "arrow_array_stream")?;
-
     // # Safety
     // capsule holds a valid C ArrowArrayStream pointer, as defined by the Arrow PyCapsule
     // Interface
     let mut stream = unsafe {
-        // Takes ownership of the pointed to ArrowArrayStream
-        // This acts to move the data out of the capsule pointer, setting the release callback to NULL
         let stream_ptr = Box::new(std::ptr::replace(
-            capsule.pointer() as _,
+            capsule
+                .pointer_checked(Some(c"arrow_array_stream"))?
+                .as_ptr() as _,
             ArrowArrayStream::empty(),
         ));
         ArrowArrayStreamReader::try_new(stream_ptr)
@@ -117,7 +101,7 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
 
     let mut produced_arrays: Vec<Box<dyn Array>> = vec![];
     while let Some(array) = unsafe { stream.next() } {
-        produced_arrays.push(array.unwrap());
+        produced_arrays.push(array.map_err(PyPolarsErr::from)?);
     }
 
     // Series::try_from fails for an empty vec of chunks
@@ -125,7 +109,7 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
         let polars_dt = DataType::from_arrow_field(stream.field());
         Series::new_empty(stream.field().name.clone(), &polars_dt)
     } else {
-        Series::try_from((stream.field(), produced_arrays)).unwrap()
+        Series::try_from((stream.field(), produced_arrays)).map_err(PyPolarsErr::from)?
     };
     Ok(PySeries::new(s))
 }
@@ -160,5 +144,59 @@ impl PySeries {
             polars_ffi::version_0::import_series(export).map_err(PyPolarsErr::from)?
         };
         Ok(PySeries::from(series))
+    }
+
+    #[staticmethod]
+    pub fn _import_decimal_from_iceberg_binary_repr(
+        bytes_list: &Bound<PyAny>, // list[bytes | None]
+        precision: usize,
+        scale: usize,
+    ) -> PyResult<Self> {
+        // From iceberg spec:
+        // * Decimal(P, S): Stores unscaled value as two’s-complement
+        //   big-endian binary, using the minimum number of bytes for the
+        //   value.
+        let max_abs_decimal_value = 10_i128.pow(u32::try_from(precision).unwrap()) - 1;
+
+        let out: Vec<i128> = bytes_list
+            .try_iter()?
+            .map(|bytes| {
+                let be_bytes: Option<PyBackedBytes> = bytes?.extract()?;
+
+                let mut le_bytes: [u8; 16] = [0; _];
+
+                if let Some(be_bytes) = be_bytes.as_deref() {
+                    if be_bytes.len() > le_bytes.len() {
+                        return Err(PyValueError::new_err(format!(
+                            "iceberg binary data for decimal exceeded 16 bytes: {}",
+                            be_bytes.len()
+                        )));
+                    }
+
+                    for (i, byte) in be_bytes.iter().rev().enumerate() {
+                        le_bytes[i] = *byte;
+                    }
+                }
+
+                let value = i128::from_le_bytes(le_bytes);
+
+                if value.abs() > max_abs_decimal_value {
+                    return Err(PyValueError::new_err(format!(
+                        "iceberg decoded value for decimal exceeded precision: \
+                        value: {value}, precision: {precision}",
+                    )));
+                }
+
+                Ok(value)
+            })
+            .collect::<PyResult<_>>()?;
+
+        Ok(PySeries::from(unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![PrimitiveArray::<i128>::from_vec(out).boxed()],
+                &DataType::Decimal(precision, scale),
+            )
+        }))
     }
 }

@@ -7,6 +7,10 @@ use super::*;
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 #[derive(Clone, PartialEq, Debug, Hash)]
 pub enum StringFunction {
+    Format {
+        format: PlSmallStr,
+        insertions: Arc<[usize]>,
+    },
     #[cfg(feature = "concat_str")]
     ConcatHorizontal {
         delimiter: PlSmallStr,
@@ -96,6 +100,11 @@ pub enum StringFunction {
     #[cfg(feature = "temporal")]
     Strptime(DataTypeExpr, StrptimeOptions),
     Split(bool),
+    #[cfg(feature = "regex")]
+    SplitRegex {
+        inclusive: bool,
+        strict: bool,
+    },
     #[cfg(feature = "dtype-decimal")]
     ToDecimal {
         scale: usize,
@@ -112,16 +121,19 @@ pub enum StringFunction {
     #[cfg(feature = "find_many")]
     ReplaceMany {
         ascii_case_insensitive: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "find_many")]
     ExtractMany {
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "find_many")]
     FindMany {
         ascii_case_insensitive: bool,
         overlapping: bool,
+        leftmost: bool,
     },
     #[cfg(feature = "regex")]
     EscapeRegex,
@@ -131,6 +143,7 @@ impl Display for StringFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use StringFunction::*;
         let s = match self {
+            Format { .. } => "format",
             #[cfg(feature = "regex")]
             Contains { .. } => "contains",
             CountMatches(_) => "count_matches",
@@ -154,7 +167,7 @@ impl Display for StringFunction {
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => "json_path_match",
             LenBytes => "len_bytes",
-            Lowercase => "lowercase",
+            Lowercase => "to_lowercase",
             LenChars => "len_chars",
             #[cfg(feature = "string_pad")]
             PadEnd { .. } => "pad_end",
@@ -200,11 +213,19 @@ impl Display for StringFunction {
                     "split"
                 }
             },
+            #[cfg(feature = "regex")]
+            SplitRegex { inclusive, .. } => {
+                if *inclusive {
+                    "split_regex_inclusive"
+                } else {
+                    "split_regex"
+                }
+            },
             #[cfg(feature = "nightly")]
-            Titlecase => "titlecase",
+            Titlecase => "to_titlecase",
             #[cfg(feature = "dtype-decimal")]
             ToDecimal { .. } => "to_decimal",
-            Uppercase => "uppercase",
+            Uppercase => "to_uppercase",
             #[cfg(feature = "string_pad")]
             ZFill => "zfill",
             #[cfg(feature = "find_many")]

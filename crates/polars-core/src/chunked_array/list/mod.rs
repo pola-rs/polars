@@ -3,6 +3,8 @@ pub(super) mod iterator;
 
 use std::borrow::Cow;
 
+use polars_utils::itertools::Itertools;
+
 use crate::prelude::*;
 
 impl ListChunked {
@@ -138,6 +140,10 @@ impl ListChunked {
         }
     }
 
+    pub fn inner_length(&self) -> usize {
+        self.downcast_iter().map(|c| c.values().len()).sum()
+    }
+
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
     pub fn apply_to_inner(
         &self,
@@ -182,5 +188,62 @@ impl ListChunked {
                 DataType::List(Box::new(out.dtype().clone())),
             )
         })
+    }
+
+    pub fn with_inner_values(&self, values: &Series) -> ListChunked {
+        if cfg!(debug_assertions) {
+            assert_eq!(values.len(), self.inner_length());
+        }
+
+        // Align the chunks of the lists inner values and the values series.
+        fn align_inner_chunks(ca: &'_ ListChunked, values: &'_ Series) -> Series {
+            if ca.chunks().len() == values.chunks().len()
+                && ca
+                    .downcast_iter()
+                    .map(|arr| arr.values().len())
+                    .zip(values.chunks().iter().map(|arr| arr.len()))
+                    .all_equal()
+            {
+                return values.clone();
+            }
+
+            let mut values = values.rechunk();
+            let chunks = unsafe { values.chunks_mut() };
+            let mut arr = chunks.pop().unwrap();
+            chunks.extend(ca.downcast_iter().map(|ca_arr| {
+                let chunk;
+                (chunk, arr) = arr.split_at_boxed(ca_arr.values().len());
+                chunk
+            }));
+            assert!(arr.is_empty());
+            values
+        }
+
+        let values = align_inner_chunks(self, values);
+        let values_dtype = values.dtype().clone();
+
+        let chunks = self
+            .downcast_iter()
+            .zip(values.into_chunks())
+            .map(|(ca_arr, v_arr)| {
+                debug_assert_eq!(ca_arr.values().len(), v_arr.len());
+                LargeListArray::new(
+                    LargeListArray::default_datatype(v_arr.dtype().clone()),
+                    (ca_arr.offsets()).clone(),
+                    v_arr,
+                    ca_arr.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect::<Vec<_>>();
+
+        // SAFETY: arr's inner dtype is derived from out dtype.
+        unsafe {
+            ListChunked::from_chunks_and_dtype_unchecked(
+                self.name().clone(),
+                chunks,
+                DataType::List(Box::new(values_dtype)),
+            )
+        }
     }
 }

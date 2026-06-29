@@ -1,8 +1,6 @@
 //! Interface with cloud storage through the object_store crate.
 
 #[cfg(feature = "cloud")]
-mod adaptors;
-#[cfg(feature = "cloud")]
 mod glob;
 #[cfg(feature = "cloud")]
 mod object_store_setup;
@@ -10,8 +8,6 @@ pub mod options;
 #[cfg(feature = "cloud")]
 mod polars_object_store;
 
-#[cfg(feature = "cloud")]
-pub use adaptors::*;
 #[cfg(feature = "cloud")]
 pub use glob::*;
 #[cfg(feature = "cloud")]
@@ -21,4 +17,12 @@ pub use options::*;
 pub use polars_object_store::*;
 
 #[cfg(feature = "cloud")]
+pub mod cloud_writer;
+#[cfg(feature = "cloud")]
+pub mod concurrency;
+pub mod concurrency_config;
+#[cfg(feature = "cloud")]
 pub mod credential_provider;
+
+#[cfg(feature = "cloud")]
+pub mod dns;

@@ -5,7 +5,7 @@ from collections import OrderedDict
 from datetime import date, datetime, time
 from io import BytesIO
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -20,7 +20,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from polars._typing import (
         ExcelSpreadsheetEngine,
@@ -515,7 +515,7 @@ def test_read_mixed_dtype_columns(
         "Employee ID": pl.Utf8(),
         "Employee Name": pl.Utf8(),
         "Date": pl.Date(),
-        "Details": pl.Categorical("lexical"),
+        "Details": pl.Categorical(),
         "Asset ID": pl.Utf8(),
     }
     df = read_spreadsheet(
@@ -636,7 +636,7 @@ def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> N
     )
     df = pl.read_excel(
         path_xlsx,
-        sheet_name=["test4", "test4"],
+        sheet_name=("test4", "test4"),
         schema_overrides=overrides,
     )
     for col, dtype in overrides.items():
@@ -954,8 +954,20 @@ def test_excel_read_named_table_with_total_row(tmp_path: Path) -> None:
         column_totals=True,
     )
     for engine in ("calamine", "openpyxl"):
-        xldf = pl.read_excel(wb_path, table_name="PolarsFrameTable", engine=engine)
-        assert_frame_equal(df, xldf)
+        col_subset = ["x", "z"]
+        subset_kwarg: dict[str, Any] = {"columns": col_subset}
+        base_kwargs: dict[str, Any] = {
+            "table_name": "PolarsFrameTable",
+            "engine": engine,
+        }
+
+        for kwargs, df_expected in (
+            (base_kwargs, df),  # all cols
+            ({**base_kwargs, **subset_kwarg}, df.select(col_subset)),
+        ):
+            # read from named table
+            xldf = pl.read_excel(wb_path, **kwargs)
+            assert_frame_equal(df_expected, xldf)
 
     # xlsx2csv doesn't support reading named tables, so we see the
     # column total if we don't filter it out after reading the data
@@ -1081,7 +1093,9 @@ def test_excel_write_sparklines(engine: ExcelSpreadsheetEngine) -> None:
             sheet_zoom=125,
         )
 
-    tables = {tbl["name"] for tbl in wb.get_worksheet_by_name("frame_data").tables}
+    worksheet = wb.get_worksheet_by_name("frame_data")
+    assert worksheet is not None
+    tables = {tbl["name"] for tbl in worksheet.tables}
     assert "Frame0" in tables
 
     with warnings.catch_warnings():
@@ -1144,11 +1158,11 @@ def test_excel_write_multiple_tables() -> None:
             },
         )
 
-    table_names = {
-        tbl["name"]
-        for sheet in wb.sheetnames
-        for tbl in wb.get_worksheet_by_name(sheet).tables
-    }
+    table_names: set[str] = set()
+    for sheet in wb.sheetnames:
+        worksheet = wb.get_worksheet_by_name(sheet)
+        assert worksheet is not None
+        table_names.update(tbl["name"] for tbl in worksheet.tables)
     assert table_names == {f"Frame{n}" for n in range(4)}
     assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
 
@@ -1192,7 +1206,7 @@ def test_excel_write_worksheet_object() -> None:
 
     with pytest.raises(  # noqa: SIM117
         ValueError,
-        match="the given workbook object .* is not the parent of worksheet 'frame_data'",
+        match=r"the given workbook object .* is not the parent of worksheet 'frame_data'",
     ):
         with Workbook(BytesIO()) as wb:
             df.write_excel(wb, worksheet=ws)
@@ -1234,9 +1248,9 @@ def test_excel_freeze_panes() -> None:
 
     table_names: set[str] = set()
     for sheet in ("sheet1", "sheet2", "sheet3"):
-        table_names.update(
-            tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
-        )
+        worksheet = wb.get_worksheet_by_name(sheet)
+        assert worksheet is not None
+        table_names.update(tbl["name"] for tbl in worksheet.tables)
     assert table_names == {f"Frame{n}" for n in range(3)}
     assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
 
@@ -1268,7 +1282,7 @@ def test_excel_empty_sheet(
     with pytest.raises(NoDataError, match="empty Excel sheet"):
         read_spreadsheet(empty_spreadsheet_path, schema_overrides=schema_overrides)
 
-    engine_params = [{}] if ods else [{"engine": "calamine"}]
+    engine_params: list[dict[str, Any]] = [{}] if ods else [{"engine": "calamine"}]
     for params in engine_params:
         df = read_spreadsheet(
             empty_spreadsheet_path,
@@ -1402,10 +1416,10 @@ def test_excel_write_select_col_dtype() -> None:
     from xlsxwriter import Workbook
 
     def get_col_widths(wb_bytes: BytesIO) -> dict[str, int]:
-        return {
-            k: round(v.width)
-            for k, v in load_workbook(wb_bytes).active.column_dimensions.items()
-        }
+        active_workbook = load_workbook(wb_bytes).active
+        assert active_workbook is not None
+
+        return {k: round(v.width) for k, v in active_workbook.column_dimensions.items()}
 
     df = pl.DataFrame(
         {
@@ -1462,3 +1476,26 @@ def test_excel_read_columns_nonlist_sequence(engine: ExcelSpreadsheetEngine) -> 
     xldf = pl.read_excel(xls, engine=engine, columns="colx")
     expected = df.select("colx")
     assert_frame_equal(xldf, expected)
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_ods, "path_ods", {}),
+    ],
+)
+def test_spreadsheet_no_resource_warning(
+    read_spreadsheet: Callable[..., pl.DataFrame],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    # ref: https://github.com/pola-rs/polars/issues/14466
+    spreadsheet_path = request.getfixturevalue(source)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ResourceWarning)
+        read_spreadsheet(spreadsheet_path, **params)
+        read_spreadsheet(spreadsheet_path, sheet_id=0, **params)

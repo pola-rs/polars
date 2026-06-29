@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import polars as pl
+from polars._typing import MaintainOrderJoin
 from polars.testing import assert_frame_equal
 
 
@@ -90,4 +91,30 @@ def test_cross_join_chunking_panic_22793() -> None:
         .filter(pl.col("a") == pl.col("a"))
         .collect(),
         df.schema.to_frame(),
+    )
+
+
+@pytest.mark.parametrize(
+    "maintain_order", ["left", "right", "left_right", "right_left"]
+)
+def test_cross_join_maintain_order_24663(maintain_order: MaintainOrderJoin) -> None:
+    df = pl.DataFrame({"x": [0, 1, 2, 3, 4]})
+    df2 = pl.DataFrame({"y": [0, 1, 2, 3, 4]})
+    primary = [x for x in range(5) for _ in range(5)]
+    secondary = [x for _ in range(5) for x in range(5)]
+    if maintain_order.startswith("left"):
+        expected = pl.DataFrame({"x": primary, "y": secondary})
+    else:
+        expected = pl.DataFrame({"x": secondary, "y": primary})
+
+    assert_frame_equal(
+        df.join(df2, how="cross", maintain_order=maintain_order), expected
+    )
+
+    # Test with fused filter as well.
+    assert_frame_equal(
+        df.lazy()
+        .join(df2.lazy(), how="cross", maintain_order=maintain_order)
+        .filter((pl.col.x + pl.col.y) % 2 == 0),
+        expected.lazy().filter((pl.col.x + pl.col.y) % 2 == 0),
     )

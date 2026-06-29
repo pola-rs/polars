@@ -18,10 +18,8 @@ impl Series {
             // Two [`Datetime`](DataType::Datetime) series are *not* equal if their timezones
             // are different, regardless if they represent the same UTC time or not.
             #[cfg(feature = "timezones")]
-            (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) => {
-                if tz_lhs != tz_rhs {
-                    return false;
-                }
+            (DataType::Datetime(_, tz_lhs), DataType::Datetime(_, tz_rhs)) if tz_lhs != tz_rhs => {
+                return false;
             },
             _ => {},
         }
@@ -46,7 +44,7 @@ impl PartialEq for Series {
 impl DataFrame {
     /// Check if [`DataFrame`]' schemas are equal.
     pub fn schema_equal(&self, other: &DataFrame) -> PolarsResult<()> {
-        for (lhs, rhs) in self.iter().zip(other.iter()) {
+        for (lhs, rhs) in self.columns().iter().zip(other.columns().iter()) {
             polars_ensure!(
                 lhs.name() == rhs.name(),
                 SchemaMismatch: "column name mismatch: left-hand = '{}', right-hand = '{}'",
@@ -79,7 +77,7 @@ impl DataFrame {
         if self.shape() != other.shape() {
             return false;
         }
-        for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
+        for (left, right) in self.columns().iter().zip(other.columns()) {
             if left.name() != right.name() || !left.equals(right) {
                 return false;
             }
@@ -105,7 +103,7 @@ impl DataFrame {
         if self.shape() != other.shape() {
             return false;
         }
-        for (left, right) in self.get_columns().iter().zip(other.get_columns()) {
+        for (left, right) in self.columns().iter().zip(other.columns()) {
             if left.name() != right.name() || !left.equals_missing(right) {
                 return false;
             }
@@ -118,9 +116,9 @@ impl PartialEq for DataFrame {
     fn eq(&self, other: &Self) -> bool {
         self.shape() == other.shape()
             && self
-                .columns
+                .columns()
                 .iter()
-                .zip(other.columns.iter())
+                .zip(other.columns().iter())
                 .all(|(s1, s2)| s1.equals_missing(s2))
     }
 }
@@ -166,7 +164,7 @@ mod test {
         let a = Column::new("a".into(), [1, 2, 3].as_ref());
         let b = Column::new("b".into(), [1, 2, 3].as_ref());
 
-        let df1 = DataFrame::new(vec![a, b]).unwrap();
+        let df1 = DataFrame::new_infer_height(vec![a, b]).unwrap();
         assert!(df1.equals(&df1))
     }
 

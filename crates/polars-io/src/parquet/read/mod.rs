@@ -25,7 +25,7 @@ mod utils;
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
     "\
 Parquet file produces more than pow(2, 32) rows; \
-consider compiling with polars-bigidx feature (polars-u64-idx package on python), \
+consider compiling with polars-bigidx feature (pip install polars[rt64]), \
 or set 'streaming'",
 ));
 

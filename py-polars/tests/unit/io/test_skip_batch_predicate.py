@@ -14,7 +14,7 @@ from polars.testing.parametric.strategies import series
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from polars._typing import PythonLiteral
+    from polars._typing import PolarsDataType, PythonLiteral
 
 
 class Case(TypedDict):
@@ -103,6 +103,24 @@ def test_equality() -> None:
     )
 
 
+def test_not_bool() -> None:
+    assert_skp_series(
+        "b",
+        pl.Boolean(),
+        ~pl.col("b"),
+        [
+            {"min": True, "max": True, "null_count": 0, "len": 42, "can_skip": True},
+            {"min": True, "max": True, "null_count": 5, "len": 42, "can_skip": True},
+            {"min": None, "max": None, "null_count": 42, "len": 42, "can_skip": True},
+            {"min": False, "max": False, "null_count": 0, "len": 42, "can_skip": False},
+            {"min": False, "max": True, "null_count": 0, "len": 42, "can_skip": False},
+            {"min": False, "max": False, "null_count": 5, "len": 42, "can_skip": False},
+            {"min": False, "max": True, "null_count": 5, "len": 42, "can_skip": False},
+            {"min": None, "max": None, "null_count": 5, "len": 42, "can_skip": False},
+        ],
+    )
+
+
 def test_datetimes() -> None:
     d = datetime.datetime(2023, 4, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
     td = datetime.timedelta
@@ -146,10 +164,38 @@ def test_datetimes() -> None:
     )
 
 
+def _null_count_dtype(dtype: PolarsDataType) -> PolarsDataType:
+    """Statistics-frame dtype of the ``<col>_nc`` column, mirroring the Rust producer.
+
+    Scalar (and non-struct nested) columns carry a single index-typed null count;
+    struct columns carry a per-field count mirroring the column shape (each leaf
+    replaced by the index type), so the predicate can read an individual field's
+    count via ``col("<col>_nc").struct.field(..)``.
+    """
+    if isinstance(dtype, pl.Struct):
+        return pl.Struct(
+            [pl.Field(f.name, _null_count_dtype(f.dtype)) for f in dtype.fields]
+        )
+    return get_index_type()
+
+
+def _null_count_value(s: pl.Series) -> Any:
+    """Per-field null counts mirroring the struct shape.
+
+    A null struct nulls every leaf, so each leaf count includes parent-null rows.
+    """
+    if isinstance(s.dtype, pl.Struct):
+        return {
+            f.name: _null_count_value(s.struct.field(f.name)) for f in s.dtype.fields
+        }
+    return s.null_count()
+
+
 @given(
     s=series(
         name="x",
         min_size=1,
+        excluded_dtypes=pl.Extension,  # literals with structs containing extensions are not supported yet
     ),
 )
 @settings(
@@ -208,14 +254,14 @@ def test_skip_batch_predicate_parametric(s: pl.Series) -> None:
         with contextlib.suppress(Exception):
             maxs = [s.max()]
 
-        null_counts = [s.null_count()]
+        null_counts = [_null_count_value(s)]
         lengths = [s.len()]
 
         df = pl.DataFrame(
             [
                 pl.Series(f"{name}_min", mins, dtype),
                 pl.Series(f"{name}_max", maxs, dtype),
-                pl.Series(f"{name}_nc", null_counts, get_index_type()),
+                pl.Series(f"{name}_nc", null_counts, _null_count_dtype(dtype)),
                 pl.Series("len", lengths, get_index_type()),
             ]
         )
@@ -231,3 +277,33 @@ def test_skip_batch_predicate_parametric(s: pl.Series) -> None:
                 print(s.to_frame().filter(expr))
 
                 raise
+
+
+def test_float_skip_batch_predicate() -> None:
+    schema = {"x": pl.Float64()}
+    NaN = float("nan")
+
+    def sbp(e: pl.Expr) -> pl.Expr | None:
+        return e._skip_batch_predicate(schema)
+
+    assert sbp(pl.col("x") < 5.0) is not None  # Can skip. NaN never satisfies <.
+    assert sbp(pl.col("x") < NaN) is not None  # Can skip. NaN never satisfies <.
+    assert sbp(pl.col("x") <= 5.0) is not None  # Can skip. NaN never satisfies <=.
+    assert sbp(pl.col("x") <= NaN) is not None  # Can skip. NaN never satisfies <=.
+    assert sbp(pl.col("x") == 5.0) is not None  # Can skip. NaN != 5.0.
+    assert sbp(pl.col("x") == NaN) is None  # No skip. Stats exclude NaN.
+    assert sbp(pl.col("x") != 5.0) is None  # No skip. Hidden NaN != x is true.
+    assert sbp(pl.col("x") != NaN) is None  # No skip. Stats exclude NaN.
+    assert sbp(pl.col("x") > 5.0) is None  # No skip. Hidden NaN satisfies >.
+    assert sbp(pl.col("x") > NaN) is not None  # Can skip. Nothing > NaN under TotalOrd.
+    assert sbp(pl.col("x") >= 5.0) is None  # No skip. Hidden NaN satisfies >=.
+    assert sbp(pl.col("x") >= NaN) is None  # No skip. Stats exclude NaN.
+    assert (
+        sbp(pl.lit(5.0) > pl.col("x")) is not None
+    )  # Can skip. 5.0 > col is col < 5.0.
+    assert sbp(pl.lit(5.0) < pl.col("x")) is None  # No skip. 5.0 < col is col > 5.0.
+    assert (
+        sbp(pl.col("x").is_between(2.0, 4.0)) is not None
+    )  # Can skip. Non-NaN bounds.
+    assert sbp(pl.col("x").is_between(NaN, 4.0)) is None  # No skip. NaN left bound.
+    assert sbp(pl.col("x").is_between(1.0, NaN)) is None  # No skip. NaN right bound.

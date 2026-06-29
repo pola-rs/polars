@@ -123,6 +123,79 @@ result2 = weather.with_columns(
 print(result.equals(result2))
 # --8<-- [end:element-wise-regex]
 
+# --8<-- [start:children]
+df = pl.DataFrame(
+    {
+        "children": [
+            [
+                {"name": "Anne", "age": 5},
+                {"name": "Averill", "age": 7},
+            ],
+            [
+                {"name": "Brandon", "age": 12},
+                {"name": "Brooke", "age": 9},
+                {"name": "Branson", "age": 11},
+            ],
+            [{"name": "Camila", "age": 19}],
+            [
+                {"name": "Dennis", "age": 8},
+                {"name": "Doyle", "age": 11},
+                {"name": "Dina", "age": 18},
+            ],
+        ],
+    }
+)
+
+print(df)
+# --8<-- [end:children]
+
+# --8<-- [start:list-sorting]
+result = df.select(
+    pl.col("children")
+    .list.eval(
+        pl.element()
+        .sort_by(pl.element().struct.field("age"), descending=True)
+        .struct.field("name")
+    )
+    .alias("names_by_age"),
+    pl.col("children")
+    .list.eval(pl.element().struct.field("age").min())
+    .alias("min_age"),
+    pl.col("children")
+    .list.eval(pl.element().struct.field("age").max())
+    .alias("max_age"),
+)
+print(result)
+# --8<-- [end:list-sorting]
+
+# --8<-- [start:list-aggregation]
+result = df.select(
+    pl.col("children")
+    .list.eval(
+        pl.element()
+        .sort_by(pl.element().struct.field("age"), descending=True)
+        .struct.field("name")
+    )
+    .alias("names_by_age"),
+    pl.col("children")
+    .list.agg(pl.element().struct.field("age").min())
+    .alias("min_age"),
+    pl.col("children")
+    .list.agg(pl.element().struct.field("age").max())
+    .alias("max_age"),
+)
+print(result)
+# --8<-- [end:list-aggregation]
+
+# --8<-- [start:list-entropy]
+result = df.with_columns(
+    pl.col("children")
+    .list.agg(pl.element().struct.field("age").entropy())
+    .alias("age_entropy"),
+)
+print(result)
+# --8<-- [end:list-entropy]
+
 # --8<-- [start:weather_by_day]
 weather_by_day = pl.DataFrame(
     {

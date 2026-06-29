@@ -60,6 +60,8 @@ pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<d
             DataType::UInt16 => Box::new(SK::<UInt16Type>::new(dt, ng)),
             DataType::UInt32 => Box::new(SK::<UInt32Type>::new(dt, ng)),
             DataType::UInt64 => Box::new(SK::<UInt64Type>::new(dt, ng)),
+            #[cfg(feature = "dtype-u128")]
+            DataType::UInt128 => Box::new(SK::<UInt128Type>::new(dt, ng)),
             #[cfg(feature = "dtype-i8")]
             DataType::Int8 => Box::new(SK::<Int8Type>::new(dt, ng)),
             #[cfg(feature = "dtype-i16")]
@@ -68,6 +70,8 @@ pub fn new_hash_hot_grouper(key_schema: Arc<Schema>, num_groups: usize) -> Box<d
             DataType::Int64 => Box::new(SK::<Int64Type>::new(dt, ng)),
             #[cfg(feature = "dtype-i128")]
             DataType::Int128 => Box::new(SK::<Int128Type>::new(dt, ng)),
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Box::new(SK::<Float16Type>::new(dt, ng)),
             DataType::Float32 => Box::new(SK::<Float32Type>::new(dt, ng)),
             DataType::Float64 => Box::new(SK::<Float64Type>::new(dt, ng)),
 

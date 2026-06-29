@@ -1,5 +1,8 @@
+mod get;
 mod namespace;
+mod slice;
 
+pub use get::bin_get;
 pub use namespace::*;
 use polars_core::prelude::*;
 

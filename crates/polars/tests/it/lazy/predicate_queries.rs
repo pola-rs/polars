@@ -181,7 +181,7 @@ fn test_binaryexpr_pushdown_left_join_9506() -> PolarsResult<()> {
     }?;
     let df = df1.lazy().left_join(df2.lazy(), col("b"), col("b"));
     let out = df.filter(col("c").eq(lit("c2"))).collect()?;
-    assert!(out.is_empty());
+    assert_eq!(out.height(), 0);
     Ok(())
 }
 
@@ -213,7 +213,7 @@ fn test_count_blocked_at_union_3963() -> PolarsResult<()> {
                 ..Default::default()
             },
         )?
-        .filter(len().over([col("k")]).gt(lit(1)))
+        .filter(len().over([col("k")]).unwrap().gt(lit(1)))
         .collect()?;
 
         assert!(out.equals(&expected));

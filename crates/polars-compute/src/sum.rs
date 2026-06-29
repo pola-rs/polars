@@ -1,11 +1,14 @@
 use std::ops::Add;
 #[cfg(feature = "simd")]
+use std::simd::Select;
+#[cfg(feature = "simd")]
 use std::simd::prelude::*;
 
 use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use num_traits::Zero;
+use polars_utils::float16::pf16;
 
 macro_rules! wrapping_impl {
     ($trait_name:ident, $method:ident, $t:ty) => {
@@ -41,6 +44,7 @@ wrapping_impl!(WrappingAdd, wrapping_add, i64);
 wrapping_impl!(WrappingAdd, wrapping_add, isize);
 wrapping_impl!(WrappingAdd, wrapping_add, i128);
 
+wrapping_impl!(WrappingAdd, add, pf16);
 wrapping_impl!(WrappingAdd, add, f32);
 wrapping_impl!(WrappingAdd, add, f64);
 
@@ -56,6 +60,21 @@ fn wrapping_sum_with_mask_scalar<T: Zero + WrappingAdd + Copy>(vals: &[T], mask:
             if mask.get(i) { *x } else { T::zero() }
         })
         .fold(T::zero(), |a, b| a.wrapping_add(&b))
+}
+
+fn wrapping_sum_with_mask_scalar_upcast<T, S>(vals: &[T], mask: &BitMask) -> S
+where
+    T: NativeType + Zero + Into<S>,
+    S: Zero + WrappingAdd + Copy,
+{
+    assert!(vals.len() == mask.len());
+    vals.iter()
+        .enumerate()
+        .map(|(i, x)| {
+            // No filter but rather select of 0 for cmov opt.
+            if mask.get(i) { *x } else { T::zero() }
+        })
+        .fold(S::zero(), |a, b| a.wrapping_add(&b.into()))
 }
 
 #[cfg(not(feature = "simd"))]
@@ -96,7 +115,7 @@ where
             .chunks_exact(STRIPE)
             .enumerate()
             .map(|(i, a)| {
-                let m: Mask<_, STRIPE> = main_mask.get_simd(i * STRIPE);
+                let m: Mask<T::Mask, STRIPE> = main_mask.get_simd(i * STRIPE);
                 m.select(Simd::from_slice(a), zero)
             })
             .fold(zero, |a, b| {
@@ -138,6 +157,17 @@ impl WrappingSum for i128 {
     }
 }
 
+#[cfg(feature = "simd")]
+impl WrappingSum for pf16 {
+    fn wrapping_sum(_vals: &[Self]) -> Self {
+        unimplemented!("should have been dispatched to other sum kernel")
+    }
+
+    fn wrapping_sum_with_validity(_vals: &[Self], _mask: &BitMask) -> Self {
+        unimplemented!("should have been dispatched to other sum kernel")
+    }
+}
+
 pub trait WrappingSum: Sized {
     fn wrapping_sum(vals: &[Self]) -> Self;
     fn wrapping_sum_with_validity(vals: &[Self], mask: &BitMask) -> Self;
@@ -152,5 +182,20 @@ where
         WrappingSum::wrapping_sum_with_validity(arr.values(), &BitMask::from_bitmap(mask))
     } else {
         WrappingSum::wrapping_sum(arr.values())
+    }
+}
+
+pub fn wrapping_sum_arr_upcast<T, S>(arr: &PrimitiveArray<T>) -> S
+where
+    T: NativeType + Zero + Into<S>,
+    S: Zero + WrappingAdd + Copy,
+{
+    let validity = arr.validity().filter(|_| arr.null_count() > 0);
+    if let Some(mask) = validity {
+        wrapping_sum_with_mask_scalar_upcast(arr.values(), &BitMask::from_bitmap(mask))
+    } else {
+        arr.values()
+            .iter()
+            .fold(S::zero(), |a, b| a.wrapping_add(&(*b).into()))
     }
 }

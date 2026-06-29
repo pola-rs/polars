@@ -19,7 +19,7 @@ impl Series {
 #[derive(Clone)]
 pub struct NullChunked {
     pub(crate) name: PlSmallStr,
-    length: IdxSize,
+    length: usize,
     // we still need chunks as many series consumers expect
     // chunks to be there
     chunks: Vec<ArrayRef>,
@@ -27,9 +27,13 @@ pub struct NullChunked {
 
 impl NullChunked {
     pub(crate) fn new(name: PlSmallStr, len: usize) -> Self {
+        if len >= (IdxSize::MAX as usize) && chunkops::CHECK_LENGTH.get() {
+            panic!("{}", LENGTH_LIMIT_MSG);
+        }
+
         Self {
             name,
-            length: len as IdxSize,
+            length: len,
             chunks: vec![Box::new(arrow::array::NullArray::new(
                 ArrowDataType::Null,
                 len,
@@ -38,7 +42,7 @@ impl NullChunked {
     }
 
     pub fn len(&self) -> usize {
-        self.length as usize
+        self.length
     }
 
     pub fn is_empty(&self) -> bool {
@@ -63,7 +67,11 @@ impl PrivateSeries for NullChunked {
                 _ => chunks.iter().fold(0, |acc, arr| acc + arr.len()),
             }
         }
-        self.length = IdxSize::try_from(inner(&self.chunks)).expect(LENGTH_LIMIT_MSG);
+        let len = inner(&self.chunks);
+        if len >= (IdxSize::MAX as usize) && chunkops::CHECK_LENGTH.get() {
+            panic!("{}", LENGTH_LIMIT_MSG);
+        }
+        self.length = len;
     }
     fn _field(&self) -> Cow<'_, Field> {
         Cow::Owned(Field::new(self.name().clone(), DataType::Null))
@@ -120,10 +128,7 @@ impl PrivateSeries for NullChunked {
         Ok(if self.is_empty() {
             GroupsType::default()
         } else {
-            GroupsType::Slice {
-                groups: vec![[0, self.length]],
-                rolling: false,
-            }
+            GroupsType::new_slice(vec![[0, self.length as IdxSize]], false, true)
         })
     }
 
@@ -212,8 +217,13 @@ impl SeriesTrait for NullChunked {
         NullChunked::new(self.name.clone(), indices.len()).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        assert_eq!(validity.set_bits(), 0);
+        self.clone().into_series()
+    }
+
     fn len(&self) -> usize {
-        self.length as usize
+        self.length
     }
 
     fn has_nulls(&self) -> bool {
@@ -222,6 +232,10 @@ impl SeriesTrait for NullChunked {
 
     fn rechunk(&self) -> Series {
         NullChunked::new(self.name.clone(), self.len()).into_series()
+    }
+
+    fn with_validity(&self, _validity: Option<Bitmap>) -> Series {
+        self.clone().into_series()
     }
 
     fn drop_nulls(&self) -> Series {
@@ -254,6 +268,15 @@ impl SeriesTrait for NullChunked {
         Ok(IdxCa::new(self.name().clone(), idxs))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        if self.is_empty() {
+            Ok((0, Vec::new()))
+        } else {
+            Ok((1, vec![0; self.len()]))
+        }
+    }
+
     fn new_from_index(&self, _index: usize, length: usize) -> Series {
         NullChunked::new(self.name.clone(), length).into_series()
     }
@@ -266,7 +289,7 @@ impl SeriesTrait for NullChunked {
         let (chunks, len) = chunkops::slice(&self.chunks, offset, length, self.len());
         NullChunked {
             name: self.name.clone(),
-            length: len as IdxSize,
+            length: len,
             chunks,
         }
         .into_series()
@@ -277,13 +300,13 @@ impl SeriesTrait for NullChunked {
         (
             NullChunked {
                 name: self.name.clone(),
-                length: l.iter().map(|arr| arr.len() as IdxSize).sum(),
+                length: l.iter().map(|arr| arr.len()).sum(),
                 chunks: l,
             }
             .into_series(),
             NullChunked {
                 name: self.name.clone(),
-                length: r.iter().map(|arr| arr.len() as IdxSize).sum(),
+                length: r.iter().map(|arr| arr.len()).sum(),
                 chunks: r,
             }
             .into_series(),
@@ -331,10 +354,38 @@ impl SeriesTrait for NullChunked {
         self.clone().into_series()
     }
 
+    fn sum_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::null(DataType::Null))
+    }
+
+    fn min_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::null(DataType::Null))
+    }
+
+    fn max_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::null(DataType::Null))
+    }
+
+    fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::null(DataType::Null))
+    }
+
+    fn median_reduce(&self) -> PolarsResult<Scalar> {
+        Ok(Scalar::null(DataType::Null))
+    }
+
+    fn std_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
+        Ok(Scalar::null(DataType::Null))
+    }
+
+    fn var_reduce(&self, _ddof: u8) -> PolarsResult<Scalar> {
+        Ok(Scalar::null(DataType::Null))
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
         // we don't create a new null array to keep probability of aligned chunks higher
-        self.length += other.len() as IdxSize;
+        self.length += other.len();
         self.chunks.extend(other.chunks().iter().cloned());
         Ok(())
     }
@@ -342,7 +393,7 @@ impl SeriesTrait for NullChunked {
         polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
         // we don't create a new null array to keep probability of aligned chunks higher
         let other: &mut NullChunked = other._get_inner_mut().as_any_mut().downcast_mut().unwrap();
-        self.length += other.len() as IdxSize;
+        self.length += other.len();
         self.chunks.extend(std::mem::take(&mut other.chunks));
         Ok(())
     }
@@ -350,6 +401,11 @@ impl SeriesTrait for NullChunked {
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         *self = NullChunked::new(self.name.clone(), self.len() + other.len());
         Ok(())
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        Ok(if self.is_empty() { 0 } else { 1 })
     }
 
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {

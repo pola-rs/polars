@@ -6,11 +6,12 @@ use arrow::array::NullArray;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 
-use super::PredicateFilter;
 use super::utils::filter::Filter;
 use super::utils::{self};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
+use crate::read::deserialize::utils::Decoded;
+use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
 pub(crate) struct NullDecoder;
 pub(crate) struct NullTranslation {
@@ -26,8 +27,13 @@ impl utils::Decoded for NullArrayLength {
     fn len(&self) -> usize {
         self.length
     }
+
     fn extend_nulls(&mut self, n: usize) {
         self.length += n;
+    }
+
+    fn remaining_capacity(&self) -> usize {
+        usize::MAX
     }
 }
 
@@ -64,12 +70,13 @@ impl utils::Decoder for NullDecoder {
         Ok(NullArray::new_empty(ArrowDataType::Null))
     }
 
-    fn has_predicate_specialization(
-        &self,
+    fn evaluate_predicate(
+        &mut self,
         _state: &utils::State<'_, Self>,
-        _predicate: &PredicateFilter,
+        _predicate: Option<&SpecializedParquetColumnExpr>,
+        _pred_true_mask: &mut BitmapBuilder,
+        _dict_mask: Option<&Bitmap>,
     ) -> ParquetResult<bool> {
-        // @TODO: This can be enabled for the fast paths
         Ok(false)
     }
 
@@ -98,8 +105,8 @@ impl utils::Decoder for NullDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        _pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
+        _chunks: &mut Vec<Self::Output>,
     ) -> ParquetResult<()> {
         if matches!(filter, Some(Filter::Predicate(_))) {
             todo!()
@@ -111,6 +118,17 @@ impl utils::Decoder for NullDecoder {
         };
         decoded.length += num_rows;
 
+        Ok(())
+    }
+
+    fn extend_constant(
+        &mut self,
+        decoded: &mut Self::DecodedState,
+        length: usize,
+        value: &ParquetScalar,
+    ) -> ParquetResult<()> {
+        assert!(matches!(value, ParquetScalar::Null));
+        decoded.extend_nulls(length);
         Ok(())
     }
 }

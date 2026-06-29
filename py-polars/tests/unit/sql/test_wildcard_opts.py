@@ -168,18 +168,18 @@ def test_select_replace(
 def test_select_wildcard_errors(df: pl.DataFrame) -> None:
     # EXCLUDE and ILIKE are not allowed together
     with pytest.raises(SQLInterfaceError, match="ILIKE"):
-        assert df.sql("SELECT * EXCLUDE Address ILIKE '%o%' FROM self")
+        df.sql("SELECT * EXCLUDE Address ILIKE '%o%' FROM self")
 
     # these two options are aliases, with EXCLUDE being preferred
     with pytest.raises(
         SQLInterfaceError,
         match="EXCLUDE and EXCEPT wildcard options cannot be used together",
     ):
-        assert df.sql("SELECT * EXCLUDE Address EXCEPT City FROM self")
+        df.sql("SELECT * EXCLUDE Address EXCEPT City FROM self")
 
     # note: missing "()" around the exclude option results in dupe col
     with pytest.raises(
         DuplicateError,
         match="City",
     ):
-        assert df.sql("SELECT * EXCLUDE Address, City FROM self")
+        df.sql("SELECT * EXCLUDE Address, City FROM self")

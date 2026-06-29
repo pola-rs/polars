@@ -15,6 +15,8 @@ pub struct ArrowSchema {
     pub(super) private_data: *mut ::std::os::raw::c_void,
 }
 
+unsafe impl Send for ArrowSchema {}
+
 /// ABI-compatible struct for [`ArrowArray`](https://arrow.apache.org/docs/format/CDataInterface.html#structure-definitions)
 #[repr(C)]
 #[derive(Debug)]

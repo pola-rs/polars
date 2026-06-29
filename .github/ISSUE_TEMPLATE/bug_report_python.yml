@@ -3,6 +3,12 @@ description: Report an issue with Python Polars.
 labels: [bug, needs triage, python]
 
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! 
+        If you are using Polars Cloud, consider opening a bug at https://github.com/pola-rs/polars-cloud-client.
+        Otherwise please fill in the form below.
   - type: checkboxes
     id: checks
     attributes:

@@ -6,36 +6,65 @@ use polars_error::PolarsResult;
 use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
+use pyo3::types::PyAnyMethods;
 use pyo3::{PyErr, PyResult, Python};
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::series::PySeries;
-use crate::timeout::{cancel_polars_timeout, schedule_polars_timeout};
+use crate::timeout::{cancel_polars_timeout, is_timeout_enabled, schedule_polars_timeout};
 
-// was redefined because I could not get feature flags activated?
+/// Calls method on downcasted ChunkedArray for all possible publicly exposed Polars dtypes.
 #[macro_export]
-macro_rules! apply_method_all_arrow_series2 {
+macro_rules! apply_all_polars_dtypes {
     ($self:expr, $method:ident, $($args:expr),*) => {
         match $self.dtype() {
             DataType::Boolean => $self.bool().unwrap().$method($($args),*),
-            DataType::String => $self.str().unwrap().$method($($args),*),
             DataType::UInt8 => $self.u8().unwrap().$method($($args),*),
             DataType::UInt16 => $self.u16().unwrap().$method($($args),*),
             DataType::UInt32 => $self.u32().unwrap().$method($($args),*),
             DataType::UInt64 => $self.u64().unwrap().$method($($args),*),
+            DataType::UInt128 => $self.u128().unwrap().$method($($args),*),
             DataType::Int8 => $self.i8().unwrap().$method($($args),*),
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
             DataType::Int128 => $self.i128().unwrap().$method($($args),*),
+            DataType::Float16 => $self.f16().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
-            DataType::Date => $self.date().unwrap().physical().$method($($args),*),
-            DataType::Datetime(_, _) => $self.datetime().unwrap().physical().$method($($args),*),
+            DataType::String => $self.str().unwrap().$method($($args),*),
+            DataType::Binary => $self.binary().unwrap().$method($($args),*),
+            DataType::Decimal(_, _) => $self.decimal().unwrap().$method($($args),*),
+
+            DataType::Date => $self.date().unwrap().$method($($args),*),
+            DataType::Datetime(_, _) => $self.datetime().unwrap().$method($($args),*),
+            DataType::Duration(_) => $self.duration().unwrap().$method($($args),*),
+            DataType::Time => $self.time().unwrap().$method($($args),*),
+
             DataType::List(_) => $self.list().unwrap().$method($($args),*),
             DataType::Struct(_) => $self.struct_().unwrap().$method($($args),*),
-            dt => panic!("dtype {:?} not supported", dt)
+            DataType::Array(_, _) => $self.array().unwrap().$method($($args),*),
+
+            dt @ (DataType::Categorical(_, _) | DataType::Enum(_, _)) => match dt.cat_physical().unwrap() {
+                CategoricalPhysical::U8 => $self.cat8().unwrap().$method($($args),*),
+                CategoricalPhysical::U16 => $self.cat16().unwrap().$method($($args),*),
+                CategoricalPhysical::U32 => $self.cat32().unwrap().$method($($args),*),
+            },
+
+            #[cfg(feature = "object")]
+            DataType::Object(_) => {
+                $self
+                .as_any()
+                .downcast_ref::<ObjectChunked<ObjectValue>>()
+                .unwrap()
+                .$method($($args),*)
+            },
+            DataType::Extension(_, _) => $self.ext().unwrap().$method($($args),*),
+
+            DataType::Null => $self.null().unwrap().$method($($args),*),
+
+            dt @ (DataType::BinaryOffset | DataType::Unknown(_)) => panic!("dtype {:?} not supported", dt)
         }
     }
 }
@@ -95,6 +124,13 @@ pub trait EnterPolarsExt {
     }
 }
 
+fn get_traceback(py: Python<'_>) -> PyResult<String> {
+    let tb = py.import(pyo3::intern!(py, "traceback"))?;
+    let format_stack = tb.getattr("format_stack")?;
+    let lines: Vec<String> = format_stack.call0()?.extract()?;
+    Ok(lines.join("\n"))
+}
+
 impl EnterPolarsExt for Python<'_> {
     fn enter_polars<T, E, F>(self, f: F) -> PyResult<T>
     where
@@ -102,8 +138,13 @@ impl EnterPolarsExt for Python<'_> {
         T: Ungil + Send,
         E: Ungil + Send + Into<PyPolarsErr>,
     {
-        let timeout = schedule_polars_timeout();
-        let ret = self.allow_threads(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
+        let timeout = if is_timeout_enabled() {
+            std::hint::cold_path();
+            schedule_polars_timeout(get_traceback(self).ok())
+        } else {
+            None
+        };
+        let ret = self.detach(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
         cancel_polars_timeout(timeout);
         match ret {
             Ok(Ok(ret)) => Ok(ret),

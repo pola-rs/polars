@@ -1,4 +1,5 @@
 use super::*;
+use crate::dsl::functions::*;
 
 impl From<AggExpr> for Expr {
     fn from(agg: AggExpr) -> Self {

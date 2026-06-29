@@ -1,3 +1,5 @@
+#[cfg(feature = "dtype-f16")]
+use num_traits::real::Real;
 use polars_core::prelude::arity::broadcast_binary_elementwise_values;
 use polars_core::prelude::*;
 use polars_core::{with_match_physical_float_polars_type, with_match_physical_integer_polars_type};
@@ -17,7 +19,6 @@ pub trait LogSeries: SeriesSealed {
     fn log(&self, base: &Series) -> Series {
         let s = self.as_series();
 
-        use DataType::*;
         match (s.dtype(), base.dtype()) {
             (dt1, dt2) if dt1 == dt2 && dt1.is_float() => {
                 let s = s.to_physical_repr();
@@ -31,12 +32,9 @@ pub trait LogSeries: SeriesSealed {
                     out.into_series()
                 })
             },
-            (_, Float64) => s.cast(&DataType::Float64).unwrap().log(base),
-            (Float64, _) => s.log(&base.cast(&DataType::Float64).unwrap()),
-            (_, _) => s
-                .cast(&DataType::Float64)
-                .unwrap()
-                .log(&base.cast(&DataType::Float64).unwrap()),
+            (dt1, _) if dt1.is_float() => s.log(&base.cast(dt1).unwrap()),
+            (_, dt2) if dt2.is_float() => s.cast(base.dtype()).unwrap().log(base),
+            (_, _) => s.cast(&DataType::Float64).unwrap().log(base),
         }
     }
 
@@ -58,6 +56,8 @@ pub trait LogSeries: SeriesSealed {
                     log1p(ca).into_series()
                 })
             },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => s.f16().unwrap().apply_values(|v| v.ln_1p()).into_series(),
             Float32 => s.f32().unwrap().apply_values(|v| v.ln_1p()).into_series(),
             Float64 => s.f64().unwrap().apply_values(|v| v.ln_1p()).into_series(),
             _ => s.cast(&DataType::Float64).unwrap().log1p(),
@@ -82,6 +82,8 @@ pub trait LogSeries: SeriesSealed {
                     exp(ca).into_series()
                 })
             },
+            #[cfg(feature = "dtype-f16")]
+            Float16 => s.f16().unwrap().apply_values(|v| v.exp()).into_series(),
             Float32 => s.f32().unwrap().apply_values(|v| v.exp()).into_series(),
             Float64 => s.f64().unwrap().apply_values(|v| v.exp()).into_series(),
             _ => s.cast(&DataType::Float64).unwrap().exp(),
@@ -99,7 +101,7 @@ pub trait LogSeries: SeriesSealed {
             return Ok(0.0);
         }
         match s.dtype() {
-            DataType::Float32 | DataType::Float64 => {
+            DataType::Float16 | DataType::Float32 | DataType::Float64 => {
                 let pk = s.as_ref();
 
                 let pk = if normalize {

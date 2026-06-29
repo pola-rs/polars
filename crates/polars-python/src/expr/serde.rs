@@ -35,7 +35,7 @@ impl PyExpr {
     }
 
     /// Serialize into binary data.
-    fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
+    fn serialize_binary(&self, py_f: Py<PyAny>) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         pl_serialize::SerializeOptions::default()
@@ -45,7 +45,7 @@ impl PyExpr {
 
     /// Serialize into a JSON string.
     #[cfg(feature = "json")]
-    fn serialize_json(&self, py_f: PyObject) -> PyResult<()> {
+    fn serialize_json(&self, py_f: Py<PyAny>) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         serde_json::to_writer(writer, &self.inner)
@@ -54,7 +54,7 @@ impl PyExpr {
 
     /// Deserialize a file-like object containing binary data into an Expr.
     #[staticmethod]
-    fn deserialize_binary(py_f: PyObject) -> PyResult<PyExpr> {
+    fn deserialize_binary(py_f: Py<PyAny>) -> PyResult<PyExpr> {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
         let expr: Expr = pl_serialize::SerializeOptions::default()
@@ -66,7 +66,7 @@ impl PyExpr {
     /// Deserialize a file-like object containing JSON string data into an Expr.
     #[staticmethod]
     #[cfg(feature = "json")]
-    fn deserialize_json(py_f: PyObject) -> PyResult<PyExpr> {
+    fn deserialize_json(py_f: Py<PyAny>) -> PyResult<PyExpr> {
         // it is faster to first read to memory and then parse: https://github.com/serde-rs/json/issues/160
         // so don't bother with files.
         let mut json = String::new();

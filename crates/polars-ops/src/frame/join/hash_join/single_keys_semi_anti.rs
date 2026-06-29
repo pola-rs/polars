@@ -33,7 +33,7 @@ where
         }
         hash_tbl
     });
-    POOL.install(|| par_iter.collect())
+    RAYON.install(|| par_iter.collect())
 }
 
 /// Construct a ParallelIterator, but doesn't iterate it. This means the caller
@@ -105,7 +105,7 @@ where
     let par_iter = semi_anti_impl(probe, build, nulls_equal)
         .filter(|tpls| !tpls.1)
         .map(|tpls| tpls.0);
-    POOL.install(|| par_iter.collect())
+    RAYON.install(|| par_iter.collect())
 }
 
 pub(super) fn hash_join_tuples_left_semi<T, I>(
@@ -121,5 +121,5 @@ where
     let par_iter = semi_anti_impl(probe, build, nulls_equal)
         .filter(|tpls| tpls.1)
         .map(|tpls| tpls.0);
-    POOL.install(|| par_iter.collect())
+    RAYON.install(|| par_iter.collect())
 }

@@ -4,15 +4,19 @@ import enum
 import sys
 from collections import OrderedDict
 from collections.abc import Mapping
+from datetime import date, datetime, time
 from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import DataOrientationWarning, InvalidOperationError
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+    from polars._typing import SchemaDict
 
 
 def test_df_mixed_dtypes_string() -> None:
@@ -110,7 +114,6 @@ def test_df_init_strict() -> None:
         pl.DataFrame(data, schema=schema, strict=True)
 
     df = pl.DataFrame(data, schema=schema, strict=False)
-
     assert df["a"].to_list() == [1, 2, 3]
     assert df["a"].dtype == pl.Int8
 
@@ -122,7 +125,6 @@ def test_df_init_from_series_strict() -> None:
         pl.DataFrame(s, schema=schema, strict=True)
 
     df = pl.DataFrame(s, schema=schema, strict=False)
-
     assert df["a"].to_list() == [None, 0, 1]
     assert df["a"].dtype == pl.UInt8
 
@@ -147,7 +149,6 @@ def test_df_init_nested_mixed_types() -> None:
         pl.DataFrame(data, strict=True)
 
     df = pl.DataFrame(data, strict=False)
-
     assert df.schema == {"key": pl.List(pl.Struct({"value": pl.Float64}))}
     assert df.to_dicts() == [{"key": [{"value": 1.0}, {"value": 1.0}]}]
 
@@ -205,3 +206,57 @@ def test_df_init_enum_dtype() -> None:
 
     df = pl.DataFrame({"Col 1": ["A", "B", "C"]}, schema={"Col 1": PythonEnum})
     assert df.dtypes[0] == pl.Enum(["A", "B", "C"])
+
+
+@pytest.mark.parametrize(
+    "schema_param",
+    [
+        {
+            "schema": {
+                "date": pl.Date,
+                "time": pl.Time,
+                "datetime": pl.Datetime,
+            },
+        },
+        {
+            "schema_overrides": {
+                "date": pl.Date(),
+                "time": pl.Time(),
+                "datetime": pl.Datetime(),
+            },
+        },
+    ],
+)
+def test_temporal_string_schema_overrides(schema_param: dict[str, SchemaDict]) -> None:
+    df = pl.DataFrame(
+        {
+            "date": ["2024-01-01", "2025-10-07"],
+            "time": ["12:00:00", "13:30:00"],
+            "datetime": ["2024-01-01 23:59:59", "2024-01-02T13:30:00.123456"],
+        },
+        **schema_param,  # type: ignore[arg-type]
+    )
+    assert df.schema == {
+        "date": pl.Date,
+        "time": pl.Time,
+        "datetime": pl.Datetime("us"),
+    }
+    assert df.to_dicts() == [
+        {
+            "date": date(2024, 1, 1),
+            "time": time(12, 0),
+            "datetime": datetime(2024, 1, 1, 23, 59, 59),
+        },
+        {
+            "date": date(2025, 10, 7),
+            "time": time(13, 30),
+            "datetime": datetime(2024, 1, 2, 13, 30, 0, 123456),
+        },
+    ]
+
+
+def test_bytes_scalar_broadcast_27620() -> None:
+    # https://github.com/pola-rs/polars/issues/27620
+    result = pl.DataFrame({"a": b"foo", "b": "foo", "c": [10, 20, 30]})
+    expected = pl.DataFrame({"a": [b"foo"] * 3, "b": ["foo"] * 3, "c": [10, 20, 30]})
+    assert_frame_equal(result, expected)

@@ -1,14 +1,13 @@
 //! Functionality to mmap in-memory data regions.
 use std::sync::Arc;
 
+use polars_buffer::{Buffer, SharedStorage};
 use polars_error::{PolarsResult, polars_bail};
 
 use super::{ArrowArray, InternalArrowArray};
 use crate::array::{BooleanArray, FromFfi, PrimitiveArray};
 use crate::bitmap::Bitmap;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
-use crate::storage::SharedStorage;
 use crate::types::NativeType;
 
 #[allow(dead_code)]
@@ -21,11 +20,11 @@ struct PrivateData<T> {
 }
 
 pub(crate) unsafe fn create_array<
-    T,
+    O: Send + 'static,
     I: Iterator<Item = Option<*const u8>>,
     II: Iterator<Item = ArrowArray>,
 >(
-    data: Arc<T>,
+    data: Arc<O>,
     num_rows: usize,
     null_count: usize,
     buffers: I,
@@ -48,7 +47,7 @@ pub(crate) unsafe fn create_array<
 
     let dictionary_ptr = dictionary.map(|array| Box::into_raw(Box::new(array)));
 
-    let mut private_data = Box::new(PrivateData::<Arc<T>> {
+    let mut private_data = Box::new(PrivateData::<Arc<O>> {
         data,
         buffers_ptr,
         children_ptr,
@@ -64,7 +63,7 @@ pub(crate) unsafe fn create_array<
         buffers: private_data.buffers_ptr.as_mut_ptr(),
         children: private_data.children_ptr.as_mut_ptr(),
         dictionary: private_data.dictionary_ptr.unwrap_or(std::ptr::null_mut()),
-        release: Some(release::<Arc<T>>),
+        release: Some(release::<Arc<O>>),
         private_data: Box::into_raw(private_data) as *mut ::std::os::raw::c_void,
     }
 }
@@ -115,7 +114,10 @@ pub unsafe fn slice<T: NativeType>(values: &[T]) -> PrimitiveArray<T> {
 /// # Safety
 ///
 /// The caller must ensure the passed `owner` ensures the data remains alive.
-pub unsafe fn slice_and_owner<T: NativeType, O>(slice: &[T], owner: O) -> PrimitiveArray<T> {
+pub unsafe fn slice_and_owner<T: NativeType, O: Send + 'static>(
+    slice: &[T],
+    owner: O,
+) -> PrimitiveArray<T> {
     let num_rows = slice.len();
     let null_count = 0;
     let validity = None;
@@ -178,7 +180,7 @@ pub unsafe fn bitmap(data: &[u8], offset: usize, length: usize) -> PolarsResult<
 /// # Safety
 ///
 /// The caller must ensure the passed `owner` ensures the data remains alive.
-pub unsafe fn bitmap_and_owner<O>(
+pub unsafe fn bitmap_and_owner<O: Send + 'static>(
     data: &[u8],
     offset: usize,
     length: usize,

@@ -21,7 +21,7 @@ where
     <T as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
     let build_hasher = build_hasher.unwrap_or_default();
-    let hashes = POOL.install(|| {
+    let hashes = RAYON.install(|| {
         iters
             .into_par_iter()
             .map(|iter| {
@@ -50,13 +50,13 @@ where
     // We will create a hashtable in every thread.
     // We use the hash to partition the keys to the matching hashtable.
     // Every thread traverses all keys/hashes and ignores the ones that doesn't fall in that partition.
-    POOL.install(|| {
+    RAYON.install(|| {
         (0..n_partitions)
             .into_par_iter()
             .map(|partition_no| {
                 let hashes_and_keys = &hashes_and_keys;
                 let mut hash_tbl: PlHashMap<T::TotalOrdItem, (bool, IdxVec)> =
-                    PlHashMap::with_hasher(build_hasher);
+                    PlHashMap::with_hasher(build_hasher.clone());
 
                 let mut offset = 0;
                 for hashes_and_keys in hashes_and_keys {
@@ -229,7 +229,8 @@ where
     let random_state = hash_tbls[0].hasher();
 
     // we pre hash the probing values
-    let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(*random_state));
+    let (probe_hashes, _) =
+        create_hash_and_keys_threaded_vectorized(probe, Some(random_state.clone()));
 
     let n_tables = hash_tbls.len();
     try_raise_keyboard_interrupt();

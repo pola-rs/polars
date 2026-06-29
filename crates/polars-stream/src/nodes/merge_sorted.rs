@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
 
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::ChunkCompareIneq;
 use polars_ops::frame::_merge_sorted_dfs;
 
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_primitives::connector::Receiver;
-use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 
@@ -16,17 +16,21 @@ pub struct MergeSortedNode {
 
     starting_nulls: bool,
 
+    maintain_order: bool,
+
     // Not yet merged buffers.
     left_unmerged: VecDeque<DataFrame>,
     right_unmerged: VecDeque<DataFrame>,
 }
 
 impl MergeSortedNode {
-    pub fn new() -> Self {
+    pub fn new(maintain_order: bool) -> Self {
         Self {
             seq: MorselSeq::default(),
 
             starting_nulls: false,
+
+            maintain_order,
 
             left_unmerged: VecDeque::new(),
             right_unmerged: VecDeque::new(),
@@ -43,6 +47,7 @@ fn find_mergeable(
 
     is_first: bool,
     starting_nulls: &mut bool,
+    maintain_order: bool,
 ) -> PolarsResult<Option<(DataFrame, DataFrame)>> {
     fn first_non_empty(vd: &mut VecDeque<DataFrame>) -> Option<DataFrame> {
         let mut df = vd.pop_front()?;
@@ -69,8 +74,8 @@ fn find_mergeable(
             (None, None) => return Ok(None),
         };
 
-        let left_key = left.get_columns().last().unwrap();
-        let right_key = right.get_columns().last().unwrap();
+        let left_key = left.columns().last().unwrap();
+        let right_key = right.columns().last().unwrap();
 
         let left_null_count = left_key.null_count();
         let right_null_count = right_key.null_count();
@@ -134,13 +139,26 @@ fn find_mergeable(
         } else if left_key_last.lt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
-            let gt_mask = right_key.gt(&left_key_last)?;
-            right_cutoff = gt_mask.downcast_as_array().values().leading_zeros();
+            if maintain_order {
+                // When maintaining order, hold back right-side rows with keys
+                // equal to left's max, since more left rows with that key may
+                // arrive in later morsels.
+                let gte_mask = right_key.gt_eq(&left_key_last)?;
+                right_cutoff = gte_mask.first_true_idx().unwrap_or(gte_mask.len());
+            } else {
+                let gt_mask = right_key.gt(&left_key_last)?;
+                right_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
+            }
         } else if left_key_last.gt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
             let gt_mask = left_key.gt(&right_key_last)?;
-            left_cutoff = gt_mask.downcast_as_array().values().leading_zeros();
+            left_cutoff = gt_mask.first_true_idx().unwrap_or(gt_mask.len());
+        } else if maintain_order {
+            // Keys are equal at both maxima. Hold back right-side rows with
+            // keys equal to the shared maximum to ensure left-biased ordering.
+            let gte_mask = right_key.gt_eq(&left_key_last)?;
+            right_cutoff = gte_mask.first_true_idx().unwrap_or(gte_mask.len());
         }
 
         let left_mergeable: DataFrame;
@@ -148,10 +166,10 @@ fn find_mergeable(
         (left_mergeable, left) = left.split_at(left_cutoff as i64);
         (right_mergeable, right) = right.split_at(right_cutoff as i64);
 
-        if !left.is_empty() {
+        if left.height() > 0 {
             left_unmerged.push_front(left);
         }
-        if !right.is_empty() {
+        if right.height() > 0 {
             right_unmerged.push_front(right);
         }
 
@@ -164,8 +182,7 @@ fn remove_key_column(df: &mut DataFrame) {
     // - We only pop so height stays same.
     // - We only pop so no new name collisions.
     // - We clear schema afterwards.
-    unsafe { df.get_columns_mut().pop().unwrap() };
-    df.clear_schema();
+    unsafe { df.columns_mut().pop().unwrap() };
 }
 
 impl ComputeNode for MergeSortedNode {
@@ -237,6 +254,7 @@ impl ComputeNode for MergeSortedNode {
 
         let seq = &mut self.seq;
         let starting_nulls = &mut self.starting_nulls;
+        let maintain_order = self.maintain_order;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
 
@@ -286,21 +304,16 @@ impl ComputeNode for MergeSortedNode {
             // data.
             (left, right) => {
                 async fn buffer_unmerged(
-                    port: &mut Receiver<Morsel>,
+                    port: &mut PortReceiver,
                     unmerged: &mut VecDeque<DataFrame>,
                 ) {
                     // If a stop was requested, we need to buffer the remaining
                     // morsels and trigger a phase transition.
-                    let Ok(morsel) = port.recv().await else {
-                        return;
-                    };
 
-                    // Request the port stop producing morsels.
-                    morsel.source_token().stop();
-
-                    // Buffer all the morsels that were already produced.
-                    unmerged.push_back(morsel.into_df());
                     while let Ok(morsel) = port.recv().await {
+                        // Request the port stop producing morsels.
+                        morsel.source_token().stop();
+                        // Buffer all the morsels that were already produced.
                         unmerged.push_back(morsel.into_df());
                     }
                 }
@@ -326,6 +339,7 @@ impl ComputeNode for MergeSortedNode {
                             right_unmerged,
                             seq.to_u64() == 0,
                             starting_nulls,
+                            maintain_order,
                         )? {
                             let left_mergeable =
                                 Morsel::new(left_mergeable, *seq, source_token.clone());
@@ -386,6 +400,7 @@ impl ComputeNode for MergeSortedNode {
                         right_unmerged,
                         seq.to_u64() == 0,
                         starting_nulls,
+                        maintain_order,
                     )? {
                         let left_mergeable =
                             Morsel::new(left_mergeable, *seq, source_token.clone());
@@ -419,7 +434,7 @@ impl ComputeNode for MergeSortedNode {
                             }
                         }
 
-                        // Start passing on the port that is port that is still open.
+                        // Start passing on the port that is still open.
                         if let Some(pass_port) = pass_port {
                             let Ok(mut m) = pass_port.recv().await else {
                                 return Ok(());
@@ -451,11 +466,12 @@ impl ComputeNode for MergeSortedNode {
                 join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
                     let ideal_morsel_size = get_ideal_morsel_size();
                     scope.spawn_task(TaskPriority::High, async move {
+                        let wait_group = WaitGroup::default();
                         while let Ok((mut left, mut right)) = recv.recv().await {
                             // When we are flushing the buffer, we will just send one morsel from
                             // the input. We don't want to mess with the source token or wait group
                             // and just pass it on.
-                            if right.is_empty() {
+                            if right.shape_has_zero() {
                                 remove_key_column(left.df_mut());
 
                                 if send.send(left).await.is_err() {
@@ -464,17 +480,15 @@ impl ComputeNode for MergeSortedNode {
                                 continue;
                             }
 
-                            let (mut left, seq, source_token, wg) = left.into_inner();
-                            assert!(wg.is_none());
-
+                            let (mut left, seq, source_token, _) = left.into_inner();
                             let left_s = left
-                                .get_columns()
+                                .columns()
                                 .last()
                                 .unwrap()
                                 .as_materialized_series()
                                 .clone();
                             let right_s = right
-                                .get_columns()
+                                .columns()
                                 .last()
                                 .unwrap()
                                 .as_materialized_series()
@@ -497,16 +511,19 @@ impl ComputeNode for MergeSortedNode {
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
-                                let morsel = Morsel::new(m2, seq, source_token.clone());
+                                let mut morsel = Morsel::new(m2, seq, source_token.clone());
+                                morsel.set_consume_token(wait_group.token());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
                             } else {
-                                let morsel = Morsel::new(merged, seq, source_token.clone());
+                                let mut morsel = Morsel::new(merged, seq, source_token.clone());
+                                morsel.set_consume_token(wait_group.token());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
                             }
+                            wait_group.wait().await;
                         }
 
                         Ok(())

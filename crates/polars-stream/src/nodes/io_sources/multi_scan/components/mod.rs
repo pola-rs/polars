@@ -8,5 +8,4 @@ pub mod forbid_extra_columns;
 pub mod physical_slice;
 pub mod projection;
 pub mod reader_operation_pushdown;
-pub mod row_counter;
 pub mod row_deletions;

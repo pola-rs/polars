@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -12,7 +14,10 @@ def test_implode_explode_over_22188() -> None:
         }
     )
     result = df.select(
-        (pl.col.x * (pl.lit(pl.Series([1, 1, 1])).implode().explode())).over(pl.col.y),
+        (
+            pl.col.x
+            * (pl.lit(pl.Series([1, 1, 1])).implode().explode(empty_as_null=False))
+        ).over(pl.col.y),
     )
 
     assert_series_equal(result.to_series(), df.get_column("x"))
@@ -43,7 +48,11 @@ def test_over_no_partition_by_no_over() -> None:
 
 def test_over_explode_22770() -> None:
     df = pl.DataFrame({"x": [[1.0], [2.0]], "idx": [1, 2]})
-    e = pl.col("x").list.explode().over("idx", mapping_strategy="join")
+    e = (
+        pl.col("x")
+        .list.explode(empty_as_null=False)
+        .over("idx", mapping_strategy="join")
+    )
 
     assert_frame_equal(
         df.select(pl.col("x").list.diff()),
@@ -99,3 +108,142 @@ def test_over_replace_strict_22870() -> None:
     assert_series_equal(
         out.get_column("val"), out.get_column("val_over"), check_names=False
     )
+
+
+@pytest.mark.parametrize(
+    "col",
+    [
+        [1, 2, 3],
+        [[11, 12], [21], [31]],
+    ],
+)
+def test_implode_explode_list_over_24616(col: list[Any]) -> None:
+    df = pl.DataFrame({"x": col})
+    q = df.lazy().select(pl.col.x.implode().explode(empty_as_null=False).over(1))
+    q_base = df.lazy().select(pl.col.x.over(1))
+    expected = df
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q_base.collect(), expected)
+
+    df = pl.DataFrame({"g": [10, 10, 20], "x": col})
+    q = df.lazy().with_columns(
+        pl.col.x.implode().explode(empty_as_null=False).over("g")
+    )
+    q_base = df.lazy().with_columns(pl.col.x.over("g"))
+    expected = df
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q_base.collect(), expected)
+
+
+def test_first_last_over() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 1, 1, 2, 2, 2, 2],
+            "b": pl.Series([1, 2, 3, None, None, 4, 5, 6], dtype=pl.Int32),
+        }
+    )
+
+    result = df.select(pl.col("b").first().over("a"))
+    expected = pl.DataFrame(
+        {"b": pl.Series([1, 1, 1, 1, None, None, None, None], dtype=pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").first(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame({"b": pl.Series([1, 1, 1, 1, 4, 4, 4, 4], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").last().over("a"))
+    expected = pl.DataFrame(
+        {"b": pl.Series([None, None, None, None, 6, 6, 6, 6], dtype=pl.Int32)}
+    )
+    assert_frame_equal(result, expected)
+
+    result = df.select(pl.col("b").last(ignore_nulls=True).over("a"))
+    expected = pl.DataFrame({"b": pl.Series([3, 3, 3, 3, 6, 6, 6, 6], dtype=pl.Int32)})
+    assert_frame_equal(result, expected)
+
+
+def test_nulls_last_over_24989() -> None:
+    lf = pl.LazyFrame(
+        {"a": [1, 1, 2], "b": [4, 5, 6], "c": [None, 7, 8], "i": [1, None, 2]}
+    )
+    out = (
+        lf.with_columns(
+            pl.col("b", "c")
+            .first()
+            .over("a", order_by="i", nulls_last=True)
+            .name.suffix("_first")
+        )
+        .sort("i")
+        .collect()
+    )
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 2],
+            "b": [5, 4, 6],
+            "c": [7, None, 8],
+            "i": [None, 1, 2],
+            "b_first": [4, 4, 6],
+            "c_first": [None, None, 8],
+        }
+    )
+
+    assert_frame_equal(out, expected)
+
+
+def test_over_order_by_descending_nulls_agg_context() -> None:
+    df = pl.DataFrame({"g": ["a", "a", "a"], "v": [1, 2, 3], "d": [1, None, 2]})
+    expr = pl.col("v").cum_sum().over("g", order_by="d", descending=True)
+
+    result = df.group_by("g", maintain_order=True).agg(expr.alias("v"))
+
+    assert result["v"][0].to_list() == [6, 2, 5]
+
+
+def test_count_over_aggregated_list_respects_inner_nulls_27031() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1, 2, None]})
+
+    result = df.with_columns(
+        pl.col("x").cum_sum().count().over("g").alias("x_count"),
+    )
+
+    assert result.get_column("x_count").to_list() == [2, 2, 2]
+
+
+def test_over_empty_order_by_27067() -> None:
+    # Empty order_by with no partition_by should raise, not panic.
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        pl.select(x=1).select(pl.col.x.over(order_by=[]))
+
+    # Empty order_by with partition_by should work (order_by is ignored).
+    df = pl.DataFrame({"a": [1, 2, 3], "g": ["x", "x", "y"]})
+    result = df.select(pl.col("a").sum().over("g", order_by=[]))
+    expected = df.select(pl.col("a").sum().over("g"))
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        pl.col.a,
+        pl.col.a.reverse(),
+        pl.lit(1),
+        pl.lit("f"),
+        pl.lit([1]),
+        pl.col.a.mean(),
+        pl.col.s.first(),
+        pl.col.a.implode(),
+    ],
+)
+def test_over_duplicate_name_27443(expr: pl.Expr) -> None:
+    df = pl.DataFrame(
+        {
+            "g": [10, 10, 20],
+            "a": [1, 2, 3],
+            "s": ["a", "b", "c"],
+        }
+    )
+    out = df.select(expr.over(pl.col.g, pl.col.g))
+    expected = df.select(expr.over(pl.col.g))
+    assert_frame_equal(out, expected)

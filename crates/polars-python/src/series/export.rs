@@ -19,18 +19,44 @@ impl PySeries {
 
         fn to_list_recursive<'py>(py: Python<'py>, series: &Series) -> PyResult<Bound<'py, PyAny>> {
             let pylist = match series.dtype() {
-                DataType::Boolean => PyList::new(py, series.bool().map_err(PyPolarsErr::from)?)?,
-                DataType::UInt8 => PyList::new(py, series.u8().map_err(PyPolarsErr::from)?)?,
-                DataType::UInt16 => PyList::new(py, series.u16().map_err(PyPolarsErr::from)?)?,
-                DataType::UInt32 => PyList::new(py, series.u32().map_err(PyPolarsErr::from)?)?,
-                DataType::UInt64 => PyList::new(py, series.u64().map_err(PyPolarsErr::from)?)?,
-                DataType::Int8 => PyList::new(py, series.i8().map_err(PyPolarsErr::from)?)?,
-                DataType::Int16 => PyList::new(py, series.i16().map_err(PyPolarsErr::from)?)?,
-                DataType::Int32 => PyList::new(py, series.i32().map_err(PyPolarsErr::from)?)?,
-                DataType::Int64 => PyList::new(py, series.i64().map_err(PyPolarsErr::from)?)?,
-                DataType::Int128 => PyList::new(py, series.i128().map_err(PyPolarsErr::from)?)?,
-                DataType::Float32 => PyList::new(py, series.f32().map_err(PyPolarsErr::from)?)?,
-                DataType::Float64 => PyList::new(py, series.f64().map_err(PyPolarsErr::from)?)?,
+                DataType::Boolean => {
+                    PyList::new(py, series.bool().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::UInt8 => PyList::new(py, series.u8().map_err(PyPolarsErr::from)?.iter())?,
+                DataType::UInt16 => {
+                    PyList::new(py, series.u16().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::UInt32 => {
+                    PyList::new(py, series.u32().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::UInt64 => {
+                    PyList::new(py, series.u64().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::UInt128 => {
+                    PyList::new(py, series.u128().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::Int8 => PyList::new(py, series.i8().map_err(PyPolarsErr::from)?.iter())?,
+                DataType::Int16 => {
+                    PyList::new(py, series.i16().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::Int32 => {
+                    PyList::new(py, series.i32().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::Int64 => {
+                    PyList::new(py, series.i64().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::Int128 => {
+                    PyList::new(py, series.i128().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::Float16 => {
+                    PyList::new(py, series.f16().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::Float32 => {
+                    PyList::new(py, series.f32().map_err(PyPolarsErr::from)?.iter())?
+                },
+                DataType::Float64 => {
+                    PyList::new(py, series.f64().map_err(PyPolarsErr::from)?.iter())?
+                },
                 DataType::Categorical(_, _) | DataType::Enum(_, _) => {
                     with_match_categorical_physical_type!(series.dtype().cat_physical().unwrap(), |$C| {
                         PyList::new(py, series.cat::<$C>().unwrap().iter_str())?
@@ -138,6 +164,9 @@ impl PySeries {
                 DataType::BinaryOffset => {
                     unreachable!()
                 },
+                DataType::Extension(_, _) => {
+                    return to_list_recursive(py, series.ext().unwrap().storage());
+                },
             };
             Ok(pylist.into_any())
         }
@@ -147,7 +176,7 @@ impl PySeries {
 
     /// Return the underlying Arrow array.
     #[allow(clippy::wrong_self_convention)]
-    fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<PyObject> {
+    fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Py<PyAny>> {
         self.rechunk(py, true)?;
         let pyarrow = py.import("pyarrow")?;
 
@@ -164,7 +193,7 @@ impl PySeries {
     fn __arrow_c_stream__<'py>(
         &self,
         py: Python<'py>,
-        requested_schema: Option<PyObject>,
+        requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
         series_to_stream(&self.series.read(), py)
     }

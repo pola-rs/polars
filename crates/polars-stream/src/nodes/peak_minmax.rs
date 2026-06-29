@@ -1,11 +1,11 @@
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, IntoColumn};
 use polars_error::PolarsResult;
 use polars_ops::prelude::peaks;
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -111,7 +111,7 @@ impl ComputeNode for PeakMinMaxNode {
                         self.is_peak_max,
                     )?
                     .into_column();
-                    let df = DataFrame::new(vec![column]).unwrap();
+                    let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
                     _ = send.send(Morsel::new(df, seq, SourceToken::new())).await;
 
                     self.state = State::Done;
@@ -153,7 +153,7 @@ impl ComputeNode for PeakMinMaxNode {
 
                         let wg = WaitGroup::default();
                         let mut m = Morsel::new(
-                            DataFrame::new(vec![out]).unwrap(),
+                            unsafe { DataFrame::new_unchecked(out.len(), vec![out]) },
                             prev_seq,
                             source_token.clone(),
                         );

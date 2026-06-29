@@ -1,6 +1,5 @@
 use super::*;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
 use crate::frame::group_by::*;
 use crate::prelude::*;
@@ -20,10 +19,6 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     }
     fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
-    }
-
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        self.0.equal_element(idx_self, idx_other, other)
     }
 
     #[cfg(feature = "zip_with")]
@@ -68,6 +63,16 @@ impl private::PrivateSeries for SeriesWrap<BinaryChunked> {
     #[cfg(feature = "algorithm_group_by")]
     unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0.agg_max(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
+        self.0.agg_arg_min(groups)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
+        self.0.agg_arg_max(groups)
     }
 
     fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -166,12 +171,20 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
 
     fn rechunk(&self) -> Series {
         self.0.rechunk().into_owned().into_series()
+    }
+
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0.clone().with_validity(validity).into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -216,6 +229,11 @@ impl SeriesTrait for SeriesWrap<BinaryChunked> {
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
         ChunkUnique::arg_unique(&self.0)
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        ChunkUnique::unique_id(&self.0)
     }
 
     #[cfg(feature = "approx_unique")]

@@ -17,8 +17,8 @@ an index or a `reset_index` call.
 
 In Polars a DataFrame will always be a 2D table with heterogeneous data-types. The data-types may
 have nesting, but the table itself will not. Operations like resampling will be done by specialized
-functions or methods that act like 'verbs' on a table explicitly stating the columns that that
-'verb' operates on. As such, it is our conviction that not having indices make things simpler, more
+functions or methods that act like 'verbs' on a table explicitly stating the columns that 'verb'
+operates on. As such, it is our conviction that not having indices make things simpler, more
 explicit, more readable and less error-prone.
 
 Note that an 'index' data structure as known in databases will be used by Polars as an optimization
@@ -421,8 +421,8 @@ lf.pipe(lambda lf: lf.with_columns(
     get_ham("col_a"),
     get_bar("col_b", lf.schema),
     get_foo("col_c", lf.schema),
-)
+))
 ```
 
-Another benefit of writing functions that return expressions, is that these functions are composable
+Another benefit of writing functions that return expressions is that these functions are composable,
 as expressions can be chained and partially applied, leading to much more flexibility in the design.

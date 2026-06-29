@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 
 use super::BinaryViewArrayGeneric;
@@ -67,7 +66,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
             return Ok(Self::new_unchecked_unknown_md(
                 dtype,
                 views,
-                Arc::from([]),
+                Buffer::new(),
                 validity,
                 None,
             ));
@@ -91,7 +90,7 @@ impl<T: ViewType + ?Sized, A: ffi::ArrowArrayRef> FromFfi<A> for BinaryViewArray
         Ok(Self::new_unchecked_unknown_md(
             dtype,
             views,
-            Arc::from(variadic_buffers),
+            Buffer::from(variadic_buffers),
             validity,
             None,
         ))

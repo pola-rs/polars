@@ -259,4 +259,8 @@ impl ProjectionBuilder {
     pub fn num_projections(&self) -> usize {
         self.projected_schema().len()
     }
+
+    pub fn projected_names(&self) -> impl Iterator<Item = &PlSmallStr> {
+        self.projected_schema().iter_names()
+    }
 }

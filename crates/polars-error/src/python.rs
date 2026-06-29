@@ -14,7 +14,7 @@ impl From<pyo3::PyErr> for PolarsError {
 
 impl Clone for PyErrWrap {
     fn clone(&self) -> Self {
-        Python::with_gil(|py| Self(self.0.clone_ref(py)))
+        Python::attach(|py| Self(self.0.clone_ref(py)))
     }
 }
 

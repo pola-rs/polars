@@ -3,10 +3,11 @@ use std::hash::Hash;
 use num_traits::Zero;
 use polars_core::hashing::_HASHMAP_INIT_SIZE;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::BitRepr;
 use polars_core::utils::flatten::flatten_nullable;
 use polars_core::utils::split_and_flatten;
-use polars_core::{POOL, with_match_physical_float_polars_type};
+use polars_core::with_match_physical_float_polars_type;
 use polars_utils::abs_diff::AbsDiff;
 use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::nulls::IsNull;
@@ -84,27 +85,31 @@ where
     T: PolarsDataType,
     S: PolarsNumericType,
     S::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
-    <S::Native as ToTotalOrd>::TotalOrdItem: Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
+    Option<S::Native>: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
+    <Option<S::Native> as ToTotalOrd>::TotalOrdItem:
+        Send + Sync + Copy + Hash + Eq + DirtyHash + IsNull,
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
+    let (left_asof, right_asof) = RAYON.join(|| left_asof.rechunk(), || right_asof.rechunk());
     let left_val_arr = left_asof.downcast_as_array();
     let right_val_arr = right_asof.downcast_as_array();
 
-    let n_threads = POOL.current_num_threads();
+    let n_threads = RAYON.current_num_threads();
     // `strict` is false so that we always flatten. Even if there are more chunks than threads.
     let split_by_left = split_and_flatten(by_left, n_threads);
     let split_by_right = split_and_flatten(by_right, n_threads);
     let offsets = compute_len_offsets(split_by_left.iter().map(|s| s.len()));
 
-    // TODO: handle nulls more efficiently. Right now we just join on the value
-    // ignoring the validity mask, and ignore the nulls later.
     let right_slices = split_by_right
         .iter()
         .map(|ca| {
             assert_eq!(ca.chunks().len(), 1);
-            ca.downcast_iter().next().unwrap().values_iter().copied()
+            ca.downcast_iter()
+                .next()
+                .unwrap()
+                .iter()
+                .map(|v| v.copied())
         })
         .collect();
     let hash_tbls = build_tables(right_slices, false);
@@ -126,7 +131,7 @@ where
                     results.push(NullableIdxSize::null());
                     continue;
                 };
-                let by_left_k = by_left_k.to_total_ord();
+                let by_left_k = Some(*by_left_k).to_total_ord();
                 let idx_left = (rel_idx_left + offset) as IdxSize;
                 let Some(left_val) = left_val_arr.get(idx_left as usize) else {
                     results.push(NullableIdxSize::null());
@@ -153,7 +158,7 @@ where
             results
         });
 
-    let bufs = POOL.install(|| out.collect::<Vec<_>>());
+    let bufs = RAYON.install(|| out.collect::<Vec<_>>());
     Ok(flatten_nullable(&bufs))
 }
 
@@ -172,7 +177,7 @@ where
     A: for<'a> AsofJoinState<T::Physical<'a>>,
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
-    let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
+    let (left_asof, right_asof) = RAYON.join(|| left_asof.rechunk(), || right_asof.rechunk());
     let left_val_arr = left_asof.downcast_as_array();
     let right_val_arr = right_asof.downcast_as_array();
 
@@ -216,7 +221,7 @@ where
             }
             results
         });
-    let bufs = POOL.install(|| iter.collect::<Vec<_>>());
+    let bufs = RAYON.install(|| iter.collect::<Vec<_>>());
     flatten_nullable(&bufs)
 }
 
@@ -235,8 +240,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let out = if left_by.width() == 1 {
-        let left_by_s = left_by.get_columns()[0].to_physical_repr();
-        let right_by_s = right_by.get_columns()[0].to_physical_repr();
+        let left_by_s = left_by.columns()[0].to_physical_repr();
+        let right_by_s = right_by.columns()[0].to_physical_repr();
         let left_dtype = left_by_s.dtype();
         let right_dtype = right_by_s.dtype();
         polars_ensure!(left_dtype == right_dtype,
@@ -276,6 +281,16 @@ where
 
                 use BitRepr as B;
                 match (left_by, right_by) {
+                    (B::U8(left_by), B::U8(right_by)) => {
+                        asof_join_by_numeric::<T, UInt8Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
+                    (B::U16(left_by), B::U16(right_by)) => {
+                        asof_join_by_numeric::<T, UInt16Type, A, F>(
+                            &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
+                        )?
+                    },
                     (B::U32(left_by), B::U32(right_by)) => {
                         asof_join_by_numeric::<T, UInt32Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
@@ -286,9 +301,9 @@ where
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
-                    #[cfg(feature = "dtype-i128")]
-                    (B::I128(left_by), B::I128(right_by)) => {
-                        asof_join_by_numeric::<T, Int128Type, A, F>(
+                    #[cfg(feature = "dtype-u128")]
+                    (B::U128(left_by), B::U128(right_by)) => {
+                        asof_join_by_numeric::<T, UInt128Type, A, F>(
                             &left_by, &right_by, left_asof, right_asof, filter, allow_eq,
                         )?
                     },
@@ -298,7 +313,7 @@ where
             },
         }
     } else {
-        for (lhs, rhs) in left_by.get_columns().iter().zip(right_by.get_columns()) {
+        for (lhs, rhs) in left_by.columns().iter().zip(right_by.columns()) {
             polars_ensure!(lhs.dtype() == rhs.dtype(),
                 ComputeError: "mismatching dtypes in 'by' parameter of asof-join: `{}` and `{}`", lhs.dtype(), rhs.dtype()
             );
@@ -326,7 +341,7 @@ fn dispatch_join_strategy<T: PolarsDataType>(
     allow_eq: bool,
 ) -> PolarsResult<IdxArr>
 where
-    for<'a> T::Physical<'a>: PartialOrd,
+    for<'a> T::Physical<'a>: TotalOrd,
 {
     let right_asof = left_asof.unpack_series_matching_type(right_asof)?;
 
@@ -427,6 +442,20 @@ fn dispatch_join_type(
                 ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
             )
         },
+        #[cfg(feature = "dtype-u128")]
+        DataType::UInt128 => {
+            let ca = left_asof.u128().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = left_asof.f16().unwrap();
+            dispatch_join_strategy_numeric(
+                ca, right_asof, left_by, right_by, strategy, tolerance, allow_eq,
+            )
+        },
         DataType::Float32 => {
             let ca = left_asof.f32().unwrap();
             dispatch_join_strategy_numeric(
@@ -519,7 +548,7 @@ pub trait AsofJoinBy: IntoDf {
         let right_asof = right_key.to_physical_repr();
         let right_asof_name = right_asof.name();
         let left_asof_name = left_asof.name();
-        check_asof_columns(
+        _check_asof_columns(
             &left_asof,
             &right_asof,
             tolerance.is_some(),
@@ -530,15 +559,12 @@ pub trait AsofJoinBy: IntoDf {
         let mut left_by = self_df.select(left_by)?;
         let mut right_by = other_df.select(right_by)?;
 
-        unsafe {
-            for (l, r) in left_by
-                .get_columns_mut()
-                .iter_mut()
-                .zip(right_by.get_columns_mut().iter_mut())
-            {
-                *l = l.to_physical_repr();
-                *r = r.to_physical_repr();
-            }
+        for (l, r) in unsafe { left_by.columns_mut() }
+            .iter_mut()
+            .zip(unsafe { right_by.columns_mut() }.iter_mut())
+        {
+            *l = l.to_physical_repr();
+            *r = r.to_physical_repr();
         }
 
         let right_join_tuples = dispatch_join_type(
@@ -557,12 +583,12 @@ pub trait AsofJoinBy: IntoDf {
         }
 
         let cols = other_df
-            .get_columns()
+            .columns()
             .iter()
             .filter(|s| !drop_these.contains(&s.name()))
             .cloned()
             .collect();
-        let proj_other_df = unsafe { DataFrame::new_no_checks(other_df.height(), cols) };
+        let proj_other_df = unsafe { DataFrame::new_unchecked(other_df.height(), cols) };
 
         let left = self_df.clone();
 

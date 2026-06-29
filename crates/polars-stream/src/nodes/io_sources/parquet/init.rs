@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use polars_async::executor;
 use polars_core::frame::DataFrame;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::ParallelStrategy;
@@ -9,21 +11,18 @@ use polars_utils::IdxSize;
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetReadImpl};
-use crate::async_executor;
 use crate::morsel::{Morsel, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 use crate::nodes::io_sources::parquet::statistics::calculate_row_group_pred_pushdown_skip_mask;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
+use crate::utils::tokio_handle_ext::{self, AbortOnDropHandle};
 
 impl ParquetReadImpl {
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
     pub(super) fn init_morsel_distributor(&mut self) -> AsyncTaskData {
         let verbose = self.verbose;
-        let io_runtime = polars_io::pl_async::get_runtime();
-
         let use_statistics = self.options.use_statistics;
 
         let (mut morsel_sender, morsel_rx) = FileReaderOutputSend::new_serial();
@@ -31,7 +30,7 @@ impl ParquetReadImpl {
         if let Some((_, 0)) = self.normalized_pre_slice {
             return (
                 morsel_rx,
-                task_handles_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
+                tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(std::future::ready(Ok(())))),
             );
         }
 
@@ -48,7 +47,15 @@ impl ParquetReadImpl {
         let ideal_morsel_size = get_ideal_morsel_size();
 
         if verbose {
-            eprintln!("[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}");
+            eprintln!(
+                "[ParquetFileReader]: ideal_morsel_size: {ideal_morsel_size}, \
+                use_async_prefetch: {}, \
+                concurrency: {:?}, \
+                chunk_size: {:?}",
+                self.byte_source.is_cloud(),
+                self.byte_source.concurrency_strategy(),
+                self.byte_source.chunk_size(),
+            );
         }
 
         let metadata = self.metadata.clone();
@@ -56,12 +63,35 @@ impl ParquetReadImpl {
         let byte_source = self.byte_source.clone();
 
         // Prefetch loop (spawns prefetches on the tokio scheduler).
+
+        // Three concurrency limits bound the pipeline:
+        // (a) rg_prefetch_kbytes_semaphore: bounds possibly compressed projected bytes
+        //     in the pipeline. Primary memory bound, but does not account for decompression.
+        // (b) rg_prefetch_semaphore: bounds row group count in the pipeline. Secondary
+        //     bound, only binding for degenerate cases (many tiny row groups where
+        //     (a) is not exhausted).
+        // (c) prefetch channel depth: sized >= (b) so it is never the binding constraint.
+        //     The channel is a handoff queue between the prefetch and decode tasks, not
+        //     a concurrency gate.
+        //
+        // Note: in-flight concurrency is separately controlled inside the object store using
+        // a combination of a bytes-based and count-based semaphore. These operate at the
+        // network layer and are independent of the pipeline limits above.
+        // The pipeline channel depth must be >= in-flight concurrency to avoid
+        // stalling the prefetch loop before the semaphores are exhausted.
+
         let (prefetch_send, mut prefetch_recv) =
             tokio::sync::mpsc::channel(row_group_prefetch_size);
 
         let row_index = self.row_index.clone();
 
-        let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        let pipeline_budget = self.pipeline_budget.clone();
+
+        let rg_prefetch_prev_all_spawned = Option::take(&mut self.rg_prefetch_prev_all_spawned);
+        let rg_prefetch_current_all_spawned =
+            Option::take(&mut self.rg_prefetch_current_all_spawned);
+
+        let prefetch_task = AbortOnDropHandle(ASYNC.spawn(async move {
             polars_ensure!(
                 metadata.num_rows < IdxSize::MAX as usize,
                 bigidx,
@@ -140,24 +170,43 @@ impl ParquetReadImpl {
                 row_offset,
             };
 
-            while let Some(prefetch) = row_group_data_fetcher.next().await {
-                if prefetch_send.send(prefetch?).await.is_err() {
+            if let Some(rg_prefetch_prev_all_spawned) = rg_prefetch_prev_all_spawned {
+                rg_prefetch_prev_all_spawned.wait().await;
+            }
+
+            while let Some(fetch_length) = row_group_data_fetcher.peek_next_bytes() {
+                let fetch_length = usize::try_from(fetch_length)
+                    .expect("ParquetReadImpl: fetch_length too large for usize: {fetch_length}");
+
+                let permit = pipeline_budget.acquire(fetch_length).await;
+
+                // Budget reserved, spawn request
+                let Some(prefetch) = row_group_data_fetcher.next().await else {
+                    // Mask skipped all remaining row groups between peek and next — release permits
+                    drop(permit);
+                    break;
+                };
+
+                if prefetch_send.send((prefetch?, permit)).await.is_err() {
                     break;
                 }
             }
+
+            drop(rg_prefetch_current_all_spawned);
+
             PolarsResult::Ok(())
         }));
 
         // Decode loop (spawns decodes on the computational executor).
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
-        let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            while let Some(prefetch) = prefetch_recv.recv().await {
-                let row_group_data = prefetch.await.unwrap()?;
+        let decode_task = AbortOnDropHandle(ASYNC.spawn(async move {
+            while let Some((prefetch_task, permits)) = prefetch_recv.recv().await {
+                let row_group_data = prefetch_task.await.unwrap()?;
                 let row_group_decoder = row_group_decoder.clone();
-                let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                let decode_fut = executor::spawn(TaskPriority::High, async move {
                     row_group_decoder.row_group_data_to_df(row_group_data).await
                 });
-                if decode_send.send(decode_fut).await.is_err() {
+                if decode_send.send((decode_fut, permits)).await.is_err() {
                     break;
                 }
             }
@@ -166,8 +215,12 @@ impl ParquetReadImpl {
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
-        let last_morsel_min_split = self.config.num_pipelines;
-        let distribute_task = async_executor::spawn(TaskPriority::High, async move {
+        //
+        // `last_morsel_pipelines` is precomputed by the multi-scan layer so the split budget
+        // is shared across files in the scan.
+        let last_morsel_pipelines = self.config.last_morsel_pipelines;
+        let disable_morsel_split = self.disable_morsel_split;
+        let distribute_task = executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
             // Note: We don't use this (it is handled by the bridge). But morsels require a source token.
             let source_token = SourceToken::new();
@@ -175,29 +228,48 @@ impl ParquetReadImpl {
             // Decode first non-empty morsel.
             let mut next = None;
             loop {
-                let Some(decode_fut) = decode_recv.recv().await else {
+                let Some((decode_fut, permits)) = decode_recv.recv().await else {
                     break;
                 };
                 let df = decode_fut.await?;
                 if df.height() == 0 {
                     continue;
                 }
-                next = Some(df);
+
+                if disable_morsel_split {
+                    if morsel_sender
+                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                    drop(permits);
+                    morsel_seq = morsel_seq.successor();
+                    continue;
+                }
+
+                next = Some((df, permits));
                 break;
             }
 
-            while let Some(df) = next.take() {
+            while let Some((df, permits)) = next.take() {
                 // Try to decode the next non-empty morsel first, so we know
                 // whether the df is the last morsel.
+
+                // Important: Drop this before awaiting the next one, or could
+                // deadlock if the permit limit is 1.
+                drop(permits);
+
                 loop {
-                    let Some(decode_fut) = decode_recv.recv().await else {
+                    let Some((decode_fut, permit)) = decode_recv.recv().await else {
                         break;
                     };
                     let next_df = decode_fut.await?;
                     if next_df.height() == 0 {
                         continue;
                     }
-                    next = Some(next_df);
+                    next = Some((next_df, permit));
                     break;
                 }
 
@@ -205,7 +277,7 @@ impl ParquetReadImpl {
                     &df,
                     ideal_morsel_size,
                     next.is_none(),
-                    last_morsel_min_split,
+                    last_morsel_pipelines,
                 ) {
                     if morsel_sender
                         .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
@@ -217,10 +289,11 @@ impl ParquetReadImpl {
                     morsel_seq = morsel_seq.successor();
                 }
             }
+
             PolarsResult::Ok(())
         });
 
-        let join_task = io_runtime.spawn(async move {
+        let join_task = ASYNC.spawn(async move {
             prefetch_task.await.unwrap()?;
             decode_task.await.unwrap()?;
             distribute_task.await?;
@@ -322,11 +395,11 @@ fn filtered_range(exclude: &[usize], len: usize) -> impl Iterator<Item = usize> 
     })
 }
 
-fn split_to_morsels(
+pub(crate) fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
     last_morsel: bool,
-    last_morsel_min_split: usize,
+    last_morsel_pipelines: usize,
 ) -> impl Iterator<Item = DataFrame> + '_ {
     let mut n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
         // num_rows > (1.5 * ideal_morsel_size)
@@ -336,7 +409,7 @@ fn split_to_morsels(
     };
 
     if last_morsel {
-        n_morsels = n_morsels.max(last_morsel_min_split);
+        n_morsels = n_morsels.max(last_morsel_pipelines);
     }
 
     let rows_per_morsel = df.height().div_ceil(n_morsels).max(1);

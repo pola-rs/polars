@@ -1,11 +1,12 @@
-use std::sync::Arc;
-
 use arrow::array::*;
-use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::{Offset, Offsets};
 use arrow::types::NativeType;
+use num_traits::AsPrimitive;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
+#[cfg(feature = "dtype-f16")]
+use polars_utils::float16::pf16;
 
 use super::CastOptionsImpl;
 
@@ -19,7 +20,7 @@ macro_rules! impl_parse {
     ($primitive_type:ident) => {
         impl Parse for $primitive_type {
             fn parse(val: &[u8]) -> Option<Self> {
-                atoi_simd::parse_skipped(val).ok()
+                atoi_simd::parse::<_, true, true>(val).ok()
             }
         }
     };
@@ -28,14 +29,25 @@ impl_parse!(i8);
 impl_parse!(i16);
 impl_parse!(i32);
 impl_parse!(i64);
+#[cfg(feature = "dtype-i128")]
+impl_parse!(i128);
 
 impl_parse!(u8);
 impl_parse!(u16);
 impl_parse!(u32);
 impl_parse!(u64);
+#[cfg(feature = "dtype-u128")]
+impl_parse!(u128);
 
-#[cfg(feature = "dtype-i128")]
-impl_parse!(i128);
+#[cfg(feature = "dtype-f16")]
+impl Parse for pf16 {
+    fn parse(val: &[u8]) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        fast_float2::parse(val).ok().map(|f: f32| f.as_())
+    }
+}
 
 impl Parse for f32 {
     fn parse(val: &[u8]) -> Option<Self>
@@ -131,8 +143,12 @@ where
 /// in the array.
 pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &BinaryArray<O>,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
-    let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::new();
+    let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::empty_with_value_dtype(
+        from.dtype().clone(),
+        ordered,
+    );
     array.reserve(from.len());
     array.try_extend(from.iter())?;
 
@@ -141,9 +157,10 @@ pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
 
 pub(super) fn binary_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
     from: &dyn Array,
+    ordered: bool,
 ) -> PolarsResult<Box<dyn Array>> {
     let values = from.as_any().downcast_ref().unwrap();
-    binary_to_dictionary::<O, K>(values).map(|x| Box::new(x) as Box<dyn Array>)
+    binary_to_dictionary::<O, K>(values, ordered).map(|x| Box::new(x) as Box<dyn Array>)
 }
 
 fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Offsets<O> {
@@ -188,7 +205,7 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
             from.size() as u8,
         );
         let views = Buffer::from(views);
-        return BinaryViewArray::try_new(datatype, views, Arc::default(), from.validity().cloned())
+        return BinaryViewArray::try_new(datatype, views, Buffer::new(), from.validity().cloned())
             .unwrap();
     }
 

@@ -7,7 +7,7 @@ use polars_parquet::write::KeyValue;
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
 #[cfg(feature = "python")]
-use pyo3::PyObject;
+use pyo3::{Py, PyAny};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize, de, ser};
 
@@ -83,7 +83,7 @@ impl KeyValueMetadata {
 
     /// Create a key value metadata object from a Python function.
     #[cfg(feature = "python")]
-    pub fn from_py_function(py_object: PyObject) -> Self {
+    pub fn from_py_function(py_object: Py<PyAny>) -> Self {
         Self::DynamicPython(python_impl::PythonKeyValueMetadataFunction(Arc::new(
             PythonObject(py_object),
         )))
@@ -187,7 +187,7 @@ mod python_impl {
     impl PythonKeyValueMetadataFunction {
         pub fn call(&self, ctx: ParquetMetadataContext) -> PolarsResult<Vec<KeyValue>> {
             let ctx = PythonParquetMetadataContext::from_key_value_metadata_context(ctx);
-            Python::with_gil(|py| {
+            Python::attach(|py| {
                 let args = (ctx,);
                 let out: Vec<(String, String)> =
                     self.0.call1(py, args)?.into_bound(py).extract()?;

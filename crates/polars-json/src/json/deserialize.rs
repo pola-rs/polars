@@ -8,6 +8,10 @@ use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
 use arrow::types::NativeType;
 use num_traits::NumCast;
+use polars_compute::cast::temporal::{utf8_to_naive_date_scalar, utf8_to_naive_time_scalar};
+#[cfg(feature = "dtype-decimal")]
+use polars_compute::decimal::{f64_to_dec128, i128_to_dec128, str_to_dec128};
+use polars_utils::float16::pf16;
 use simd_json::{BorrowedValue, StaticNode};
 
 use super::*;
@@ -39,6 +43,8 @@ fn deserialize_primitive_into<'a, T: NativeType + NumCast, A: Borrow<BorrowedVal
     let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
         BorrowedValue::Static(StaticNode::I64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::U64(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::I128(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::U128(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::F64(v)) => T::from(*v),
         BorrowedValue::Static(StaticNode::Bool(v)) => T::from(*v as u8),
         BorrowedValue::Static(StaticNode::Null) => None,
@@ -49,6 +55,47 @@ fn deserialize_primitive_into<'a, T: NativeType + NumCast, A: Borrow<BorrowedVal
     });
     target.extend_trusted_len(iter);
     check_err_idx(rows, err_idx, "numeric")
+}
+
+#[cfg(feature = "dtype-decimal")]
+fn deserialize_decimal<'a, A: Borrow<BorrowedValue<'a>>>(
+    rows: &[A],
+    dtype: ArrowDataType,
+) -> PolarsResult<Int128Array> {
+    let ArrowDataType::Decimal(prec, scale) = dtype else {
+        unreachable!()
+    };
+    let mut err_idx = rows.len();
+    let iter = rows.iter().enumerate().map(|(i, row)| {
+        let decode = match row.borrow() {
+            BorrowedValue::Static(StaticNode::I64(v)) => i128_to_dec128(*v as i128, prec, scale),
+            BorrowedValue::Static(StaticNode::U64(v)) => i128_to_dec128(*v as i128, prec, scale),
+            BorrowedValue::Static(StaticNode::I128(v)) => i128_to_dec128(*v, prec, scale),
+            BorrowedValue::Static(StaticNode::U128(v)) => i128::try_from(*v)
+                .ok()
+                .and_then(|v| i128_to_dec128(v, prec, scale)),
+            BorrowedValue::Static(StaticNode::F64(v)) => f64_to_dec128(*v, prec, scale),
+            BorrowedValue::String(s) => str_to_dec128(s.as_bytes(), prec, scale, false),
+            BorrowedValue::Static(StaticNode::Null) => return None,
+            _ => None,
+        };
+        if decode.is_none() && err_idx == rows.len() {
+            err_idx = i;
+        }
+        decode
+    });
+
+    let arr = Int128Array::from_trusted_len_iter(iter);
+    if err_idx != rows.len() {
+        polars_bail!(
+            ComputeError:
+            r#"error deserializing value "{:?}" as Decimal({prec}, {scale}).
+
+Try increasing `infer_schema_length` or specifying a schema."#,
+            rows[err_idx].borrow()
+        )
+    }
+    Ok(arr.to(dtype))
 }
 
 fn deserialize_binary<'a, A: Borrow<BorrowedValue<'a>>>(
@@ -330,6 +377,37 @@ where
     Ok(Box::new(A::from(array)))
 }
 
+fn deserialize_temporal_primitive<'a, T, A>(
+    rows: &[A],
+    dtype: ArrowDataType,
+    type_name: &'static str,
+    parse_str: impl Fn(&str) -> Option<T>,
+) -> PolarsResult<Box<dyn Array>>
+where
+    T: NativeType + NumCast,
+    A: Borrow<BorrowedValue<'a>>,
+{
+    let mut err_idx = rows.len();
+    let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
+        BorrowedValue::Static(StaticNode::I64(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::U64(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::I128(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::U128(v)) => T::from(*v),
+        BorrowedValue::Static(StaticNode::F64(v)) => T::from(*v),
+        BorrowedValue::String(s) => parse_str(s),
+        BorrowedValue::Static(StaticNode::Null) => None,
+        _ => {
+            if err_idx == rows.len() {
+                err_idx = i;
+            }
+            None
+        },
+    });
+    let out = Box::new(PrimitiveArray::<T>::from_iter(iter).to(dtype));
+    check_err_idx(rows, err_idx, type_name)?;
+    Ok(out)
+}
+
 pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
     rows: &[A],
     dtype: ArrowDataType,
@@ -354,33 +432,52 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::Int16 => {
             fill_array_from::<_, _, PrimitiveArray<i16>>(deserialize_primitive_into, dtype, rows)
         },
-        ArrowDataType::Int32
-        | ArrowDataType::Date32
-        | ArrowDataType::Time32(_)
-        | ArrowDataType::Interval(IntervalUnit::YearMonth) => {
+        ArrowDataType::Int32 | ArrowDataType::Interval(IntervalUnit::YearMonth) => {
             fill_array_from::<_, _, PrimitiveArray<i32>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::Interval(IntervalUnit::DayTime) => {
             unimplemented!("There is no natural representation of DayTime in JSON.")
         },
-        ArrowDataType::Int64
-        | ArrowDataType::Date64
-        | ArrowDataType::Time64(_)
-        | ArrowDataType::Duration(_) => {
+        ArrowDataType::Int64 | ArrowDataType::Duration(_) => {
             fill_array_from::<_, _, PrimitiveArray<i64>>(deserialize_primitive_into, dtype, rows)
         },
+        ArrowDataType::Date32 => {
+            deserialize_temporal_primitive::<i32, _>(rows, dtype, "date", utf8_to_naive_date_scalar)
+        },
+        ArrowDataType::Date64 => {
+            deserialize_temporal_primitive::<i64, _>(rows, dtype, "date", |s| {
+                utf8_to_naive_date_scalar(s)
+                    .map(|d| d as i64 * temporal_conversions::MILLISECONDS_IN_DAY)
+            })
+        },
+        ArrowDataType::Time32(tu) => {
+            let tu = *tu;
+            deserialize_temporal_primitive::<i32, _>(rows, dtype, "time", |s| {
+                utf8_to_naive_time_scalar(s, tu).and_then(|v| i32::try_from(v).ok())
+            })
+        },
+        ArrowDataType::Time64(tu) => {
+            let tu = *tu;
+            deserialize_temporal_primitive::<i64, _>(rows, dtype, "time", |s| {
+                utf8_to_naive_time_scalar(s, tu)
+            })
+        },
+        ArrowDataType::Int128 => {
+            fill_array_from::<_, _, PrimitiveArray<i128>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Timestamp(tu, tz) => {
+            let tz_offset = tz
+                .as_ref()
+                .map(|tz| temporal_conversions::parse_offset(tz.as_str()))
+                .transpose()?;
             let mut err_idx = rows.len();
             let iter = rows.iter().enumerate().map(|(i, row)| match row.borrow() {
                 BorrowedValue::Static(StaticNode::I64(v)) => Some(*v),
-                BorrowedValue::String(v) => match (tu, tz) {
-                    (_, None) => {
+                BorrowedValue::String(v) => match &tz_offset {
+                    None => {
                         polars_compute::cast::temporal::utf8_to_naive_timestamp_scalar(v, "%+", tu)
                     },
-                    (_, Some(tz)) => {
-                        let tz = temporal_conversions::parse_offset(tz.as_str()).unwrap();
-                        temporal_conversions::utf8_to_timestamp_scalar(v, "%+", &tz, tu)
-                    },
+                    Some(tz) => temporal_conversions::utf8_to_timestamp_scalar(v, "%+", tz, tu),
                 },
                 BorrowedValue::Static(StaticNode::Null) => None,
                 _ => {
@@ -388,7 +485,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
                     None
                 },
             });
-            let out = Box::new(Int64Array::from_iter(iter).to(dtype));
+            let out = Box::new(Int64Array::from_trusted_len_iter(iter).to(dtype));
             check_err_idx(rows, err_idx, "timestamp")?;
             Ok(out)
         },
@@ -404,13 +501,20 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
         ArrowDataType::UInt64 => {
             fill_array_from::<_, _, PrimitiveArray<u64>>(deserialize_primitive_into, dtype, rows)
         },
-        ArrowDataType::Float16 => unreachable!(),
+        ArrowDataType::UInt128 => {
+            fill_array_from::<_, _, PrimitiveArray<u128>>(deserialize_primitive_into, dtype, rows)
+        },
+        ArrowDataType::Float16 => {
+            fill_array_from::<_, _, PrimitiveArray<pf16>>(deserialize_primitive_into, dtype, rows)
+        },
         ArrowDataType::Float32 => {
             fill_array_from::<_, _, PrimitiveArray<f32>>(deserialize_primitive_into, dtype, rows)
         },
         ArrowDataType::Float64 => {
             fill_array_from::<_, _, PrimitiveArray<f64>>(deserialize_primitive_into, dtype, rows)
         },
+        #[cfg(feature = "dtype-decimal")]
+        ArrowDataType::Decimal(_, _) => Ok(Box::new(deserialize_decimal(rows, dtype)?)),
         ArrowDataType::LargeUtf8 => {
             fill_generic_array_from::<_, _, Utf8Array<i64>>(deserialize_utf8_into, rows)
         },
@@ -428,7 +532,7 @@ pub(crate) fn _deserialize<'a, A: Borrow<BorrowedValue<'a>>>(
             dtype,
             allow_extra_fields_in_struct,
         )?)),
-        _ => todo!(),
+        adt => unimplemented!("Deserialization from JSON not implemented for {adt:?}"),
     }
 }
 
@@ -456,9 +560,9 @@ fn check_err_idx<'a>(
     if err_idx != rows.len() {
         polars_bail!(
             ComputeError:
-            r#"error deserializing value "{:?}" as {}. \
-            Try increasing `infer_schema_length` or specifying a schema.
-            "#,
+            r#"error deserializing value "{:?}" as {}.
+
+Try increasing `infer_schema_length` or specifying a schema."#,
             rows[err_idx].borrow(), type_name,
         )
     }

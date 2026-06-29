@@ -1,8 +1,8 @@
 use arrow::datatypes::IntegerType;
 use arrow::record_batch::RecordBatch;
-use parking_lot::RwLockWriteGuard;
 use polars::prelude::*;
 use polars_compute::cast::CastOptionsImpl;
+use polars_utils::itertools::Itertools;
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};
@@ -30,7 +30,7 @@ impl PyDataFrame {
         }
         PyTuple::new(
             py,
-            df.get_columns().iter().map(|s| match s.dtype() {
+            df.columns().iter().map(|s| match s.dtype() {
                 DataType::Object(_) => {
                     let obj: Option<&ObjectValue> = s.get_object(idx).map(|any| any.into());
                     obj.into_py_any(py).unwrap()
@@ -48,7 +48,7 @@ impl PyDataFrame {
         // TODO: iterate over the chunks directly instead of using random access.
         let df = if df.max_n_chunks() > 16 {
             rechunked = df.clone();
-            rechunked.as_single_chunk_par();
+            py.enter_polars_ok(|| rechunked.rechunk_mut_par())?;
             &rechunked
         } else {
             &df
@@ -58,7 +58,7 @@ impl PyDataFrame {
             (0..df.height()).map(|idx| {
                 PyTuple::new(
                     py,
-                    df.get_columns().iter().map(|c| match c.dtype() {
+                    df.columns().iter().map(|c| match c.dtype() {
                         DataType::Null => py.None(),
                         DataType::Object(_) => {
                             let obj: Option<&ObjectValue> = c.get_object(idx).map(|any| any.into());
@@ -77,11 +77,14 @@ impl PyDataFrame {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_arrow(&self, py: Python<'_>, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
-        let mut df = self.df.write();
-        let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
-        py.enter_polars_ok(|| dfr.align_chunks_par())?;
-        let df = RwLockWriteGuard::downgrade(df);
+    pub fn to_arrow(
+        &self,
+        py: Python<'_>,
+        compat_level: PyCompatLevel,
+    ) -> PyResult<Vec<Py<PyAny>>> {
+        let mut df = self.df.read().clone();
+        py.enter_polars_ok(|| df.align_chunks_par())?;
+        *self.df.write() = df.clone();
 
         let pyarrow = py.import("pyarrow")?;
 
@@ -102,70 +105,80 @@ impl PyDataFrame {
     /// since those can't be converted correctly via PyArrow. The calling Python
     /// code should make sure these are not included.
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_pandas(&self, py: Python) -> PyResult<Vec<PyObject>> {
-        let mut df = self.df.write();
-        let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
-        py.enter_polars_ok(|| dfr.as_single_chunk_par())?;
-        let df = RwLockWriteGuard::downgrade(df);
-        Python::with_gil(|py| {
-            let pyarrow = py.import("pyarrow")?;
-            let cat_columns = df
-                .get_columns()
-                .iter()
-                .enumerate()
-                .filter(|(_i, s)| {
-                    matches!(
-                        s.dtype(),
-                        DataType::Categorical(_, _) | DataType::Enum(_, _)
-                    )
-                })
-                .map(|(i, _)| i)
-                .collect::<Vec<_>>();
+    pub fn to_pandas(&self, py: Python) -> PyResult<Vec<Py<PyAny>>> {
+        let mut df = self.df.read().clone();
+        py.enter_polars_ok(|| df.rechunk_mut_par())?;
+        *self.df.write() = df.clone();
 
-            let enum_and_categorical_dtype = ArrowDataType::Dictionary(
-                IntegerType::Int64,
-                Box::new(ArrowDataType::LargeUtf8),
-                false,
-            );
+        let pyarrow = py.import("pyarrow")?;
 
-            let mut replaced_schema = None;
-            let rbs = df
-                .iter_chunks(CompatLevel::oldest(), true)
-                .map(|rb| {
-                    let length = rb.len();
-                    let (schema, mut arrays) = rb.into_schema_and_arrays();
+        let dict_columns = df
+            .columns()
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| {
+                matches!(
+                    s.dtype(),
+                    DataType::Categorical(_, _) | DataType::Enum(_, _)
+                )
+            })
+            .map(|(i, _)| i)
+            .collect_vec();
+        let is_enum_col = df
+            .columns()
+            .iter()
+            .map(|c| matches!(c.dtype(), DataType::Enum(_, _)))
+            .collect_vec();
 
-                    // Pandas does not allow unsigned dictionary indices so we replace them.
-                    replaced_schema =
-                        (replaced_schema.is_none() && !cat_columns.is_empty()).then(|| {
-                            let mut schema = schema.as_ref().clone();
-                            for i in &cat_columns {
-                                let (_, field) = schema.get_at_index_mut(*i).unwrap();
-                                field.dtype = enum_and_categorical_dtype.clone();
-                            }
-                            Arc::new(schema)
-                        });
+        let enum_dtype =
+            ArrowDataType::Dictionary(IntegerType::Int64, Box::new(ArrowDataType::LargeUtf8), true);
+        let categorical_dtype = ArrowDataType::Dictionary(
+            IntegerType::Int64,
+            Box::new(ArrowDataType::LargeUtf8),
+            false,
+        );
 
-                    for i in &cat_columns {
-                        let arr = arrays.get_mut(*i).unwrap();
-                        let out = polars_compute::cast::cast(
-                            &**arr,
-                            &enum_and_categorical_dtype,
-                            CastOptionsImpl::default(),
-                        )
-                        .unwrap();
-                        *arr = out;
-                    }
-                    let schema = replaced_schema
-                        .as_ref()
-                        .map_or(schema, |replaced| replaced.clone());
-                    let rb = RecordBatch::new(length, schema, arrays);
+        let mut replaced_schema = None;
+        df.iter_chunks(CompatLevel::oldest(), true)
+            .map(|rb| {
+                let length = rb.len();
+                let (schema, mut arrays) = rb.into_schema_and_arrays();
 
-                    interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow)
-                })
-                .collect::<PyResult<_>>()?;
-            Ok(rbs)
-        })
+                // Pandas does not allow unsigned dictionary indices, so replace them.
+                replaced_schema =
+                    (replaced_schema.is_none() && !dict_columns.is_empty()).then(|| {
+                        let mut schema = schema.as_ref().clone();
+                        for i in &dict_columns {
+                            let (_, field) = schema.get_at_index_mut(*i).unwrap();
+                            field.dtype = if is_enum_col[*i] {
+                                enum_dtype.clone()
+                            } else {
+                                categorical_dtype.clone()
+                            };
+                        }
+                        Arc::new(schema)
+                    });
+
+                for i in &dict_columns {
+                    let arr = arrays.get_mut(*i).unwrap();
+                    let cast_dtype = if is_enum_col[*i] {
+                        &enum_dtype
+                    } else {
+                        &categorical_dtype
+                    };
+                    let out =
+                        polars_compute::cast::cast(&**arr, cast_dtype, CastOptionsImpl::default())
+                            .unwrap();
+                    *arr = out;
+                }
+                let schema = replaced_schema
+                    .as_ref()
+                    .map_or(schema, |replaced| replaced.clone());
+                let rb = RecordBatch::new(length, schema, arrays);
+
+                interop::arrow::to_py::to_py_rb(&rb, py, &pyarrow)
+            })
+            .collect::<PyResult<_>>()
     }
 
     #[allow(unused_variables)]
@@ -173,12 +186,11 @@ impl PyDataFrame {
     fn __arrow_c_stream__<'py>(
         &self,
         py: Python<'py>,
-        requested_schema: Option<PyObject>,
+        requested_schema: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        let mut df = self.df.write();
-        let dfr = &mut *df; // Lock guard isn't Send, but mut ref is.
-        py.enter_polars_ok(|| dfr.as_single_chunk_par())?;
-        let df = RwLockWriteGuard::downgrade(df);
-        dataframe_to_stream(&df, py)
+        py.enter_polars_ok(|| {
+            self.df.write().rechunk_mut_par();
+        })?;
+        dataframe_to_stream(&self.df.read(), py)
     }
 }

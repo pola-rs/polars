@@ -4,25 +4,31 @@ use polars_utils::sync::SyncPtr;
 use super::*;
 
 pub fn flatten_df_iter(df: &DataFrame) -> impl Iterator<Item = DataFrame> + '_ {
-    df.iter_chunks_physical().flat_map(|chunk| {
-        let columns = df
-            .iter()
-            .zip(chunk.into_arrays())
-            .map(|(s, arr)| {
-                // SAFETY:
-                // datatypes are correct
-                let mut out = unsafe {
-                    Series::from_chunks_and_dtype_unchecked(s.name().clone(), vec![arr], s.dtype())
-                };
-                out.set_sorted_flag(s.is_sorted_flag());
-                Column::from(out)
-            })
-            .collect::<Vec<_>>();
+    df.iter_chunks_physical()
+        .filter(|chunk| !chunk.is_empty())
+        .map(|chunk| {
+            let height = chunk.len();
+            let columns = df
+                .columns()
+                .iter()
+                .zip(chunk.into_arrays())
+                .map(|(s, arr)| {
+                    // SAFETY:
+                    // datatypes are correct
+                    let mut out = unsafe {
+                        Series::from_chunks_and_dtype_unchecked(
+                            s.name().clone(),
+                            vec![arr],
+                            s.dtype(),
+                        )
+                    };
+                    out.set_sorted_flag(s.is_sorted_flag());
+                    Column::from(out)
+                })
+                .collect::<Vec<_>>();
 
-        let height = DataFrame::infer_height(&columns);
-        let df = unsafe { DataFrame::new_no_checks(height, columns) };
-        if df.is_empty() { None } else { Some(df) }
-    })
+            unsafe { DataFrame::new_unchecked(height, columns) }
+        })
 }
 
 pub fn flatten_series(s: &Series) -> Vec<Series> {
@@ -74,7 +80,7 @@ fn flatten_par_impl<T: Send + Sync + Copy>(
     let mut out = Vec::with_capacity(len);
     let out_ptr = unsafe { SyncPtr::new(out.as_mut_ptr()) };
 
-    POOL.install(|| {
+    RAYON.install(|| {
         offsets.into_par_iter().enumerate().for_each(|(i, offset)| {
             let buf = bufs[i];
             let ptr: *mut T = out_ptr.get();
@@ -115,6 +121,6 @@ pub fn flatten_nullable<S: AsRef<[NullableIdxSize]> + Send + Sync>(
         validity.freeze()
     };
 
-    let (a, b) = POOL.join(a, b);
+    let (a, b) = RAYON.join(a, b);
     PrimitiveArray::from_vec(bytemuck::cast_vec::<_, IdxSize>(a)).with_validity(Some(b))
 }

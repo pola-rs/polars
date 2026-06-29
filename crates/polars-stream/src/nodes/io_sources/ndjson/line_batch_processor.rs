@@ -1,14 +1,12 @@
 use std::cmp::Reverse;
-use std::sync::Arc;
 
+use polars_async::primitives::distributor_channel;
+use polars_async::primitives::linearizer::Inserter;
+use polars_buffer::Buffer;
 use polars_error::PolarsResult;
-use polars_io::ndjson;
-use polars_utils::mmap::MemSlice;
 use polars_utils::priority::Priority;
 
 use super::chunk_reader::ChunkReader;
-use crate::async_primitives::distributor_channel;
-use crate::async_primitives::linearizer::Inserter;
 use crate::morsel::SourceToken;
 use crate::nodes::MorselSeq;
 use crate::nodes::compute_node_prelude::*;
@@ -19,10 +17,8 @@ pub(super) struct LineBatchProcessor {
     /// Mainly for logging
     pub(super) worker_idx: usize,
 
-    /// We need to hold a ref to this as `LineBatch` we receive contains `&[u8]`
-    /// references to it.
-    pub(super) global_bytes: MemSlice,
-    pub(super) chunk_reader: Arc<ChunkReader>,
+    pub(super) chunk_reader: ChunkReader,
+    pub(super) count_rows_fn: fn(&[u8]) -> usize,
 
     // Input
     pub(super) line_batch_rx: distributor_channel::Receiver<LineBatch>,
@@ -41,8 +37,8 @@ impl LineBatchProcessor {
     pub(super) async fn run(self) -> PolarsResult<usize> {
         let LineBatchProcessor {
             worker_idx,
-            global_bytes: _global_bytes,
             chunk_reader,
+            count_rows_fn,
             mut line_batch_rx,
             mut output_port,
             needs_total_row_count,
@@ -51,7 +47,7 @@ impl LineBatchProcessor {
 
         if verbose {
             eprintln!(
-                "[NDJSON LineBatchProcessor {}]: begin run(): port_type: {}",
+                "[NDJson LineBatchProcessor {}]: begin run(): port_type: {}",
                 worker_idx,
                 output_port.port_type()
             );
@@ -59,21 +55,23 @@ impl LineBatchProcessor {
 
         let mut n_rows_processed: usize = 0;
 
-        while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().await {
-            let df = chunk_reader.read_chunk(bytes)?;
+        if !matches!(output_port, LineBatchProcessorOutputPort::Closed) {
+            while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().await {
+                let df = chunk_reader.read_chunk(&bytes)?;
 
-            n_rows_processed = n_rows_processed.saturating_add(df.height());
+                n_rows_processed = n_rows_processed.saturating_add(df.height());
 
-            let morsel_seq = MorselSeq::new(chunk_idx as u64);
+                let morsel_seq = MorselSeq::new(chunk_idx as u64);
 
-            if output_port.send(morsel_seq, df).await.is_err() {
-                break;
+                if output_port.send(morsel_seq, df).await.is_err() {
+                    break;
+                }
             }
         }
 
         if needs_total_row_count {
             if verbose {
-                eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: entering row count mode");
+                eprintln!("[NDJson LineBatchProcessor {worker_idx}]: entering row count mode");
             }
 
             while let Ok(LineBatch {
@@ -81,12 +79,12 @@ impl LineBatchProcessor {
                 chunk_idx: _,
             }) = line_batch_rx.recv().await
             {
-                n_rows_processed = n_rows_processed.saturating_add(ndjson::count_rows(bytes));
+                n_rows_processed = n_rows_processed.saturating_add(count_rows_fn(&bytes));
             }
         }
 
         if verbose {
-            eprintln!("[NDJSON LineBatchProcessor {worker_idx}]: returning");
+            eprintln!("[NDJson LineBatchProcessor {worker_idx}]: returning");
         }
 
         Ok(n_rows_processed)
@@ -95,8 +93,8 @@ impl LineBatchProcessor {
 
 /// Represents a complete chunk of NDJSON data (i.e. no partial lines).
 pub(super) struct LineBatch {
-    /// Safety: This is sent between 2 places that both hold a reference to the underlying MemSlice.
-    pub(super) bytes: &'static [u8],
+    /// Safety: This is sent between 2 places that both hold a reference to the underlying Buffer.
+    pub(super) bytes: Buffer<u8>,
     pub(super) chunk_idx: usize,
 }
 

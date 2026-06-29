@@ -1,10 +1,10 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+use polars_buffer::SharedStorage;
 use polars_utils::IdxSize;
 use polars_utils::slice::load_padded_le_u64;
 
 use super::bitmask::BitMask;
 use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
 /// Used to build bitmaps bool-by-bool in sequential order.
@@ -242,13 +242,14 @@ impl BitmapBuilder {
         length: usize,
         repeats: usize,
     ) {
+        debug_assert!(8 * slice.len() >= offset + length);
         if repeats == 0 {
             return;
         }
         if repeats == 1 {
             return self.extend_from_slice_unchecked(slice, offset, length);
         }
-        for bit_idx in offset..length {
+        for bit_idx in offset..(offset + length) {
             let bit = (*slice.get_unchecked(bit_idx / 8) >> (bit_idx % 8)) & 1 != 0;
             self.extend_constant(repeats, bit);
         }

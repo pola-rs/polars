@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -104,6 +104,13 @@ def test_array_large_u64() -> None:
     assert s.to_list() == values
 
 
+def test_array_creation_idx_size() -> None:
+    s = pl.Series([None])
+    width = 2**31
+    s = s.new_from_index(0, width)
+    assert pl.Series("a", [s, s, s, s], dtype=pl.Array(pl.Null, width)).shape == (4,)
+
+
 def test_series_init_ambiguous_datetime() -> None:
     value = datetime(2001, 10, 28, 2)
     dtype = pl.Datetime(time_zone="Europe/Belgrade")
@@ -169,3 +176,41 @@ def test_list_null_constructor_schema() -> None:
     expected = pl.List(pl.Null)
     assert pl.Series([[]]).dtype == expected
     assert pl.Series([[]], dtype=pl.List).dtype == expected
+
+
+@pytest.mark.parametrize(
+    ("data", "dtype", "expected_values"),
+    [
+        (
+            ["2024-01-01", "2025-10-07"],
+            pl.Date,
+            [date(2024, 1, 1), date(2025, 10, 7)],
+        ),
+        (
+            ["12:00:00", "13:30:00"],
+            pl.Time,
+            [time(12, 0), time(13, 30)],
+        ),
+        (
+            ["2024-01-01 23:59:59", "2024-01-02T13:30:00.123456"],
+            pl.Datetime,
+            [datetime(2024, 1, 1, 23, 59, 59), datetime(2024, 1, 2, 13, 30, 0, 123456)],
+        ),
+    ],
+)
+def test_temporal_dtype_string_values(
+    data: list[str], dtype: PolarsDataType, expected_values: list[Any]
+) -> None:
+    for tp in (dtype, dtype()):  # type: ignore[operator]
+        s = pl.Series(name="srs", values=data, dtype=tp)
+        assert s.to_list() == expected_values
+        assert s.dtype == dtype
+
+
+def test_invalid() -> None:
+    with pytest.raises(TypeError, match="constructor"):
+        # Note: the `type: ignore` is correct here, as `0` is
+        # an invalid type. If you make a PR which removes this
+        # `type: ignore`, you may have inadvertently introduced
+        # an `Any` type in the `Series.__init__` signature.
+        pl.Series(1)  # type: ignore[arg-type]

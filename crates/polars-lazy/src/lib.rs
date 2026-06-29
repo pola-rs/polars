@@ -146,7 +146,7 @@
 //!         col("column_a")
 //!         // apply a custom closure Series => Result<Series>
 //!         .map(
-//!             |_s| Ok(Column::new("".into(), &[6.0f32, 6.0, 6.0, 6.0, 6.0])),
+//!             |c| c.clone() + c,
 //!             // return type of the closure
 //!             |_, f| Ok(Field::new(f.name().clone(), DataType::Float64))
 //!         ).alias("new_column"),
@@ -196,7 +196,7 @@
 //! }
 //! ```
 #![allow(ambiguous_glob_reexports)]
-#![cfg_attr(docsrs, feature(doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(
     feature = "allow_unused",
     allow(unused, dead_code, irrefutable_let_patterns)
@@ -207,7 +207,6 @@ extern crate core;
 mod dot;
 pub mod dsl;
 pub mod frame;
-pub mod physical_plan;
 pub mod prelude;
 
 mod scan;

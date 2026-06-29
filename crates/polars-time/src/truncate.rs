@@ -33,7 +33,7 @@ impl PolarsTruncate for DatetimeChunked {
         // Let's check if we can use a fastpath...
         if every.len() == 1 {
             if let Some(every) = every.get(0) {
-                let every_parsed = Duration::parse(every);
+                let every_parsed = Duration::try_parse(every)?;
                 if every_parsed.negative {
                     polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
                 }
@@ -47,6 +47,9 @@ impl PolarsTruncate for DatetimeChunked {
                         TimeUnit::Microseconds => every_parsed.duration_us(),
                         TimeUnit::Nanoseconds => every_parsed.duration_ns(),
                     };
+                    if every == 0 {
+                        return Ok(self.clone());
+                    }
                     return Ok(self
                         .physical()
                         .apply_values(|t| fast_truncate(t, every))
@@ -86,7 +89,8 @@ impl PolarsTruncate for DatetimeChunked {
             every,
             |opt_timestamp, opt_every| match (opt_timestamp, opt_every) {
                 (Some(timestamp), Some(every)) => {
-                    let every = *duration_cache.get_or_insert_with(every, Duration::parse);
+                    let every =
+                        *duration_cache.try_get_or_insert_with(every, Duration::try_parse)?;
 
                     if every.negative {
                         polars_bail!(ComputeError: "cannot truncate a Datetime to a negative duration")
@@ -115,7 +119,7 @@ impl PolarsTruncate for DateChunked {
         let out = match every.len() {
             1 => {
                 if let Some(every) = every.get(0) {
-                    let every = Duration::parse(every);
+                    let every = Duration::try_parse(every)?;
                     if every.negative {
                         polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")
                     }
@@ -134,7 +138,8 @@ impl PolarsTruncate for DateChunked {
                     LruCache::with_capacity((every.len() as f64).sqrt() as usize);
                 match (opt_t, opt_every) {
                     (Some(t), Some(every)) => {
-                        let every = *duration_cache.get_or_insert_with(every, Duration::parse);
+                        let every =
+                            *duration_cache.try_get_or_insert_with(every, Duration::try_parse)?;
 
                         if every.negative {
                             polars_bail!(ComputeError: "cannot truncate a Date to a negative duration")

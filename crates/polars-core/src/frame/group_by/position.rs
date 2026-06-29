@@ -6,16 +6,18 @@ use polars_utils::idx_vec::IdxVec;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::utils::{NoNull, flatten, slice_slice};
 
 /// Indexes of the groups, the first index is stored separately.
 /// this make sorting fast.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GroupsIdx {
-    pub(crate) sorted: bool,
+    pub(crate) sorted_by_first_idx: bool,
+    /// Positions of the start of each group.
     first: Vec<IdxSize>,
+    /// Global positions of all elements of all groups.
     all: Vec<IdxVec>,
 }
 
@@ -55,7 +57,7 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
         let mut all = Vec::with_capacity(cap);
         let all_ptr = all.as_ptr() as usize;
 
-        POOL.install(|| {
+        RAYON.install(|| {
             v.into_par_iter()
                 .zip(offsets)
                 .for_each(|(mut inner, offset)| {
@@ -80,7 +82,7 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
             first.set_len(cap);
         }
         GroupsIdx {
-            sorted: false,
+            sorted_by_first_idx: false,
             first,
             all,
         }
@@ -88,12 +90,16 @@ impl From<Vec<Vec<IdxItem>>> for GroupsIdx {
 }
 
 impl GroupsIdx {
-    pub fn new(first: Vec<IdxSize>, all: Vec<IdxVec>, sorted: bool) -> Self {
-        Self { sorted, first, all }
+    pub fn new(first: Vec<IdxSize>, all: Vec<IdxVec>, sorted_by_first_idx: bool) -> Self {
+        Self {
+            sorted_by_first_idx,
+            first,
+            all,
+        }
     }
 
-    pub fn sort(&mut self) {
-        if self.sorted {
+    pub fn sort_by_first_idx(&mut self) {
+        if self.sorted_by_first_idx {
             return;
         }
         let mut idx = 0;
@@ -119,13 +125,13 @@ impl GroupsIdx {
                 })
                 .collect_trusted::<Vec<_>>()
         };
-        let (first, all) = POOL.install(|| rayon::join(take_first, take_all));
+        let (first, all) = RAYON.install(|| rayon::join(take_first, take_all));
         self.first = first;
         self.all = all;
-        self.sorted = true
+        self.sorted_by_first_idx = true
     }
-    pub fn is_sorted_flag(&self) -> bool {
-        self.sorted
+    pub fn is_sorted_by_first_idx(&self) -> bool {
+        self.sorted_by_first_idx
     }
 
     pub fn iter(
@@ -162,7 +168,7 @@ impl GroupsIdx {
     // Create an 'empty group', containing 1 group of length 0
     pub fn new_empty() -> Self {
         Self {
-            sorted: false,
+            sorted_by_first_idx: false,
             first: vec![0],
             all: vec![vec![].into()],
         }
@@ -173,7 +179,7 @@ impl FromIterator<IdxItem> for GroupsIdx {
     fn from_iter<T: IntoIterator<Item = IdxItem>>(iter: T) -> Self {
         let (first, all) = iter.into_iter().unzip();
         GroupsIdx {
-            sorted: false,
+            sorted_by_first_idx: false,
             first,
             all,
         }
@@ -210,7 +216,7 @@ impl FromParallelIterator<IdxItem> for GroupsIdx {
     {
         let (first, all) = par_iter.into_par_iter().unzip();
         GroupsIdx {
-            sorted: false,
+            sorted_by_first_idx: false,
             first,
             all,
         }
@@ -246,18 +252,23 @@ impl IntoParallelIterator for GroupsIdx {
 ///
 /// Only used when group values are stored together
 ///
-/// This type should have the invariant that it is always sorted in ascending order.
+/// This type should have the invariant that it is always sorted in ascending
+/// order by the start indices.
 pub type GroupsSlice = Vec<[IdxSize; 2]>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupsType {
     Idx(GroupsIdx),
-    /// Slice is always sorted in ascending order.
     Slice {
         // the groups slices
         groups: GroupsSlice,
-        // indicates if we do a rolling group_by
-        rolling: bool,
+        /// Indicates if the groups may overlap, i.e., at least one index MAY be
+        /// included in more than one group slice.
+        overlapping: bool,
+        /// Indicates if the groups are rolling, i.e. for every consecutive group
+        /// slice (offset, len), and given start = offset and end = offset + len,
+        /// then both new_start >= start AND new_end >= end MUST be true.
+        monotonic: bool,
     },
 }
 
@@ -268,6 +279,65 @@ impl Default for GroupsType {
 }
 
 impl GroupsType {
+    pub fn new_slice(groups: GroupsSlice, overlapping: bool, monotonic: bool) -> Self {
+        #[cfg(debug_assertions)]
+        {
+            fn groups_overlap(groups: &GroupsSlice) -> bool {
+                if groups.len() < 2 {
+                    return false;
+                }
+                let mut groups = groups.clone();
+                groups.sort();
+                let mut prev_end = groups[0][1];
+
+                for g in &groups[1..] {
+                    let start = g[0];
+                    let end = g[1];
+                    if start < prev_end {
+                        return true;
+                    }
+                    if end > prev_end {
+                        prev_end = end;
+                    }
+                }
+                false
+            }
+
+            assert!(overlapping || !groups_overlap(&groups));
+
+            fn groups_are_monotonic(groups: &GroupsSlice) -> bool {
+                if groups.len() < 2 {
+                    return true;
+                }
+
+                let (offset, len) = (groups[0][0], groups[0][1]);
+                let mut prev_start = offset;
+                let mut prev_end = offset + len;
+
+                for g in &groups[1..] {
+                    let start = g[0];
+                    let end = g[0] + g[1];
+
+                    if start < prev_start || end < prev_end {
+                        return false;
+                    }
+
+                    prev_start = start;
+                    prev_end = end;
+                }
+                true
+            }
+
+            assert!(!monotonic || groups_are_monotonic(&groups));
+        }
+
+        Self::Slice {
+            groups,
+            overlapping,
+            monotonic,
+        }
+    }
+
     pub fn into_idx(self) -> GroupsIdx {
         match self {
             GroupsType::Idx(groups) => groups,
@@ -342,11 +412,11 @@ impl GroupsType {
         GroupsTypeIter::new(self)
     }
 
-    pub fn sort(&mut self) {
+    pub fn sort_by_first_idx(&mut self) {
         match self {
             GroupsType::Idx(groups) => {
-                if !groups.is_sorted_flag() {
-                    groups.sort()
+                if !groups.is_sorted_by_first_idx() {
+                    groups.sort_by_first_idx()
                 }
             },
             GroupsType::Slice { .. } => {
@@ -355,11 +425,31 @@ impl GroupsType {
         }
     }
 
-    pub(crate) fn is_sorted_flag(&self) -> bool {
+    pub(crate) fn is_sorted_by_first_idx(&self) -> bool {
         match self {
-            GroupsType::Idx(groups) => groups.is_sorted_flag(),
+            GroupsType::Idx(groups) => groups.is_sorted_by_first_idx(),
             GroupsType::Slice { .. } => true,
         }
+    }
+
+    pub fn is_overlapping(&self) -> bool {
+        matches!(
+            self,
+            GroupsType::Slice {
+                overlapping: true,
+                ..
+            }
+        )
+    }
+
+    pub fn is_monotonic(&self) -> bool {
+        matches!(
+            self,
+            GroupsType::Slice {
+                monotonic: true,
+                ..
+            }
+        )
     }
 
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
@@ -369,6 +459,18 @@ impl GroupsType {
                 groups.into_iter().map(|[first, _len]| first).collect()
             },
         }
+    }
+
+    /// Checks if groups are of equal length. The caller is responsible for
+    /// updating the groups by calling `groups()` prior to calling this method.
+    pub fn check_lengths(self: &GroupsType, other: &GroupsType) -> PolarsResult<()> {
+        if std::ptr::eq(self, other) {
+            return Ok(());
+        }
+        polars_ensure!(self.iter().zip(other.iter()).all(|(a, b)| {
+            a.len() == b.len()
+        }), ShapeMismatch: "expressions must have matching group lengths");
+        Ok(())
     }
 
     /// # Safety
@@ -487,6 +589,17 @@ impl GroupsType {
     pub fn into_sliceable(self) -> GroupPositions {
         let len = self.len();
         slice_groups(Arc::new(self), 0, len)
+    }
+
+    pub fn num_elements(&self) -> usize {
+        match self {
+            GroupsType::Idx(i) => i.all().iter().map(|v| v.len()).sum(),
+            GroupsType::Slice {
+                groups,
+                overlapping: _,
+                monotonic: _,
+            } => groups.iter().map(|[_, l]| *l as usize).sum(),
+        }
     }
 }
 
@@ -620,12 +733,6 @@ impl Clone for GroupPositions {
     }
 }
 
-impl PartialEq for GroupPositions {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset && self.len == other.len && self.sliced == other.sliced
-    }
-}
-
 impl AsRef<GroupsType> for GroupPositions {
     fn as_ref(&self) -> &GroupsType {
         self.sliced.deref()
@@ -649,18 +756,13 @@ impl Default for GroupPositions {
 impl GroupPositions {
     pub fn slice(&self, offset: i64, len: usize) -> Self {
         let offset = self.offset + offset;
-        slice_groups(
-            self.original.clone(),
-            offset,
-            // invariant that len should be in bounds, so truncate if not
-            if len > self.len { self.len } else { len },
-        )
+        slice_groups(self.original.clone(), offset, len)
     }
 
-    pub fn sort(&mut self) {
-        if !self.as_ref().is_sorted_flag() {
+    pub fn sort_by_first_idx(&mut self) {
+        if !self.as_ref().is_sorted_by_first_idx() {
             let original = Arc::make_mut(&mut self.original);
-            original.sort();
+            original.sort_by_first_idx();
 
             self.sliced = slice_groups_inner(original, self.offset, self.len);
         }
@@ -669,7 +771,9 @@ impl GroupPositions {
     pub fn unroll(mut self) -> GroupPositions {
         match self.sliced.deref_mut() {
             GroupsType::Idx(_) => self,
-            GroupsType::Slice { rolling: false, .. } => self,
+            GroupsType::Slice {
+                overlapping: false, ..
+            } => self,
             GroupsType::Slice { groups, .. } => {
                 // SAFETY: sliced is a shallow partial clone of original.
                 // A new owning Vec is required per GH issue #21859
@@ -683,13 +787,32 @@ impl GroupPositions {
                     })
                     .collect();
 
-                GroupsType::Slice {
-                    groups,
-                    rolling: false,
-                }
-                .into_sliceable()
+                GroupsType::new_slice(groups, false, true).into_sliceable()
             },
         }
+    }
+
+    pub fn as_unrolled_slice(&self) -> Option<&GroupsSlice> {
+        match &*self.sliced {
+            GroupsType::Idx(_) => None,
+            GroupsType::Slice {
+                groups: _,
+                overlapping: true,
+                monotonic: _,
+            } => None,
+            GroupsType::Slice {
+                groups,
+                overlapping: false,
+                monotonic: _,
+            } => Some(groups),
+        }
+    }
+
+    /// Compare groups based on inner pointer.
+    pub fn is_same(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.original, &other.original)
+            && self.offset == other.offset
+            && self.len == other.len
     }
 }
 
@@ -715,20 +838,21 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
             ManuallyDrop::new(GroupsType::Idx(GroupsIdx::new(
                 first,
                 all,
-                groups.is_sorted_flag(),
+                groups.is_sorted_by_first_idx(),
             )))
         },
-        GroupsType::Slice { groups, rolling } => {
+        GroupsType::Slice {
+            groups,
+            overlapping,
+            monotonic,
+        } => {
             let groups = unsafe {
                 let groups = slice_slice(groups, offset, len);
                 let ptr = groups.as_ptr() as *mut _;
                 Vec::from_raw_parts(ptr, groups.len(), groups.len())
             };
 
-            ManuallyDrop::new(GroupsType::Slice {
-                groups,
-                rolling: *rolling,
-            })
+            ManuallyDrop::new(GroupsType::new_slice(groups, *overlapping, *monotonic))
         },
     }
 }

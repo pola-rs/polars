@@ -201,6 +201,28 @@ pub mod checked {
         }
     }
 
+    #[cfg(feature = "dtype-f16")]
+    impl NumOpsDispatchCheckedInner for Float16Type {
+        fn checked_div(lhs: &Float16Chunked, rhs: &Series) -> PolarsResult<Series> {
+            // SAFETY:
+            // see check_div for chunkedarray<T>
+            let rhs = unsafe { lhs.unpack_series_matching_physical_type(rhs) };
+
+            let ca: Float16Chunked =
+                arity::binary_elementwise(lhs, rhs, |opt_l, opt_r| match (opt_l, opt_r) {
+                    (Some(l), Some(r)) => {
+                        if r.is_zero() {
+                            None
+                        } else {
+                            Some(l / r)
+                        }
+                    },
+                    _ => None,
+                });
+            Ok(ca.into_series())
+        }
+    }
+
     impl NumOpsDispatchCheckedInner for Float32Type {
         fn checked_div(lhs: &Float32Chunked, rhs: &Series) -> PolarsResult<Series> {
             // SAFETY:

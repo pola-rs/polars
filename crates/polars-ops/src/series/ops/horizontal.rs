@@ -2,9 +2,10 @@ use std::borrow::Cow;
 
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
 use polars_core::utils::dtypes_to_supertype;
-use polars_core::{POOL, with_match_physical_numeric_polars_type};
+use polars_core::with_match_physical_numeric_polars_type;
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 fn validate_column_lengths(cs: &[Column]) -> PolarsResult<()> {
@@ -31,10 +32,10 @@ pub trait MinMaxHorizontal {
 
 impl MinMaxHorizontal for DataFrame {
     fn min_horizontal(&self) -> PolarsResult<Option<Column>> {
-        min_horizontal(self.get_columns())
+        min_horizontal(self.columns())
     }
     fn max_horizontal(&self) -> PolarsResult<Option<Column>> {
-        max_horizontal(self.get_columns())
+        max_horizontal(self.columns())
     }
 }
 
@@ -54,10 +55,10 @@ pub trait SumMeanHorizontal {
 
 impl SumMeanHorizontal for DataFrame {
     fn sum_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Column>> {
-        sum_horizontal(self.get_columns(), null_strategy)
+        sum_horizontal(self.columns(), null_strategy)
     }
     fn mean_horizontal(&self, null_strategy: NullStrategy) -> PolarsResult<Option<Column>> {
-        mean_horizontal(self.get_columns(), null_strategy)
+        mean_horizontal(self.columns(), null_strategy)
     }
 }
 
@@ -143,7 +144,7 @@ pub fn max_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
         _ => {
             // the try_reduce_with is a bit slower in parallelism,
             // but I don't think it matters here as we parallelize over columns, not over elements
-            POOL.install(|| {
+            RAYON.install(|| {
                 columns
                     .par_iter()
                     .map(|s| Ok(Cow::Borrowed(s)))
@@ -169,7 +170,7 @@ pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
         _ => {
             // the try_reduce_with is a bit slower in parallelism,
             // but I don't think it matters here as we parallelize over columns, not over elements
-            POOL.install(|| {
+            RAYON.install(|| {
                 columns
                     .par_iter()
                     .map(|s| Ok(Cow::Borrowed(s)))
@@ -249,7 +250,7 @@ pub fn sum_horizontal(
         _ => {
             // the try_reduce_with is a bit slower in parallelism,
             // but I don't think it matters here as we parallelize over columns, not over elements
-            let out = POOL.install(|| {
+            let out = RAYON.install(|| {
                 non_null_cols
                     .into_par_iter()
                     .cloned()
@@ -287,7 +288,7 @@ pub fn mean_horizontal(
     match num_rows {
         0 => Ok(None),
         1 => Ok(Some(match columns[0].dtype() {
-            dt if dt != &DataType::Float32 && !dt.is_decimal() => {
+            dt if !matches!(dt, DataType::Float16 | DataType::Float32) && !dt.is_decimal() => {
                 columns[0].cast(&DataType::Float64)?
             },
             _ => columns[0].clone(),
@@ -313,7 +314,7 @@ pub fn mean_horizontal(
                     .unwrap()
             };
 
-            let (sum, null_count) = POOL.install(|| rayon::join(sum, null_count));
+            let (sum, null_count) = RAYON.install(|| rayon::join(sum, null_count));
             let sum = sum?;
             let null_count = null_count?;
 
@@ -329,14 +330,11 @@ pub fn mean_horizontal(
 
             // make sure that we do not divide by zero
             // by replacing with None
-            let dt = if sum
+            let dt = sum
                 .as_ref()
-                .is_some_and(|s| s.dtype() == &DataType::Float32)
-            {
-                &DataType::Float32
-            } else {
-                &DataType::Float64
-            };
+                .map(Column::dtype)
+                .filter(|dt| matches!(dt, DataType::Float16 | DataType::Float32))
+                .unwrap_or(&DataType::Float64);
             let value_length = value_length
                 .set(&value_length.equal(0), None)?
                 .into_column()
@@ -377,7 +375,7 @@ mod tests {
         let b = Column::new("b".into(), [Some(1), None, None]);
         let c = Column::new("c".into(), [Some(4), None, Some(3)]);
 
-        let df = DataFrame::new(vec![a, b, c]).unwrap();
+        let df = DataFrame::new_infer_height(vec![a, b, c]).unwrap();
         assert_eq!(
             Vec::from(
                 df.mean_horizontal(NullStrategy::Ignore)

@@ -7,11 +7,11 @@ SHELL=/bin/bash
 
 install: .venv
 	unset CONDA_PREFIX && \
-	source .venv/bin/activate && maturin develop -m expression_lib/Cargo.toml
+	source .venv/bin/activate && maturin develop -m expression_lib/Cargo.toml --uv
 
 install-release: .venv
 	unset CONDA_PREFIX && \
-	source .venv/bin/activate && maturin develop --release -m expression_lib/Cargo.toml
+	source .venv/bin/activate && maturin develop --release -m expression_lib/Cargo.toml --uv
 
 clean:
 	-@rm -r .venv

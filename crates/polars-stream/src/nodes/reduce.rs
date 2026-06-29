@@ -12,7 +12,7 @@ use crate::morsel::SourceToken;
 
 enum ReduceState {
     Sink {
-        selectors: Vec<StreamExpr>,
+        selectors: Vec<Vec<StreamExpr>>,
         reductions: Vec<Box<dyn GroupedReduction>>,
     },
     Source(Option<DataFrame>),
@@ -26,7 +26,7 @@ pub struct ReduceNode {
 
 impl ReduceNode {
     pub fn new(
-        selectors: Vec<StreamExpr>,
+        selectors: Vec<Vec<StreamExpr>>,
         reductions: Vec<Box<dyn GroupedReduction>>,
         output_schema: Arc<Schema>,
     ) -> Self {
@@ -40,7 +40,7 @@ impl ReduceNode {
     }
 
     fn spawn_sink<'env, 's>(
-        selectors: &'env [StreamExpr],
+        selectors: &'env [Vec<StreamExpr>],
         reductions: &'env mut [Box<dyn GroupedReduction>],
         scope: &'s TaskScope<'s, 'env>,
         recv: RecvPort<'_>,
@@ -61,12 +61,24 @@ impl ReduceNode {
                     .collect();
 
                 scope.spawn_task(TaskPriority::High, async move {
+                    let mut in_columns = Vec::new();
+                    let mut in_column_refs = Vec::new();
                     while let Ok(morsel) = recv.recv().await {
-                        for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
-                            let input = selector
-                                .evaluate(morsel.df(), &state.in_memory_exec_state)
-                                .await?;
-                            reducer.update_group(&input, 0, morsel.seq().to_u64())?;
+                        for (reducer, selector_set) in local_reducers.iter_mut().zip(selectors) {
+                            for selector in selector_set {
+                                let col = selector
+                                    .evaluate(morsel.df(), &state.in_memory_exec_state)
+                                    .await?;
+                                in_columns.push(col);
+                            }
+                            for c in in_columns.iter() {
+                                in_column_refs.push(c);
+                            }
+                            reducer.update_group(&in_column_refs, 0, morsel.seq().to_u64())?;
+                            in_column_refs.clear();
+                            in_column_refs =
+                                in_column_refs.into_iter().map(|_| unreachable!()).collect(); // Clear lifetimes.
+                            in_columns.clear();
                         }
                     }
 
@@ -132,12 +144,12 @@ impl ComputeNode for ReduceNode {
                     .map(|(r, field)| {
                         r.resize(1);
                         r.finalize().map(|s| {
-                            let s = s.with_name(field.name.clone()).cast(&field.dtype).unwrap();
+                            let s = s.with_name(field.name.clone());
                             Column::Scalar(ScalarColumn::unit_scalar_from_series(s))
                         })
                     })
                     .try_collect_vec()?;
-                let out = DataFrame::new(columns).unwrap();
+                let out = unsafe { DataFrame::new_unchecked(1, columns) };
 
                 self.state = ReduceState::Source(Some(out));
             },

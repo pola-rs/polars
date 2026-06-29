@@ -1,4 +1,5 @@
-use polars_core::error::{PolarsResult, polars_bail};
+#![allow(unused)]
+use polars_core::error::{PolarsResult, polars_bail, polars_err};
 use polars_core::schema::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -28,9 +29,9 @@ pub(crate) enum ExprOrigin {
 impl ExprOrigin {
     /// Errors with ColumnNotFound if a column cannot be found on either side.
     ///
-    /// The origin of coalesced join columns will be `Left`, except for right-joins.
-    /// For coalescing right-joins, `is_coalesced_to_right` must be passed to
-    /// properly identify the origin.
+    /// Note, for right-joins an `is_coalesced_to_right` function must be passed
+    /// to properly identify coalesced key columns as originating from the `ExprOrigin::Right`.
+    /// Otherwise they will be identified as `ExprOrigin::Left`.
     pub(crate) fn get_expr_origin(
         root: Node,
         expr_arena: &Arena<AExpr>,
@@ -46,7 +47,7 @@ impl ExprOrigin {
             |acc_origin, column_name| {
                 Ok(acc_origin
                     | Self::get_column_origin(
-                        &column_name,
+                        column_name,
                         left_schema,
                         right_schema,
                         suffix,
@@ -58,9 +59,9 @@ impl ExprOrigin {
 
     /// Errors with ColumnNotFound if a column cannot be found on either side.
     ///
-    /// The origin of coalesced join columns will be `Left`, except for right-joins.
-    /// For coalescing right-joins, `is_coalesced_to_right` must be passed to
-    /// properly identify the origin.
+    /// Note, for right-joins an `is_coalesced_to_right` function must be passed
+    /// to properly identify coalesced key columns as originating from the `ExprOrigin::Right`.
+    /// Otherwise they will be identified as `ExprOrigin::Left`.
     pub(crate) fn get_column_origin(
         column_name: &str,
         left_schema: &Schema,
@@ -80,7 +81,22 @@ impl ExprOrigin {
             {
                 ExprOrigin::Right
             } else {
-                polars_bail!(ColumnNotFound: "{}", column_name)
+                let suggestion = polars_utils::levenshtein::did_you_mean(
+                    column_name,
+                    left_schema
+                        .iter_names()
+                        .chain(right_schema.iter_names())
+                        .map(|s| s.as_str()),
+                );
+                let available: Vec<_> = left_schema
+                    .iter_names()
+                    .chain(right_schema.iter_names())
+                    .collect();
+                return Err(if let Some(s) = suggestion {
+                    polars_err!(ColumnNotFound: "unable to find column {:?}; valid columns: {:?}\n\nDid you mean {:?}?", column_name, available, s)
+                } else {
+                    polars_err!(ColumnNotFound: "unable to find column {:?}; valid columns: {:?}", column_name, available)
+                });
             },
         )
     }
@@ -164,9 +180,4 @@ pub(super) fn remove_suffix<'a>(
             )))))
         }
     }
-}
-
-pub(super) fn split_suffix<'a>(name: &'a str, suffix: &str) -> &'a str {
-    let (original, _) = name.split_at(name.len() - suffix.len());
-    original
 }

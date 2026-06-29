@@ -142,10 +142,125 @@ pub fn get_bit_width(max: u64) -> u32 {
     64 - max.leading_zeros()
 }
 
+pub(super) fn is_utf8_type(primitive_type: &PrimitiveType) -> bool {
+    use crate::parquet::schema::types::{PrimitiveConvertedType, PrimitiveLogicalType};
+
+    matches!(
+        primitive_type.logical_type,
+        Some(PrimitiveLogicalType::String)
+    ) || matches!(
+        primitive_type.converted_type,
+        Some(PrimitiveConvertedType::Utf8)
+    )
+}
+
 pub(super) fn invalid_encoding(encoding: Encoding, dtype: &ArrowDataType) -> PolarsError {
     polars_err!(InvalidOperation:
         "Datatype {:?} cannot be encoded by {:?} encoding",
         dtype,
         encoding
     )
+}
+
+/// Truncates to the last valid UTF-8 codepoint in `bytes[..requested_len]` if one can be found, or
+/// otherwise the smallest `n` for which `bytes[..n]` is valid UTF-8.
+///
+/// If no truncation is performed, a `None` is returned.
+fn truncate_utf8_aware(bytes: &[u8], requested_len: usize) -> Option<&[u8]> {
+    if bytes.len() <= requested_len {
+        return None;
+    }
+
+    if let Some(chunk) = bytes[..requested_len]
+        .utf8_chunks()
+        .next()
+        .map(|span| span.valid().as_bytes())
+        .filter(|x| !x.is_empty())
+    {
+        return Some(chunk);
+    }
+
+    bytes[..usize::min(bytes.len(), 4)]
+        .utf8_chunks()
+        .next()
+        .map(|span| span.valid().as_bytes())
+        .filter(|x| !x.is_empty() && x.len() < bytes.len())
+}
+
+/// Truncates a min statistics value to `len` bytes.
+///
+/// When `is_utf8` is true, truncation happens at a character boundary so
+/// the result stays valid UTF-8. For binary data, raw byte truncation is
+/// used. In both cases a prefix is always <= the original in lexicographic
+/// order, so the truncated value remains a valid lower bound.
+pub(super) fn truncate_min_binary_statistics_value(
+    mut val: Vec<u8>,
+    len: usize,
+    is_utf8: bool,
+) -> Vec<u8> {
+    if val.len() <= len {
+        return val;
+    }
+
+    if is_utf8 {
+        if let Some(prefix) = truncate_utf8_aware(&val, len) {
+            val.truncate(prefix.len());
+        }
+    } else {
+        val.truncate(len);
+    }
+
+    val
+}
+
+/// Truncates a max statistics value to `len` bytes, then increments it so
+/// that the result is still a valid upper bound.
+///
+/// When `is_utf8` is true, truncation happens at a character boundary and
+/// the last *character* (not byte) is incremented, keeping the result valid
+/// UTF-8. For binary data the last non-0xFF byte is incremented.
+///
+/// Falls back to the original (untruncated) value when no short upper bound
+/// can be produced.
+pub(super) fn truncate_max_binary_statistics_value(
+    mut val: Vec<u8>,
+    len: usize,
+    is_utf8: bool,
+) -> Vec<u8> {
+    if val.len() <= len {
+        return val;
+    }
+
+    if is_utf8 {
+        if let Some(end_idx) = truncate_utf8_aware(&val, len).map(|p| p.len())
+            && let Some(end_idx) =
+                increment_utf8(std::str::from_utf8_mut(val.get_mut(..end_idx).unwrap()).unwrap())
+        {
+            val.truncate(end_idx);
+        }
+    } else if let Some((i, new_c)) = (0..len)
+        .rev()
+        .chain(len..val.len() - 1)
+        .find_map(|i| val[i].checked_add(1).map(|c| (i, c)))
+    {
+        val[i] = new_c;
+        val.truncate(i + 1)
+    }
+
+    val
+}
+
+/// Find and increment last UTF-8 character that can be incremented without changing the encoded
+/// UTF-8 byte length. Returns the byte position of the end of the incremented char.
+fn increment_utf8(s: &mut str) -> Option<usize> {
+    let (idx, new_char) = s.char_indices().rev().find_map(|(idx, c)| {
+        char::from_u32(c as u32 + 1)
+            .filter(|new_c| new_c.len_utf8() == c.len_utf8())
+            .map(|new_c| (idx, new_c))
+    })?;
+
+    let trailing = unsafe { &mut s.as_bytes_mut()[idx..] };
+    let new_char_byte_len = new_char.encode_utf8(trailing).len();
+
+    Some(idx + new_char_byte_len)
 }

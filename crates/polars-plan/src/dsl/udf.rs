@@ -62,22 +62,28 @@ pub fn infer_udf_output_dtype(
     {
         let numeric_to_one = true; // A lot of functions error on 0, just give a 1.
         let num_list_values = 1; // Give at least 1 value, so UDFs have something to go off.
-        let params = input_fields
+        let params: Option<Vec<_>> = input_fields
             .iter()
             .map(|f| {
-                let av = AnyValue::default_value(f.dtype(), numeric_to_one, num_list_values);
-                let scalar = Scalar::new(f.dtype().clone(), av);
+                // Materialize `Unknown` dtypes (e.g., from literals like `pl.lit(10)`)
+                // to concrete types before we try to create default values for them.
+                let dtype = f.dtype().clone().materialize_unknown(true).ok()?;
+                if !dtype.is_known() {
+                    return None;
+                }
+                let av = AnyValue::default_value(&dtype, numeric_to_one, num_list_values);
+                let scalar = Scalar::new(dtype, av);
 
                 // Give each column with 2 dummy values.
-                Column::new_scalar(f.name().clone(), scalar, 2)
+                Some(Column::new_scalar(f.name().clone(), scalar, 2))
             })
-            .collect::<Vec<_>>();
+            .collect();
 
+        let params = params?;
         if let Ok(c) = f(&params) {
             return Some(c.dtype().clone());
         }
     }
-
     None
 }
 

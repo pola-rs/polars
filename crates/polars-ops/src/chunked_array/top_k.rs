@@ -1,9 +1,10 @@
 use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
+use polars_core::downcast_as_macro_arg_physical;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::series::IsSorted;
-use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_utils::total_ord::TotalOrd;
 
 fn first_n_valid_mask(num_valid: usize, out_len: usize) -> Option<Bitmap> {
@@ -75,7 +76,7 @@ where
     nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
     let (_, buffer, _) = chunk.into_inner();
-    let mut vec = buffer.make_mut();
+    let mut vec = buffer.to_vec();
 
     // Partition.
     if k < vec.len() {
@@ -155,7 +156,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
             ComputeError: "`k` must be a single value for `top_k`."
         );
 
-        let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
+        let Some(k) = k_s.strict_cast(&IDX_DTYPE)?.idx()?.get(0) else {
             polars_bail!(ComputeError: "`k` must be set for `top_k`")
         };
 
@@ -231,7 +232,7 @@ pub fn top_k_by(s: &[Column], descending: Vec<bool>) -> PolarsResult<Column> {
             ComputeError: "`k` must be a single value for `top_k`."
         );
 
-        let Some(k) = k_s.cast(&IDX_DTYPE)?.idx()?.get(0) else {
+        let Some(k) = k_s.strict_cast(&IDX_DTYPE)?.idx()?.get(0) else {
             polars_bail!(ComputeError: "`k` must be set for `top_k`")
         };
 
@@ -271,7 +272,7 @@ fn top_k_by_impl(
         return Ok(src.clone());
     }
 
-    let multithreaded = k >= 10000 && POOL.current_num_threads() > 1;
+    let multithreaded = k >= 10000 && RAYON.current_num_threads() > 1;
     let mut sort_options = SortMultipleOptions {
         descending: descending.into_iter().map(|x| !x).collect(),
         nulls_last: vec![true; by.len()],

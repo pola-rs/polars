@@ -85,11 +85,17 @@ def test_clear_series_object_starting_with_null() -> None:
     assert result.is_empty()
 
 
-def test_clear_raise_negative_n() -> None:
+def test_clear_raise_conditions() -> None:
     s = pl.Series([1, 2, 3])
 
-    msg = "`n` should be greater than or equal to 0, got -1"
+    # negative values
+    msg = "`n` should be an integer >= 0, got -1"
     with pytest.raises(ValueError, match=msg):
         s.clear(-1)
     with pytest.raises(ValueError, match=msg):
         s.to_frame().clear(-1)
+
+    # non-integer values
+    msg = "`n` should be an integer >= 0, got 2.5"
+    with pytest.raises(TypeError, match=msg):
+        s.clear(2.5)  # type: ignore[arg-type]

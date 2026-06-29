@@ -2,6 +2,9 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::primitives::linearizer::Linearizer;
+use polars_async::primitives::oneshot_channel;
 use polars_core::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_error::{PolarsResult, polars_bail};
@@ -9,9 +12,6 @@ use polars_io::RowIndex;
 use polars_utils::IdxSize;
 use polars_utils::priority::Priority;
 
-use crate::async_executor;
-use crate::async_executor::AbortOnDropHandle;
-use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputSend;
 
@@ -26,7 +26,7 @@ pub struct MorselStreamReverser {
     pub morsel_senders: Vec<FileReaderOutputSend>,
     /// Slice from right to left.
     pub offset_len_rtl: (usize, usize),
-    pub row_index: Option<(RowIndex, tokio::sync::oneshot::Receiver<usize>)>,
+    pub row_index: Option<(RowIndex, oneshot_channel::Receiver<usize>)>,
     pub verbose: bool,
 }
 
@@ -101,7 +101,7 @@ impl MorselStreamReverser {
                 eprintln!("MorselStreamReverser: wait for total row count");
             }
 
-            let Ok(total_count) = total_row_count_rx.await else {
+            let Ok(total_count) = total_row_count_rx.recv().await else {
                 // Errored, or empty file.
                 if verbose {
                     eprintln!("MorselStreamReverser: did not receive total row count, returning");
@@ -155,8 +155,7 @@ impl MorselStreamReverser {
                 chunk_size: {}, \
                 num_pipelines: {}, \
                 n_tasks: {}, \
-                row_index: {:?} \
-                ",
+                row_index: {:?}",
                 combined_df.height(),
                 n_chunks,
                 chunk_size,
@@ -176,55 +175,46 @@ impl MorselStreamReverser {
                 let chunk_idx_arc = chunk_idx_arc.clone();
                 let combined_df = combined_df.clone();
                 let row_index = row_index.clone();
-                AbortOnDropHandle::new(async_executor::spawn(
-                    async_executor::TaskPriority::Low,
-                    async move {
-                        loop {
-                            let chunk_idx =
-                                chunk_idx_arc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
+                    loop {
+                        let chunk_idx =
+                            chunk_idx_arc.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-                            if chunk_idx >= n_chunks {
-                                break;
-                            }
-
-                            let row_offset = chunk_idx.saturating_mul(chunk_size);
-                            let mut df =
-                                combined_df.slice(row_offset.try_into().unwrap(), chunk_size);
-
-                            assert!(df.height() > 0); // If we did our calculations properly
-
-                            if let Some(row_index) = row_index.clone() {
-                                let offset = row_index.offset.saturating_add(
-                                    IdxSize::try_from(row_offset).unwrap_or(IdxSize::MAX),
-                                );
-
-                                if offset.checked_add(df.height() as IdxSize).is_none() {
-                                    polars_bail!(
-                                        ComputeError:
-                                        "row_index with offset {} overflows at {} rows",
-                                        row_index.offset, row_offset.saturating_add(df.height())
-                                    )
-                                };
-
-                                unsafe {
-                                    df.with_row_index_mut(row_index.name.clone(), Some(offset))
-                                };
-                            }
-
-                            let morsel = Morsel::new(
-                                df,
-                                MorselSeq::new(chunk_idx as u64),
-                                SourceToken::new(),
-                            );
-
-                            if morsel_tx.send_morsel(morsel).await.is_err() {
-                                break;
-                            }
+                        if chunk_idx >= n_chunks {
+                            break;
                         }
 
-                        Ok(())
-                    },
-                ))
+                        let row_offset = chunk_idx.saturating_mul(chunk_size);
+                        let mut df = combined_df.slice(row_offset.try_into().unwrap(), chunk_size);
+
+                        assert!(df.height() > 0); // If we did our calculations properly
+
+                        if let Some(row_index) = row_index.clone() {
+                            let offset = row_index.offset.saturating_add(
+                                IdxSize::try_from(row_offset).unwrap_or(IdxSize::MAX),
+                            );
+
+                            if offset.checked_add(df.height() as IdxSize).is_none() {
+                                polars_bail!(
+                                    ComputeError:
+                                    "row_index with offset {} overflows at {} rows",
+                                    row_index.offset, row_offset.saturating_add(df.height())
+                                )
+                            };
+
+                            unsafe { df.with_row_index_mut(row_index.name.clone(), Some(offset)) };
+                        }
+
+                        let morsel =
+                            Morsel::new(df, MorselSeq::new(chunk_idx as u64), SourceToken::new());
+
+                        if morsel_tx.send_morsel(morsel).await.is_err() {
+                            break;
+                        }
+                    }
+
+                    Ok(())
+                }))
             })
             .collect::<Vec<_>>();
 

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import pyarrow as pa
 import pytest
+from hypothesis import given
 
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import series
 
 
 def test_explode_multiple() -> None:
@@ -20,7 +22,9 @@ def test_explode_multiple() -> None:
 
 def test_group_by_flatten_list() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": [[1, 2], [2, 3], [4]]})
-    result = df.group_by("group", maintain_order=True).agg(pl.col("values").flatten())
+    result = df.group_by("group", maintain_order=True).agg(
+        pl.col("values").list.explode(keep_nulls=False)
+    )
 
     expected = pl.DataFrame({"group": ["a", "b"], "values": [[1, 2], [2, 3, 4]]})
     assert_frame_equal(result, expected)
@@ -28,12 +32,12 @@ def test_group_by_flatten_list() -> None:
 
 def test_explode_empty_df_3402() -> None:
     df = pl.DataFrame({"a": pa.array([], type=pa.large_list(pa.int32()))})
-    assert df.explode("a").dtypes == [pl.Int32]
+    assert df.explode("a", empty_as_null=True).dtypes == [pl.Int32]
 
 
 def test_explode_empty_df_3460() -> None:
     df = pl.DataFrame({"a": pa.array([[]], type=pa.large_list(pa.int32()))})
-    assert df.explode("a").dtypes == [pl.Int32]
+    assert df.explode("a", empty_as_null=True).dtypes == [pl.Int32]
 
 
 def test_explode_empty_df_3902() -> None:
@@ -49,7 +53,7 @@ def test_explode_empty_df_3902() -> None:
             "second": ["a", None, "b", "c", None, "d", "f", "g"],
         }
     )
-    assert_frame_equal(df.explode("second"), expected)
+    assert_frame_equal(df.explode("second", empty_as_null=True), expected)
 
 
 def test_explode_empty_list_4003() -> None:
@@ -60,7 +64,7 @@ def test_explode_empty_list_4003() -> None:
             {"id": 3, "nested": [2]},
         ]
     )
-    assert df.explode("nested").to_dict(as_series=False) == {
+    assert df.explode("nested", empty_as_null=True).to_dict(as_series=False) == {
         "id": [1, 2, 3],
         "nested": [None, 1, 2],
     }
@@ -70,7 +74,8 @@ def test_explode_empty_list_4107() -> None:
     df = pl.DataFrame({"b": [[1], [2], []] * 2}).with_row_index()
 
     assert_frame_equal(
-        df.explode(["b"]), df.explode(["b"]).drop("index").with_row_index()
+        df.explode(["b"], empty_as_null=True),
+        df.explode(["b"], empty_as_null=True).drop("index").with_row_index(),
     )
 
 
@@ -98,29 +103,39 @@ def test_explode_correct_for_slice() -> None:
             "group": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
             "b": [1, 2, 3, 2, 3, 4, 1, 2, 3, 0, 1, 2, 3, 2, 3, 4, 1, 2, 3, 0],
         },
-        schema_overrides={"index": pl.UInt32},
+        schema_overrides={"index": pl.get_index_type()},
     )
     assert_frame_equal(df.slice(0, 10).explode(["b"]), expected)
 
 
 def test_sliced_null_explode() -> None:
     s = pl.Series("", [[1], [2], [3], [4], [], [6]])
-    assert s.slice(2, 4).list.explode().to_list() == [3, 4, None, 6]
-    assert s.slice(2, 2).list.explode().to_list() == [3, 4]
-    assert pl.Series("", [[1], [2], None, [4], [], [6]]).slice(
-        2, 4
-    ).list.explode().to_list() == [None, 4, None, 6]
+    assert s.slice(2, 4).list.explode(empty_as_null=True).to_list() == [3, 4, None, 6]
+    assert s.slice(2, 2).list.explode(empty_as_null=True).to_list() == [3, 4]
+    assert pl.Series("", [[1], [2], None, [4], [], [6]]).slice(2, 4).list.explode(
+        empty_as_null=True
+    ).to_list() == [None, 4, None, 6]
 
     s = pl.Series("", [["a"], ["b"], ["c"], ["d"], [], ["e"]])
-    assert s.slice(2, 4).list.explode().to_list() == ["c", "d", None, "e"]
-    assert s.slice(2, 2).list.explode().to_list() == ["c", "d"]
+    assert s.slice(2, 4).list.explode(empty_as_null=True).to_list() == [
+        "c",
+        "d",
+        None,
+        "e",
+    ]
+    assert s.slice(2, 2).list.explode(empty_as_null=True).to_list() == ["c", "d"]
     assert pl.Series("", [["a"], ["b"], None, ["d"], [], ["e"]]).slice(
         2, 4
-    ).list.explode().to_list() == [None, "d", None, "e"]
+    ).list.explode(empty_as_null=True).to_list() == [None, "d", None, "e"]
 
     s = pl.Series("", [[False], [False], [True], [False], [], [True]])
-    assert s.slice(2, 2).list.explode().to_list() == [True, False]
-    assert s.slice(2, 4).list.explode().to_list() == [True, False, None, True]
+    assert s.slice(2, 2).list.explode(empty_as_null=True).to_list() == [True, False]
+    assert s.slice(2, 4).list.explode(empty_as_null=True).to_list() == [
+        True,
+        False,
+        None,
+        True,
+    ]
 
 
 @pytest.mark.parametrize("maintain_order", [False, True])
@@ -133,7 +148,7 @@ def test_explode_in_agg_context(maintain_order: bool) -> None:
         df.with_row_index()
         .explode("idxs")
         .group_by("index", maintain_order=maintain_order)
-        .agg(pl.col("array").flatten()),
+        .agg(pl.col("array").list.explode(keep_nulls=False)),
         pl.DataFrame(
             {
                 "index": [0, 1, 2],
@@ -153,7 +168,11 @@ def test_explode_inner_lists_3985() -> None:
     assert (
         df.group_by("id")
         .agg(pl.col("categories"))
-        .with_columns(pl.col("categories").list.eval(pl.element().list.explode()))
+        .with_columns(
+            pl.col("categories").list.eval(
+                pl.element().list.explode(empty_as_null=False)
+            )
+        )
     ).collect().to_dict(as_series=False) == {
         "id": [1],
         "categories": [["a", "b", "a", "c"]],
@@ -172,7 +191,7 @@ def test_list_struct_explode_6905() -> None:
             ]
         },
         schema={"group": pl.List(pl.Struct([pl.Field("params", pl.List(pl.Int32))]))},
-    )["group"].list.explode().to_list() == [
+    )["group"].list.explode(empty_as_null=True).to_list() == [
         None,
         {"params": [1]},
         {"params": []},
@@ -180,9 +199,9 @@ def test_list_struct_explode_6905() -> None:
 
 
 def test_explode_binary() -> None:
-    assert pl.Series([[1, 2], [3]]).cast(
-        pl.List(pl.Binary)
-    ).list.explode().to_list() == [
+    assert pl.Series([[1, 2], [3]]).cast(pl.List(pl.Binary)).list.explode(
+        empty_as_null=False
+    ).to_list() == [
         b"1",
         b"2",
         b"3",
@@ -225,7 +244,9 @@ def test_logical_explode() -> None:
 
 def test_explode_inner_null() -> None:
     expected = pl.DataFrame({"A": [None, None]}, schema={"A": pl.Null})
-    out = pl.DataFrame({"A": [[], []]}, schema={"A": pl.List(pl.Null)}).explode("A")
+    out = pl.DataFrame({"A": [[], []]}, schema={"A": pl.List(pl.Null)}).explode(
+        "A", empty_as_null=True
+    )
     assert_frame_equal(out, expected)
 
 
@@ -251,7 +272,9 @@ def test_string_list_agg_explode() -> None:
     df2 = pl.DataFrame({"a": [[], ["b"]]})
 
     assert_frame_equal(df, df2)
-    assert_frame_equal(df.explode("a"), df2.explode("a"))
+    assert_frame_equal(
+        df.explode("a", empty_as_null=True), df2.explode("a", empty_as_null=True)
+    )
 
 
 def test_explode_null_struct() -> None:
@@ -265,7 +288,9 @@ def test_explode_null_struct() -> None:
         },
     ]
 
-    assert pl.DataFrame(df).explode("col1").to_dict(as_series=False) == {
+    assert pl.DataFrame(df).explode("col1", empty_as_null=True).to_dict(
+        as_series=False
+    ) == {
         "col1": [
             None,
             {"field1": None, "field2": None, "field3": None},
@@ -295,7 +320,7 @@ def test_df_explode_with_array() -> None:
             "val": ["x", "x", "y", "y", "z", "q", "q"],
         }
     )
-    assert_frame_equal(df.explode("arr"), expected_by_arr)
+    assert_frame_equal(df.explode("arr", empty_as_null=True), expected_by_arr)
 
     expected_by_list = pl.DataFrame(
         {
@@ -309,7 +334,7 @@ def test_df_explode_with_array() -> None:
             "val": pl.String,
         },
     )
-    assert_frame_equal(df.explode("list"), expected_by_list)
+    assert_frame_equal(df.explode("list", empty_as_null=True), expected_by_list)
 
     df = pl.DataFrame(
         {
@@ -335,7 +360,9 @@ def test_df_explode_with_array() -> None:
             "val": pl.Int64,
         },
     )
-    assert_frame_equal(df.explode("arr", "list"), expected_by_arr_and_list)
+    assert_frame_equal(
+        df.explode("arr", "list", empty_as_null=True), expected_by_arr_and_list
+    )
 
 
 def test_explode_nullable_list() -> None:
@@ -343,7 +370,7 @@ def test_explode_nullable_list() -> None:
         layout2=pl.when(pl.col("b")).then([1, 2]),
     )
 
-    explode_df = df.explode("layout1", "layout2")
+    explode_df = df.explode("layout1", "layout2", empty_as_null=True)
     expected_df = pl.DataFrame(
         {
             "layout1": [None, 1, 2],
@@ -354,8 +381,8 @@ def test_explode_nullable_list() -> None:
     assert_frame_equal(explode_df, expected_df)
 
     explode_expr = df.select(
-        pl.col("layout1").explode(),
-        pl.col("layout2").explode(),
+        pl.col("layout1").explode(empty_as_null=True),
+        pl.col("layout2").explode(empty_as_null=True),
     )
     expected_df = pl.DataFrame(
         {
@@ -370,7 +397,7 @@ def test_group_by_flatten_string() -> None:
     df = pl.DataFrame({"group": ["a", "b", "b"], "values": ["foo", "bar", "baz"]})
 
     result = df.group_by("group", maintain_order=True).agg(
-        pl.col("values").str.split("").explode()
+        pl.col("values").str.split("").explode(empty_as_null=False)
     )
 
     expected = pl.DataFrame(
@@ -390,7 +417,7 @@ def test_fast_explode_merge_right_16923() -> None:
         ],
         how="diagonal",
         rechunk=True,
-    ).explode("foo")
+    ).explode("foo", empty_as_null=True)
 
     assert df.height == 4
 
@@ -403,7 +430,7 @@ def test_fast_explode_merge_left_16923() -> None:
         ],
         how="diagonal",
         rechunk=True,
-    ).explode("foo")
+    ).explode("foo", empty_as_null=True)
 
     assert df.height == 4
 
@@ -457,4 +484,183 @@ def test_explode_17648() -> None:
 
 def test_explode_struct_nulls() -> None:
     df = pl.DataFrame({"A": [[{"B": 1}], [None], []]})
-    assert df.explode("A").to_dict(as_series=False) == {"A": [{"B": 1}, None, None]}
+    assert df.explode("A", empty_as_null=True).to_dict(as_series=False) == {
+        "A": [{"B": 1}, None, None]
+    }
+
+
+def test_explode_basic() -> None:
+    s = pl.Series
+
+    assert_series_equal(
+        s([[1, 2, 3]]).explode(empty_as_null=True), pl.Series([1, 2, 3])
+    )
+    assert_series_equal(
+        s([[1, 2, 3], None]).explode(empty_as_null=True), pl.Series([1, 2, 3, None])
+    )
+    assert_series_equal(
+        s([[1, 2, 3], []]).explode(empty_as_null=True), pl.Series([1, 2, 3, None])
+    )
+    masked = (
+        s([[1, 2, 3], [1, 2], [1, 2]])
+        .to_frame()
+        .select(pl.when(pl.Series([True, False, True])).then(pl.col("")))
+        .to_series()
+    )
+    assert_series_equal(
+        masked.explode(empty_as_null=True), pl.Series([1, 2, 3, None, 1, 2])
+    )
+    masked = (
+        s([[1, 2, 3], [], [1, 2]])
+        .to_frame()
+        .select(pl.when(pl.Series([True, False, True])).then(pl.col("")))
+        .to_series()
+    )
+    assert_series_equal(
+        masked.explode(empty_as_null=True), pl.Series([1, 2, 3, None, 1, 2])
+    )
+
+    assert_series_equal(
+        s([[1, 2, 3]]).explode(empty_as_null=False, keep_nulls=False),
+        pl.Series([1, 2, 3]),
+    )
+
+    assert_series_equal(
+        s([[1, 2, 3], None]).explode(empty_as_null=True), pl.Series([1, 2, 3, None])
+    )
+    assert_series_equal(
+        s([[1, 2, 3], None]).explode(keep_nulls=False, empty_as_null=True),
+        pl.Series([1, 2, 3]),
+    )
+    assert_series_equal(
+        s([[1, 2, 3], [None]]).explode(keep_nulls=False, empty_as_null=True),
+        pl.Series([1, 2, 3, None]),
+    )
+
+    assert_series_equal(
+        s([[1, 2, 3], []]).explode(empty_as_null=True), pl.Series([1, 2, 3, None])
+    )
+    assert_series_equal(
+        s([[1, 2, 3], []]).explode(empty_as_null=False), pl.Series([1, 2, 3])
+    )
+    assert_series_equal(
+        s([[1, 2, 3], [None]]).explode(empty_as_null=False), pl.Series([1, 2, 3, None])
+    )
+
+
+@given(s=series(min_size=1))
+@pytest.mark.parametrize("empty_as_null", [False, True])
+@pytest.mark.parametrize("keep_nulls", [False, True])
+def test_explode_parametric(
+    s: pl.Series, empty_as_null: bool, keep_nulls: bool
+) -> None:
+    a = {"empty_as_null": empty_as_null, "keep_nulls": keep_nulls}
+    si = s.implode()
+
+    empty_list_item = s.clear(1) if empty_as_null else s.clear()
+    null_list_item = s.clear(1) if keep_nulls else s.clear()
+
+    assert_series_equal(si.explode(**a), s)
+    assert_series_equal(s.clear().implode().explode(**a), empty_list_item)
+    assert_series_equal(si.clear(1).explode(**a), null_list_item)
+
+    assert_series_equal(
+        pl.concat([si, s.clear().implode(), si]).explode(**a),
+        pl.concat([s, empty_list_item, s]),
+    )
+    assert_series_equal(
+        pl.concat([si, si.clear(1), si]).explode(**a), pl.concat([s, null_list_item, s])
+    )
+
+    for mask in [
+        (False, False, False),
+        (True, False, True),
+        (False, False, True),
+        (True, False, False),
+        (False, True, False),
+    ]:
+        masked = (
+            pl.concat([si, si, si])
+            .to_frame()
+            .select(pl.when(pl.Series(mask)).then(pl.col(s.name)).alias(s.name))
+            .to_series()
+        )
+        assert_series_equal(
+            masked.explode(**a), pl.concat([s if m else null_list_item for m in mask])
+        )
+
+    for size in [2, 3, 7, 15]:
+        assert_series_equal(pl.concat([si] * size).explode(**a), pl.concat([s] * size))
+
+        assert_series_equal(
+            pl.concat([s.clear().implode()] + [si] * size).explode(**a),
+            pl.concat([empty_list_item] + [s] * size),
+        )
+        assert_series_equal(
+            pl.concat([si] * size + [s.clear().implode()]).explode(**a),
+            pl.concat([s] * size + [empty_list_item]),
+        )
+
+        assert_series_equal(
+            pl.concat([si.clear(1)] + [si] * size).explode(**a),
+            pl.concat([null_list_item] + [s] * size),
+        )
+        assert_series_equal(
+            pl.concat([si] * size + [si.clear(1)]).explode(**a),
+            pl.concat([s] * size + [null_list_item]),
+        )
+
+
+def test_explode_array_parameters() -> None:
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6], [7, 8, 9]], pl.Array(pl.Int64, 3))
+    assert_series_equal(
+        s.explode(empty_as_null=True), pl.Series("a", list(range(1, 10)), pl.Int64)
+    )
+
+    s = pl.Series("a", [[1, 2, 3], [4, 5, 6], None], pl.Array(pl.Int64, 3))
+    assert_series_equal(
+        s.explode(empty_as_null=True),
+        pl.Series("a", list(range(1, 7)) + [None], pl.Int64),
+    )
+    assert_series_equal(
+        s.explode(keep_nulls=False, empty_as_null=True),
+        pl.Series("a", list(range(1, 7)), pl.Int64),
+    )
+
+    s = pl.Series("a", [[], [], None], pl.Array(pl.Int64, 0))
+    assert_series_equal(
+        s.explode(empty_as_null=True), pl.Series("a", [None] * 3, pl.Int64)
+    )
+    assert_series_equal(
+        s.explode(keep_nulls=False, empty_as_null=True),
+        pl.Series("a", [None] * 2, pl.Int64),
+    )
+    assert_series_equal(
+        s.explode(empty_as_null=False), pl.Series("a", [None], pl.Int64)
+    )
+    assert_series_equal(
+        s.explode(empty_as_null=False, keep_nulls=False), pl.Series("a", [], pl.Int64)
+    )
+
+
+def test_explode_params() -> None:
+    df = pl.DataFrame({"a": [[1, 2, 3], None, [4, 5, 6], []], "b": [1, 2, 3, 4]})
+
+    assert_frame_equal(
+        df.explode("a", empty_as_null=True),
+        pl.DataFrame(
+            {"a": [1, 2, 3, None, 4, 5, 6, None], "b": [1, 1, 1, 2, 3, 3, 3, 4]}
+        ),
+    )
+    assert_frame_equal(
+        df.explode("a", empty_as_null=False),
+        pl.DataFrame({"a": [1, 2, 3, None, 4, 5, 6], "b": [1, 1, 1, 2, 3, 3, 3]}),
+    )
+    assert_frame_equal(
+        df.explode("a", empty_as_null=True, keep_nulls=False),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 6, None], "b": [1, 1, 1, 3, 3, 3, 4]}),
+    )
+    assert_frame_equal(
+        df.explode("a", empty_as_null=False, keep_nulls=False),
+        pl.DataFrame({"a": [1, 2, 3, 4, 5, 6], "b": [1, 1, 1, 3, 3, 3]}),
+    )

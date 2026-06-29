@@ -15,6 +15,20 @@ source = "s3://bucket/*.parquet"
 df = pl.scan_parquet(source).filter(pl.col("id") < 100).select("id","value").collect()
 # --8<-- [end:scan_parquet_query]
 
+# --8<-- [start:storage_options_retry_configuration]
+import polars as pl
+
+pl.scan_parquet(
+    "s3://bucket/*.parquet",
+    storage_options={
+        "max_retries": 3,
+        "retry_timeout_ms": 9873,
+        "retry_init_backoff_ms": 9874,
+        "retry_max_backoff_ms": 9875,
+        "retry_base_multiplier": 3.14159,
+    },
+)
+# --8<-- [end:storage_options_retry_configuration]
 
 # --8<-- [start:scan_parquet_storage_options_aws]
 import polars as pl
@@ -33,7 +47,7 @@ df = pl.scan_parquet(source, storage_options=storage_options).collect()
 lf = pl.scan_parquet(
     "s3://.../...",
     credential_provider=pl.CredentialProviderAWS(
-        profile_name="..."
+        profile_name="...",
         assume_role={
             "RoleArn": f"...",
             "RoleSessionName": "...",
@@ -43,6 +57,18 @@ lf = pl.scan_parquet(
 
 df = lf.collect()
 # --8<-- [end:credential_provider_class]
+
+# --8<-- [start:credential_provider_class_global_default]
+pl.Config.set_default_credential_provider(
+    pl.CredentialProviderAWS(
+        profile_name="...",
+        assume_role={
+            "RoleArn": f"...",
+            "RoleSessionName": "...",
+        },
+    )
+)
+# --8<-- [end:credential_provider_class_global_default]
 
 # --8<-- [start:credential_provider_custom_func]
 def get_credentials() -> pl.CredentialProviderFunctionReturn:
@@ -81,7 +107,7 @@ pl.scan_parquet(
 pl.scan_parquet(
     "abfss://...@.../...",
     credential_provider=pl.CredentialProviderAzure(
-        credentials=DefaultAzureCredential(exclude_managed_identity_credential=True)
+        credential=DefaultAzureCredential(exclude_managed_identity_credential=True)
     ),
 )
 

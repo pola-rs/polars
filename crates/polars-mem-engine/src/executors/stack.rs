@@ -38,11 +38,11 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 // We don't have to do a broadcast check as cse is not allowed to hit this.
-                df._add_columns(res.into_iter().collect(), schema)?;
+                df.with_columns_mut(res, schema)?;
                 Ok(df)
             });
 
-            let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let df = RAYON.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             accumulate_dataframes_vertical_unchecked(df)
         }
         // Only horizontal parallelism
@@ -65,13 +65,13 @@ impl StackExec {
                 // new, unique column names. It is immediately
                 // followed by a projection which pulls out the
                 // possibly mismatching column lengths.
-                unsafe { df.column_extend_unchecked(res) };
+                unsafe { df.columns_mut() }.extend(res);
             } else {
                 let (df_height, df_width) = df.shape();
 
                 // When we have CSE we cannot verify scalars yet.
-                let verify_scalar = if !df.get_columns().is_empty() {
-                    !df.get_columns()[df.width() - 1]
+                let verify_scalar = if !df.columns().is_empty() {
+                    !df.columns()[df.width() - 1]
                         .name()
                         .starts_with(CSE_REPLACED)
                 } else {
@@ -95,7 +95,7 @@ impl StackExec {
                         }
                     }
                 }
-                df._add_columns(res.into_iter().collect(), schema)?;
+                df.with_columns_mut(res, schema)?;
             }
             df
         };

@@ -9,11 +9,11 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.convert import parse_as_duration_string
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import TimeUnit
+    from polars._typing import PolarsTemporalType, TimeUnit
 
 
 @given(
@@ -166,3 +166,62 @@ def test_truncate_invalid() -> None:
     s = pl.Series([date(2020, 1, 1)])
     with pytest.raises(ComputeError, match="cannot mix"):
         s.dt.truncate("1d1h")
+
+
+@pytest.mark.parametrize(
+    "dtype", [pl.Date, pl.Datetime, pl.Datetime("ms", time_zone="America/New_York")]
+)
+def test_truncate_invalid_duration(dtype: PolarsTemporalType) -> None:
+    df = pl.DataFrame(
+        {
+            "t": pl.Series([date(2020, 1, 15), date(2020, 4, 15)], dtype=dtype),
+            "every": ["1mo", "2"],  # 2 is invalid
+        }
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a valid unit to follow integer in the duration string '1'",
+    ):
+        df.select(pl.col("t").dt.truncate(every="1"))
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="expected a valid unit to follow integer in the duration string '2'",
+    ):
+        df.select(pl.col("t").dt.truncate(every=pl.col("every")))
+
+
+def test_truncate_empty_22835() -> None:
+    # Test with Datetime
+    df = pl.DataFrame(
+        schema=[("timestamp", pl.Datetime), ("truncate_interval", pl.Utf8)]
+    )
+    result = df.with_columns(
+        pl.col("timestamp").dt.truncate(pl.col("truncate_interval"))
+    )
+    assert result.shape == (0, 2)
+    assert result.schema == {
+        "timestamp": pl.Datetime("us"),
+        "truncate_interval": pl.Utf8,
+    }
+
+    # Test with Date
+    df = pl.DataFrame(schema=[("date", pl.Date), ("truncate_interval", pl.Utf8)])
+    result = df.with_columns(pl.col("date").dt.truncate(pl.col("truncate_interval")))
+    assert result.shape == (0, 2)
+    assert result.schema == {"date": pl.Date, "truncate_interval": pl.Utf8}
+
+
+def test_round_empty_22835() -> None:
+    # Test with Datetime
+    df = pl.DataFrame(schema=[("timestamp", pl.Datetime), ("round_interval", pl.Utf8)])
+    result = df.with_columns(pl.col("timestamp").dt.round(pl.col("round_interval")))
+    assert result.shape == (0, 2)
+    assert result.schema == {"timestamp": pl.Datetime("us"), "round_interval": pl.Utf8}
+
+    # Test with Date
+    df = pl.DataFrame(schema=[("date", pl.Date), ("round_interval", pl.Utf8)])
+    result = df.with_columns(pl.col("date").dt.round(pl.col("round_interval")))
+    assert result.shape == (0, 2)
+    assert result.schema == {"date": pl.Date, "round_interval": pl.Utf8}

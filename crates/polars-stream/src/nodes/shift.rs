@@ -1,14 +1,15 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::*;
 use polars_core::schema::Schema;
+use polars_ooc::{MostRecentSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
-use crate::async_primitives::connector::{Receiver, Sender};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::in_memory_sink::InMemorySinkNode;
+use crate::pipe::PortReceiver;
 
 #[allow(private_interfaces)]
 pub enum ShiftNode {
@@ -25,16 +26,17 @@ struct ShiftState {
     offset: i64,
     rows_received: usize,
     rows_sent: usize,
-    buffer: VecDeque<DataFrame>,
+    frames: VecDeque<SpillFrame>,
     fill: DataFrame,
     seq: MorselSeq,
+    spill_ctx: Arc<MostRecentSpillContext>,
 }
 
 impl ShiftState {
     async fn shift_positive(
         &mut self,
-        mut recv: Option<Receiver<Morsel>>,
-        mut send: Sender<Morsel>,
+        mut recv: Option<PortReceiver>,
+        mut send: PortSender,
     ) -> PolarsResult<()> {
         let mut source_token = SourceToken::new();
         let wait_group = WaitGroup::default();
@@ -45,11 +47,12 @@ impl ShiftState {
                 if let Some(r) = &mut recv {
                     let Ok(morsel) = r.recv().await else { break };
                     source_token = morsel.source_token().clone();
-                    if morsel.df().is_empty() {
+                    if morsel.height() == 0 {
                         continue;
                     }
-                    self.rows_received += morsel.df().height();
-                    self.buffer.push_back(morsel.into_df());
+                    self.rows_received += morsel.height();
+                    self.frames
+                        .push_back(SpillFrame::new(morsel.into_df(), &*self.spill_ctx).await);
                 }
             }
 
@@ -59,11 +62,15 @@ impl ShiftState {
                 let len = self.rows_received.min(self.offset as usize) - self.rows_sent;
                 df = self.fill.new_from_index(0, len);
             } else {
-                let src = self.buffer.front_mut().unwrap();
+                let src = self.frames.front_mut().unwrap();
                 let len = self.rows_received - self.rows_sent;
-                (df, *src) = src.split_at(len as i64);
-                if src.is_empty() {
-                    self.buffer.pop_front();
+                let mut src_df = src.get_mut().await;
+                let (head, tail) = src_df.split_at(len as i64);
+                *src_df = tail;
+                df = head;
+                drop(src_df);
+                if src.height() == 0 {
+                    self.frames.pop_front();
                 }
             };
             self.rows_sent += df.height();
@@ -75,9 +82,6 @@ impl ShiftState {
                 break;
             }
             wait_group.wait().await;
-            if source_token.stop_requested() {
-                break;
-            }
         }
 
         Ok(())
@@ -85,25 +89,25 @@ impl ShiftState {
 
     async fn shift_negative(
         &mut self,
-        mut recv: Receiver<Morsel>,
-        mut send: Sender<Morsel>,
+        mut recv: PortReceiver,
+        mut send: PortSender,
     ) -> PolarsResult<()> {
         let shift = self.offset.unsigned_abs() as usize;
 
         while let Ok(mut morsel) = recv.recv().await {
             let shift_needed = shift.saturating_sub(self.rows_received);
-            self.rows_received += morsel.df().height();
+            self.rows_received += morsel.height();
             if shift_needed > 0 {
                 morsel =
                     morsel.map(|df| df.slice(shift_needed.min(df.height()) as i64, df.height()));
             }
-            if morsel.df().is_empty() {
+            if morsel.height() == 0 {
                 continue;
             }
 
             morsel.set_seq(self.seq);
             self.seq = self.seq.successor();
-            self.rows_sent += morsel.df().height();
+            self.rows_sent += morsel.height();
             if send.send(morsel).await.is_err() {
                 break;
             }
@@ -114,7 +118,7 @@ impl ShiftState {
 
     async fn flush_negative(
         &mut self,
-        mut send: Sender<Morsel>,
+        mut send: PortSender,
         state: &StreamingExecutionState,
     ) -> PolarsResult<()> {
         let source_token = SourceToken::new();
@@ -137,9 +141,6 @@ impl ShiftState {
                 break;
             }
             wait_group.wait().await;
-            if source_token.stop_requested() {
-                break;
-            }
         }
 
         Ok(())
@@ -171,7 +172,9 @@ impl ComputeNode for ShiftNode {
         assert!(recv.len() <= 3 && send.len() == 1);
 
         // Are we done?
-        if recv[0] == PortState::Done {
+        if send[0] == PortState::Done {
+            *self = Self::Done;
+        } else if recv[0] == PortState::Done {
             if let Self::Shifting(shift_state) = self {
                 if shift_state.rows_sent == shift_state.rows_received {
                     *self = Self::Done;
@@ -189,7 +192,7 @@ impl ComputeNode for ShiftNode {
             {
                 let offset_frame = offset.get_output()?.unwrap();
                 polars_ensure!(offset_frame.height() == 1, ComputeError: "got more than one value for 'n' in shift");
-                let offset_item = offset_frame.get_columns()[0].get(0)?;
+                let offset_item = offset_frame.columns()[0].get(0)?;
                 let offset = if offset_item.is_null() {
                     polars_warn!(
                         Deprecation, // @2.0
@@ -215,9 +218,10 @@ impl ComputeNode for ShiftNode {
                     offset,
                     rows_received: 0,
                     rows_sent: 0,
-                    buffer: VecDeque::new(),
+                    frames: VecDeque::new(),
                     fill: fill_frame,
                     seq: MorselSeq::default(),
+                    spill_ctx: MostRecentSpillContext::new("shift".into()),
                 })
             }
         }

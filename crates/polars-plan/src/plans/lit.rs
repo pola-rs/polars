@@ -2,10 +2,11 @@ use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "temporal")]
 use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
+use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
-use polars_utils::hashing::hash_to_partition;
+use polars_utils::float16::pf16;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -93,33 +94,27 @@ impl DynListLiteralValue {
 
         let s = match self {
             DynListLiteralValue::Str(vs) => {
-                StringChunked::from_iter_options(PlSmallStr::from_static("literal"), vs.into_iter())
-                    .into_series()
+                StringChunked::from_iter_options(get_literal_name(), vs.into_iter()).into_series()
             },
             DynListLiteralValue::Int(vs) => {
                 #[cfg(feature = "dtype-i128")]
                 {
-                    Int128Chunked::from_iter_options(
-                        PlSmallStr::from_static("literal"),
-                        vs.into_iter(),
-                    )
-                    .into_series()
+                    Int128Chunked::from_iter_options(get_literal_name(), vs.into_iter())
+                        .into_series()
                 }
 
                 #[cfg(not(feature = "dtype-i128"))]
                 {
                     Int64Chunked::from_iter_options(
-                        PlSmallStr::from_static("literal"),
+                        get_literal_name(),
                         vs.into_iter().map(|v| v.map(|v| v as i64)),
                     )
                     .into_series()
                 }
             },
-            DynListLiteralValue::Float(vs) => Float64Chunked::from_iter_options(
-                PlSmallStr::from_static("literal"),
-                vs.into_iter(),
-            )
-            .into_series(),
+            DynListLiteralValue::Float(vs) => {
+                Float64Chunked::from_iter_options(get_literal_name(), vs.into_iter()).into_series()
+            },
             DynListLiteralValue::List(_) => todo!("nested lists"),
         };
 
@@ -215,9 +210,9 @@ impl RangeLiteralValue {
 
 impl LiteralValue {
     /// Get the output name as [`PlSmallStr`].
-    pub(crate) fn output_column_name(&self) -> &PlSmallStr {
+    pub(crate) fn output_column_name(&self) -> PlSmallStr {
         match self {
-            LiteralValue::Series(s) => s.name(),
+            LiteralValue::Series(s) => s.name().clone(),
             _ => get_literal_name(),
         }
     }
@@ -294,6 +289,10 @@ impl LiteralValue {
 
     pub fn is_scalar(&self) -> bool {
         !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
+    }
+
+    pub fn is_nan(&self) -> bool {
+        self.to_any_value().is_some_and(|av| av.is_nan())
     }
 
     pub fn to_any_value(&self) -> Option<AnyValue<'_>> {
@@ -491,6 +490,8 @@ macro_rules! make_dyn_lit {
 }
 
 make_literal!(bool, Boolean);
+
+make_literal_typed!(pf16, Float16);
 make_literal_typed!(f32, Float32);
 make_literal_typed!(f64, Float64);
 make_literal_typed!(i8, Int8);
@@ -502,7 +503,9 @@ make_literal_typed!(u8, UInt8);
 make_literal_typed!(u16, UInt16);
 make_literal_typed!(u32, UInt32);
 make_literal_typed!(u64, UInt64);
+make_literal_typed!(u128, UInt128);
 
+make_dyn_lit!(pf16, Float);
 make_dyn_lit!(f32, Float);
 make_dyn_lit!(f64, Float);
 make_dyn_lit!(i8, Int);
@@ -514,6 +517,7 @@ make_dyn_lit!(u16, Int);
 make_dyn_lit!(u32, Int);
 make_dyn_lit!(u64, Int);
 make_dyn_lit!(i128, Int);
+make_dyn_lit!(u128, Int);
 
 /// The literal Null
 pub struct Null {}
@@ -607,17 +611,6 @@ impl Literal for Scalar {
     }
 }
 
-/// Create a Literal Expression from `L`. A literal expression behaves like a column that contains a single distinct
-/// value.
-///
-/// The column is automatically of the "correct" length to make the operations work. Often this is determined by the
-/// length of the `LazyFrame` it is being used with. For instance, `lazy_df.with_column(lit(5).alias("five"))` creates a
-/// new column named "five" that is the length of the Dataframe (at the time `collect` is called), where every value in
-/// the column is `5`.
-pub fn lit<L: Literal>(t: L) -> Expr {
-    t.lit()
-}
-
 pub fn typed_lit<L: TypedLiteral>(t: L) -> Expr {
     t.typed_lit()
 }
@@ -627,17 +620,14 @@ impl Hash for LiteralValue {
         std::mem::discriminant(self).hash(state);
         match self {
             LiteralValue::Series(s) => {
-                // Free stats
-                s.dtype().hash(state);
-                let len = s.len();
-                len.hash(state);
-                s.null_count().hash(state);
-                const RANDOM: u64 = 0x2c194fa5df32a367;
-                let mut rng = (len as u64) ^ RANDOM;
-                for _ in 0..std::cmp::min(5, len) {
-                    let idx = hash_to_partition(rng, len);
-                    s.get(idx).unwrap().hash(state);
-                    rng = rng.rotate_right(17).wrapping_add(RANDOM);
+                state.write_usize(if s.len() > CHEAP_SERIES_HASH_LIMIT {
+                    Arc::as_ptr(&s.0) as *const () as usize
+                } else {
+                    0
+                });
+
+                for av in s.iter().take(CHEAP_SERIES_HASH_LIMIT) {
+                    av.hash(state)
                 }
             },
             LiteralValue::Range(range) => range.hash(state),

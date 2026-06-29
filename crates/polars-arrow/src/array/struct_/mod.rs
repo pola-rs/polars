@@ -124,7 +124,7 @@ impl StructArray {
 
     /// Creates an empty [`StructArray`].
     pub fn new_empty(dtype: ArrowDataType) -> Self {
-        if let ArrowDataType::Struct(fields) = &dtype.to_logical_type() {
+        if let ArrowDataType::Struct(fields) = &dtype.to_storage() {
             let values = fields
                 .iter()
                 .map(|field| new_empty_array(field.dtype().clone()))
@@ -245,7 +245,7 @@ impl StructArray {
 impl StructArray {
     /// Returns the fields the `DataType::Struct`.
     pub(crate) fn try_get_fields(dtype: &ArrowDataType) -> PolarsResult<&[Field]> {
-        match dtype.to_logical_type() {
+        match dtype.to_storage() {
             ArrowDataType::Struct(fields) => Ok(fields),
             _ => {
                 polars_bail!(ComputeError: "Struct array must be created with a DataType whose physical type is Struct")

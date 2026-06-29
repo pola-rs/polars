@@ -149,6 +149,15 @@ impl<M: MutableArray> MutableFixedSizeListArray<M> {
             validity.shrink_to_fit()
         }
     }
+
+    pub fn freeze(mut self) -> FixedSizeListArray {
+        FixedSizeListArray::new(
+            self.dtype,
+            self.length,
+            self.values.as_box(),
+            self.validity.map(|b| b.freeze()),
+        )
+    }
 }
 
 impl<M: MutableArray + 'static> MutableArray for MutableFixedSizeListArray<M> {

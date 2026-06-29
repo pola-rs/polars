@@ -39,8 +39,14 @@ pub fn replace(s: &Series, old: &ListChunked, new: &ListChunked) -> PolarsResult
         nyi = "`replace` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
 
     if old.is_empty() {
         return Ok(s.clone());
@@ -83,8 +89,14 @@ pub fn replace_or_default(
         nyi = "`replace_strict` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
 
     polars_ensure!(
         default.len() == s.len() || default.len() == 1,
@@ -136,8 +148,14 @@ pub fn replace_strict(
         nyi = "`replace_strict` with a replacement pattern per row"
     );
 
-    let old = old.explode(true)?;
-    let new = new.explode(true)?;
+    let old = old.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
+    let new = new.explode(ExplodeOptions {
+        empty_as_null: false,
+        keep_nulls: true,
+    })?;
 
     if old.is_empty() {
         polars_ensure!(
@@ -148,7 +166,17 @@ pub fn replace_strict(
     }
     validate_old(&old)?;
 
+    // Extra check because strict_cast is too permissive, e.g. allows string -> struct cast.
+    if old.dtype().can_cast_to(s.dtype()) != Some(true) {
+        polars_bail!(
+            InvalidOperation: "cannot use values of type `{}` to replace values in a column of type `{}`",
+            old.dtype(),
+            s.dtype()
+        )
+    }
+
     let old = old.strict_cast(s.dtype())?;
+
     let new = match return_dtype {
         Some(dtype) => new.strict_cast(&dtype)?,
         None => new,
@@ -183,6 +211,7 @@ fn replace_by_single(
     }
     new.zip_with(&mask, default)
 }
+
 /// Fast path for replacing by a single value in strict mode
 fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
     let mask = get_replacement_mask(s, old)?;
@@ -196,6 +225,7 @@ fn replace_by_single_strict(s: &Series, old: &Series, new: &Series) -> PolarsRes
     }
     Ok(out)
 }
+
 /// Get a boolean mask of which values in the original Series will be replaced.
 ///
 /// Null values are propagated to the mask.
@@ -203,6 +233,8 @@ fn get_replacement_mask(s: &Series, old: &Series) -> PolarsResult<BooleanChunked
     if old.null_count() == old.len() {
         // Fast path for when users are using `replace(None, ...)` instead of `fill_null`.
         Ok(s.is_null())
+    } else if old.len() == 1 {
+        Ok(s.equal(old)?)
     } else {
         let old = old.implode()?;
         is_in(s, &old.into_series(), false)
@@ -305,7 +337,7 @@ fn create_replacer(mut old: Series, mut new: Series, add_mask: bool) -> PolarsRe
     } else {
         vec![old.into(), new.into()]
     };
-    let out = unsafe { DataFrame::new_no_checks(len, cols) };
+    let out = unsafe { DataFrame::new_unchecked(len, cols) };
     Ok(out)
 }
 

@@ -1,5 +1,4 @@
-use crate::async_primitives::morsel_linearizer::MorselLinearizer;
-use crate::morsel::Morsel;
+use crate::morsel::{Morsel, MorselLinearizer};
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputRecv;
 
 #[derive(Copy, Clone)]

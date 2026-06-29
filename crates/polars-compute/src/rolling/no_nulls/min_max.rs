@@ -37,7 +37,7 @@ macro_rules! rolling_minmax_func {
                 false => det_offsets,
             };
             match weights {
-                None => rolling_apply_agg_window::<MinMaxWindow<T, $policy>, _, _>(
+                None => rolling_apply_agg_window::<MinMaxWindow<T, $policy>, _, _, _>(
                     values,
                     window_size,
                     min_periods,

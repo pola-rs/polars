@@ -2,48 +2,17 @@ use std::borrow::Cow;
 
 use arrow::array::PrimitiveArray;
 use num_traits::Zero;
+use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
 
 use super::*;
 
-pub trait SumCast: Sized {
-    type Sum: NumericNative + From<Self>;
-}
-
-macro_rules! impl_sum_cast {
-    ($($x:ty),*) => {
-        $(impl SumCast for $x { type Sum = $x; })*
-    };
-    ($($from:ty as $to:ty),*) => {
-        $(impl SumCast for $from { type Sum = $to; })*
-    };
-}
-
-impl_sum_cast!(
-    bool as IdxSize,
-    u8 as i64,
-    u16 as i64,
-    i8 as i64,
-    i16 as i64
-);
-impl_sum_cast!(u32, u64, i32, i64, f32, f64);
-#[cfg(feature = "dtype-i128")]
-impl_sum_cast!(i128);
-
-fn out_dtype(in_dtype: &DataType) -> DataType {
-    use DataType::*;
-    match in_dtype {
-        Boolean => IDX_DTYPE,
-        Int8 | UInt8 | Int16 | UInt16 => Int64,
-        dt => dt.clone(),
-    }
-}
-
-pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
+pub fn new_sum_reduction(dtype: DataType) -> PolarsResult<Box<dyn GroupedReduction>> {
+    // TODO: Move the error checks up and make this function infallible
     use DataType::*;
     use VecGroupedReduction as VGR;
-    match dtype {
+    Ok(match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolSumReducer)),
         _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
@@ -53,10 +22,18 @@ pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumSumReducer::<Int128Type>(PhantomData))),
         Duration(_) => Box::new(VGR::new(dtype, NumSumReducer::<Int64Type>(PhantomData))),
-        // For compatibility with the current engine, should probably be an error.
-        String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),
-        _ => unimplemented!("{dtype:?} is not supported by sum reduction"),
-    }
+        Null => Box::new(super::NullGroupedReduction::new(Scalar::null(
+            DataType::Null,
+        ))),
+        String => {
+            polars_bail!(
+                op = "`sum`",
+                DataType::String,
+                hint = "you may mean to call `str.join` or `list.join`"
+            );
+        },
+        _ => polars_bail!(op = "`sum`", dtype),
+    })
 }
 
 struct NumSumReducer<T>(PhantomData<T>);
@@ -121,7 +98,11 @@ where
         assert!(m.is_none());
         let arr = Box::new(PrimitiveArray::from_vec(v));
         Ok(unsafe {
-            Series::from_chunks_and_dtype_unchecked(PlSmallStr::EMPTY, vec![arr], &out_dtype(dtype))
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                vec![arr],
+                &sum_output_dtype(dtype),
+            )
         })
     }
 }

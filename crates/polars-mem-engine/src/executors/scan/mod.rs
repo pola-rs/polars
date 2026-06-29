@@ -8,8 +8,8 @@ use polars_utils::slice_enum::Slice;
 #[cfg(feature = "python")]
 pub(crate) use self::python_scan::*;
 use super::*;
-use crate::ScanPredicate;
 use crate::prelude::*;
+use crate::scan_predicate::ScanPredicate;
 
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {

@@ -245,8 +245,8 @@ def test_replace_ambiguous() -> None:
     with pytest.raises(
         ComputeError,
         match=(
-            "datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'. "
-            "Please use `ambiguous` to tell how it should be localized."
+            r"datetime '2020-10-25 01:00:00' is ambiguous in time zone 'Europe/London'\. "
+            r"Please use `ambiguous` to tell how it should be localized"
         ),
     ):
         value.dt.replace(hour=1, ambiguous="raise")
@@ -255,8 +255,8 @@ def test_replace_ambiguous() -> None:
 def test_replace_datetime_preserve_ns() -> None:
     df = pl.DataFrame(
         {
-            "a": pl.Series(["2020-01-01T00:00:00.123456789"] * 2).cast(
-                pl.Datetime("ns")
+            "a": pl.Series(["2020-01-01T00:00:00.123456789"] * 2).str.to_datetime(
+                time_unit="ns"
             ),
             "year": [2021, None],
             "microsecond": [50, None],
@@ -275,13 +275,13 @@ def test_replace_datetime_preserve_ns() -> None:
                     "2021-01-01T00:00:00.123456789",
                     "2020-01-01T00:00:00.123456789",
                 ]
-            ).cast(pl.Datetime("ns")),
+            ).str.to_datetime(time_unit="ns"),
             "us": pl.Series(
                 [
                     "2020-01-01T00:00:00.000050",
                     "2020-01-01T00:00:00.123456789",
                 ]
-            ).cast(pl.Datetime("ns")),
+            ).str.to_datetime(time_unit="ns"),
         }
     )
 

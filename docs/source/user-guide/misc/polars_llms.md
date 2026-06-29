@@ -1,11 +1,37 @@
 # Generating Polars code with LLMs
 
-Large Language Models (LLMs) can sometimes return Pandas code or invalid Polars code in their
+Large Language Models (LLMs) can sometimes return pandas code or invalid Polars code in their
 output. This guide presents approaches that help LLMs generate valid Polars code more consistently.
 
 These approaches have been developed by the Polars community through testing model responses to
 various inputs. If you find additional effective approaches for generating Polars code from LLMs,
 please raise a [pull request](https://github.com/pola-rs/polars/pulls).
+
+## Polars MCP server
+
+The new remote Model Context Protocol (MCP) server for Polars provides access to the official Polars
+and Polars Cloud documentation. The server enables LLMs to query the user guide and API references
+directly, making it easier to get more accurate answers about DataFrame operations, expressions,
+lazy evaluation, and cloud deployments.
+
+```json
+{
+  "mcpServers": {
+    "ask_polars": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://mcp.pola.rs/mcp"]
+    }
+  }
+}
+```
+
+If you run into an issue or are missing a feature, please
+[open an issue](https://github.com/pola-rs/polars/issues) on the public issue tracker. We plan to
+expand the capabilities over time.
+
+!!! note "MCP server installation"
+
+    Please refer to the documentation of your preferred client to connect to the MCP server.
 
 ## System prompt
 

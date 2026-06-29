@@ -37,6 +37,7 @@ use polars_utils::algebraic_ops::*;
 const CHUNK_SIZE: usize = 128;
 
 #[derive(Default, Clone)]
+#[repr(C)] // For serialization, don't change struct member order.
 pub struct VarState {
     weight: f64,
     mean: f64,
@@ -44,6 +45,7 @@ pub struct VarState {
 }
 
 #[derive(Default, Clone)]
+#[repr(C)] // For serialization, don't change struct member order.
 pub struct CovState {
     weight: f64,
     mean_x: f64,
@@ -52,6 +54,7 @@ pub struct CovState {
 }
 
 #[derive(Default, Clone)]
+#[repr(C)] // For serialization, don't change struct member order.
 pub struct PearsonState {
     weight: f64,
     mean_x: f64,
@@ -140,6 +143,10 @@ impl VarState {
 }
 
 impl CovState {
+    pub fn weight(&self) -> f64 {
+        self.weight
+    }
+
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
         if x.is_empty() {
@@ -160,6 +167,19 @@ impl CovState {
                     .map(|(&xi, &yi)| (xi - mean_x) * (yi - mean_y)),
             ),
         }
+    }
+
+    pub fn insert_one(&mut self, x: f64, y: f64) {
+        let new_weight = self.weight + 1.0;
+        let new_weight_frac = 1.0 / new_weight;
+        let delta_mean_x = x - self.mean_x;
+        let delta_mean_y = y - self.mean_y;
+        let new_mean_x = self.mean_x + delta_mean_x * new_weight_frac;
+        let new_mean_y = self.mean_y + delta_mean_y * new_weight_frac;
+        self.dp_xy += (x - new_mean_x) * delta_mean_y;
+        self.weight = new_weight;
+        self.mean_x = new_mean_x;
+        self.mean_y = new_mean_y;
     }
 
     pub fn combine(&mut self, other: &Self) {
@@ -192,6 +212,10 @@ impl CovState {
 }
 
 impl PearsonState {
+    pub fn weight(&self) -> f64 {
+        self.weight
+    }
+
     fn new(x: &[f64], y: &[f64]) -> Self {
         assert!(x.len() == y.len());
         if x.is_empty() {
@@ -218,6 +242,21 @@ impl PearsonState {
             dp_xy,
             dp_yy,
         }
+    }
+
+    pub fn insert_one(&mut self, x: f64, y: f64) {
+        let new_weight = self.weight + 1.0;
+        let new_weight_frac = 1.0 / new_weight;
+        let delta_mean_x = x - self.mean_x;
+        let delta_mean_y = y - self.mean_y;
+        let new_mean_x = self.mean_x + delta_mean_x * new_weight_frac;
+        let new_mean_y = self.mean_y + delta_mean_y * new_weight_frac;
+        self.dp_xx += (x - new_mean_x) * delta_mean_x;
+        self.dp_xy += (x - new_mean_x) * delta_mean_y;
+        self.dp_yy += (y - new_mean_y) * delta_mean_y;
+        self.weight = new_weight;
+        self.mean_x = new_mean_x;
+        self.mean_y = new_mean_y;
     }
 
     pub fn combine(&mut self, other: &Self) {
@@ -253,6 +292,7 @@ impl PearsonState {
 }
 
 #[derive(Default, Clone)]
+#[repr(C)] // For serialization, don't change struct member order.
 pub struct SkewState {
     weight: f64,
     mean: f64,
@@ -262,15 +302,19 @@ pub struct SkewState {
 
 impl SkewState {
     fn new(x: &[f64]) -> Self {
-        if x.is_empty() {
+        Self::from_iter(x.iter().copied(), x.len())
+    }
+
+    fn from_iter(iter: impl Iterator<Item = f64> + Clone, length: usize) -> Self {
+        if length == 0 {
             return Self::default();
         }
 
-        let weight = x.len() as f64;
-        let mean = alg_sum_f64(x.iter().copied()) / weight;
+        let weight = length as f64;
+        let mean = alg_sum_f64(iter.clone()) / weight;
         let mut m2 = 0.0;
         let mut m3 = 0.0;
-        for xi in x.iter() {
+        for xi in iter {
             let d = xi - mean;
             let d2 = d * d;
             let d3 = d * d2;
@@ -291,6 +335,24 @@ impl SkewState {
             self.mean = 0.0;
             self.m2 = 0.0;
             self.m3 = 0.0;
+        }
+    }
+
+    pub fn from_array(arr: &PrimitiveArray<f64>, start: usize, length: usize) -> Self {
+        let validity = arr.validity().cloned();
+        let validity = validity
+            .map(|v| v.sliced(start, length))
+            .filter(|v| v.unset_bits() > 0);
+
+        match validity {
+            None => Self::new(&arr.values().as_slice()[start..][..length]),
+            Some(validity) => {
+                let iter = arr.values()[start..][..length].iter().copied();
+                let iter = iter
+                    .zip(validity.iter())
+                    .filter_map(|(x, v)| v.then_some(x));
+                Self::from_iter(iter, validity.set_bits())
+            },
         }
     }
 
@@ -385,6 +447,7 @@ impl SkewState {
 }
 
 #[derive(Default, Clone)]
+#[repr(C)] // For serialization, don't change struct member order.
 pub struct KurtosisState {
     weight: f64,
     mean: f64,
@@ -394,17 +457,21 @@ pub struct KurtosisState {
 }
 
 impl KurtosisState {
-    fn new(x: &[f64]) -> Self {
-        if x.is_empty() {
+    pub fn new(x: &[f64]) -> Self {
+        Self::from_iter(x.iter().copied(), x.len())
+    }
+
+    pub fn from_iter(iter: impl Iterator<Item = f64> + Clone, length: usize) -> Self {
+        if length == 0 {
             return Self::default();
         }
 
-        let weight = x.len() as f64;
-        let mean = alg_sum_f64(x.iter().copied()) / weight;
+        let weight = length as f64;
+        let mean = alg_sum_f64(iter.clone()) / weight;
         let mut m2 = 0.0;
         let mut m3 = 0.0;
         let mut m4 = 0.0;
-        for xi in x.iter() {
+        for xi in iter {
             let d = xi - mean;
             let d2 = d * d;
             let d3 = d * d2;
@@ -419,6 +486,24 @@ impl KurtosisState {
             m2,
             m3,
             m4,
+        }
+    }
+
+    pub fn from_array(arr: &PrimitiveArray<f64>, start: usize, length: usize) -> Self {
+        let validity = arr.validity().cloned();
+        let validity = validity
+            .map(|v| v.sliced(start, length))
+            .filter(|v| v.unset_bits() > 0);
+
+        match validity {
+            None => Self::new(&arr.values().as_slice()[start..][..length]),
+            Some(validity) => {
+                let iter = arr.values()[start..][..length].iter().copied();
+                let iter = iter
+                    .zip(validity.iter())
+                    .filter_map(|(x, v)| v.then_some(x));
+                Self::from_iter(iter, validity.set_bits())
+            },
         }
     }
 

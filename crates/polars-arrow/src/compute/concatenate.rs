@@ -1,6 +1,5 @@
-use std::sync::Arc;
-
 use hashbrown::hash_map::Entry;
+use polars_buffer::Buffer;
 use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::itertools::Itertools;
@@ -8,7 +7,6 @@ use polars_utils::vec::PushUnchecked;
 
 use crate::array::*;
 use crate::bitmap::{Bitmap, BitmapBuilder};
-use crate::buffer::Buffer;
 use crate::datatypes::PhysicalType;
 use crate::offset::Offsets;
 use crate::types::{NativeType, Offset};
@@ -77,8 +75,14 @@ pub fn concatenate_unchecked<A: AsRef<dyn Array>>(arrays: &[A]) -> PolarsResult<
         polars_bail!(InvalidOperation: "concat requires input of at least one array")
     }
 
-    if arrays.len() == 1 {
+    let mut non_empty_arrays_iter = arrays.iter().filter(|arr| !arr.as_ref().is_empty());
+
+    let Some(first_non_empty) = non_empty_arrays_iter.next() else {
         return Ok(arrays[0].as_ref().to_boxed());
+    };
+
+    if non_empty_arrays_iter.next().is_none() {
+        return Ok(first_non_empty.as_ref().to_boxed());
     }
 
     use PhysicalType::*;
@@ -218,24 +222,23 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
         max_arr_bufferset_len = max_arr_bufferset_len.max(arr.data_buffers().len());
         total_nondedup_buffers += arr.data_buffers().len();
         // Fat pointer equality, checks both start and length.
-        all_same_bufs &= std::ptr::eq(
-            Arc::as_ptr(arr.data_buffers()),
-            Arc::as_ptr(first_arr.data_buffers()),
-        );
+        all_same_bufs &= Buffer::is_same_buffer(arr.data_buffers(), first_arr.data_buffers());
     }
 
-    let mut total_bytes_len = 0;
+    let mut total_bytes_len = None;
     let mut views = Vec::with_capacity(total_len);
 
     let mut total_buffer_len = 0;
     let buffers = if all_same_bufs {
         total_buffer_len = first_arr.total_buffer_len();
+        let mut bytes_len = 0;
         for arr in arrays {
             let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
             views.extend_from_slice(arr.views());
-            total_bytes_len += arr.total_bytes_len();
+            bytes_len += arr.total_bytes_len();
         }
-        Arc::clone(first_arr.data_buffers())
+        total_bytes_len = Some(bytes_len);
+        Buffer::clone(first_arr.data_buffers())
 
     // There might be way more buffers than elements, so we only dedup if there
     // is at least one element per buffer on average.
@@ -279,7 +282,6 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
                         view.buffer_idx = new_buffer_idx;
                     }
 
-                    total_bytes_len += view.length as usize;
                     views.push_unchecked(view);
                 }
             }
@@ -307,7 +309,6 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
 
             unsafe {
                 for mut view in arr.views().iter().copied() {
-                    total_bytes_len += view.length as usize;
                     if view.length > 12 {
                         if new_buffers.last().unwrap_unchecked().len() + view.length as usize
                             >= u32::MAX as usize

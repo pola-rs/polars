@@ -12,12 +12,14 @@ description = "Lazy query engine for the Polars DataFrame library"
 doctest = false
 
 [dependencies]
-libloading = { version = "0.8.0", optional = true }
+libloading = { workspace = true, optional = true }
+polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-error = { workspace = true }
 polars-ffi = { workspace = true, optional = true }
-polars-io = { workspace = true, features = ["lazy", "csv"] }
+polars-io = { workspace = true, features = ["lazy", "csv", "async"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = [] }
 polars-parquet = { workspace = true, optional = true }
@@ -26,13 +28,17 @@ polars-utils = { workspace = true }
 
 arrow = { workspace = true }
 bitflags = { workspace = true }
+blake3 = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
+digest-io = { workspace = true }
 either = { workspace = true }
-futures = { workspace = true, optional = true }
+futures = { workspace = true }
 hashbrown = { workspace = true }
+hex = { workspace = true }
+indexmap = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
 percent-encoding = { workspace = true }
@@ -40,13 +46,16 @@ pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 recursive = { workspace = true }
 regex = { workspace = true, optional = true }
-schemars = { workspace = true, features = ["either"], optional = true }
+schemars = { workspace = true, features = ["either1"], optional = true }
 serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
+slotmap = { workspace = true }
 strum_macros = { workspace = true }
+tokio = { workspace = true }
 
 [build-dependencies]
+hex = { workspace = true }
 sha2 = { workspace = true }
 version_check = { workspace = true }
 
@@ -56,6 +65,8 @@ debugging = []
 python = ["dep:pyo3", "polars-utils/python", "polars-ffi", "polars-core/object", "serde"]
 serde = [
   "dep:serde",
+  "polars-buffer/serde",
+  "polars-config/serde",
   "polars-core/serde-lazy",
   "polars-core/serde",
   "polars-time/serde",
@@ -64,12 +75,13 @@ serde = [
   "polars-utils/serde",
   "polars-compute/serde",
   "either/serde",
+  "slotmap/serde",
 ]
 parquet = ["polars-io/parquet", "polars-parquet"]
-async = ["polars-io/async", "futures"]
-cloud = ["async", "polars-io/cloud"]
+cloud = ["polars-io/cloud"]
 ipc = ["polars-io/ipc"]
 json = ["polars-io/json", "polars-json"]
+scan_lines = []
 csv = ["polars-io/csv"]
 temporal = [
   "chrono",
@@ -86,9 +98,11 @@ strings = ["polars-core/strings", "polars-ops/strings"]
 future = []
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
+dtype-u128 = ["polars-core/dtype-u128", "polars-ops/dtype-u128"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
+dtype-f16 = ["polars-core/dtype-f16"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-ops/dtype-decimal", "dtype-i128"]
 dtype-date = ["polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-time/dtype-datetime", "temporal"]
@@ -96,6 +110,7 @@ dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "t
 dtype-time = ["polars-time/dtype-time", "temporal"]
 dtype-array = ["polars-core/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
+dtype-extension = ["polars-core/dtype-extension", "polars-ops/dtype-extension"]
 dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object", "polars-ops/object"]
 list_filter = ["polars-ops/list_filter"]
@@ -141,7 +156,7 @@ asof_join = ["polars-time", "polars-ops/asof_join"]
 iejoin = ["polars-ops/iejoin"]
 concat_str = []
 business = ["polars-ops/business"]
-range = []
+range = ["dtype-array"]
 mode = ["polars-ops/mode"]
 cum_agg = ["polars-ops/cum_agg"]
 interpolate = ["polars-ops/interpolate"]
@@ -161,7 +176,7 @@ diff = ["polars-ops/diff"]
 pct_change = ["polars-ops/pct_change"]
 moment = ["polars-ops/moment"]
 abs = ["polars-ops/abs"]
-random = ["polars-core/random"]
+random = ["polars-core/random", "polars-ops/random"]
 dynamic_group_by = ["polars-core/dynamic_group_by", "dtype-date", "dtype-datetime"]
 ewma = ["polars-ops/ewma"]
 ewma_by = ["polars-ops/ewma_by"]
@@ -189,9 +204,7 @@ cse = []
 propagate_nans = ["polars-ops/propagate_nans"]
 coalesce = []
 fused = ["polars-ops/fused"]
-array_any_all = ["polars-ops/array_any_all", "dtype-array"]
 list_sets = ["polars-ops/list_sets"]
-list_any_all = ["polars-ops/list_any_all"]
 list_drop_nulls = ["polars-ops/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample"]
 cutqcut = ["polars-ops/cutqcut"]
@@ -232,7 +245,6 @@ features = [
   "dtype-array",
   "is_last_distinct",
   "dtype-time",
-  "array_any_all",
   "month_start",
   "month_end",
   "offset_by",
@@ -243,7 +255,6 @@ features = [
   "python",
   "cloud",
   "string_to_integer",
-  "list_any_all",
   "pct_change",
   "list_gather",
   "list_filter",
@@ -300,6 +311,7 @@ features = [
   "semi_anti_join",
   "replace",
   "dtype-u16",
+  "dtype-f16",
   "regex",
   "dtype-decimal",
   "arg_where",

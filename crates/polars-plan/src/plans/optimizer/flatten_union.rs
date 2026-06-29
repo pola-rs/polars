@@ -26,7 +26,7 @@ impl OptimizationRule for FlattenUnionRule {
         match lp {
             Union { inputs, options }
                 if inputs.iter().any(|node| match lp_arena.get(*node) {
-                    Union { options, .. } => !options.flattened_by_opt,
+                    Union { options, .. } => !options.flattened_by_opt && options.slice.is_none(),
                     _ => false,
                 }) =>
             {

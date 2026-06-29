@@ -5,7 +5,6 @@ import pytest
 
 import polars as pl
 from polars._utils.cloud import prepare_cloud_plan
-from polars.exceptions import InvalidOperationError
 
 CLOUD_SOURCE = "s3://my-nonexistent-bucket/dataset"
 DST = "s3://my-nonexistent-bucket/output"
@@ -25,7 +24,7 @@ DST = "s3://my-nonexistent-bucket/output"
     ],
 )
 def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
-    result = prepare_cloud_plan(lf)
+    (result, _flags) = prepare_cloud_plan(lf)
     assert isinstance(result, bytes)
 
     deserialized = pl.LazyFrame.deserialize(BytesIO(result))
@@ -53,7 +52,7 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
     ],
 )
 def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
-    result = prepare_cloud_plan(lf)
+    (result, _flags) = prepare_cloud_plan(lf)
     assert isinstance(result, bytes)
 
     deserialized = pl.LazyFrame.deserialize(BytesIO(result))
@@ -63,8 +62,9 @@ def test_prepare_cloud_plan_udf(lf: pl.LazyFrame) -> None:
 def test_prepare_cloud_plan_optimization_toggle() -> None:
     lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).sink_parquet(DST, lazy=True)
 
-    result = prepare_cloud_plan(
-        lf, optimizations=pl.QueryOptFlags(projection_pushdown=False)
+    (result, _flags) = prepare_cloud_plan(
+        lf,
+        optimizations=pl.QueryOptFlags(projection_pushdown=False),
     )
     assert isinstance(result, bytes)
 
@@ -82,9 +82,8 @@ def test_prepare_cloud_plan_optimization_toggle() -> None:
         pl.scan_ipc(["data-1.feather", "data-2.feather"]).sink_parquet(DST, lazy=True),
     ],
 )
-def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:
-    with pytest.raises(
-        InvalidOperationError,
-        match="logical plan ineligible for execution on Polars Cloud",
-    ):
-        prepare_cloud_plan(lf)
+def test_prepare_cloud_plan_succeed_on_local_data_source(lf: pl.LazyFrame) -> None:
+    # Client-side checks for local data source has been moved to the scheduler and will
+    # be validated during planning.
+    (result, _flags) = prepare_cloud_plan(lf)
+    assert isinstance(result, bytes)

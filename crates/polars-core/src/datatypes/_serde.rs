@@ -30,7 +30,7 @@ impl Serialize for DataType {
 
 #[cfg(feature = "dsl-schema")]
 impl schemars::JsonSchema for DataType {
-    fn schema_name() -> String {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
         SerializableDataType::schema_name()
     }
 
@@ -38,7 +38,7 @@ impl schemars::JsonSchema for DataType {
         SerializableDataType::schema_id()
     }
 
-    fn json_schema(generator: &mut schemars::r#gen::SchemaGenerator) -> schemars::schema::Schema {
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
         SerializableDataType::json_schema(generator)
     }
 }
@@ -52,11 +52,13 @@ enum SerializableDataType {
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
     Int8,
     Int16,
     Int32,
     Int64,
     Int128,
+    Float16,
     Float32,
     Float64,
     String,
@@ -91,9 +93,15 @@ enum SerializableDataType {
         strings: Series,
     },
     #[cfg(feature = "dtype-decimal")]
-    Decimal(Option<usize>, Option<usize>),
+    Decimal(usize, usize),
     #[cfg(feature = "object")]
     Object(String),
+    #[cfg(feature = "dtype-extension")]
+    Extension {
+        name: String,
+        metadata: Option<String>,
+        storage: Box<SerializableDataType>,
+    },
 }
 
 impl From<&DataType> for SerializableDataType {
@@ -105,11 +113,13 @@ impl From<&DataType> for SerializableDataType {
             UInt16 => Self::UInt16,
             UInt32 => Self::UInt32,
             UInt64 => Self::UInt64,
+            UInt128 => Self::UInt128,
             Int8 => Self::Int8,
             Int16 => Self::Int16,
             Int32 => Self::Int32,
             Int64 => Self::Int64,
             Int128 => Self::Int128,
+            Float16 => Self::Float16,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
             String => Self::String,
@@ -144,6 +154,12 @@ impl From<&DataType> for SerializableDataType {
             Decimal(precision, scale) => Self::Decimal(*precision, *scale),
             #[cfg(feature = "object")]
             Object(name) => Self::Object(name.to_string()),
+            #[cfg(feature = "dtype-extension")]
+            Extension(typ, storage) => Self::Extension {
+                name: typ.name().to_string(),
+                metadata: typ.serialize_metadata().map(|s| s.into_owned()),
+                storage: Box::new(SerializableDataType::from(storage.as_ref())),
+            },
         }
     }
 }
@@ -156,11 +172,13 @@ impl From<SerializableDataType> for DataType {
             UInt16 => Self::UInt16,
             UInt32 => Self::UInt32,
             UInt64 => Self::UInt64,
+            UInt128 => Self::UInt128,
             Int8 => Self::Int8,
             Int16 => Self::Int16,
             Int32 => Self::Int32,
             Int64 => Self::Int64,
             Int128 => Self::Int128,
+            Float16 => Self::Float16,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
             String => Self::String,
@@ -202,6 +220,20 @@ impl From<SerializableDataType> for DataType {
             Decimal(precision, scale) => Self::Decimal(precision, scale),
             #[cfg(feature = "object")]
             Object(_) => Self::Object("unknown"),
+            #[cfg(feature = "dtype-extension")]
+            Extension {
+                name,
+                metadata,
+                storage,
+            } => {
+                let storage = DataType::from(*storage);
+                let ext_type = crate::datatypes::extension::get_extension_type_or_generic(
+                    &name,
+                    &storage,
+                    metadata.as_deref(),
+                );
+                Self::Extension(ext_type, Box::new(storage))
+            },
         }
     }
 }

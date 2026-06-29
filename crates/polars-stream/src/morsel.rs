@@ -1,19 +1,15 @@
+use std::cmp::Reverse;
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
+use polars_async::primitives::linearizer::{Inserter, Linearizer};
+use polars_async::primitives::wait_group::WaitToken;
 use polars_core::frame::DataFrame;
+use polars_utils::priority::Priority;
 use polars_utils::relaxed_cell::RelaxedCell;
 
-use crate::async_primitives::wait_group::WaitToken;
-
-static IDEAL_MORSEL_SIZE: OnceLock<usize> = OnceLock::new();
-
 pub fn get_ideal_morsel_size() -> usize {
-    *IDEAL_MORSEL_SIZE.get_or_init(|| {
-        std::env::var("POLARS_IDEAL_MORSEL_SIZE")
-            .map(|m| m.parse().unwrap())
-            .unwrap_or(100_000)
-    })
+    polars_config::config().ideal_morsel_size() as usize
 }
 
 /// A token indicating the order of morsels in a stream.
@@ -58,6 +54,12 @@ impl MorselSeq {
 #[derive(Clone, Debug)]
 pub struct SourceToken {
     stop: Arc<RelaxedCell<bool>>,
+}
+
+impl Default for SourceToken {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SourceToken {
@@ -105,6 +107,10 @@ impl Morsel {
     #[allow(unused)]
     pub fn into_inner(self) -> (DataFrame, MorselSeq, SourceToken, Option<WaitToken>) {
         (self.df, self.seq, self.source_token, self.consume_token)
+    }
+
+    pub fn height(&self) -> usize {
+        self.df.height()
     }
 
     pub fn into_df(self) -> DataFrame {
@@ -164,5 +170,32 @@ impl Morsel {
 
     pub fn replace_source_token(&mut self, new_token: SourceToken) -> SourceToken {
         core::mem::replace(&mut self.source_token, new_token)
+    }
+}
+
+pub struct MorselLinearizer(Linearizer<Priority<Reverse<MorselSeq>, Morsel>>);
+pub struct MorselInserter(Inserter<Priority<Reverse<MorselSeq>, Morsel>>);
+
+impl MorselLinearizer {
+    pub fn new(num_inserters: usize, buffer_size: usize) -> (Self, Vec<MorselInserter>) {
+        let (lin, inserters) = Linearizer::new(num_inserters, buffer_size);
+
+        (
+            MorselLinearizer(lin),
+            inserters.into_iter().map(MorselInserter).collect(),
+        )
+    }
+
+    pub async fn get(&mut self) -> Option<Morsel> {
+        self.0.get().await.map(|x| x.1)
+    }
+}
+
+impl MorselInserter {
+    pub async fn insert(&mut self, morsel: Morsel) -> Result<(), Morsel> {
+        self.0
+            .insert(Priority(Reverse(morsel.seq()), morsel))
+            .await
+            .map_err(|Priority(_, v)| v)
     }
 }

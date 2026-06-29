@@ -1,17 +1,23 @@
 use std::fmt::Write;
 
-use polars_plan::dsl::PartitionVariantIR;
+use polars_ops::frame::JoinArgs;
+use polars_plan::dsl::PartitionStrategyIR;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, EscapeLabel};
-use polars_plan::prelude::FileType;
+use polars_plan::prelude::FileWriteFormat;
+use polars_time::ClosedWindow;
+#[cfg(feature = "dynamic_group_by")]
+use polars_time::DynamicGroupOptions;
 use polars_utils::arena::Arena;
+use polars_utils::itertools::Itertools;
 use polars_utils::slice_enum::Slice;
 use slotmap::{Key, SecondaryMap, SlotMap};
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use crate::physical_plan::ZipBehavior;
 
 /// A style of a graph node.
-enum NodeStyle {
+pub enum NodeStyle {
     InMemoryFallback,
     MemoryIntensive,
     Generic,
@@ -25,7 +31,9 @@ impl NodeStyle {
     pub fn for_node_kind(kind: &PhysNodeKind) -> Self {
         use PhysNodeKind as K;
         match kind {
-            K::InMemoryMap { .. } | K::InMemoryJoin { .. } => Self::InMemoryFallback,
+            K::InMemoryMap { .. } | K::InMemoryJoin { .. } | K::ColumnarFunction { .. } => {
+                Self::InMemoryFallback
+            },
             K::InMemorySource { .. }
             | K::InputIndependentSelect { .. }
             | K::NegativeSlice { .. }
@@ -34,7 +42,11 @@ impl NodeStyle {
             | K::GroupBy { .. }
             | K::EquiJoin { .. }
             | K::SemiAntiJoin { .. }
-            | K::Multiplexer { .. } => Self::MemoryIntensive,
+            | K::CrossJoin { .. }
+            | K::Multiplexer { .. }
+            | K::Gather { .. } => Self::MemoryIntensive,
+            #[cfg(feature = "iejoin")]
+            K::RangeJoin { .. } => Self::MemoryIntensive,
             #[cfg(feature = "merge_sorted")]
             K::MergeSorted { .. } => Self::MemoryIntensive,
             _ => Self::Generic,
@@ -128,7 +140,7 @@ pub fn fmt_exprs(
         }
 
         for (name, expr) in formatted {
-            write!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}\\n").unwrap();
+            writeln!(f, "{name:>max_name_width$} = {expr:<max_expr_width$}").unwrap();
         }
     } else {
         let Some(e) = exprs.first() else {
@@ -138,10 +150,28 @@ pub fn fmt_exprs(
         fmt_expr(f, e, expr_arena).unwrap();
 
         for e in &exprs[1..] {
-            f.write_str("\\n").unwrap();
+            f.write_str("\n").unwrap();
             fmt_expr(f, e, expr_arena).unwrap();
         }
     }
+}
+
+fn fmt_join_label(base_label: &str, left_on: &str, right_on: &str, args: &JoinArgs) -> String {
+    let mut label = base_label.to_string();
+    write!(label, r"\nleft_on:\n{}", left_on).unwrap();
+    write!(label, r"\nright_on:\n{}", right_on).unwrap();
+    if args.how.is_equi() {
+        write!(
+            label,
+            r"\nhow: {}",
+            escape_graphviz(&format!("{:?}", args.how))
+        )
+        .unwrap();
+    }
+    if args.nulls_equal {
+        write!(label, r"\njoin-nulls").unwrap();
+    }
+    label
 }
 
 #[recursive::recursive]
@@ -161,7 +191,10 @@ fn visualize_plan_rec(
 
     use std::slice::from_ref;
     let (label, inputs) = match kind {
-        PhysNodeKind::InMemorySource { df } => (
+        PhysNodeKind::InMemorySource {
+            df,
+            disable_morsel_split: _,
+        } => (
             format!(
                 "in-memory-source\\ncols: {}",
                 df.get_column_names_owned().join(", ")
@@ -169,7 +202,7 @@ fn visualize_plan_rec(
             &[][..],
         ),
         #[cfg(feature = "python")]
-        PhysNodeKind::PythonScan { .. } => ("python-scan".to_string(), &[][..]),
+        PhysNodeKind::PythonScan { .. } => ("streaming-python-scan".to_string(), &[][..]),
         PhysNodeKind::SinkMultiple { sinks } => {
             for sink in sinks {
                 visualize_plan_rec(*sink, phys_sm, expr_arena, visited, out);
@@ -254,48 +287,49 @@ fn visualize_plan_rec(
             ),
             from_ref(input),
         ),
-        PhysNodeKind::SimpleProjection { input, columns } => (
-            format!("select\\ncols: {}", columns.join(", ")),
-            from_ref(input),
-        ),
-        PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
-        PhysNodeKind::FileSink {
-            input, file_type, ..
-        } => match file_type {
-            #[cfg(feature = "parquet")]
-            FileType::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "ipc")]
-            FileType::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "csv")]
-            FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
-            #[cfg(feature = "json")]
-            FileType::Json(_) => ("ndjson-sink".to_string(), from_ref(input)),
-            #[allow(unreachable_patterns)]
-            _ => todo!(),
+        PhysNodeKind::SimpleProjection { input, columns } => {
+            let mut label = "select".to_string();
+            let mut f = EscapeLabel(&mut label);
+            if columns.iter().all(|(out, col)| out == col) {
+                write!(f, "\n{}", &columns.values().join(", ")).unwrap();
+            } else {
+                for (out, col) in columns {
+                    if out == col {
+                        write!(f, "\n{col}").unwrap();
+                    } else {
+                        write!(f, "\n{out} = {col}").unwrap();
+                    }
+                }
+            };
+            (label, from_ref(input))
         },
-        PhysNodeKind::PartitionSink {
-            input,
-            file_type,
-            variant,
-            ..
-        } => {
-            let variant = match variant {
-                PartitionVariantIR::ByKey { .. } => "partition-by-key-sink",
-                PartitionVariantIR::MaxSize { .. } => "partition-max-size-sink",
-                PartitionVariantIR::Parted { .. } => "partition-parted-sink",
+        PhysNodeKind::InMemorySink { input } => ("in-memory-sink".to_string(), from_ref(input)),
+        PhysNodeKind::CallbackSink { input, .. } => ("callback-sink".to_string(), from_ref(input)),
+        PhysNodeKind::FileSink { input, options } => match options.file_format {
+            #[cfg(feature = "parquet")]
+            FileWriteFormat::Parquet(_) => ("parquet-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
+            FileWriteFormat::Ipc(_) => ("ipc-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
+            FileWriteFormat::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
+            FileWriteFormat::NDJson(_) => ("ndjson-sink".to_string(), from_ref(input)),
+        },
+        PhysNodeKind::PartitionedSink { input, options } => {
+            let variant = match options.partition_strategy {
+                PartitionStrategyIR::Keyed { .. } => "partition-keyed",
+                PartitionStrategyIR::FileSize => "partition-file-size",
             };
 
-            match file_type {
+            match options.file_format {
                 #[cfg(feature = "parquet")]
-                FileType::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
+                FileWriteFormat::Parquet(_) => (format!("{variant}[parquet]"), from_ref(input)),
                 #[cfg(feature = "ipc")]
-                FileType::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
+                FileWriteFormat::Ipc(_) => (format!("{variant}[ipc]"), from_ref(input)),
                 #[cfg(feature = "csv")]
-                FileType::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
+                FileWriteFormat::Csv(_) => (format!("{variant}[csv]"), from_ref(input)),
                 #[cfg(feature = "json")]
-                FileType::Json(_) => (format!("{variant}[ndjson]"), from_ref(input)),
-                #[allow(unreachable_patterns)]
-                _ => todo!(),
+                FileWriteFormat::NDJson(_) => (format!("{variant}[ndjson]"), from_ref(input)),
             }
         },
         PhysNodeKind::InMemoryMap {
@@ -306,14 +340,67 @@ fn visualize_plan_rec(
             let mut label = String::new();
             label.push_str("in-memory-map");
             if let Some(format_str) = format_str {
-                label.push('\n');
+                label.write_str("\\n").unwrap();
 
                 let mut f = EscapeLabel(&mut label);
-                write!(f, "{format_str}").unwrap();
+                f.write_str(format_str).unwrap();
             }
             (label, from_ref(input))
         },
-        PhysNodeKind::Map { input, map: _ } => ("map".to_string(), from_ref(input)),
+        PhysNodeKind::Map {
+            input,
+            map: _,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("map");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                f.write_str(format_str).unwrap();
+            }
+            (label, from_ref(input))
+        },
+        PhysNodeKind::ColumnarFunction {
+            inputs,
+            func: _,
+            arg_map: _,
+            output_name,
+            format_str,
+        } => {
+            let mut label = String::new();
+            label.push_str("columnar-function");
+            if let Some(format_str) = format_str {
+                label.push_str("\\n");
+
+                let mut f = EscapeLabel(&mut label);
+                write!(f, "{output_name} = {format_str}(...)").unwrap();
+            }
+            (label, &inputs[..])
+        },
+        PhysNodeKind::SortedGroupBy {
+            input,
+            key,
+            aggs,
+            slice,
+        } => {
+            let mut s = String::new();
+            s.push_str("sorted-group-by\\n");
+            let f = &mut s;
+            write!(f, "key: {key}\\n").unwrap();
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
         PhysNodeKind::Sort {
             input,
             by_column,
@@ -332,6 +419,7 @@ fn visualize_plan_rec(
             by_column,
             reverse,
             nulls_last: _,
+            dyn_pred: _,
         } => {
             let name = if reverse.iter().all(|r| *r) {
                 "bottom-k"
@@ -365,21 +453,57 @@ fn visualize_plan_rec(
                 &[*input][..],
             )
         },
+        PhysNodeKind::GatherEvery { input, n, offset } => (
+            format!("gather_every\\nn: {n}, offset: {offset}"),
+            &[*input][..],
+        ),
+        PhysNodeKind::ForwardFill { input, limit }
+        | PhysNodeKind::BackwardFill { input, limit } => (
+            {
+                let mut out = if matches!(kind, PhysNodeKind::ForwardFill { .. }) {
+                    String::from("forward_fill")
+                } else {
+                    String::from("backward_fill")
+                };
+                if let Some(limit) = limit {
+                    use std::fmt::Write;
+                    writeln!(&mut out).unwrap();
+                    write!(&mut out, "limit: {limit}").unwrap();
+                }
+                out
+            },
+            &[*input][..],
+        ),
+        #[cfg(feature = "interpolate")]
+        PhysNodeKind::Interpolate { input, method } => {
+            (format!("interpolate\\nmethod: {method:?}"), &[*input][..])
+        },
         PhysNodeKind::Rle(input) => ("rle".to_owned(), &[*input][..]),
         PhysNodeKind::RleId(input) => ("rle_id".to_owned(), &[*input][..]),
+        PhysNodeKind::SortedUnique { input, keys } => {
+            let mut out = String::from("sorted-unique\n");
+            for key in keys.iter() {
+                writeln!(&mut out, "{key}",).unwrap();
+            }
+            (out, &[*input][..])
+        },
         PhysNodeKind::PeakMinMax { input, is_peak_max } => (
             if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
             &[*input][..],
         ),
+        PhysNodeKind::IsSorted { input, .. } => ("is_sorted".to_owned(), &[*input][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
+        PhysNodeKind::UnorderedUnion { inputs } => {
+            ("unordered-union".to_string(), inputs.as_slice())
+        },
         PhysNodeKind::Zip {
             inputs,
-            null_extend,
+            zip_behavior,
         } => {
-            let label = if *null_extend {
-                "zip-null-extend"
-            } else {
-                "zip"
+            let label = match zip_behavior {
+                ZipBehavior::NullExtend => "zip-null-extend",
+                ZipBehavior::Broadcast => "zip-broadcast",
+                ZipBehavior::Strict => "zip-strict",
             };
             (label.to_string(), inputs.as_slice())
         },
@@ -393,13 +517,16 @@ fn visualize_plan_rec(
             row_index,
             pre_slice,
             predicate,
+            predicate_file_skip_applied: _,
             hive_parts,
             include_file_paths,
             cast_columns_policy: _,
             missing_columns_policy: _,
             forbid_extra_columns: _,
             deletion_files,
+            table_statistics: _,
             file_schema: _,
+            disable_morsel_split: _,
         } => {
             let mut out = format!("multi-scan[{}]", file_reader_builder.reader_name());
             let mut f = EscapeLabel(&mut out);
@@ -459,14 +586,150 @@ fn visualize_plan_rec(
 
             (out, &[][..])
         },
-        PhysNodeKind::GroupBy { input, key, aggs } => (
-            format!(
-                "group-by\\nkey:\\n{}\\naggs:\\n{}",
-                fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+        PhysNodeKind::GroupBy {
+            inputs,
+            key_per_input,
+            aggs_per_input,
+        } => {
+            let mut out = String::from("group-by");
+            for (key, aggs) in key_per_input.iter().zip(aggs_per_input) {
+                write!(
+                    &mut out,
+                    "\\nkey:\\n{}\\naggs:\\n{}",
+                    fmt_exprs_to_label(key, expr_arena, FormatExprStyle::Select),
+                    fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+                )
+                .ok();
+            }
+            (out, inputs.as_slice())
+        },
+        #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::DynamicGroupBy {
+            input,
+            options,
+            aggs,
+            slice,
+        } => {
+            use polars_time::prelude::{Label, StartBy};
+
+            let DynamicGroupOptions {
+                index_column,
+                every,
+                period,
+                offset,
+                label,
+                include_boundaries,
+                closed_window,
+                start_by,
+            } = options;
+            let mut s = String::new();
+            let f = &mut s;
+            f.write_str("dynamic-group-by\\n").unwrap();
+            write!(f, "index column: {index_column}\\n").unwrap();
+            write!(f, "every: {every}").unwrap();
+            if every != period {
+                write!(f, ", period: {period}").unwrap();
+            }
+            if !offset.is_zero() {
+                write!(f, ", offset: {offset}").unwrap();
+            }
+            f.write_str("\\n").unwrap();
+            if *label != Label::Left {
+                write!(f, "label: {}\\n", <&'static str>::from(label)).unwrap();
+            }
+            if *include_boundaries {
+                write!(f, "include_boundaries: true\\n").unwrap();
+            }
+            if *start_by != StartBy::WindowBound {
+                write!(f, "start_by: {}\\n", <&'static str>::from(start_by)).unwrap();
+            }
+            if *closed_window != ClosedWindow::Left {
+                write!(
+                    f,
+                    "closed_window: {}\\n",
+                    <&'static str>::from(closed_window)
+                )
+                .unwrap();
+            }
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
                 fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
-            ),
-            from_ref(input),
-        ),
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
+        #[cfg(feature = "dynamic_group_by")]
+        PhysNodeKind::RollingGroupBy {
+            input,
+            index_column,
+            period,
+            offset,
+            closed,
+            slice,
+            aggs,
+        } => {
+            let mut s = String::new();
+            let f = &mut s;
+            f.write_str("rolling-group-by\\n").unwrap();
+            write!(f, "index column: {index_column}\\n").unwrap();
+            write!(f, "period: {period}, offset: {offset}\\n").unwrap();
+            write!(f, "closed: {}\\n", <&'static str>::from(*closed)).unwrap();
+            if let Some((offset, length)) = slice {
+                write!(f, "slice: {offset}, {length}\\n").unwrap();
+            }
+            write!(
+                f,
+                "aggs:\\n{}",
+                fmt_exprs_to_label(aggs, expr_arena, FormatExprStyle::Select)
+            )
+            .unwrap();
+
+            (s, from_ref(input))
+        },
+
+        #[cfg(feature = "is_first_distinct")]
+        PhysNodeKind::IsFirstDistinct {
+            input,
+            out_name,
+            columns,
+        } => {
+            let mut s = String::new();
+            let mut f = EscapeLabel(&mut s);
+            writeln!(f, "is-first-distinct").unwrap();
+            writeln!(f, "key: {}", columns.join(", ")).unwrap();
+            write!(f, "out: {out_name}").unwrap();
+            (s, from_ref(input))
+        },
+        PhysNodeKind::MergeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            ..
+        } => {
+            let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(2);
+            let left_on_exprs = left_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let right_on_exprs = right_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let label = fmt_join_label(
+                "merge-join",
+                &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
         PhysNodeKind::InMemoryJoin {
             input_left,
             input_right,
@@ -490,10 +753,10 @@ fn visualize_plan_rec(
             args,
             output_bool: _,
         } => {
-            let label = match phys_sm[node_key].kind {
+            let base_label = match phys_sm[node_key].kind {
+                PhysNodeKind::MergeJoin { .. } => "merge-join",
                 PhysNodeKind::EquiJoin { .. } => "equi-join",
                 PhysNodeKind::InMemoryJoin { .. } => "in-memory-join",
-                PhysNodeKind::CrossJoin { .. } => "cross-join",
                 PhysNodeKind::SemiAntiJoin {
                     output_bool: false, ..
                 } if args.how.is_semi() => "semi-join",
@@ -508,30 +771,38 @@ fn visualize_plan_rec(
                 } if args.how.is_anti() => "is-not-in",
                 _ => unreachable!(),
             };
-            let mut label = label.to_string();
-            write!(
-                label,
-                r"\nleft_on:\n{}",
-                fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases)
-            )
-            .unwrap();
-            write!(
-                label,
-                r"\nright_on:\n{}",
-                fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases)
-            )
-            .unwrap();
-            if args.how.is_equi() {
-                write!(
-                    label,
-                    r"\nhow: {}",
-                    escape_graphviz(&format!("{:?}", args.how))
-                )
-                .unwrap();
-            }
-            if args.nulls_equal {
-                write!(label, r"\njoin-nulls").unwrap();
-            }
+            let label = fmt_join_label(
+                base_label,
+                &fmt_exprs_to_label(left_on, expr_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(right_on, expr_arena, FormatExprStyle::NoAliases),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
+        #[cfg(feature = "iejoin")]
+        PhysNodeKind::RangeJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            ..
+        } => {
+            let mut tmp_arena: Arena<AExpr> = Arena::with_capacity(3);
+            let left_on_exprs = left_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let right_on_exprs = right_on
+                .iter()
+                .map(|on| ExprIR::from_column_name(on.clone(), &mut tmp_arena))
+                .collect_vec();
+            let label = fmt_join_label(
+                "range-join",
+                &fmt_exprs_to_label(&left_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                &fmt_exprs_to_label(&right_on_exprs, &tmp_arena, FormatExprStyle::NoAliases),
+                args,
+            );
             (label, &[*input_left, *input_right][..])
         },
         PhysNodeKind::CrossJoin {
@@ -539,11 +810,54 @@ fn visualize_plan_rec(
             input_right,
             args: _,
         } => ("cross-join".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::AsOfJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+            ..
+        } => {
+            let label = fmt_join_label(
+                "asof-join",
+                &escape_graphviz(&left_on[..]),
+                &escape_graphviz(&right_on[..]),
+                args,
+            );
+            (label, &[*input_left, *input_right][..])
+        },
         #[cfg(feature = "merge_sorted")]
         PhysNodeKind::MergeSorted {
             input_left,
             input_right,
+            ..
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
+        PhysNodeKind::Gather { input, idxs, .. } => ("gather".to_string(), &[*input, *idxs][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmVar { input, options: _ } => ("ewm-var".to_string(), &[*input][..]),
+        #[cfg(feature = "ewma")]
+        PhysNodeKind::EwmStd { input, options: _ } => ("ewm-std".to_string(), &[*input][..]),
+        #[cfg(any(
+            feature = "dtype-date",
+            feature = "dtype-datetime",
+            feature = "dtype-time"
+        ))]
+        PhysNodeKind::StrptimeInfer {
+            input,
+            dtype,
+            ambiguous_is_raise,
+            ..
+        } => {
+            let mut s = String::new();
+            let mut f = EscapeLabel(&mut s);
+            writeln!(f, "strptime-infer").unwrap();
+            writeln!(f, "dtype: {dtype}").unwrap();
+            let ambiguous = if *ambiguous_is_raise { "raise" } else { "null" };
+            write!(f, "ambiguous: {ambiguous}").unwrap();
+            (s, &[*input][..])
+        },
     };
 
     let node_id = node_key.data().as_ffi();

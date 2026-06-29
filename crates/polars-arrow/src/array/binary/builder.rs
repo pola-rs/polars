@@ -1,9 +1,9 @@
+use polars_buffer::Buffer;
 use polars_utils::IdxSize;
 
 use crate::array::BinaryArray;
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::bitmap::OptBitmapBuilder;
-use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 

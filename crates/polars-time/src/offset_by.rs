@@ -76,7 +76,7 @@ pub fn impl_offset_by(ts: &Series, offsets: &Series) -> PolarsResult<Series> {
     let tz = match dtype {
         DataType::Date => None,
         DataType::Datetime(_, tz) => tz.clone(),
-        _ => polars_bail!(InvalidOperation: "expected Date or Datetime, got {}", dtype),
+        _ => polars_bail!(InvalidOperation: "expected Date or Datetime, got {dtype}"),
     };
     let preserve_sortedness = match offsets.len() {
         1 => match offsets.get(0) {

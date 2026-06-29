@@ -113,7 +113,7 @@ def test_get_chunks(n_chunks: int | None) -> None:
     out = col.get_chunks(n_chunks)
 
     expected = [s1, s2]
-    for o, e in zip(out, expected):
+    for o, e in zip(out, expected, strict=True):
         assert_series_equal(o._col, e)
 
 

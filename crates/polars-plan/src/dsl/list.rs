@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 
+use crate::dsl::functions::lit;
 use crate::prelude::function_expr::ListFunction;
 use crate::prelude::*;
 
@@ -9,16 +10,6 @@ use crate::prelude::*;
 pub struct ListNameSpace(pub Expr);
 
 impl ListNameSpace {
-    #[cfg(feature = "list_any_all")]
-    pub fn any(self) -> Expr {
-        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::Any))
-    }
-
-    #[cfg(feature = "list_any_all")]
-    pub fn all(self) -> Expr {
-        self.0.map_unary(FunctionExpr::ListExpr(ListFunction::All))
-    }
-
     #[cfg(feature = "list_drop_nulls")]
     pub fn drop_nulls(self) -> Expr {
         self.0
@@ -110,29 +101,6 @@ impl ListNameSpace {
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0
             .map_unary(FunctionExpr::ListExpr(ListFunction::Sort(options)))
-    }
-
-    /// Reverse every sublist
-    pub fn reverse(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Reverse))
-    }
-
-    /// Keep only the unique values in every sublist.
-    pub fn unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(false)))
-    }
-
-    /// Keep only the unique values in every sublist.
-    pub fn unique_stable(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(true)))
-    }
-
-    pub fn n_unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::NUnique))
     }
 
     /// Get items in every sublist by index.
@@ -302,6 +270,14 @@ impl ListNameSpace {
             expr: Arc::new(self.0),
             evaluation: Arc::new(other.into()),
             variant: EvalVariant::List,
+        }
+    }
+
+    pub fn agg<E: Into<Expr>>(self, other: E) -> Expr {
+        Expr::Eval {
+            expr: Arc::new(self.0),
+            evaluation: Arc::new(other.into()),
+            variant: EvalVariant::ListAgg,
         }
     }
 }

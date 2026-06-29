@@ -47,6 +47,24 @@ def test_bitwise_count(df: pl.DataFrame) -> None:
     }
 
 
+def test_bitwise_not(df: pl.DataFrame) -> None:
+    res = df.sql(
+        """
+        SELECT
+          -- note: operator support pending...
+          --  https://github.com/apache/datafusion-sqlparser-rs/pull/2081
+          -- ~x AS bit_not_op_x,
+          BIT_NOT(-x) AS bit_not_minus_x,
+          BITNOT(y) AS bitnot_y,
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "bit_not_minus_x": [19, 31, 49, 87, 127],
+        "bitnot_y": [127, -1, -11, 0, None],
+    }
+
+
 def test_bitwise_or(df: pl.DataFrame) -> None:
     res = df.sql(
         """

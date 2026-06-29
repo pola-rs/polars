@@ -1,5 +1,7 @@
 mod simplify_functions;
 
+use num_traits::Zero;
+use polars_utils::float16::pf16;
 use polars_utils::floor_divmod::FloorDivMod;
 use polars_utils::total_ord::ToTotalOrd;
 use simplify_functions::optimize_functions;
@@ -8,10 +10,128 @@ mod arity;
 use crate::plans::*;
 
 fn new_null_count(input: &[ExprIR]) -> AExpr {
+    let function = IRFunctionExpr::NullCount;
+    let options = function.function_options();
     AExpr::Function {
         input: input.to_vec(),
-        function: IRFunctionExpr::NullCount,
-        options: FunctionOptions::aggregation(),
+        function,
+        options,
+    }
+}
+
+fn integer_literal_value(ae: &AExpr) -> Option<i64> {
+    match ae {
+        AExpr::Literal(lv) => lv.extract_i64().ok(),
+        _ => None,
+    }
+}
+
+enum CountCmpInput {
+    Len(Node),
+    NullCount(Node),
+}
+
+fn maybe_negate(ae: AExpr, negate: bool, expr_arena: &mut Arena<AExpr>) -> AExpr {
+    if negate {
+        AExprBuilder::new_from_aexpr(ae, expr_arena)
+            .not(expr_arena)
+            .build(expr_arena)
+    } else {
+        ae
+    }
+}
+
+fn bool_literal(value: bool) -> AExpr {
+    AExpr::Literal(Scalar::from(value).into())
+}
+
+fn non_negative_count_cmp_literal(op: Operator, literal: i64) -> Option<AExpr> {
+    let value = match op {
+        Operator::Eq if literal < 0 => false,
+        Operator::NotEq if literal < 0 => true,
+        Operator::Gt if literal < 0 => true,
+        Operator::GtEq if literal <= 0 => true,
+        Operator::Lt if literal <= 0 => false,
+        Operator::LtEq if literal < 0 => false,
+        _ => return None,
+    };
+    Some(bool_literal(value))
+}
+
+fn optimize_len_or_null_count_cmp(
+    left: Node,
+    op: Operator,
+    right: Node,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<AExpr> {
+    let left_ae = expr_arena.get(left);
+    let right_ae = expr_arena.get(right);
+
+    let (count_expr_node, op, literal) = if let Some(value) = integer_literal_value(right_ae) {
+        (left, op, value)
+    } else if let Some(value) = integer_literal_value(left_ae) {
+        let op = match op {
+            Operator::Eq => Operator::Eq,
+            Operator::NotEq => Operator::NotEq,
+            Operator::Gt => Operator::Lt,
+            Operator::GtEq => Operator::LtEq,
+            Operator::Lt => Operator::Gt,
+            Operator::LtEq => Operator::GtEq,
+            _ => return None,
+        };
+        (right, op, value)
+    } else {
+        return None;
+    };
+
+    let input = match expr_arena.get(count_expr_node) {
+        AExpr::Agg(IRAggExpr::Count {
+            input,
+            include_nulls: true,
+        }) => CountCmpInput::Len(*input),
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::NullCount,
+            ..
+        } if input.len() == 1 => CountCmpInput::NullCount(input[0].node()),
+        _ => return None,
+    };
+
+    if let Some(out) = non_negative_count_cmp_literal(op, literal) {
+        return Some(out);
+    }
+
+    match input {
+        CountCmpInput::Len(input) => {
+            let is_empty = match op {
+                Operator::Eq if literal == 0 => true,
+                Operator::Lt if literal == 1 => true,
+                Operator::LtEq if literal == 0 => true,
+                Operator::NotEq | Operator::Gt if literal == 0 => false,
+                Operator::GtEq if literal == 1 => false,
+                _ => return None,
+            };
+
+            let out = AExprBuilder::new_from_node(input)
+                .is_empty(false, expr_arena)
+                .build(expr_arena);
+            Some(maybe_negate(out, !is_empty, expr_arena))
+        },
+        CountCmpInput::NullCount(input) => {
+            let has_nulls = match op {
+                Operator::Eq if literal == 0 => false,
+                Operator::Lt if literal == 1 => false,
+                Operator::LtEq if literal == 0 => false,
+                Operator::NotEq | Operator::Gt if literal == 0 => true,
+                Operator::GtEq if literal == 1 => true,
+                _ => return None,
+            };
+
+            let out = AExprBuilder::new_from_node(input)
+                .has_nulls(expr_arena)
+                .build(expr_arena);
+            Some(maybe_negate(out, !has_nulls, expr_arena))
+        },
     }
 }
 
@@ -21,6 +141,9 @@ macro_rules! eval_binary_same_type {
             match (lit_left, lit_right) {
                 (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
                     match (l.as_any_value(), r.as_any_value()) {
+                        (AnyValue::Float16($l), AnyValue::Float16($r)) => {
+                            Some(AExpr::Literal(Scalar::from($ret).into()))
+                        },
                         (AnyValue::Float32($l), AnyValue::Float32($r)) => {
                             Some(AExpr::Literal(<Scalar as From<f32>>::from($ret).into()))
                         },
@@ -55,6 +178,9 @@ macro_rules! eval_binary_same_type {
                         },
                         (AnyValue::UInt64($l), AnyValue::UInt64($r)) => {
                             Some(AExpr::Literal(<Scalar as From<u64>>::from($ret).into()))
+                        },
+                        (AnyValue::UInt128($l), AnyValue::UInt128($r)) => {
+                            Some(AExpr::Literal(<Scalar as From<u128>>::from($ret).into()))
                         },
 
                         _ => None,
@@ -94,6 +220,7 @@ macro_rules! eval_binary_cmp_same_type {
     if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
         match (lit_left, lit_right) {
             (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => match (l.as_any_value(), r.as_any_value()) {
+                (AnyValue::Float16(l), AnyValue::Float16(r)) => Some(AExpr::Literal({ let x: bool = l.to_total_ord() $operand r.to_total_ord(); Scalar::from(x) }.into())),
                 (AnyValue::Float32(l), AnyValue::Float32(r)) => Some(AExpr::Literal({ let x: bool = l.to_total_ord() $operand r.to_total_ord(); Scalar::from(x) }.into())),
                 (AnyValue::Float64(l), AnyValue::Float64(r)) => Some(AExpr::Literal({ let x: bool = l.to_total_ord() $operand r.to_total_ord(); Scalar::from(x) }.into())),
 
@@ -109,6 +236,7 @@ macro_rules! eval_binary_cmp_same_type {
                 (AnyValue::UInt16(l), AnyValue::UInt16(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
                 (AnyValue::UInt32(l), AnyValue::UInt32(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
                 (AnyValue::UInt64(l), AnyValue::UInt64(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
+                (AnyValue::UInt128(l), AnyValue::UInt128(r)) => Some(AExpr::Literal({ let x: bool = l $operand r; Scalar::from(x) }.into())),
 
                 _ => None,
             }.into(),
@@ -129,9 +257,41 @@ macro_rules! eval_binary_cmp_same_type {
     }}
 }
 
-pub struct SimplifyBooleanRule {}
+pub struct SimplifyBooleanRule {
+    pub maintain_errors: bool,
+}
 
 impl OptimizationRule for SimplifyBooleanRule {
+    fn optimize_plan(
+        &mut self,
+        lp_arena: &mut Arena<IR>,
+        expr_arena: &mut Arena<AExpr>,
+        node: Node,
+    ) -> PolarsResult<Option<IR>> {
+        let (input_node, predicate_node) = match lp_arena.get(node) {
+            IR::Filter { input, predicate } => (*input, predicate.node()),
+            _ => return Ok(None),
+        };
+
+        let lv = match expr_arena.get(predicate_node) {
+            AExpr::Literal(lv) => lv,
+            _ => return Ok(None),
+        };
+
+        match lv.bool() {
+            Some(false) => {
+                let schema = lp_arena.get(input_node).schema(lp_arena).into_owned();
+                Ok(Some(IR::DataFrameScan {
+                    df: Arc::new(DataFrame::empty_with_schema(&schema)),
+                    schema,
+                    output_schema: None,
+                }))
+            },
+            Some(true) => Ok(Some(lp_arena.get(input_node).clone())),
+            _ => Ok(None),
+        }
+    }
+
     fn optimize_expr(
         &mut self,
         expr_arena: &mut Arena<AExpr>,
@@ -144,7 +304,14 @@ impl OptimizationRule for SimplifyBooleanRule {
         let out = match expr {
             // true AND x => x
             AExpr::BinaryExpr { left, op, right } => {
-                return Ok(arity::simplify_binary(*left, *op, *right, ctx, expr_arena));
+                return Ok(arity::simplify_binary(
+                    *left,
+                    *op,
+                    *right,
+                    ctx,
+                    self.maintain_errors,
+                    expr_arena,
+                ));
             },
             AExpr::Ternary {
                 predicate,
@@ -164,6 +331,15 @@ impl OptimizationRule for SimplifyBooleanRule {
                 let ae = expr_arena.get(input.node());
                 eval_negate(ae)
             },
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::DynamicPred { pred },
+                options,
+            } if pred.id().is_none() => {
+                // The sender of this dynamic predicate was dropped,
+                // so the result is always true.
+                Some(AExpr::Literal(Scalar::from(true).into()))
+            },
             _ => None,
         };
         Ok(out)
@@ -179,6 +355,8 @@ fn eval_negate(ae: &AExpr) -> Option<AExpr> {
                 AnyValue::Int16(v) => Scalar::from(v.checked_neg()?),
                 AnyValue::Int32(v) => Scalar::from(v.checked_neg()?),
                 AnyValue::Int64(v) => Scalar::from(v.checked_neg()?),
+                AnyValue::Int128(v) => Scalar::from(v.checked_neg()?),
+                AnyValue::Float16(v) => Scalar::from(v.neg()),
                 AnyValue::Float32(v) => Scalar::from(v.neg()),
                 AnyValue::Float64(v) => Scalar::from(v.neg()),
                 _ => return None,
@@ -222,7 +400,10 @@ fn string_addition_to_linear_concat(
         let left_e = ExprIR::from_node(left_node, expr_arena);
         let right_e = ExprIR::from_node(right_node, expr_arena);
 
-        let get_type = |ae: &AExpr| ae.get_dtype(input_schema, expr_arena).ok();
+        let get_type = |ae: &AExpr| {
+            ae.to_dtype(&ToFieldContext::new(expr_arena, input_schema))
+                .ok()
+        };
         let type_a = get_type(left_aexpr).or_else(|| get_type(right_aexpr))?;
         let type_b = get_type(right_aexpr).or_else(|| get_type(right_aexpr))?;
 
@@ -345,8 +526,17 @@ impl OptimizationRule for SimplifyExprRule {
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
         schema: &Schema,
-        _ctx: OptimizeExprContext,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
+        let expr = expr_arena.get(expr_node);
+
+        if let AExpr::BinaryExpr { left, op, right } = expr {
+            let (left, op, right) = (*left, *op, *right);
+            if let Some(out) = optimize_len_or_null_count_cmp(left, op, right, expr_arena) {
+                return Ok(Some(out));
+            }
+        }
+
         let expr = expr_arena.get(expr_node);
 
         let out = match &expr {
@@ -423,6 +613,30 @@ impl OptimizationRule for SimplifyExprRule {
                     _ => None,
                 }
             },
+            // drop_nulls().first() -> first(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::First(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::FirstNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
+            // drop_nulls().last()  -> last(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::Last(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::LastNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {
@@ -458,13 +672,18 @@ impl OptimizationRule for SimplifyExprRule {
                     },
                     Minus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l - r),
                     Multiply => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l * r),
-                    Divide => {
+                    RustDivide => {
                         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) =
                             (left_aexpr, right_aexpr)
                         {
                             match (lit_left, lit_right) {
                                 (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
                                     match (l.as_any_value(), r.as_any_value()) {
+                                        (AnyValue::Float16(x), AnyValue::Float16(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<pf16>>::from(x / y).into(),
+                                            ))
+                                        },
                                         (AnyValue::Float32(x), AnyValue::Float32(y)) => {
                                             Some(AExpr::Literal(
                                                 <Scalar as From<f32>>::from(x / y).into(),
@@ -537,6 +756,11 @@ impl OptimizationRule for SimplifyExprRule {
                                                 <Scalar as From<u64>>::from(x / y).into(),
                                             ))
                                         },
+                                        (AnyValue::UInt128(x), AnyValue::UInt128(y)) => {
+                                            Some(AExpr::Literal(
+                                                <Scalar as From<u128>>::from(x / y).into(),
+                                            ))
+                                        },
 
                                         _ => None,
                                     }
@@ -567,6 +791,10 @@ impl OptimizationRule for SimplifyExprRule {
                             match (lit_left, lit_right) {
                                 (LiteralValue::Scalar(l), LiteralValue::Scalar(r)) => {
                                     match (l.as_any_value(), r.as_any_value()) {
+                                        #[cfg(feature = "dtype-f16")]
+                                        (AnyValue::Float16(x), AnyValue::Float16(y)) => {
+                                            Some(AExpr::Literal(Scalar::from(x / y).into()))
+                                        },
                                         (AnyValue::Float32(x), AnyValue::Float32(y)) => {
                                             Some(AExpr::Literal(Scalar::from(x / y).into()))
                                         },
@@ -641,9 +869,14 @@ impl OptimizationRule for SimplifyExprRule {
                             None
                         }
                     },
-                    Modulus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l
-                        .wrapping_floor_div_mod(r)
-                        .1),
+                    Modulus => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| {
+                        if r.is_zero() {
+                            // TODO: this should optimize to `null` once we can express "is dynamic int but actually contains null"
+                            return Ok(None);
+                        }
+
+                        l.wrapping_floor_div_mod(r).1
+                    }),
                     Lt => eval_binary_cmp_same_type!(left_aexpr, <, right_aexpr),
                     Gt => eval_binary_cmp_same_type!(left_aexpr, >, right_aexpr),
                     Eq | EqValidity => eval_binary_cmp_same_type!(left_aexpr, ==, right_aexpr),
@@ -655,9 +888,14 @@ impl OptimizationRule for SimplifyExprRule {
                     And | LogicalAnd => eval_bitwise(left_aexpr, right_aexpr, |l, r| l & r),
                     Or | LogicalOr => eval_bitwise(left_aexpr, right_aexpr, |l, r| l | r),
                     Xor => eval_bitwise(left_aexpr, right_aexpr, |l, r| l ^ r),
-                    FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| l
-                        .wrapping_floor_div_mod(r)
-                        .0),
+                    FloorDivide => eval_binary_same_type!(left_aexpr, right_aexpr, |l, r| {
+                        if r.is_zero() {
+                            // TODO: this should optimize to `null` once we can express "is dynamic int but actually contains null"
+                            return Ok(None);
+                        }
+
+                        l.wrapping_floor_div_mod(r).0
+                    }),
                 };
                 if out.is_some() {
                     return Ok(out);
@@ -671,7 +909,13 @@ impl OptimizationRule for SimplifyExprRule {
                 options,
                 ..
             } => {
-                return optimize_functions(input.clone(), function.clone(), *options, expr_arena);
+                return optimize_functions(
+                    input.clone(),
+                    function.clone(),
+                    *options,
+                    ctx,
+                    expr_arena,
+                );
             },
             _ => None,
         };

@@ -283,7 +283,7 @@ def test_fast_explode_on_list_struct_6208() -> None:
     )
 
     assert not df["parents"].flags["FAST_EXPLODE"]
-    assert df.explode("parents").to_dict(as_series=False) == {
+    assert df.explode("parents", empty_as_null=True).to_dict(as_series=False) == {
         "label": ["l", "l"],
         "tag": ["t", "t"],
         "ref": [1, 1],
@@ -320,24 +320,59 @@ def test_list_sum_and_dtypes() -> None:
         (pl.Int16, pl.Int64),
         (pl.Int32, pl.Int32),
         (pl.Int64, pl.Int64),
+        (pl.Int128, pl.Int128),
         (pl.UInt8, pl.Int64),
         (pl.UInt16, pl.Int64),
         (pl.UInt32, pl.UInt32),
         (pl.UInt64, pl.UInt64),
+        (pl.UInt128, pl.UInt128),
+        (pl.Float16, pl.Float16),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
     ]:
         df = pl.DataFrame(
-            {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
-            schema={"a": pl.List(dt_in)},
+            {
+                "a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]],
+                "b": [[None], [1, 2, None], [1, 2, 3, None], [1, 2, 3, 4, None]],
+            },
+            schema={
+                "a": pl.List(dt_in),
+                "b": pl.List(dt_in),
+            },
         )
 
-        summed = df.explode("a").sum()
-        assert summed.dtypes == [dt_out]
-        assert summed.item() == 32
-        assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
+        assert_frame_equal(
+            df.select("a")
+            .explode(
+                "a",
+            )
+            .sum(),
+            pl.DataFrame(pl.Series("a", [32], dtype=dt_out)),
+            check_dtypes=True,
+            check_exact=True,
+        )
+        assert_series_equal(
+            df.get_column("a").list.sum(),
+            pl.Series("a", [1, 6, 10, 15], dtype=dt_out),
+            check_dtypes=True,
+            check_exact=True,
+        )
 
-    assert df.select(pl.col("a").list.sum()).to_dict(as_series=False) == {
-        "a": [1, 6, 10, 15]
-    }
+        # include nulls in the list
+        assert_frame_equal(
+            df.select("b").explode("b", empty_as_null=True).sum(),
+            pl.DataFrame(pl.Series("b", [19], dtype=dt_out)),
+            check_dtypes=True,
+            check_exact=True,
+        )
+        assert_series_equal(
+            df.get_column("b").list.sum(),
+            pl.Series("b", [0, 3, 6, 10], dtype=dt_out),
+            check_dtypes=True,
+            check_exact=True,
+        )
+
+    assert df.select(pl.col("a").list.sum()).dtypes == [dt_out]
 
     # include nulls
     assert pl.DataFrame(
@@ -515,10 +550,12 @@ def test_logical_parallel_list_collect() -> None:
         )
         .group_by("Group")
         .agg(pl.col("Values").value_counts(sort=True))
-        .explode("Values")
+        .explode(
+            "Values",
+        )
         .unnest("Values")
     )
-    assert out.dtypes == [pl.String, pl.Categorical, pl.UInt32]
+    assert out.dtypes == [pl.String, pl.Categorical, pl.get_index_type()]
     assert out.to_dict(as_series=False) == {
         "Group": ["GroupA", "GroupA"],
         "Values": ["Value1", "Value2"],
@@ -607,9 +644,15 @@ def test_struct_with_nulls_as_list() -> None:
 def test_list_amortized_iter_clear_settings_10126() -> None:
     out = (
         pl.DataFrame({"a": [[1], [1], [2]], "b": [[1, 2], [1, 3], [4]]})
-        .explode("a")
+        .explode(
+            "a",
+        )
         .group_by("a")
-        .agg(pl.col("b").flatten())
+        .agg(
+            pl.col("b").list.explode(
+                keep_nulls=False,
+            )
+        )
         .with_columns(pl.col("b").list.unique())
         .sort("a")
     )
@@ -696,22 +739,20 @@ def test_list_std(data_dispersion: pl.DataFrame) -> None:
     result = df.select(
         pl.col("int").list.std().name.suffix("_std"),
         pl.col("float").list.std().name.suffix("_std"),
-        pl.col("duration").list.std().name.suffix("_std"),
     )
 
     expected = pl.DataFrame(
         [
             pl.Series("int_std", [1.5811388300841898], dtype=pl.Float64),
             pl.Series("float_std", [1.5811388300841898], dtype=pl.Float64),
-            pl.Series(
-                "duration_std",
-                [timedelta(microseconds=1581)],
-                dtype=pl.Duration(time_unit="us"),
-            ),
         ]
     )
 
     assert_frame_equal(result, expected)
+
+    # `std` is not supported for Duration (see #23608).
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("duration").list.std())
 
 
 def test_list_median(data_dispersion: pl.DataFrame) -> None:
@@ -773,9 +814,9 @@ def test_take_list_15719() -> None:
         {"a": [None, None], "b": [None, [[1, 2]]]}, schema={"a": schema, "b": schema}
     )
     df = df.select(
-        a_explode=pl.col("a").explode(),
+        a_explode=pl.col("a").explode(empty_as_null=True),
         a_get=pl.col("a").list.get(0, null_on_oob=True),
-        b_explode=pl.col("b").explode(),
+        b_explode=pl.col("b").explode(empty_as_null=True),
         b_get=pl.col("b").list.get(0, null_on_oob=True),
     )
 

@@ -11,6 +11,44 @@ use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
 
+#[macro_export]
+macro_rules! binary_output_height {
+    ($a:expr, $b:expr, op = $op:expr) => {
+        match ($a.len(), $b.len()) {
+            (a, 1) | (1, a) => Ok(a),
+            (a, b) if a == b => Ok(a),
+            (a, b) => Err(polars_err!(
+                ShapeMismatch:
+                "{} got differing lengths \
+                ({}: {}, {}: {})",
+                $op,
+                stringify!($a.len()), $a.len(),
+                stringify!($b.len()), $b.len(),
+            )),
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! ternary_output_height {
+    ($a:expr, $b:expr, $c:expr, op = $op:expr) => {
+        match ($a.len(), $b.len(), $c.len()) {
+            (a, 1, 1) | (1, a, 1) | (1, 1, a) => Ok(a),
+            (a, b, 1) | (a, 1, b) | (1, a, b) if a == b => Ok(a),
+            (a, b, c) if a == b && b == c => Ok(a),
+            (a, b, c) => Err(polars_err!(
+                ShapeMismatch:
+                "{} got differing lengths \
+                ({}: {}, {}: {}, {}: {})",
+                $op,
+                stringify!($a.len()), $a.len(),
+                stringify!($b.len()), $b.len(),
+                stringify!($c.len()), $c.len(),
+            )),
+        }
+    }
+}
+
 // We need this helper because for<'a> notation can't yet be applied properly
 // on the return type.
 pub trait UnaryFnMut<A1>: FnMut(A1) -> Self::Ret {
@@ -556,7 +594,18 @@ where
     ca
 }
 
-#[inline]
+pub fn try_unary_to_series<T, F>(ca: &ChunkedArray<T>, op: F) -> PolarsResult<Series>
+where
+    T: PolarsDataType,
+    F: FnMut(&T::Array) -> PolarsResult<Box<dyn Array>>,
+{
+    let chunks = ca
+        .downcast_iter()
+        .map(op)
+        .collect::<PolarsResult<Vec<_>>>()?;
+    Series::try_from((ca.name().clone(), chunks))
+}
+
 pub fn binary_to_series<T, U, F>(
     lhs: &ChunkedArray<T>,
     rhs: &ChunkedArray<U>,
@@ -573,6 +622,25 @@ where
         .zip(rhs.downcast_iter())
         .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
         .collect::<Vec<_>>();
+    Series::try_from((lhs.name().clone(), chunks))
+}
+
+pub fn try_binary_to_series<T, U, F>(
+    lhs: &ChunkedArray<T>,
+    rhs: &ChunkedArray<U>,
+    mut op: F,
+) -> PolarsResult<Series>
+where
+    T: PolarsDataType,
+    U: PolarsDataType,
+    F: FnMut(&T::Array, &U::Array) -> PolarsResult<Box<dyn Array>>,
+{
+    let (lhs, rhs) = align_chunks_binary(lhs, rhs);
+    let chunks = lhs
+        .downcast_iter()
+        .zip(rhs.downcast_iter())
+        .map(|(lhs_arr, rhs_arr)| op(lhs_arr, rhs_arr))
+        .collect::<PolarsResult<Vec<_>>>()?;
     Series::try_from((lhs.name().clone(), chunks))
 }
 

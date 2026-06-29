@@ -1,5 +1,7 @@
 use std::iter;
 
+use polars_utils::itertools::Itertools;
+
 use super::*;
 
 impl IR {
@@ -11,18 +13,9 @@ impl IR {
     where
         E: IntoIterator<Item = ExprIR>,
     {
-        let mut exprs_mut = self.exprs_mut();
-        let mut new_exprs = exprs.into_iter();
-
-        for (expr, new_expr) in exprs_mut.by_ref().zip(new_exprs.by_ref()) {
+        for (expr, new_expr) in self.exprs_mut().zip_eq(exprs) {
             *expr = new_expr;
         }
-
-        assert!(exprs_mut.next().is_none(), "not enough exprs");
-        assert!(new_exprs.next().is_none(), "too many exprs");
-
-        drop(exprs_mut);
-
         self
     }
 
@@ -34,34 +27,27 @@ impl IR {
     where
         I: IntoIterator<Item = Node>,
     {
-        let mut inputs_mut = self.inputs_mut();
-        let mut new_inputs = inputs.into_iter();
-
-        for (input, new_input) in inputs_mut.by_ref().zip(new_inputs.by_ref()) {
+        for (input, new_input) in self.inputs_mut().zip_eq(inputs) {
             *input = new_input;
         }
-
-        assert!(inputs_mut.next().is_none(), "not enough inputs");
-        assert!(new_inputs.next().is_none(), "too many inputs");
-
-        drop(inputs_mut);
-
         self
     }
 
     pub fn exprs(&'_ self) -> Exprs<'_> {
         use IR::*;
         match self {
-            Slice { .. } => Exprs::Empty,
-            Cache { .. } => Exprs::Empty,
-            Distinct { .. } => Exprs::Empty,
-            Union { .. } => Exprs::Empty,
-            MapFunction { .. } => Exprs::Empty,
-            DataFrameScan { .. } => Exprs::Empty,
-            HConcat { .. } => Exprs::Empty,
-            ExtContext { .. } => Exprs::Empty,
-            SimpleProjection { .. } => Exprs::Empty,
-            SinkMultiple { .. } => Exprs::Empty,
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | DataFrameScan { .. }
+            | HConcat { .. }
+            | ExtContext { .. }
+            | SimpleProjection { .. }
+            | SinkMultiple { .. }
+            | Gather { .. } => Exprs::Empty,
+
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => Exprs::Empty,
 
@@ -101,22 +87,23 @@ impl IR {
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => Exprs::Empty,
+                SinkTypeIR::Callback(_) => Exprs::Empty,
+
                 SinkTypeIR::File(_) => Exprs::Empty,
-                SinkTypeIR::Partition(p) => {
-                    let key_iter = match &p.variant {
-                        PartitionVariantIR::Parted { key_exprs, .. }
-                        | PartitionVariantIR::ByKey { key_exprs, .. } => key_exprs.iter(),
-                        _ => [].iter(),
-                    };
-                    let sort_by_iter = match &p.per_partition_sort_by {
-                        Some(sort_by) => sort_by.iter(),
-                        _ => [].iter(),
-                    }
-                    .map(|s| &s.expr);
-                    Exprs::Boxed(Box::new(key_iter.chain(sort_by_iter)))
+
+                SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                    partition_strategy, ..
+                }) => match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys: _,
+                        keys_pre_grouped: _,
+                    } => Exprs::Slice(keys.iter()),
+                    PartitionStrategyIR::FileSize => Exprs::Empty,
                 },
             },
 
+            UnoptimizedDispatch { .. } => Exprs::Empty,
             Invalid => unreachable!(),
         }
     }
@@ -124,16 +111,17 @@ impl IR {
     pub fn exprs_mut(&'_ mut self) -> ExprsMut<'_> {
         use IR::*;
         match self {
-            Slice { .. } => ExprsMut::Empty,
-            Cache { .. } => ExprsMut::Empty,
-            Distinct { .. } => ExprsMut::Empty,
-            Union { .. } => ExprsMut::Empty,
-            MapFunction { .. } => ExprsMut::Empty,
-            DataFrameScan { .. } => ExprsMut::Empty,
-            HConcat { .. } => ExprsMut::Empty,
-            ExtContext { .. } => ExprsMut::Empty,
-            SimpleProjection { .. } => ExprsMut::Empty,
-            SinkMultiple { .. } => ExprsMut::Empty,
+            Slice { .. }
+            | Cache { .. }
+            | Distinct { .. }
+            | Union { .. }
+            | MapFunction { .. }
+            | DataFrameScan { .. }
+            | HConcat { .. }
+            | ExtContext { .. }
+            | SimpleProjection { .. }
+            | SinkMultiple { .. }
+            | Gather { .. } => ExprsMut::Empty,
             #[cfg(feature = "merge_sorted")]
             MergeSorted { .. } => ExprsMut::Empty,
 
@@ -173,22 +161,23 @@ impl IR {
 
             Sink { payload, .. } => match payload {
                 SinkTypeIR::Memory => ExprsMut::Empty,
+                SinkTypeIR::Callback(_) => ExprsMut::Empty,
+
                 SinkTypeIR::File(_) => ExprsMut::Empty,
-                SinkTypeIR::Partition(p) => {
-                    let key_iter = match &mut p.variant {
-                        PartitionVariantIR::Parted { key_exprs, .. }
-                        | PartitionVariantIR::ByKey { key_exprs, .. } => key_exprs.iter_mut(),
-                        _ => [].iter_mut(),
-                    };
-                    let sort_by_iter = match &mut p.per_partition_sort_by {
-                        Some(sort_by) => sort_by.iter_mut(),
-                        _ => [].iter_mut(),
-                    }
-                    .map(|s| &mut s.expr);
-                    ExprsMut::Boxed(Box::new(key_iter.chain(sort_by_iter)))
+
+                SinkTypeIR::Partitioned(PartitionedSinkOptionsIR {
+                    partition_strategy, ..
+                }) => match partition_strategy {
+                    PartitionStrategyIR::Keyed {
+                        keys,
+                        include_keys: _,
+                        keys_pre_grouped: _,
+                    } => ExprsMut::Slice(keys.iter_mut()),
+                    PartitionStrategyIR::FileSize => ExprsMut::Empty,
                 },
             },
 
+            UnoptimizedDispatch { .. } => ExprsMut::Empty,
             Invalid => unreachable!(),
         }
     }
@@ -201,7 +190,7 @@ impl IR {
         container.extend(self.exprs().cloned())
     }
 
-    pub fn inputs(&'_ self) -> Inputs<'_> {
+    pub fn inputs(&self) -> Inputs<'_> {
         use IR::*;
         match self {
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
@@ -219,13 +208,19 @@ impl IR {
                 input_right,
                 ..
             } => Inputs::double(*input_left, *input_right),
+            Gather { input, idxs, .. } => Inputs::double(*input, *idxs),
             HStack { input, .. } => Inputs::single(*input),
             Distinct { input, .. } => Inputs::single(*input),
             MapFunction { input, .. } => Inputs::single(*input),
             Sink { input, .. } => Inputs::single(*input),
             ExtContext {
                 input, contexts, ..
-            } => Inputs::Boxed(Box::new(iter::once(*input).chain(contexts.iter().copied()))),
+            } => Inputs::DoubleSlice(
+                std::slice::from_ref(input)
+                    .iter()
+                    .chain(contexts.iter())
+                    .copied(),
+            ),
             Scan { .. } => Inputs::Empty,
             DataFrameScan { .. } => Inputs::Empty,
             #[cfg(feature = "python")]
@@ -236,11 +231,12 @@ impl IR {
                 input_right,
                 ..
             } => Inputs::double(*input_left, *input_right),
+            UnoptimizedDispatch { inputs, .. } => Inputs::slice(inputs),
             Invalid => unreachable!(),
         }
     }
 
-    pub fn inputs_mut(&'_ mut self) -> InputsMut<'_> {
+    pub fn inputs_mut(&mut self) -> InputsMut<'_> {
         use IR::*;
         match self {
             Union { inputs, .. } | HConcat { inputs, .. } | SinkMultiple { inputs } => {
@@ -258,13 +254,17 @@ impl IR {
                 input_right,
                 ..
             } => InputsMut::double(input_left, input_right),
+            Gather { input, idxs, .. } => InputsMut::double(input, idxs),
             HStack { input, .. } => InputsMut::single(input),
             Distinct { input, .. } => InputsMut::single(input),
             MapFunction { input, .. } => InputsMut::single(input),
             Sink { input, .. } => InputsMut::single(input),
             ExtContext {
                 input, contexts, ..
-            } => InputsMut::Boxed(Box::new(iter::once(input).chain(contexts.iter_mut()))),
+            } => InputsMut::DoubleSlice(std::iter::chain(
+                std::slice::from_mut(input).iter_mut(),
+                contexts.iter_mut(),
+            )),
             Scan { .. } => InputsMut::Empty,
             DataFrameScan { .. } => InputsMut::Empty,
             #[cfg(feature = "python")]
@@ -275,6 +275,7 @@ impl IR {
                 input_right,
                 ..
             } => InputsMut::double(input_left, input_right),
+            UnoptimizedDispatch { inputs, .. } => InputsMut::slice(inputs),
             Invalid => unreachable!(),
         }
     }
@@ -303,7 +304,7 @@ pub enum Inputs<'a> {
     Single(iter::Once<Node>),
     Double(std::array::IntoIter<Node, 2>),
     Slice(iter::Copied<std::slice::Iter<'a, Node>>),
-    Boxed(Box<dyn Iterator<Item = Node> + 'a>),
+    DoubleSlice(iter::Copied<iter::Chain<std::slice::Iter<'a, Node>, std::slice::Iter<'a, Node>>>),
 }
 
 impl<'a> Inputs<'a> {
@@ -329,7 +330,17 @@ impl<'a> Iterator for Inputs<'a> {
             Self::Single(it) => it.next(),
             Self::Double(it) => it.next(),
             Self::Slice(it) => it.next(),
-            Self::Boxed(it) => it.next(),
+            Self::DoubleSlice(it) => it.next(),
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(it) => it.nth(n),
+            Self::Double(it) => it.nth(n),
+            Self::Slice(it) => it.nth(n),
+            Self::DoubleSlice(it) => it.nth(n),
         }
     }
 }
@@ -339,7 +350,7 @@ pub enum InputsMut<'a> {
     Single(iter::Once<&'a mut Node>),
     Double(std::array::IntoIter<&'a mut Node, 2>),
     Slice(std::slice::IterMut<'a, Node>),
-    Boxed(Box<dyn Iterator<Item = &'a mut Node> + 'a>),
+    DoubleSlice(iter::Chain<std::slice::IterMut<'a, Node>, std::slice::IterMut<'a, Node>>),
 }
 
 impl<'a> InputsMut<'a> {
@@ -365,7 +376,17 @@ impl<'a> Iterator for InputsMut<'a> {
             Self::Single(it) => it.next(),
             Self::Double(it) => it.next(),
             Self::Slice(it) => it.next(),
-            Self::Boxed(it) => it.next(),
+            Self::DoubleSlice(it) => it.next(),
+        }
+    }
+
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        match self {
+            Self::Empty => None,
+            Self::Single(it) => it.nth(n),
+            Self::Double(it) => it.nth(n),
+            Self::Slice(it) => it.nth(n),
+            Self::DoubleSlice(it) => it.nth(n),
         }
     }
 }

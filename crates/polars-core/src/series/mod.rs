@@ -18,13 +18,16 @@ macro_rules! invalid_operation_panic {
 pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
+pub mod arrow_export;
 pub mod builder;
+
 mod comparison;
 mod from;
 pub mod implementations;
-mod into;
 pub(crate) mod iterator;
 pub mod ops;
+#[cfg(feature = "proptest")]
+pub mod proptest;
 mod series_trait;
 
 use std::borrow::Cow;
@@ -37,10 +40,11 @@ pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
 use polars_error::feature_gated;
+use polars_utils::float::IsFloat;
 pub use series_trait::{IsSorted, *};
 
-use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
+use crate::runtime::RAYON;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
@@ -97,7 +101,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// let mask = s.equal(1).unwrap();
 /// let valid = [true, false, false].iter();
 /// assert!(mask
-///     .into_iter()
+///     .iter()
 ///     .map(|opt_bool| opt_bool.unwrap()) // option, because series can be null
 ///     .zip(valid)
 ///     .all(|(a, b)| a == *b))
@@ -119,7 +123,7 @@ use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 /// let s = Series::new("angle".into(), [2f32 * pi, pi, 1.5 * pi].as_ref());
 /// let s_cos: Series = s.f32()
 ///                     .expect("series was not an f32 dtype")
-///                     .into_iter()
+///                     .iter()
 ///                     .map(|opt_angle| opt_angle.map(|angle| angle.cos()))
 ///                     .collect();
 /// ```
@@ -156,15 +160,11 @@ impl Eq for Wrap<Series> {}
 
 impl Hash for Wrap<Series> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let rs = PlSeedableRandomStateQuality::fixed();
-        let mut h = vec![];
-        if self.0.vec_hash(rs, &mut h).is_ok() {
-            let h = h.into_iter().fold(0, |a: u64, b| a.wrapping_add(b));
-            h.hash(state)
-        } else {
-            self.len().hash(state);
-            self.null_count().hash(state);
-            self.dtype().hash(state);
+        self.dtype().hash(state);
+        self.len().hash(state);
+
+        for av in self.iter() {
+            av.hash(state);
         }
     }
 }
@@ -208,6 +208,12 @@ impl Series {
             Ok(ca) => ca.0,
             Err(ca) => ca.as_ref().as_ref().clone(),
         }
+    }
+
+    /// Returns a reference to the Arrow ArrayRef
+    #[inline]
+    pub fn array_ref(&self, chunk_idx: usize) -> &ArrayRef {
+        &self.chunks()[chunk_idx] as &ArrayRef
     }
 
     /// # Safety
@@ -271,7 +277,7 @@ impl Series {
 
     pub fn into_frame(self) -> DataFrame {
         // SAFETY: A single-column dataframe cannot have length mismatches or duplicate names
-        unsafe { DataFrame::new_no_checks(self.len(), vec![self.into()]) }
+        unsafe { DataFrame::new_unchecked(self.len(), vec![self.into()]) }
     }
 
     /// Rename series.
@@ -383,7 +389,7 @@ impl Series {
 
         use DataType as D;
         let do_clone = match dtype {
-            D::Unknown(UnknownKind::Any | UnknownKind::Ufunc) => true,
+            D::Unknown(UnknownKind::Any) => true,
             D::Unknown(UnknownKind::Int(_)) if slf.dtype().is_integer() => true,
             D::Unknown(UnknownKind::Float) if slf.dtype().is_float() => true,
             D::Unknown(UnknownKind::Str)
@@ -391,7 +397,7 @@ impl Series {
             {
                 true
             },
-            dt if dt.is_primitive() && dt == slf.dtype() => true,
+            dt if (dt.is_primitive() || dt.is_extension()) && dt == slf.dtype() => true,
             _ => false,
         };
 
@@ -457,8 +463,9 @@ impl Series {
         }
 
         let new_options = match options {
-            // Strictness is handled on this level to improve error messages.
-            CastOptions::Strict => CastOptions::NonStrict,
+            // Strictness is handled on this level to improve error messages, if not nested.
+            // Nested types could hide cast errors, so have to be done internally.
+            CastOptions::Strict if !dtype.is_nested() => CastOptions::NonStrict,
             opt => opt,
         };
 
@@ -506,7 +513,11 @@ impl Series {
         match (self.dtype(), dtype) {
             #[cfg(feature = "dtype-decimal")]
             (D::Int128, D::Decimal(precision, scale)) => {
-                self.clone().into_decimal(*precision, scale.unwrap())
+                let ca = self.i128().unwrap();
+                Ok(ca
+                    .clone()
+                    .into_decimal_unchecked(*precision, *scale)
+                    .into_series())
             },
 
             #[cfg(feature = "dtype-categorical")]
@@ -565,8 +576,22 @@ impl Series {
                     .map(|ca| ca.into_series())
             },
 
+            #[cfg(feature = "dtype-extension")]
+            (_, D::Extension(typ, storage)) => {
+                let storage_series = self.from_physical_unchecked(storage.as_ref())?;
+                let ext = ExtensionChunked::from_storage(typ.clone(), storage_series);
+                Ok(ext.into_series())
+            },
+
             _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),
         }
+    }
+
+    #[cfg(feature = "dtype-extension")]
+    pub fn into_extension(self, typ: ExtensionTypeInstance) -> Series {
+        assert!(!self.dtype().is_extension());
+        let ext = ExtensionChunked::from_storage(typ, self);
+        ext.into_series()
     }
 
     /// Cast numerical types to f64, and keep floats as is.
@@ -577,15 +602,15 @@ impl Series {
         }
     }
 
-    /// Compute the sum of all values in this Series.
-    /// Returns `Some(0)` if the array is empty, and `None` if the array only
-    /// contains null values.
+    /// Get the sum of the Series as a `Scalar`.
+    /// Returns a `Scalar` with a zeroed value if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum<T>(&self) -> PolarsResult<T>
     where
-        T: NumCast,
+        T: NumCast + IsFloat,
     {
         let sum = self.sum_reduce()?;
         let sum = sum.value().extract().unwrap();
@@ -596,7 +621,7 @@ impl Series {
     /// Returns an option because the array is nullable.
     pub fn min<T>(&self) -> PolarsResult<Option<T>>
     where
-        T: NumCast,
+        T: NumCast + IsFloat,
     {
         let min = self.min_reduce()?;
         let min = min.value().extract::<T>();
@@ -607,7 +632,7 @@ impl Series {
     /// Returns an option because the array is nullable.
     pub fn max<T>(&self) -> PolarsResult<Option<T>>
     where
-        T: NumCast,
+        T: NumCast + IsFloat,
     {
         let max = self.max_reduce()?;
         let max = max.value().extract::<T>();
@@ -615,11 +640,11 @@ impl Series {
     }
 
     /// Explode a list Series. This expands every item to a new row..
-    pub fn explode(&self, skip_empty: bool) -> PolarsResult<Series> {
+    pub fn explode(&self, options: ExplodeOptions) -> PolarsResult<Series> {
         match self.dtype() {
-            DataType::List(_) => self.list().unwrap().explode(skip_empty),
+            DataType::List(_) => self.list().unwrap().explode(options),
             #[cfg(feature = "dtype-array")]
-            DataType::Array(_, _) => self.array().unwrap().explode(skip_empty),
+            DataType::Array(_, _) => self.array().unwrap().explode(options),
             _ => Ok(self.clone()),
         }
     }
@@ -627,6 +652,8 @@ impl Series {
     /// Check if numeric value is NaN (note this is different than missing/ null)
     pub fn is_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_nan()),
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -642,6 +669,8 @@ impl Series {
     /// Check if numeric value is NaN (note this is different than missing/null)
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_not_nan()),
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
             dt if dt.is_primitive_numeric() => {
@@ -656,6 +685,8 @@ impl Series {
     /// Check if numeric value is finite
     pub fn is_finite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_finite()),
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -671,6 +702,8 @@ impl Series {
     /// Check if numeric value is infinite
     pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
+            #[cfg(feature = "dtype-f16")]
+            DataType::Float16 => Ok(self.f16().unwrap().is_infinite()),
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             DataType::Null => Ok(BooleanChunked::full_null(self.name().clone(), self.len())),
@@ -704,6 +737,7 @@ impl Series {
     /// * List(inner) -> List(physical of inner)
     /// * Array(inner) -> Array(physical of inner)
     /// * Struct -> Struct with physical repr of each struct column
+    /// * Extension -> physical of storage type
     pub fn to_physical_repr(&self) -> Cow<'_, Series> {
         use DataType::*;
         match self.dtype() {
@@ -740,8 +774,22 @@ impl Series {
                 Cow::Borrowed(_) => Cow::Borrowed(self),
                 Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
+            #[cfg(feature = "dtype-extension")]
+            Extension(_, _) => self.ext().unwrap().storage().to_physical_repr(),
             _ => Cow::Borrowed(self),
         }
+    }
+
+    /// If the Series is an Extension type, return its storage Series.
+    /// Otherwise, return itself.
+    pub fn to_storage(&self) -> &Series {
+        #[cfg(feature = "dtype-extension")]
+        {
+            if let DataType::Extension(_, _) = self.dtype() {
+                return self.ext().unwrap().storage();
+            }
+        }
+        self
     }
 
     /// Traverse and collect every nth element in a new array.
@@ -759,17 +807,20 @@ impl Series {
         std::ops::Mul::mul(self, other)?.sum::<f64>()
     }
 
-    /// Get the sum of the Series as a new Series of length 1.
-    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    /// Get the sum of the [`ChunkedArray`] as a `Scalar`.
+    /// Returns a `Scalar` with a single zeroed value if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
-        use DataType::*;
-        match self.dtype() {
-            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
-            _ => self.0.sum_reduce(),
-        }
+        self.0.sum_reduce()
+    }
+
+    /// Get the mean of the Series as a new Series of length 1.
+    /// Returns a Series with a single null entry if self is an empty numeric series.
+    pub fn mean_reduce(&self) -> PolarsResult<Scalar> {
+        self.0.mean_reduce()
     }
 
     /// Get the product of an array.
@@ -790,8 +841,14 @@ impl Series {
                 UInt64 => Ok(self.u64().unwrap().prod_reduce()),
                 #[cfg(feature = "dtype-i128")]
                 Int128 => Ok(self.i128().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-u128")]
+                UInt128 => Ok(self.u128().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-f16")]
+                Float16 => Ok(self.f16().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-decimal")]
+                Decimal(..) => Ok(self.decimal().unwrap().prod_reduce()),
                 dt => {
                     polars_bail!(InvalidOperation: "`product` operation not supported for dtype `{dt}`")
                 },
@@ -809,11 +866,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-decimal")]
-    pub(crate) fn into_decimal(
-        self,
-        precision: Option<usize>,
-        scale: usize,
-    ) -> PolarsResult<Series> {
+    pub fn into_decimal(self, precision: usize, scale: usize) -> PolarsResult<Series> {
         match self.dtype() {
             DataType::Int128 => Ok(self
                 .i128()
@@ -822,8 +875,7 @@ impl Series {
                 .into_decimal(precision, scale)?
                 .into_series()),
             DataType::Decimal(cur_prec, cur_scale)
-                if (cur_prec.is_none() || precision.is_none() || *cur_prec == precision)
-                    && *cur_scale == Some(scale) =>
+                if scale == *cur_scale && precision >= *cur_prec =>
             {
                 Ok(self)
             },
@@ -832,7 +884,7 @@ impl Series {
     }
 
     #[cfg(feature = "dtype-time")]
-    pub(crate) fn into_time(self) -> Series {
+    pub fn into_time(self) -> Series {
         match self.dtype() {
             DataType::Int64 => self.i64().unwrap().clone().into_time().into_series(),
             DataType::Time => self
@@ -846,7 +898,7 @@ impl Series {
         }
     }
 
-    pub(crate) fn into_date(self) -> Series {
+    pub fn into_date(self) -> Series {
         #[cfg(not(feature = "dtype-date"))]
         {
             panic!("activate feature dtype-date")
@@ -866,7 +918,7 @@ impl Series {
     }
 
     #[allow(unused_variables)]
-    pub(crate) fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
+    pub fn into_datetime(self, timeunit: TimeUnit, tz: Option<TimeZone>) -> Series {
         #[cfg(not(feature = "dtype-datetime"))]
         {
             panic!("activate feature dtype-datetime")
@@ -892,7 +944,7 @@ impl Series {
     }
 
     #[allow(unused_variables)]
-    pub(crate) fn into_duration(self, timeunit: TimeUnit) -> Series {
+    pub fn into_duration(self, timeunit: TimeUnit) -> Series {
         #[cfg(not(feature = "dtype-duration"))]
         {
             panic!("activate feature dtype-duration")
@@ -931,10 +983,6 @@ impl Series {
         let len = length.unwrap_or(TAIL_DEFAULT_LENGTH);
         let len = std::cmp::min(len, self.len());
         self.slice(-(len as i64), len)
-    }
-
-    pub fn mean_reduce(&self) -> Scalar {
-        crate::scalar::reduce::mean_reduce(self.mean(), self.dtype().clone())
     }
 
     /// Compute the unique elements, but maintain order. This requires more work
@@ -1037,7 +1085,14 @@ impl Series {
             &[self.clone().into_column()],
             &[descending],
             &[nulls_last],
+            false,
         )
+    }
+}
+
+impl Default for Series {
+    fn default() -> Self {
+        NullChunked::new(PlSmallStr::EMPTY, 0).into_series()
     }
 }
 
@@ -1052,12 +1107,6 @@ impl Deref for Series {
 impl<'a> AsRef<dyn SeriesTrait + 'a> for Series {
     fn as_ref(&self) -> &(dyn SeriesTrait + 'a) {
         self.0.as_ref()
-    }
-}
-
-impl Default for Series {
-    fn default() -> Self {
-        Int64Chunked::default().into_series()
     }
 }
 
@@ -1169,23 +1218,23 @@ mod test {
     #[cfg(feature = "dtype-decimal")]
     fn series_append_decimal() {
         let s1 = Series::new("a".into(), &[1.1, 2.3])
-            .cast(&DataType::Decimal(None, Some(2)))
+            .cast(&DataType::Decimal(38, 2))
             .unwrap();
         let s2 = Series::new("b".into(), &[3])
-            .cast(&DataType::Decimal(None, Some(0)))
+            .cast(&DataType::Decimal(38, 0))
             .unwrap();
 
         {
             let mut s1 = s1.clone();
             s1.append(&s2).unwrap();
             assert_eq!(s1.len(), 3);
-            assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 2));
+            assert_eq!(s1.get(2).unwrap(), AnyValue::Decimal(300, 38, 2));
         }
 
         {
             let mut s2 = s2;
             s2.extend(&s1).unwrap();
-            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 0));
+            assert_eq!(s2.get(2).unwrap(), AnyValue::Decimal(2, 38, 0));
         }
     }
 

@@ -1,9 +1,10 @@
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::read::ParallelStrategy;
 use polars_io::prelude::ParquetOptions;
 use polars_io::{HiveOptions, RowIndex};
-use polars_utils::plpath::PlPath;
+use polars_utils::pl_path::PlRefPath;
 use polars_utils::slice_enum::Slice;
 
 use crate::prelude::*;
@@ -78,6 +79,7 @@ impl LazyFileListReader for LazyParquetReader {
             rechunk: self.args.rechunk,
             cache: self.args.cache,
             glob: self.args.glob,
+            hidden_file_prefix: None,
             projection: None,
             column_mapping: None,
             default_values: None,
@@ -96,6 +98,8 @@ impl LazyFileListReader for LazyParquetReader {
             extra_columns_policy: ExtraColumnsPolicy::Raise,
             include_file_paths: self.args.include_file_paths,
             deletion_files: None,
+            table_statistics: None,
+            row_count: None,
         };
 
         let mut lf: LazyFrame =
@@ -162,8 +166,8 @@ impl LazyFileListReader for LazyParquetReader {
 
 impl LazyFrame {
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn scan_parquet(path: PlPath, args: ScanArgsParquet) -> PolarsResult<Self> {
-        Self::scan_parquet_sources(ScanSources::Paths([path].into()), args)
+    pub fn scan_parquet(path: PlRefPath, args: ScanArgsParquet) -> PolarsResult<Self> {
+        Self::scan_parquet_sources(ScanSources::Paths(Buffer::from_iter([path])), args)
     }
 
     /// Create a LazyFrame directly from a parquet scan.
@@ -172,7 +176,10 @@ impl LazyFrame {
     }
 
     /// Create a LazyFrame directly from a parquet scan.
-    pub fn scan_parquet_files(paths: Arc<[PlPath]>, args: ScanArgsParquet) -> PolarsResult<Self> {
+    pub fn scan_parquet_files(
+        paths: Buffer<PlRefPath>,
+        args: ScanArgsParquet,
+    ) -> PolarsResult<Self> {
         Self::scan_parquet_sources(ScanSources::Paths(paths), args)
     }
 }

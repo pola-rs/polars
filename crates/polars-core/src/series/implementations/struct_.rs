@@ -4,7 +4,9 @@ use arrow::bitmap::Bitmap;
 
 use super::*;
 use crate::chunked_array::StructChunked;
-use crate::prelude::row_encode::_get_rows_encoded_ca_unordered;
+use crate::prelude::row_encode::{
+    _get_rows_encoded_ca, _get_rows_encoded_ca_unordered, encode_rows_unordered,
+};
 use crate::prelude::*;
 use crate::series::private::{PrivateSeries, PrivateSeriesNumeric};
 
@@ -35,23 +37,27 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.set_flags(flags);
     }
 
-    // TODO! remove this. Very slow. Asof join should use row-encoding.
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let other = other.struct_().unwrap();
-        self.0
-            .fields_as_series()
-            .iter()
-            .zip(other.fields_as_series())
-            .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
-    }
-
     fn vec_hash(
         &self,
         build_hasher: PlSeedableRandomStateQuality,
         buf: &mut Vec<u64>,
     ) -> PolarsResult<()> {
-        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+        // TODO: don't use row-encoding here.
+        if self.0.dtype().contains_categoricals() {
+            // The unordered encoding uses physicals for categoricals which depends on insertion order,
+            // so we use the ordered one here.
+            _get_rows_encoded_ca(
+                PlSmallStr::EMPTY,
+                &[self.0.clone().into_column()],
+                &[false],
+                &[false],
+                true,
+            )?
             .vec_hash(build_hasher, buf)
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+                .vec_hash(build_hasher, buf)
+        }
     }
 
     fn vec_hash_combine(
@@ -59,8 +65,22 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         build_hasher: PlSeedableRandomStateQuality,
         hashes: &mut [u64],
     ) -> PolarsResult<()> {
-        _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+        // TODO: don't use row-encoding here.
+        if self.0.dtype().contains_categoricals() {
+            // The unordered encoding uses physicals for categoricals which depends on insertion order,
+            // so we use the ordered one here.
+            _get_rows_encoded_ca(
+                PlSmallStr::EMPTY,
+                &[self.0.clone().into_column()],
+                &[false],
+                &[false],
+                true,
+            )?
             .vec_hash_combine(build_hasher, hashes)
+        } else {
+            _get_rows_encoded_ca_unordered(PlSmallStr::EMPTY, &[self.0.clone().into_column()])?
+                .vec_hash_combine(build_hasher, hashes)
+        }
     }
 
     #[cfg(feature = "algorithm_group_by")]
@@ -153,12 +173,20 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.take_unchecked(_idx).into_series()
     }
 
+    fn deposit(&self, validity: &Bitmap) -> Series {
+        self.0.deposit(validity).into_series()
+    }
+
     fn len(&self) -> usize {
         self.0.len()
     }
 
     fn rechunk(&self) -> Series {
         self.0.rechunk().into_owned().into_series()
+    }
+
+    fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+        self.0.clone().with_outer_validity(validity).into_series()
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {
@@ -194,7 +222,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         if self.len() < 2 {
             return Ok(self.0.clone().into_series());
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
         // SAFETY:
         // groups are in bounds
@@ -210,7 +238,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             1 => Ok(1),
             _ => {
                 // TODO! try row encoding
-                let main_thread = POOL.current_thread_index().is_none();
+                let main_thread = RAYON.current_thread_index().is_none();
                 let groups = self.group_tuples(main_thread, false)?;
                 Ok(groups.len())
             },
@@ -224,10 +252,16 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name().clone(), first))
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
+        ChunkUnique::unique_id(&ca)
     }
 
     fn has_nulls(&self) -> bool {

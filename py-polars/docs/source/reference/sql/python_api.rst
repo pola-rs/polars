@@ -7,18 +7,13 @@ Python API
 Introduction
 ------------
 
-There are four primary entry points to the Polars SQL interface, each operating at a
-different level of granularity. There is the :class:`~polars.sql.SQLContext` object,
-a top-level :func:`polars.sql` function that operates on the global context,
-frame-level :meth:`DataFrame.sql` and :meth:`LazyFrame.sql` methods, and the
-:func:`polars.sql_expr` function that creates native expressions from SQL.
-
-
-Querying
---------
-
-SQL queries can be issued against compatible data structures in the current globals,
-against specific frames, or incorporated into expressions.
+There are several entry points to the Polars SQL interface, each operating at a
+different level of granularity. There is the :class:`~polars.sql.SQLContext` object that
+allows for specific objects to be registered and queried within a managed context, a
+top-level :func:`polars.sql` function that operates on the global context, frame-level
+:meth:`DataFrame.sql` and :meth:`LazyFrame.sql` methods, and a :meth:`Series.sql`
+method. There is also a :func:`polars.sql_expr` function that creates Polars-native
+expressions from SQL fragments.
 
 
 .. _global_sql:
@@ -31,9 +26,11 @@ to execute SQL queries mediated by the Polars execution engine against Polars
 :ref:`DataFrame <dataframe>`, :ref:`LazyFrame <lazyframe>`, and :ref:`Series <series>`
 data, as well as `Pandas <https://pandas.pydata.org/>`_ DataFrame and Series, and
 `PyArrow <https://arrow.apache.org/docs/python/>`_ Table and RecordBatch objects.
+
+
 Non-Polars objects are implicitly converted to DataFrame when used in a SQL query; for
-PyArrow, and Pandas data that uses PyArrow dtypes, this conversion can often be
-zero-copy if the underlying data maps cleanly to a natively-supported dtype.
+PyArrow, and Pandas data that uses PyArrow dtypes, this conversion will be zero-copy
+if the underlying data maps cleanly to a natively-supported dtype.
 
 **Example:**
 
@@ -87,7 +84,7 @@ Frame SQL
 ~~~~~~~~~
 
 Executes SQL directly against the specific underlying eager/lazy frame, referencing
-it as "self"; returns a new frame representing the query result.
+it as "self"; returns a new frame of the same type representing the query result.
 
 **Example:**
 

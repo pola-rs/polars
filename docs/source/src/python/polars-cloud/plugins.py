@@ -1,18 +1,21 @@
 """
+from datetime import datetime
+
+import numpy as np
 import polars as pl
 import polars_cloud as pc
 
 # --8<-- [start:set-context]
-ctx = pc.ComputeContext(workspace="your-workspace",
+ctx = pc.ComputeContext(
+    workspace="your-workspace",
     cpus=12,
     memory=12,
-    requirements="requirements.txt"
+    requirements="requirements.txt",
 )
 # --8<-- [end:set-context]
 
 
 # --8<-- [start:run-plugin]
-
 import polars_xdt as xdt
 
 lf = pl.LazyFrame(
@@ -31,9 +34,7 @@ lf = pl.LazyFrame(
 )
 
 query = lf.with_columns(
-    xdt.from_local_datetime(
-        "local_dt", pl.col("timezone"), "UTC"
-    ).alias("date")
+    xdt.from_local_datetime("local_dt", pl.col("timezone"), "UTC").alias("date")
 )
 
 query.remote(ctx).show()
@@ -50,12 +51,8 @@ lf = pl.LazyFrame(
     }
 )
 
-q = lf.select(
-    pl.col("values").map_batches(np.log, return_dtype=pl.Float64)
-)
+q = lf.select(pl.col("values").map_batches(np.log, return_dtype=pl.Float64))
 
 q.remote(ctx).show()
-
 # --8<-- [end:run-udf]
-
 """

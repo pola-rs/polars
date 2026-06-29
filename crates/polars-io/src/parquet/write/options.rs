@@ -1,15 +1,14 @@
-use polars_error::PolarsResult;
+use arrow::datatypes::ArrowSchemaRef;
+use polars_core::prelude::CompatLevel;
 use polars_parquet::write::{
-    BrotliLevel as BrotliLevelParquet, CompressionOptions, GzipLevel as GzipLevelParquet,
-    StatisticsOptions, ZstdLevel as ZstdLevelParquet,
+    BrotliLevel, CompressionOptions, GzipLevel, StatisticsOptions, ZstdLevel,
 };
-use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::KeyValueMetadata;
 
-#[derive(Clone, Debug, PartialEq, Eq, Default, Hash)]
+#[derive(Default, Clone, Debug, PartialEq, Hash, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
 pub struct ParquetWriteOptions {
@@ -23,40 +22,15 @@ pub struct ParquetWriteOptions {
     pub data_page_size: Option<usize>,
     /// Custom file-level key value metadata
     pub key_value_metadata: Option<KeyValueMetadata>,
-
-    /// Per-field overwrites for writing properties.
-    pub field_overwrites: Vec<ParquetFieldOverwrites>,
+    pub arrow_schema: Option<ArrowSchemaRef>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub compat_level: Option<CompatLevel>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub enum ChildFieldOverwrites {
-    /// Flat datatypes
-    None,
-    /// List / Array
-    ListLike(Box<ParquetFieldOverwrites>),
-    Struct(Vec<ParquetFieldOverwrites>),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct MetadataKeyValue {
-    pub key: PlSmallStr,
-    pub value: Option<PlSmallStr>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct ParquetFieldOverwrites {
-    pub name: Option<PlSmallStr>,
-    pub children: ChildFieldOverwrites,
-
-    pub required: Option<bool>,
-    pub field_id: Option<i32>,
-    pub metadata: Option<Vec<MetadataKeyValue>>,
+impl ParquetWriteOptions {
+    pub fn compat_level(&self) -> CompatLevel {
+        self.compat_level.unwrap_or(CompatLevel::oldest())
+    }
 }
 
 /// The compression strategy to use for writing Parquet files.
@@ -67,7 +41,6 @@ pub enum ParquetCompression {
     Uncompressed,
     Snappy,
     Gzip(Option<GzipLevel>),
-    Lzo,
     Brotli(Option<BrotliLevel>),
     Zstd(Option<ZstdLevel>),
     Lz4Raw,
@@ -79,62 +52,16 @@ impl Default for ParquetCompression {
     }
 }
 
-/// A valid Gzip compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct GzipLevel(u8);
-
-impl GzipLevel {
-    pub fn try_new(level: u8) -> PolarsResult<Self> {
-        GzipLevelParquet::try_new(level)?;
-        Ok(GzipLevel(level))
-    }
-}
-
-/// A valid Brotli compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct BrotliLevel(u32);
-
-impl BrotliLevel {
-    pub fn try_new(level: u32) -> PolarsResult<Self> {
-        BrotliLevelParquet::try_new(level)?;
-        Ok(BrotliLevel(level))
-    }
-}
-
-/// A valid Zstandard compression level.
-#[derive(Debug, Eq, PartialEq, Hash, Clone, Copy)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
-pub struct ZstdLevel(i32);
-
-impl ZstdLevel {
-    pub fn try_new(level: i32) -> PolarsResult<Self> {
-        ZstdLevelParquet::try_new(level)?;
-        Ok(ZstdLevel(level))
-    }
-}
-
 impl From<ParquetCompression> for CompressionOptions {
     fn from(value: ParquetCompression) -> Self {
         use ParquetCompression::*;
         match value {
             Uncompressed => CompressionOptions::Uncompressed,
             Snappy => CompressionOptions::Snappy,
-            Gzip(level) => {
-                CompressionOptions::Gzip(level.map(|v| GzipLevelParquet::try_new(v.0).unwrap()))
-            },
-            Lzo => CompressionOptions::Lzo,
-            Brotli(level) => {
-                CompressionOptions::Brotli(level.map(|v| BrotliLevelParquet::try_new(v.0).unwrap()))
-            },
+            Gzip(level) => CompressionOptions::Gzip(level),
+            Brotli(level) => CompressionOptions::Brotli(level),
             Lz4Raw => CompressionOptions::Lz4Raw,
-            Zstd(level) => {
-                CompressionOptions::Zstd(level.map(|v| ZstdLevelParquet::try_new(v.0).unwrap()))
-            },
+            Zstd(level) => CompressionOptions::Zstd(level),
         }
     }
 }

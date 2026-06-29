@@ -33,6 +33,11 @@ where
 
 pub fn nan_min_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16().unwrap();
+            Series::new(name, [ca_nan_agg(ca, MinMax::min_propagate_nan)])
+        },
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             Series::new(name, [ca_nan_agg(ca, MinMax::min_propagate_nan)])
@@ -47,6 +52,11 @@ pub fn nan_min_s(s: &Series, name: PlSmallStr) -> Series {
 
 pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16().unwrap();
+            Series::new(name, [ca_nan_agg(ca, MinMax::max_propagate_nan)])
+        },
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             Series::new(name, [ca_nan_agg(ca, MinMax::max_propagate_nan)])
@@ -72,13 +82,13 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        MinMax::max_propagate_nan,
-                    ),
+                    )
+                    .reduce(MinMax::max_propagate_nan),
                     (_, 1) => take_agg_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        MinMax::max_propagate_nan,
-                    ),
+                    )
+                    .reduce(MinMax::max_propagate_nan),
                     _ => {
                         let take = { ca.take_unchecked(idx) };
                         ca_nan_agg(&take, MinMax::max_propagate_nan)
@@ -88,20 +98,22 @@ unsafe fn group_nan_max<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
         }),
         GroupsType::Slice {
             groups: groups_slice,
-            ..
+            overlapping,
+            monotonic,
         } => {
-            if _use_rolling_kernels(groups_slice, ca.chunks()) {
+            if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _>(
+                    None => _rolling_apply_agg_window_no_nulls::<MaxWindow<_>, _, _, _>(
                         values,
                         offset_iter,
                         None,
                     ),
                     Some(validity) => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MaxWindow<_>,
+                        _,
                         _,
                         _,
                     >(values, validity, offset_iter, None),
@@ -137,13 +149,13 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
                     (false, 1) => take_agg_no_null_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        MinMax::min_propagate_nan,
-                    ),
+                    )
+                    .reduce(MinMax::min_propagate_nan),
                     (_, 1) => take_agg_primitive_iter_unchecked(
                         ca.downcast_iter().next().unwrap(),
                         idx.iter().map(|i| *i as usize),
-                        MinMax::min_propagate_nan,
-                    ),
+                    )
+                    .reduce(MinMax::min_propagate_nan),
                     _ => {
                         let take = { ca.take_unchecked(idx) };
                         ca_nan_agg(&take, MinMax::min_propagate_nan)
@@ -153,20 +165,22 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
         }),
         GroupsType::Slice {
             groups: groups_slice,
-            ..
+            overlapping,
+            monotonic,
         } => {
-            if _use_rolling_kernels(groups_slice, ca.chunks()) {
+            if _use_rolling_kernels(groups_slice, *overlapping, *monotonic, ca.chunks()) {
                 let arr = ca.downcast_iter().next().unwrap();
                 let values = arr.values().as_slice();
                 let offset_iter = groups_slice.iter().map(|[first, len]| (*first, *len));
                 let arr = match arr.validity() {
-                    None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _>(
+                    None => _rolling_apply_agg_window_no_nulls::<MinWindow<_>, _, _, _>(
                         values,
                         offset_iter,
                         None,
                     ),
                     Some(validity) => _rolling_apply_agg_window_nulls::<
                         rolling::nulls::MinWindow<_>,
+                        _,
                         _,
                         _,
                     >(values, validity, offset_iter, None),
@@ -193,6 +207,11 @@ unsafe fn group_nan_min<T: PolarsFloatType>(ca: &ChunkedArray<T>, groups: &Group
 /// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16().unwrap();
+            group_nan_min(ca, groups)
+        },
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             group_nan_min(ca, groups)
@@ -209,6 +228,11 @@ pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsType) -> Series {
 /// `groups` must be in bounds.
 pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            let ca = s.f16().unwrap();
+            group_nan_max(ca, groups)
+        },
         DataType::Float32 => {
             let ca = s.f32().unwrap();
             group_nan_max(ca, groups)

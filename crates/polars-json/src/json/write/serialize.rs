@@ -16,6 +16,8 @@ use arrow::temporal_conversions::{
 };
 use arrow::types::NativeType;
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use num_traits::{Float, ToPrimitive};
+use polars_utils::float16::pf16;
 use streaming_iterator::StreamingIterator;
 
 use super::utf8;
@@ -26,10 +28,32 @@ fn write_integer<I: itoa::Integer>(buf: &mut Vec<u8>, val: I) {
     buf.extend_from_slice(value.as_bytes())
 }
 
-fn write_float<I: ryu::Float>(f: &mut Vec<u8>, val: I) {
-    let mut buffer = ryu::Buffer::new();
+fn write_float<I: zmij::Float>(f: &mut Vec<u8>, val: I) {
+    let mut buffer = zmij::Buffer::new();
     let value = buffer.format(val);
     f.extend_from_slice(value.as_bytes())
+}
+
+pub trait JsonSerializer: StreamingIterator<Item = [u8]> {
+    /// Serializes all rows directly into `to`, bypassing the `BufStreamingIterator` buffer.
+    fn serialize_json_lines_to_vec(self: Box<Self>, to: &mut Vec<u8>, n: usize);
+}
+
+impl<I, F, T> JsonSerializer for BufStreamingIterator<I, F, T>
+where
+    I: Iterator<Item = T>,
+    F: FnMut(T, &mut Vec<u8>),
+{
+    fn serialize_json_lines_to_vec(self: Box<Self>, to: &mut Vec<u8>, n: usize) {
+        let (mut iterator, mut f) = self.into_inner();
+
+        for _ in 0..n {
+            if let Some(v) = iterator.next() {
+                f(v, to);
+                to.push(b'\n')
+            }
+        }
+    }
 }
 
 fn materialize_serializer<'a, I, F, T>(
@@ -37,7 +61,7 @@ fn materialize_serializer<'a, I, F, T>(
     iterator: I,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync>
 where
     T: 'a,
     I: Iterator<Item = T> + Send + Sync + 'a,
@@ -58,7 +82,7 @@ fn boolean_serializer<'a>(
     array: &'a BooleanArray,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let f = |x: Option<bool>, buf: &mut Vec<u8>| match x {
         Some(true) => buf.extend_from_slice(b"true"),
         Some(false) => buf.extend_from_slice(b"false"),
@@ -71,7 +95,7 @@ fn null_serializer(
     len: usize,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + Send + Sync> {
     let f = |_x: (), buf: &mut Vec<u8>| buf.extend_from_slice(b"null");
     materialize_serializer(f, std::iter::repeat_n((), len), offset, take)
 }
@@ -80,7 +104,7 @@ fn primitive_serializer<'a, T: NativeType + itoa::Integer>(
     array: &'a PrimitiveArray<T>,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let f = |x: Option<&T>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             write_integer(buf, *x)
@@ -95,9 +119,9 @@ fn float_serializer<'a, T>(
     array: &'a PrimitiveArray<T>,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync>
 where
-    T: num_traits::Float + NativeType + ryu::Float,
+    T: num_traits::Float + NativeType + zmij::Float,
 {
     let f = |x: Option<&T>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
@@ -114,18 +138,38 @@ where
     materialize_serializer(f, array.iter(), offset, take)
 }
 
+fn float16_serializer<'a>(
+    array: &'a PrimitiveArray<pf16>,
+    offset: usize,
+    take: usize,
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
+    let f = |x: Option<&pf16>, buf: &mut Vec<u8>| {
+        if let Some(x) = x {
+            if pf16::is_nan(*x) || pf16::is_infinite(*x) {
+                buf.extend(b"null")
+            } else {
+                write_float(buf, x.to_f32().unwrap())
+            }
+        } else {
+            buf.extend(b"null")
+        }
+    };
+
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
 #[cfg(feature = "dtype-decimal")]
 fn decimal_serializer<'a>(
     array: &'a PrimitiveArray<i128>,
     scale: usize,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let trim_zeros = get_trim_decimal_zeros();
-    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
+    let mut fmt_buf = polars_compute::decimal::DecimalFmtBuffer::new();
     let f = move |x: Option<&i128>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
-            utf8::write_str(buf, fmt_buf.format(*x, scale, trim_zeros)).unwrap()
+            utf8::write_str(buf, fmt_buf.format_dec128(*x, scale, trim_zeros, false)).unwrap()
         } else {
             buf.extend(b"null")
         }
@@ -138,7 +182,7 @@ fn dictionary_utf8view_serializer<'a, K: DictionaryKey>(
     array: &'a DictionaryArray<K>,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let iter = array.iter_typed::<Utf8ViewArray>().unwrap().skip(offset);
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
@@ -154,7 +198,7 @@ fn utf8_serializer<'a, O: Offset>(
     array: &'a Utf8Array<O>,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             utf8::write_str(buf, x).unwrap();
@@ -169,7 +213,7 @@ fn utf8view_serializer<'a>(
     array: &'a Utf8ViewArray,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let f = |x: Option<&str>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             utf8::write_str(buf, x).unwrap();
@@ -184,7 +228,7 @@ fn struct_serializer<'a>(
     array: &'a StructArray,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     // {"a": [1, 2, 3], "b": [a, b, c], "c": {"a": [1, 2, 3]}}
     // [
     //  {"a": 1, "b": a, "c": {"a": 1}},
@@ -228,7 +272,7 @@ fn list_serializer<'a, O: Offset>(
     array: &'a ListArray<O>,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     // [[1, 2], [3]]
     // [
     //  [1, 2],
@@ -275,7 +319,7 @@ fn fixed_size_list_serializer<'a>(
     array: &'a FixedSizeListArray,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let mut serializer = new_serializer(
         array.values().as_ref(),
         offset * array.size(),
@@ -310,7 +354,7 @@ fn date_serializer<'a, T, F>(
     convert: F,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync>
 where
     T: NativeType,
     F: Fn(T) -> NaiveDate + 'static + Send + Sync,
@@ -332,7 +376,7 @@ fn duration_serializer<'a, T, F>(
     convert: F,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync>
 where
     T: NativeType,
     F: Fn(T) -> Duration + 'static + Send + Sync,
@@ -354,7 +398,7 @@ fn time_serializer<'a, T, F>(
     convert: F,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync>
 where
     T: NativeType,
     F: Fn(T) -> NaiveTime + 'static + Send + Sync,
@@ -376,7 +420,7 @@ fn timestamp_serializer<'a, F>(
     convert: F,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync>
 where
     F: Fn(i64) -> NaiveDateTime + 'static + Send + Sync,
 {
@@ -397,7 +441,7 @@ fn timestamp_tz_serializer<'a>(
     tz: &str,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     match parse_offset(tz) {
         Ok(parsed_tz) => {
             let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
@@ -436,12 +480,12 @@ fn timestamp_tz_serializer<'a>(
     }
 }
 
-pub(crate) fn new_serializer<'a>(
+pub fn new_serializer<'a>(
     array: &'a dyn Array,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
-    match array.dtype().to_logical_type() {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
+    match array.dtype().to_storage() {
         ArrowDataType::Boolean => {
             boolean_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
@@ -457,6 +501,9 @@ pub(crate) fn new_serializer<'a>(
         ArrowDataType::Int64 => {
             primitive_serializer::<i64>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
+        ArrowDataType::Int128 => {
+            primitive_serializer::<i128>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
         ArrowDataType::UInt8 => {
             primitive_serializer::<u8>(array.as_any().downcast_ref().unwrap(), offset, take)
         },
@@ -468,6 +515,12 @@ pub(crate) fn new_serializer<'a>(
         },
         ArrowDataType::UInt64 => {
             primitive_serializer::<u64>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::UInt128 => {
+            primitive_serializer::<u128>(array.as_any().downcast_ref().unwrap(), offset, take)
+        },
+        ArrowDataType::Float16 => {
+            float16_serializer(array.as_any().downcast_ref().unwrap(), offset, take)
         },
         ArrowDataType::Float32 => {
             float_serializer::<f32>(array.as_any().downcast_ref().unwrap(), offset, take)

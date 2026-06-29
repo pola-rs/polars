@@ -123,7 +123,7 @@ def test_unique_counts() -> None:
             None,
         ],
     )
-    expect = pl.Series("x", [2, 2, 1, 1], dtype=pl.UInt32)
+    expect = pl.Series("x", [2, 2, 1, 1], dtype=pl.get_index_type())
     out = s.unique_counts()
     assert_series_equal(expect, out)
 
@@ -167,7 +167,9 @@ def test_group_by_float() -> None:
         .with_columns(a=pl.lit("a"))
     )
 
-    expect = pl.Series("index", [[0, 1], [2, 3], [4], [5]], dtype=pl.List(pl.UInt32))
+    expect = pl.Series(
+        "index", [[0, 1], [2, 3], [4], [5]], dtype=pl.List(pl.get_index_type())
+    )
     expect_no_null = expect.head(3)
 
     for group_keys in (("x",), ("x", "a")):
@@ -230,7 +232,7 @@ def test_joins() -> None:
         assert_series_equal(expect, out)
 
         how = "inner"
-        expect = pl.Series("index", [0, 1, 2, 3], dtype=pl.UInt32)
+        expect = pl.Series("index", [0, 1, 2, 3], dtype=pl.get_index_type())
         out = (
             df.join(rhs, on=join_on, how=how).sort("index").select("index").to_series()  # type: ignore[arg-type]
         )
@@ -308,4 +310,4 @@ def test_arrow_float16_read_empty_20946() -> None:
 
     df = pl.from_arrow(table)
     assert df.shape == (0, 1)
-    assert df.schema == pl.Schema([("float_column", pl.Float32)])  # type: ignore[union-attr]
+    assert df.schema == pl.Schema([("float_column", pl.Float16)])  # type: ignore[union-attr]

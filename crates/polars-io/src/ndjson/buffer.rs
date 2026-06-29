@@ -1,7 +1,6 @@
+use std::fmt::Write;
 use std::hash::{Hash, Hasher};
 
-use arrow::types::NativeType;
-use num_traits::NumCast;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -9,6 +8,7 @@ use polars_time::prelude::string::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::string::infer::{DatetimeInfer, TryFromWithUnit, infer_pattern_single};
 use polars_utils::format_pl_smallstr;
+use simd_json::prelude::*;
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,68 +39,66 @@ impl Buffer<'_> {
     pub(crate) fn add(&mut self, value: &Value) -> PolarsResult<()> {
         use AnyValueBuffer::*;
         match &mut self.buf {
+            _ if value.is_null() => {
+                self.buf.add(AnyValue::Null);
+                Ok(())
+            },
             Boolean(buf) => {
                 match value {
-                    Value::Static(StaticNode::Bool(b)) => buf.append_value(*b),
+                    Value::Static(StaticNode::Bool(v)) => buf.append_value(*v),
                     Value::Static(StaticNode::Null) => buf.append_null(),
                     _ if self.ignore_errors => buf.append_null(),
-                    v => polars_bail!(ComputeError: "cannot parse '{}' as Boolean", v),
+                    v => {
+                        polars_bail!(ComputeError: "cannot parse '{}' ({}) as Boolean", v, v.value_type())
+                    },
                 }
                 Ok(())
             },
             Int32(buf) => {
-                let n = deserialize_number::<i32>(value, self.ignore_errors)?;
-                match n {
-                    Some(v) => buf.append_value(v),
-                    None => buf.append_null(),
-                }
+                let v =
+                    deserialize_numeric::<Int32Type>(value, value.as_i32(), self.ignore_errors)?;
+                buf.append_option(v);
                 Ok(())
             },
             Int64(buf) => {
-                let n = deserialize_number::<i64>(value, self.ignore_errors)?;
-                match n {
-                    Some(v) => buf.append_value(v),
-                    None => buf.append_null(),
-                }
+                let v =
+                    deserialize_numeric::<Int64Type>(value, value.as_i64(), self.ignore_errors)?;
+                buf.append_option(v);
                 Ok(())
             },
             UInt64(buf) => {
-                let n = deserialize_number::<u64>(value, self.ignore_errors)?;
-                match n {
-                    Some(v) => buf.append_value(v),
-                    None => buf.append_null(),
-                }
+                let v =
+                    deserialize_numeric::<UInt64Type>(value, value.as_u64(), self.ignore_errors)?;
+                buf.append_option(v);
                 Ok(())
             },
             UInt32(buf) => {
-                let n = deserialize_number::<u32>(value, self.ignore_errors)?;
-                match n {
-                    Some(v) => buf.append_value(v),
-                    None => buf.append_null(),
-                }
+                let v =
+                    deserialize_numeric::<UInt32Type>(value, value.as_u32(), self.ignore_errors)?;
+                buf.append_option(v);
                 Ok(())
             },
             Float32(buf) => {
-                let n = deserialize_number::<f32>(value, self.ignore_errors)?;
-                match n {
-                    Some(v) => buf.append_value(v),
-                    None => buf.append_null(),
-                }
+                let v = deserialize_numeric::<Float32Type>(
+                    value,
+                    value.cast_f64().map(|f| f as f32),
+                    self.ignore_errors,
+                )?;
+                buf.append_option(v);
                 Ok(())
             },
             Float64(buf) => {
-                let n = deserialize_number::<f64>(value, self.ignore_errors)?;
-                match n {
-                    Some(v) => buf.append_value(v),
-                    None => buf.append_null(),
-                }
+                let v = deserialize_numeric::<Float64Type>(
+                    value,
+                    value.cast_f64(),
+                    self.ignore_errors,
+                )?;
+                buf.append_option(v);
                 Ok(())
             },
-
             String(buf) => {
                 match value {
                     Value::String(v) => buf.append_value(v),
-                    Value::Static(StaticNode::Null) => buf.append_null(),
                     // Forcibly convert to String using the Display impl.
                     v => buf.append_value(format_pl_smallstr!("{}", ValueDisplay(v))),
                 }
@@ -167,30 +165,17 @@ pub(crate) fn init_buffers(
         .collect()
 }
 
-fn deserialize_number<T: NativeType + NumCast>(
+fn deserialize_numeric<T: PolarsNumericType>(
     value: &Value,
+    n: Option<T::Native>,
     ignore_errors: bool,
-) -> PolarsResult<Option<T>> {
-    let to_result = |x: Option<T>| {
-        let out = if ignore_errors {
-            x
-        } else {
-            Some(x.ok_or_else(|| {
-                polars_err!(ComputeError: "cannot parse '{}' as {:?}", value, T::PRIMITIVE
-                )
-            })?)
-        };
-
-        Ok(out)
-    };
-
-    match value {
-        Value::Static(StaticNode::F64(f)) => to_result(num_traits::cast(*f)),
-        Value::Static(StaticNode::I64(i)) => to_result(num_traits::cast(*i)),
-        Value::Static(StaticNode::U64(u)) => to_result(num_traits::cast(*u)),
-        Value::Static(StaticNode::Bool(b)) => to_result(num_traits::cast(*b as i32)),
-        Value::Static(StaticNode::Null) => Ok(None),
-        _ => to_result(None),
+) -> PolarsResult<Option<T::Native>> {
+    match n {
+        Some(v) => Ok(Some(v)),
+        None if ignore_errors => Ok(None),
+        None => Err(
+            polars_err!(ComputeError: "cannot parse '{}' ({}) as {:?}", value, value.value_type(), T::get_static_dtype()),
+        ),
     }
 }
 
@@ -223,7 +208,7 @@ where
         return Ok(None);
     }
 
-    polars_bail!(ComputeError: "cannot parse '{}' as {}", value, type_name)
+    polars_bail!(ComputeError: "cannot parse '{}' ({}) as {}", value, value.value_type(), type_name)
 }
 
 fn deserialize_all<'a>(
@@ -258,23 +243,36 @@ fn deserialize_all<'a>(
                 AnyValue::Null
             });
         },
-        DataType::Float32 => {
-            return Ok(
-                if let Some(v) = deserialize_number::<f32>(json, ignore_errors)? {
-                    AnyValue::Float32(v)
-                } else {
-                    AnyValue::Null
+        #[cfg(feature = "dtype-f16")]
+        dt @ DataType::Float16 => {
+            use num_traits::AsPrimitive;
+            use polars_utils::float16::pf16;
+
+            return match json.cast_f64() {
+                Some(v) => Ok(AnyValue::Float16(AsPrimitive::<pf16>::as_(v))),
+                None if ignore_errors => Ok(AnyValue::Null),
+                None => {
+                    polars_bail!(ComputeError: "cannot parse '{}' ({}) as {}", json, json.value_type(), dt)
                 },
-            );
+            };
         },
-        DataType::Float64 => {
-            return Ok(
-                if let Some(v) = deserialize_number::<f64>(json, ignore_errors)? {
-                    AnyValue::Float64(v)
-                } else {
-                    AnyValue::Null
+        dt @ DataType::Float32 => {
+            return match json.cast_f64() {
+                Some(v) => Ok(AnyValue::Float32(v as f32)),
+                None if ignore_errors => Ok(AnyValue::Null),
+                None => {
+                    polars_bail!(ComputeError: "cannot parse '{}' ({}) as {}", json, json.value_type(), dt)
                 },
-            );
+            };
+        },
+        dt @ DataType::Float64 => {
+            return match json.cast_f64() {
+                Some(v) => Ok(AnyValue::Float64(v)),
+                None if ignore_errors => Ok(AnyValue::Null),
+                None => {
+                    polars_bail!(ComputeError: "cannot parse '{}' ({}) as {}", json, json.value_type(), dt)
+                },
+            };
         },
         DataType::String => {
             return Ok(match json {
@@ -283,13 +281,13 @@ fn deserialize_all<'a>(
             });
         },
         dt if dt.is_primitive_numeric() => {
-            return Ok(
-                if let Some(v) = deserialize_number::<i128>(json, ignore_errors)? {
-                    AnyValue::Int128(v).cast(dt).into_static()
-                } else {
-                    AnyValue::Null
+            return match json.as_i128() {
+                Some(v) => Ok(AnyValue::Int128(v).into_static()),
+                None if ignore_errors => Ok(AnyValue::Null),
+                None => {
+                    polars_bail!(ComputeError: "cannot parse '{}' ({}) as {}", json, json.value_type(), dt)
                 },
-            );
+            };
         },
         _ => {},
     }
@@ -357,40 +355,79 @@ struct ValueDisplay<'a>(&'a Value<'a>);
 
 impl std::fmt::Display for ValueDisplay<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use std::fmt::Display;
+
         use Value::*;
 
         match self.0 {
-            Static(s) => write!(f, "{s}"),
-            String(s) => write!(f, r#""{s}""#),
+            Static(s) => Display::fmt(s, f),
+            String(s) => {
+                f.write_char('"')?;
+
+                let s: &mut &[u8] = &mut s.as_bytes();
+
+                while !s.is_empty() {
+                    f.write_str({
+                        let i = memchr::memchr3(b'"', b'\n', b'\r', s);
+
+                        // Safety: If `i` is `Some(_)`, it points to an ASCII char.
+                        unsafe {
+                            str::from_utf8_unchecked(s.split_off(..i.unwrap_or(s.len())).unwrap())
+                        }
+                    })?;
+
+                    if let Some(&[c]) = s.split_off(..1) {
+                        match c {
+                            b'"' => f.write_str(r#"\""#)?,
+                            b'\n' => f.write_str(r#"\n"#)?,
+                            b'\r' => f.write_str(r#"\r"#)?,
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+
+                f.write_char('"')?;
+
+                Ok(())
+            },
             Array(a) => {
-                write!(f, "[")?;
+                f.write_char('[')?;
 
                 let mut iter = a.iter();
 
                 for v in (&mut iter).take(1) {
-                    write!(f, "{}", ValueDisplay(v))?;
+                    ValueDisplay(v).fmt(f)?;
                 }
 
                 for v in iter {
-                    write!(f, ", {}", ValueDisplay(v))?;
+                    f.write_str(", ")?;
+                    ValueDisplay(v).fmt(f)?;
                 }
 
-                write!(f, "]")
+                f.write_char(']')
             },
             Object(o) => {
-                write!(f, "{{")?;
+                f.write_char('{')?;
 
                 let mut iter = o.iter();
 
                 for (k, v) in (&mut iter).take(1) {
-                    write!(f, r#""{}": {}"#, k, ValueDisplay(v))?;
+                    f.write_char('"')?;
+
+                    f.write_str(k)?;
+                    f.write_str(r#"": "#)?;
+                    ValueDisplay(v).fmt(f)?;
                 }
 
                 for (k, v) in iter {
-                    write!(f, r#", "{}": {}"#, k, ValueDisplay(v))?;
+                    f.write_str(r#", ""#)?;
+
+                    f.write_str(k)?;
+                    f.write_str(r#"": "#)?;
+                    ValueDisplay(v).fmt(f)?;
                 }
 
-                write!(f, "}}")
+                f.write_char('}')
             },
         }
     }
