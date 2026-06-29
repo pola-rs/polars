@@ -5211,7 +5211,7 @@ Consider using {self}.implode() instead"""
         ...     scaled=pl.col("val")
         ...     .implode()
         ...     .map_elements(lambda s: s * len(s), return_dtype=pl.List(pl.Int64))
-        ...     .explode()
+        ...     .explode(empty_as_null=False)
         ...     .over("key"),
         ... ).sort("key")
         shape: (6, 3)
@@ -5413,7 +5413,7 @@ Consider using {self}.implode() instead"""
         ...         ],
         ...     }
         ... )
-        >>> df.select(pl.col("values").explode())
+        >>> df.select(pl.col("values").explode(empty_as_null=False))
         shape: (4, 1)
         ┌────────┐
         │ values │
