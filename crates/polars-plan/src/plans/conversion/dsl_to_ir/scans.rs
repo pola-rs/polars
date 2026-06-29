@@ -6,9 +6,12 @@ use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
-use polars_io::prelude::{CsvReadOptions, FileMetadataRef, ParquetObjectStore, ParquetReader};
+use polars_io::prelude::CsvReadOptions;
+#[cfg(feature = "parquet")]
+use polars_io::prelude::{FileMetadataRef, ParquetObjectStore, ParquetReader};
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
 use polars_io::utils::compression::{ByteSourceReader, CompressedReader, SupportedCompression};
+#[cfg(feature = "json")]
 use polars_io::utils::overwrite_schema;
 use polars_io::utils::stream_buf_reader::ReaderSource;
 use polars_io::{RowIndex, SerReader};

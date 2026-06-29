@@ -6,11 +6,13 @@ use polars_core::prelude::{
 };
 #[cfg(feature = "timezones")]
 use polars_core::prelude::{NonExistent, StringChunked, TimeZone};
+#[cfg(feature = "month_end")]
+use polars_time::PolarsMonthEnd;
+#[cfg(feature = "month_start")]
+use polars_time::PolarsMonthStart;
 use polars_time::chunkedarray::DurationMethods;
 use polars_time::series::TemporalMethods;
-use polars_time::{
-    PolarsMonthEnd, PolarsMonthStart, PolarsRound, PolarsTruncate, replace_datetime,
-};
+use polars_time::{PolarsRound, PolarsTruncate, replace_datetime};
 
 pub(super) fn millennium(s: &Column) -> PolarsResult<Column> {
     s.as_materialized_series()

@@ -15,6 +15,7 @@ use polars_ops::chunked_array::ListNameSpaceImpl;
 use polars_ops::frame::SeriesJoin;
 use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::JoinValidation;
+#[cfg(feature = "rank")]
 use polars_ops::series::{RankMethod, RankOptions};
 use polars_plan::prelude::*;
 use polars_utils::UnitVec;
