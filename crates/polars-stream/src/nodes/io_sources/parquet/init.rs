@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
@@ -360,6 +361,12 @@ impl ParquetReadImpl {
             && !projected_arrow_fields.iter().any(|x| {
                 x.arrow_field().dtype().is_nested()
                     || matches!(x, ArrowFieldProjection::Mapped { .. })
+            })
+            && !predicate.as_ref().is_none_or(|p| {
+                projected_arrow_fields.iter().any(|f| {
+                    matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
+                        && p.column_predicates.predicates.contains_key(f.output_name())
+                })
             });
 
         RowGroupDecoder {

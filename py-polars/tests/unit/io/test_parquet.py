@@ -4375,3 +4375,23 @@ def test_multi_file_resolve_metadata_level(
     lf = pl.scan_parquet(tmp_path / "part_*.parquet")
     assert lf.collect().height == 8
     assert f"ESTIMATED ROWS: {expected_est}" in lf.explain(optimized=True)
+
+
+def test_parquet_prefilter_fixed_size_binary_27781() -> None:
+    val = b"0x004521bdf6bf838e71c0b977678adae368c3ac5d5c665cef09cbd61a9d591d3f"
+
+    table = pa.table(
+        {
+            "market": pa.array([val, val], type=pa.binary(66)),
+            "asset_id": ["abc", "def"],
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(table, f)
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(pl.col("market") == val).collect(),
+        pl.DataFrame(table),
+    )
