@@ -632,8 +632,12 @@ where
     }
 
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
-        // faster paths
-        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
+        // Sorted fast-path. We skip this for floats because the largest value might be NaN, which
+        // max is supposed to skip unless everything is NaN. We would need an
+        // agg_first_non_null_non_nan.
+        if (!self.has_nulls() || matches!(groups, GroupsType::Slice { .. }))
+            && !T::Native::is_float()
+        {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
