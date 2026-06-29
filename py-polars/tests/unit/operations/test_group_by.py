@@ -3164,3 +3164,10 @@ def test_group_by_when_then_with_mutated_idxs() -> None:
             }
         ),
     )
+
+
+def test_group_by_max_sorted_nan_28121() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1.0, 2.0, float("nan")]}).sort("x")
+    out = df.group_by("g").agg(pl.col("x").max())
+    expected = pl.DataFrame({"g": [1], "x": [2.0]})
+    assert_frame_equal(out, expected)
