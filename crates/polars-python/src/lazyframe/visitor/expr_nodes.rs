@@ -447,6 +447,9 @@ pub struct Len {}
 pub struct Explode {
     #[pyo3(get)]
     expr: usize,
+    #[pyo3(get)]
+    // empty_as_null, keep_nulls
+    options: (bool, bool),
 }
 
 #[pyclass(frozen)]
@@ -639,7 +642,11 @@ impl PyGroupbyOptions {
 pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
     match expr {
         AExpr::Element => Err(PyNotImplementedError::new_err("element")),
-        AExpr::Explode { expr, options: _ } => Explode { expr: expr.0 }.into_py_any(py),
+        AExpr::Explode { expr, options } => Explode {
+            expr: expr.0,
+            options: (options.empty_as_null, options.keep_nulls),
+        }
+        .into_py_any(py),
         AExpr::Column(name) => Column {
             name: name.into_py_any(py)?,
         }
