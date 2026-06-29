@@ -5,8 +5,8 @@ use polars_buffer::{Buffer, SharedStorage};
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::{accumulate_dataframes_vertical, handle_casting_failures};
+use polars_time::chunkedarray::StringMethods;
 #[cfg(feature = "polars-time")]
-use polars_time::prelude::*;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rayon::prelude::*;
 

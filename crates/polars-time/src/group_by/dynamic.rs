@@ -489,7 +489,7 @@ impl Wrap<&DataFrame> {
 #[cfg(test)]
 mod test {
     use polars_compute::rolling::QuantileMethod;
-    use polars_ops::prelude::*;
+    use polars_ops::series::abs;
 
     use super::*;
 

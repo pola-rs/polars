@@ -1,4 +1,3 @@
-use polars_ops::prelude::*;
 use recursive::recursive;
 
 use super::*;
