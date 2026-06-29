@@ -35,24 +35,22 @@ def _normalize_horizontal_concat(
 ) -> ConcatMethod:
     """Normalize deprecated horizontal concat arguments."""
     if how == "horizontal":
-        if strict is None:
-            issue_deprecation_warning(
-                f"the default behavior of `how='horizontal'` for `{function_name}` "
-                "is deprecated and will require equal heights in the next breaking "
-                "release. "
-                "Use `how='horizontal_extend'` to keep the current behavior.",
-                version="1.42.1",
-            )
-            return "horizontal_extend"
-        elif strict is False:
-            issue_deprecation_warning(
-                f"the `strict` parameter for `{function_name}` is deprecated. "
-                "Use `how='horizontal_extend'` instead.",
-                version="1.42.1",
-            )
-            return "horizontal_extend"
-        else:
-            return "horizontal"
+        match strict:
+            case None:
+                return "horizontal"
+            case True:
+                issue_deprecation_warning(
+                    f"the `strict` parameter for `{function_name}` is deprecated. "
+                    "`how='horizontal'` already requires equal heights; omit `strict`.",
+                    version="2.0.0",
+                )
+                return "horizontal"
+            case False:
+                msg = (
+                    "`strict=False` is no longer supported for `how='horizontal'`. "
+                    "Use `how='horizontal_extend'` to pad shorter frames with `null`."
+                )
+                raise ValueError(msg)
 
     if how == "horizontal_extend" and strict is not None:
         msg = "`strict` cannot be used with `how='horizontal_extend'`"
@@ -106,9 +104,10 @@ def concat(
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
 
-        .. deprecated:: 1.42.1
-            Use `how='horizontal'` (equal heights) or
-            `how='horizontal_extend'` (pad with null) instead.
+        .. deprecated:: 2.0.0
+            `how='horizontal'` already requires equal heights, so `strict` is
+            redundant. Use `how='horizontal_extend'` to pad shorter frames with
+            `null` instead.
 
     Examples
     --------
@@ -421,9 +420,10 @@ def union(
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
 
-        .. deprecated:: 1.42.1
-            Use `how='horizontal'` (equal heights) or
-            `how='horizontal_extend'` (pad with null) instead.
+        .. deprecated:: 2.0.0
+            `how='horizontal'` already requires equal heights, so `strict` is
+            redundant. Use `how='horizontal_extend'` to pad shorter frames with
+            `null` instead.
 
     Examples
     --------
