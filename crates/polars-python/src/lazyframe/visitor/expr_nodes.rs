@@ -15,7 +15,7 @@ use polars_plan::plans::{
     IRTemporalFunction,
 };
 use polars_plan::prelude::{
-    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping,
+    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
 use polars_time::prelude::RollingGroupOptions;
 use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
@@ -1076,8 +1076,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     #[cfg(feature = "json")]
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
-                    IRStructFunction::MapFieldNames(_) => {
-                        (PyStructFunction::MapFieldNames,).into_py_any(py)
+                    IRStructFunction::MapFieldNames(function) => match function {
+                        PlanCallback::Python(lambda) => {
+                            (PyStructFunction::MapFieldNames, lambda.0.clone_ref(py))
+                                .into_py_any(py)
+                        },
+                        PlanCallback::Rust(_) => {
+                            return Err(PyNotImplementedError::new_err("map_field_names"));
+                        },
                     },
                 },
                 IRFunctionExpr::TemporalExpr(fun) => match fun {
