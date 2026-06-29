@@ -24,39 +24,6 @@ pub fn try_get_supertype_with_options(
     )
 }
 
-pub fn get_nested_numeric_upcast_supertype_lossless(
-    l: &DataType,
-    r: &DataType,
-) -> Option<DataType> {
-    use DataType::*;
-
-    match (l, r) {
-        (List(inner_left), List(inner_right)) => {
-            let st = get_nested_numeric_upcast_supertype_lossless(inner_left, inner_right)?;
-            Some(List(Box::new(st)))
-        },
-        #[cfg(feature = "dtype-array")]
-        (List(inner_left), Array(inner_right, _)) | (Array(inner_left, _), List(inner_right)) => {
-            let st = get_nested_numeric_upcast_supertype_lossless(inner_left, inner_right)?;
-            Some(List(Box::new(st)))
-        },
-        #[cfg(feature = "dtype-array")]
-        (Array(inner_left, width_left), Array(inner_right, width_right))
-            if *width_left == *width_right =>
-        {
-            let st = get_nested_numeric_upcast_supertype_lossless(inner_left, inner_right)?;
-            Some(Array(Box::new(st), *width_left))
-        },
-        #[cfg(feature = "dtype-array")]
-        (Array(inner_left, _), Array(inner_right, _)) => {
-            let st = get_nested_numeric_upcast_supertype_lossless(inner_left, inner_right)?;
-            Some(List(Box::new(st)))
-        },
-
-        (l, r) => get_numeric_upcast_supertype_lossless(l, r),
-    }
-}
-
 /// Returns the smallest numeric dtype that `l` and `r` can both be casted to without loss of data.
 /// If no such dtype exists, or `l` and `r` are already matching, returns `None`.
 pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
