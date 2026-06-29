@@ -125,6 +125,7 @@ bad-return = false
 
 [tool.mypy]
 files = ["src/polars", "tests"]
+num_workers = 4
 strict = true
 enable_error_code = [
   "redundant-expr",
@@ -309,9 +310,6 @@ filterwarnings = [
   # Introspection under PyCharm IDE can generate this in Python 3.12
   "ignore:.*co_lnotab is deprecated, use co_lines.*:DeprecationWarning",
   "ignore:the argument `return_as_string` for `DataFrame.glimpse` is deprecated",
-  # TODO: Database tests lead to unclosed database warnings
-  # https://github.com/pola-rs/polars/issues/20296
-  "ignore:unclosed database.*:ResourceWarning",
   # Ignore invalid warnings when running earlier versions of SQLAlchemy (we
   # know they are invalid because our standard tests run the latest version)
   "ignore:Deprecated API features detected.*:DeprecationWarning",
