@@ -4416,3 +4416,23 @@ print("OK", end="", file=sys.stderr)
         timeout=30,
     )
     assert out == b"OK"
+
+
+def test_parquet_prefilter_fixed_size_binary_27781() -> None:
+    val = b"0x004521bdf6bf838e71c0b977678adae368c3ac5d5c665cef09cbd61a9d591d3f"
+
+    table = pa.table(
+        {
+            "market": pa.array([val, val], type=pa.binary(66)),
+            "asset_id": ["abc", "def"],
+        }
+    )
+
+    f = io.BytesIO()
+    pq.write_table(table, f)
+    f.seek(0)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).filter(pl.col("market") == val).collect(),
+        pl.DataFrame(table),
+    )
