@@ -277,6 +277,107 @@ def test_asof_join_projection_() -> None:
     )
 
 
+def test_asof_join_hoists_elementwise_right_expression_25867() -> None:
+    left = pl.LazyFrame({"time": [-1, 5]}).set_sorted("time")
+    right = pl.LazyFrame(
+        {
+            "time": [0, 3, 5],
+            "a": [1.0, 1.5, 2.0],
+            "b": [2.0, 3.0, 4.0],
+            "c": [3.0, 4.5, 6.0],
+            "d": [2.0, 2.5, 3.0],
+        }
+    ).set_sorted("time")
+    metric = ((pl.col("a") + pl.col("b")) * pl.col("c") / pl.col("d")).alias("metric")
+
+    q = left.join_asof(right.with_columns(metric), on="time")
+    plan = q.explain()
+
+    assert plan.index("WITH_COLUMNS") < plan.index("ASOF JOIN")
+    assert_frame_equal(
+        q.select("time", "metric").collect(),
+        pl.DataFrame({"time": [-1, 5], "metric": [None, 12.0]}),
+    )
+
+
+def test_asof_join_does_not_hoist_without_cardinality_benefit() -> None:
+    left = pl.LazyFrame({"time": [0, 1, 2]}).set_sorted("time")
+    right = pl.LazyFrame({"time": [0, 2], "value": [1, 2]}).set_sorted("time")
+
+    q = left.join_asof(
+        right.with_columns((pl.col("value") + 1).alias("adjusted")),
+        on="time",
+    )
+    plan = q.explain()
+
+    assert plan.index("ASOF JOIN") < plan.index("WITH_COLUMNS")
+
+
+def test_asof_join_partially_hoists_right_expressions() -> None:
+    left = pl.LazyFrame({"time": [-1, 2]}).set_sorted("time")
+    right = pl.LazyFrame({"time": [0, 1, 2], "value": [1, None, 3]}).set_sorted("time")
+
+    q = left.join_asof(
+        right.with_columns(
+            (pl.col("value") + 1).alias("adjusted"),
+            pl.col("value").is_null().alias("value_is_null"),
+        ),
+        on="time",
+    )
+    plan = q.explain()
+
+    assert plan.index("WITH_COLUMNS") < plan.index("ASOF JOIN")
+    assert plan.index("ASOF JOIN") < plan.rindex("WITH_COLUMNS")
+    assert q.collect_schema().names() == [
+        "time",
+        "value",
+        "adjusted",
+        "value_is_null",
+    ]
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "time": [-1, 2],
+                "value": [None, 3],
+                "adjusted": [None, 4],
+                "value_is_null": [None, False],
+            }
+        ),
+    )
+
+
+def test_asof_join_does_not_hoist_non_null_preserving_expression() -> None:
+    left = pl.LazyFrame({"time": [-1, 1]}).set_sorted("time")
+    right = pl.LazyFrame({"time": [0, 1, 2], "value": [1, None, 2]}).set_sorted("time")
+
+    q = left.join_asof(
+        right.with_columns(pl.col("value").is_null().alias("value_is_null")),
+        on="time",
+    )
+    plan = q.explain()
+
+    assert plan.index("ASOF JOIN") < plan.index("WITH_COLUMNS")
+    assert_frame_equal(
+        q.select("time", "value_is_null").collect(),
+        pl.DataFrame({"time": [-1, 1], "value_is_null": [None, True]}),
+    )
+
+
+def test_asof_join_does_not_hoist_ambiguous_right_expression() -> None:
+    left = pl.LazyFrame({"time": [1], "value": [100]}).set_sorted("time")
+    right = pl.LazyFrame({"time": [0, 1], "value": [0, 1]}).set_sorted("time")
+
+    q = left.join_asof(
+        right.with_columns((pl.col("value") + 1).alias("adjusted")),
+        on="time",
+    )
+    plan = q.explain()
+
+    assert plan.index("ASOF JOIN") < plan.index("WITH_COLUMNS")
+    assert q.select("adjusted").collect().item() == 2
+
+
 def test_merge_sorted_projection_pd() -> None:
     lf = pl.LazyFrame(
         {
