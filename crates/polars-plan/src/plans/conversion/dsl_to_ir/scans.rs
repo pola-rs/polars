@@ -7,8 +7,10 @@ use polars_core::runtime::ASYNC;
 use polars_io::cloud::concurrency_config::FetchConfig;
 use polars_io::csv::read::streaming::read_until_start_and_infer_schema;
 use polars_io::prelude::CsvReadOptions;
+#[cfg(all(feature = "parquet", feature = "cloud"))]
+use polars_io::prelude::ParquetObjectStore;
 #[cfg(feature = "parquet")]
-use polars_io::prelude::{FileMetadataRef, ParquetObjectStore, ParquetReader};
+use polars_io::prelude::{FileMetadataRef, ParquetReader};
 use polars_io::utils::byte_source::{ByteSource, DynByteSourceBuilder};
 use polars_io::utils::compression::{ByteSourceReader, CompressedReader, SupportedCompression};
 #[cfg(feature = "json")]
