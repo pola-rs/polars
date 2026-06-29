@@ -553,7 +553,8 @@ impl Decoder for BinaryDecoder {
         // Dispatch to this codepath disabled from crates/polars-stream/src/nodes/io_sources/parquet/init.rs
         //
         // This would panic attempting to create a polars DataType::Binary Series from a
-        // dyn Array of type ArrowDataType::FixedSizeBinary(_).
+        // dyn Array of type ArrowDataType::FixedSizeBinary(_) (via Series::from_chunk_and_dtype
+        // in predicate.evaluate_mut()).
         //
         // Performant fix would involve refactoring this (BinaryDecoder) to also store Views
         // in the intermediate state, and only when a predicate is being applied on this column.
