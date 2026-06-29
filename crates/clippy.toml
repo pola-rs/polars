@@ -2,5 +2,5 @@ disallowed-types = ["std::collections::HashMap", "std::collections::HashSet"]
 
 disallowed-methods = [
   { path = "regex::Regex::new", reason = "use polars_utils::regex_cache" },
-  { path = "tokio::spawn", reason = "use polars_async::ASYNC::spawn" },
+  { path = "tokio::spawn", reason = "use ASYNC.spawn (polars_async::ASYNC)" },
 ]
