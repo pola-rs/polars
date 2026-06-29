@@ -1,4 +1,4 @@
-use arrow::array::{BinaryViewArray, FixedSizeBinaryArray, Splitable, View};
+use arrow::array::{FixedSizeBinaryArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -547,8 +547,8 @@ impl Decoder for BinaryDecoder {
 
     fn evaluate_dict_predicate(
         &self,
-        dict: &Self::Dict,
-        predicate: &PredicateFilter,
+        _dict: &Self::Dict,
+        _predicate: &PredicateFilter,
     ) -> ParquetResult<Bitmap> {
         // Dispatch to this codepath disabled from crates/polars-stream/src/nodes/io_sources/parquet/init.rs
         //
