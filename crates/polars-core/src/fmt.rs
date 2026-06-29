@@ -218,6 +218,35 @@ macro_rules! format_array {
     }};
 }
 
+#[cfg(feature = "dtype-extension")]
+fn format_extension_array(
+    f: &mut Formatter<'_>,
+    object: &Series,
+    name: &str,
+    array_type: &str,
+) -> fmt::Result {
+    let dtype = object.dtype();
+    let DataType::Extension(instance, _) = dtype else {
+        unreachable!()
+    };
+    let limit = std::cmp::min(DEFAULT_ROW_LIMIT, object.len());
+    write!(
+        f,
+        "shape: ({},)\n{}: '{}' [{}]\n[\n",
+        fmt_int_string_custom(&object.len().to_string(), 3, "_"),
+        array_type,
+        name,
+        dtype
+    )?;
+    let c = object.clone().into_column();
+    for i in 0..limit {
+        let v = instance.0.dyn_display_value(&c, i);
+        writeln!(f, "\t{}", v)?;
+    }
+    write!(f, "]")?;
+
+    Ok(())
+}
 #[cfg(feature = "object")]
 fn format_object_array(
     f: &mut Formatter<'_>,
@@ -326,6 +355,14 @@ where
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "dtype-extension")]
+impl Debug for ExtensionChunked {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let s = self.clone().into_series();
+        format_extension_array(f, &s, s.name(), "ChunkedArray")
     }
 }
 
@@ -451,10 +488,7 @@ impl Debug for Series {
                 )
             },
             #[cfg(feature = "dtype-extension")]
-            DataType::Extension(_, _) => {
-                let dt = format!("{}", self.dtype());
-                format_array!(f, self.ext().unwrap(), &dt, self.name(), "Series")
-            },
+            DataType::Extension(_, _) => format_extension_array(f, self, self.name(), "Series"),
             dt => panic!("{dt:?} not impl"),
         }
     }
@@ -586,7 +620,14 @@ fn fmt_df_shape((shape0, shape1): &(usize, usize)) -> String {
         fmt_int_string_custom(&shape1.to_string(), 3, "_")
     )
 }
-
+#[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
+fn col_to_str<'a>(c: &'a crate::prelude::Column, i: usize) -> Cow<'a, str> {
+    match c.dtype() {
+        #[cfg(feature = "dtype-extension")]
+        DataType::Extension(instance, _) => instance.0.dyn_display_value(c, i),
+        _ => c.str_value(i).unwrap(),
+    }
+}
 impl Display for DataFrame {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -666,13 +707,8 @@ impl Display for DataFrame {
                     let mut rows = Vec::with_capacity(std::cmp::max(max_n_rows, 2));
                     let half = max_n_rows / 2;
                     let rest = max_n_rows % 2;
-
                     for i in 0..(half + rest) {
-                        let row = self
-                            .columns()
-                            .iter()
-                            .map(|c| c.str_value(i).unwrap())
-                            .collect();
+                        let row = self.columns().iter().map(|c| col_to_str(c, i)).collect();
 
                         let row_strings = prepare_row(
                             row,
@@ -689,11 +725,7 @@ impl Display for DataFrame {
                     rows.push(dots);
 
                     for i in (height - half)..height {
-                        let row = self
-                            .columns()
-                            .iter()
-                            .map(|c| c.str_value(i).unwrap())
-                            .collect();
+                        let row = self.columns().iter().map(|c| col_to_str(c, i)).collect();
 
                         let row_strings = prepare_row(
                             row,
@@ -710,10 +742,7 @@ impl Display for DataFrame {
                 } else {
                     for i in 0..height {
                         if self.width() > 0 {
-                            let row = self
-                                .materialized_column_iter()
-                                .map(|s| s.str_value(i).unwrap())
-                                .collect();
+                            let row = self.columns().iter().map(|c| col_to_str(c, i)).collect();
 
                             let row_strings = prepare_row(
                                 row,
