@@ -76,3 +76,23 @@ the open source project. Polars is focused on single node compute, as it makes e
 available resources. Users already report utilizing Polars to process hundreds of gigabytes of data
 on single (large) compute instance. The distributed engine is geared towards teams and organizations
 that are I/O bound or want to scale their Polars queries beyond single machines.
+
+## How can I best handle cloud storage throttling (HTTP/503)?
+
+The scale-out nature of the distributed engine may result in data being read or written faster than
+the cloud storage back-end can service. This shows as HTTP 503 Service Unavailable ("SlowDown")
+errors, potentially resulting in failing queries. Multiple factors contribute: cluster size,
+instance capacity, cloud provider, object store class, scaling delays, data access patterns, and the
+actual query. To mitigate:
+
+- Follow the cloud provider storage data organization and layout guidance for maximum performance,
+  including prefixing and partitioning, e.g.
+  [AWS - Optimizing for high-request rate workloads](https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance-design-patterns.html).
+- Review and adjust the
+  [Cloud retry configuration](https://docs.pola.rs/user-guide/io/cloud-storage/#cloud-retry-configuration).
+  HTTP/503 SlowDown is expected under burst and is designed to be retried; configure sufficient
+  retries and higher timeouts so that transient throttling is absorbed as latency rather than
+  surfacing as failure.
+- Monitor cloud storage request and error statistics; see your cloud provider for details.
+- Consider higher-performance storage classes with greater request-rate limits and different
+  durability/performance/cost tradeoffs, such as AWS S3 Express One Zone.
