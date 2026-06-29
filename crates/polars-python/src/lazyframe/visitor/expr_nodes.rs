@@ -888,9 +888,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                             .into_py_any(py)
                     },
                     #[cfg(feature = "list_sets")]
-                    IRListFunction::SetOperation(set_operation) => {
-                        (PyListFunction::SetOperation, set_operation.to_string()).into_py_any(py)
-                    },
+                    IRListFunction::SetOperation(set_operation) => (
+                        PyListFunction::SetOperation,
+                        Into::<&str>::into(set_operation),
+                    )
+                        .into_py_any(py),
                     _ => return Err(PyNotImplementedError::new_err("list expr")),
                 },
                 IRFunctionExpr::Bitwise(_) => {
