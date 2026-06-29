@@ -283,6 +283,45 @@ def test_parquet_statistics(
     assert "Predicate pushdown: reading 1 / 2 row groups" in captured
 
 
+@pytest.mark.may_fail_cloud  # reason: inspects logs
+@pytest.mark.write_disk
+def test_parquet_bloom_filter_prune(
+    plmonkeypatch: PlMonkeyPatch, capfd: Any, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    rows_per_row_group = 10
+    num_row_groups = 10
+    n = rows_per_row_group * num_row_groups
+    table = pa.table({"id": pa.array(range(n), type=pa.int64())})
+    file_path = tmp_path / "bloom.parquet"
+    try:
+        writer = pq.ParquetWriter(
+            file_path,
+            table.schema,
+            bloom_filter_options={"id": {"ndv": rows_per_row_group, "fpp": 0.01}},
+        )
+    except TypeError:
+        pytest.skip("pyarrow ParquetWriter without bloom_filter_options")
+
+    with writer:
+        for rg in range(num_row_groups):
+            start = rg * rows_per_row_group
+            writer.write_table(table.slice(start, rows_per_row_group))
+
+    df = pl.DataFrame({"id": pl.arange(0, n, eager=True)})
+
+    capfd.readouterr()
+    result = (
+        pl.scan_parquet(file_path, use_statistics=False)
+        .filter(pl.col("id") == 999)
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(result, df.filter(pl.col("id") == 999))
+    assert "Predicate pushdown: reading 0 / 10 row groups" in capfd.readouterr().err
+
+
 @pytest.mark.write_disk
 def test_categorical(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)

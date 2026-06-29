@@ -1,15 +1,31 @@
-/// magic numbers taken from https://github.com/apache/parquet-format/blob/master/BloomFilter.md
+/// Magic numbers taken from https://github.com/apache/parquet-format/blob/master/BloomFilter.md
 const SALT: [u32; 8] = [
     1203114875, 1150766481, 2284105051, 2729912477, 1884591559, 770785867, 2667333959, 1550580529,
 ];
 
-fn hash_to_block_index(hash: u64, len: usize) -> usize {
-    let number_of_blocks = len as u64 / 32;
+/// Size of one split-block bloom filter block in bytes.
+pub const BLOCK_SIZE: usize = 32;
+
+#[inline]
+fn block(bitset: &[u8], block_index: usize) -> &[u8] {
+    &bitset[block_index * BLOCK_SIZE..(block_index + 1) * BLOCK_SIZE]
+}
+
+#[inline]
+fn block_mut(bitset: &mut [u8], block_index: usize) -> &mut [u8] {
+    &mut bitset[block_index * BLOCK_SIZE..(block_index + 1) * BLOCK_SIZE]
+}
+
+/// Block index for `hash` from its upper 32 bits. `bitset_len` must be a multiple of [`BLOCK_SIZE`].
+#[inline]
+pub fn hash_to_block_index(hash: u64, bitset_len: usize) -> usize {
+    let number_of_blocks = bitset_len as u64 / BLOCK_SIZE as u64;
     let low_hash = hash >> 32;
     let block_index = ((low_hash * number_of_blocks) >> 32) as u32;
     block_index as usize
 }
 
+/// Eight single-bit masks (one per `u32` word), derived from the hash's lower 32 bits.
 fn new_mask(x: u32) -> [u32; 8] {
     let mut a = [0u32; 8];
     for i in 0..8 {
@@ -21,7 +37,7 @@ fn new_mask(x: u32) -> [u32; 8] {
     a
 }
 
-/// loads a block from the bitset to the stack
+/// Loads a block from the bitset to the stack.
 #[inline]
 fn load_block(bitset: &[u8]) -> [u32; 8] {
     let mut a = [0u32; 8];
@@ -32,7 +48,7 @@ fn load_block(bitset: &[u8]) -> [u32; 8] {
     a
 }
 
-/// assigns a block from the stack to `bitset`
+/// Assigns a block from the stack to `bitset`.
 #[inline]
 fn unload_block(block: [u32; 8], bitset: &mut [u8]) {
     let bitset = bitset.chunks_exact_mut(4).take(8);
@@ -45,14 +61,14 @@ fn unload_block(block: [u32; 8], bitset: &mut [u8]) {
     }
 }
 
-/// Returns whether the `hash` is in the set
-pub fn is_in_set(bitset: &[u8], hash: u64) -> bool {
-    let block_index = hash_to_block_index(hash, bitset.len());
+/// Probe one [`BLOCK_SIZE`]-byte bloom block for `hash`.
+///
+/// `false` if all eight required bits are absent; `true` otherwise.
+pub fn is_maybe_in_block(block: &[u8], hash: u64) -> bool {
+    debug_assert_eq!(block.len(), BLOCK_SIZE);
     let key = hash as u32;
-
     let mask = new_mask(key);
-    let slice = &bitset[block_index * 32..(block_index + 1) * 32];
-    let block_mask = load_block(slice);
+    let block_mask = load_block(block);
 
     for i in 0..8 {
         if mask[i] & block_mask[i] == 0 {
@@ -62,19 +78,23 @@ pub fn is_in_set(bitset: &[u8], hash: u64) -> bool {
     true
 }
 
-/// Inserts a new hash to the set
+/// Probe a bloom filter bitset for `hash`.
+///
+/// In Parquet this bitset is the filter for one column chunk. `false` means
+/// definitely not present; `true` means may be present (or inconclusive).
+pub fn is_maybe_in_bitset(bitset: &[u8], hash: u64) -> bool {
+    let block_index = hash_to_block_index(hash, bitset.len());
+    is_maybe_in_block(block(bitset, block_index), hash)
+}
+
+/// Inserts a new hash: set the eight bit positions for `hash` in the bloom bitset.
 pub fn insert(bitset: &mut [u8], hash: u64) {
     let block_index = hash_to_block_index(hash, bitset.len());
-    let key = hash as u32;
-
-    let mask = new_mask(key);
-    let slice = &bitset[block_index * 32..(block_index + 1) * 32];
-    let mut block_mask = load_block(slice);
-
+    let mask = new_mask(hash as u32);
+    let block = block_mut(bitset, block_index);
+    let mut block_mask = load_block(block);
     for i in 0..8 {
         block_mask[i] |= mask[i];
-
-        let mut_slice = &mut bitset[block_index * 32..(block_index + 1) * 32];
-        unload_block(block_mask, mut_slice)
     }
+    unload_block(block_mask, block);
 }

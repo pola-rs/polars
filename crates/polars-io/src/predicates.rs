@@ -4,7 +4,10 @@ use arrow::array::Array;
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
-use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr};
+use polars_parquet::{
+    parquet::bloom_filter::hash_parquet_scalar,
+    read::expr::{ParquetColumnExpr, ParquetScalar, SpecializedParquetColumnExpr},
+};
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -114,6 +117,19 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     fn as_specialized(&self) -> Option<&SpecializedParquetColumnExpr> {
         self.specialized.as_ref()
     }
+}
+
+/// Bloom hashes for equality literals, computed once per scan predicate column.
+///
+/// Returns `None` if any scalar cannot be hashed (caller should treat as inconclusive).
+#[cfg(feature = "parquet")]
+pub fn bloom_hashes_for_scalars(scalars: &[Scalar]) -> Option<Box<[u64]>> {
+    let mut hashes = Vec::with_capacity(scalars.len());
+    for scalar in scalars {
+        let parquet_scalar = cast_to_parquet_scalar(scalar.clone())?;
+        hashes.push(hash_parquet_scalar(&parquet_scalar)?);
+    }
+    Some(hashes.into_boxed_slice())
 }
 
 #[cfg(feature = "parquet")]
