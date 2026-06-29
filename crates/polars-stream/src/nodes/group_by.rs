@@ -215,18 +215,29 @@ impl GroupBySinkState {
                     }
 
                     // Store cold keys.
-                    // TODO: don't always gather, if majority cold simply store all and remember offsets into it.
                     if !cold_idxs.is_empty() {
                         unsafe {
-                            let cold_keys = hash_keys.gather_unchecked(&cold_idxs);
-                            let cold_df = df.take_slice_unchecked_impl(&cold_idxs, false);
-
-                            cold_keys.gen_idxs_per_partition(
-                                &partitioner,
-                                &mut local.morsel_idxs_values_per_p,
-                                &mut local.sketch_per_p,
-                                true,
-                            );
+                            let (cold_keys, cold_df) =
+                                if cold_idxs.len() >= df.height() - cold_idxs.len() {
+                                    hash_keys.gen_idxs_per_partition_subset(
+                                        &cold_idxs,
+                                        &partitioner,
+                                        &mut local.morsel_idxs_values_per_p,
+                                        &mut local.sketch_per_p,
+                                        true,
+                                    );
+                                    (hash_keys, df)
+                                } else {
+                                    let cold_keys = hash_keys.gather_unchecked(&cold_idxs);
+                                    let cold_df = df.take_slice_unchecked_impl(&cold_idxs, false);
+                                    cold_keys.gen_idxs_per_partition(
+                                        &partitioner,
+                                        &mut local.morsel_idxs_values_per_p,
+                                        &mut local.sketch_per_p,
+                                        true,
+                                    );
+                                    (cold_keys, cold_df)
+                                };
                             local
                                 .morsel_idxs_offsets_per_p
                                 .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));

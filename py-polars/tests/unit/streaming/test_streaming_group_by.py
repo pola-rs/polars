@@ -530,3 +530,23 @@ def test_streaming_group_by_nested_agg_fallback() -> None:
     )
     expected = {("aaa", n // 3), ("bbb", n - n // 3)}
     assert expected == set(res.rows())
+
+
+def test_streaming_group_by_mostly_cold_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
+    n = 4096
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_STREAMING_CHUNK_SIZE", "512")
+    df = pl.DataFrame(
+        {
+            "k": range(n),
+            "v": [i % 13 for i in range(n)],
+        }
+    )
+
+    q = (
+        df.lazy()
+        .group_by("k")
+        .agg(pl.col("v").sum().alias("v_sum"), pl.len().alias("len"))
+        .sort("k")
+    )
+    assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

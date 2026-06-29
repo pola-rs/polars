@@ -127,3 +127,17 @@ def test_groupby_h2oai_q10(groupby_data: pl.DataFrame) -> None:
         )
         .collect()
     )
+
+
+def test_groupby_streaming_mostly_cold(
+    high_cardinality_groupby_data: pl.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "1")
+    monkeypatch.setenv("POLARS_STREAMING_CHUNK_SIZE", "4096")
+
+    (
+        high_cardinality_groupby_data.lazy()
+        .group_by("k")
+        .agg(pl.col("v").sum())
+        .collect(engine="streaming")
+    )
