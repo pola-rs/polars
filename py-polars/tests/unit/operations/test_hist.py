@@ -160,6 +160,18 @@ def test_hist_invalid_bins() -> None:
         s.hist(bins=[1, 0])  # invalid order
 
 
+def test_hist_non_numeric_dtype_raises() -> None:
+    s = pl.Series("a", ["A", "G", "Y", "Z"])
+    bins = pl.Series("bins", ["N"])
+    msg = "'hist' is only supported for numeric data"
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
+        s.to_frame().select(pl.col("a").hist(bins=bins))
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
+        s.hist(bins=bins)  # type: ignore[arg-type]
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=msg):
+        s.hist()
+
+
 def test_hist_bin_outside_data() -> None:
     s = pl.Series([-5, 2, 0, 1, 99], dtype=pl.Int32)
     result = s.hist(bins=[-10, -9])
