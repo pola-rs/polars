@@ -354,19 +354,16 @@ impl ParquetReadImpl {
             )
         }
 
-        let allow_column_predicates = predicate
-            .as_ref()
-            .is_some_and(|x| x.column_predicates.is_sumwise_complete)
-            && row_index.is_none()
-            && !projected_arrow_fields.iter().any(|x| {
-                x.arrow_field().dtype().is_nested()
-                    || matches!(x, ArrowFieldProjection::Mapped { .. })
-            })
-            && !predicate.as_ref().is_none_or(|p| {
-                projected_arrow_fields.iter().any(|f| {
+        let allow_column_predicates = predicate.as_ref().is_some_and(|p| {
+            p.column_predicates.is_sumwise_complete
+                && !projected_arrow_fields.iter().any(|f| {
                     matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
                         && p.column_predicates.predicates.contains_key(f.output_name())
                 })
+        }) && row_index.is_none()
+            && !projected_arrow_fields.iter().any(|x| {
+                x.arrow_field().dtype().is_nested()
+                    || matches!(x, ArrowFieldProjection::Mapped { .. })
             });
 
         RowGroupDecoder {
