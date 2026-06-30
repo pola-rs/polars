@@ -404,19 +404,17 @@ def test_file_list_schema_mismatch(
         assert_frame_equal(out, expect)
 
 
+@pytest.mark.parametrize("missing_columns", [None, "raise"])
+def test_scan_csv_missing_columns_raise(missing_columns: str | None) -> None:
+    with pytest.raises(pl.exceptions.ComputeError, match=r"^schema names differ: "):
+        pl.scan_csv(
+            [b"x,y\n1,2", b"x,z\n3,4"], missing_columns=missing_columns
+        ).collect()
+
+
 def test_scan_csv_missing_columns_insert() -> None:
-    # Union of all columns, NULLs where a file lacks a column
-    result = pl.scan_csv(
-        [b"x,y\n1,2", b"x,z\n3,4"],
-        missing_columns="insert",
-    ).collect()
-    expected = pl.DataFrame(
-        {
-            "x": [1, 3],
-            "y": [2, None],
-            "z": [None, 4],
-        }
-    )
+    result = pl.scan_csv([b"x,y\n1,2", b"x,z\n3,4"], missing_columns="insert").collect()
+    expected = pl.DataFrame({"x": [1, 3], "y": [2, None], "z": [None, 4]})
     assert_frame_equal(result, expected)
 
 
@@ -514,7 +512,7 @@ a,b,c
     schema = dict.fromkeys(["a", "b", "c", "d", "e"], pl.String)
 
     assert_frame_equal(
-        pl.scan_csv(data, schema=schema).collect(),
+        pl.scan_csv(data, schema=schema, missing_columns="insert").collect(),
         pl.DataFrame(
             {
                 "a": "a",
