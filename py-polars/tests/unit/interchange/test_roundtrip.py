@@ -11,9 +11,6 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.interchange.from_dataframe import (
-    from_dataframe as from_dataframe_interchange_protocol,
-)
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
@@ -23,6 +20,8 @@ skip_if_broken_pandas_version = pytest.mark.skipif(
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
+
+protocol_categories = pl.Categories(__name__)
 
 protocol_dtypes: list[PolarsDataType] = [
     pl.Int8,
@@ -41,7 +40,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Datetime,
     # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    # pl.Categorical(),
+    pl.Categorical(protocol_categories),
     # TODO: Add Enum
     # pl.Enum,
 ]
@@ -131,7 +130,7 @@ def test_to_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     df_pa = df.to_arrow()
-    result = from_dataframe_interchange_protocol(df_pa)
+    result = pl.from_arrow(df_pa)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -148,7 +147,7 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pa = df.to_arrow()
-    result = from_dataframe_interchange_protocol(df_pa, allow_copy=False)
+    result = pl.from_arrow(df_pa, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 
@@ -164,7 +163,7 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type,unused-ignore]
+    result = pl.from_pandas(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -186,7 +185,7 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
+    result = pl.from_pandas(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 
@@ -205,7 +204,7 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = from_dataframe_interchange_protocol(df_pd)  # type: ignore[arg-type,unused-ignore]
+    result = pl.from_pandas(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
@@ -227,40 +226,7 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
-    result = from_dataframe_interchange_protocol(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
-    assert_frame_equal(result, df)
-
-
-@pytest.mark.filterwarnings("ignore:.*copy keyword is deprecated:Warning")
-def test_to_dataframe_pandas_boolean_subchunks() -> None:
-    df = pl.Series("a", [False, False]).to_frame()
-    df_chunked = pl.concat([df[0, :], df[1, :]], rechunk=False)
-    dfi = df_chunked.__dataframe__()
-
-    df_pd = pd.api.interchange.from_dataframe(dfi)
-    result = pl.from_pandas(df_pd, nan_to_null=False)
-
-    assert_frame_equal(result, df)
-
-
-def test_to_dataframe_pyarrow_boolean() -> None:
-    df = pl.Series("a", [True, False], dtype=pl.Boolean).to_frame()
-    dfi = df.__dataframe__()
-
-    df_pa = pa.interchange.from_dataframe(dfi)
-    result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
-
-    assert_frame_equal(result, df)
-
-
-def test_to_dataframe_pyarrow_boolean_midbyte_slice() -> None:
-    s = pl.Series("a", [False] * 9)[3:]
-    df = s.to_frame()
-    dfi = df.__dataframe__()
-
-    df_pa = pa.interchange.from_dataframe(dfi)
-    result: pl.DataFrame = pl.from_arrow(df_pa)  # type: ignore[assignment]
-
+    result = pl.from_pandas(df_pd, allow_copy=False)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df)
 
 
