@@ -27,6 +27,11 @@ impl GroupedReduction for HasNullsReduce {
         self.has_nulls.resize(num_groups as usize, false);
     }
 
+    fn is_group_done(&self, group_idx: IdxSize) -> bool {
+        // Locked to `true` as soon as a single null has been seen.
+        self.has_nulls.get(group_idx as usize)
+    }
+
     fn update_group(
         &mut self,
         values: &[&Column],
