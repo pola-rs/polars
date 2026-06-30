@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Any, Literal, overload
 
 from polars._typing import PythonDataType
 from polars._utils.unstable import unstable
+from polars.compat_level import CompatLevel
 from polars.datatypes import DataType, DataTypeClass, is_polars_dtype
 from polars.datatypes._parse import parse_into_dtype
 from polars.datatypes.convert import unpack_dtypes
 from polars.exceptions import DuplicateError
-from polars.interchange.protocol import CompatLevel
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import (

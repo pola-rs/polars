@@ -65,6 +65,7 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_df, wrap_expr
 from polars._warnings import find_stacklevel, issue_warning
+from polars.compat_level import CompatLevel
 from polars.datatypes import (
     DTYPE_TEMPORAL_UNITS,
     N_INFER_DEFAULT,
@@ -96,7 +97,6 @@ from polars.datatypes import (
 )
 from polars.datatypes.group import DataTypeGroup
 from polars.exceptions import InvalidOperationError, PerformanceWarning
-from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery

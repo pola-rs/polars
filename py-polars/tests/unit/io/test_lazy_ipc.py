@@ -9,7 +9,7 @@ import pyarrow.ipc
 import pytest
 
 import polars as pl
-from polars.interchange.protocol import CompatLevel
+from polars.compat_level import CompatLevel
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:

@@ -31,7 +31,6 @@ from polars._utils.various import (
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_df, wrap_s
-from polars._warnings import issue_warning
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
 from polars.exceptions import NoDataError
 
@@ -49,7 +48,6 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
     )
-    from polars.interchange.protocol import SupportsInterchange
 
 
 def from_dict(
@@ -1093,7 +1091,7 @@ def _from_series_repr(m: re.Match[str]) -> Series:
 
 
 def from_dataframe(
-    df: SupportsInterchange | ArrowArrayExportable | ArrowStreamExportable,
+    df: ArrowArrayExportable | ArrowStreamExportable,
     *,
     allow_copy: bool | None = None,
     rechunk: bool = True,
@@ -1104,7 +1102,7 @@ def from_dataframe(
     .. versionchanged:: 1.23.0
 
        `from_dataframe` uses the PyCapsule Interface instead of the Dataframe
-       Interchange Protocol for conversion, only using the latter as a fallback.
+       Interchange Protocol for conversion.
 
     Parameters
     ----------
@@ -1123,8 +1121,6 @@ def from_dataframe(
     -----
     - Details on the PyCapsule Interface:
       https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html.
-    - Details on the Python dataframe interchange protocol:
-      https://data-apis.org/dataframe-protocol/latest/index.html.
       Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is
       a more efficient method of conversion.
 
@@ -1152,18 +1148,5 @@ def from_dataframe(
         )
     else:
         allow_copy = True
-    if is_pycapsule(df):
-        try:
-            return pycapsule_to_frame(df, rechunk=rechunk)
-        except Exception as exc:
-            issue_warning(
-                f"Failed to convert dataframe using PyCapsule Interface with exception: {exc!r}.\n"
-                "Falling back to Dataframe Interchange Protocol, which is known to be less robust.",
-                UserWarning,
-            )
-    from polars.interchange.from_dataframe import from_dataframe
 
-    result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
-    if rechunk:
-        return result.rechunk()
-    return result
+    return pycapsule_to_frame(df, rechunk=rechunk)

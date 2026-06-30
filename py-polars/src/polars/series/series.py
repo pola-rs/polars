@@ -67,6 +67,7 @@ from polars._utils.various import (
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_df, wrap_s
+from polars.compat_level import CompatLevel
 from polars.datatypes import (
     Array,
     Boolean,
@@ -102,7 +103,6 @@ from polars.exceptions import (
     ModuleUpgradeRequiredError,
     ShapeError,
 )
-from polars.interchange.protocol import CompatLevel
 from polars.series.array import ArrayNameSpace
 from polars.series.binary import BinaryNameSpace
 from polars.series.categorical import CatNameSpace

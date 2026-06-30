@@ -13,7 +13,7 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.interchange.protocol import CompatLevel
+from polars.compat_level import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies import dataframes
 

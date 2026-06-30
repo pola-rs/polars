@@ -13,6 +13,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
+from polars.compat_level import CompatLevel
 from polars.exceptions import (
     ComputeError,
     DuplicateError,
@@ -20,7 +21,6 @@ from polars.exceptions import (
     PanicException,
     UnstableWarning,
 )
-from polars.interchange.protocol import CompatLevel
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 

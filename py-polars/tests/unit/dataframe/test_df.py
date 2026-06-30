@@ -3210,16 +3210,6 @@ def test_flags() -> None:
     }
 
 
-def test_interchange() -> None:
-    df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
-    dfi = df.__dataframe__()
-
-    # Testing some random properties to make sure conversion happened correctly
-    assert dfi.num_rows() == 2
-    assert dfi.get_column(0).dtype[1] == 64
-    assert dfi.get_column_by_name("c").get_buffers()["data"][0].bufsize == 6
-
-
 def test_from_dicts_undeclared_column_dtype() -> None:
     data = [{"a": 1, "b": 2}]
     result = pl.from_dicts(data, schema=["x"])
