@@ -8,6 +8,8 @@ mod rank;
 mod sum;
 
 mod arg_min_max;
+mod min_by_max_by;
+pub use min_by_max_by::*;
 pub(super) mod window;
 use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
