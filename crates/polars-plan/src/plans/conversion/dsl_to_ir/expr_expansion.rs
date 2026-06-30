@@ -532,14 +532,6 @@ fn expand_expression_rec(
                     opt_flags,
                     |e| Expr::Agg(AggExpr::Sum(Arc::new(e))),
                 )?,
-                AggExpr::AggGroups(expr) => expand_single(
-                    expr.as_ref(),
-                    ignored_selector_columns,
-                    schema,
-                    out,
-                    opt_flags,
-                    |e| Expr::Agg(AggExpr::AggGroups(Arc::new(e))),
-                )?,
                 AggExpr::Std(expr, ddof) => expand_single(
                     expr.as_ref(),
                     ignored_selector_columns,

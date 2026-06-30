@@ -243,11 +243,6 @@ impl AExpr {
                         field.coerce(IDX_DTYPE);
                         Ok(field)
                     },
-                    AggGroups(expr) => {
-                        let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
-                        field.coerce(IDX_DTYPE.implode());
-                        Ok(field)
-                    },
                 }
             },
             Cast { expr, dtype, .. } => {
@@ -445,8 +440,7 @@ impl AExpr {
             | Agg(Std(expr, _))
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))
-            | Agg(Count { input: expr, .. })
-            | Agg(AggGroups(expr)) => expr_arena.get(*expr).to_name(expr_arena),
+            | Agg(Count { input: expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
             AnonymousFunction { input, fmt_str, .. } | AnonymousAgg { input, fmt_str, .. } => {
                 if input.is_empty() {
                     fmt_str.as_ref().clone()
