@@ -102,9 +102,11 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
             if row_byte_range.end > current_buffer_range.end {
                 let new_buffer_end = usize::min(
                     arr.values().len(),
-                    row_byte_range.start.saturating_add(
-                        // Allow oversize row with ARROW_MAX_OFFSET < row_byte_len <= BINVIEW_MAX_ROW_BYTE_LEN
-                        u32::max(row_byte_len, ARROW_MAX_OFFSET) as usize,
+                    usize::max(
+                        row_byte_range.end,
+                        row_byte_range
+                            .start
+                            .saturating_add(ARROW_MAX_OFFSET as usize),
                     ),
                 );
 
