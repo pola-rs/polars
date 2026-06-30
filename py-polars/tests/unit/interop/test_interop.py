@@ -13,7 +13,6 @@ import pyarrow.parquet as pq
 import pytest
 
 import polars as pl
-from polars.compat_level import CompatLevel
 from polars.exceptions import (
     ComputeError,
     DuplicateError,
@@ -955,13 +954,13 @@ def test_from_numpy_different_resolution_invalid() -> None:
 def test_compat_level(plmonkeypatch: PlMonkeyPatch) -> None:
     # change these if compat level bumped
     plmonkeypatch.setenv("POLARS_WARN_UNSTABLE", "1")
-    oldest = CompatLevel.oldest()
-    assert oldest is CompatLevel.oldest()  # test singleton
+    oldest = pl.CompatLevel.oldest()
+    assert oldest is pl.CompatLevel.oldest()  # test singleton
     assert oldest._version == 0
     with pytest.warns(UnstableWarning):
-        newest = CompatLevel.newest()
+        newest = pl.CompatLevel.newest()
     with pytest.warns(UnstableWarning):
-        assert newest is CompatLevel.newest()
+        assert newest is pl.CompatLevel.newest()
     assert newest._version == 1
 
     str_col = pl.Series(["awd"])
@@ -1163,7 +1162,7 @@ def test_schema_constructor_from_schema_capsule() -> None:
 
 def test_to_arrow_24142() -> None:
     df = pl.DataFrame({"a": object(), "b": "any string or bytes"})
-    df.to_arrow(compat_level=CompatLevel.oldest())
+    df.to_arrow(compat_level=pl.CompatLevel.oldest())
 
 
 def test_pycapsule_stream_interface_all_types() -> None:
@@ -1476,7 +1475,7 @@ def test_schema_to_arrow_15563() -> None:
     )
 
     assert pl.Schema({"x": pl.String}).to_arrow(
-        compat_level=CompatLevel.oldest()
+        compat_level=pl.CompatLevel.oldest()
     ) == pa.schema([pa.field("x", pa.large_string())])
 
 
