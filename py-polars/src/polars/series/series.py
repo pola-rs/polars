@@ -555,7 +555,8 @@ class Series:
 
         Notes
         -----
-        This method is mainly intended for use with the dataframe interchange protocol.
+        This method is mainly intended for testing interop and conversion with other
+        libraries.
         """
         return self._s._get_buffer_info()
 
@@ -580,7 +581,8 @@ class Series:
 
         Notes
         -----
-        This method is mainly intended for use with the dataframe interchange protocol.
+        This method is mainly intended for testing interop and conversion with other
+        libraries.
         """
         buffers = self._s._get_buffers()
         keys = ("values", "validity", "offsets")
@@ -617,7 +619,8 @@ class Series:
 
         Notes
         -----
-        This method is mainly intended for use with the dataframe interchange protocol.
+        This method is mainly intended for testing interop and conversion with other
+        libraries.
         """
         return cls._from_pyseries(PySeries._from_buffer(dtype, buffer_info, owner))
 
@@ -664,7 +667,8 @@ class Series:
 
         Notes
         -----
-        This method is mainly intended for use with the dataframe interchange protocol.
+        This method is mainly intended for testing interop and conversion with other
+        libraries.
         """
         if isinstance(data, Series):
             data_lst = [data._s]
