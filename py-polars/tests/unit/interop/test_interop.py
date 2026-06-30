@@ -11,8 +11,10 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from hypothesis import given
 
 import polars as pl
+from polars._utils.various import parse_version
 from polars.exceptions import (
     ComputeError,
     DuplicateError,
@@ -21,10 +23,90 @@ from polars.exceptions import (
     UnstableWarning,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric.strategies.core import dataframes
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
     from tests.conftest import PlMonkeyPatch
+
+
+PROTOCOL_DTYPES: list[PolarsDataType] = [
+    pl.Int8,
+    pl.Int16,
+    pl.Int32,
+    pl.Int64,
+    pl.UInt8,
+    pl.UInt16,
+    pl.UInt32,
+    pl.UInt64,
+    pl.Float16,
+    pl.Float32,
+    pl.Float64,
+    pl.Boolean,
+    pl.String,
+    pl.Datetime,
+    # This is broken for empty dataframes
+    # TODO: Enable lexically ordered categoricals
+    # pl.Categorical(),
+    # TODO: Add Enum
+    # pl.Enum,
+]
+
+
+skip_if_broken_pandas_version = pytest.mark.skipif(
+    pd.__version__.startswith("2"), reason="bug. see #20316"
+)
+
+
+@given(
+    dataframes(
+        allowed_dtypes=PROTOCOL_DTYPES,
+        excluded_dtypes=[
+            pl.Categorical,  # Categoricals read back as Enum types
+        ],
+    )
+)
+def test_from_dataframe_pyarrow_roundtrip_parametric(df: pl.DataFrame) -> None:
+    df_pa = df.to_arrow()
+    result = pl.from_arrow(df_pa)  # type: ignore[arg-type,unused-ignore]
+    assert isinstance(result, pl.DataFrame)
+    assert_frame_equal(result, df, categorical_as_str=True)
+
+
+@skip_if_broken_pandas_version
+@given(
+    dataframes(
+        allowed_dtypes=PROTOCOL_DTYPES,
+        excluded_dtypes=[
+            pl.Categorical,  # Categoricals come back as Enums
+        ],
+        allow_nan=False,  # NaN values come back as nulls
+    )
+)
+def test_from_dataframe_pandas_pyarrow_roundtrip_parametric(df: pl.DataFrame) -> None:
+    df_pd = df.to_pandas(use_pyarrow_extension_array=True)
+    result = pl.from_pandas(df_pd)  # type: ignore[arg-type,unused-ignore]
+    assert_frame_equal(result, df, categorical_as_str=True)
+
+
+@given(
+    dataframes(
+        allowed_dtypes=PROTOCOL_DTYPES,
+        excluded_dtypes=[
+            pl.Categorical,  # Categoricals come back as Enums
+        ],
+        # Empty string columns cause an error due to a bug in pandas.
+        # https://github.com/pandas-dev/pandas/issues/56703
+        min_size=1,
+        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
+        allow_nan=False,  # NaN values come back as nulls
+    )
+)
+def test_from_dataframe_pandas_native_roundtrip_parametric(df: pl.DataFrame) -> None:
+    df_pd = df.to_pandas()
+    result = pl.from_pandas(df_pd)  # type: ignore[arg-type,unused-ignore]
+    assert_frame_equal(result, df, categorical_as_str=True)
 
 
 def test_arrow_list_roundtrip() -> None:
@@ -1540,3 +1622,31 @@ def test_from_pandas_timestamp_17382() -> None:
     assert isinstance(result, datetime)
     assert result.tzinfo == ZoneInfo("UTC")
     assert result == datetime(2021, 1, 1, 0, 0, 0, tzinfo=ZoneInfo("UTC"))
+
+
+@pytest.mark.skipif(
+    parse_version(pd.__version__) < (2, 2),
+    reason="Pandas versions < 2.2 do not implement the required conversions",
+)
+def test_from_dataframe_pandas_timestamp_ns() -> None:
+    df = pl.Series("a", [datetime(2000, 1, 1)], dtype=pl.Datetime("ns")).to_frame()
+    df_pd = df.to_pandas(use_pyarrow_extension_array=True)
+    result = pl.from_dataframe(df_pd)
+    assert_frame_equal(result, df)
+
+
+def test_from_pyarrow_str_dict_with_null_values_20270() -> None:
+    tb = pa.table(
+        {
+            "col1": pa.DictionaryArray.from_arrays(
+                [0, 0, None, 1, 2], ["A", None, "B"]
+            ),
+        },
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.string())}),
+    )
+    df = pl.from_arrow(tb)
+    assert isinstance(df, pl.DataFrame)
+
+    assert_series_equal(
+        df.to_series(), pl.Series("col1", ["A", "A", None, None, "B"], pl.Categorical)
+    )
