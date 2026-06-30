@@ -142,35 +142,35 @@ def test_parquet_is_in_stats(tmp_path: Path) -> None:
 
     df1 = pd.DataFrame({"a": [None, 1, None, 2, 3, 3, 4, 4, 5, 5]})
     df1.to_parquet(file_path, engine="pyarrow")
-    df = pl.scan_parquet(file_path).filter(pl.col("a").is_in([5])).collect()
+    df = pl.scan_parquet(file_path).filter(pl.col("a").is_in([5.0])).collect()
     assert df["a"].to_list() == [5.0, 5.0]
 
     assert (
         pl.scan_parquet(file_path)
-        .filter(pl.col("a").is_in([5]))
+        .filter(pl.col("a").is_in([5.0]))
         .select(pl.col("a").sum())
     ).collect()[0, "a"] == 10.0
 
     assert (
         pl.scan_parquet(file_path)
-        .filter(pl.col("a").is_in([1, 2, 3]))
+        .filter(pl.col("a").is_in([1.0, 2.0, 3.0]))
         .select(pl.col("a").sum())
     ).collect()[0, "a"] == 9.0
 
     assert (
         pl.scan_parquet(file_path)
-        .filter(pl.col("a").is_in([1, 2, 3]))
+        .filter(pl.col("a").is_in([1.0, 2.0, 3.0]))
         .select(pl.col("a").sum())
     ).collect()[0, "a"] == 9.0
 
     assert (
         pl.scan_parquet(file_path)
-        .filter(pl.col("a").is_in([5]))
+        .filter(pl.col("a").is_in([5.0]))
         .select(pl.col("a").sum())
     ).collect()[0, "a"] == 10.0
 
     assert pl.scan_parquet(file_path).filter(
-        pl.col("a").is_in([1, 2, 3, 4, 5])
+        pl.col("a").is_in([1.0, 2.0, 3.0, 4.0, 5.0])
     ).collect().shape == (8, 1)
 
 

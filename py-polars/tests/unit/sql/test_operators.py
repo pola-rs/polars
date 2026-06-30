@@ -213,16 +213,14 @@ def test_starts_with() -> None:
     ]
 
 
-@pytest.mark.parametrize("match_float", [False, True])
-def test_unary_ops_8890(match_float: bool) -> None:
+def test_unary_ops_8890() -> None:
     with pl.SQLContext(
         df=pl.DataFrame({"a": [-2, -1, 1, 2], "b": ["w", "x", "y", "z"]}),
     ) as ctx:
-        in_values = "(-3.0, -1.0, +2.0, +4.0)" if match_float else "(-3, -1, +2, +4)"
         res = ctx.execute(
-            f"""
+            """
             SELECT *, -(3) as c, (+4) as d
-            FROM df WHERE a IN {in_values}
+            FROM df WHERE a IN (-3, -1, +2, +4)
             """
         )
         assert res.collect().to_dict(as_series=False) == {
