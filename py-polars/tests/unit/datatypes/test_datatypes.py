@@ -266,7 +266,9 @@ def test_unknown_resolve() -> None:
 
     q = pl.LazyFrame({"dec": [D("0.25")]})
     assert "Float64" in q.select(pl.col("dec") * (1.0 * 1)).explain()
-    q = pl.LazyFrame({"x": 76}, schema={"x": pl.Int32}).select(pl.col.x * (pl.lit(100.0) * pl.lit(1)))
+    q = pl.LazyFrame({"x": 76}, schema={"x": pl.Int32}).select(
+        pl.col.x * (pl.lit(100.0) * pl.lit(1))
+    )
     plan = q.explain()
     assert "Float64" in plan
     assert "dyn" not in plan
