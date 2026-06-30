@@ -287,3 +287,9 @@ def test_allow_dtype_expr_lit_26644() -> None:
     )
     expected = pl.DataFrame({"literal": pl.Series([None], dtype=pl.String)})
     assert_frame_equal(result, expected)
+
+
+def test_lit_bytearray_27640() -> None:
+    s = pl.select(pl.lit(bytearray(b"foo"))).to_series()
+    assert s.dtype == pl.Binary
+    assert s.to_list() == [b"foo"]
