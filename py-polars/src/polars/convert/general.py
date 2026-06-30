@@ -1146,7 +1146,5 @@ def from_dataframe(
             "`allow_copy` is deprecated and will be removed in a future version.",
             version="1.23",
         )
-    else:
-        allow_copy = True
 
     return pycapsule_to_frame(df, rechunk=rechunk)
