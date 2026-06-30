@@ -894,6 +894,22 @@ def test_sliced_struct_from_arrow() -> None:
     assert result.to_dict(as_series=False) == {"struct_col": [{"a": 2, "b": "bar"}]}
 
 
+def test_to_arrow_sliced_struct_with_nulls_23214() -> None:
+    s = pl.Series([{"a": 1}, {"a": 2}, None], dtype=pl.Struct({"a": pl.Int32}))
+
+    arr = s[1:].to_arrow()
+    arr.validate(full=True)
+    assert arr.to_pylist() == [{"a": 2}, None]
+
+    s2 = pl.Series(
+        [{"a": 1}, {"a": 2}, None, None, None, None, None, None, {"a": 4}],
+        dtype=pl.Struct({"a": pl.Int32}),
+    )
+    arr2 = s2[-2:].to_arrow()
+    arr2.validate(full=True)
+    assert arr2.to_pylist() == [None, {"a": 4}]
+
+
 def test_from_arrow_invalid_time_zone() -> None:
     arr = pa.array(
         [datetime(2021, 1, 1, 0, 0, 0, 0)],

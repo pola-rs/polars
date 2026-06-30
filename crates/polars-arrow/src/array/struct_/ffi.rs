@@ -3,6 +3,7 @@ use polars_error::PolarsResult;
 use super::super::ffi::ToFfi;
 use super::super::{Array, FromFfi};
 use super::StructArray;
+use crate::bitmap::align;
 use crate::ffi;
 
 unsafe impl ToFfi for StructArray {
@@ -15,16 +16,28 @@ unsafe impl ToFfi for StructArray {
     }
 
     fn offset(&self) -> Option<usize> {
-        Some(
-            self.validity
-                .as_ref()
-                .map(|bitmap| bitmap.offset())
-                .unwrap_or_default(),
-        )
+        // The child arrays are sliced together with the struct (see `slice_unchecked`),
+        // so they already start at logical index 0. The exported offset is applied to the
+        // children by the consumer, hence it must be 0 to avoid shifting them a second time.
+        //
+        // The only buffer the struct owns is the validity bitmap. A non-zero bitmap offset
+        // cannot be expressed through a raw pointer, so we signal that the array first needs
+        // to be re-aligned via `to_ffi_aligned`.
+        match self.validity.as_ref() {
+            Some(bitmap) if bitmap.offset() != 0 => None,
+            _ => Some(0),
+        }
     }
 
     fn to_ffi_aligned(&self) -> Self {
-        self.clone()
+        // Re-align the validity bitmap to offset 0 so it matches the already-sliced children.
+        let validity = self.validity.as_ref().map(|bitmap| align(bitmap, 0));
+        Self::new(
+            self.dtype.clone(),
+            self.length,
+            self.values.clone(),
+            validity,
+        )
     }
 }
 
