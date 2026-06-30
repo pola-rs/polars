@@ -406,3 +406,10 @@ def test_from_pandas_string_with_natype_17355(null: Any) -> None:
     result = pl.from_pandas(pd_df)
     expected = pl.DataFrame({"col": ["a", None]})
     assert_frame_equal(result, expected)
+
+
+def test_to_pandas_int8_20316() -> None:
+    df = pl.Series("a", [None], pl.Int8).to_frame()
+    df_pd = df.to_pandas(use_pyarrow_extension_array=True)
+    result = pl.from_dataframe(df_pd)
+    assert_frame_equal(result, df)

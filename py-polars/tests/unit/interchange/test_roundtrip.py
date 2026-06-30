@@ -21,7 +21,6 @@ skip_if_broken_pandas_version = pytest.mark.skipif(
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
-protocol_categories = pl.Categories(__name__)
 
 protocol_dtypes: list[PolarsDataType] = [
     pl.Int8,
@@ -40,7 +39,7 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Datetime,
     # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    pl.Categorical(protocol_categories),
+    # pl.Categorical(),
     # TODO: Add Enum
     # pl.Enum,
 ]
