@@ -3288,6 +3288,7 @@ class DataFrame:
         result: str = self.write_csv(file=None, separator=separator, **kwargs)
         _write_clipboard_string(result)
 
+    @unstable()
     def write_avro(
         self,
         file: str | Path | IO[bytes],
@@ -3296,6 +3297,10 @@ class DataFrame:
     ) -> None:
         """
         Write to Apache Avro file.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
