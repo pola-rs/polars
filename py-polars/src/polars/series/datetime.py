@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
@@ -45,11 +45,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         s = wrap_s(self._s)
         return s[item]
 
-    @unstable()
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.27.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
+        *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] | Expr | Series = (),
         roll: Roll = "raise",
