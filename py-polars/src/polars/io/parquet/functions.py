@@ -33,7 +33,7 @@ with contextlib.suppress(ImportError):
     from polars._plr import read_parquet_metadata as _read_parquet_metadata
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
@@ -42,6 +42,7 @@ if TYPE_CHECKING:
         DefaultFieldValues,
         DeletionFiles,
         FileSource,
+        IntoExpr,
         ParallelStrategy,
         SchemaDict,
         StorageOptionsDict,
@@ -55,7 +56,7 @@ if TYPE_CHECKING:
 def read_parquet(
     source: FileSource,
     *,
-    columns: list[int] | list[str] | None = None,
+    columns: IntoExpr | Iterable[IntoExpr] | None = None,
     n_rows: int | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -98,7 +99,8 @@ def read_parquet(
         may not be updated accordingly after reading.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
-        of column names.
+        of column names. When ``use_pyarrow=False`` (default), also accepts a single
+        column name or regex pattern, a polars expression, or a column selector.
     n_rows
         Stop reading from parquet file after reading `n_rows`.
         Only valid when `use_pyarrow=False`.
