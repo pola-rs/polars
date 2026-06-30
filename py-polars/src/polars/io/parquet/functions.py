@@ -273,7 +273,6 @@ def read_parquet(
         schema=schema,
         hive_schema=hive_schema,
         try_parse_hive_dates=try_parse_hive_dates,
-        rechunk=rechunk,
         low_memory=low_memory,
         cache=False,
         storage_options=storage_options,
@@ -290,7 +289,12 @@ def read_parquet(
         else:
             lf = lf.select(columns)
 
-    return lf.collect()
+    ret = lf.collect()
+
+    if rechunk:
+        ret = ret.rechunk()
+
+    return ret
 
 
 def _read_parquet_with_pyarrow(
@@ -478,7 +482,7 @@ def scan_parquet(
     schema: SchemaDict | None = None,
     hive_schema: SchemaDict | None = None,
     try_parse_hive_dates: bool = True,
-    rechunk: bool = False,
+    rechunk: bool | None = None,
     low_memory: bool = False,
     cache: bool = True,
     storage_options: StorageOptionsDict | None = None,
@@ -574,6 +578,9 @@ def scan_parquet(
     rechunk
         In case of reading multiple files via a glob pattern rechunk the final DataFrame
         into contiguous memory chunks.
+
+        .. deprecated:: 1.42.0
+            Collect into a DataFrame first, then call rechunk on the result.
     low_memory
         Reduce memory pressure at the expense of performance.
     cache
@@ -661,6 +668,16 @@ def scan_parquet(
     ... }
     >>> pl.scan_parquet(source, storage_options=storage_options)  # doctest: +SKIP
     """
+    if rechunk is not None:
+        issue_deprecation_warning(
+            "`rechunk` parameter on scan_parquet() will be removed. "
+            "Consider first collecting the scan to a DataFrame, then calling "
+            "df.rechunk() on the result.",
+            version="1.42.0",
+        )
+    else:
+        rechunk = False
+
     if schema is not None:
         msg = "the `schema` parameter of `scan_parquet` is considered unstable."
         issue_unstable_warning(msg)
