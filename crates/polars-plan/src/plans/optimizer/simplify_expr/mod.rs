@@ -643,6 +643,37 @@ impl OptimizationRule for SimplifyExprRule {
                 let left_aexpr = expr_arena.get(*left);
                 let right_aexpr = expr_arena.get(*right);
 
+                // Inline dynamic value casts
+                // Ensure that dynamic values upcast in lined
+                // This will allow const folding later
+                if let (
+                    AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))),
+                    AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(r))),
+                ) = (left_aexpr, right_aexpr)
+                {
+                    let left = *left;
+                    let op = *op;
+                    let right = expr_arena.add(AExpr::Literal(LiteralValue::Dyn(
+                        DynLiteralValue::Float(*r as _),
+                    )));
+                    return Ok(Some(AExpr::BinaryExpr { left, op, right }));
+                };
+
+                // Ensure that dynamic values upcast inlined
+                // This will allow const folding later
+                if let (
+                    AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(l))),
+                    AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))),
+                ) = (left_aexpr, right_aexpr)
+                {
+                    let right = *right;
+                    let op = *op;
+                    let left = expr_arena.add(AExpr::Literal(LiteralValue::Dyn(
+                        DynLiteralValue::Float(*l as _),
+                    )));
+                    return Ok(Some(AExpr::BinaryExpr { left, op, right }));
+                };
+
                 // lit(left) + lit(right) => lit(left + right)
                 use Operator::*;
                 #[allow(clippy::manual_map)]
