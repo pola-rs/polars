@@ -82,33 +82,33 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
     let mut current_buffer_range: std::ops::Range<usize> = 0..0;
     let mut total_buffer_len: usize = 0;
 
-    for src_range in arr
+    for row_byte_range in arr
         .offsets()
         .array_windows::<2>()
         .map(|[start, end]| start.to_usize()..end.to_usize())
     {
-        let row_byte_len: usize = src_range.len();
+        let row_byte_len: usize = row_byte_range.len();
         assert!(
             row_byte_len <= BINVIEW_MAX_ROW_BYTE_LEN,
             "max string/binary length exceeded"
         );
         let row_byte_len: u32 = row_byte_len as _;
 
-        let row_byte_values = unsafe { arr.values().get_unchecked(src_range.clone()) };
+        let row_byte_values = unsafe { arr.values().get_unchecked(row_byte_range.clone()) };
 
         views.push(if row_byte_len <= 12 {
             unsafe { View::new_inline_unchecked(row_byte_values) }
         } else {
-            if src_range.end > current_buffer_range.end {
+            if row_byte_range.end > current_buffer_range.end {
                 let new_buffer_end = usize::min(
                     arr.values().len(),
-                    src_range.start.saturating_add(
+                    row_byte_range.start.saturating_add(
                         // Allow oversize row with ARROW_MAX_OFFSET < row_byte_len <= BINVIEW_MAX_ROW_BYTE_LEN
                         u32::max(row_byte_len, ARROW_MAX_OFFSET) as usize,
                     ),
                 );
 
-                let new_buffer_range = src_range.start..new_buffer_end;
+                let new_buffer_range = row_byte_range.start..new_buffer_end;
 
                 assert!(
                     buffers.len() < u32::MAX as usize,
@@ -125,7 +125,7 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
                 current_buffer_range = new_buffer_range;
             }
 
-            let offset: usize = src_range.start - current_buffer_range.start;
+            let offset: usize = row_byte_range.start - current_buffer_range.start;
             let offset: u32 = offset as u32;
             unsafe {
                 View::new_noninline_unchecked(row_byte_values, (buffers.len() - 1) as u32, offset)
