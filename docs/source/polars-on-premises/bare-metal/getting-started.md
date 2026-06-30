@@ -63,7 +63,7 @@ directory.
 ```toml
 cluster_id = "polars-cluster"
 instance_id = "node-0"
-license = "./license.json" # Path to your Polars On-Prem license. This is a JSON file containing your company name, license expiry, and license signature.
+license.on_prem_enterprise.license_path = "./license.json" # Path to your Polars On-Prem license. This is a JSON file containing your company name, license expiry, and license signature.
 
 # Component that receives the Polars queries from the Python client.
 [scheduler]
