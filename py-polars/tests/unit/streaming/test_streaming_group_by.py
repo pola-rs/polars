@@ -534,11 +534,11 @@ def test_streaming_group_by_nested_agg_fallback() -> None:
 
 def test_streaming_group_by_mostly_cold_morsels(plmonkeypatch: PlMonkeyPatch) -> None:
     n = 4096
-    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "1")
+    plmonkeypatch.setenv("POLARS_HOT_TABLE_SIZE", "2")
     plmonkeypatch.setenv("POLARS_STREAMING_CHUNK_SIZE", "512")
     df = pl.DataFrame(
         {
-            "k": range(n),
+            "k": [(i * 7919) % n for i in range(n)],
             "v": [i % 13 for i in range(n)],
         }
     )
@@ -549,4 +549,8 @@ def test_streaming_group_by_mostly_cold_morsels(plmonkeypatch: PlMonkeyPatch) ->
         .agg(pl.col("v").sum().alias("v_sum"), pl.len().alias("len"))
         .sort("k")
     )
+    plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
+    assert 'label="group-by' in plan
+    assert 'label="sorted-group-by' not in plan
+
     assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

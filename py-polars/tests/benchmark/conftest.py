@@ -14,7 +14,7 @@ def high_cardinality_groupby_data() -> pl.DataFrame:
     n = 200_000
     return pl.DataFrame(
         {
-            "k": range(n),
+            "k": [(i * 7919) % n for i in range(n)],
             "v": [i % 97 for i in range(n)],
         }
     )
