@@ -60,24 +60,6 @@ def test_from_dataframe_pyarrow_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@given(
-    dataframes(
-        allowed_dtypes=protocol_dtypes,
-        excluded_dtypes=[
-            pl.String,  # Polars String type does not match protocol spec
-            pl.Categorical,  # Polars copies the categories to construct a mapping
-            pl.Boolean,  # pyarrow exports boolean buffers as byte-packed: https://github.com/apache/arrow/issues/37991
-        ],
-        allow_chunks=False,
-    )
-)
-def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
-    df_pa = df.to_arrow()
-    result = pl.from_arrow(df_pa)  # type: ignore[arg-type,unused-ignore]
-    assert isinstance(result, pl.DataFrame)
-    assert_frame_equal(result, df)
-
-
 @skip_if_broken_pandas_version
 @given(
     dataframes(
@@ -92,28 +74,6 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
     result = pl.from_pandas(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
-
-
-@skip_if_broken_pandas_version
-@given(
-    dataframes(
-        allowed_dtypes=protocol_dtypes,
-        excluded_dtypes=[
-            pl.String,  # Polars String type does not match protocol spec
-            pl.Categorical,  # Categoricals come back as Enums
-            pl.Boolean,  # pandas exports boolean buffers as byte-packed
-        ],
-        # Empty dataframes cause an error due to a bug in pandas.
-        # https://github.com/pandas-dev/pandas/issues/56700
-        min_size=1,
-        allow_chunks=False,
-        allow_nan=False,  # NaN values come back as nulls
-    )
-)
-def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
-    df_pd = df.to_pandas(use_pyarrow_extension_array=True)
-    result = pl.from_pandas(df_pd)  # type: ignore[arg-type,unused-ignore]
-    assert_frame_equal(result, df)
 
 
 @given(
@@ -133,28 +93,6 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
     result = pl.from_pandas(df_pd)  # type: ignore[arg-type,unused-ignore]
     assert_frame_equal(result, df, categorical_as_str=True)
-
-
-@given(
-    dataframes(
-        allowed_dtypes=protocol_dtypes,
-        excluded_dtypes=[
-            pl.String,  # Polars String type does not match protocol spec
-            pl.Categorical,  # Categoricals come back as Enums
-            pl.Boolean,  # pandas exports boolean buffers as byte-packed
-        ],
-        # Empty dataframes cause an error due to a bug in pandas.
-        # https://github.com/pandas-dev/pandas/issues/56700
-        min_size=1,
-        allow_chunks=False,
-        allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
-        allow_nan=False,  # NaN values come back as nulls
-    )
-)
-def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
-    df_pd = df.to_pandas()
-    result = pl.from_pandas(df_pd)  # type: ignore[arg-type,unused-ignore]
-    assert_frame_equal(result, df)
 
 
 @pytest.mark.skipif(
