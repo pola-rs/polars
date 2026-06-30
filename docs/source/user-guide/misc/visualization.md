@@ -88,10 +88,8 @@ of Graphics to Python users with an interface similar to its R counterpart. It s
 
 ## Seaborn
 
-[Seaborn](https://seaborn.pydata.org/) can accept a Polars `DataFrame` by leveraging the
-[dataframe interchange protocol](https://data-apis.org/dataframe-api/), which offers zero-copy
-conversion where possible. Note that the protocol does not support all Polars data types (e.g.
-`List`) so your mileage may vary here.
+[Seaborn](https://seaborn.pydata.org/) can accept a Polars `DataFrame`. Seaborn accepts Pandas
+`DataFrame`s, and will internally convert Polars `DataFrame`s using `DataFrame.to_pandas()`.
 
 {{code_block('user-guide/misc/visualization','seaborn_show_plot',[])}}
 
