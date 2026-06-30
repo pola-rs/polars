@@ -1560,6 +1560,7 @@ class PyExpr:
         second: PyExpr,
         microsecond: PyExpr,
         ambiguous: PyExpr,
+        strict: bool,
     ) -> PyExpr: ...
     def dt_combine(self, time: PyExpr, time_unit: TimeUnit) -> PyExpr: ...
     def dt_millennium(self) -> PyExpr: ...
@@ -2176,6 +2177,7 @@ def datetime(
     year: PyExpr,
     month: PyExpr,
     day: PyExpr,
+    strict: bool,
     hour: PyExpr | None,
     minute: PyExpr | None,
     second: PyExpr | None,

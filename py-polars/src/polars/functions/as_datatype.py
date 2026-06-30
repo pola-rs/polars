@@ -36,6 +36,7 @@ def datetime_(
     time_unit: TimeUnit = "us",
     time_zone: str | None = None,
     ambiguous: Ambiguous | Expr = "raise",
+    strict: bool = True,
 ) -> Expr:
     """
     Create a Polars literal expression of type Datetime.
@@ -67,6 +68,10 @@ def datetime_(
         - `'earliest'`: use the earliest datetime
         - `'latest'`: use the latest datetime
         - `'null'`: set to null
+    strict
+        If `True` (default), raise an error on invalid date/time components.
+        If `False`, set the result to null for invalid components instead of
+        raising an error.
 
     Returns
     -------
@@ -149,6 +154,7 @@ def datetime_(
             year_expr,
             month_expr,
             day_expr,
+            strict,
             hour_expr,
             minute_expr,
             second_expr,

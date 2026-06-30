@@ -405,7 +405,7 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "timezones")]
                 T::DSTOffset => IT::DSTOffset,
                 T::Round => IT::Round,
-                T::Replace => IT::Replace,
+                T::Replace { strict } => IT::Replace { strict },
                 #[cfg(feature = "timezones")]
                 T::ReplaceTimeZone(time_zone, non_existent) => {
                     IT::ReplaceTimeZone(time_zone, non_existent)
@@ -414,9 +414,11 @@ pub(super) fn convert_functions(
                 T::DatetimeFunction {
                     time_unit,
                     time_zone,
+                    strict,
                 } => IT::DatetimeFunction {
                     time_unit,
                     time_zone,
+                    strict,
                 },
             })
         },

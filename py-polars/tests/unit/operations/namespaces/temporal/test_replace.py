@@ -403,3 +403,46 @@ def test_replace_broadcast_self() -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+def test_replace_date_strict_false() -> None:
+    s = pl.Series("a", [date(2025, 1, 1)])
+
+    # strict=False returns null for invalid date components
+    result = s.dt.replace(month=13, strict=False)
+    assert result[0] is None
+
+    result = s.dt.replace(day=32, strict=False)
+    assert result[0] is None
+
+
+def test_replace_datetime_strict_false() -> None:
+    s = pl.Series("a", [datetime(2025, 1, 1)])
+
+    # invalid date components → null
+    result = s.dt.replace(month=13, strict=False)
+    assert result[0] is None
+
+    # invalid time components → null
+    result = s.dt.replace(second=61, strict=False)
+    assert result[0] is None
+
+    result = s.dt.replace(hour=25, strict=False)
+    assert result[0] is None
+
+
+def test_replace_plan_visitor() -> None:
+    # Covers the IRTemporalFunction::Replace arm in the IR plan visitor
+    # (expr_nodes::into_py in polars-python/src/lazyframe/visitor/expr_nodes.rs)
+    # and the Display impl for Replace in the optimized plan
+    df = pl.LazyFrame({"a": [datetime(2020, 1, 1)]})
+    q = df.with_columns(pl.col("a").dt.replace(year=2021))
+    # Cover Display impl via explain()
+    plan = q.explain()
+    assert "replace" in plan
+    # Cover IR visitor via view_expression()
+    nt = q._ldf.visit()
+    exprs = nt.get_exprs()
+    assert len(exprs) > 0
+    expr = nt.view_expression(exprs[0].node)
+    assert expr is not None

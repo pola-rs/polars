@@ -355,9 +355,10 @@ impl DateLikeNameSpace {
         second: Expr,
         microsecond: Expr,
         ambiguous: Expr,
+        strict: bool,
     ) -> Expr {
         self.0.map_n_ary(
-            FunctionExpr::TemporalExpr(TemporalFunction::Replace),
+            FunctionExpr::TemporalExpr(TemporalFunction::Replace { strict }),
             [
                 year,
                 month,

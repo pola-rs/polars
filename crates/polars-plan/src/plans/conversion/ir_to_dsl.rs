@@ -631,7 +631,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 #[cfg(feature = "timezones")]
                 IB::DSTOffset => B::DSTOffset,
                 IB::Round => B::Round,
-                IB::Replace => B::Replace,
+                IB::Replace { strict } => B::Replace { strict },
                 #[cfg(feature = "timezones")]
                 IB::ReplaceTimeZone(time_zone, non_existent) => {
                     B::ReplaceTimeZone(time_zone, non_existent)
@@ -640,9 +640,11 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IB::DatetimeFunction {
                     time_unit,
                     time_zone,
+                    strict,
                 } => B::DatetimeFunction {
                     time_unit,
                     time_zone,
+                    strict,
                 },
             })
         },
