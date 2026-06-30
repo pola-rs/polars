@@ -1039,7 +1039,7 @@ def test_excel_read_no_headers(engine: ExcelSpreadsheetEngine) -> None:
     df.write_excel(xls, worksheet="data", include_header=False)
 
     xldf = pl.read_excel(xls, engine=engine, has_header=False)
-    expected = xldf.rename({"column_1": "colx", "column_2": "coly", "column_3": "colz"})
+    expected = xldf.rename({"column_0": "colx", "column_1": "coly", "column_2": "colz"})
     assert_frame_equal(df, expected)
 
 
