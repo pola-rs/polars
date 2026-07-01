@@ -189,9 +189,9 @@ def test_concat_horizontal_single_df(lazy: bool) -> None:
     a = pl.DataFrame({"a": ["a", "b"], "b": [1, 2]})
 
     if lazy:
-        out = pl.concat([a.lazy()], how="horizontal", strict=True).collect()
+        out = pl.concat([a.lazy()], how="horizontal").collect()
     else:
-        out = pl.concat([a], how="horizontal", strict=True)
+        out = pl.concat([a], how="horizontal")
 
     expected = a
     assert_frame_equal(out, expected)
