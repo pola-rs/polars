@@ -45,7 +45,6 @@ const PRUNE_PARQUET_METADATA: &str = "POLARS_PRUNE_PARQUET_METADATA";
 const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
 
 const RESOLVE_METADATA_LEVEL: &str = "POLARS_RESOLVE_METADATA_LEVEL";
-const DEFAULT_RESOLVE_METADATA_LEVEL: ResolveMode = ResolveMode::RowCounts;
 
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
@@ -183,7 +182,7 @@ impl Config {
                 DEFAULT_PARQUET_BINARY_STATISTICS_TRUNCATE_LENGTH,
             ),
             prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
-            resolve_metadata_level: AtomicU8::new(DEFAULT_RESOLVE_METADATA_LEVEL as u8),
+            resolve_metadata_level: AtomicU8::new(ResolveMode::default() as u8),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
@@ -276,7 +275,7 @@ impl Config {
             ),
             RESOLVE_METADATA_LEVEL => self.resolve_metadata_level.store(
                 val.and_then(|x| parse::parse_resolve_mode(var, x))
-                    .unwrap_or(DEFAULT_RESOLVE_METADATA_LEVEL) as u8,
+                    .unwrap_or_default() as u8,
                 Ordering::Relaxed,
             ),
 

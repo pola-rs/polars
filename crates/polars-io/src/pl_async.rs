@@ -154,7 +154,7 @@ fn get_semaphore() -> &'static (Semaphore, u32) {
     })
 }
 
-pub(crate) fn get_concurrency_limit() -> u32 {
+pub fn get_concurrency_limit() -> u32 {
     get_semaphore().1
 }
 

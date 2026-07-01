@@ -4566,7 +4566,7 @@ class Series:
             [1, 2, 3]
             [4, 5, 6]
         ]
-        >>> s.explode()
+        >>> s.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [

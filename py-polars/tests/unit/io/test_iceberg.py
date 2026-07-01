@@ -73,9 +73,13 @@ from polars.io.iceberg._utils import (
 )
 from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
+from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
+    from tests.unit.io.test_scan_row_deletion import (
+        WritePositionDeletes,
+    )
 
     # Mypy does not understand the constructors and we can't construct the inputs
     # explicitly since they are abstract base classes.
@@ -117,6 +121,33 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     from pyiceberg.catalog.sql import SqlCatalog
     from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+
+@pytest.fixture(autouse=True)
+def sqlcatalog_uses_null_pool_connections(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    # note: SqlCatalog is sqlite-backed, and pyiceberg builds its engine with
+    # a SingletonThreadPool that can raise a ResourceWarning on test shutdown;
+    # we ensure it uses a NullPool instead, resolving the connection "leak"
+    import pyiceberg.catalog.sql as pyiceberg_sql
+    from sqlalchemy.pool import NullPool
+
+    tmp_path = tmp_path_factory.mktemp("iceberg_catalogs")
+    original_create_engine = pyiceberg_sql.create_engine
+    counter = itertools.count()
+
+    def create_engine(url: str, **kwargs: Any) -> Any:
+        if url == "sqlite:///:memory:":
+            # need to use a file-backed catalog, otherwise NullPool connections
+            # will be working with different in-memory databases on each call
+            url = f"sqlite:///{tmp_path}/catalog_{next(counter)}.db"
+
+        kwargs["poolclass"] = NullPool
+        return original_create_engine(url, **kwargs)
+
+    monkeypatch.setattr(pyiceberg_sql, "create_engine", create_engine)
 
 
 def new_iceberg_scan_resolver(
@@ -2698,3 +2729,82 @@ def test_scan_iceberg_partial_and_pushdown(
     # Verify: correctness
     assert len(result) == 2
     assert result["a"].to_list() == [2, 3]
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_row_estimate(
+    tmp_path: Path,
+    write_position_deletes: WritePositionDeletes,  # noqa: F811
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
+
+    q = pl.scan_iceberg(tbl, use_metadata_statistics=True)
+    plan = q.explain()
+
+    assert "ESTIMATED ROWS: 5" in plan
+
+    file_paths = [
+        _normalize_windows_iceberg_file_uri(x.file.file_path)
+        for x in tbl.scan().plan_files()
+    ]
+
+    deletion_files = (
+        "iceberg-position-delete",
+        {
+            0: [
+                write_position_deletes(pl.Series([1, 2])),
+            ],
+        },
+    )
+
+    q = pl.scan_parquet(
+        file_paths,
+        _deletion_files=deletion_files,  # type: ignore[arg-type]
+        _row_count=(5, 2),
+    )
+    plan = q.explain()
+
+    assert "ESTIMATED ROWS: 3" in plan
+    assert q.select(pl.len()).collect().item() == 3
+    assert q.collect().height == 3
+
+
+def test_convert_iceberg_storage_options_dot_filtering() -> None:
+    from polars.io.iceberg._dataset import (
+        _convert_iceberg_to_object_store_storage_options,
+    )
+
+    result = _convert_iceberg_to_object_store_storage_options(
+        {
+            "user": "foo",
+            "hdfs.host": "localhost",
+            "hdfs.port": "9005",
+            # "dfs.replication": "3",
+            # "write.parquet.compression": "zstd",
+            "other.foo": "bar",
+        }
+    )
+
+    # keep
+    assert result["user"] == "foo"
+    assert result["hdfs.host"] == "localhost"
+    assert result["hdfs.port"] == "9005"
+
+    # drop
+    assert "dfs.replication" not in result
+    assert "write.parquet.compression" not in result
+    assert "other.foo" not in result
