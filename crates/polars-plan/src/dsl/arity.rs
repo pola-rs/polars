@@ -1,5 +1,8 @@
 use super::*;
 
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+
 /// Utility struct for the `when-then-otherwise` expression.
 ///
 /// Represents the state of the expression after [when] is called.
@@ -14,6 +17,7 @@ pub struct When {
 ///
 /// Represents the state of the expression after `when(...).then(...)` is called.
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))] // Not in DSL schema, but needed for pickling.
 pub struct Then {
     condition: Expr,
     statement: Expr,
@@ -34,6 +38,7 @@ pub struct ChainedWhen {
 ///
 /// Represents the state of the expression after an additional `then` is called.
 #[derive(Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))] // Not in DSL schema, but needed for pickling.
 pub struct ChainedThen {
     conditions: Vec<Expr>,
     statements: Vec<Expr>,
