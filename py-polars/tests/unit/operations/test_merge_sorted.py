@@ -1,5 +1,6 @@
 import re
 from datetime import time
+from itertools import product
 
 import pytest
 from hypothesis import given
@@ -449,13 +450,10 @@ def test_merge_sorted_with_list_27563() -> None:
 @pytest.mark.parametrize(
     ("left_desc", "left_null_last", "right_desc", "right_null_last"),
     [
-        (ld, lnl, rd, rnl)
-        for ld in (True, False)
-        for lnl in (True, False)
-        for rd in (True, False)
-        for rnl in (True, False)
+        params
+        for params in product((True, False), repeat=4)
         # Exclude valid combination of sortedness and nulls_last
-        if ld or not lnl or rd or not rnl
+        if params != (False, True, False, True)
     ],
 )
 def test_merge_sorted_with_incorrectly_sorted_input_fails(
