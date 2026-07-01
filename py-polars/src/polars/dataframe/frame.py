@@ -1110,7 +1110,7 @@ class DataFrame:
 
         suffix = "__POLARS_CMP_OTHER"
         other_renamed = other.select(F.all().name.suffix(suffix))
-        combined = F.concat([self, other_renamed], how="horizontal", strict=True)
+        combined = F.concat([self, other_renamed], how="horizontal")
 
         if op == "eq":
             expr = [F.col(n) == F.col(f"{n}{suffix}") for n in self.columns]
@@ -2490,9 +2490,7 @@ class DataFrame:
                 if features is not None
                 else self.drop(*label_frame.columns)
             ).cast(to_dtype)  # type: ignore[arg-type]
-            frame = F.concat(
-                [label_frame, features_frame], how="horizontal", strict=True
-            )
+            frame = F.concat([label_frame, features_frame], how="horizontal")
         else:
             label_frame = None
             features_frame = None
