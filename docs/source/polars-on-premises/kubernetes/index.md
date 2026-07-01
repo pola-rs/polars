@@ -171,9 +171,8 @@ troubleshoot queries.
 
 The data your queries process stays entirely within your environment, and is never shared with us.
 
-We also offer custom solutions for running Polars On-Prem in air-gapped environments in which
-registration with our servers is not required, and no data is shared with us (see
-[On-Prem Enterprise](#on-prem-enterprise) section).
+Need an air-gapped Enterprise deployment that runs entirely in your infrastructure without outside
+connections? See the [On-Prem Enterprise](#on-prem-enterprise) section to get started.
 
 ### Production configuration
 
@@ -258,6 +257,7 @@ unavailable on managed clusters, so prefer shared shuffle storage where possible
 
 ## On-Prem Enterprise
 
-If you are interested in deploying one or several clusters without any resource limitations nor data
-sharing, on bare-metal machines or in a Kubernetes setup, and in air-gapped environments, please
-[sign up here to apply](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide).
+Looking to run multiple concurrent clusters, in an air-gapped environment, or on bare-metal
+machines?
+[Contact the team](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide)
+to discuss your setup.
