@@ -3207,3 +3207,11 @@ def test_read_csv_mixed_i128_float_infers_float64_27654(chunk_override: None) ->
     csv_data = b"value\n12345678901234567890\n1.5"
     df = pl.read_csv(csv_data)
     assert df.schema["value"] == pl.Float64
+
+
+def test_read_csv_missing_utf8_is_empty_string_deprecated() -> None:
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"`missing_utf8_is_empty_string` for `read_csv` is deprecated",
+    ):
+        pl.read_csv(b"a,b\n1,2", missing_utf8_is_empty_string=True)  # type: ignore[call-arg]
