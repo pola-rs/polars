@@ -520,7 +520,7 @@ class IcebergStatisticsLoader:
             column_stats_df = stat_builder.finish(expected_height, p)
             out.append(column_stats_df)
 
-        return pl.concat(out, how="horizontal", strict=True)
+        return pl.concat(out, how="horizontal")
 
 
 @dataclass

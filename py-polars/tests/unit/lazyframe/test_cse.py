@@ -1273,7 +1273,7 @@ def test_cse_map_batches_distinct_functions() -> None:
         lambda df: df.select(pl.col("b").alias("y")),
         schema=pl.Schema({"y": pl.Int64}),
     )
-    result = pl.concat([lf1, lf2], how="horizontal", strict=True).collect(
+    result = pl.concat([lf1, lf2], how="horizontal").collect(
         optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
     assert result.columns == ["x", "y"]
