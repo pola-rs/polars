@@ -443,3 +443,32 @@ def test_merge_sorted_with_list_27563() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+@pytest.mark.parametrize(
+        ("left_desc", "left_null_last", "right_desc", "right_null_last"),
+     [
+         (ld, lnl, rd, rnl)
+         for ld in (True, False)
+         for lnl in (True, False)
+         for rd in (True, False)
+         for rnl in (True, False)
+         if ld or not lnl or rd or not rnl
+     ],
+)
+def test_merge_sorted_with_incorrectly_sorted_input_fails(left_desc: bool, left_null_last: bool, right_desc: bool, right_null_last: bool) -> None:
+    df1 = pl.DataFrame({"key": [1, 3, None]})
+    df2 = pl.DataFrame({"key": [2, 4, None]})
+
+    # Intentionally sort the input dataframes incorrectly to trigger the error
+    df1_sorted = df1.sort("key", descending=left_desc, nulls_last=left_null_last)
+    df2_sorted = df2.sort("key", descending=right_desc, nulls_last=right_null_last)
+
+    with pytest.raises(pl.exceptions.ComputeError, match=r"merge-sort requires key columns to be sorted in ascending order and nulls last."):
+        df1_sorted.merge_sorted(df2_sorted, key="key")
+
+def test_merge_sorted_with_unsorted_input_fails() -> None:
+    df1 = pl.DataFrame({"key": [5, 1, 3]})
+    df2 = pl.DataFrame({"key": [6, 2, 4]})
+
+    with pytest.raises(pl.exceptions.ComputeError, match=r"merge-sort requires key columns to be sorted in ascending order and nulls last. left key sorted: false, right key sorted: false"):
+        df1.merge_sorted(df2, key="key")
