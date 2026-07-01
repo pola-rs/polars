@@ -32,7 +32,7 @@ pub fn _merge_sorted_dfs(
 
     let left_s_sorted = left_s.is_sorted(sort_options)?;
     let right_s_sorted = right_s.is_sorted(sort_options)?;
-    
+
     polars_ensure!(
         left_s_sorted && right_s_sorted,
         ComputeError: "merge-sort requires key columns to be sorted in ascending order and nulls last. left key sorted: {}, right key sorted: {}",
