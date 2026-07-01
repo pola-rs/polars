@@ -469,6 +469,9 @@ def test_merge_sorted_with_incorrectly_sorted_input_fails(
     left_correct = not left_desc and not left_null_last
     right_correct = not right_desc and not right_null_last
 
+    print("left:", dfl)
+    print("right:", dfr)
+
     with pytest.raises(
         pl.exceptions.ComputeError,
         match=re.escape(
