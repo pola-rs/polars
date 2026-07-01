@@ -162,7 +162,7 @@ path, see [Top-level configuration](#top-level-configuration)) or as one of the 
 | `host_metrics`                    | object  | Object used for configuring the host metrics exporter.                                                                                                   |
 | `host_metrics.enabled`            | boolean | Enable/disable exporting host metrics from this node                                                                                                     |
 | `host_metrics.disk_usage_metrics` | boolean | Whether to export disk usage metrics for the shuffle directory.                                                                                          |
-| `host_metrics.disk_io_metrics`    | boolean | Whether to export disk read/write throughput metrics for the shuffle directory.                                                                          |
+| `host_metrics.disk_io_metrics`    | boolean | Whether to export disk read/write throughput metrics for the shuffle directory (enabled by default if IO accounting is enabled for the used cgroup).     |
 
 ### `[static_leader]` section
 
