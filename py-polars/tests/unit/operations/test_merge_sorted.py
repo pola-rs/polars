@@ -539,8 +539,18 @@ def test_merge_sorted_empty_key_raises() -> None:
 
 
 @given(
-    left=dataframes([column("key_1", dtype=pl.Int32, allow_null=False), column("key_2", dtype=pl.Int32, allow_null=False)]),
-    right=dataframes([column("key_1", dtype=pl.Int32, allow_null=False), column("key_2", dtype=pl.Int32, allow_null=False)]),
+    left=dataframes(
+        [
+            column("key_1", dtype=pl.Int32, allow_null=False),
+            column("key_2", dtype=pl.Int32, allow_null=False),
+        ]
+    ),
+    right=dataframes(
+        [
+            column("key_1", dtype=pl.Int32, allow_null=False),
+            column("key_2", dtype=pl.Int32, allow_null=False),
+        ]
+    ),
 )
 def test_merge_sorted_multiple_keys_parametric(
     left: pl.DataFrame, right: pl.DataFrame
