@@ -44,28 +44,44 @@ jobs:
         os: [ubuntu-latest]
         python-version: ['3.10', '3.12', '3.13', '3.14', '3.14t']
         ideal_morsel_size: [100000]
+        engine_affinity_in_memory: [false]
         auto_new_streaming: [false]
         include:
           - os: windows-latest
             python-version: '3.14'
             ideal_morsel_size: 100000
+            engine_affinity_in_memory: false
             auto_new_streaming: false
           - os: windows-latest
             python-version: '3.14'
+            engine_affinity_in_memory: false
             ideal_morsel_size: 100000
             auto_new_streaming: true
-          - os: ubuntu-latest
+          - os: windows-latest
             python-version: '3.14'
-            ideal_morsel_size: 4
+            engine_affinity_in_memory: true
+            ideal_morsel_size: null
             auto_new_streaming: false
           - os: ubuntu-latest
             python-version: '3.14'
+            ideal_morsel_size: 4
+            engine_affinity_in_memory: false
+            auto_new_streaming: false
+          - os: ubuntu-latest
+            python-version: '3.14'
+            engine_affinity_in_memory: false
             ideal_morsel_size: 100000
             auto_new_streaming: true
           - os: ubuntu-latest
             python-version: '3.14'
             ideal_morsel_size: 4
+            engine_affinity_in_memory: false
             auto_new_streaming: true
+          - os: ubuntu-latest
+            python-version: '3.14'
+            ideal_morsel_size: null
+            engine_affinity_in_memory: true
+            auto_new_streaming: false
 
     steps:
       - uses: actions/checkout@v6
@@ -138,13 +154,13 @@ jobs:
           pytest tests/docs/test_user_guide.py -m docs
 
       - name: Run tests
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming && !matrix.engine_affinity_in_memory
         env:
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs"
 
       - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.engine_affinity_in_memory
         env:
           POLARS_ENGINE_AFFINITY: in-memory
           POLARS_TIMEOUT_MS: 60000
@@ -158,14 +174,14 @@ jobs:
         run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
 
       - name: Run tests async reader tests
-        if: github.event_name == 'pull_request' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming && !matrix.engine_affinity_in_memory
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
 
       - name: Run tests multiscan force empty capabilities
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming && !matrix.engine_affinity_in_memory
         env:
           POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
           POLARS_TIMEOUT_MS: 60000
