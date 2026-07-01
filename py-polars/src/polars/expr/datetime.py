@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
+from polars._utils.deprecation import deprecated
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin, qualified_type_name
@@ -43,11 +43,10 @@ class ExprDateTimeNameSpace(_NamespaceSuggestMixin):
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
-    @unstable()
-    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.12.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
+        *,
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] | Expr | pl.Series = (),
         roll: Roll = "raise",
