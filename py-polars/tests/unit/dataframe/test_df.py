@@ -3379,3 +3379,18 @@ def test_transpose_mixed_list_and_non_list_columns_no_panic_26538() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.transpose()
+
+
+# shuffle=True and shuffle=None both rely on rand::seq::index::sample's
+# unspecified order, so they produce the same behavior here
+@pytest.mark.parametrize("shuffle", [False, None, True])
+def test_df_sample_reworked_shuffle_23557(shuffle: bool | None) -> None:
+    df = pl.DataFrame({"x": [1, 2, 3, 4]})
+
+    result = df.sample(n=2, shuffle=shuffle, seed=0)["x"].to_list()
+
+    if shuffle is False:
+        assert result == [1, 2]
+    else:
+        assert len(result) == 2
+        assert set(result).issubset({1, 2, 3, 4})

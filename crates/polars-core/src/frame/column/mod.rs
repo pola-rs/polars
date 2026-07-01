@@ -1400,7 +1400,7 @@ impl Column {
         &self,
         frac: f64,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         self.as_materialized_series()
@@ -1413,7 +1413,7 @@ impl Column {
         &self,
         n: usize,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<Self> {
         self.as_materialized_series()
