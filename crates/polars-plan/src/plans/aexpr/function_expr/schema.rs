@@ -558,9 +558,9 @@ impl<'a> FieldsMapper<'a> {
     }
 
     pub fn ewm_var_dtype(&self, op: &'static str, coerce_decimal: bool) -> PolarsResult<Field> {
-        let dtype = self.fields[0].dtype();
-        if dtype.is_duration() {
-            polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{dtype}`");
+        let leaf_dtype = self.fields[0].dtype().leaf_dtype();
+        if leaf_dtype.is_duration() {
+            polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{leaf_dtype}`");
         }
         self.map_numeric_to_float_dtype(coerce_decimal)
     }
