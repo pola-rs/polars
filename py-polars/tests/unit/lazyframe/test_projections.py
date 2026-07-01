@@ -100,7 +100,7 @@ def test_unnest_projection_pushdown() -> None:
 def test_hconcat_projection_pushdown() -> None:
     lf1 = pl.LazyFrame({"a": [0, 1, 2], "b": [3, 4, 5]})
     lf2 = pl.LazyFrame({"c": [6, 7, 8], "d": [9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal", strict=True).select(["a", "d"])
+    query = pl.concat([lf1, lf2], how="horizontal").select(["a", "d"])
 
     explanation = query.explain()
     assert explanation.count("1/2 COLUMNS") == 2
