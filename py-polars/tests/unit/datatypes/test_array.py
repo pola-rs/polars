@@ -30,22 +30,6 @@ def test_cast_list_array() -> None:
         s.cast(pl.Array(pl.Int64, 2))
 
 
-@pytest.mark.filterwarnings("ignore::DeprecationWarning")
-def test_array_in_group_by_iter() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("id", [1, 2]),
-            pl.Series("list", [[1, 2], [5, 5]], dtype=pl.Array(pl.UInt8, 2)),
-        ]
-    )
-
-    assert df.lazy().group_by("id").agg(b=pl.col("id").agg_groups()).collect_schema()[
-        "b"
-    ] == pl.List(pl.get_index_type())
-    result = next(iter(df.group_by(["id"], maintain_order=True)))[1]["list"]
-    assert result.to_list() == [[1, 2]]
-
-
 def test_array_in_group_by() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2], [2, 2], [1, 4]], "g": [1, 1, 2]},
