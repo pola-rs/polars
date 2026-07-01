@@ -21,7 +21,8 @@ use polars_compute::rolling::nulls::{RollingAggWindowNulls, VarianceMoment};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, ArgMaxWindow, ArgMinWindow, MeanWindow, QuantileMethod, RollingFnParams,
-    RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter,
+    RollingQuantileParams, RollingVarParams, SumWindow, quantile_filter, rolling_argmax_by,
+    rolling_argmin_by,
 };
 use polars_utils::arg_min_max::ArgMinMax;
 use polars_utils::float::IsFloat;
@@ -64,6 +65,40 @@ pub fn _use_rolling_kernels(
         0 | 1 => false,
         _ => overlapping && monotonic && chunks.len() == 1,
     }
+}
+
+/// Rolling min_by/max_by for numeric `by` columns using O(n) deque kernel.
+///
+/// # Panics
+/// Panics if the `by` column's physical dtype is not primitive numeric or if it is a categorical.
+pub fn rolling_numeric_minmax_by(by_col: &Column, slices: &GroupsSlice, is_max_by: bool) -> IdxCa {
+    let dtype = by_col.dtype();
+    let by_series = by_col.as_materialized_series().rechunk();
+    let by_phys = by_series.to_physical_repr();
+    let phys_dtype = by_phys.dtype();
+
+    assert!(
+        phys_dtype.is_primitive_numeric() && !dtype.is_categorical(),
+        "rolling_numeric_minmax_by requires a numeric by column, got {dtype}",
+    );
+
+    let starts: Vec<IdxSize> = slices.iter().map(|s| s[0]).collect();
+    let ends: Vec<IdxSize> = slices.iter().map(|s| s[0] + s[1]).collect();
+
+    let arr = with_match_physical_numeric_polars_type!(phys_dtype, |$T| {
+        let ca: &ChunkedArray<$T> = by_phys.as_ref().as_ref().as_ref();
+        let arr = ca.downcast_as_array();
+        let values = arr.values().as_slice();
+        let validity = arr.validity();
+
+        if is_max_by {
+            rolling_argmax_by(values, validity, &starts, &ends, 1)
+        } else {
+            rolling_argmin_by(values, validity, &starts, &ends, 1)
+        }
+    });
+
+    IdxCa::with_chunk(PlSmallStr::EMPTY, arr)
 }
 
 // Use an aggregation window that maintains the state
