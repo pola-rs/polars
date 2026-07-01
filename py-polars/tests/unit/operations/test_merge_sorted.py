@@ -1,3 +1,4 @@
+import re
 from datetime import time
 
 import pytest
@@ -467,9 +468,14 @@ def test_merge_sorted_with_incorrectly_sorted_input_fails(
     dfl_sorted = dfl.sort("key", descending=left_desc, nulls_last=left_null_last)
     dfr_sorted = dfr.sort("key", descending=right_desc, nulls_last=right_null_last)
 
+    left_correct = not left_desc and left_null_last
+    right_correct = not right_desc and right_null_last
+
     with pytest.raises(
         pl.exceptions.ComputeError,
-        match=r"merge-sort requires key columns to be sorted in ascending order and nulls last.",
+        match=re.escape(
+            f"merge-sort requires key columns to be sorted in ascending order and nulls last. left key sorted: {str(left_correct).lower()}, right key sorted: {str(right_correct).lower()}"
+        ),
     ):
         dfl_sorted.merge_sorted(dfr_sorted, key="key")
 
@@ -480,6 +486,8 @@ def test_merge_sorted_with_unsorted_input_fails() -> None:
 
     with pytest.raises(
         pl.exceptions.ComputeError,
-        match=r"merge-sort requires key columns to be sorted in ascending order and nulls last. left key sorted: false, right key sorted: false",
+        match=re.escape(
+            "merge-sort requires key columns to be sorted in ascending order and nulls last. left key sorted: false, right key sorted: false"
+        ),
     ):
         dfl.merge_sorted(dfr, key="key")
