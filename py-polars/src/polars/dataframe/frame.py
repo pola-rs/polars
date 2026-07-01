@@ -136,6 +136,7 @@ if TYPE_CHECKING:
     import jax
     import pyiceberg
     from great_tables import GT
+    from sqlalchemy.engine import Engine
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
@@ -163,6 +164,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         IpcCompression,
+        JoinBuildSide,
         JoinStrategy,
         JoinValidation,
         Label,
@@ -4674,9 +4676,13 @@ class DataFrame:
             from sqlalchemy.engine import Connectable, create_engine
             from sqlalchemy.orm import Session
 
+            # note: we can only dispose of engines that we create ourselves;
+            # caller-supplied connectables remain the caller's responsibility
+            engine_to_dispose: Engine | None = None
             sa_object: Connectable
+
             if isinstance(connection, str):
-                sa_object = create_engine(connection)
+                sa_object = engine_to_dispose = create_engine(connection)
             elif isinstance(connection, Session):
                 sa_object = connection.connection()
             elif isinstance(connection, Connectable):
@@ -4692,18 +4698,23 @@ class DataFrame:
                 msg = f"Unexpected three-part table name; provide the database/catalog ({catalog!r}) on the connection URI"
                 raise ValueError(msg)
 
-            # ensure conversion to pandas uses the pyarrow extension array option
-            # so that we can make use of the sql/db export *without* copying data
-            res: int | None = self.to_pandas(
-                use_pyarrow_extension_array=True,
-            ).to_sql(
-                name=unpacked_table_name,
-                schema=db_schema,
-                con=sa_object,
-                if_exists=if_table_exists,
-                index=False,
-                **(engine_options or {}),
-            )
+            try:
+                # ensure conversion to pandas uses the pyarrow extension array option
+                # so that we can make use of the sql/db export *without* copying data
+                res: int | None = self.to_pandas(
+                    use_pyarrow_extension_array=True,
+                ).to_sql(
+                    name=unpacked_table_name,
+                    schema=db_schema,
+                    con=sa_object,
+                    if_exists=if_table_exists,
+                    index=False,
+                    **(engine_options or {}),
+                )
+            finally:
+                if engine_to_dispose is not None:
+                    engine_to_dispose.dispose()
+
             return -1 if res is None else res
 
         elif isinstance(engine, str):
@@ -8227,6 +8238,7 @@ class DataFrame:
         nulls_equal: bool = False,
         coalesce: bool | None = None,
         maintain_order: MaintainOrderJoin | None = None,
+        build_side: JoinBuildSide = "auto",
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -8330,6 +8342,32 @@ class DataFrame:
                  - First preserves the order of the left DataFrame, then the right.
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
+        build_side: {'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}
+            Which side of the join will be used as the build side. This side will be
+            likely be held in memory as a hash table. Note that unless a `force_`
+            variant is chosen, the chosen side might differ across Polars versions or
+            even between different runs.
+
+            .. list-table ::
+               :header-rows: 0
+
+               * - **auto**
+                 - *(Default)* Let Polars figure out the build side.
+               * - **prefer_left**
+                 - Unless there's a very good reason to believe that the right side is
+                   smaller, use the left side.
+               * - **prefer_right**
+                 - Unless there's a very good reason to believe that the left side is
+                   smaller, use the right side.
+               * - **force_left**
+                 - Always use the left side.
+               * - **force_right**
+                 - Always use the right side.
+
+            .. warning::
+                This functionality is considered **experimental**. It may be removed or
+                changed at any point without it being considered a breaking change.
+
 
         See Also
         --------
@@ -8455,6 +8493,7 @@ class DataFrame:
                 nulls_equal=nulls_equal,
                 coalesce=coalesce,
                 maintain_order=maintain_order,
+                build_side=build_side,
             )
             .collect(optimizations=QueryOptFlags._eager())
         )

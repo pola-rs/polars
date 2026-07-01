@@ -76,7 +76,7 @@ pub fn start_single_file_sink_pipeline(
         let io_metrics = io_metrics.clone();
         tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
             target
-                .open_into_writeable_async(
+                .open_into_writable_async(
                     cloud_options.as_deref(),
                     mkdir,
                     upload_chunk_size,

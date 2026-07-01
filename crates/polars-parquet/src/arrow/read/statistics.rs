@@ -523,10 +523,21 @@ pub fn deserialize_all(
                 (D::Utf8View, _) => rmap!(@string),
 
                 (D::FixedSizeBinary(width), _) => {
+                    struct FixedSizeBinaryArray2;
+
+                    impl FixedSizeBinaryArray2 {
+                        fn with_capacity(
+                            row_groups_len: usize,
+                            row_width: usize,
+                        ) -> MutableFixedSizeBinaryArray {
+                            MutableFixedSizeBinaryArray::with_capacity(row_width, row_groups_len)
+                        }
+                    }
+
                     rmap!(
                         expect_fixedlen,
                         |x: Option<Vec<u8>>| ParquetResult::Ok(x),
-                        MutableFixedSizeBinaryArray,
+                        FixedSizeBinaryArray2,
                         *width
                     )
                 },

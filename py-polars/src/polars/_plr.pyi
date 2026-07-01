@@ -78,6 +78,9 @@ JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
 ]
+JoinBuildSide: TypeAlias = Literal[
+    "auto", "prefer_left", "prefer_right", "force_left", "force_right"
+]
 QuoteStyle: TypeAlias = Literal["always", "necessary", "non_numeric", "never"]
 SetOperation: TypeAlias = Literal[
     "union", "difference", "intersection", "symmetric_difference"
@@ -1080,6 +1083,7 @@ class PyLazyFrame:
         suffix: str,
         validate: JoinValidation,
         maintain_order: MaintainOrderJoin,
+        build_side: JoinBuildSide,
         coalesce: bool | None,
     ) -> PyLazyFrame: ...
     def join_where(

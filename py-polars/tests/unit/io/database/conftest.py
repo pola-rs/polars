@@ -2,12 +2,52 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
+
+    from sqlalchemy.engine import Engine
+
+
+def close_connections(*connections: Any) -> None:
+    """Fully release the underlying DB-API connection for each given object."""
+    from sqlalchemy.engine import Connection, Engine
+
+    for conn in connections:
+        if isinstance(conn, str):
+            continue  # eg: connection URI, nothing to close
+        elif isinstance(conn, Engine):
+            conn.dispose()
+        elif isinstance(conn, Connection):
+            engine = conn.engine
+            conn.close()
+            engine.dispose()
+        elif hasattr(conn, "close"):
+            conn.close()
+
+
+def create_sqlite_engine(target: str | Path, **kwargs: Any) -> Engine:
+    """Create a SQLite Engine that uses NullPool connections."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import NullPool
+
+    if not (uri := str(target)).startswith("sqlite:"):
+        uri = f"sqlite:///{uri}"
+    return create_engine(uri, poolclass=NullPool, **kwargs)
+
+
+@pytest.fixture
+def sqlite_engine(tmp_sqlite_db: Path) -> Iterator[Engine]:
+    """A NullPool SQLAlchemy engine bound to the standard test database."""
+    engine = create_sqlite_engine(tmp_sqlite_db)
+    try:
+        yield engine
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture

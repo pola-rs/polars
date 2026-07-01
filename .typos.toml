@@ -20,10 +20,14 @@ arange = "arange"
 ser = "ser"
 splitted = "splitted"
 strat = "strat"
+striter = "striter"
 typ = "typ"
 
 [default.extend-identifiers]
 AKS = "AKS"
+
+[type.py]
+extend-ignore-re = ['\.flags\.writeable\b']
 
 [type.py.extend-identifiers]
 ba = "ba"

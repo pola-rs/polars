@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 pub use admission::{InFlightBudget, InFlightPermit, InFlightStats};
 use crossbeam_queue::ArrayQueue;
 pub use model::Model;
+use polars_core::runtime::ASYNC;
 use polars_utils::relaxed_cell::RelaxedCell;
 pub use regime::{Regime, RegimeState};
 
@@ -203,7 +204,7 @@ impl ConcurrencyController {
                 config.control_interval.as_millis()
             );
         }
-        tokio::spawn(async move {
+        ASYNC.spawn(async move {
             let mut model = Model::new(config.window);
             let mut regime = Regime::new(Instant::now());
 

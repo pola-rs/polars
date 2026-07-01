@@ -1362,6 +1362,26 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MaintainOrderJoin> {
     }
 }
 
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Option<JoinBuildSide>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => None,
+            "prefer_left" => Some(JoinBuildSide::PreferLeft),
+            "prefer_right" => Some(JoinBuildSide::PreferRight),
+            "force_left" => Some(JoinBuildSide::ForceLeft),
+            "force_right" => Some(JoinBuildSide::ForceRight),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`build_side` must be one of {{'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "csv")]
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QuoteStyle> {
     type Error = PyErr;

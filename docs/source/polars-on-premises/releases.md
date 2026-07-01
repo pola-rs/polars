@@ -1,6 +1,19 @@
-## 0.5.2 (latest) <small>- 16 June 2026</small>
+## 0.6.3 (latest) <small>- 1 July 2026</small>
 
-- `polars` [1.42.0](https://github.com/pola-rs/polars/releases/tag/py-1.42.0)
+- `polars` [1.42.1](https://github.com/pola-rs/polars/releases/tag/py-1.42.1)
+- `polars-cloud` [0.9.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.9.0)
+
+**Highlights**
+
+- `Expression` running distributed
+- Improved `ClusterContext` API
+- Distributed Iceberg sink
+- Manual cluster scaling for on-premise deployments
+- New disk I/O metrics
+
+## 0.5.2 <small>- 16 June 2026</small>
+
+- `polars` [1.41.2](https://github.com/pola-rs/polars/releases/tag/py-1.41.2)
 - `polars-cloud` [0.8.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.8.0)
 
 **Highlights**
@@ -11,7 +24,7 @@
 
 ## 0.5.1 <small>- 3 June 2026</small>
 
-- `polars` [1.42.0](https://github.com/pola-rs/polars/releases/tag/py-1.42.0)
+- `polars` [1.41.2](https://github.com/pola-rs/polars/releases/tag/py-1.41.2)
 - `polars-cloud` [0.8.0](https://github.com/pola-rs/polars-cloud-client/releases/tag/client-0.8.0)
 
 The changelog can be found in

@@ -811,7 +811,7 @@ class ExprArrayNameSpace:
         >>> df = pl.DataFrame(
         ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
         ... )
-        >>> df.select(pl.col("a").arr.explode())
+        >>> df.select(pl.col("a").arr.explode(empty_as_null=False))
         shape: (6, 1)
         ┌─────┐
         │ a   │

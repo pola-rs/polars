@@ -858,7 +858,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-        >>> s.list.explode()
+        >>> s.list.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
