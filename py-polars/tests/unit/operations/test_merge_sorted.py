@@ -538,13 +538,10 @@ def test_merge_sorted_empty_key_raises() -> None:
         a.merge_sorted(a, key=[])
 
 
-_KEY_COLS = [
-    column("key_1", dtype=pl.Int32, allow_null=False),
-    column("key_2", dtype=pl.Int32, allow_null=False),
-]
-
-
-@given(left=dataframes(_KEY_COLS), right=dataframes(_KEY_COLS))
+@given(
+    left=dataframes([column("key_1", dtype=pl.Int32, allow_null=False), column("key_2", dtype=pl.Int32, allow_null=False)]),
+    right=dataframes([column("key_1", dtype=pl.Int32, allow_null=False), column("key_2", dtype=pl.Int32, allow_null=False)]),
+)
 def test_merge_sorted_multiple_keys_parametric(
     left: pl.DataFrame, right: pl.DataFrame
 ) -> None:
