@@ -535,8 +535,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Implode {
                     maintain_order: true,
                     ..
-                }
-                | IRAggExpr::AggGroups(..) => None, // TODO: allow all aggregates,
+                } => None, // TODO: allow all aggregates,
             }
         },
         AExpr::Len => {

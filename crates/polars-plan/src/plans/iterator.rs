@@ -54,7 +54,6 @@ macro_rules! push_expr {
                     Implode { input, .. } => $push($c, input),
                     Count { input, .. } => $push($c, input),
                     Sum(e) => $push($c, e),
-                    AggGroups(e) => $push($c, e),
                     Std(e, _) => $push($c, e),
                     Var(e, _) => $push($c, e),
                 }

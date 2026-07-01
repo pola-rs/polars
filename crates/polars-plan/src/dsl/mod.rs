@@ -211,11 +211,6 @@ impl Expr {
         self.map_binary(FunctionExpr::Quantile { method }, quantile)
     }
 
-    /// Get the group indexes of the group by operation.
-    pub fn agg_groups(self) -> Self {
-        AggExpr::AggGroups(Arc::new(self)).into()
-    }
-
     /// Explode the String/List column.
     pub fn explode(self, options: ExplodeOptions) -> Self {
         Expr::Explode {

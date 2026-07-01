@@ -570,11 +570,6 @@ impl Display for ExprIRDisplay<'_> {
                         "{}.sum()",
                         self.with_root(expr).parenthesize_if_binexpr()
                     ),
-                    AggGroups(expr) => write!(
-                        f,
-                        "{}.groups()",
-                        self.with_root(expr).parenthesize_if_binexpr()
-                    ),
                     Count {
                         input,
                         include_nulls: false,
