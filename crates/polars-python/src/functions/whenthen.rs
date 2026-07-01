@@ -55,7 +55,7 @@ impl PyThen {
     fn otherwise(&self, statement: PyExpr) -> PyExpr {
         self.inner.clone().otherwise(statement.inner).into()
     }
-    
+
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         crate::conversion::serde_pickle(&self.inner, py)
     }

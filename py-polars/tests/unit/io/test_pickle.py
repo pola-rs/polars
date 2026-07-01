@@ -36,6 +36,7 @@ def test_pickle_when_then_28164() -> None:
     e = pl.when(pl.lit(True)).then(pl.lit(0))
     pickle.loads(pickle.dumps(e))
 
+
 def test_pickle_chained_when_then_28164() -> None:
     e = pl.when(pl.col.x).then(pl.lit(0)).when(pl.col.y).then(pl.lit(1))
     pickle.loads(pickle.dumps(e))

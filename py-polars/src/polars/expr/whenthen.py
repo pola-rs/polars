@@ -165,8 +165,12 @@ class ChainedThen(Expr):
 
     def __setstate__(self, state: bytes) -> None:
         # Initialize with a chained when-then dummy.
-        tmp = (plr.when(F.lit(False)._pyexpr).then(F.lit(False)._pyexpr)
-                  .when(F.lit(False)._pyexpr).then(F.lit(False)._pyexpr))
+        tmp = (
+            plr.when(F.lit(False)._pyexpr)
+            .then(F.lit(False)._pyexpr)
+            .when(F.lit(False)._pyexpr)
+            .then(F.lit(False)._pyexpr)
+        )
         tmp.__setstate__(state)
         self._chained_then = tmp
 

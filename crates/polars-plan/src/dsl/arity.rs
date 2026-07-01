@@ -1,7 +1,7 @@
-use super::*;
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
+use super::*;
 
 /// Utility struct for the `when-then-otherwise` expression.
 ///
