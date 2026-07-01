@@ -32,9 +32,14 @@ Connect your AWS billing account to your Polars Cloud organization by clicking "
 following the steps in the AWS Marketplace portal. After clicking "Set up your account" you are
 redirected to Polars Cloud where you can select and confirm the organization to connect.
 
-Under `Billing`, the status will update to show your organization is connected to AWS Marketplace.
+On the Billing page the status will update to show your organization is connected to AWS Marketplace.
 If the status doesn't update within 15 minutes, contact our support team at
 [support@polars.tech](mailto:support@polars.tech).
+
+!!! Warning "Complete the steps in the AWS Marketplace portal"
+
+    If your account is subscribed without completing the steps, your AWS
+    billing account cannot be connected to your Polars Cloud organization.
 
 ### Request and Accept Private Offers
 
