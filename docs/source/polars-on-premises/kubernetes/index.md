@@ -171,7 +171,8 @@ troubleshoot queries.
 
 The data your queries process stays entirely within your environment, and is never shared with us.
 
-Need an air-gapped Enterprise deployment that runs entirely in your infrastructure without outside connections? See the [On-Prem Enterprise](#on-prem-enterprise) section to get started.
+Need an air-gapped Enterprise deployment that runs entirely in your infrastructure without outside
+connections? See the [On-Prem Enterprise](#on-prem-enterprise) section to get started.
 
 ### Production configuration
 
@@ -256,4 +257,7 @@ unavailable on managed clusters, so prefer shared shuffle storage where possible
 
 ## On-Prem Enterprise
 
-Looking to run multiple concurrent clusters, in an air-gapped environment, or on bare-metal machines? [Contact the team](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide) to discuss your setup.
+Looking to run multiple concurrent clusters, in an air-gapped environment, or on bare-metal
+machines?
+[Contact the team](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide)
+to discuss your setup.
