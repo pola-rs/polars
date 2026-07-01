@@ -20,7 +20,7 @@ pub(super) async fn dsl_to_ir(
     scan_type: Box<FileScanDsl>,
     cached_ir: Arc<Mutex<Option<IR>>>,
     cache_file_info: SourcesToFileInfo,
-    py_scan_resolve_threadpool: Arc<LazyLock<PyScanResolveThreadPool>>,
+    #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<LazyLock<PyScanResolveThreadPool>>,
     verbose: bool,
 ) -> PolarsResult<()> {
     // Note that the first metadata can still end up being `None` later if the files were
@@ -89,6 +89,7 @@ pub(super) async fn dsl_to_ir(
                     &sources,
                     sources_before_expansion,
                     unified_scan_args,
+                    #[cfg(feature = "python")]
                     py_scan_resolve_threadpool,
                     verbose,
                 )
@@ -1077,7 +1078,9 @@ impl SourcesToFileInfo {
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
-        py_scan_resolve_threadpool: Arc<LazyLock<PyScanResolveThreadPool>>,
+        #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
+            LazyLock<PyScanResolveThreadPool>,
+        >,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         let require_first_source = |failed_operation_name: &'static str, hint: &'static str| {
             sources.first_or_empty_expand_err(
@@ -1353,7 +1356,9 @@ this scan to succeed with an empty DataFrame.",
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
-        py_scan_resolve_threadpool: Arc<LazyLock<PyScanResolveThreadPool>>,
+        #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
+            LazyLock<PyScanResolveThreadPool>,
+        >,
         verbose: bool,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         // Only cache non-empty paths. Others are directly parsed.
@@ -1367,6 +1372,7 @@ this scan to succeed with an empty DataFrame.",
                         sources,
                         sources_before_expansion,
                         unified_scan_args,
+                        #[cfg(feature = "python")]
                         py_scan_resolve_threadpool,
                     )
                     .await;
@@ -1425,6 +1431,7 @@ this scan to succeed with an empty DataFrame.",
                         sources,
                         sources_before_expansion,
                         unified_scan_args,
+                        #[cfg(feature = "python")]
                         py_scan_resolve_threadpool,
                     )
                     .await;
@@ -1443,6 +1450,7 @@ this scan to succeed with an empty DataFrame.",
                     sources,
                     sources_before_expansion,
                     unified_scan_args,
+                    #[cfg(feature = "python")]
                     py_scan_resolve_threadpool,
                 )
                 .await?;

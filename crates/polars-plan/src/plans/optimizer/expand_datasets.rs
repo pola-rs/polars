@@ -31,6 +31,7 @@ pub(super) fn expand_datasets(
 ) -> PolarsResult<()> {
     let mut stack = unitvec![root];
     let mut expansion_tasks: FuturesUnordered<_> = FuturesUnordered::new();
+    #[cfg(feature = "python")]
     let mut py_scan_resolve_threadpool: Option<Arc<PyScanResolveThreadPool>> = None;
 
     while let Some(node) = stack.pop() {
