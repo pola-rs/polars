@@ -20,26 +20,6 @@ license.on_prem_enterprise.license_path = "/etc/polars/license.json"
 
 The cluster verifies the license key periodically, and will shutdown once the license expires.
 
-## Online licensing
-
-Instead of an offline license file, you can license the cluster online against the Polars control
-plane. Configure the credentials on the leader node using the `[license.on_prem]` section:
-
-```toml
-[license.on_prem]
-cert_dir = "/etc/polars/certs"
-workspace_id = "00000000-0000-0000-0000-000000000000"
-client_id = "your-client-id"
-client_secret = "your-client-secret"
-```
-
-On pure worker nodes you do not repeat the credentials; instead just enable it:
-
-```toml
-[license.on_prem]
-enabled = true
-```
-
 ## EULA license
 
 Polars On-Prem is licensed under the End User License Agreement (EULA) which can be found in the

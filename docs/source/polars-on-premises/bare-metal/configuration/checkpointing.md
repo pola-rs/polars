@@ -1,11 +1,17 @@
 # Checkpointing
 
 When running long queries, you can enable checkpointing so that intermediate state is persisted
-during execution. If a query fails part way through, it can resume from the last checkpoint instead
-of starting over from the beginning.
+during execution. If a worker fails part way through, the query can resume from the last checkpoint
+instead of starting over from the beginning.
 
 Checkpointing requires configuration on both the scheduler and the workers: the scheduler decides
 when checkpoints are created, while the workers store the checkpoint data.
+
+!!! note
+
+    Checkpointing is a no-op when the query's shuffles already write to a shared storage system. In
+    that case the intermediate state is persisted there as part of normal execution, so there is
+    nothing extra for checkpointing to store.
 
 ## Scheduler configuration
 
@@ -20,13 +26,13 @@ enabled = true
 
 [scheduler.checkpoint]
 enabled = true
-period = "5 secs"
+period = "10 mins"
 ```
 
 Checkpointing must be turned on by setting `enabled = true`, just like the other components. The
 `period` accepts either a jiff friendly duration format (see
 [the jiff documentation](https://docs.rs/jiff/0.2.18/jiff/fmt/friendly/)) or an ISO 8601 duration
-format, _e.g._ `PT5S` for 5 seconds.
+format, _e.g._ `PT10M` for 10 minutes.
 
 ## Worker configuration
 
