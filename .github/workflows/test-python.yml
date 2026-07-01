@@ -57,7 +57,7 @@ jobs:
           - os: windows-latest
             python-version: '3.14'
             variant: engine_affinity_in_memory
-            ideal_morsel_size: null
+            ideal_morsel_size: 100000
           - os: ubuntu-latest
             python-version: '3.14'
             variant: null
@@ -73,7 +73,7 @@ jobs:
           - os: ubuntu-latest
             python-version: '3.14'
             variant: engine_affinity_in_memory
-            ideal_morsel_size: null
+            ideal_morsel_size: 100000
 
     steps:
       - uses: actions/checkout@v6
