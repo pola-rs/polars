@@ -470,6 +470,7 @@ def test_merge_sorted_with_incorrectly_sorted_input_fails(
     right_correct = not right_desc and not right_null_last
 
     print("left:", dfl)
+    print(f"{right_desc = }, {right_null_last = }, {right_correct = }")
     print("right:", dfr)
 
     with pytest.raises(
