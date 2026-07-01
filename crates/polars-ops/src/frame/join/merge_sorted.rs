@@ -28,14 +28,14 @@ pub fn _merge_sorted_dfs(
 
     let sort_options = SortOptions::default()
         .with_order_descending(false)
-        .with_nulls_last(true);
+        .with_nulls_last(false);
 
     let left_s_sorted = left_s.is_sorted(sort_options)?;
     let right_s_sorted = right_s.is_sorted(sort_options)?;
 
     polars_ensure!(
         left_s_sorted && right_s_sorted,
-        ComputeError: "merge-sort requires key columns to be sorted in ascending order and nulls last. left key sorted: {}, right key sorted: {}",
+        ComputeError: "merge-sort requires key columns to be sorted in ascending order and nulls first. left key sorted: {}, right key sorted: {}",
         left_s_sorted, right_s_sorted
     );
 

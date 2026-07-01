@@ -453,7 +453,7 @@ def test_merge_sorted_with_list_27563() -> None:
         params
         for params in product((True, False), repeat=4)
         # Exclude valid combination of sortedness and nulls_last
-        if params != (False, True, False, True)
+        if params != (False, False, False, False)
     ],
 )
 def test_merge_sorted_with_incorrectly_sorted_input_fails(
@@ -466,13 +466,13 @@ def test_merge_sorted_with_incorrectly_sorted_input_fails(
     dfl_sorted = dfl.sort("key", descending=left_desc, nulls_last=left_null_last)
     dfr_sorted = dfr.sort("key", descending=right_desc, nulls_last=right_null_last)
 
-    left_correct = not left_desc and left_null_last
-    right_correct = not right_desc and right_null_last
+    left_correct = not left_desc and not left_null_last
+    right_correct = not right_desc and not right_null_last
 
     with pytest.raises(
         pl.exceptions.ComputeError,
         match=re.escape(
-            f"merge-sort requires key columns to be sorted in ascending order and nulls last. left key sorted: {str(left_correct).lower()}, right key sorted: {str(right_correct).lower()}"
+            f"merge-sort requires key columns to be sorted in ascending order and nulls first. left key sorted: {str(left_correct).lower()}, right key sorted: {str(right_correct).lower()}"
         ),
     ):
         dfl_sorted.merge_sorted(dfr_sorted, key="key")
@@ -485,7 +485,7 @@ def test_merge_sorted_with_unsorted_input_fails() -> None:
     with pytest.raises(
         pl.exceptions.ComputeError,
         match=re.escape(
-            "merge-sort requires key columns to be sorted in ascending order and nulls last. left key sorted: false, right key sorted: false"
+            "merge-sort requires key columns to be sorted in ascending order and nulls first. left key sorted: false, right key sorted: false"
         ),
     ):
         dfl.merge_sorted(dfr, key="key")
