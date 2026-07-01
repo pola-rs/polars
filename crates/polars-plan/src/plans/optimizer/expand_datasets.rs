@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -30,7 +31,11 @@ pub(super) fn expand_datasets(
     ) -> PolarsResult<()>,
 ) -> PolarsResult<()> {
     let mut stack = unitvec![root];
-    let mut expansion_tasks: FuturesUnordered<_> = FuturesUnordered::new();
+
+    let mut expansion_tasks: FuturesUnordered<
+        Pin<Box<dyn Future<Output = PolarsResult<(Node, IR)>>>>,
+    > = FuturesUnordered::new();
+
     #[cfg(feature = "python")]
     let mut py_scan_resolve_threadpool: Option<Arc<PyScanResolveThreadPool>> = None;
 
@@ -139,7 +144,7 @@ pub(super) fn expand_datasets(
                         .get_or_insert_with(|| Arc::new(PyScanResolveThreadPool::new())),
                 );
 
-                expansion_tasks.push(async move {
+                expansion_tasks.push(Box::pin(async move {
                     let ir = AbortOnDropHandle(ASYNC.spawn_blocking(move || {
                         expand_python_dataset(
                             ir,
@@ -155,7 +160,7 @@ pub(super) fn expand_datasets(
                     .unwrap()?;
 
                     PolarsResult::Ok((node, ir))
-                });
+                }));
             },
 
             _ => {},
@@ -500,13 +505,11 @@ impl PyScanResolveThreadPool {
             }
 
             return Self(
-                (|| {
-                    PY_SCAN_RESOLVE_THREADPOOL_CLS
-                        .bind(py)
-                        .call1((num_threads,))
-                        .map(|x| x.unbind())
-                })()
-                .unwrap(),
+                PY_SCAN_RESOLVE_THREADPOOL_CLS
+                    .bind(py)
+                    .call1((num_threads,))
+                    .map(|x| x.unbind())
+                    .unwrap(),
             );
 
             static PY_SCAN_RESOLVE_THREADPOOL_CLS: LazyLock<Py<PyAny>> = LazyLock::new(|| {
@@ -522,6 +525,12 @@ impl PyScanResolveThreadPool {
                 })
             });
         })
+    }
+}
+
+impl Default for PyScanResolveThreadPool {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
