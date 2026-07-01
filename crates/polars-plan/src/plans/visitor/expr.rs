@@ -72,7 +72,6 @@ impl TreeWalker for Expr {
                 Implode { input, maintain_order } => Implode { input: am(input, f)?, maintain_order },
                 Count { input, include_nulls } => Count { input: am(input, f)?, include_nulls },
                 Sum(x) => Sum(am(x, f)?),
-                AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),
                 Var(x, ddf) => Var(am(x, f)?, ddf),
 
