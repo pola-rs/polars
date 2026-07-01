@@ -5563,7 +5563,9 @@ class DataFrame:
         Parameters
         ----------
         predicates
-            Expression that evaluates to a boolean Series.
+            Expression(s) that evaluate to a boolean Series. When multiple predicates
+            are provided they are combined using `&` (logical AND), so a row is only
+            removed when *every* predicate evaluates to True for that row.
         constraints
             Column filters; use `name = value` to filter columns using the supplied
             value. Each constraint behaves the same as `pl.col(name).eq(value)`,
@@ -5571,6 +5573,13 @@ class DataFrame:
 
         Notes
         -----
+        Because multiple predicates are combined with `&` (logical AND), passing
+        several predicates to a single call is *not* the same as chaining `remove`
+        calls. For example, ``df.remove(a, b)`` removes only the rows where both ``a``
+        and ``b`` are True, whereas ``df.remove(a).remove(b)`` removes every row where
+        ``a`` or ``b`` is True. To remove rows matching *any* of several predicates in a
+        single call, combine them explicitly with `|` (see examples below).
+
         If you are transitioning from Pandas, and performing filter operations based on
         the comparison of two or more columns, please note that in Polars any comparison
         involving `null` values will result in a `null` result, *not* boolean True or
@@ -5647,6 +5656,32 @@ class DataFrame:
         │ null ┆ null ┆ null │
         │ 4    ┆ null ┆ c    │
         └──────┴──────┴──────┘
+
+        Multiple predicates are combined with `&` (logical AND), so a row is only
+        removed when *all* of them are True. To instead remove rows matching *any*
+        predicate, combine them with `|` (logical OR):
+
+        >>> df2 = pl.DataFrame({"a": [1, 0, 2, 0], "b": [0, 4, 5, 0]})
+        >>> df2.remove(pl.col("a") == 0, pl.col("b") == 0)  # a == 0 AND b == 0
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 0   │
+        │ 0   ┆ 4   │
+        │ 2   ┆ 5   │
+        └─────┴─────┘
+        >>> df2.remove((pl.col("a") == 0) | (pl.col("b") == 0))  # a == 0 OR b == 0
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 2   ┆ 5   │
+        └─────┴─────┘
 
         Provide constraints(s) using `**kwargs` syntax:
 
