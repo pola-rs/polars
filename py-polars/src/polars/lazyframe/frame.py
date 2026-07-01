@@ -9130,7 +9130,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
         are sorted in ascending order by the key, with null
-        keys at the end, otherwise the order of the output
+        keys at the start, otherwise the order of the output
         will not make sense.
 
         The schemas of both LazyFrames must be equal.
