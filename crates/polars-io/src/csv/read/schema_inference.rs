@@ -335,7 +335,7 @@ pub fn infer_field_schema(string: &str, try_parse_dates: bool, decimal_comma: bo
 }
 
 fn column_name(i: usize) -> PlSmallStr {
-    format_pl_smallstr!("column_{}", i + 1)
+    format_pl_smallstr!("column_{}", i)
 }
 
 #[cfg(test)]
