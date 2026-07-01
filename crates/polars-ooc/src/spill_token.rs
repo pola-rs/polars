@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::ptr;
-use std::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicPtr, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 use std::time::Instant;
@@ -29,7 +29,7 @@ enum ValueSlot<T> {
         n_bytes: usize,
         spill_ctx_stats: Arc<SpillContextStatistics>,
         reinsert_ctx: &'static SpillContextInner,
-        reinsert_id: u64,
+        reinsert_id: u32,
         spill_time_ns: u64,
         spilled_start: Instant,
     },
@@ -54,7 +54,7 @@ struct SpillTokenInner<T: Spillable> {
 
     // Used to register into contexts, and detect when a token has moved to a
     // different context.
-    registration_id: AtomicU64,
+    registration_id: AtomicU32,
 
     // See above.
     state: AtomicU64,
@@ -329,14 +329,14 @@ pub enum TrySpillError {
 
 pub(crate) trait DynSpillToken: Send + Sync + 'static {
     /// Register this spill token at a new context, returning the registration ID.
-    fn register(&self, ctx: &'static SpillContextInner) -> u64;
+    fn register(&self, ctx: &'static SpillContextInner) -> u32;
 
     /// Unregisters this spill token from its current context, returning where
     /// it was registered, if anywhere.
     fn unregister(&self) -> Option<&'static SpillContextInner>;
 
     /// Returns the current context registration ID of this spill token without modifying it.
-    fn current_registration_id(&self) -> u64;
+    fn current_registration_id(&self) -> u32;
 
     /// Whether this token can be spilled. Returns false if pinned, dropped or
     /// already spilled.
@@ -358,12 +358,12 @@ pub(crate) trait DynSpillToken: Send + Sync + 'static {
         &self,
         stats: &Arc<SpillContextStatistics>,
         context: &'static SpillContextInner,
-        registration_id: u64,
+        registration_id: u32,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError>;
 }
 
 impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
-    fn register(&self, ctx: &'static SpillContextInner) -> u64 {
+    fn register(&self, ctx: &'static SpillContextInner) -> u32 {
         self.cur_ctx.store(ptr::from_ref(ctx).cast_mut(), Ordering::Release);
         self.registration_id.fetch_add(1, Ordering::Release) + 1
     }
@@ -374,7 +374,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         unsafe { old_ctx.as_ref() }
     }
 
-    fn current_registration_id(&self) -> u64 {
+    fn current_registration_id(&self) -> u32 {
         self.registration_id.load(Ordering::Relaxed)
     }
 
@@ -395,7 +395,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         &self,
         stats: &Arc<SpillContextStatistics>,
         context: &'static SpillContextInner,
-        registration_id: u64,
+        registration_id: u32,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError> {
         // First, we try setting the lock bit. If anyone else has a pin we don't bother.
         let pin_update = self
@@ -498,7 +498,7 @@ impl<T: Spillable> SpillToken<T> {
             value_slot: UnsafeCell::new(ValueSlot::InMemory(value)),
             spilled_value: UnsafeCell::new(None),
             cur_ctx: AtomicPtr::new(core::ptr::null_mut()),
-            registration_id: AtomicU64::new(0),
+            registration_id: AtomicU32::new(0),
             state: AtomicU64::new(0),
             waiters: Mutex::default(),
         });

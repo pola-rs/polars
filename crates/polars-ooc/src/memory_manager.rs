@@ -133,7 +133,7 @@ impl MemoryManager {
         &self,
     ) -> Option<(
         &'static SpillContextInner,
-        Vec<(Arc<dyn DynSpillToken>, u64, usize)>,
+        Vec<(Arc<dyn DynSpillToken>, u32, usize)>,
     )> {
         // TODO: don't block here under a certain memory threshold.
         let finding_spill_guard = self.finding_spill_lock.lock().await;

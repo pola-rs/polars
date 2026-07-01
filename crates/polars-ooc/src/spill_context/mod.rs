@@ -19,26 +19,26 @@ pub(crate) use stats::UNEXPLORED_SCORE;
 
 #[derive(Default)]
 struct LocalSpillQueue {
-    tokens: VecDeque<(Weak<dyn DynSpillToken>, u64)>,
+    tokens: VecDeque<(Weak<dyn DynSpillToken>, u32)>,
     retain_amort: usize,
 }
 
 impl LocalSpillQueue {
-    pub fn push_back(&mut self, token: &Arc<dyn DynSpillToken>, id: u64) {
+    pub fn push_back(&mut self, token: &Arc<dyn DynSpillToken>, id: u32) {
         self.gc();
         if token.current_registration_id() == id {
             self.tokens.push_back((Arc::downgrade(token), id));
         }
     }
 
-    pub fn push_front(&mut self, token: &Arc<dyn DynSpillToken>, id: u64) {
+    pub fn push_front(&mut self, token: &Arc<dyn DynSpillToken>, id: u32) {
         self.gc();
         if token.current_registration_id() == id {
             self.tokens.push_front((Arc::downgrade(token), id));
         }
     }
 
-    pub fn pop_front(&mut self) -> Option<(Arc<dyn DynSpillToken>, u64)> {
+    pub fn pop_front(&mut self) -> Option<(Arc<dyn DynSpillToken>, u32)> {
         loop {
             let (weak, id) = self.tokens.pop_front()?;
             if let Some(token) = weak.upgrade()
@@ -49,7 +49,7 @@ impl LocalSpillQueue {
         }
     }
 
-    pub fn pop_back(&mut self) -> Option<(Arc<dyn DynSpillToken>, u64)> {
+    pub fn pop_back(&mut self) -> Option<(Arc<dyn DynSpillToken>, u32)> {
         loop {
             let (weak, id) = self.tokens.pop_back()?;
             if let Some(token) = weak.upgrade()
@@ -60,7 +60,7 @@ impl LocalSpillQueue {
         }
     }
 
-    pub fn pop_random(&mut self, rng: &mut ThreadRng) -> Option<(Arc<dyn DynSpillToken>, u64)> {
+    pub fn pop_random(&mut self, rng: &mut ThreadRng) -> Option<(Arc<dyn DynSpillToken>, u32)> {
         while !self.tokens.is_empty() {
             let idx = rng.random_range(0..self.tokens.len());
             let (weak, id) = self.tokens.swap_remove_back(idx).unwrap();
@@ -122,7 +122,6 @@ impl SpillContextInner {
     }
     
     fn reset(&self, name: PlSmallStr, policy: SpillContextPolicy) {
-        self.stats.reset(name);
         self.policy.store(policy as u8, Ordering::Relaxed);
         for local_lock in self.local.iter() {
             let mut local = local_lock.write().unwrap();
@@ -130,6 +129,7 @@ impl SpillContextInner {
                 token.0.unregister();
             }
         }
+        self.stats.reset(name);
     }
     
     pub(crate) fn is_dead(&self) -> bool {
@@ -144,7 +144,7 @@ impl SpillContextInner {
         &self.stats
     }
 
-    pub fn pop(&self) -> Vec<(Arc<dyn DynSpillToken>, u64)> {
+    pub fn pop(&self) -> Vec<(Arc<dyn DynSpillToken>, u32)> {
         let mut out = Vec::new();
         let mut rng = rand::rng();
         let policy = self.policy();
@@ -160,7 +160,7 @@ impl SpillContextInner {
         out
     }
 
-    pub fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u64) {
+    pub fn reinsert(&self, token: &Arc<dyn DynSpillToken>, id: u32) {
         let mut local = self.local.get_or_default().write().unwrap();
         match self.policy() {
             SpillContextPolicy::MostRecent => local.push_front(token, id),
