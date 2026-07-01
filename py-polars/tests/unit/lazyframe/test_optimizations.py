@@ -1116,7 +1116,6 @@ def test_hconcat_reorder_projection_push_to_inputs() -> None:
             pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
         ],
         how="horizontal",
-        strict=True,
     )
 
     q = hconcat.select("b", "a", "d", "c")
@@ -1152,7 +1151,6 @@ def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
             ),
         ],
         how="horizontal",
-        strict=True,
     ).select("B", "C")
 
     f = io.BytesIO()

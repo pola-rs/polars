@@ -411,9 +411,7 @@ def test_zero_width_array(fn: str) -> None:
 
                 series_f(a, b)
 
-                df = pl.concat(
-                    [a.to_frame(), b.to_frame()], how="horizontal", strict=True
-                )
+                df = pl.concat([a.to_frame(), b.to_frame()], how="horizontal")
                 df.select(c=expr_f(pl.col.a, pl.col.b))
 
 
