@@ -21,6 +21,7 @@ edition = "2024"
 homepage = "https://www.pola.rs/"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"
+rust-version = "1.95"
 
 [workspace.dependencies]
 aho-corasick = "1.1"

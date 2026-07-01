@@ -6,6 +6,7 @@ edition = { workspace = true }
 homepage = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
+rust-version = { workspace = true }
 description = "Enable running Polars workloads in Python"
 
 [dependencies]

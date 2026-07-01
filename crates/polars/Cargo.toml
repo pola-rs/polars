@@ -8,6 +8,7 @@ keywords = ["dataframe", "query-engine", "arrow"]
 license = { workspace = true }
 readme = "../../README.md"
 repository = { workspace = true }
+rust-version = { workspace = true }
 description = "DataFrame library based on Apache Arrow"
 
 [dependencies]
