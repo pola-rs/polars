@@ -257,14 +257,18 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
 
     let mut all_views_inline = true;
 
-    // In a View for BinaryViewArray, both length and offset are u32.
-    #[cfg(not(test))]
-    const MAX_BUF_SIZE: usize = u32::MAX as usize;
-
-    // This allows us to test some invariants without using 4GB of RAM; see mod
-    // tests below.
-    #[cfg(test)]
-    const MAX_BUF_SIZE: usize = 15;
+    const MAX_BUF_SIZE: usize = if cfg!(test) {
+        // This allows us to test some invariants without using 4GB of RAM; see mod
+        // tests below.
+        27
+    } else {
+        BINVIEW_MAX_ROW_BYTE_LEN
+    };
+    const SPLIT_BUF_SIZE: usize = if cfg!(test) {
+        26
+    } else {
+        BINVIEW_ARROW_BUFFER_LEN_LIMIT
+    };
 
     for index in 0..list.len() {
         // Check if there's a null instead of a list:
@@ -303,7 +307,7 @@ fn cast_list_uint8_to_binary<O: Offset>(list: &ListArray<O>) -> PolarsResult<Bin
             }
         }
 
-        if end - previous_buf_lengths > MAX_BUF_SIZE {
+        if end - previous_buf_lengths > SPLIT_BUF_SIZE {
             // View offsets must fit in u32 (or smaller value when running Rust
             // tests), and we've determined the end of the next view will be
             // past that.
@@ -1168,10 +1172,10 @@ mod tests {
     fn cast_list_uint8_to_binary_across_buffer_max_size() {
         let dtype =
             ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
-        let values = PrimitiveArray::from_slice((0u8..20).collect::<Vec<_>>()).boxed();
+        let values = PrimitiveArray::from_slice((0u8..53).collect::<Vec<_>>()).boxed();
         let list_u8 = ListArray::try_new(
             dtype,
-            unsafe { OffsetsBuffer::new_unchecked(vec![0, 13, 18, 20].into()) },
+            unsafe { OffsetsBuffer::new_unchecked(vec![0, 13, 26, 39, 53].into()) },
             values,
             None,
         )
@@ -1191,8 +1195,9 @@ mod tests {
                 .collect::<Vec<Vec<u8>>>(),
             vec![
                 vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-                vec![13, 14, 15, 16, 17],
-                vec![18, 19]
+                vec![13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+                vec![26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38],
+                vec![39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52],
             ]
         );
         // max offset of 15 so we need to split:
@@ -1202,7 +1207,7 @@ mod tests {
                 .iter()
                 .map(|buf| buf.len())
                 .collect::<Vec<_>>(),
-            vec![13, 7]
+            vec![26, 13, 14]
         );
     }
 
@@ -1211,12 +1216,12 @@ mod tests {
     /// smaller, so a list of size 16 should cause an error.
     #[test]
     fn cast_list_uint8_to_binary_errors_too_large_list() {
-        let values = PrimitiveArray::from_slice(vec![0u8; 16]);
+        let values = PrimitiveArray::from_slice(vec![0u8; 28]);
         let dtype =
             ArrowDataType::List(Box::new(Field::new("".into(), ArrowDataType::UInt8, true)));
         let list_u8 = ListArray::new(
             dtype,
-            OffsetsBuffer::one_with_length(16),
+            OffsetsBuffer::one_with_length(28),
             values.boxed(),
             None,
         );
@@ -1230,7 +1235,7 @@ mod tests {
         assert!(matches!(
             err,
             PolarsError::InvalidOperation(msg)
-                if msg.as_ref() == "when casting to BinaryView, list lengths must be <= 15"
+                if msg.as_ref() == "when casting to BinaryView, list lengths must be <= 27"
         ));
     }
 
