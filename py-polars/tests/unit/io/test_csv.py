@@ -196,8 +196,8 @@ def test_csv_null_values(chunk_override: None) -> None:
     assert df.rows() == [(None, "b", "c"), ("a", None, "c"), (None, "b", None)]
 
 
-def test_csv_missing_utf8_is_empty_string(chunk_override: None) -> None:
-    # validate 'missing_utf8_is_empty_string' for missing fields that are...
+def test_csv_missing_is_empty_string(chunk_override: None) -> None:
+    # validate 'empty_string_is_null=False' for missing fields that are...
     # >> ...leading
     # >> ...trailing (both EOL & EOF)
     # >> ...in lines that have missing fields
@@ -216,7 +216,7 @@ def test_csv_missing_utf8_is_empty_string(chunk_override: None) -> None:
     df = pl.read_csv(
         f,
         null_values={"a": "na", "b": r"\N"},
-        missing_utf8_is_empty_string=True,
+        empty_string_is_null=False,
     )
     # ┌──────┬──────┬─────┐
     # │ a    ┆ b    ┆ c   │
@@ -257,7 +257,7 @@ def test_csv_missing_utf8_is_empty_string(chunk_override: None) -> None:
     df = pl.read_csv(
         f,
         null_values=["na", r"\N"],
-        missing_utf8_is_empty_string=True,
+        empty_string_is_null=False,
     )
     # ┌──────┬──────┬─────┬──────┬──────┬──────┬─────┐
     # │ a    ┆ b    ┆ c   ┆ d    ┆ e    ┆ f    ┆ g   │
@@ -1300,12 +1300,12 @@ def test_skip_new_line_embedded_lines(chunk_override: None) -> None:
 4,5,6,"Test A",\n
 7,8,,"Test B \n",\n"""
 
-    for empty_string, missing_value in ((True, ""), (False, None)):
+    for empty_string_is_null, missing_value in ((False, ""), (True, None)):
         df = pl.read_csv(
             csv.encode(),
             skip_rows_after_header=1,
             infer_schema_length=0,
-            missing_utf8_is_empty_string=empty_string,
+            empty_string_is_null=empty_string_is_null,
         )
         assert df.to_dict(as_series=False) == {
             "a": ["4", "7"],
@@ -1511,10 +1511,10 @@ def test_skip_rows_different_field_len(chunk_override: None) -> None:
         """
         )
     )
-    for empty_string, missing_value in ((True, ""), (False, None)):
+    for empty_string_is_null, missing_value in ((False, ""), (True, None)):
         csv.seek(0)
         assert pl.read_csv(
-            csv, skip_rows_after_header=2, missing_utf8_is_empty_string=empty_string
+            csv, skip_rows_after_header=2, empty_string_is_null=empty_string_is_null
         ).to_dict(as_series=False) == {
             "a": [3, 4],
             "b": ["B", missing_value],
