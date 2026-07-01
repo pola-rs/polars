@@ -36,7 +36,8 @@ Here is a curated (non-exhaustive) list of community-implemented plugins.
 ### Bioinformatics
 
 - [polars-bio](https://github.com/biodatageeks/polars-bio) Blazing-fast genomic interval operations
-  on Polars DataFrames, with support for overlap, closest, and window-based joins using Apache Arrow.
+  on Polars DataFrames, with support for overlap, closest, and window-based joins using Apache
+  Arrow.
 
 ## Other material
 
