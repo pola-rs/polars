@@ -32,7 +32,7 @@ pub(super) fn expand_datasets(
 ) -> PolarsResult<()> {
     let mut stack = unitvec![root];
 
-    #[expect]
+    #[expect(clippy::type_complexity)]
     let mut expansion_tasks: FuturesUnordered<
         Pin<Box<dyn Future<Output = PolarsResult<(Node, IR)>>>>,
     > = FuturesUnordered::new();
