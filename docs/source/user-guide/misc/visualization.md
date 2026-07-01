@@ -88,8 +88,12 @@ of Graphics to Python users with an interface similar to its R counterpart. It s
 
 ## Seaborn
 
-[Seaborn](https://seaborn.pydata.org/) can accept a Polars `DataFrame`. Seaborn accepts Pandas
-`DataFrame`s, and will internally convert Polars `DataFrame`s using `DataFrame.to_pandas()`.
+<!-- NOTE: At the time of writing, Seaborn mainline already checks looks for a `to_pandas()`
+method on the DataFrame. However, this functionality is not released yet. Therefore we still have
+to recommend the user to manually convert the DataFrame using DataFrame.to_pandas() manually. -->
+
+[Seaborn](https://seaborn.pydata.org/) accepts pandas `DataFrame`s. Use `DataFrame.to_pandas()` to
+convert Polars `DataFrame`s when passing them on to Seaborn.
 
 {{code_block('user-guide/misc/visualization','seaborn_show_plot',[])}}
 
