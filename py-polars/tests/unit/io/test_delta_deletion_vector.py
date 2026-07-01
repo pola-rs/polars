@@ -586,7 +586,7 @@ def test_scan_delta_dv_single(
             v.pop()
         return v
 
-    observed_vec = truncate_trailing_trues(dv_df["selection_vector"][0].to_list())
+    observed_vec = truncate_trailing_trues(dv_df["selection_vector"][0])
     expected_vec = truncate_trailing_trues([i not in dv for i in range(n_rows)])
 
     expected_dv_df = pl.DataFrame(

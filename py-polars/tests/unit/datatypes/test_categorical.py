@@ -468,12 +468,6 @@ def test_categorical_asof_join_by_arg() -> None:
     )
 
 
-def test_categorical_list_get_item() -> None:
-    out = pl.Series([["a"]]).cast(pl.List(pl.Categorical)).item()
-    assert isinstance(out, pl.Series)
-    assert out.dtype == pl.Categorical
-
-
 def test_nested_categorical_aggregation_7848() -> None:
     # a double categorical aggregation
     assert pl.DataFrame(

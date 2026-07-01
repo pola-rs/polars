@@ -70,8 +70,7 @@ def test_series_allow_null_allowed_dtypes(s: pl.Series) -> None:
 
 @given(s=series(allowed_dtypes=[pl.List(pl.Int8)], allow_null=False))
 def test_series_allow_null_nested(s: pl.Series) -> None:
-    for v in s:
-        assert not v.has_nulls()
+    assert not s.explode(empty_as_null=False).has_nulls()
 
 
 @given(df=dataframes())
