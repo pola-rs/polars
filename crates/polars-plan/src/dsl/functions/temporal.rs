@@ -213,17 +213,13 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         ambiguous,
     ];
 
-    Expr::Alias(
-        Arc::new(Expr::Function {
-            input,
-            function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
-                time_unit,
-                time_zone,
-            }),
+    Expr::Function {
+        input,
+        function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
+            time_unit,
+            time_zone,
         }),
-        // TODO: follow left-hand rule in Polars 2.0.
-        PlSmallStr::from_static("datetime"),
-    )
+    }
 }
 
 /// Arguments used by `duration` in order to produce an [`Expr`] of [`Duration`]
