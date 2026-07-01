@@ -607,3 +607,84 @@ unsafe fn for_each_hash_subset_single<T, F>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gen_idxs_per_partition_subset_matches_gathered_keys() {
+        let s = Series::new(
+            PlSmallStr::from_static("k"),
+            &[Some(1i32), None, Some(2), Some(3), None, Some(4)],
+        );
+        let df = DataFrame::new(6, vec![Column::from(s)]).unwrap();
+        let hash_keys = HashKeys::from_df(&df, PlRandomState::default(), false, false);
+        let subset = [0, 1, 3, 4, 5];
+        let partitioner = HashPartitioner::new(4, 0);
+
+        let mut subset_idxs = vec![Vec::new(); partitioner.num_partitions()];
+        let mut no_sketches = Vec::new();
+        unsafe {
+            hash_keys.gen_idxs_per_partition_subset(
+                &subset,
+                &partitioner,
+                &mut subset_idxs,
+                &mut no_sketches,
+                true,
+            );
+        }
+
+        let gathered = unsafe { hash_keys.gather_unchecked(&subset) };
+        let mut gathered_idxs = vec![Vec::new(); partitioner.num_partitions()];
+        let mut gathered_no_sketches = Vec::new();
+        gathered.gen_idxs_per_partition(
+            &partitioner,
+            &mut gathered_idxs,
+            &mut gathered_no_sketches,
+            true,
+        );
+
+        let gathered_original_idxs = gathered_idxs
+            .into_iter()
+            .map(|idxs| {
+                idxs.into_iter()
+                    .map(|idx| subset[idx as usize])
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(subset_idxs, gathered_original_idxs);
+
+        let mut subset_idxs = vec![Vec::new(); partitioner.num_partitions()];
+        let mut subset_sketches = vec![CardinalitySketch::new(); partitioner.num_partitions()];
+        unsafe {
+            hash_keys.gen_idxs_per_partition_subset(
+                &subset,
+                &partitioner,
+                &mut subset_idxs,
+                &mut subset_sketches,
+                true,
+            );
+        }
+
+        let mut gathered_idxs = vec![Vec::new(); partitioner.num_partitions()];
+        let mut gathered_sketches = vec![CardinalitySketch::new(); partitioner.num_partitions()];
+        gathered.gen_idxs_per_partition(
+            &partitioner,
+            &mut gathered_idxs,
+            &mut gathered_sketches,
+            true,
+        );
+
+        assert_eq!(
+            subset_sketches
+                .iter()
+                .map(CardinalitySketch::estimate)
+                .collect::<Vec<_>>(),
+            gathered_sketches
+                .iter()
+                .map(CardinalitySketch::estimate)
+                .collect::<Vec<_>>()
+        );
+    }
+}
