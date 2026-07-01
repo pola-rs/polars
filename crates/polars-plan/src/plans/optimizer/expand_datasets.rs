@@ -164,7 +164,7 @@ pub(super) fn expand_datasets(
                 }));
             },
 
-            _ => {},
+            _ => apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?,
         }
     }
 
