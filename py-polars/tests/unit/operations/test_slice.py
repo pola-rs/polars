@@ -148,7 +148,7 @@ def test_hconcat_slice_pushdown() -> None:
         pl.LazyFrame({f"column_{i}": list(range(i, i + 10))}) for i in range(num_dfs)
     ]
 
-    out = pl.concat(lfs, how="horizontal", strict=True).slice(2, 3)
+    out = pl.concat(lfs, how="horizontal").slice(2, 3)
     plan = out.explain()
 
     assert not plan.startswith("SLICE")
@@ -177,15 +177,15 @@ def test_hconcat_tail_unequal_heights_27552() -> None:
 
 def test_hconcat_tail_unequal_heights_strict_raises_27552() -> None:
     # Regression for https://github.com/pola-rs/polars/issues/27552
-    # With strict=True, concat of unequal-height inputs must raise, even when
-    # followed by a negative-offset slice. Before the fix, the slice was pushed
-    # into each input and equalised their post-slice heights,
+    # With `how="horizontal"`, concat of unequal-height inputs must raise, even
+    # when followed by a negative-offset slice. Before the fix, the slice was
+    # pushed into each input and equalised their post-slice heights,
     # silently bypassing the strict-mode height check.
     a = pl.LazyFrame({"x": [1, 2, 3, 4, 5]})
     b = pl.LazyFrame({"y": [10, 20, 30]})
 
     with pytest.raises(ShapeError):
-        pl.concat([a, b], how="horizontal", strict=True).tail(2).collect()
+        pl.concat([a, b], how="horizontal").tail(2).collect()
 
 
 @pytest.mark.parametrize(
