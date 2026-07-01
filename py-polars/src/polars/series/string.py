@@ -1889,43 +1889,6 @@ class StringNameSpace(_NamespaceSuggestMixin):
         ]
         """
 
-    @deprecated(
-        '`Series.str.explode` is deprecated; use `Series.str.split("").explode()` instead. '
-        "Note that empty strings will result in null instead of being preserved. To get "
-        "the exact same behavior, split first and then use a `pl.when...then...otherwise` "
-        "expression to handle the empty list before exploding. "
-    )
-    def explode(self) -> Series:
-        """
-        Returns a column with a separate row for every string character.
-
-        .. deprecated:: 0.20.31
-            Use the `.str.split("").explode()` method instead. Note that empty strings
-            will result in null instead of being preserved. To get the exact same
-            behavior, split first and then use a `pl.when...then...otherwise`
-            expression to handle the empty list before exploding.
-
-        Returns
-        -------
-        Series
-            Series of data type :class:`String`.
-
-        Examples
-        --------
-        >>> s = pl.Series("a", ["foo", "bar"])
-        >>> s.str.explode()  # doctest: +SKIP
-        shape: (6,)
-        Series: 'a' [str]
-        [
-                "f"
-                "o"
-                "o"
-                "b"
-                "a"
-                "r"
-        ]
-        """
-
     def to_integer(
         self,
         *,
