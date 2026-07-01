@@ -32,6 +32,7 @@ pub(super) fn expand_datasets(
 ) -> PolarsResult<()> {
     let mut stack = unitvec![root];
 
+    #[expect]
     let mut expansion_tasks: FuturesUnordered<
         Pin<Box<dyn Future<Output = PolarsResult<(Node, IR)>>>>,
     > = FuturesUnordered::new();
@@ -528,6 +529,7 @@ impl PyScanResolveThreadPool {
     }
 }
 
+#[cfg(feature = "python")]
 impl Default for PyScanResolveThreadPool {
     fn default() -> Self {
         Self::new()
