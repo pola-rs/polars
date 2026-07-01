@@ -505,6 +505,13 @@ def numpy_to_pyseries(
     """Construct a PySeries from a numpy array."""
     values = np.ascontiguousarray(values)
 
+    # Convert non-native byte order to native.
+    # rust-numpy expects native dtype descriptors (e.g. PyArray1<f32>) and
+    # will fail with "not an instance of ndarray" when given a non-native
+    # byte order array like >f4.
+    if values.dtype.byteorder not in ("=", "|"):
+        values = values.astype(values.dtype.newbyteorder("="))
+
     if values.ndim == 1:
         values, dtype = numpy_values_and_dtype(values)
         constructor = numpy_type_to_constructor(values, dtype)
