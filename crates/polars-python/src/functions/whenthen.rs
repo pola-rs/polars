@@ -85,4 +85,12 @@ impl PyChainedThen {
     fn otherwise(&self, statement: PyExpr) -> PyExpr {
         self.inner.clone().otherwise(statement.inner).into()
     }
+
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        crate::conversion::serde_pickle(&self.inner, py)
+    }
+
+    fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
+        crate::conversion::serde_unpickle(&mut self.inner, state)
+    }
 }
