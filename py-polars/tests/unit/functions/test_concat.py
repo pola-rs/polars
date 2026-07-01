@@ -31,41 +31,6 @@ def test_concat_lf_stack_overflow() -> None:
     assert bar.collect().shape == (1001, 1)
 
 
-def test_concat_horizontally_strict() -> None:
-    df1 = pl.DataFrame({"c": [11], "d": [42]})  # 1 vs N (may broadcast)
-    df2 = pl.DataFrame({"c": [11, 12], "d": [42, 24]})  # 2 vs N
-    df3 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
-    with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([df1, df3], how="horizontal", strict=True)
-
-    with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([df2, df3], how="horizontal", strict=True)
-
-    with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([df1.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
-
-    with pytest.raises(pl.exceptions.ShapeError):
-        pl.concat([df2.lazy(), df3.lazy()], how="horizontal", strict=True).collect()
-
-    with pytest.deprecated_call(match="`strict` parameter"):
-        out = pl.concat([df1, df3], how="horizontal", strict=False)
-    assert out.to_dict(as_series=False) == {
-        "a": [0, 1, 2],
-        "b": [1, 2, 3],
-        "c": [11, None, None],
-        "d": [42, None, None],
-    }
-
-    with pytest.deprecated_call(match="`strict` parameter"):
-        out = pl.concat([df2, df3], how="horizontal", strict=False)
-    assert out.to_dict(as_series=False) == {
-        "a": [0, 1, 2],
-        "b": [1, 2, 3],
-        "c": [11, 12, None],
-        "d": [42, 24, None],
-    }
-
-
 def test_concat_vertically_relaxed() -> None:
     a = pl.DataFrame(
         data={"a": [1, 2, 3], "b": [True, False, None]},
@@ -298,15 +263,19 @@ def test_concat_horizontal() -> None:
     df2 = pl.DataFrame({"b": [4, 5]})
     df3 = pl.DataFrame({"c": [6, 7, 8]})
 
-    with pytest.deprecated_call(match="default behavior of `how='horizontal'`"):
-        result = pl.concat([df1, df2], how="horizontal")
-    expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, None]})
-    assert_frame_equal(result, expected)
-
-    with pytest.deprecated_call(match="default behavior of `how='horizontal'`"):
-        result = pl.concat([df1, df3], how="horizontal")
+    result = pl.concat([df1, df3], how="horizontal")
     expected = pl.DataFrame({"a": [1, 2, 3], "c": [6, 7, 8]})
     assert_frame_equal(result, expected)
+
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([df1, df2], how="horizontal")
+
+    with pytest.deprecated_call(match="`strict` parameter"):
+        result = pl.concat([df1, df3], how="horizontal", strict=True)
+    assert_frame_equal(result, expected)
+
+    with pytest.raises(ValueError, match="`strict=False` is no longer supported"):
+        pl.concat([df1, df2], how="horizontal", strict=False)
 
 
 def test_concat_horizontal_extend() -> None:
@@ -352,33 +321,33 @@ def test_concat_lazyframe_horizontal() -> None:
     lf2 = pl.DataFrame({"b": [4, 5]}).lazy()
     lf3 = pl.DataFrame({"c": [6, 7, 8]}).lazy()
 
-    with pytest.deprecated_call(match="default behavior of `how='horizontal'`"):
-        result = pl.concat([lf1, lf2], how="horizontal")
+    result = pl.concat([lf1, lf3], how="horizontal")
     assert isinstance(result, pl.LazyFrame)
+    expected = pl.LazyFrame({"a": [1, 2, 3], "c": [6, 7, 8]})
+    assert_frame_equal(result, expected)
 
-    collected = result.collect()
-    expected = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, None]})
-    assert_frame_equal(collected, expected)
+    with pytest.raises(pl.exceptions.ShapeError):
+        pl.concat([lf1, lf2], how="horizontal").collect()
 
-    with pytest.deprecated_call(match="default behavior of `how='horizontal'`"):
-        result = pl.concat([lf1, lf3], how="horizontal")
-    assert isinstance(result, pl.LazyFrame)
+    with pytest.deprecated_call(match="`strict` parameter"):
+        result = pl.concat([lf1, lf3], how="horizontal", strict=True)
+    assert_frame_equal(result, expected)
 
-    collected = result.collect()
-    expected = pl.DataFrame({"a": [1, 2, 3], "c": [6, 7, 8]})
-    assert_frame_equal(collected, expected)
+    with pytest.raises(ValueError, match="`strict=False` is no longer supported"):
+        pl.concat([lf1, lf2], how="horizontal", strict=False)
 
 
 def test_concat_lazyframe_horizontal_extend() -> None:
-    lf1 = pl.DataFrame({"a": [1, 2]}).lazy()
-    lf2 = pl.DataFrame({"b": [3, 4, 5]}).lazy()
+    lf1 = pl.DataFrame({"a": [1, 2, 3]}).lazy()
+    lf2 = pl.DataFrame({"b": [4, 5]}).lazy()
+    lf3 = pl.DataFrame({"c": [6, 7, 8, 9]}).lazy()
 
-    result = pl.concat([lf1, lf2], how="horizontal_extend")
+    result = pl.concat([lf1, lf2, lf3], how="horizontal_extend")
     assert isinstance(result, pl.LazyFrame)
-
-    collected = result.collect()
-    expected = pl.DataFrame({"a": [1, 2, None], "b": [3, 4, 5]})
-    assert_frame_equal(collected, expected)
+    expected = pl.LazyFrame(
+        {"a": [1, 2, 3, None], "b": [4, 5, None, None], "c": [6, 7, 8, 9]}
+    )
+    assert_frame_equal(result, expected)
 
     for strict in (True, False):
         with pytest.raises(ValueError, match=r"strict.*horizontal_extend"):
@@ -452,7 +421,7 @@ def test_concat_with_empty_dataframes() -> None:
 
 def test_concat_with_empty_dataframes_strict_25725() -> None:
     df = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
-    result = pl.concat([df, df.select([])], how="horizontal", strict=True)
+    result = pl.concat([df, df.select([])], how="horizontal")
     expected = pl.LazyFrame({"a": [1, 2], "b": ["x", "y"]})
     assert_frame_equal(result, expected)
 
@@ -516,7 +485,6 @@ def test_concat_horizontal_zero_width_height_mismatch_26876() -> None:
             pl.LazyFrame(height=3),
         ],
         how="horizontal",
-        strict=True,
     )
 
     with pytest.raises(ShapeError):
@@ -533,7 +501,6 @@ def test_concat_horizontal_lazy_strict_raises_shape_error_27415(
             pl.LazyFrame({"z": [0, -1, -2]}),
         ],
         how="horizontal",
-        strict=True,
     )
 
     q = hconcat.select("y")
@@ -578,7 +545,6 @@ def test_concat_horizontal_strict_cached_projection_27923(
             pl.LazyFrame({"right_unused": [30, 31, 32]}),
         ],
         how="horizontal",
-        strict=True,
     ).cache()
     q = pl.concat(
         [
@@ -586,7 +552,6 @@ def test_concat_horizontal_strict_cached_projection_27923(
             lf.select("a"),
         ],
         how="horizontal",
-        strict=True,
     )
 
     assert_frame_equal(
