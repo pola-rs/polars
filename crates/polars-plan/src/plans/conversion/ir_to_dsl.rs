@@ -167,10 +167,6 @@ pub fn node_to_expr(node: Node, expr_arena: &Arena<AExpr>) -> Expr {
                 let exp = node_to_expr(expr, expr_arena);
                 AggExpr::Var(Arc::new(exp), ddof).into()
             },
-            IRAggExpr::AggGroups(expr) => {
-                let exp = node_to_expr(expr, expr_arena);
-                AggExpr::AggGroups(Arc::new(exp)).into()
-            },
             IRAggExpr::Count {
                 input,
                 include_nulls,
