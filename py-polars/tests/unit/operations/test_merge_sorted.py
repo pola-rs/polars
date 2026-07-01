@@ -453,6 +453,7 @@ def test_merge_sorted_with_list_27563() -> None:
         for lnl in (True, False)
         for rd in (True, False)
         for rnl in (True, False)
+        # Exclude valid combination of sortedness and nulls_last
         if ld or not lnl or rd or not rnl
     ],
 )
