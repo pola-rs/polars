@@ -38,12 +38,12 @@ impl IOWriter {
             // `task::block_in_place` provided by `AsyncDynWritable`. In theory this could
             // bottleneck the pipeline if there are a large number of files being written into in
             // parallel, since the tokio thread-pool is smaller than the computation thread-pool.
-            ExternalCompression::Gzip { level } => AsyncWritable::Dyn(AsyncDynWritable(
-                Box::new(CompressedWriter::gzip(writable, level)),
-            )),
-            ExternalCompression::Zstd { level } => AsyncWritable::Dyn(AsyncDynWritable(
-                Box::new(CompressedWriter::zstd(writable, level)?),
-            )),
+            ExternalCompression::Gzip { level } => AsyncWritable::Dyn(AsyncDynWritable(Box::new(
+                CompressedWriter::gzip(writable, level),
+            ))),
+            ExternalCompression::Zstd { level } => AsyncWritable::Dyn(AsyncDynWritable(Box::new(
+                CompressedWriter::zstd(writable, level)?,
+            ))),
         };
 
         while let Some((handle, permit)) = filled_serializer_rx.recv().await {
