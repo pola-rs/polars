@@ -1223,12 +1223,12 @@ def test_csv_whitespace_separator_at_start_do_not_skip(chunk_override: None) -> 
     csv = "\t\t\t\t0\t1"
     result = pl.read_csv(csv.encode(), separator="\t", has_header=False)
     expected = {
+        "column_0": [None],
         "column_1": [None],
         "column_2": [None],
         "column_3": [None],
-        "column_4": [None],
-        "column_5": [0],
-        "column_6": [1],
+        "column_4": [0],
+        "column_5": [1],
     }
     assert result.to_dict(as_series=False) == expected
 
@@ -1237,12 +1237,12 @@ def test_csv_whitespace_separator_at_end_do_not_skip(chunk_override: None) -> No
     csv = "0\t1\t\t\t\t"
     result = pl.read_csv(csv.encode(), separator="\t", has_header=False)
     expected = {
-        "column_1": [0],
-        "column_2": [1],
+        "column_0": [0],
+        "column_1": [1],
+        "column_2": [None],
         "column_3": [None],
         "column_4": [None],
         "column_5": [None],
-        "column_6": [None],
     }
     assert result.to_dict(as_series=False) == expected
 
@@ -1271,7 +1271,7 @@ def test_csv_multiple_null_values(chunk_override: None) -> None:
 def test_different_eol_char(chunk_override: None) -> None:
     csv = "a,1,10;b,2,20;c,3,30"
     expected = pl.DataFrame(
-        {"column_1": ["a", "b", "c"], "column_2": [1, 2, 3], "column_3": [10, 20, 30]}
+        {"column_0": ["a", "b", "c"], "column_1": [1, 2, 3], "column_2": [10, 20, 30]}
     )
     assert_frame_equal(
         pl.read_csv(csv.encode(), eol_char=";", has_header=False), expected
@@ -2416,9 +2416,9 @@ def test_read_csv_cast_unparsable_later(
 
 def test_csv_double_new_line(chunk_override: None) -> None:
     assert pl.read_csv(b"a,b,c\n\n", has_header=False).to_dict(as_series=False) == {
-        "column_1": ["a", None],
-        "column_2": ["b", None],
-        "column_3": ["c", None],
+        "column_0": ["a", None],
+        "column_1": ["b", None],
+        "column_2": ["c", None],
     }
 
 
@@ -2590,8 +2590,8 @@ def test_trailing_separator_8240(chunk_override: None) -> None:
     csv = "A|B|"
 
     expected = pl.DataFrame(
-        {"column_1": ["A"], "column_2": ["B"], "column_3": [None]},
-        schema={"column_1": pl.String, "column_2": pl.String, "column_3": pl.String},
+        {"column_0": ["A"], "column_1": ["B"], "column_2": [None]},
+        schema={"column_0": pl.String, "column_1": pl.String, "column_2": pl.String},
     )
 
     result = pl.read_csv(io.StringIO(csv), separator="|", has_header=False)
@@ -2627,12 +2627,12 @@ a,b,c,d,e,f
 g,h,i,j,k""")
 
     assert pl.read_csv(csv, has_header=False).to_dict(as_series=False) == {
-        "column_1": ["a", "a", "g"],
-        "column_2": ["b", "b", "h"],
-        "column_3": ["c", "c", "i"],
-        "column_4": [None, "d", "j"],
-        "column_5": [None, "e", "k"],
-        "column_6": [None, "f", None],
+        "column_0": ["a", "a", "g"],
+        "column_1": ["b", "b", "h"],
+        "column_2": ["c", "c", "i"],
+        "column_3": [None, "d", "j"],
+        "column_4": [None, "e", "k"],
+        "column_5": [None, "f", None],
     }
 
 
