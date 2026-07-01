@@ -515,7 +515,6 @@ impl Display for ExprIRDisplay<'_> {
                     },
                     NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
                     Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
-                    AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),
                     Count {
                         input,
                         include_nulls: false,

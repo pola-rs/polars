@@ -796,11 +796,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 arguments: vec![n.0],
                 options: ddof.into_py_any(py)?,
             },
-            IRAggExpr::AggGroups(n) => Agg {
-                name: "agg_groups".into_py_any(py)?,
-                arguments: vec![n.0],
-                options: py.None(),
-            },
         }
         .into_py_any(py),
         AExpr::Ternary {

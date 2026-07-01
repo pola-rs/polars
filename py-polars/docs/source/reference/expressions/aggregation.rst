@@ -6,7 +6,6 @@ Aggregation
 .. autosummary::
    :toctree: api/
 
-    Expr.agg_groups
     Expr.all
     Expr.any
     Expr.approx_n_unique

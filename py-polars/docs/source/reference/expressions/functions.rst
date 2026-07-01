@@ -49,7 +49,6 @@ These functions are available from the Polars module root and can be used as exp
    fold
    format
    from_epoch
-   groups
    head
    implode
    int_range

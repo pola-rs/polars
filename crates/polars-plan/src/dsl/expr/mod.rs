@@ -49,7 +49,6 @@ pub enum AggExpr {
         include_nulls: bool,
     },
     Sum(Arc<Expr>),
-    AggGroups(Arc<Expr>),
     Std(Arc<Expr>, u8),
     Var(Arc<Expr>, u8),
 }
