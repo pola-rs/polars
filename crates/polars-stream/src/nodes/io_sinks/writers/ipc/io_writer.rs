@@ -10,7 +10,7 @@ use polars_core::utils::arrow;
 use polars_error::{PolarsResult, to_compute_err};
 use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
-use polars_io::utils::file::Writeable;
+use polars_io::utils::file::Writable;
 use polars_io::{SerWriter, schema_to_arrow_checked};
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
@@ -41,7 +41,7 @@ impl IOWriter {
         let mut custom_pl_metadata = write_custom_pl_metadata.then_some(PlIpcMetadata::default());
 
         match file {
-            Writeable::Cloud(cloudwriter) => {
+            Writable::Cloud(cloudwriter) => {
                 // The zero-copy implementation takes ownership of the encoded data and, after
                 // framing and aligning, passes it to the object_store via the BufWriter::put() method.
                 let mut cloud_writer = cloudwriter.into_cloud_writer().await?;
