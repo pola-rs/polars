@@ -251,9 +251,6 @@ impl PyExpr {
         self.inner.clone().rle_id().into()
     }
 
-    fn agg_groups(&self) -> Self {
-        self.inner.clone().agg_groups().into()
-    }
     fn count(&self) -> Self {
         self.inner.clone().count().into()
     }

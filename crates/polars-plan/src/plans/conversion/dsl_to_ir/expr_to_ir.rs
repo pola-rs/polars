@@ -335,10 +335,6 @@ pub(super) fn to_aexpr_impl(
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Var(input, ddof), output_name)
                 },
-                AggExpr::AggGroups(input) => {
-                    let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
-                    (IRAggExpr::AggGroups(input), output_name)
-                },
             };
             (AExpr::Agg(a_agg), output_name)
         },
