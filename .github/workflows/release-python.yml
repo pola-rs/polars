@@ -20,6 +20,8 @@ concurrency:
 env:
   PYTHON_VERSION: '3.10'
   PYTHON_VERSION_WIN_ARM64: '3.11' # ARM64 Windows doesn't have older versions
+  PYTHON_VERSION_FREE_THREADED: '3.15t'
+
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUSTUP_MAX_RETRIES: 10
@@ -39,8 +41,6 @@ defaults:
 jobs:
   base-package:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
 
     steps:
       - name: Checkout
@@ -133,7 +133,7 @@ jobs:
           args: >
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
-          maturin-version: 1.8.3
+          maturin-version: 1.14.0
 
       - name: Test sdist
         run: |
@@ -153,6 +153,7 @@ jobs:
       fail-fast: false
       matrix:
         package: [polars-runtime-32, polars-runtime-64, polars-runtime-compat]
+        variant: [abi3, abi3t]
         job_config: [linux-x64, linux-arm64, linux-musl-x64, linux-musl-arm64, macos-x64, macos-arm64, win-x64, win-arm64]
         include:
           - job_config: linux-x64
@@ -267,16 +268,20 @@ jobs:
           swap-size-gb: 10
 
       - name: Set up Python
+        id: setup-python
         if: matrix.os != 'windows-11-arm'
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.variant == 'abi3t' && env.PYTHON_VERSION_FREE_THREADED || env.PYTHON_VERSION }}
+          allow-prereleases: ${{ matrix.variant == 'abi3t' }}
 
       - name: Set up Python (ARM64 Windows)
+        id: setup-python-win-arm64
         if: matrix.os == 'windows-11-arm'
         uses: actions/setup-python@v6
         with:
-          python-version: ${{ env.PYTHON_VERSION_WIN_ARM64 }}
+          python-version: ${{ matrix.variant == 'abi3t' && env.PYTHON_VERSION_FREE_THREADED || env.PYTHON_VERSION_WIN_ARM64 }}
+          allow-prereleases: ${{ matrix.variant == 'abi3t' }}
 
       # Otherwise can't find `tomlq` after `pip install yq`
       - name: Add Python scripts folder to GITHUB_PATH (ARM64 Windows)
@@ -344,11 +349,12 @@ jobs:
           command: build
           target: ${{ matrix.target }}
           args: >
-            --profile ${{ inputs.dry-run == true && 'mindebug-dev' || 'dist-release' }}
+            --interpreter ${{ steps.setup-python.outputs.python-path || steps.setup-python-win-arm64.outputs.python-path }}
             --manifest-path py-polars/runtime/${{ matrix.package }}/Cargo.toml
             --out dist
+            --profile ${{ inputs.dry-run == true && 'mindebug-dev' || 'dist-release' }}
           manylinux: auto
-          maturin-version: 1.8.3
+          maturin-version: 1.14.0
 
       - name: Test wheel
         # Testing on entire matrix except musl targets, which are missing on all ubuntu-x images.
@@ -360,7 +366,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v6
         with:
-          name: wheel-${{ matrix.package }}-${{ matrix.job_config }}
+          name: wheel-${{ matrix.package }}-${{ matrix.variant }}-${{ matrix.job_config }}
           path: dist/*.whl
 
   publish-to-pypi:
