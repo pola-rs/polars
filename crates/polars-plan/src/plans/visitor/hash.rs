@@ -72,7 +72,13 @@ fn hash_python_predicate<H: Hasher>(
     std::mem::discriminant(pred).hash(state);
     match pred {
         PythonPredicate::None => {},
-        PythonPredicate::PyArrow(s) => s.hash(state),
+        PythonPredicate::PyArrow {
+            predicate,
+            has_residual,
+        } => {
+            predicate.hash(state);
+            has_residual.hash(state);
+        },
         PythonPredicate::Polars(e) => e.traverse_and_hash(expr_arena, state),
     }
 }
@@ -226,6 +232,13 @@ impl Hash for IRHashWrap<'_> {
                 hash_exprs(right_on, self.expr_arena, state);
                 options.hash(state);
             },
+            IR::Gather {
+                input: _,
+                idxs: _,
+                null_on_oob,
+            } => {
+                null_on_oob.hash(state);
+            },
             IR::HStack {
                 input: _,
                 exprs,
@@ -277,6 +290,7 @@ impl Hash for IRHashWrap<'_> {
             },
             IR::UnoptimizedDispatch {
                 inputs: _,
+                arg_map: _,
                 operation,
             } => match operation {
                 UnoptimizedOperation::ColumnarFunction {
@@ -286,6 +300,22 @@ impl Hash for IRHashWrap<'_> {
                 } => {
                     function.hash(state);
                     options.hash(state);
+                    output_name.hash(state);
+                },
+
+                UnoptimizedOperation::AnonymousColumnsUdf {
+                    function,
+                    options,
+                    output_name,
+                    fmt_str: _,
+                    ctx_schema: _,
+                } => {
+                    function.hash(state);
+                    options.hash(state);
+                    output_name.hash(state);
+                },
+
+                UnoptimizedOperation::DynamicSlice { output_name } => {
                     output_name.hash(state);
                 },
             },

@@ -405,11 +405,11 @@ class SQLContext(Generic[FrameType]):
         >>> ctx.execute(
         ...     '''
         ...     SELECT
-        ...         MAX(release_year / 10) * 10 AS decade,
+        ...         MAX(release_year // 10) * 10 AS decade,
         ...         SUM(gross) AS total_gross,
         ...         COUNT(title) AS n_films,
         ...     FROM films
-        ...     GROUP BY (release_year / 10) -- decade
+        ...     GROUP BY (release_year // 10) -- decade
         ...     ORDER BY total_gross DESC
         ...     ''',
         ...     eager=True,

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use polars_core::POOL;
 use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_core::schema::Schema;
 use polars_plan::dsl::Expr;
 use rayon::prelude::*;
@@ -235,7 +235,7 @@ impl PhysicalExpr for StructEvalExpr {
             Ok(result)
         };
         let cols = if self.allow_threading {
-            POOL.install(|| {
+            RAYON.install(|| {
                 self.evaluation
                     .par_iter()
                     .map(f)
@@ -278,7 +278,7 @@ impl PhysicalExpr for StructEvalExpr {
 
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, &state);
         let acs_eval = if self.allow_threading {
-            POOL.install(|| {
+            RAYON.install(|| {
                 self.evaluation
                     .par_iter()
                     .map(f)

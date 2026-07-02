@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::num::NonZeroUsize;
 
 use arrow::ffi::export_iterator;
@@ -488,7 +487,7 @@ impl PyLazyFrame {
         py.enter_polars(|| self.ldf.read().to_dot(optimized))
     }
 
-    #[cfg(feature = "new_streaming")]
+    #[cfg(feature = "streaming")]
     fn to_dot_streaming_phys(&self, py: Python, optimized: bool) -> PyResult<String> {
         py.enter_polars(|| self.ldf.read().to_dot_streaming_phys(optimized))
     }
@@ -626,7 +625,7 @@ impl PyLazyFrame {
 
             // We use a tokio spawn_blocking here as it has a high blocking
             // thread pool limit.
-            polars_io::pl_async::get_runtime().spawn_blocking(move || {
+            polars_core::runtime::ASYNC.spawn_blocking(move || {
                 let result = ldf
                     .collect_with_engine(engine.0)
                     .map(|r| match r {
@@ -1055,7 +1054,7 @@ impl PyLazyFrame {
             .into())
     }
 
-    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, nulls_equal, how, suffix, validate, maintain_order, coalesce=None))]
+    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, nulls_equal, how, suffix, validate, maintain_order, build_side, coalesce=None))]
     fn join(
         &self,
         other: Self,
@@ -1068,6 +1067,7 @@ impl PyLazyFrame {
         suffix: String,
         validate: Wrap<JoinValidation>,
         maintain_order: Wrap<MaintainOrderJoin>,
+        build_side: Wrap<Option<JoinBuildSide>>,
         coalesce: Option<bool>,
     ) -> PyResult<Self> {
         let coalesce = match coalesce {
@@ -1099,6 +1099,7 @@ impl PyLazyFrame {
             .validate(validate.0)
             .coalesce(coalesce)
             .maintain_order(maintain_order.0)
+            .build_side(build_side.0)
             .finish()
             .into())
     }
@@ -1115,6 +1116,12 @@ impl PyLazyFrame {
             .suffix(suffix)
             .join_where(predicates)
             .into())
+    }
+
+    fn gather(&self, idxs: Self, null_on_oob: bool) -> Self {
+        let ldf = self.ldf.read().clone();
+        let idxs = idxs.ldf.into_inner();
+        ldf.gather(idxs, null_on_oob).into()
     }
 
     fn with_columns(&self, exprs: Vec<PyExpr>) -> Self {
@@ -1458,7 +1465,7 @@ impl PyLazyFrame {
         opt.set(OptFlags::PREDICATE_PUSHDOWN, predicate_pushdown);
         opt.set(OptFlags::PROJECTION_PUSHDOWN, projection_pushdown);
         opt.set(OptFlags::SLICE_PUSHDOWN, slice_pushdown);
-        opt.set(OptFlags::NEW_STREAMING, streamable);
+        opt.set(OptFlags::STREAMING, streamable);
 
         self.ldf
             .read()
@@ -1626,8 +1633,7 @@ impl PyCollectBatches {
         let iter = Box::new(ArrowStreamIterator::new(self.inner.clone(), dtype.clone()));
         let field = ArrowField::new(PlSmallStr::EMPTY, dtype, false);
         let stream = export_iterator(iter, field);
-        let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-        PyCapsule::new(py, stream, Some(stream_capsule_name))
+        PyCapsule::new_with_value(py, stream, c"arrow_array_stream")
     }
 }
 

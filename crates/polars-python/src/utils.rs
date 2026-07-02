@@ -6,12 +6,13 @@ use polars_error::PolarsResult;
 use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
+use pyo3::types::PyAnyMethods;
 use pyo3::{PyErr, PyResult, Python};
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::series::PySeries;
-use crate::timeout::{cancel_polars_timeout, schedule_polars_timeout};
+use crate::timeout::{cancel_polars_timeout, is_timeout_enabled, schedule_polars_timeout};
 
 /// Calls method on downcasted ChunkedArray for all possible publicly exposed Polars dtypes.
 #[macro_export]
@@ -123,6 +124,13 @@ pub trait EnterPolarsExt {
     }
 }
 
+fn get_traceback(py: Python<'_>) -> PyResult<String> {
+    let tb = py.import(pyo3::intern!(py, "traceback"))?;
+    let format_stack = tb.getattr("format_stack")?;
+    let lines: Vec<String> = format_stack.call0()?.extract()?;
+    Ok(lines.join("\n"))
+}
+
 impl EnterPolarsExt for Python<'_> {
     fn enter_polars<T, E, F>(self, f: F) -> PyResult<T>
     where
@@ -130,7 +138,12 @@ impl EnterPolarsExt for Python<'_> {
         T: Ungil + Send,
         E: Ungil + Send + Into<PyPolarsErr>,
     {
-        let timeout = schedule_polars_timeout();
+        let timeout = if is_timeout_enabled() {
+            std::hint::cold_path();
+            schedule_polars_timeout(get_traceback(self).ok())
+        } else {
+            None
+        };
         let ret = self.detach(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
         cancel_polars_timeout(timeout);
         match ret {

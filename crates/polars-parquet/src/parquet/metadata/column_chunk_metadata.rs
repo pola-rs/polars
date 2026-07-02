@@ -1,4 +1,3 @@
-use polars_buffer::Buffer;
 use polars_parquet_format::Statistics as ParquetStatistics;
 
 use super::column_descriptor::{ColumnDescriptor, ColumnDescriptorRef};
@@ -39,6 +38,14 @@ impl ColumnChunkMetadata {
         &self.column_chunk.meta_data
     }
 
+    /// The full `CompactColumnChunk` wrapper. Used by the prune pass
+    /// (`FileMetadata::pruned`) to rebuild a smaller `FileMetadata` for
+    /// serialisation.
+    #[inline]
+    pub(crate) fn compact_column_chunk(&self) -> &CompactColumnChunk {
+        &self.column_chunk
+    }
+
     /// The [`ColumnDescriptor`] for this column. This descriptor contains
     /// the physical and logical type of the pages.
     pub fn descriptor(&self) -> &ColumnDescriptor {
@@ -59,7 +66,7 @@ impl ColumnChunkMetadata {
     ///
     /// `footer_buf` must be the same buffer this chunk was decoded from,
     /// typically [`super::FileMetadata::footer_buf`].
-    pub fn statistics(&self, footer_buf: &Buffer<u8>) -> Option<ParquetResult<Statistics>> {
+    pub fn statistics(&self, footer_buf: &[u8]) -> Option<ParquetResult<Statistics>> {
         let stats = self.compact_metadata().statistics.as_ref()?;
         let parquet_stats = compact_stats_to_parquet(stats, footer_buf);
         Some(Statistics::deserialize(

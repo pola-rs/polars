@@ -1436,6 +1436,39 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
             },
 
+            AExpr::Function {
+                input: ref inner_exprs,
+                function:
+                    IRFunctionExpr::Boolean(IRBooleanFunction::IsSorted {
+                        descending,
+                        nulls_last,
+                    }),
+                options: _,
+            } => {
+                assert_eq!(inner_exprs.len(), 1);
+
+                let value_key = unique_column_name();
+
+                let input = build_select_stream_with_ctx(
+                    input,
+                    &[inner_exprs[0].with_alias(value_key.clone())],
+                    ctx,
+                )?;
+                let node_kind = PhysNodeKind::IsSorted {
+                    input,
+                    descending,
+                    nulls_last,
+                    output_name: value_key.clone(),
+                };
+
+                let output_schema = Schema::from_iter([(value_key.clone(), DataType::Boolean)]);
+                let node_key = ctx
+                    .phys_sm
+                    .insert(PhysNode::new(Arc::new(output_schema), node_kind));
+                input_streams.insert(PhysStream::first(node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(value_key.clone())));
+            },
+
             // pl.row_index() maps to this.
             #[cfg(feature = "range")]
             AExpr::Function {
@@ -1988,22 +2021,22 @@ fn lower_exprs_with_ctx(
             },
 
             AExpr::Gather {
-                expr: target_expr,
+                expr: input_expr,
                 idx: idx_expr,
                 returns_scalar: _,
                 null_on_oob,
             } => {
                 let out_name = unique_column_name();
-                let target_expr_ir = ExprIR::new(target_expr, OutputName::Alias(out_name.clone()));
+                let input_expr_ir = ExprIR::new(input_expr, OutputName::Alias(out_name.clone()));
                 let idx_expr_ir = ExprIR::from_node(idx_expr, ctx.expr_arena);
-                let target_stream = build_select_stream_with_ctx(input, &[target_expr_ir], ctx)?;
+                let input_stream = build_select_stream_with_ctx(input, &[input_expr_ir], ctx)?;
                 let idx_stream = build_select_stream_with_ctx(input, &[idx_expr_ir], ctx)?;
                 let kind = PhysNodeKind::Gather {
-                    target: target_stream,
+                    input: input_stream,
                     idxs: idx_stream,
                     null_on_oob,
                 };
-                let output_schema = target_stream.output_schema(ctx.phys_sm).clone();
+                let output_schema = input_stream.output_schema(ctx.phys_sm).clone();
                 let gather_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
                 input_streams.insert(PhysStream::first(gather_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
@@ -2109,10 +2142,7 @@ fn lower_exprs_with_ctx(
                     input_streams.insert(PhysStream::first(reduce_node_key));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(tmp_name)));
                 },
-                IRAggExpr::Median(_)
-                | IRAggExpr::Implode { .. }
-                | IRAggExpr::Quantile { .. }
-                | IRAggExpr::AggGroups(_) => {
+                IRAggExpr::Median(_) | IRAggExpr::Implode { .. } | IRAggExpr::AggGroups(_) => {
                     let out_name = unique_column_name();
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
@@ -2145,7 +2175,10 @@ fn lower_exprs_with_ctx(
             AExpr::Function {
                 function:
                     IRFunctionExpr::Boolean(
-                        IRBooleanFunction::Any { .. } | IRBooleanFunction::All { .. },
+                        IRBooleanFunction::Any { .. }
+                        | IRBooleanFunction::All { .. }
+                        | IRBooleanFunction::IsEmpty { .. }
+                        | IRBooleanFunction::HasNulls,
                     )
                     | IRFunctionExpr::MinBy
                     | IRFunctionExpr::MaxBy
@@ -2620,6 +2653,7 @@ fn lower_exprs_with_ctx(
                 let kind = PhysNodeKind::ColumnarFunction {
                     inputs,
                     func,
+                    arg_map: None,
                     output_name: out_name.clone(),
                     format_str,
                 };

@@ -14,6 +14,7 @@ chrono = { workspace = true }
 futures = { workspace = true, optional = true }
 polars-buffer = { workspace = true }
 polars-compute = { workspace = true }
+polars-config = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-expr = { workspace = true }
 polars-io = { workspace = true, features = ["lazy"] }
@@ -42,7 +43,7 @@ version_check = { workspace = true }
 [features]
 catalog = ["polars-io/catalog"]
 nightly = ["polars-core/nightly", "polars-expr/nightly"]
-new_streaming = ["polars-stream"]
+streaming = ["polars-stream"]
 parquet = [
   "polars-io/parquet",
   "polars-plan/parquet",

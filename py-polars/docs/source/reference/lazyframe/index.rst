@@ -16,6 +16,7 @@ This page gives an overview of all public LazyFrame methods.
    miscellaneous
    in_process
    gpu_engine
+   query_result
 
 .. _lazyframe:
 

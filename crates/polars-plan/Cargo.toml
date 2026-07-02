@@ -33,9 +33,11 @@ bytemuck = { workspace = true }
 bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
+digest-io = { workspace = true }
 either = { workspace = true }
 futures = { workspace = true }
 hashbrown = { workspace = true }
+hex = { workspace = true }
 indexmap = { workspace = true }
 memmap = { workspace = true }
 num-traits = { workspace = true }
@@ -53,6 +55,7 @@ strum_macros = { workspace = true }
 tokio = { workspace = true }
 
 [build-dependencies]
+hex = { workspace = true }
 sha2 = { workspace = true }
 version_check = { workspace = true }
 
@@ -173,7 +176,7 @@ diff = ["polars-ops/diff"]
 pct_change = ["polars-ops/pct_change"]
 moment = ["polars-ops/moment"]
 abs = ["polars-ops/abs"]
-random = ["polars-core/random"]
+random = ["polars-core/random", "polars-ops/random"]
 dynamic_group_by = ["polars-core/dynamic_group_by", "dtype-date", "dtype-datetime"]
 ewma = ["polars-ops/ewma"]
 ewma_by = ["polars-ops/ewma_by"]

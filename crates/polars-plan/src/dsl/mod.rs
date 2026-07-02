@@ -208,29 +208,12 @@ impl Expr {
 
     /// Compute the quantile per group.
     pub fn quantile(self, quantile: Expr, method: QuantileMethod) -> Self {
-        AggExpr::Quantile {
-            expr: Arc::new(self),
-            quantile: Arc::new(quantile),
-            method,
-        }
-        .into()
+        self.map_binary(FunctionExpr::Quantile { method }, quantile)
     }
 
     /// Get the group indexes of the group by operation.
     pub fn agg_groups(self) -> Self {
         AggExpr::AggGroups(Arc::new(self)).into()
-    }
-
-    /// Alias for `explode`.
-    #[deprecated(
-        since = "0.53.0",
-        note = "Use `explode()` with `ExplodeOptions { empty_as_null: false, keep_nulls: false }` instead. Will be removed in version 2.0."
-    )]
-    pub fn flatten(self) -> Self {
-        self.explode(ExplodeOptions {
-            empty_as_null: true,
-            keep_nulls: true,
-        })
     }
 
     /// Explode the String/List column.
@@ -985,6 +968,13 @@ impl Expr {
         )
     }
 
+    pub fn is_sorted(self, descending: Option<bool>, nulls_last: Option<bool>) -> Self {
+        self.map_unary(BooleanFunction::IsSorted {
+            descending,
+            nulls_last,
+        })
+    }
+
     /// Get the approximate count of unique values.
     #[cfg(feature = "approx_unique")]
     pub fn approx_n_unique(self) -> Self {
@@ -1541,6 +1531,19 @@ impl Expr {
     /// [Kleene logic]: https://en.wikipedia.org/wiki/Three-valued_logic
     pub fn all(self, ignore_nulls: bool) -> Self {
         self.map_unary(BooleanFunction::All { ignore_nulls })
+    }
+
+    /// Returns whether this column is empty.
+    ///
+    /// If `ignore_nulls` is True, the column is also considered empty if it
+    /// only consists of nulls.
+    pub fn is_empty(self, ignore_nulls: bool) -> Self {
+        self.map_unary(BooleanFunction::IsEmpty { ignore_nulls })
+    }
+
+    /// Returns whether the column contains one or more null values.
+    pub fn has_nulls(self) -> Self {
+        self.map_unary(BooleanFunction::HasNulls)
     }
 
     #[cfg(feature = "dtype-struct")]

@@ -27,7 +27,7 @@ impl IRPlanSorted {
         let mut seen = PlHashSet::default();
         let mut sortedness = PlHashMap::default();
         let mut cache_proxy = PlHashMap::default();
-        let mut amort_passed_columns = PlHashSet::default();
+        let mut names_set_scratch = ScratchHashSet::default();
         is_sorted_rec(
             root,
             ir_arena,
@@ -35,7 +35,7 @@ impl IRPlanSorted {
             &mut seen,
             &mut sortedness,
             &mut cache_proxy,
-            &mut amort_passed_columns,
+            &mut names_set_scratch,
             true,
         );
         Self(sortedness)
@@ -171,7 +171,7 @@ pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) ->
     let mut seen = PlHashSet::default();
     let mut sortedness = PlHashMap::default();
     let mut cache_proxy = PlHashMap::default();
-    let mut amort_passed_columns = PlHashSet::default();
+    let mut names_set_scratch = ScratchHashSet::default();
 
     is_sorted_rec(
         root,
@@ -180,7 +180,7 @@ pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) ->
         &mut seen,
         &mut sortedness,
         &mut cache_proxy,
-        &mut amort_passed_columns,
+        &mut names_set_scratch,
         false,
     )
 }
@@ -194,7 +194,7 @@ fn is_sorted_rec(
     seen: &mut PlHashSet<Node>,
     sortedness: &mut PlHashMap<Node, IRSorted>,
     cache_proxy: &mut PlHashMap<UniqueId, Option<IRSorted>>,
-    amort_passed_columns: &mut PlHashSet<PlSmallStr>,
+    names_set_scratch: &mut ScratchHashSet<PlSmallStr>,
     create_full_map: bool,
 ) -> Option<IRSorted> {
     if let Some(s) = sortedness.get(&root) {
@@ -213,7 +213,7 @@ fn is_sorted_rec(
                 seen,
                 sortedness,
                 cache_proxy,
-                amort_passed_columns,
+                names_set_scratch,
                 create_full_map,
             )
         }};
@@ -281,7 +281,7 @@ fn is_sorted_rec(
             if let Some(input_sorted) = &input_sorted {
                 // We can keep a sorted column if it was kept and not changed.
 
-                amort_passed_columns.clear();
+                let amort_passed_columns = names_set_scratch.get();
                 amort_passed_columns.extend(expr.iter().filter_map(|e| {
                     let column = into_column(e.node(), expr_arena)?;
                     (column == e.output_name()).then(|| column.clone())
@@ -318,7 +318,7 @@ fn is_sorted_rec(
             if let Some(input_sorted) = &input_sorted {
                 // We can keep a sorted column if it was not overwritten.
 
-                amort_passed_columns.clear();
+                let amort_passed_columns = names_set_scratch.get();
                 amort_passed_columns.extend(exprs.iter().filter_map(|e| {
                     match into_column(e.node(), expr_arena) {
                         None => Some(e.output_name().clone()),
@@ -404,7 +404,7 @@ fn is_sorted_rec(
             let input = *input;
             let input_sorted = rec!(input)?;
 
-            amort_passed_columns.clear();
+            let amort_passed_columns = names_set_scratch.get();
             amort_passed_columns.extend(keys.iter().filter_map(|e| {
                 let column = into_column(e.node(), expr_arena)?;
                 (column == e.output_name()).then(|| column.clone())
@@ -459,12 +459,100 @@ fn is_sorted_rec(
 
         IR::GroupBy { .. } => None,
         IR::Join { .. } => None,
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => {
+            let input = *input;
+            let idxs = *idxs;
+            let null_on_oob = *null_on_oob;
+            let input_sorted = rec!(input)?;
+            let idxs_sorted = rec!(idxs)?;
+            if idxs_sorted.0.len() != 1 {
+                return None;
+            }
+            let idxs_sorted = &idxs_sorted.0[0];
+
+            // The null locations must be known and match exactly, or we might
+            // get a mixture of nulls at start and end.
+            for s in input_sorted.0.iter() {
+                if s.nulls_last.is_none() || s.nulls_last != idxs_sorted.nulls_last {
+                    return None;
+                }
+            }
+
+            // Furthermore, if out-of-bounds can create nulls those must match the null location,
+            // that is, the larger indices must be on the side where the nulls are.
+            if null_on_oob {
+                if idxs_sorted.nulls_last.is_none()
+                    || idxs_sorted.nulls_last != idxs_sorted.descending.map(|b| !b)
+                {
+                    return None;
+                }
+            }
+
+            let mut out_sorted = input_sorted.0.iter().cloned().collect_vec();
+            match idxs_sorted.descending {
+                Some(false) => {},
+                Some(true) => {
+                    for s in &mut out_sorted {
+                        s.descending = s.descending.map(|b| !b);
+                        s.nulls_last = s.nulls_last.map(|b| !b);
+                    }
+                },
+                None => {
+                    for s in &mut out_sorted {
+                        s.descending = None;
+                        s.nulls_last = None;
+                    }
+                },
+            }
+            Some(input_sorted)
+        },
         IR::MapFunction { input, function } => match function {
             FunctionIR::Hint(hint) => match hint {
                 HintIR::Sorted(v) => Some(IRSorted(v.clone())),
                 #[expect(unreachable_patterns)]
                 _ => rec!(*input),
             },
+            FunctionIR::Explode { columns, .. } => {
+                let mut sorted = rec!(*input);
+
+                // Truncate the sortedness to the first exploded column if one exists.
+                if let Some(sorted) = sorted.as_mut() {
+                    let explode_names = names_set_scratch.get();
+                    explode_names.extend(columns.iter().cloned());
+
+                    if let Some(i) = sorted
+                        .0
+                        .iter()
+                        .position(|x| explode_names.contains(&x.column))
+                    {
+                        sorted.0 = sorted.0.iter().take(i).cloned().collect();
+                    }
+                }
+
+                sorted
+            },
+            FunctionIR::RowIndex { name, .. } => Some(IRSorted(
+                // e.g. sort([A, B]).with_row_index(), is valid to be sorted to either of:
+                // 1) [index, A, B]
+                // 2) [A, B, index]
+                // We choose (2), as that does better for the following case:
+                // `.sort([A, B]).with_row_index().join_asof(on=[A, B])`
+                // as the join_asof can successfully validate the input has a sorted (prefix) of
+                // [A, B],
+                rec!(*input)
+                    .as_ref()
+                    .map_or(Default::default(), |x| x.0.iter().cloned())
+                    .chain(Some(Sorted {
+                        column: name.clone(),
+                        descending: Some(false),
+                        nulls_last: Some(false),
+                    }))
+                    .collect(),
+            )),
             _ => None,
         },
         IR::Union { .. } => None,

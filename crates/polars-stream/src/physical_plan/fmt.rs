@@ -365,6 +365,7 @@ fn visualize_plan_rec(
         PhysNodeKind::ColumnarFunction {
             inputs,
             func: _,
+            arg_map: _,
             output_name,
             format_str,
         } => {
@@ -490,6 +491,7 @@ fn visualize_plan_rec(
             if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
             &[*input][..],
         ),
+        PhysNodeKind::IsSorted { input, .. } => ("is_sorted".to_owned(), &[*input][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::UnorderedUnion { inputs } => {
             ("unordered-union".to_string(), inputs.as_slice())
@@ -830,7 +832,7 @@ fn visualize_plan_rec(
             input_right,
             ..
         } => ("merge-sorted".to_string(), &[*input_left, *input_right][..]),
-        PhysNodeKind::Gather { target, idxs, .. } => ("gather".to_string(), &[*target, *idxs][..]),
+        PhysNodeKind::Gather { input, idxs, .. } => ("gather".to_string(), &[*input, *idxs][..]),
         #[cfg(feature = "ewma")]
         PhysNodeKind::EwmMean { input, options: _ } => ("ewm-mean".to_string(), &[*input][..]),
         #[cfg(feature = "ewma")]

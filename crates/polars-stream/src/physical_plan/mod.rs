@@ -27,7 +27,7 @@ use polars_plan::dsl::{
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
 mod io;
@@ -260,6 +260,7 @@ pub enum PhysNodeKind {
     ColumnarFunction {
         inputs: Vec<PhysStream>,
         func: Arc<dyn ColumnsUdf>,
+        arg_map: Option<FunctionArgMap>,
         output_name: PlSmallStr,
         format_str: Option<String>,
     },
@@ -346,6 +347,12 @@ pub enum PhysNodeKind {
     PeakMinMax {
         input: PhysStream,
         is_peak_max: bool,
+    },
+    IsSorted {
+        input: PhysStream,
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+        output_name: PlSmallStr,
     },
 
     OrderedUnion {
@@ -516,7 +523,7 @@ pub enum PhysNodeKind {
     },
 
     Gather {
-        target: PhysStream,
+        input: PhysStream,
         idxs: PhysStream,
         null_on_oob: bool,
     },
@@ -585,7 +592,8 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::SortedUnique { input, .. }
-            | PhysNodeKind::PeakMinMax { input, .. } => {
+            | PhysNodeKind::PeakMinMax { input, .. }
+            | PhysNodeKind::IsSorted { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -689,10 +697,10 @@ fn visit_node_inputs_mut(
                 visit(input_right);
             },
 
-            PhysNodeKind::Gather { target, idxs, .. } => {
-                rec!(target.node);
+            PhysNodeKind::Gather { input, idxs, .. } => {
+                rec!(input.node);
                 rec!(idxs.node);
-                visit(target);
+                visit(input);
                 visit(idxs);
             },
 
@@ -770,7 +778,7 @@ fn visit_node_inputs_mut(
 }
 
 fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
-    let mut refcount: PlHashMap<_, usize> = PlHashMap::new();
+    let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
     });

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import io
 import itertools
 import math
 import random
@@ -20,6 +21,7 @@ from polars.testing.parametric.strategies.core import dataframes
 
 if TYPE_CHECKING:
     from polars._typing import AsofJoinStrategy, PolarsIntegerType
+    from tests.conftest import PlMonkeyPatch
 
 
 def test_asof_join_singular_right_11966() -> None:
@@ -567,7 +569,7 @@ def test_asof_join_nearest_reference(allow_exact_matches: bool) -> None:
         return result
 
     test_dfs = []
-    rng = random.Random()
+    rng = random.Random(0)
     for n_a, n_b, n_c, n_d in itertools.product([0, 1, 2], repeat=4):
         a = rng.randint(0, 10)
         b = rng.randint(0, 10)
@@ -1184,8 +1186,11 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.may_fail_auto_streaming  # See #18927.
+@pytest.mark.may_fail_auto_streaming
 def test_asof_join_string() -> None:
+    # These set_sorted() calls are invalid, so the code is technically incorrect.
+    # However, this code used to work in the past and we'd like to know when it
+    # breaks. (See also: #18927)
     left = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None]}).set_sorted("x")
     right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted(
         "x"
@@ -1391,7 +1396,10 @@ def test_join_asof_no_exact_matches_parametric(
 
 def test_join_asof_not_sorted() -> None:
     df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
-    with pytest.raises(InvalidOperationError, match="is not sorted"):
+    with pytest.raises(
+        InvalidOperationError,
+        match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+    ):
         df.join_asof(df, on="b")
 
     # When 'by' is provided, we do not check sortedness, but a warning is received
@@ -1406,6 +1414,42 @@ def test_join_asof_not_sorted() -> None:
         df.join_asof(df, on="b", check_sortedness=False)
         df.join_asof(df, on="b", by="a", check_sortedness=False)
         assert len(w) == 0  # no warnings caught
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_asof_not_sorted_streaming_27457(
+    swap: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+    for n in range(4, 10):
+        df = pl.DataFrame({"a": (10 * [1, 2, 3])[:n]})
+        df2 = df.sort("a")
+        if swap:
+            (df, df2) = df2, df
+        with pytest.raises(
+            InvalidOperationError,
+            match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+        ):
+            df.lazy().join_asof(df2.lazy(), on="a").collect(engine="streaming")
+
+
+@pytest.mark.parametrize("swap", [False, True])
+def test_join_asof_not_sorted_streaming_grouped_27457(
+    swap: bool, plmonkeypatch: PlMonkeyPatch
+) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "3")
+    for n in range(4, 10):
+        df = pl.DataFrame({"group": (10 * [1, 2, 3])[:n]})
+        df2 = df.sort("group")
+        lf = df.lazy().set_sorted("group").with_row_index("a")  # Deliberately invalid
+        lf2 = df2.lazy().set_sorted("group").with_row_index("a")
+        if swap:
+            (lf, lf2) = lf2, lf
+        with pytest.raises(
+            InvalidOperationError,
+            match="argument in operation 'asof_join' is not sorted, please sort the 'expr/series/column' first",
+        ):
+            lf.join_asof(lf2, on="a", by="group").collect(engine="streaming")
 
 
 @pytest.mark.parametrize(
@@ -1781,3 +1825,57 @@ def test_join_asof_by_nulls_27165_2() -> None:
         .drop("group_right")
     )
     assert_frame_equal(actual, expected)
+
+
+def test_join_asof_maintain_order_left_27526() -> None:
+    N_IDS = 20
+    N_TS = 100_000
+    data = io.BytesIO()
+    metadata = io.BytesIO()
+
+    pl.DataFrame(
+        {
+            "id": [i for i in range(N_IDS) for _ in range(N_TS)],
+            "ts": [j for _ in range(N_IDS) for j in range(N_TS)],
+        }
+    ).sort("id", "ts").write_parquet(data)
+    pl.DataFrame(
+        {
+            "id": range(N_IDS),
+            "name": [f"name_{i}" for i in range(N_IDS)],
+        }
+    ).write_parquet(metadata)
+
+    joined = pl.scan_parquet(data.getvalue()).join(
+        pl.scan_parquet(metadata.getvalue()),
+        on="id",
+        how="left",
+        maintain_order="left_right",
+    )
+    q = joined.set_sorted("id", "ts").join_asof(
+        pl.scan_parquet(data.getvalue()).set_sorted("id", "ts"),
+        on="ts",
+        by="id",
+        check_sortedness=False,
+    )
+    assert q.collect(engine="streaming")["id"].is_sorted(), (
+        "expected asof_join to maintain left ordering"
+    )
+
+
+def test_join_asof_buffer_ordering_27619() -> None:
+    n = 10
+    for n_dataframes in range(1, 20):
+        linspace = pl.select(pl.linear_space(0, 1, n).alias("a"))
+        left_dfs = pl.concat(
+            [linspace.lazy()]
+            + [linspace.slice(0, 0).lazy() for _ in range(n_dataframes - 1)]
+        )
+        left_lazy = left_dfs.set_sorted("a")
+        right_lazy = left_dfs.select(pl.col("a") - 0.5).set_sorted("a")
+        q = left_lazy.join_asof(
+            right_lazy,
+            on="a",
+            check_sortedness=False,
+        )
+        assert_frame_equal(q.collect(engine="streaming"), q.collect(engine="in-memory"))

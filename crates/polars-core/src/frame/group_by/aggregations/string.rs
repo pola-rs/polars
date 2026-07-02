@@ -4,7 +4,7 @@ pub fn _agg_helper_idx_bin<'a, F>(groups: &'a GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &'a IdxVec)) -> Option<&'a [u8]> + Send + Sync,
 {
-    let ca: BinaryChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BinaryChunked = RAYON.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -12,7 +12,7 @@ pub fn _agg_helper_slice_bin<'a, F>(groups: &'a [[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<&'a [u8]> + Send + Sync,
 {
-    let ca: BinaryChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BinaryChunked = RAYON.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
@@ -20,7 +20,7 @@ impl BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_min<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -84,7 +84,7 @@ impl BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     pub(crate) unsafe fn agg_max<'a>(&'a self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -145,7 +145,7 @@ impl BinaryChunked {
 
     pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
         // fast paths, consistent with other impls
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -200,7 +200,7 @@ impl BinaryChunked {
 
     pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
         // fast paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);

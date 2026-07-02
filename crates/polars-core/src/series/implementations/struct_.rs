@@ -37,16 +37,6 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.set_flags(flags);
     }
 
-    // TODO! remove this. Very slow. Asof join should use row-encoding.
-    unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
-        let other = other.struct_().unwrap();
-        self.0
-            .fields_as_series()
-            .iter()
-            .zip(other.fields_as_series())
-            .all(|(s, other)| s.equal_element(idx_self, idx_other, &other))
-    }
-
     fn vec_hash(
         &self,
         build_hasher: PlSeedableRandomStateQuality,
@@ -232,7 +222,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         if self.len() < 2 {
             return Ok(self.0.clone().into_series());
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, false);
         // SAFETY:
         // groups are in bounds
@@ -248,7 +238,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
             1 => Ok(1),
             _ => {
                 // TODO! try row encoding
-                let main_thread = POOL.current_thread_index().is_none();
+                let main_thread = RAYON.current_thread_index().is_none();
                 let groups = self.group_tuples(main_thread, false)?;
                 Ok(groups.len())
             },
@@ -262,12 +252,13 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         if self.len() == 1 {
             return Ok(IdxCa::new_vec(self.name().clone(), vec![0 as IdxSize]));
         }
-        let main_thread = POOL.current_thread_index().is_none();
+        let main_thread = RAYON.current_thread_index().is_none();
         let groups = self.group_tuples(main_thread, true)?;
         let first = groups.take_group_firsts();
         Ok(IdxCa::from_vec(self.name().clone(), first))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         let ca = encode_rows_unordered(&[self.0.clone().into_column()])?;
         ChunkUnique::unique_id(&ca)

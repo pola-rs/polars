@@ -36,14 +36,11 @@ pub(super) fn convert_functions(
                 A::Max => IA::Max,
                 A::Sum => IA::Sum,
                 A::ToList => IA::ToList,
-                A::Unique(stable) => IA::Unique(stable),
-                A::NUnique => IA::NUnique,
                 A::Std(v) => IA::Std(v),
                 A::Var(v) => IA::Var(v),
                 A::Mean => IA::Mean,
                 A::Median => IA::Median,
                 A::Sort(sort_options) => IA::Sort(sort_options),
-                A::Reverse => IA::Reverse,
                 A::ArgMin => IA::ArgMin,
                 A::ArgMax => IA::ArgMax,
                 A::Get(v) => IA::Get(v),
@@ -173,9 +170,6 @@ pub(super) fn convert_functions(
                 #[cfg(feature = "diff")]
                 L::Diff { n, null_behavior } => IL::Diff { n, null_behavior },
                 L::Sort(sort_options) => IL::Sort(sort_options),
-                L::Reverse => IL::Reverse,
-                L::Unique(v) => IL::Unique(v),
-                L::NUnique => IL::NUnique,
                 #[cfg(feature = "list_sets")]
                 L::SetOperation(set_operation) => IL::SetOperation(set_operation),
                 L::Join(v) => IL::Join(v),
@@ -444,6 +438,8 @@ pub(super) fn convert_functions(
             I::Boolean(match boolean_function {
                 B::Any { ignore_nulls } => IB::Any { ignore_nulls },
                 B::All { ignore_nulls } => IB::All { ignore_nulls },
+                B::IsEmpty { ignore_nulls } => IB::IsEmpty { ignore_nulls },
+                B::HasNulls => IB::HasNulls,
                 B::IsNull => IB::IsNull,
                 B::IsNotNull => IB::IsNotNull,
                 B::IsFinite => IB::IsFinite,
@@ -471,6 +467,13 @@ pub(super) fn convert_functions(
                     abs_tol,
                     rel_tol,
                     nans_equal,
+                },
+                B::IsSorted {
+                    descending,
+                    nulls_last,
+                } => IB::IsSorted {
+                    descending,
+                    nulls_last,
                 },
                 B::AllHorizontal => {
                     let Some(fst) = e.first() else {
@@ -806,6 +809,7 @@ pub(super) fn convert_functions(
         },
         F::DropNans => I::DropNans,
         F::DropNulls => I::DropNulls,
+        F::Quantile { method } => I::Quantile { method },
         #[cfg(feature = "mode")]
         F::Mode { maintain_order } => I::Mode { maintain_order },
         #[cfg(feature = "moment")]

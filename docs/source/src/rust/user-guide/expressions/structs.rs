@@ -111,8 +111,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         // iterate both `ChunkedArrays`
                         let result: Int32Chunked = ca_a
-                            .into_iter()
-                            .zip(ca_b)
+                            .iter()
+                            .zip(ca_b.iter())
                             .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
                                 (Some(a), Some(b)) => Some(a.len() as i32 + b),
                                 _ => None,

@@ -1,8 +1,9 @@
 use std::ops::Range;
 
+use polars_async::primitives::distributor_channel::{self};
 use polars_buffer::Buffer;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
-use polars_io::pl_async;
 use polars_io::prelude::_csv_read_internal::CountLines;
 use polars_io::utils::compression::ByteSourceReader;
 use polars_io::utils::slice::SplitSlicePosition;
@@ -11,7 +12,6 @@ use polars_utils::mem::prefetch::prefetch_l2;
 use polars_utils::slice_enum::Slice;
 
 use super::{NO_SLICE, SLICE_ENDED};
-use crate::async_primitives::distributor_channel::{self};
 use crate::nodes::MorselSeq;
 use crate::utils::tokio_handle_ext;
 
@@ -80,9 +80,8 @@ impl LineBatchSource {
         let verbose = self.verbose;
         let mut line_batch_tx = self.line_batch_tx;
 
-        let read_loop_handle = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime().spawn_blocking(move || {
-                let handle = tokio::runtime::Handle::current();
+        let read_loop_handle =
+            tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn_blocking(move || {
                 if verbose {
                     eprintln!("[CsvSource]: Start line splitting async");
                 }
@@ -100,14 +99,13 @@ impl LineBatchSource {
 
                 while let Some(batch) = producer.next_batch()? {
                     // Effectively, this is `blocking_send`.
-                    if handle.block_on(line_batch_tx.send(batch)).is_err() {
+                    if ASYNC.block_on(line_batch_tx.send(batch)).is_err() {
                         break;
                     }
                 }
 
                 PolarsResult::Ok(producer.n_rows_skipped())
-            }),
-        );
+            }));
 
         let n_rows_skipped = read_loop_handle.await.unwrap()?;
 

@@ -76,6 +76,11 @@ pub(crate) enum SerializableDslPlanNode {
         predicates: Vec<Expr>,
         options: Arc<JoinOptions>,
     },
+    Gather {
+        input: DslPlanKey,
+        idxs: DslPlanKey,
+        null_on_oob: bool,
+    },
     HStack {
         input: DslPlanKey,
         exprs: Vec<Expr>,
@@ -252,6 +257,15 @@ fn convert_dsl_plan_to_serializable_plan(
             predicates: predicates.clone(),
             options: options.clone(),
         },
+        DP::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => SP::Gather {
+            input: dsl_plan_key(input, arenas),
+            idxs: dsl_plan_key(idxs, arenas),
+            null_on_oob: *null_on_oob,
+        },
         DP::HStack {
             input,
             exprs,
@@ -372,6 +386,7 @@ fn convert_dsl_plan_to_serializable_plan(
             dsl,
             version: _,
             node: _,
+            opt_flags: _,
         } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
     }
 }
@@ -499,6 +514,15 @@ fn try_convert_serializable_plan_to_dsl_plan(
             right_on: right_on.clone(),
             predicates: predicates.clone(),
             options: options.clone(),
+        }),
+        SP::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => Ok(DP::Gather {
+            input: get_dsl_plan(*input, ser_dsl_plan, arenas)?,
+            idxs: get_dsl_plan(*idxs, ser_dsl_plan, arenas)?,
+            null_on_oob: *null_on_oob,
         }),
         SP::HStack {
             input,

@@ -60,6 +60,23 @@ a:visited {
     margin: 0 !important;
 }
 
+/* Polars Cloud announcement banner — hidden by default, shown by JS if not dismissed */
+.bd-header-announcement {
+    background-color: #0075ff;
+    color: #ffffff;
+    display: none;
+}
+
+.bd-header-announcement a {
+    color: #ffffff;
+}
+
+.bd-header-announcement__content a {
+    font-weight: 600;
+    text-decoration: underline;
+}
+
+
 /* give code examples the same faint drop-shadow as admonitions */
 pre {
     box-shadow: 0 .2rem .5rem var(--pst-color-shadow), 0 0 .0625rem var(--pst-color-shadow) !important;

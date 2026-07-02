@@ -333,7 +333,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     lf1 = pl.scan_parquet(tmp_path / "df1.parquet")
     lf2 = pl.scan_parquet(tmp_path / "df2.parquet")
     query = (
-        pl.concat([lf1, lf2], how="horizontal")
+        pl.concat([lf1, lf2], how="horizontal", strict=True)
         .group_by("id")
         .agg(pl.all().mean())
         .sort(pl.col("id"))
@@ -455,4 +455,23 @@ def test_streaming_strptime_infer_leading_nulls(
     df = pl.DataFrame({"s": [None, None, "2020-01-01", "2021-06-15"]})
     result = df.lazy().select(pl.col("s").str.to_date()).collect(engine="streaming")
     expected = df.lazy().select(pl.col("s").str.to_date()).collect()
+    assert_frame_equal(result, expected)
+
+
+def test_streaming_hconcat_strict_27372() -> None:
+    data = pl.LazyFrame({"ct": [1, 2, 3]}, schema={"ct": pl.UInt8})
+    lf = pl.concat(
+        [
+            data.select(
+                x=pl.col.ct
+                ^ pl.lit(pl.Series("LUT", [[0]], pl.List(pl.UInt8))).list.get(0)
+            ),
+            data,
+        ],
+        how="horizontal",
+        strict=True,
+    )
+
+    result = lf.collect(engine="streaming")
+    expected = lf.collect(engine="in-memory")
     assert_frame_equal(result, expected)

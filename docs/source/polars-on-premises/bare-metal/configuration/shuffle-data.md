@@ -47,11 +47,11 @@ shuffle_location.shared_filesystem.path = "/mnt/storage/polars/shuffle"
 # ...
 ```
 
-## S3 compatible storage
+## S3-compatible storage
 
-S3 compatible storage is similar to the shared filesystem storage described above, but uses the S3
+S3-compatible storage is similar to the shared filesystem storage described above, but uses the S3
 API. It has the same advantages and disadvantages as the shared filesystem storage. You can
-configure S3 compatible storage as follows:
+configure S3-compatible storage as follows:
 
 ```toml
 [worker]
@@ -61,7 +61,7 @@ shuffle_location.s3.aws_secret_access_key = "YOURSECRETKEY"
 shuffle_location.s3.aws_access_key_id = "YOURACCESSKEY"
 ```
 
-If you self-host an S3 compatible storage solution, you can override the `aws_endpoint_url`
+If you self-host an S3-compatible storage solution, you can override the `aws_endpoint_url`
 configuration option.
 
 ```toml

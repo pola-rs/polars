@@ -5,7 +5,7 @@ import os
 from functools import wraps
 from typing import TYPE_CHECKING, TypeVar
 
-from polars._utils.various import issue_warning
+from polars._warnings import issue_warning
 from polars.exceptions import UnstableWarning
 
 if TYPE_CHECKING:

@@ -125,9 +125,9 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
         #[cfg(feature = "dtype-array")]
         Array(_, _) => {
             // @Optimize. This is horrendous
+            let fields = std::slice::from_ref(lhs.array().unwrap().ref_field());
             let lhs = lhs.row_encode_unordered()?;
             let rhs = rhs.row_encode_unordered()?;
-            let fields = std::slice::from_ref(lhs.ref_field());
             merge_ca(&lhs, &rhs, merge_indicator)
                 .row_decode_unordered(fields)?
                 .fields_as_series()
@@ -136,9 +136,9 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
         },
         List(_) => {
             // @Optimize. This is horrendous
+            let fields = std::slice::from_ref(lhs.list().unwrap().ref_field());
             let lhs = lhs.row_encode_unordered()?;
             let rhs = rhs.row_encode_unordered()?;
-            let fields = std::slice::from_ref(lhs.ref_field());
             merge_ca(&lhs, &rhs, merge_indicator)
                 .row_decode_unordered(fields)?
                 .fields_as_series()
@@ -164,14 +164,12 @@ fn merge_ca<'a, T>(
 ) -> ChunkedArray<T>
 where
     T: PolarsDataType + 'static,
-    &'a ChunkedArray<T>: IntoIterator,
-    T::Array: ArrayFromIterDtype<<&'a ChunkedArray<T> as IntoIterator>::Item>,
 {
     let dtype = a.dtype().clone();
 
     let total_len = a.len() + b.len();
-    let mut a = a.into_iter();
-    let mut b = b.into_iter();
+    let mut a = a.iter();
+    let mut b = b.iter();
 
     let iter = merge_indicator.iter().map(|a_indicator| {
         if *a_indicator {
@@ -201,8 +199,8 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
 
     if lhs.dtype().is_nested() {
         return Ok(get_merge_indicator(
-            lhs.row_encode_ordered(false, false)?.into_iter(),
-            rhs.row_encode_ordered(false, false)?.into_iter(),
+            lhs.row_encode_ordered(false, false)?.iter(),
+            rhs.row_encode_ordered(false, false)?.iter(),
         ));
     }
 
@@ -214,29 +212,29 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
         DataType::Boolean => {
             let lhs = lhs_s.bool().unwrap();
             let rhs = rhs_s.bool().unwrap();
-            get_merge_indicator(lhs.into_iter(), rhs.into_iter())
+            get_merge_indicator(lhs.iter(), rhs.iter())
         },
         DataType::Binary => {
             let lhs = lhs_s.binary().unwrap();
             let rhs = rhs_s.binary().unwrap();
-            get_merge_indicator(lhs.into_iter(), rhs.into_iter())
+            get_merge_indicator(lhs.iter(), rhs.iter())
         },
         DataType::String => {
             let lhs = lhs.str().unwrap().as_binary();
             let rhs = rhs.str().unwrap().as_binary();
-            get_merge_indicator(lhs.into_iter(), rhs.into_iter())
+            get_merge_indicator(lhs.iter(), rhs.iter())
         },
         DataType::BinaryOffset => {
             let lhs = lhs_s.binary_offset().unwrap();
             let rhs = rhs_s.binary_offset().unwrap();
-            get_merge_indicator(lhs.into_iter(), rhs.into_iter())
+            get_merge_indicator(lhs.iter(), rhs.iter())
         },
         dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(lhs_s.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs_s.as_ref().as_ref().as_ref();
                     let rhs: &ChunkedArray<$T> = rhs_s.as_ref().as_ref().as_ref();
 
-                    get_merge_indicator(lhs.into_iter(), rhs.into_iter())
+                    get_merge_indicator(lhs.iter(), rhs.iter())
 
             })
         },
@@ -260,10 +258,10 @@ where
     let a_len = a_iter.size_hint().0;
     let b_len = b_iter.size_hint().0;
     if a_len == 0 {
-        return vec![true; b_len];
+        return vec![B_INDICATOR; b_len];
     };
     if b_len == 0 {
-        return vec![false; a_len];
+        return vec![A_INDICATOR; a_len];
     }
 
     let mut current_a = T::default();

@@ -454,6 +454,10 @@ impl PyExpr {
             .into()
     }
 
+    fn is_sorted(&self, descending: Option<bool>, nulls_last: Option<bool>) -> Self {
+        self.inner.clone().is_sorted(descending, nulls_last).into()
+    }
+
     #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
@@ -887,6 +891,13 @@ impl PyExpr {
     }
     fn all(&self, ignore_nulls: bool) -> Self {
         self.inner.clone().all(ignore_nulls).into()
+    }
+    fn is_empty(&self, ignore_nulls: bool) -> Self {
+        self.inner.clone().is_empty(ignore_nulls).into()
+    }
+
+    fn has_nulls(&self) -> Self {
+        self.inner.clone().has_nulls().into()
     }
 
     fn log(&self, base: PyExpr) -> Self {

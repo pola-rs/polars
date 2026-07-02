@@ -38,7 +38,6 @@ pub fn read_parquet_metadata(
     use std::io::Cursor;
 
     use polars_error::feature_gated;
-    use polars_io::pl_async::get_runtime;
     use polars_parquet::read::read_metadata;
     use polars_parquet::read::schema::read_custom_key_value_metadata;
 
@@ -60,7 +59,7 @@ pub fn read_parquet_metadata(
                     use polars_error::PolarsResult;
 
                     py.detach(|| {
-                        get_runtime().block_on(async {
+                        polars_core::runtime::ASYNC.block_on(async {
                             let mut reader =
                                 ParquetObjectStore::from_uri(p, cloud_options.as_ref(), None)
                                     .await?;
@@ -86,6 +85,74 @@ pub fn read_parquet_metadata(
         dict.set_item(key.as_str(), value.as_str())?;
     }
     Ok(dict.unbind())
+}
+
+/// Decode a parquet footer, optionally apply `FileMetadata::pruned`, then
+/// bincode-encode and return the byte length of the wire form.
+///
+/// Exposed for out-of-tree measurement of the IR-plan-borne metadata wire
+/// form (the `bincode(FileMetadata)` blob shipped to workers in distributed
+/// execution); no caller in py-polars itself.
+///
+/// `projection = None` ⇒ encode the full `FileMetadata`. `projection =
+/// Some(cols)` ⇒ apply `pruned(cols, predicate)`. Local files only.
+#[cfg(all(feature = "parquet", feature = "json"))]
+#[pyfunction]
+pub fn _bench_parquet_metadata_bincode_size(
+    path: &str,
+    projection: Option<Vec<String>>,
+    predicate: Vec<String>,
+) -> PyResult<usize> {
+    use polars_parquet::read::read_metadata;
+    use polars_utils::pl_serialize;
+    use polars_utils::pl_str::PlSmallStr;
+
+    let file = std::fs::File::open(path).map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+    let metadata = read_metadata(&mut BufReader::new(file)).map_err(PyPolarsErr::from)?;
+
+    // Match the IR-plan serializer's framing format.
+    let bytes = match projection {
+        None => {
+            pl_serialize::serialize_to_bytes::<_, false>(&metadata).map_err(PyPolarsErr::from)?
+        },
+        Some(keep) => {
+            let keep_pl: Vec<PlSmallStr> = keep.into_iter().map(PlSmallStr::from).collect();
+            let pred_pl: Vec<PlSmallStr> = predicate.into_iter().map(PlSmallStr::from).collect();
+            let pruned = metadata
+                .pruned(&keep_pl, &pred_pl)
+                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+            pl_serialize::serialize_to_bytes::<_, false>(&pruned).map_err(PyPolarsErr::from)?
+        },
+    };
+    Ok(bytes.len())
+}
+
+/// Decode a parquet footer, apply `FileMetadata::pruned(projection, predicate)`,
+/// and return the result as a JSON string. Format-agnostic custom serde lets
+/// the same wire DTOs emit JSON for inspection or bincode for dispatch.
+///
+/// Used by py-polars tests to assert structural prune behavior (only kept
+/// columns survive, stats only on predicate columns). Local files only.
+#[cfg(all(feature = "parquet", feature = "json"))]
+#[pyfunction]
+pub fn _parquet_metadata_pruned_json(
+    path: &str,
+    projection: Vec<String>,
+    predicate: Vec<String>,
+) -> PyResult<String> {
+    use polars_parquet::read::read_metadata;
+    use polars_utils::pl_str::PlSmallStr;
+
+    let file = std::fs::File::open(path).map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+    let metadata = read_metadata(&mut BufReader::new(file)).map_err(PyPolarsErr::from)?;
+
+    let keep: Vec<PlSmallStr> = projection.into_iter().map(PlSmallStr::from).collect();
+    let pred: Vec<PlSmallStr> = predicate.into_iter().map(PlSmallStr::from).collect();
+    let pruned = metadata
+        .pruned(&keep, &pred)
+        .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+
+    serde_json::to_string(&pruned).map_err(|e| PyPolarsErr::Other(e.to_string()).into())
 }
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]

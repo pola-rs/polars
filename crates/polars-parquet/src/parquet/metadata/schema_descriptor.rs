@@ -2,8 +2,6 @@ use std::sync::Arc;
 
 use polars_parquet_format::SchemaElement;
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use super::column_descriptor::{BaseType, ColumnDescriptor, Descriptor};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -13,8 +11,12 @@ use crate::parquet::schema::types::{FieldInfo, ParquetType};
 
 /// A schema descriptor. This encapsulates the top-level schema for all the
 /// columns, as well as the descriptors for the primitive columns.
+//
+// Custom serde: only `(name, fields)` is sent over the wire; `leaves` is
+// reconstructed via `Self::new`'s DFS on deserialize. Auto-derive would
+// duplicate each leaf's parent `ParquetType` through `BaseType::Arc`,
+// causing 100×–1000× wire bloat on wide nested schemas.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct SchemaDescriptor {
     name: PlSmallStr,
     // The top-level schema (the "message" type).
@@ -26,6 +28,35 @@ pub struct SchemaDescriptor {
     // ownership is `(Arc::clone, index)` instead of a deep `ColumnDescriptor`
     // clone. See [`super::ColumnChunkMetadata`].
     leaves: Arc<Vec<ColumnDescriptor>>,
+}
+
+#[cfg(feature = "serde")]
+impl serde::Serialize for SchemaDescriptor {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        #[derive(serde::Serialize)]
+        struct Wire<'a> {
+            name: &'a PlSmallStr,
+            fields: &'a [ParquetType],
+        }
+        Wire {
+            name: &self.name,
+            fields: &self.fields,
+        }
+        .serialize(s)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> serde::Deserialize<'de> for SchemaDescriptor {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Wire {
+            name: PlSmallStr,
+            fields: Vec<ParquetType>,
+        }
+        let w = Wire::deserialize(d)?;
+        Ok(Self::new(w.name, w.fields))
+    }
 }
 
 impl SchemaDescriptor {

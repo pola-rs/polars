@@ -3,12 +3,13 @@ use std::sync::Arc;
 use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
 use arrow::datatypes::ArrowDataType;
 use parking_lot::Mutex;
+use polars_async::executor::ALLOW_RAYON_THREADS;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, IntoColumn, PlHashMap, PlHashSet};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::series::Series;
-use polars_core::{ALLOW_RAYON_THREADS, SchemaExtPl, config};
+use polars_core::{SchemaExtPl, config};
 use polars_error::{PolarsResult, polars_ensure};
 use polars_expr::dispatch::function_expr_to_udf;
 use polars_expr::state::ExecutionState;
@@ -21,6 +22,7 @@ use polars_plan::dsl::{CallbackSinkType, ExtraColumnsPolicy, FileScanIR, SinkTyp
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue, write_ir_non_recursive};
 use polars_plan::prelude::*;
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
@@ -206,10 +208,12 @@ pub fn lower_ir(
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
 
-            if selectors
-                .iter()
-                .all(|e| matches!(expr_arena.get(e.node()), AExpr::Len | AExpr::Column(_)))
-            {
+            if selectors.iter().all(|e| {
+                matches!(
+                    expr_arena.get(e.node()),
+                    AExpr::Len | AExpr::Column(_) | AExpr::Eval { .. } | AExpr::StructField(_)
+                )
+            }) {
                 disable_morsel_split.get_or_insert(true);
             }
 
@@ -286,6 +290,7 @@ pub fn lower_ir(
                 maintain_order,
                 chunk_size,
             }) => {
+                disable_morsel_split.get_or_insert(true);
                 let function = function.clone();
                 let maintain_order = *maintain_order;
                 let chunk_size = *chunk_size;
@@ -299,6 +304,10 @@ pub fn lower_ir(
             },
 
             SinkTypeIR::File(options) => {
+                // Defer to the chunk-aware morsel splitting strategy in morsel_resize_pipeline.
+                // This cannot currently be done by the InMemorySource as the morsel splitting
+                // is done against a configured TargetSinkMorselSize.
+                disable_morsel_split.get_or_insert(true);
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
                 PhysNodeKind::FileSink { input, options }
@@ -736,13 +745,16 @@ pub fn lower_ir(
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet {
                         options,
-                        metadata: first_metadata,
+                        first_metadata,
+                        // Used at plan time (optimizer passes, cloud
+                        // scheduler). The streaming reader reads per-file
+                        // footers at scan time and only needs `first_metadata`.
+                        metadata_per_source: _,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
                             first_metadata: first_metadata.clone(),
-                            prefetch_limit: RelaxedCell::new_usize(0),
-                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
                         },
@@ -755,8 +767,7 @@ pub fn lower_ir(
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         options: Arc::new(options.clone()),
                         first_metadata: first_metadata.clone(),
-                        prefetch_limit: RelaxedCell::new_usize(0),
-                        prefetch_semaphore: std::sync::OnceLock::new(),
+                        pipeline_budget: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
                         io_metrics: std::sync::OnceLock::new(),
                     }) as _,
@@ -1373,6 +1384,23 @@ pub fn lower_ir(
             }
         },
 
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => {
+            let input = *input;
+            let idxs = *idxs;
+            let null_on_oob = *null_on_oob;
+            let phys_input = lower_ir!(input)?;
+            let phys_idxs = lower_ir!(idxs)?;
+            PhysNodeKind::Gather {
+                input: phys_input,
+                idxs: phys_idxs,
+                null_on_oob,
+            }
+        },
+
         IR::Distinct { input, options } => {
             let input = *input;
             let options = options.clone();
@@ -1597,10 +1625,22 @@ pub fn lower_ir(
             return Ok(stream);
         },
         IR::ExtContext { .. } => todo!(),
-        IR::UnoptimizedDispatch { inputs, operation } => {
+        IR::UnoptimizedDispatch {
+            inputs,
+            arg_map,
+            operation,
+        } => {
             let operation = operation.clone();
             let inputs = inputs.clone();
-            let trans_inputs = inputs.iter().map(|input| lower_ir!(*input)).try_collect()?;
+            let arg_map = arg_map.clone();
+
+            let trans_inputs: Vec<_> =
+                inputs.iter().map(|input| lower_ir!(*input)).try_collect()?;
+
+            let trans_schemas: Vec<Arc<Schema>> = trans_inputs
+                .iter()
+                .map(|i| i.output_schema(phys_sm).clone())
+                .collect();
 
             match operation {
                 UnoptimizedOperation::ColumnarFunction {
@@ -1608,27 +1648,49 @@ pub fn lower_ir(
                     options,
                     output_name,
                 } => {
-                    if options.is_elementwise() {
-                        // If it is elementwise we can just zip the inputs together.
-                        let mut zip_schema = Schema::default();
-                        for input in inputs {
-                            zip_schema.hstack_mut(
-                                (*IR::schema_with_cache(input, ir_arena, schema_cache)).clone(),
-                            )?;
-                        }
-                        let zip_schema = Arc::new(zip_schema);
+                    if trans_inputs.len() == 1 {
+                        // Single input, can directly dispatch through a select.
+                        let expr_input =
+                            arg_map.arg_selectors(&trans_schemas, expr_arena).collect();
+                        let expr = ExprIR::from_node(
+                            expr_arena.add(AExpr::Function {
+                                input: expr_input,
+                                function,
+                                options,
+                            }),
+                            expr_arena,
+                        )
+                        .with_alias(output_name);
+                        return build_select_stream(
+                            trans_inputs[0],
+                            &[expr],
+                            expr_arena,
+                            phys_sm,
+                            expr_cache,
+                            ctx,
+                        );
+                    } else if options.is_row_separable() {
+                        // We can zip the inputs together and dispatch through a select.
+
+                        let zip_schema = {
+                            let mut zip_schema = Schema::default();
+                            for schema in &trans_schemas {
+                                // Will panic on column name collision
+                                zip_schema.hstack_mut(schema.as_ref().clone())?;
+                            }
+                            Arc::new(zip_schema)
+                        };
+
                         let zip_node = phys_sm.insert(PhysNode::new(
-                            zip_schema.clone(),
+                            zip_schema,
                             PhysNodeKind::Zip {
                                 inputs: trans_inputs,
                                 zip_behavior: ZipBehavior::Broadcast,
                             },
                         ));
 
-                        let expr_input = zip_schema
-                            .iter_names()
-                            .map(|n| ExprIR::from_column_name(n.clone(), expr_arena))
-                            .collect_vec();
+                        let expr_input =
+                            arg_map.arg_selectors(&trans_schemas, expr_arena).collect();
                         let expr = ExprIR::from_node(
                             expr_arena.add(AExpr::Function {
                                 input: expr_input,
@@ -1652,9 +1714,57 @@ pub fn lower_ir(
                         PhysNodeKind::ColumnarFunction {
                             inputs: trans_inputs,
                             func,
+                            arg_map: Some(arg_map),
                             output_name,
                             format_str,
                         }
+                    }
+                },
+
+                UnoptimizedOperation::AnonymousColumnsUdf {
+                    function,
+                    options: _,
+                    output_name,
+                    fmt_str,
+                    ctx_schema: _,
+                } => {
+                    let func = function
+                        .clone()
+                        .materialize()
+                        .unwrap()
+                        .into_inner()
+                        .as_column_udf();
+                    let format_str = Some(format!("ANONYMOUS {fmt_str}"));
+                    PhysNodeKind::ColumnarFunction {
+                        inputs: trans_inputs,
+                        func,
+                        arg_map: Some(arg_map),
+                        output_name,
+                        format_str,
+                    }
+                },
+
+                UnoptimizedOperation::DynamicSlice { output_name } => {
+                    let (input_name, dtype) = {
+                        let (input_idx, col_idx, _) = arg_map.iter().next().unwrap();
+                        trans_schemas[input_idx].get_at_index(col_idx).unwrap()
+                    };
+                    let slice = {
+                        let &[input, offset, length] = trans_inputs.as_array().unwrap();
+                        phys_sm.insert(PhysNode::new(
+                            Arc::new(Schema::from_iter([(input_name.clone(), dtype.clone())])),
+                            PhysNodeKind::DynamicSlice {
+                                input,
+                                offset,
+                                length,
+                            },
+                        ))
+                    };
+
+                    // Rename the output
+                    PhysNodeKind::SimpleProjection {
+                        input: PhysStream::first(slice),
+                        columns: PlIndexMap::from_iter([(output_name.clone(), input_name.clone())]),
                     }
                 },
             }

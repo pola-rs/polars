@@ -7,7 +7,6 @@ use polars_core::schema::SchemaRef;
 use polars_core::series::Series;
 use polars_utils::range::check_range;
 
-use crate::morsel::MorselSeq;
 use crate::pipe::PortReceiver;
 
 #[derive(Clone, Debug)]
@@ -90,6 +89,7 @@ impl DataFrameSearchBuffer {
         self.total_rows -= offset;
         self.total_rows = usize::min(self.total_rows, len);
         self.frozen = true;
+        self.gc();
         self
     }
 
@@ -156,7 +156,31 @@ impl DataFrameSearchBuffer {
     }
 
     pub(super) async fn stop_and_buffer_from_pipe(&mut self, port: Option<&mut PortReceiver>) {
-        stop_and_buffer_pipe_contents(port, &mut |df, _| self.push_df(df)).await
+        stop_and_buffer_pipe_contents(port, &mut |df| self.push_df(df)).await
+    }
+
+    pub(super) fn select<I, S>(&self, columns: I) -> Self
+    where
+        I: IntoIterator<Item = S> + Clone,
+        S: AsRef<str>,
+    {
+        let select_map = |df: &DataFrame| df.select(columns.clone()).expect("projection failed");
+        let dfs_at_offsets = self
+            .dfs_at_offsets
+            .iter()
+            .map(|(offset, df)| (*offset, select_map(df)))
+            .collect();
+        DataFrameSearchBuffer {
+            schema: self
+                .schema
+                .try_project(columns)
+                .expect("projection failed")
+                .into(),
+            dfs_at_offsets,
+            total_rows: self.total_rows,
+            skip_rows: self.skip_rows,
+            frozen: self.frozen,
+        }
     }
 }
 
@@ -165,7 +189,7 @@ pub(super) async fn stop_and_buffer_pipe_contents<F>(
     port: Option<&mut PortReceiver>,
     buffer_morsel: &mut F,
 ) where
-    F: FnMut(DataFrame, MorselSeq),
+    F: FnMut(DataFrame),
 {
     let Some(port) = port else {
         return;
@@ -173,8 +197,8 @@ pub(super) async fn stop_and_buffer_pipe_contents<F>(
 
     while let Ok(morsel) = port.recv().await {
         morsel.source_token().stop();
-        let (df, seq, _, _) = morsel.into_inner();
-        buffer_morsel(df, seq);
+        let (df, _, _, _) = morsel.into_inner();
+        buffer_morsel(df);
     }
 }
 

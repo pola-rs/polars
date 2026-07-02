@@ -2490,3 +2490,45 @@ def test_full_null_cast_to_empty_struct_23276() -> None:
 
     s = pl.Series([None, None, None])
     assert s.cast(pl.Struct({})).to_list() == [None, None, None]
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ([pl.lit(1)], [2]),
+        ([1], [pl.lit(2)]),
+        ([pl.lit(1)], [pl.lit(2)]),
+    ],
+)
+def test_replace_with_expr_raises_22591(old: list[Any], new: list[Any]) -> None:
+    s = pl.Series([1])
+    with pytest.raises(
+        InvalidOperationError,
+        match="`replace` does not support `old`/`new` values of object dtype",
+    ):
+        s.replace(old, new)
+
+
+def test_is_sorted_struct_27613() -> None:
+    s = pl.Series([{"x": 1, "y": 1}, {"x": 1, "y": 2}, {"x": 2, "y": 0}])
+    assert s.is_sorted()
+    assert not s.is_sorted(descending=True)
+
+    s = pl.Series([{"x": 2, "y": 0}, {"x": 1, "y": 2}, {"x": 1, "y": 1}])
+    assert s.is_sorted(descending=True)
+    assert not s.is_sorted()
+
+    # nulls first, ascending
+    s = pl.Series([None, {"x": 1}, {"x": 2}])
+    assert s.is_sorted(nulls_last=False)
+    assert not s.is_sorted(nulls_last=True)
+
+    # nulls last, ascending
+    s = pl.Series([{"x": 1}, {"x": 2}, None])
+    assert s.is_sorted(nulls_last=True)
+    assert not s.is_sorted(nulls_last=False)
+
+    # nulls last, descending
+    s = pl.Series([{"x": 2}, {"x": 1}, None])
+    assert s.is_sorted(descending=True, nulls_last=True)
+    assert not s.is_sorted(descending=True, nulls_last=False)

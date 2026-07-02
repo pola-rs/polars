@@ -635,7 +635,7 @@ def test_merge_join_applicable(
 )
 @pytest.mark.parametrize("n_groups", [0, 1, 2])
 @given(data=st.data())
-@settings(max_examples=10)
+@settings(max_examples=20)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,
@@ -712,6 +712,23 @@ def test_streaming_asof_join(
     plan = q.show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     assert "asof-join" in plan
 
+    expected = q.collect(engine="in-memory")
+    actual = q.collect(engine="streaming")
+    assert_frame_equal(actual, expected)
+
+
+def test_streaming_merge_join_send_port_done_27547() -> None:
+    left = pl.LazyFrame({"key": [1, 2, 3], "left_payload": ["a", "b", "c"]})
+    right = pl.LazyFrame({"key": [1, 2, 3], "right_payload": ["d", "e", "f"]})
+    q = (
+        left.set_sorted("key")
+        .join(
+            right.set_sorted("key"),
+            on="key",
+            how="inner",
+        )
+        .head(2)
+    )
     expected = q.collect(engine="in-memory")
     actual = q.collect(engine="streaming")
     assert_frame_equal(actual, expected)

@@ -591,8 +591,8 @@ where
     F: Fn(&'a str, &'a str) -> Cow<'a, str>,
 {
     let mut out: StringChunked = ca
-        .into_iter()
-        .zip(val)
+        .iter()
+        .zip(val.iter())
         .map(|(opt_src, opt_val)| match (opt_src, opt_val) {
             (Some(src), Some(val)) => Some(f(src, val)),
             (Some(src), None) => Some(Cow::from(src)),

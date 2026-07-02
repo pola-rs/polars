@@ -103,29 +103,6 @@ impl ListNameSpace {
             .map_unary(FunctionExpr::ListExpr(ListFunction::Sort(options)))
     }
 
-    /// Reverse every sublist
-    pub fn reverse(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Reverse))
-    }
-
-    /// Keep only the unique values in every sublist.
-    pub fn unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(false)))
-    }
-
-    /// Keep only the unique values in every sublist.
-    pub fn unique_stable(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::Unique(true)))
-    }
-
-    pub fn n_unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ListExpr(ListFunction::NUnique))
-    }
-
     /// Get items in every sublist by index.
     pub fn get(self, index: Expr, null_on_oob: bool) -> Expr {
         self.0.map_binary(

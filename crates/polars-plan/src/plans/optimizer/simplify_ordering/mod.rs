@@ -290,7 +290,7 @@ impl SimplifyIRNodeOrder<'_> {
 
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
-                if !options.maintain_order || out_edge.is_unordered() {
+                if !options.maintain_order || (out_edge.is_unordered() && options.slice.is_none()) {
                     options.maintain_order = false;
                     *out_edge = Edge::Unordered;
                 }
@@ -390,6 +390,18 @@ impl SimplifyIRNodeOrder<'_> {
                         },
                         JO::None | JO::Left => {},
                     }
+                }
+            },
+
+            IR::Gather { .. } => {
+                // Target is always order-sensitive.
+                let ([_input_edge, idxs_edge], [out_edge]) = unpack_edges!(3);
+                if out_edge.is_unordered() {
+                    *idxs_edge = Edge::Unordered;
+                }
+
+                if idxs_edge.is_unordered() {
+                    *out_edge = Edge::Unordered;
                 }
             },
 

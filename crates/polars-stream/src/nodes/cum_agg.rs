@@ -1,3 +1,4 @@
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_core::prelude::{AnyValue, IntoColumn};
 use polars_core::utils::last_non_null;
 use polars_error::PolarsResult;
@@ -7,7 +8,6 @@ use polars_ops::series::{
 };
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};
@@ -75,7 +75,7 @@ impl ComputeNode for CumAggNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(mut m) = recv.recv().await {
                 assert_eq!(m.df().width(), 1);
-                if m.df().height() == 0 {
+                if m.height() == 0 {
                     continue;
                 }
 

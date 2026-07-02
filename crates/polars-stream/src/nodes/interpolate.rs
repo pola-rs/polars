@@ -1,3 +1,5 @@
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::{AnyValue, Column, DataType, IntoColumn};
 use polars_core::scalar::Scalar;
 use polars_error::PolarsResult;
@@ -7,8 +9,6 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{MorselSeq, SourceToken, get_ideal_morsel_size};
 
 pub struct InterpolateNode {

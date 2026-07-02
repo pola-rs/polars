@@ -1,10 +1,9 @@
 use polars_core::error::{PolarsResult, polars_err};
 
-use crate::constants::POLARS_PLACEHOLDER;
 use crate::dsl::{DslPlan, FileScanDsl, ScanSources, SinkType};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
-pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> PolarsResult<()> {
+pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
     if std::env::var("POLARS_SKIP_CLIENT_CHECK").as_deref() == Ok("1") {
         return Ok(());
     }
@@ -22,15 +21,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan, allow_local_scans: bool) -> P
                 sources, scan_type, ..
             } => {
                 match sources {
-                    ScanSources::Paths(paths) => {
-                        if !allow_local_scans
-                            && paths
-                                .iter()
-                                .any(|p| !p.has_scheme() && p.as_str() != POLARS_PLACEHOLDER)
-                        {
-                            return ineligible_error("contains scan of local file system");
-                        }
-                    },
+                    ScanSources::Paths(_) => {},
                     ScanSources::Files(_) => {
                         return ineligible_error("contains scan of opened files");
                     },

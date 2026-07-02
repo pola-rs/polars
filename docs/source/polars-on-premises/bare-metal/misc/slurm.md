@@ -221,7 +221,7 @@ import datetime
 import polars as pl
 import polars_cloud as pc
 
-ctx = pc.ClusterContext(compute_address=os.environ["SCHEDULER_IP"])
+ctx = pc.ClusterContext(uri="http://"+os.environ["SCHEDULER_IP"])
 
 (
     pl.scan_parquet(...)

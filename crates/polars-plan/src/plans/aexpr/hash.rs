@@ -14,6 +14,7 @@ impl Hash for AExpr {
 
         match self {
             AExpr::Column(name) => name.hash(state),
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructField(name) => name.hash(state),
             AExpr::Literal(lv) => lv.hash(state),
             AExpr::Function {
@@ -100,6 +101,7 @@ impl Hash for AExpr {
                 evaluation: _,
                 variant,
             } => variant.hash(state),
+            #[cfg(feature = "dtype-struct")]
             AExpr::StructEval {
                 expr: _,
                 evaluation: _,

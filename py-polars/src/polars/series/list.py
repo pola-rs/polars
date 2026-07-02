@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.unstable import unstable
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-class ListNameSpace:
+class ListNameSpace(_NamespaceSuggestMixin):
     """Namespace for list related methods."""
 
     _accessor = "list"
@@ -832,7 +833,9 @@ class ListNameSpace:
         ]
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Series:
         """
         Returns a column with a separate row for every list element.
 
@@ -855,7 +858,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-        >>> s.list.explode()
+        >>> s.list.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [

@@ -632,7 +632,7 @@ def test_config_load_save(tmp_path: Path) -> None:
         assert os.environ.get("POLARS_VERBOSE") == "0"
 
         # ...load back from config file/string...
-        assert isinstance(cfg, str)
+        assert isinstance(cfg, str)  # pyrefly: ignore[unbound-name]
         if file is None:
             pl.Config.load(cfg)
         else:

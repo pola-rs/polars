@@ -54,7 +54,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.getitem import get_series_item_by_key
-from polars._utils.unstable import unstable
+from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     NO_DEFAULT,
@@ -125,7 +125,6 @@ if TYPE_CHECKING:
     from collections.abc import Collection, Generator, Mapping
 
     import jax
-    import numpy.typing as npt
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -1574,7 +1573,7 @@ class Series:
 
     def __array__(
         self,
-        dtype: npt.DTypeLike | None = None,
+        dtype: np.dtype[Any] | None = None,
         copy: bool | None = None,  # noqa: FBT001
     ) -> np.ndarray[Any, Any]:
         """
@@ -4130,17 +4129,35 @@ class Series:
         """
         return self._s.has_nulls()
 
-    def is_empty(self) -> bool:
+    def is_empty(self, *, ignore_nulls: bool = False) -> bool:
         """
         Check if the Series is empty.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If true a series containing only nulls will also be considered empty.
+            The default is false.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
 
         Examples
         --------
         >>> s = pl.Series("a", [], dtype=pl.Float32)
         >>> s.is_empty()
         True
+        >>> s = pl.Series("a", [None], dtype=pl.Float32)
+        >>> s.is_empty()
+        False
+        >>> s.is_empty(ignore_nulls=True)
+        True
         """
-        return self.len() == 0
+        if ignore_nulls:
+            msg = "the `ignore_nulls` parameter of `Series.is_empty()` is considered unstable."
+            issue_unstable_warning(msg)
+        return self._s.is_empty(ignore_nulls=ignore_nulls)
 
     def is_sorted(self, *, descending: bool = False, nulls_last: bool = False) -> bool:
         """
@@ -4515,7 +4532,9 @@ class Series:
         ]
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = True, keep_nulls: bool = True
+    ) -> Series:
         """
         Explode a list Series.
 
@@ -4547,7 +4566,7 @@ class Series:
             [1, 2, 3]
             [4, 5, 6]
         ]
-        >>> s.explode()
+        >>> s.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
@@ -6182,6 +6201,7 @@ class Series:
         return_dtype: PolarsDataType | None = None,
         *,
         skip_nulls: bool = True,
+        _disable_inefficient_map_warning: bool = False,
     ) -> Self:
         """
         Map a custom/user-defined function (UDF) over elements in this Series.
@@ -6264,7 +6284,9 @@ class Series:
         else:
             pl_return_dtype = parse_into_dtype(return_dtype)
 
-        warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+        if not _disable_inefficient_map_warning:
+            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+
         return self._from_pyseries(
             self._s.map_elements(
                 function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
@@ -6925,7 +6947,7 @@ class Series:
         by: IntoExpr,
         window_size: timedelta | str_,
         *,
-        min_samples: int = 1,
+        min_samples: int = 0,
         closed: ClosedInterval = "right",
     ) -> Self:
         """
@@ -8858,10 +8880,6 @@ class Series:
         replace_strict
         str.replace
 
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
-
         Examples
         --------
         Replace a single value by another value. Values that were not replaced remain
@@ -8957,10 +8975,6 @@ class Series:
         --------
         replace
         str.replace
-
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------

@@ -98,7 +98,7 @@ impl AExpr {
             Column(name) => ctx
                 .schema
                 .get_field(name)
-                .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
+                .ok_or_else(|| ctx.schema.column_not_found_err(name)),
             #[cfg(feature = "dtype-struct")]
             StructField(name) => {
                 let struct_field = ctx
@@ -247,11 +247,6 @@ impl AExpr {
                         let mut field = ctx.arena.get(*expr).to_field_impl(ctx)?;
                         field.coerce(IDX_DTYPE.implode());
                         Ok(field)
-                    },
-                    Quantile { expr, .. } => {
-                        let field = [ctx.arena.get(*expr).to_field_impl(ctx)?];
-                        let mapper = FieldsMapper::new(&field);
-                        mapper.moment_dtype()
                     },
                 }
             },
@@ -451,8 +446,7 @@ impl AExpr {
             | Agg(Var(expr, _))
             | Agg(NUnique(expr))
             | Agg(Count { input: expr, .. })
-            | Agg(AggGroups(expr))
-            | Agg(Quantile { expr, .. }) => expr_arena.get(*expr).to_name(expr_arena),
+            | Agg(AggGroups(expr)) => expr_arena.get(*expr).to_name(expr_arena),
             AnonymousFunction { input, fmt_str, .. } | AnonymousAgg { input, fmt_str, .. } => {
                 if input.is_empty() {
                     fmt_str.as_ref().clone()

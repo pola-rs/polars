@@ -116,6 +116,7 @@ impl<'a> ExprToIRContext<'a> {
 }
 
 /// Converts expression to AExpr and adds it to the arena, which uses an arena (Vec) for allocation.
+#[recursive]
 pub(super) fn to_aexpr_impl(
     expr: Expr,
     ctx: &mut ExprToIRContext,
@@ -322,22 +323,6 @@ pub(super) fn to_aexpr_impl(
                         output_name,
                     )
                 },
-                AggExpr::Quantile {
-                    expr,
-                    quantile,
-                    method,
-                } => {
-                    let (expr, output_name) = to_aexpr_mat_lit_arc!(expr)?;
-                    let (quantile, _) = to_aexpr_mat_lit_arc!(quantile)?;
-                    (
-                        IRAggExpr::Quantile {
-                            expr,
-                            quantile,
-                            method,
-                        },
-                        output_name,
-                    )
-                },
                 AggExpr::Sum(input) => {
                     let (input, output_name) = to_aexpr_mat_lit_arc!(input)?;
                     (IRAggExpr::Sum(input), output_name)
@@ -448,15 +433,10 @@ pub(super) fn to_aexpr_impl(
                 None
             };
 
-            // Convert partition_by expressions and check for duplicate names
-            let mut partition_nodes = Vec::with_capacity(partition_by.len());
-            let mut seen_names = PlHashSet::with_capacity(partition_by.len());
-
-            for expr in partition_by {
-                let (node, name) = to_aexpr_impl_materialized_lit(expr, ctx)?;
-                polars_ensure!(seen_names.insert(name.clone()), duplicate = name);
-                partition_nodes.push(node);
-            }
+            let partition_nodes = partition_by
+                .into_iter()
+                .map(|e| Ok(to_aexpr_impl_materialized_lit(e, ctx)?.0))
+                .collect::<PolarsResult<_>>()?;
 
             (
                 AExpr::Over {

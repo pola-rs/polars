@@ -1,6 +1,7 @@
 use polars_core::prelude::*;
 use polars_error::feature_gated;
 
+use crate::plans::optimizer::parquet_metadata_prune::prune_parquet_metadata;
 use crate::plans::optimizer::projection_pushdown::projection_pushdown;
 use crate::prelude::*;
 
@@ -24,8 +25,10 @@ pub use expand_datasets::ExpandedPythonScan;
 mod collapse_sort;
 pub mod deep_copy;
 mod ir_traversal;
+mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod range_merge;
 mod simplify_expr;
 pub mod simplify_ordering;
 mod slice_pushdown_expr;
@@ -152,8 +155,12 @@ pub fn optimize(
                     eprintln!("found multiple sources; run comm_subplan_elim")
                 }
 
-                run_set_cache_states =
-                    cse::cspe::common_subplan_elimination(root, ir_arena, expr_arena);
+                run_set_cache_states = cse::cspe::common_subplan_elimination(
+                    root,
+                    ir_arena,
+                    expr_arena,
+                    polars_config::config().allow_nested_cspe(),
+                );
             }
         });
     };
@@ -173,7 +180,7 @@ pub fn optimize(
     // This allows columns only needed for filters to be dropped early.
     if opt_flags.predicate_pushdown() {
         let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.new_streaming());
+            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.streaming());
         let ir = ir_arena.take(root);
         let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
         ir_arena.replace(root, ir);
@@ -188,7 +195,7 @@ pub fn optimize(
             scratch,
             verbose,
             pushdown_maintain_errors,
-            opt_flags.new_streaming(),
+            opt_flags.streaming(),
         )?;
     }
 
@@ -220,7 +227,16 @@ pub fn optimize(
     // This optimization removes branches, so we must do it when type coercion
     // is completed.
     if opt_flags.simplify_expr() {
-        rules.push(Box::new(SimplifyBooleanRule {}));
+        // RangeMergeRule turns an impossible range like `a > 5 AND a < 3` into
+        // `false`. It runs before SimplifyBooleanRule so that, in the same pass,
+        // SimplifyBooleanRule can use that `false` to collapse the whole filter
+        // into an empty scan.
+        rules.push(Box::new(range_merge::RangeMergeRule {
+            maintain_errors: pushdown_maintain_errors,
+        }));
+        rules.push(Box::new(SimplifyBooleanRule {
+            maintain_errors: pushdown_maintain_errors,
+        }));
     }
 
     if !opt_flags.eager() {
@@ -246,7 +262,7 @@ pub fn optimize(
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
         let mut optimizer = CommonSubExprOptimizer::new(
-            opt_flags.contains(OptFlags::NEW_STREAMING) | opt_flags.contains(OptFlags::GPU),
+            opt_flags.contains(OptFlags::STREAMING) | opt_flags.contains(OptFlags::GPU),
         );
         let ir_node = IRNode::new_mutate(root);
 
@@ -284,6 +300,8 @@ pub fn optimize(
     }
 
     expand_datasets::expand_datasets(root, ir_arena, expr_arena, apply_scan_predicate_to_scan_ir)?;
+
+    prune_parquet_metadata(root, ir_arena, expr_arena);
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

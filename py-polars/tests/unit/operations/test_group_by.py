@@ -60,7 +60,9 @@ def test_group_by() -> None:
     )
 
     # check if this query runs and thus column names propagate
-    df.group_by("b").agg(pl.col("c").fill_null(strategy="forward")).explode("c")
+    df.group_by("b").agg(pl.col("c").fill_null(strategy="forward")).explode(
+        "c", empty_as_null=True
+    )
 
     # get a specific column
     result = df.group_by("b", maintain_order=True).agg(pl.count("a"))
@@ -577,6 +579,36 @@ def test_group_by_iteration() -> None:
     assert result3 == expected3
 
 
+def test_group_by_next_raises_type_error() -> None:
+    # Calling next() directly on a GroupBy (not an iterator) should raise TypeError,
+    # not AttributeError. Regression test for https://github.com/pola-rs/polars/issues/12868
+    gb = pl.DataFrame({"a": [1, 2, 3]}).group_by("a")
+    with pytest.raises(TypeError):
+        next(gb)  # type: ignore[call-overload]
+
+    # iter() then next() must still work correctly, and the iterator is its own __iter__
+    it = iter(
+        pl.DataFrame({"a": [1, 1, 2], "b": [10, 20, 30]}).group_by(
+            "a", maintain_order=True
+        )
+    )
+    assert iter(it) is it  # GroupByIter.__iter__ returns self
+    name, group = next(it)
+    assert name == (1,)
+    assert group.shape == (2, 2)
+
+    # RollingGroupByIter is also its own iterator
+    dates = pl.date_range(date(2020, 1, 1), date(2020, 1, 4), eager=True)
+    df_roll = pl.DataFrame({"dt": dates, "v": [1, 2, 3, 4]})
+    roll_it = iter(df_roll.rolling("dt", period="2d"))
+    assert iter(roll_it) is roll_it  # RollingGroupByIter.__iter__ returns self
+
+    # DynamicGroupByIter is also its own iterator
+    df_dyn = pl.DataFrame({"dt": dates, "v": [1, 2, 3, 4]})
+    dyn_it = iter(df_dyn.group_by_dynamic("dt", every="2d"))
+    assert iter(dyn_it) is dyn_it  # DynamicGroupByIter.__iter__ returns self
+
+
 def test_group_by_iteration_selector() -> None:
     df = pl.DataFrame({"a": ["one", "two", "one", "two"], "b": [1, 2, 3, 4]})
     result = dict(df.group_by(cs.string()))
@@ -1025,11 +1057,11 @@ def test_group_by_with_expr_as_key() -> None:
 
     # tests: 11766
     result = gb.head(0)
-    expected = gb.agg(pl.col("x").head(0)).explode("x")
+    expected = gb.agg(pl.col("x").head(0)).explode("x", empty_as_null=True)
     assert_frame_equal(result, expected)
 
     result = gb.tail(0)
-    expected = gb.agg(pl.col("x").tail(0)).explode("x")
+    expected = gb.agg(pl.col("x").tail(0)).explode("x", empty_as_null=True)
     assert_frame_equal(result, expected)
 
 
@@ -2023,18 +2055,18 @@ def test_group_by_unique_parametric(
     sl = df.select(expr(pl.col.a))
     gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a)).drop("literal")
     if not is_scalar:
-        gb = gb.select(pl.col.a.explode())
+        gb = gb.select(pl.col.a.explode(empty_as_null=False))
     assert_frame_equal(sl, gb, check_row_order=maintain_order)
 
     # check scalar case
     sl_first = df.select(expr(pl.col.a.first()))
     gb = df.group_by(pl.lit(1)).agg(expr(pl.col.a.first())).drop("literal")
     if not is_scalar:
-        gb = gb.select(pl.col.a.explode())
+        gb = gb.select(pl.col.a.explode(empty_as_null=False))
     assert_frame_equal(sl_first, gb, check_row_order=maintain_order)
 
     li = df.select(pl.col.a.implode().list.eval(expr(pl.element())))
-    li = li.select(pl.col.a.explode())
+    li = li.select(pl.col.a.explode(empty_as_null=False))
     assert_frame_equal(sl, li, check_row_order=maintain_order)
 
 
@@ -2188,15 +2220,17 @@ def test_group_broadcast_binary_apply_expr_25046(
 
 def test_group_by_explode_none_dtype_25045() -> None:
     df = pl.DataFrame({"a": [None, None, None], "b": [1.0, 2.0, None]})
-    out_a = df.group_by(pl.lit(1)).agg(pl.col.a.explode())
+    out_a = df.group_by(pl.lit(1)).agg(pl.col.a.explode(empty_as_null=True))
     expected_a = pl.DataFrame({"literal": 1, "a": [[None, None, None]]})
     assert_frame_equal(out_a, expected_a)
 
-    out_b = df.group_by(pl.lit(1)).agg(pl.col.b.explode())
+    out_b = df.group_by(pl.lit(1)).agg(pl.col.b.explode(empty_as_null=True))
     assert len(out_a["a"][0]) == len(out_b["b"][0])
 
     out_c = df.select(
-        pl.coalesce(pl.col.a.explode(), pl.col.b.explode())
+        pl.coalesce(
+            pl.col.a.explode(empty_as_null=True), pl.col.b.explode(empty_as_null=True)
+        )
         .implode()
         .over(pl.int_range(pl.len()))
     )
@@ -2245,17 +2279,19 @@ def test_group_by_forward_backward_fill(
 
     data = df.group_by(lit=pl.lit(1)).agg(expr(cl)).drop("lit")
     if not is_scalar:
-        data = data.explode(cs.all())
+        data = data.explode(cs.all(), empty_as_null=True)
     assert_frame_equal(df.select(expr(cl)), data)
 
     data = df.group_by("g").agg(expr(cl)).drop("g")
     if not is_scalar:
-        data = data.explode(cs.all())
+        data = data.explode(cs.all(), empty_as_null=True)
     assert_frame_equal(df.select(expr(cl)), data)
 
     assert_frame_equal(
         df.select(expr(cl)),
-        df.select(cl.implode().list.eval(expr(pl.element())).explode()),
+        df.select(
+            cl.implode().list.eval(expr(pl.element())).explode(empty_as_null=True)
+        ),
     )
 
     df = pl.Schema({"x": pl.Int64()}).to_frame()
@@ -2449,7 +2485,11 @@ def test_grouped_agg_parametric(
     if not is_window:
         types["first"] = (pl.Expr.first, True, False)
         types["slice"] = (lambda e: e.slice(1, 3), False, False)
-        types["impl_expl"] = (lambda e: e.implode().explode(), False, False)
+        types["impl_expl"] = (
+            lambda e: e.implode().explode(empty_as_null=True),
+            False,
+            False,
+        )
         types["rolling"] = (
             lambda e: e.rolling(pl.row_index(), period="3i"),
             False,
@@ -3080,3 +3120,54 @@ def test_group_by_max_by_min_by_string_single_element_27171() -> None:
     result = df.group_by("key", maintain_order=True).agg(pl.col("val").min_by("by"))
     assert result.filter(pl.col("key") == "a")["val"][0] == 10
     assert result.filter(pl.col("key") == "b")["val"][0] == 30
+
+
+def test_group_by_sort_flag_27672() -> None:
+    df = pl.DataFrame(
+        {
+            "s": ["a", "b", "b", "b"],
+            "z": [1, 2, 0, None],
+        }
+    )
+
+    out = (
+        df.sort("z").group_by("s", maintain_order=True).max().sort("z", descending=True)
+    )
+    expected = pl.DataFrame({"s": ["b", "a"], "z": [2, 1]})
+    assert_frame_equal(out, expected)
+
+
+def test_group_by_when_then_with_mutated_idxs() -> None:
+    df = pl.DataFrame({"g": ["A", "A"], "v": [10.0, None], "m": [True, True]})
+    out = df.select(
+        ffill=pl.when("m").then(pl.col("v").forward_fill()).otherwise(None).over("g"),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "ffill": [10.0, 10.0],
+            }
+        ),
+    )
+
+    out = df.select(
+        rev=pl.when("m").then(pl.col("v").reverse()).otherwise(None).over("g"),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "rev": [None, 10.0],
+            }
+        ),
+    )
+
+
+def test_group_by_max_sorted_nan_28121() -> None:
+    df = pl.DataFrame({"g": [1, 1, 1], "x": [1.0, 2.0, float("nan")]}).sort("x")
+    out = df.group_by("g").agg(pl.col("x").max())
+    expected = pl.DataFrame({"g": [1], "x": [2.0]})
+    assert_frame_equal(out, expected)

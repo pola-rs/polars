@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::sync::Arc;
 
@@ -24,6 +25,9 @@ pub struct FileMetadata {
 
     /// The custom metadata that is read from the schema
     pub custom_schema_metadata: Option<Arc<Metadata>>,
+
+    /// Custom metadata from footer.
+    pub custom_metadata: Option<Arc<Metadata>>,
 
     /// The files' [`IpcSchema`]
     pub ipc_schema: IpcSchema,
@@ -264,6 +268,22 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
     let ipc_schema = deserialize_schema_ref_from_footer(footer)?;
     let (schema, ipc_schema, custom_schema_metadata) = fb_to_schema(ipc_schema)?;
 
+    let custom_metadata = footer
+        .custom_metadata()?
+        .map(|md| {
+            md.iter()
+                .map(|kv_pair| {
+                    let kv_pair = kv_pair?;
+                    Ok((
+                        kv_pair.key()?.unwrap_or("").into(),
+                        kv_pair.value()?.unwrap_or("").into(),
+                    ))
+                })
+                .collect::<PolarsResult<BTreeMap<_, _>>>()
+        })
+        .transpose()?
+        .map(Arc::new);
+
     Ok(FileMetadata {
         schema: Arc::new(schema),
         ipc_schema,
@@ -271,6 +291,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
         dictionaries,
         size,
         custom_schema_metadata: custom_schema_metadata.map(Arc::new),
+        custom_metadata,
     })
 }
 

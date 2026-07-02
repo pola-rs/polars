@@ -1,3 +1,5 @@
+import io
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -98,7 +100,7 @@ def test_unnest_projection_pushdown() -> None:
 def test_hconcat_projection_pushdown() -> None:
     lf1 = pl.LazyFrame({"a": [0, 1, 2], "b": [3, 4, 5]})
     lf2 = pl.LazyFrame({"c": [6, 7, 8], "d": [9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal").select(["a", "d"])
+    query = pl.concat([lf1, lf2], how="horizontal", strict=True).select(["a", "d"])
 
     explanation = query.explain()
     assert explanation.count("1/2 COLUMNS") == 2
@@ -113,7 +115,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     # the length of the result, even though no columns are used.
     lf1 = pl.LazyFrame({"a": [0, 1], "b": [2, 3]})
     lf2 = pl.LazyFrame({"c": [4, 5, 6, 7], "d": [8, 9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal").select(["a"])
+    query = pl.concat([lf1, lf2], how="horizontal_extend").select(["a"])
 
     explanation = query.explain()
     assert "1/2 COLUMNS" in explanation
@@ -834,6 +836,23 @@ def test_projection_pushdown_select_len() -> None:
     assert q.collect().item() == 1
 
 
+def test_projection_pushdown_horizontal_extend_select_len() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame({"a": [0, 1, 2]}),
+            pl.LazyFrame({"b": [0, 1, 2, 3, 4]}),
+        ],
+        how="horizontal_extend",
+    ).select(pl.len())
+    plan = q.explain()
+
+    assert plan.index("len()") > plan.index("HCONCAT")
+    assert_frame_equal(
+        q.collect(),
+        pl.Series("len", [5], dtype=pl.get_index_type()).to_frame(),
+    )
+
+
 def test_projection_pushdown_non_projected_sort_column() -> None:
     lf = pl.LazyFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
     q = lf.sort("a", descending=True).unique("b", maintain_order=True).drop("a")
@@ -866,3 +885,58 @@ def test_projection_pushdown_filter_len_to_sum() -> None:
         q.collect(),
         pl.DataFrame({"b": 1}, schema={"b": pl.get_index_type()}),
     )
+
+
+@pytest.mark.parametrize(
+    ("sink", "scan"),
+    [
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+    ],
+)
+@pytest.mark.parametrize(
+    "slice",
+    [
+        None,
+        (0, 5),
+        (-5, 5),
+        (5, 10),  # overrun past the end
+        (-15, 10),  # overrun before the start
+        (-5, 10),  # overrun past the end
+        (-15, 20),  # overrun before the start and past the end
+    ],
+)
+@pytest.mark.parametrize("predicate", [None, pl.col("a") % 2 == 1])
+def test_projection_pushdown_fastcount_27534(
+    sink: Callable[[pl.DataFrame, io.BytesIO], None],
+    scan: Callable[[bytes], pl.LazyFrame],
+    slice: tuple[int, int] | None,
+    predicate: pl.Expr | None,
+) -> None:
+    df = pl.DataFrame({"a": range(10)})
+    buf = io.BytesIO()
+    sink(df, buf)
+    lf = scan(buf.getvalue())
+    if slice is not None:
+        df = df.slice(*slice)
+        lf = lf.slice(*slice)
+    if predicate is not None:
+        df = df.filter(predicate)
+        lf = lf.filter(predicate)
+
+    assert_frame_equal(lf.select(pl.len()).collect(), df.select(pl.len()))
+    assert_frame_equal(lf.collect(), df)
+
+
+def test_projection_pushdown_select_non_column_height_27807() -> None:
+    q = (
+        pl.LazyFrame()
+        .select(
+            x=pl.Series([1, 2, 3]),
+            y=pl.lit(10, dtype=pl.Int64),
+        )
+        .select("y")
+    )
+
+    assert_frame_equal(q.collect(), pl.Series("y", [10, 10, 10]).to_frame())

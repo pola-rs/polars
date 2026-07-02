@@ -73,14 +73,6 @@ pub(crate) mod private {
 
         fn _set_flags(&mut self, flags: StatisticsFlags);
 
-        unsafe fn equal_element(
-            &self,
-            _idx_self: usize,
-            _idx_other: usize,
-            _other: &Series,
-        ) -> bool {
-            invalid_operation_panic!(equal_element, self)
-        }
         #[expect(clippy::wrong_self_convention)]
         fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
         #[expect(clippy::wrong_self_convention)]
@@ -319,6 +311,11 @@ pub trait SeriesTrait:
         self.len() == 0
     }
 
+    /// Check if Series only consists of nulls.
+    fn is_full_null(&self) -> bool {
+        self.len() == self.null_count()
+    }
+
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
 
@@ -473,7 +470,9 @@ pub trait SeriesTrait:
     /// Get dense ids for each unique value.
     ///
     /// Returns: (n_unique, unique_ids)
-    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)>;
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        polars_bail!(opq = unique_id, self._dtype());
+    }
 
     /// Get a mask of the null values.
     fn is_null(&self) -> BooleanChunked;

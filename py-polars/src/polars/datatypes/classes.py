@@ -134,7 +134,9 @@ class DataType(metaclass=DataTypeClass):
         return _dtype_str_repr(self)
 
     @overload  # type: ignore[override]
-    def __eq__(self, other: pl.DataTypeExpr) -> pl.Expr: ...
+    def __eq__(  # pyrefly: ignore[bad-override]
+        self, other: pl.DataTypeExpr
+    ) -> pl.Expr: ...
 
     @overload
     def __eq__(self, other: PolarsDataType) -> bool: ...
@@ -424,10 +426,6 @@ class UInt128(UnsignedIntegerType):
 
 class Float16(FloatType):
     """16-bit floating point type.
-
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
 
     .. warning::
         Regular computing platforms do not natively support `Float16` operations,

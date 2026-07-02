@@ -1,16 +1,15 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use polars_core::frame::DataFrame;
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
+use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
-use polars_io::pl_async;
 use polars_plan::dsl::sink::SinkedPathInfo;
 use polars_plan::dsl::{SinkTarget, UnifiedSinkArgs};
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
 use crate::execute::StreamingExecutionState;
 use crate::morsel::Morsel;
 use crate::nodes::io_sinks::components::morsel_resize_pipeline::MorselResizePipeline;
@@ -28,7 +27,7 @@ pub fn start_single_file_sink_pipeline(
     config: IOSinkNodeConfig,
     execution_state: &StreamingExecutionState,
     io_metrics: Option<Arc<IOMetrics>>,
-) -> PolarsResult<async_executor::AbortOnDropHandle<PolarsResult<()>>> {
+) -> PolarsResult<executor::AbortOnDropHandle<PolarsResult<()>>> {
     let num_pipelines: NonZeroUsize = execution_state.num_pipelines.try_into().unwrap();
 
     let inflight_morsel_limit = config.inflight_morsel_limit(num_pipelines);
@@ -74,9 +73,9 @@ pub fn start_single_file_sink_pipeline(
 
     let file_open_task = {
         let io_metrics = io_metrics.clone();
-        tokio_handle_ext::AbortOnDropHandle(pl_async::get_runtime().spawn(async move {
+        tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
             target
-                .open_into_writeable_async(
+                .open_into_writable_async(
                     cloud_options.as_deref(),
                     mkdir,
                     upload_chunk_size,
@@ -90,20 +89,20 @@ pub fn start_single_file_sink_pipeline(
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
         create_file_writer_starter(&file_format, &file_schema)?;
-    let takeable_rows_provider = file_writer_starter.takeable_rows_provider();
+    let target_sink_morsel_size = file_writer_starter.target_sink_morsel_size();
 
     if verbose {
         eprintln!(
             "{node_name}: start_single_file_sink_pipeline: \
             file_writer_starter: {}, \
-            takeable_rows_provider: {:?}, \
+            target_sink_morsel_size: {:?}, \
             inflight_morsel_limit: {}, \
             upload_chunk_size: {}, \
             upload_concurrency: {}, \
             io_metrics: {}, \
             build_sinked_path_info_list: {}",
             file_writer_starter.writer_name(),
-            takeable_rows_provider,
+            target_sink_morsel_size,
             inflight_morsel_limit,
             upload_chunk_size,
             upload_max_concurrency,
@@ -116,26 +115,25 @@ pub fn start_single_file_sink_pipeline(
     let writer_handle =
         file_writer_starter.start_file_writer(writer_rx, file_open_task, num_pipelines_per_sink)?;
 
-    let empty_with_schema_df = DataFrame::empty_with_arc_schema(file_schema.clone());
+    let schema = Arc::clone(&file_schema);
     let inflight_morsel_semaphore =
         Arc::new(tokio::sync::Semaphore::new(inflight_morsel_limit.get()));
 
     let resize_pipeline = MorselResizePipeline {
-        empty_with_schema_df,
-        takeable_rows_provider,
+        schema,
+        target_sink_morsel_size,
         inflight_morsel_semaphore,
         morsel_rx,
         morsel_tx: writer_tx,
     };
 
-    let resize_pipeline_handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
+    let resize_pipeline_handle = executor::AbortOnDropHandle::new(executor::spawn(
         TaskPriority::High,
         resize_pipeline.run(),
     ));
 
-    let handle = async_executor::AbortOnDropHandle::new(async_executor::spawn(
-        TaskPriority::High,
-        async move {
+    let handle =
+        executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
             writer_handle.await?;
             let sent_size = resize_pipeline_handle.await?;
 
@@ -153,8 +151,7 @@ pub fn start_single_file_sink_pipeline(
             }
 
             Ok(())
-        },
-    ));
+        }));
 
     Ok(handle)
 }

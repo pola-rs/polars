@@ -5,7 +5,7 @@ use polars_core::prelude::{
     ChunkExpandAtIndex, Column, DataType, IDX_DTYPE, IntoColumn, ListChunked, SortOptions,
 };
 use polars_core::utils::CustomIterTools;
-use polars_ops::prelude::ListNameSpaceImpl;
+use polars_ops::prelude::{ListNameSpaceImpl, slice_broadcast_list};
 use polars_plan::dsl::{ColumnsUdf, ReshapeDimension, SpecialEq};
 use polars_plan::plans::IRListFunction;
 use polars_utils::pl_str::PlSmallStr;
@@ -53,14 +53,11 @@ pub fn function_expr_to_udf(func: IRListFunction) -> SpecialEq<Arc<dyn ColumnsUd
         #[cfg(feature = "diff")]
         Diff { n, null_behavior } => map!(diff, n, null_behavior),
         Sort(options) => map!(sort, options),
-        Reverse => map!(reverse),
-        Unique(is_stable) => map!(unique, is_stable),
         #[cfg(feature = "list_sets")]
         SetOperation(s) => map_as_slice!(set_operation, s),
         Join(ignore_nulls) => map_as_slice!(join, ignore_nulls),
         #[cfg(feature = "dtype-array")]
         ToArray(width) => map!(to_array, width),
-        NUnique => map!(n_unique),
         #[cfg(feature = "list_to_struct")]
         ToStruct(names) => map!(to_struct, &names),
     }
@@ -142,6 +139,24 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
     let offset_s = &args[1];
     let length_s = &args[2];
 
+    let target_len = offset_s.len().max(length_s.len());
+    if list_ca.len() == 1 && target_len > 1 {
+        let single_list = list_ca.get_as_series(0);
+        let length_ca = length_s.cast(&DataType::Int64)?;
+        let length_ca = length_ca.i64().unwrap();
+        let offset_ca = offset_s.cast(&DataType::Int64)?;
+        let offset_ca = offset_ca.i64().unwrap();
+        let out = slice_broadcast_list(
+            single_list,
+            offset_ca,
+            length_ca,
+            target_len,
+            s.name().clone(),
+            list_ca.inner_dtype(),
+        );
+        return Ok(out.into_column());
+    }
+
     let mut out: ListChunked = match (offset_s.len(), length_s.len()) {
         (1, 1) => {
             let offset = offset_s.get(0).unwrap().try_extract::<i64>()?;
@@ -162,7 +177,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 
             list_ca
                 .amortized_iter()
-                .zip(length_ca)
+                .zip(length_ca.iter())
                 .map(|(opt_s, opt_length)| match (opt_s, opt_length) {
                     (Some(s), Some(length)) => Some(s.as_ref().slice(offset, length as usize)),
                     _ => None,
@@ -180,7 +195,7 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
             let offset_ca = offset_ca.i64().unwrap();
             list_ca
                 .amortized_iter()
-                .zip(offset_ca)
+                .zip(offset_ca.iter())
                 .map(|(opt_s, opt_offset)| match (opt_s, opt_offset) {
                     (Some(s), Some(offset)) => Some(s.as_ref().slice(offset, length_slice)),
                     _ => None,
@@ -199,8 +214,8 @@ pub(super) fn slice(args: &mut [Column]) -> PolarsResult<Column> {
 
             list_ca
                 .amortized_iter()
-                .zip(offset_ca)
-                .zip(length_ca)
+                .zip(offset_ca.iter())
+                .zip(length_ca.iter())
                 .map(
                     |((opt_s, opt_offset), opt_length)| match (opt_s, opt_offset, opt_length) {
                         (Some(s), Some(offset), Some(length)) => {
@@ -233,9 +248,9 @@ pub(super) fn concat(s: &mut [Column]) -> PolarsResult<Column> {
     .clone();
 
     if first_ca.len() == 1 && !other.is_empty() {
-        let max_len = other.iter().map(|s| s.len()).max().unwrap();
-        if max_len != 1 {
-            first_ca = first_ca.new_from_index(0, max_len)
+        let broadcast_len = other.iter().map(|s| s.len()).filter(|l| *l != 1).max();
+        if let Some(l) = broadcast_len {
+            first_ca = first_ca.new_from_index(0, l)
         }
     }
 
@@ -345,18 +360,6 @@ pub(super) fn sort(s: &Column, options: SortOptions) -> PolarsResult<Column> {
     Ok(s.list()?.lst_sort(options)?.into_column())
 }
 
-pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
-    Ok(s.list()?.lst_reverse().into_column())
-}
-
-pub(super) fn unique(s: &Column, is_stable: bool) -> PolarsResult<Column> {
-    if is_stable {
-        Ok(s.list()?.lst_unique_stable()?.into_column())
-    } else {
-        Ok(s.list()?.lst_unique()?.into_column())
-    }
-}
-
 #[cfg(feature = "list_sets")]
 pub(super) fn set_operation(
     s: &[Column],
@@ -412,8 +415,4 @@ pub(super) fn to_struct(s: &Column, names: &Arc<[PlSmallStr]>) -> PolarsResult<C
 
     let args = polars_ops::prelude::ListToStructArgs::FixedWidth(names.clone());
     Ok(s.list()?.to_struct(&args)?.into_column())
-}
-
-pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
-    Ok(s.list()?.lst_n_unique()?.into_column())
 }

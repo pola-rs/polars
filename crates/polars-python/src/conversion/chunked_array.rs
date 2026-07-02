@@ -115,7 +115,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DateChunked> {
         let iter = self
             .0
             .physical()
-            .into_iter()
+            .iter()
             .map(|opt_v| opt_v.map(date32_to_date));
         PyList::new(py, iter)
     }

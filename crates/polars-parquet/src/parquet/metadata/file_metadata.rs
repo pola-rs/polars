@@ -1,12 +1,14 @@
 use polars_buffer::Buffer;
 use polars_parquet_format::ColumnOrder as TColumnOrder;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use super::RowGroupMetadata;
 use super::column_order::ColumnOrder;
-use super::compact::CompactFileMetaData;
+use super::compact::{CompactColumnChunk, CompactFileMetaData, CompactRowGroup};
 use super::schema_descriptor::SchemaDescriptor;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::metadata::get_sort_order;
+use crate::parquet::schema::types::ParquetType;
 pub use crate::parquet::thrift_format::KeyValue;
 
 /// Metadata for a Parquet file.
@@ -16,6 +18,11 @@ pub use crate::parquet::thrift_format::KeyValue;
 // per-row-group structures, and the footer buffer that backs lazily-resolved
 // column-chunk statistics. Built from `CompactFileMetaData` (the hand-written
 // decoder's output) via `Self::from_compact`.
+//
+// Custom `Serialize`/`Deserialize` (in `file_metadata_serde`) emit a pruned
+// wire form: schema without `leaves`, stats materialised to owned bytes,
+// `footer_buf` reconstructed on deserialize. Cheap enough to ship in IR
+// plans for distributed execution.
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
     /// version of this file.
@@ -74,6 +81,97 @@ impl FileMetadata {
             .unwrap_or(ColumnOrder::Undefined)
     }
 
+    /// Prune to projected columns, keeping statistics only for predicate
+    /// columns.
+    ///
+    /// Returns a new [`FileMetadata`] containing only:
+    /// - top-level schema fields whose name is in `keep_top_level_names`,
+    /// - row-group chunks corresponding to those fields' leaves,
+    /// - statistics on chunks whose column is in `predicate_top_level_names`.
+    ///
+    /// `predicate_top_level_names` is treated as a subset of
+    /// `keep_top_level_names`; pass `&[]` to drop all stats. `created_by`,
+    /// `key_value_metadata`, and `column_orders` are also dropped (not
+    /// needed by the read hot path).
+    ///
+    /// Returns `Err` only when [`RowGroupMetadata::from_compact`] rejects
+    /// the rebuilt row group (chunks-vs-leaves desync). Callers can fall
+    /// back to unpruned metadata; the unpruned form is always valid.
+    ///
+    /// TODO: a planner-side pass could pre-evaluate static predicates
+    /// against stats and drop fully-skipped row groups, removing stats
+    /// from the wire for those cases.
+    pub fn pruned(
+        &self,
+        keep_top_level_names: &[polars_utils::pl_str::PlSmallStr],
+        predicate_top_level_names: &[polars_utils::pl_str::PlSmallStr],
+    ) -> ParquetResult<Self> {
+        // Column name → keep-stats flag. Names not in the map are pruned
+        // entirely. O(1) lookup per chunk keeps this scalable to
+        // wide-column workloads (10k+ columns × many row groups).
+        let mut keep: PlHashMap<&str, bool> = PlHashMap::with_capacity(keep_top_level_names.len());
+        keep.extend(keep_top_level_names.iter().map(|n| (n.as_str(), false)));
+        // Promotes from false to true if already present.
+        keep.extend(predicate_top_level_names.iter().map(|n| (n.as_str(), true)));
+
+        // 1. Filter top-level fields, preserving order from the source schema.
+        let pruned_fields: Vec<ParquetType> = self
+            .schema_descr
+            .fields()
+            .iter()
+            .filter(|f| keep.contains_key(f.get_field_info().name.as_str()))
+            .cloned()
+            .collect();
+
+        // 2. Build the pruned SchemaDescriptor (DFS derives leaves Arc).
+        let pruned_schema = SchemaDescriptor::new(self.schema_descr.name().into(), pruned_fields);
+
+        // 3. Per row group: pick chunks whose top-level field is in `keep`,
+        //    drop stats from non-predicate columns.
+        let mut max_row_group_height = 0;
+        let row_groups: Vec<RowGroupMetadata> = self
+            .row_groups
+            .iter()
+            .map(|rg| {
+                let kept_chunks: Vec<CompactColumnChunk> = rg
+                    .parquet_columns()
+                    .iter()
+                    .filter_map(|c| {
+                        let keep_stats = *keep.get(c.descriptor().path_in_schema[0].as_str())?;
+                        let mut chunk = c.compact_column_chunk().clone();
+                        if !keep_stats {
+                            chunk.meta_data.statistics = None;
+                        }
+                        Some(chunk)
+                    })
+                    .collect();
+
+                let compact_rg = CompactRowGroup {
+                    columns: kept_chunks,
+                    total_byte_size: rg.total_byte_size() as i64,
+                    num_rows: rg.num_rows() as i64,
+                    sorting_columns: rg.sorting_columns().map(|sc| sc.to_vec()),
+                };
+
+                let md = RowGroupMetadata::from_compact(&pruned_schema, compact_rg)?;
+                max_row_group_height = max_row_group_height.max(md.num_rows());
+                Ok(md)
+            })
+            .collect::<ParquetResult<_>>()?;
+
+        Ok(FileMetadata {
+            version: self.version,
+            num_rows: self.num_rows,
+            max_row_group_height,
+            created_by: None,
+            row_groups,
+            key_value_metadata: None,
+            schema_descr: pruned_schema,
+            column_orders: None,
+            footer_buf: self.footer_buf.clone(),
+        })
+    }
+
     /// Build a `FileMetadata` from a [`CompactFileMetaData`], the output of
     /// the hand-written Thrift decoder. Parses the schema, attaches each
     /// row group's chunks to the schema's descriptors, and stores the
@@ -106,7 +204,7 @@ impl FileMetadata {
             })
             .collect::<ParquetResult<_>>()?;
 
-        let column_orders = column_orders.map(|orders| parse_column_orders(&orders, &schema_descr));
+        let column_orders = column_orders.map(|o| parse_column_orders(&o, &schema_descr));
 
         Ok(FileMetadata {
             version,

@@ -1,91 +1,70 @@
 # Prefect
 
-Configure Polars Cloud authentication securely within Prefect workflows using native secret
-management patterns. This section details how to integrate Polars Cloud service account credentials
-with Prefect's configuration system.
+Integrate Polars Cloud authentication and per-task compute sizing into a Prefect flow using `Secret`
+blocks for credentials.
 
-Prefect implements secure credential handling through three standard approaches:
+Credentials are stored as Prefect
+[`Secret` blocks](https://docs.prefect.io/v3/how-to-guides/configuration/store-secrets) so raw
+values are never hard-coded in flow code. Register and populate them once with the Prefect CLI:
 
-1. **Secret manager** (<ins>recommended</ins>): pull the secret secret manager of your choice and
-   use it in your workflow (see official docs; here is
-   [AWS](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets-python.html)'
-   as an example). One can also use the AWS-specific `Secret` `Block` (see below;
-   [docs](https://docs.prefect.io/v3/how-to-guides/configuration/store-secrets)) to interact with
-   the AWS Secret Manager.
-2. **Environment variables**: load your environment variables into your running instance (container
-   or else).
-3. **`Block` system** ([docs](https://docs.prefect.io/v3/concepts/blocks)): Prefect defined a
-   `Block` framework that can be used via the CLI
-   (`prefect block register -m prefect.blocks.system`) or directly in the code
-   (`from prefect.blocks.system import Secret`). A secret can be created via CLI (for instance):
-   `prefect block create secret polars-cloud-client-id` and retrieved from the code as
-   `Secret.load("polars-cloud-client-id").get()`.
-
-Some code snippets for solutions **#1** and **#2** described above:
-
-```python
-# pull secrets from the aws secret manager
-def service_account_from_aws(_):
-    client = boto3.client("secretsmanager")
-    return {
-        "client_id": client.get_secret_value(SecretId="<SECRET>").get("SecretString"),
-        "client_secret": client.get_secret_value(SecretId="<SECRET>").get("SecretString"),
-    }
+```sh
+prefect block register -m prefect.blocks.system
+prefect block create secret polars-cloud-client-id
+prefect block create secret polars-cloud-client-secret
 ```
 
-```python
-# fetch [securely injected!] secrets from environment
-@resource
-def service_account_from_env(_):
-    return {
-        "client_id": os.getenv("POLARS_CLOUD_CLIENT_ID"),
-        "client_secret": os.getenv("POLARS_CLOUD_CLIENT_SECRET"),
-    }
-```
+Authentication is performed once at the top of the flow so every task in the run shares the same
+session. Each task receives its `ComputeContext` directly via `.remote(ctx)`, and the flow owns the
+VM lifecycle: `start()` is called before any task runs and `stop()` is guaranteed by the `finally`
+clause.
 
-Below a few lines of _pseudo-code_ to define a Prefect flow:
+`dataset_1` and `dataset_2` share a single instance which handles both tasks sequentially
+(_concurrently_ for Prefect, but _sequentially_ in Polars Cloud). `joined` runs on a larger VM,
+which is started and stopped independently.
 
 ```python
-import os
 import polars as pl
-
-from polars_cloud import ComputeContext, authenticate, set_compute_context
+import polars_cloud as pc
 from prefect import flow, task
+from prefect.blocks.system import Secret
 
-# define two compute contexts (two instance sizes)
-vm_small = ComputeContext(cpus=2, memory=4)
-vm_large = ComputeContext(cpus=4, memory=16)
+SMALL_CTX = pc.ComputeContext(cpus=2, memory=4)
+LARGE_CTX = pc.ComputeContext(cpus=4, memory=16)
 
-# queries will execute on the small vm by default
-set_compute_context(vm_small)
 
 @task
-def prepare_dataset_1():
-    pl.scan_csv(...).remote().sink_parquet(...)
+def dataset_1():
+    pl.scan_csv(...).remote(SMALL_CTX).sink_parquet(...)
+
 
 @task
-def prepare_dataset_2():
-    pl.scan_ndjson(...).remote().sink_parquet(...)
+def dataset_2():
+    pl.scan_ndjson(...).remote(SMALL_CTX).sink_parquet(...)
 
-# use a bigger machine for this operation
+
+# Use a bigger machine for the join.
 @task
-@set_compute_context(vm_large)
-def join_datasets():
-    pl.scan_parquet(...).remote().sink_parquet(...)
+def joined():
+    pl.scan_parquet(...).remote(LARGE_CTX).sink_parquet(...)
 
-@flow(name="Daily report")
+
+@flow(name="Report")
 def report():
-    # authenticate to polars cloud with the secrets created above
-    authenticate(**service_account_from_env())
+    pc.authenticate(
+        client_id=Secret.load("polars-cloud-client-id").get(),
+        client_secret=Secret.load("polars-cloud-client-secret").get(),
+    )
 
-    prepare_dataset_1()
-    prepare_dataset_2()
-    join_datasets()
+    SMALL_CTX.start()
+    LARGE_CTX.start()
+    try:
+        f1 = dataset_1.submit()
+        f2 = dataset_2.submit()
+        joined.submit(wait_for=[f1, f2])
+    finally:
+        SMALL_CTX.stop()
+        LARGE_CTX.stop()
 
-# run the flow
+
 report()
-
-# stop the instances
-vm_small.stop()
-vm_large.stop()
 ```

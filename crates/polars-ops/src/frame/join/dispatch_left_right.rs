@@ -99,21 +99,21 @@ pub fn materialize_left_join_from_series(
                     args,
                 ))
             } else {
-                Ok(POOL.join(
+                Ok(RAYON.join(
                     || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
                     || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
                 ))
             }
         },
-        (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Left(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_chunked_right(&right, right_idx.as_slice(), args),
         )),
-        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Right(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_chunked_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_chunked_right(&right, right_idx.as_slice(), args),
         )),
-        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Left(right_idx)) => Ok(POOL.join(
+        (ChunkJoinIds::Right(left_idx), ChunkJoinOptIds::Left(right_idx)) => Ok(RAYON.join(
             || materialize_left_join_chunked_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
         )),
@@ -129,7 +129,7 @@ pub fn materialize_left_join_from_series(
             args,
         ))
     } else {
-        Ok(POOL.join(
+        Ok(RAYON.join(
             || materialize_left_join_idx_left(&left, left_idx.as_slice(), args),
             || materialize_left_join_idx_right(&right, right_idx.as_slice(), args),
         ))
@@ -189,7 +189,7 @@ fn maintain_order_idx(
         .cont_slice()
         .unwrap();
 
-    POOL.join(
+    RAYON.join(
         || materialize_left_join_idx_left(left, join_tuples_left, args),
         || materialize_left_join_idx_right(other, bytemuck::cast_slice(join_tuples_right), args),
     )

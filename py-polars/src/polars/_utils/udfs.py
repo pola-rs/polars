@@ -583,9 +583,9 @@ class BytecodeParser:
         # Import these here so that udfs can be imported without polars installed.
 
         from polars._utils.various import (
-            find_stacklevel,
             in_terminal_that_supports_colour,
         )
+        from polars._warnings import find_stacklevel
         from polars.exceptions import PolarsInefficientMapWarning
 
         suggested_expression = suggestion_override or self.to_expression(col)

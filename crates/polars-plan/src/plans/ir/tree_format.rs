@@ -1,7 +1,9 @@
 use std::fmt::{self, Write};
 
 use polars_core::error::*;
+use polars_utils::aliases::PlHashSet;
 use polars_utils::format_list_truncated;
+use polars_utils::unique_id::UniqueId;
 
 use crate::constants;
 use crate::plans::ir::IRPlanRef;
@@ -98,6 +100,21 @@ pub enum TreeFmtNodeContent<'a> {
     LogicalPlan(Node),
 }
 
+impl<'a> TreeFmtNodeContent<'a> {
+    pub fn cache_id(&self, arena: &Arena<IR>) -> Option<UniqueId> {
+        match self {
+            Self::Expression(_) => None,
+            Self::LogicalPlan(node) => {
+                if let IR::Cache { id, .. } = arena.get(*node) {
+                    Some(*id)
+                } else {
+                    None
+                }
+            },
+        }
+    }
+}
+
 struct TreeFmtNodeData<'a>(String, Vec<TreeFmtNode<'a>>);
 
 fn with_header(header: &Option<String>, text: &str) -> String {
@@ -158,8 +175,14 @@ impl<'a> TreeFmtNode<'a> {
         visitor.prev_depth = visitor.depth;
         visitor.depth += 1;
 
-        for child in &child_nodes {
-            child.traverse(visitor);
+        if self
+            .content
+            .cache_id(self.lp.lp_arena)
+            .is_none_or(|id| visitor.seen_caches.insert(id))
+        {
+            for child in &child_nodes {
+                child.traverse(visitor);
+            }
         }
 
         visitor.depth -= 1;
@@ -228,9 +251,12 @@ impl<'a> TreeFmtNode<'a> {
                     wh(
                         h,
                         &(if let Some(slice) = options.slice {
-                            format!("SLICED UNION: {slice:?}")
+                            format!(
+                                "SLICED UNION[maintain_order: {0}]: {slice:?}",
+                                options.maintain_order
+                            )
                         } else {
-                            "UNION".to_string()
+                            format!("UNION[maintain_order: {0}]", options.maintain_order)
                         }),
                     ),
                     inputs
@@ -317,6 +343,17 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                         .collect(),
                 ),
+                Gather {
+                    input,
+                    idxs,
+                    null_on_oob,
+                } => ND(
+                    wh(h, &format!("GATHER[null_on_oob: {null_on_oob}]")),
+                    vec![
+                        self.lp_node(Some("INPUT:".to_string()), *input),
+                        self.lp_node(Some("IDXS:".to_string()), *idxs),
+                    ],
+                ),
                 HStack { input, exprs, .. } => ND(
                     wh(h, "WITH_COLUMNS"),
                     exprs
@@ -398,10 +435,15 @@ impl<'a> TreeFmtNode<'a> {
                         .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
                         .collect(),
                 ),
-                UnoptimizedDispatch { inputs, operation } => ND(
+                UnoptimizedDispatch {
+                    inputs,
+                    operation,
+                    arg_map,
+                } => ND(
                     wh(h, &format!("DISPATCH {operation}")),
-                    inputs
+                    arg_map
                         .iter()
+                        .map(|(input_idx, _col_idx, _arg_name)| &inputs[input_idx])
                         .map(|input| self.lp_node(None, *input))
                         .collect(),
                 ),
@@ -424,6 +466,7 @@ pub(crate) struct TreeFmtVisitor {
     prev_depth: usize,
     depth: usize,
     width: usize,
+    seen_caches: PlHashSet<UniqueId>,
     pub(crate) display: TreeFmtVisitorDisplay,
 }
 

@@ -23,6 +23,7 @@ pub mod io_sinks;
 pub mod io_sources;
 #[cfg(feature = "is_first_distinct")]
 pub mod is_first_distinct;
+pub mod is_sorted;
 pub mod joins;
 pub mod map;
 #[cfg(feature = "merge_sorted")]
@@ -56,12 +57,12 @@ pub mod zip;
 
 /// The imports you'll always need for implementing a ComputeNode.
 mod compute_node_prelude {
+    pub use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
     pub use polars_core::frame::DataFrame;
     pub use polars_error::PolarsResult;
     pub use polars_expr::state::ExecutionState;
 
     pub use super::ComputeNode;
-    pub use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
     pub use crate::execute::StreamingExecutionState;
     pub use crate::graph::PortState;
     pub use crate::morsel::{Morsel, MorselSeq};

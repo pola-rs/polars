@@ -19,6 +19,7 @@ pub fn common_subplan_elimination(
     root: Node,
     ir_arena: &mut Arena<IR>,
     expr_arena: &Arena<AExpr>,
+    insert_nested_caches: bool,
 ) -> bool {
     let mut visit_stack = ScratchVec::default();
     let mut edges = vec![usize::MAX]; // Indices into `id_map`
@@ -68,6 +69,7 @@ pub fn common_subplan_elimination(
         visitor: &mut InsertCachesVisitor {
             id_map: &mut id_map,
             inserted_cache: &mut inserted_cache,
+            insert_nested_caches,
             phantom: PhantomData,
         },
     }
@@ -209,6 +211,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
 struct InsertCachesVisitor<'a, 'arena> {
     id_map: &'a mut PlIndexMap<[u8; 32], IDState>,
     inserted_cache: &'a mut bool,
+    insert_nested_caches: bool,
     phantom: PhantomData<&'arena ()>,
 }
 
@@ -270,6 +273,10 @@ impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
             };
 
             curr_state.replacement_ir = Some(replacement_ir);
+
+            if !self.insert_nested_caches {
+                return ControlFlow::Continue(SubtreeVisit::Skip);
+            }
         }
 
         ControlFlow::Continue(SubtreeVisit::Visit)
