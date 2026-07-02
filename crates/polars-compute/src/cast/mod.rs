@@ -1158,6 +1158,14 @@ fn from_to_binview(
     Ok(binview)
 }
 
+fn warn_cast_to_list_deprecated(from_type: &ArrowDataType) {
+    polars_warn!(
+        Deprecation,
+        "casting from {from_type:?} to list type is deprecated\n\
+        Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use arrow::offset::OffsetsBuffer;
@@ -1267,12 +1275,4 @@ mod tests {
             vec![vec![10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],]
         );
     }
-}
-
-fn warn_cast_to_list_deprecated(from_type: &ArrowDataType) {
-    polars_warn!(
-        Deprecation,
-        "casting from {from_type:?} to list type is deprecated\n\
-        Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
-    )
 }
