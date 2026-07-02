@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
+from polars._utils.various import _Omitted
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -379,7 +382,9 @@ class ExprArrayNameSpace:
         │ [1, 2]    │
         └───────────┘
         """
-        return wrap_expr(self._pyexpr.arr_unique(maintain_order))
+        return self.eval(
+            F.element().unique(maintain_order=maintain_order), as_list=True
+        )
 
     def n_unique(self) -> Expr:
         """
@@ -404,7 +409,7 @@ class ExprArrayNameSpace:
         │ [2, 3, 4]     ┆ 3        │
         └───────────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.arr_n_unique())
+        return self.agg(F.element().n_unique())
 
     def to_list(self) -> Expr:
         """
@@ -434,9 +439,20 @@ class ExprArrayNameSpace:
         """
         return wrap_expr(self._pyexpr.arr_to_list())
 
-    def any(self) -> Expr:
+    def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value is true for every subarray.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -466,11 +482,22 @@ class ExprArrayNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.arr_any())
+        return self.agg(F.element().any(ignore_nulls=ignore_nulls))
 
-    def all(self) -> Expr:
+    def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether all boolean values are true for every subarray.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -500,7 +527,7 @@ class ExprArrayNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.arr_all())
+        return self.agg(F.element().all(ignore_nulls=ignore_nulls))
 
     def sort(self, *, descending: bool = False, nulls_last: bool = False) -> Expr:
         """
@@ -567,7 +594,7 @@ class ExprArrayNameSpace:
         │ [9, 1, 2]     ┆ [2, 1, 9]     │
         └───────────────┴───────────────┘
         """
-        return wrap_expr(self._pyexpr.arr_reverse())
+        return self.eval(F.element().reverse())
 
     def arg_min(self) -> Expr:
         """
@@ -761,7 +788,9 @@ class ExprArrayNameSpace:
         separator_pyexpr = parse_into_expression(separator, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_join(separator_pyexpr, ignore_nulls))
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
+    ) -> Expr:
         """
         Returns a column with a separate row for every array element.
 
@@ -782,7 +811,7 @@ class ExprArrayNameSpace:
         >>> df = pl.DataFrame(
         ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
         ... )
-        >>> df.select(pl.col("a").arr.explode())
+        >>> df.select(pl.col("a").arr.explode(empty_as_null=False))
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -797,6 +826,13 @@ class ExprArrayNameSpace:
         │ 6   │
         └─────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.arr_explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )

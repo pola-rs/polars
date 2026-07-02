@@ -3,13 +3,13 @@ use std::sync::Arc;
 
 use components::row_deletions::DeletionFilesProvider;
 use futures::StreamExt;
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
 use crate::execute::StreamingExecutionState;
 use crate::nodes::io_sources::multi_scan::pipeline::models::ResolvedSliceInfo;
 use crate::nodes::io_sources::multi_scan::{MultiScanConfig, components};
@@ -118,7 +118,7 @@ async fn resolve_negative_slice(
                     Ok(reader)
                 });
 
-            AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
+            AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                 let mut reader = reader?;
 
                 if verbose {

@@ -216,7 +216,7 @@ def json_normalize(
     └──────┴────────────┴────────────────┴────────────────┘
 
     Normalize to a specific depth, using a custom JSON encoder
-    (note that `orson.dumps` encodes to bytes, not str).
+    (note that `orjson.dumps` encodes to bytes, not str).
 
     >>> import orjson
     >>> pl.json_normalize(data, max_level=0, encoder=orjson.dumps)

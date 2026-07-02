@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.unstable import unstable
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-class DateTimeNameSpace:
+class DateTimeNameSpace(_NamespaceSuggestMixin):
     """Series.dt namespace."""
 
     _accessor = "dt"
@@ -1933,6 +1934,10 @@ class DateTimeNameSpace:
         Series
             Series of data type :class:`Date` or :class:`Datetime`.
 
+        See Also
+        --------
+        Series.dt.round : Map to the nearest bucket.
+
         Examples
         --------
         >>> from datetime import timedelta, datetime
@@ -2045,6 +2050,10 @@ class DateTimeNameSpace:
         By "calendar day", we mean the corresponding time on the next day (which may
         not be 24 hours, due to daylight savings). Similarly for "calendar week",
         "calendar month", "calendar quarter", and "calendar year".
+
+        See Also
+        --------
+        Series.dt.truncate : Map to start of the bucket.
 
         Examples
         --------

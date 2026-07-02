@@ -1,6 +1,12 @@
-Some of the code in this crate is subject to the Apache 2 license below, as it
-was taken from the arrow2 and parquet2 Rust crate in October 2023. Later changes are subject
-to the MIT license in ../../LICENSE.
+Some of the code in this crate is subject to the Apache 2 license below.
+
+The original code was taken from the arrow2 and parquet2 Rust crates in
+October 2023.
+
+Additional code in `src/parquet/handwritten_thrift/` was ported from
+apache/arrow-rs 57.0 (https://github.com/apache/arrow-rs) in April 2026.
+
+Later changes are subject to the MIT license in ../../LICENSE.
 
 
 

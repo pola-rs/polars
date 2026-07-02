@@ -22,7 +22,7 @@ impl Executor for MergeSorted {
         let (left, right) = {
             let mut state2 = state.split();
             state2.branch_idx += 1;
-            let (left, right) = POOL.join(
+            let (left, right) = RAYON.join(
                 || self.input_left.execute(state),
                 || self.input_right.execute(&mut state2),
             );

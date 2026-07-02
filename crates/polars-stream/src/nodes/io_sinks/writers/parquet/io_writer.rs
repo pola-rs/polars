@@ -1,21 +1,20 @@
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
+use polars_async::executor::{self};
 use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::KeyValueMetadata;
 use polars_parquet::write::{Encoding, FileWriter, SchemaDescriptor, WriteOptions};
 
-use crate::async_executor::{self};
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
 use crate::nodes::io_sinks::writers::parquet::EncodedRowGroup;
 
 pub struct IOWriter {
     pub file: FileOpenTaskHandle,
-    pub encoded_row_group_rx: tokio::sync::mpsc::Receiver<
-        async_executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>,
-    >,
+    pub encoded_row_group_rx:
+        tokio::sync::mpsc::Receiver<executor::AbortOnDropHandle<PolarsResult<EncodedRowGroup>>>,
     pub arrow_schema: ArrowSchemaRef,
     pub schema_descriptor: Arc<SchemaDescriptor>,
     pub write_options: WriteOptions,

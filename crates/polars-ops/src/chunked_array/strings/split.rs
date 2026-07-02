@@ -315,7 +315,7 @@ pub fn split_regex_helper(
             let mut builder =
                 ListStringChunkedBuilder::new(ca.name().clone(), ca.len(), ca.get_values_size());
 
-            for (opt_s, opt_pat) in ca.into_iter().zip(by) {
+            for (opt_s, opt_pat) in ca.iter().zip(by.iter()) {
                 match (opt_s, opt_pat) {
                     (Some(s), Some(pat)) => append_split(&mut builder, s, pat, inclusive, strict)?,
                     _ => builder.append_null(),
@@ -334,7 +334,7 @@ pub fn split_regex_helper(
                     by.get_values_size(),
                 );
 
-                for opt_pat in by.into_iter() {
+                for opt_pat in by.iter() {
                     match opt_pat {
                         Some(pat) => append_split(&mut builder, s0, pat, inclusive, strict)?,
                         None => builder.append_null(),

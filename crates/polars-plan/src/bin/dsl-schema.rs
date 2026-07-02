@@ -132,9 +132,9 @@ mod impls {
     }
 
     fn schema_hash(schema: &Schema) -> String {
-        let mut digest = sha2::Sha256::new();
+        let mut digest = digest_io::IoWrapper(sha2::Sha256::new());
         serde_json::to_writer(&mut digest, schema).expect("failed to serialize the schema");
-        let hash = digest.finalize();
-        format!("{hash:064x}")
+        let hash = digest.0.finalize();
+        hex::encode(hash)
     }
 }

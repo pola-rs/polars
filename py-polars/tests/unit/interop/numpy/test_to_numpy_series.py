@@ -434,7 +434,7 @@ def test_series_to_numpy(s: pl.Series) -> None:
     result = s.to_numpy()
 
     values = s.to_list()
-    dtype_map = {
+    dtype_map: dict[PolarsDataType, str] = {
         pl.Datetime("ns"): "datetime64[ns]",
         pl.Datetime("us"): "datetime64[us]",
         pl.Duration("ns"): "timedelta64[ns]",

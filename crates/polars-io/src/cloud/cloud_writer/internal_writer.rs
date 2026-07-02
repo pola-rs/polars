@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 use futures::StreamExt as _;
 use futures::stream::FuturesUnordered;
 use object_store::PutPayload;
+use polars_core::runtime::ASYNC;
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::async_utils::error_capture::{ErrorCapture, ErrorHandle};
 use polars_utils::async_utils::tokio_handle_ext;
@@ -112,9 +113,9 @@ impl InternalCloudWriter {
 
         let fut = async move { io_metrics.record_bytes_tx(num_bytes, upload_fut).await };
 
-        let handle = tokio_handle_ext::AbortOnDropHandle(tokio::spawn(
-            state.error_capture.clone().wrap_future(fut),
-        ));
+        let handle = tokio_handle_ext::AbortOnDropHandle(
+            ASYNC.spawn(state.error_capture.clone().wrap_future(fut)),
+        );
 
         state.tasks.push(handle);
 

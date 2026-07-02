@@ -271,7 +271,7 @@ pub(crate) fn arg_sort_row_fmt(
     let mut items: Vec<_> = rows_encoded.iter().enumerate_idx().collect();
 
     if parallel {
-        POOL.install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));
+        RAYON.install(|| items.par_sort_by(|a, b| a.1.cmp(b.1)));
     } else {
         items.sort_by(|a, b| a.1.cmp(b.1));
     }
@@ -299,7 +299,7 @@ mod test {
                 Some(4), // 6
             ],
         );
-        let idx = reverse_stable_no_nulls(&a, 7);
+        let idx = reverse_stable_no_nulls(a.iter(), 7);
         let expected = [6, 3, 4, 5, 1, 2, 0];
         assert_eq!(idx, expected);
 
@@ -315,7 +315,7 @@ mod test {
                 Some(7), // 6
             ],
         );
-        let idx = reverse_stable_no_nulls(&a, 7);
+        let idx = reverse_stable_no_nulls(a.iter(), 7);
         let expected = [6, 5, 4, 3, 2, 1, 0];
         assert_eq!(idx, expected);
 
@@ -325,13 +325,13 @@ mod test {
                 Some(1), // 0
             ],
         );
-        let idx = reverse_stable_no_nulls(&a, 1);
+        let idx = reverse_stable_no_nulls(a.iter(), 1);
         let expected = [0];
         assert_eq!(idx, expected);
 
         let empty_array: [i32; 0] = [];
         let a = Int32Chunked::new(PlSmallStr::from_static("a"), &empty_array);
-        let idx = reverse_stable_no_nulls(&a, 0);
+        let idx = reverse_stable_no_nulls(a.iter(), 0);
         assert_eq!(idx.len(), 0);
     }
 

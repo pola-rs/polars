@@ -897,7 +897,7 @@ unless a strftime-compatible formatting string is provided as the second paramet
 
    `DATETIME`
 
-.. tip::
+.. note::
 
   `TIMESTAMP` is also supported as a typed literal (this form does not allow a format string).
 

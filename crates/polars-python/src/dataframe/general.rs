@@ -341,6 +341,20 @@ impl PyDataFrame {
         py.enter_polars_series(|| self.df.read().is_duplicated())
     }
 
+    #[pyo3(signature = (by, descending, nulls_last))]
+    pub fn is_sorted(
+        &self,
+        py: Python<'_>,
+        by: Vec<String>,
+        descending: Vec<bool>,
+        nulls_last: Vec<bool>,
+    ) -> PyResult<bool> {
+        py.enter_polars(|| {
+            let by = strings_to_pl_smallstr(by);
+            self.df.read().is_sorted(&by, &descending, &nulls_last)
+        })
+    }
+
     pub fn equals(&self, py: Python<'_>, other: &PyDataFrame, null_equal: bool) -> PyResult<bool> {
         if null_equal {
             py.enter_polars_ok(|| self.df.read().equals_missing(&other.df.read()))

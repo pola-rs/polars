@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from decimal import Decimal as D
 from math import ceil, floor
 from random import choice, randrange, seed
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Literal, NamedTuple
 
 import pyarrow as pa
 import pytest
@@ -510,7 +510,7 @@ def test_decimal_explode() -> None:
             "bar": [[D("3.4"), D("3.4")], [D("4.5")]],
         }
     )
-    df = nested_decimal_df.explode("bar")
+    df = nested_decimal_df.explode("bar", empty_as_null=False)
     expected_df = pl.DataFrame(
         {
             "bar": [D("3.4"), D("3.4"), D("4.5")],
@@ -929,4 +929,18 @@ def test_product_decimal_26721() -> None:
     )
     out = df.select(pl.col.x.product())
     expected = pl.DataFrame({"x": ["1.25512"]}).cast(pl.Decimal(precision=38, scale=5))
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory"])
+def test_decimal_sum_widens_precision_27576(
+    engine: Literal["streaming", "in-memory"],
+) -> None:
+    df = pl.DataFrame({"v": ["99999.99", "99999.99", "1.00"]}).cast(
+        pl.Decimal(precision=7, scale=2)
+    )
+    out = df.lazy().select(pl.col("v").sum()).collect(engine=engine)
+    expected = pl.DataFrame({"v": ["200000.98"]}).cast(
+        pl.Decimal(precision=38, scale=2)
+    )
     assert_frame_equal(out, expected)

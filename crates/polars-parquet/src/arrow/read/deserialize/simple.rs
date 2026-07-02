@@ -728,7 +728,9 @@ fn timestamp(
                 field_name,
                 pages,
                 dtype,
-                primitive::FloatDecoder::closure(|x: [u32; 3]| int96_to_i64_ns(x)),
+                primitive::FloatDecoder::closure(|x: [u32; 3]| {
+                    int96_to_i64_ns(x).unwrap_or(i64::MAX)
+                }),
                 nested,
             )?
             .collect_boxed(filter),

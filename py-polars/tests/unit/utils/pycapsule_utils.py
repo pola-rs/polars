@@ -39,5 +39,7 @@ class PyCapsuleArrayHolder:
     def __init__(self, arrow_obj: object) -> None:
         self.arrow_obj = arrow_obj
 
-    def __arrow_c_array__(self, requested_schema: object = None) -> object:
-        return self.arrow_obj.__arrow_c_array__(requested_schema)
+    def __arrow_c_array__(
+        self, requested_schema: object | None = None
+    ) -> tuple[object, object]:
+        return self.arrow_obj.__arrow_c_array__(requested_schema)  # type: ignore[no-any-return]

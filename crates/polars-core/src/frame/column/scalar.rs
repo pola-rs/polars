@@ -72,6 +72,10 @@ impl ScalarColumn {
         self.length == 0
     }
 
+    pub fn is_full_null(&self) -> bool {
+        self.scalar.is_null()
+    }
+
     fn _to_series(name: PlSmallStr, value: Scalar, length: usize) -> Series {
         let series = if length == 0 {
             Series::new_empty(name, value.dtype())

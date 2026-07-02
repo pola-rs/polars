@@ -87,7 +87,9 @@ def test_lazyframe_membership_operator() -> None:
 def test_apply() -> None:
     ldf = pl.LazyFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0]})
     new = ldf.with_columns_seq(
-        pl.col("a").map_batches(lambda s: s * 2, return_dtype=pl.Int64).alias("foo")
+        pl.col("a")
+        .map_batches(lambda s: s * 2, return_dtype=pl.Int64, is_elementwise=True)
+        .alias("foo")
     )
     expected = ldf.clone().with_columns((pl.col("a") * 2).alias("foo"))
     assert_frame_equal(new, expected)
@@ -453,7 +455,7 @@ def test_head_group_by() -> None:
         ldf.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(cs.all().exclude(keys))
+        .explode(cs.all().exclude(keys), empty_as_null=False)
     )
 
     assert out.collect().rows() == [
@@ -1828,3 +1830,19 @@ def test_cache_hit_child_removal() -> None:
     assert_frame_equal(df1.tail(3), df, check_row_order=False)
     assert_frame_equal(df2.head(3), df, check_row_order=False)
     assert_frame_equal(df2.tail(3), df, check_row_order=False)
+
+
+def test_sum_decimal_widens_precision_27269() -> None:
+    from decimal import Decimal
+
+    lf = pl.LazyFrame(
+        {"x": [Decimal("5000000000000.00"), Decimal("5000000000000.00")]},
+        schema={"x": pl.Decimal(15, 2)},
+    )
+    assert lf.select(pl.sum("x")).collect_schema()["x"] == pl.Decimal(38, 2)
+
+
+def test_execute() -> None:
+    assert pl.LazyFrame({"a": [1, 2, 3, 4]}).select(pl.col.a).execute().lazy().select(
+        sum=pl.col.a.sum(), count=pl.len()
+    ).collect().to_dict(as_series=False) == {"sum": [10], "count": [4]}

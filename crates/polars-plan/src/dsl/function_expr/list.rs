@@ -43,15 +43,8 @@ pub enum ListFunction {
         null_behavior: NullBehavior,
     },
     Sort(SortOptions),
-    Reverse,
-    Unique(bool),
-    NUnique,
     #[cfg(feature = "list_sets")]
     SetOperation(SetOperation),
-    #[cfg(feature = "list_any_all")]
-    Any,
-    #[cfg(feature = "list_any_all")]
-    All,
     Join(bool),
     #[cfg(feature = "dtype-array")]
     ToArray(usize),
@@ -99,21 +92,8 @@ impl Display for ListFunction {
             Diff { .. } => "diff",
             Length => "length",
             Sort(_) => "sort",
-            Reverse => "reverse",
-            Unique(is_stable) => {
-                if *is_stable {
-                    "unique_stable"
-                } else {
-                    "unique"
-                }
-            },
-            NUnique => "n_unique",
             #[cfg(feature = "list_sets")]
             SetOperation(s) => return write!(f, "list.{s}"),
-            #[cfg(feature = "list_any_all")]
-            Any => "any",
-            #[cfg(feature = "list_any_all")]
-            All => "all",
             Join(_) => "join",
             #[cfg(feature = "dtype-array")]
             ToArray(_) => "to_array",

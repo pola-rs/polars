@@ -67,46 +67,10 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
         }
         .into_boxed_path();
 
-        if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
-            if !path.is_dir() {
-                panic!(
-                    "failed to create temporary directory: {} (path = {:?})",
-                    err,
-                    path.as_ref()
-                );
-            }
-        }
+        let perm_result = create_dir_owner_only(path.as_ref());
 
-        #[cfg(target_family = "unix")]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            let result = (|| {
-                std::fs::set_permissions(path.as_ref(), std::fs::Permissions::from_mode(0o700))?;
-                let perms = std::fs::metadata(path.as_ref())?.permissions();
-
-                if (perms.mode() % 0o1000) != 0o700 {
-                    std::io::Result::Err(std::io::Error::other(format!(
-                        "permission mismatch: {perms:?}"
-                    )))
-                } else {
-                    std::io::Result::Ok(())
-                }
-            })()
-            .map_err(|e| {
-                std::io::Error::new(
-                    e.kind(),
-                    format!(
-                        "error setting temporary directory permissions: {} (path = {:?})",
-                        e,
-                        path.as_ref()
-                    ),
-                )
-            });
-
-            if std::env::var("POLARS_ALLOW_UNSECURED_TEMP_DIR").as_deref() != Ok("1") {
-                result?;
-            }
+        if std::env::var("POLARS_ALLOW_UNSECURED_TEMP_DIR").as_deref() != Ok("1") {
+            perm_result?;
         }
 
         std::io::Result::Ok(path)
@@ -122,6 +86,27 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
     })
     .unwrap()
 });
+
+/// Create a directory (and parents) with owner-only permissions (0o700) on Unix.
+pub fn create_dir_owner_only(path: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(path)?;
+
+    #[cfg(target_family = "unix")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+        let perms = std::fs::metadata(path)?.permissions();
+
+        if (perms.mode() % 0o1000) != 0o700 {
+            return Err(std::io::Error::other(format!(
+                "error setting directory permissions: permission mismatch: {perms:?} (path = {path:?})"
+            )));
+        }
+    }
+
+    Ok(())
+}
 
 /// Replaces a "~" in the Path with the home directory.
 pub fn resolve_homedir<'a, S: AsRef<Path> + ?Sized>(path: &'a S) -> Cow<'a, Path> {
@@ -147,6 +132,78 @@ fn has_glob(path: &[u8]) -> bool {
     fn get_glob_start_idx(path: &[u8]) -> Option<usize> {
         memchr::memchr3(b'*', b'?', b'[', path)
     }
+}
+
+/// Returns `true` for a `file://` URI whose path component carries a percent-escape.
+fn is_file_uri_with_escape(path: &PlRefPath) -> bool {
+    path.scheme().is_some_and(|s| s.is_file()) && path.strip_scheme().contains('%')
+}
+
+/// Decode `%` escapes in `file://` paths and return them as plain local paths
+/// (e.g. `file:///x/foo%3Dbar` -> `/x/foo=bar`).
+///
+/// The `file://` is dropped before decoding, so the result is a plain path, not a URI.
+/// That keeps decoded `?`/`#` as literal filename characters; kept as a URI they'd be read
+/// as a query or fragment and cut the path short.
+///
+/// When `glob` is set, a percent-encoded path is treated as a literal: every glob
+/// metacharacter in the decoded result is escaped (`?` -> `[?]`), so a decoded `?`/`*`
+/// matches the literal character instead of acting as a wildcard. A path with no `%` is
+/// never decoded (see below), so a plain `file:///x/*.parquet` still globs as usual.
+///
+/// Everything else is returned unchanged: `file://` paths with no `%`, plain paths, and
+/// cloud keys (`s3://`, ...), which are taken literally.
+pub fn decode_file_uri_paths(paths: &[PlRefPath], glob: bool) -> Cow<'_, [PlRefPath]> {
+    // Nothing to decode: borrow the input untouched.
+    if !paths.iter().any(is_file_uri_with_escape) {
+        return Cow::Borrowed(paths);
+    }
+
+    Cow::Owned(
+        paths
+            .iter()
+            .map(|path| {
+                if is_file_uri_with_escape(path)
+                    && let Some(decoded) = decode_file_uri_path(path.strip_scheme(), glob)
+                {
+                    PlRefPath::new(decoded)
+                } else {
+                    // Not an encoded file URI, or the escape isn't valid UTF-8: leave the
+                    // path literal and let the downstream open surface any not-found error.
+                    path.clone()
+                }
+            })
+            .collect(),
+    )
+}
+
+/// Percent-decode a path component. When `glob` is set the decoded result is glob-escaped
+/// (via `glob::Pattern::escape`), so a decoded `?`/`*`/`[`/`]` matches the literal character
+/// instead of acting as a wildcard. Returns `None` if the decoded bytes are not valid UTF-8.
+fn decode_file_uri_path(path: &str, glob: bool) -> Option<String> {
+    let decoded = percent_encoding::percent_decode_str(path)
+        .decode_utf8()
+        .ok()?;
+    let path = strip_windows_drive_slash(&decoded);
+    Some(if glob {
+        glob::Pattern::escape(path)
+    } else {
+        path.to_owned()
+    })
+}
+
+/// `strip_scheme` leaves a Windows `file:///C:/x` URI as `/C:/x`; drop the leading slash before
+/// the drive letter so it is a valid local path (`C:/x`). The inverse of the extra slash
+/// `format_file_uri` adds on Windows. A no-op on other platforms (a leading `/` is the root).
+fn strip_windows_drive_slash(path: &str) -> &str {
+    #[cfg(target_family = "windows")]
+    {
+        let b = path.as_bytes();
+        if b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' {
+            return &path[1..];
+        }
+    }
+    path
 }
 
 /// Returns `true` if `expanded_paths` were expanded from a single directory
@@ -425,9 +482,7 @@ pub async fn expand_paths_hive(
                 if glob && has_glob(path.as_bytes()) {
                     hive_idx_tracker.update(0, path_idx)?;
 
-                    let iter = crate::pl_async::get_runtime().block_in_place_on(
-                        crate::async_glob(path.into_owned(), cloud_options.as_ref()),
-                    )?;
+                    let iter = crate::async_glob(path.into_owned(), cloud_options.as_ref()).await?;
 
                     if first_path_has_scheme {
                         out_paths.extend(iter.into_iter().map(PlRefPath::new))
@@ -600,10 +655,10 @@ pub(crate) fn ensure_directory_init(path: &Path) -> std::io::Result<()> {
 mod tests {
     use std::path::PathBuf;
 
+    use polars_core::runtime::ASYNC;
     use polars_utils::pl_path::PlRefPath;
 
     use super::resolve_homedir;
-    use crate::pl_async::get_runtime;
 
     #[cfg(not(target_os = "windows"))]
     #[test]
@@ -660,7 +715,7 @@ mod tests {
 
         let path = "https://pola.rs/test.csv?token=bear";
         let paths = &[PlRefPath::new(path)];
-        let out = get_runtime()
+        let out = ASYNC
             .block_on(expand_paths(paths, true, &[], &mut None))
             .unwrap();
         assert_eq!(out.as_ref(), paths);

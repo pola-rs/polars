@@ -369,6 +369,30 @@ impl AExprBuilder {
         )
     }
 
+    pub fn any(self, ignore_nulls: bool, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_unnamed()],
+            IRFunctionExpr::Boolean(IRBooleanFunction::Any { ignore_nulls }),
+            arena,
+        )
+    }
+
+    pub fn all(self, ignore_nulls: bool, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_unnamed()],
+            IRFunctionExpr::Boolean(IRBooleanFunction::All { ignore_nulls }),
+            arena,
+        )
+    }
+
+    pub fn is_empty(self, ignore_nulls: bool, arena: &mut Arena<AExpr>) -> Self {
+        Self::function(
+            vec![self.expr_ir_unnamed()],
+            IRFunctionExpr::Boolean(IRBooleanFunction::IsEmpty { ignore_nulls }),
+            arena,
+        )
+    }
+
     pub fn null_count(self, arena: &mut Arena<AExpr>) -> Self {
         Self::function(
             vec![self.expr_ir_unnamed()],
@@ -416,9 +440,11 @@ impl AExprBuilder {
     }
 
     pub fn has_nulls(self, arena: &mut Arena<AExpr>) -> Self {
-        let nc = self.null_count(arena);
-        let idx_zero = Self::lit_scalar(Scalar::from(0 as IdxSize), arena);
-        nc.gt(idx_zero, arena)
+        Self::function(
+            vec![self.expr_ir_unnamed()],
+            IRFunctionExpr::Boolean(IRBooleanFunction::HasNulls),
+            arena,
+        )
     }
 
     pub fn drop_nulls(self, arena: &mut Arena<AExpr>) -> Self {
@@ -532,6 +558,10 @@ impl AExprBuilder {
     pub fn node(self) -> Node {
         self.node
     }
+
+    pub fn build(self, arena: &Arena<AExpr>) -> AExpr {
+        arena.get(self.node).clone()
+    }
 }
 
 pub trait IntoAExprBuilder {
@@ -541,6 +571,12 @@ pub trait IntoAExprBuilder {
 impl IntoAExprBuilder for Node {
     fn into_aexpr_builder(self) -> AExprBuilder {
         AExprBuilder { node: self }
+    }
+}
+
+impl IntoAExprBuilder for ExprIR {
+    fn into_aexpr_builder(self) -> AExprBuilder {
+        self.node().into_aexpr_builder()
     }
 }
 

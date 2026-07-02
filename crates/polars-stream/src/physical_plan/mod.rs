@@ -2,20 +2,32 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_core::prelude::DataType;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, PlIndexMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
+#[cfg(any(
+    feature = "dtype-date",
+    feature = "dtype-datetime",
+    feature = "dtype-time"
+))]
+use polars_plan::dsl::StrptimeOptions;
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    CastColumnsPolicy, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
+    CastColumnsPolicy, ColumnsUdf, FileSinkOptions, JoinTypeOptionsIR, MissingColumnsPolicy,
     PartitionedSinkOptionsIR, PredicateFileSkip, ScanSources, TableStatistics,
 };
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, DynamicPred, FunctionArgMap, IR};
 
 mod fmt;
 mod io;
@@ -32,6 +44,7 @@ use polars_time::{ClosedWindow, Duration};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice_enum::Slice;
+use polars_utils::{UnitVec, unitvec};
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
@@ -58,16 +71,31 @@ impl PhysNodeKey {
 /// acyclic graph of operations that can run on the streaming engine.
 #[derive(Clone, Debug)]
 pub struct PhysNode {
-    output_schema: Arc<Schema>,
+    output_schemas: UnitVec<Arc<Schema>>,
     kind: PhysNodeKind,
 }
 
 impl PhysNode {
     pub fn new(output_schema: Arc<Schema>, kind: PhysNodeKind) -> Self {
         Self {
-            output_schema,
+            output_schemas: unitvec![output_schema],
             kind,
         }
+    }
+
+    pub fn new_multi_output(output_schemas: UnitVec<Arc<Schema>>, kind: PhysNodeKind) -> Self {
+        Self {
+            output_schemas,
+            kind,
+        }
+    }
+
+    pub fn output_schema(&self, port_idx: usize) -> &Arc<Schema> {
+        &self.output_schemas[port_idx]
+    }
+
+    pub fn output_schema_mut(&mut self, port_idx: usize) -> &mut Arc<Schema> {
+        &mut self.output_schemas[port_idx]
     }
 
     pub fn kind(&self) -> &PhysNodeKind {
@@ -93,6 +121,17 @@ impl PhysStream {
     // Convenience method to refer to the first output port of a physical node.
     pub fn first(node: PhysNodeKey) -> Self {
         Self { node, port: 0 }
+    }
+
+    pub fn output_schema<'sm>(&self, sm: &'sm SlotMap<PhysNodeKey, PhysNode>) -> &'sm Arc<Schema> {
+        sm[self.node].output_schema(self.port)
+    }
+
+    pub fn output_schema_mut<'sm>(
+        &self,
+        sm: &'sm mut SlotMap<PhysNodeKey, PhysNode>,
+    ) -> &'sm mut Arc<Schema> {
+        sm[self.node].output_schema_mut(self.port)
     }
 }
 
@@ -207,17 +246,43 @@ pub enum PhysNodeKind {
     InMemoryMap {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
-
-        /// A formatted explain of what the in-memory map. This usually calls format on the IR.
+        /// A formatted string of what the in-memory map is. This usually calls format on the IR.
         format_str: Option<String>,
     },
 
     Map {
         input: PhysStream,
         map: Arc<dyn DataFrameUdf>,
-
-        /// A formatted explain of what the in-memory map. This usually calls format on the IR.
+        /// A formatted string of what the map is. This usually calls format on the IR.
         format_str: Option<String>,
+    },
+
+    ColumnarFunction {
+        inputs: Vec<PhysStream>,
+        func: Arc<dyn ColumnsUdf>,
+        arg_map: Option<FunctionArgMap>,
+        output_name: PlSmallStr,
+        format_str: Option<String>,
+    },
+
+    /// Streaming strptime without an explicit format.
+    #[cfg(any(
+        feature = "dtype-date",
+        feature = "dtype-datetime",
+        feature = "dtype-time"
+    ))]
+    StrptimeInfer {
+        input: PhysStream,
+        dtype: DataType,
+        options: StrptimeOptions,
+
+        /// Ambiguous can be `raise`, `earliest`, `latest` and `null`.
+        ///
+        /// If it is broadcast and it is `raise` or `null`, we can actually execute it in this
+        /// node. So
+        /// - `false` -> "null"
+        /// - `true`  -> "raise"
+        ambiguous_is_raise: bool,
     },
 
     SortedGroupBy {
@@ -268,6 +333,11 @@ pub enum PhysNodeKind {
         input: PhysStream,
         limit: Option<IdxSize>,
     },
+    #[cfg(feature = "interpolate")]
+    Interpolate {
+        input: PhysStream,
+        method: polars_ops::series::InterpolationMethod,
+    },
     Rle(PhysStream),
     RleId(PhysStream),
     SortedUnique {
@@ -277,6 +347,12 @@ pub enum PhysNodeKind {
     PeakMinMax {
         input: PhysStream,
         is_peak_max: bool,
+    },
+    IsSorted {
+        input: PhysStream,
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+        output_name: PlSmallStr,
     },
 
     OrderedUnion {
@@ -409,6 +485,8 @@ pub enum PhysNodeKind {
         right_on: PlSmallStr,
         tmp_left_key_col: Option<PlSmallStr>,
         tmp_right_key_col: Option<PlSmallStr>,
+        by_descending: Option<Vec<bool>>,
+        by_nulls_last: Option<Vec<bool>>,
         args: JoinArgs,
     },
 
@@ -441,6 +519,13 @@ pub enum PhysNodeKind {
     MergeSorted {
         input_left: PhysStream,
         input_right: PhysStream,
+        maintain_order: bool,
+    },
+
+    Gather {
+        input: PhysStream,
+        idxs: PhysStream,
+        null_on_oob: bool,
     },
 
     #[cfg(feature = "ewma")]
@@ -507,13 +592,30 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::Rle(input)
             | PhysNodeKind::RleId(input)
             | PhysNodeKind::SortedUnique { input, .. }
-            | PhysNodeKind::PeakMinMax { input, .. } => {
+            | PhysNodeKind::PeakMinMax { input, .. }
+            | PhysNodeKind::IsSorted { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(feature = "interpolate")]
+            PhysNodeKind::Interpolate { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
 
             #[cfg(feature = "is_first_distinct")]
             PhysNodeKind::IsFirstDistinct { input, .. } => {
+                rec!(input.node);
+                visit(input);
+            },
+
+            #[cfg(any(
+                feature = "dtype-date",
+                feature = "dtype-datetime",
+                feature = "dtype-time"
+            ))]
+            PhysNodeKind::StrptimeInfer { input, .. } => {
                 rec!(input.node);
                 visit(input);
             },
@@ -595,6 +697,13 @@ fn visit_node_inputs_mut(
                 visit(input_right);
             },
 
+            PhysNodeKind::Gather { input, idxs, .. } => {
+                rec!(input.node);
+                rec!(idxs.node);
+                visit(input);
+                visit(idxs);
+            },
+
             PhysNodeKind::TopK { input, k, .. } => {
                 rec!(input.node);
                 rec!(k.node);
@@ -642,7 +751,8 @@ fn visit_node_inputs_mut(
             PhysNodeKind::GroupBy { inputs, .. }
             | PhysNodeKind::OrderedUnion { inputs }
             | PhysNodeKind::UnorderedUnion { inputs }
-            | PhysNodeKind::Zip { inputs, .. } => {
+            | PhysNodeKind::Zip { inputs, .. }
+            | PhysNodeKind::ColumnarFunction { inputs, .. } => {
                 for input in inputs {
                     rec!(input.node);
                     visit(input);
@@ -668,7 +778,7 @@ fn visit_node_inputs_mut(
 }
 
 fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
-    let mut refcount = PlHashMap::new();
+    let mut refcount: PlIndexMap<_, usize> = PlIndexMap::new();
     visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
         *refcount.entry(*i).or_insert(0) += 1;
     });
@@ -676,10 +786,10 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
     let mut multiplexer_map: PlHashMap<PhysStream, PhysStream> = refcount
         .into_iter()
         .filter(|(_stream, refcount)| *refcount > 1)
-        .map(|(stream, _refcount)| {
-            let input_schema = phys_sm[stream.node].output_schema.clone();
-            let multiplexer_node = phys_sm.insert(PhysNode::new(
-                input_schema,
+        .map(|(stream, refcount)| {
+            let input_schema = Arc::clone(stream.output_schema(phys_sm));
+            let multiplexer_node = phys_sm.insert(PhysNode::new_multi_output(
+                (0..refcount).map(|_| Arc::clone(&input_schema)).collect(),
                 PhysNodeKind::Multiplexer { input: stream },
             ));
             (stream, PhysStream::first(multiplexer_node))

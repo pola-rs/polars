@@ -4,8 +4,8 @@ use polars_utils::aliases::PlRandomState;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
-use crate::POOL;
 use crate::prelude::*;
+use crate::runtime::RAYON;
 use crate::utils::{_set_partition_size, _split_offsets};
 
 #[inline]
@@ -46,7 +46,7 @@ where
         mut multithreaded: bool,
         hb: PlRandomState,
     ) -> Vec<Vec<BytesHash<'a>>> {
-        multithreaded &= POOL.current_num_threads() > 1;
+        multithreaded &= RAYON.current_num_threads() > 1;
         let null_h = hb.hash_one(0xde259df92c607d49_u64);
 
         if multithreaded {
@@ -54,7 +54,7 @@ where
 
             let split = _split_offsets(self.len(), n_partitions);
 
-            POOL.install(|| {
+            RAYON.install(|| {
                 split
                     .into_par_iter()
                     .map(|(offset, len)| {

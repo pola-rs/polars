@@ -182,6 +182,8 @@ pub struct Scan {
     #[pyo3(get)]
     file_info: Py<PyAny>,
     #[pyo3(get)]
+    hive_parts: Option<PyDataFrame>,
+    #[pyo3(get)]
     predicate: Option<PyExprIR>,
     #[pyo3(get)]
     file_options: PyFileOptions,
@@ -228,7 +230,7 @@ pub struct Sort {
     #[pyo3(get)]
     sort_options: (bool, Vec<bool>, Vec<bool>),
     #[pyo3(get)]
-    slice: Option<(i64, usize)>,
+    slice: Option<(i64, usize, Option<u128>)>,
 }
 
 #[pyclass(frozen)]
@@ -273,6 +275,17 @@ pub struct Join {
 }
 
 #[pyclass(frozen)]
+/// Join operation
+pub struct Gather {
+    #[pyo3(get)]
+    input: usize,
+    #[pyo3(get)]
+    idxs: usize,
+    #[pyo3(get)]
+    null_on_oob: bool,
+}
+
+#[pyclass(frozen)]
 /// Merge sorted operation
 pub struct MergeSorted {
     #[pyo3(get)]
@@ -281,6 +294,8 @@ pub struct MergeSorted {
     input_right: usize,
     #[pyo3(get)]
     key: String,
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 
 #[pyclass(frozen)]
@@ -324,7 +339,11 @@ pub struct Union {
     #[pyo3(get)]
     inputs: Vec<usize>,
     #[pyo3(get)]
-    options: Option<(i64, usize)>,
+    slice: Option<(i64, usize)>,
+    #[pyo3(get)]
+    rows: (Option<usize>, usize),
+    #[pyo3(get)]
+    maintain_order: bool,
 }
 #[pyclass(frozen)]
 /// Horizontal concatenation of multiple plans
@@ -378,7 +397,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                     python_src,
                     match &options.predicate {
                         PythonPredicate::None => py.None(),
-                        PythonPredicate::PyArrow(s) => ("pyarrow", s).into_py_any(py)?,
+                        PythonPredicate::PyArrow {
+                            predicate,
+                            has_residual,
+                        } => {
+                            ("pyarrow", predicate, "has_residual", has_residual).into_py_any(py)?
+                        },
                         PythonPredicate::Polars(e) => ("polars", e.node().0).into_py_any(py)?,
                     },
                     options
@@ -401,15 +425,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         }
         .into_py_any(py),
         IR::Scan {
-            hive_parts: Some(_),
-            ..
-        } => Err(PyNotImplementedError::new_err(
-            "scan with hive partitioning",
-        )),
-        IR::Scan {
             sources,
             file_info: _,
-            hive_parts: _,
+            hive_parts,
             predicate,
             predicate_file_skip_applied,
             output_schema: _,
@@ -434,6 +452,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 },
                 // TODO: file info
                 file_info: py.None(),
+                hive_parts: hive_parts
+                    .as_ref()
+                    .map(|h| PyDataFrame::new(h.df().clone())),
                 predicate: predicate
                     .as_ref()
                     .filter(|_| {
@@ -498,7 +519,9 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 sort_options.nulls_last.clone(),
                 sort_options.descending.clone(),
             ),
-            slice: slice.as_ref().map(|t| (t.0, t.1)),
+            slice: slice
+                .as_ref()
+                .map(|t| (t.0, t.1, t.2.as_ref().map(|p| p.id().as_u128()))),
         }
         .into_py_any(py),
         IR::Cache { input, id } => Cache {
@@ -579,6 +602,16 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
                 )
                     .into_py_any(py)?
             },
+        }
+        .into_py_any(py),
+        IR::Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => Gather {
+            input: input.0,
+            idxs: idxs.0,
+            null_on_oob: *null_on_oob,
         }
         .into_py_any(py),
         IR::HStack {
@@ -699,8 +732,10 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         .into_py_any(py),
         IR::Union { inputs, options } => Union {
             inputs: inputs.iter().map(|n| n.0).collect(),
-            // TODO: rest of options
-            options: options.slice,
+            // Remaining options are implementation detail, not logical
+            slice: options.slice,
+            rows: options.rows,
+            maintain_order: options.maintain_order,
         }
         .into_py_any(py),
         IR::HConcat {
@@ -744,12 +779,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
             input_left,
             input_right,
             key,
+            maintain_order,
         } => MergeSorted {
             input_left: input_left.0,
             input_right: input_right.0,
             key: key.to_string(),
+            maintain_order: *maintain_order,
         }
         .into_py_any(py),
+        IR::UnoptimizedDispatch { .. } => Err(PyNotImplementedError::new_err(
+            "Not expecting to see a UnoptimizedDispatch node",
+        )),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

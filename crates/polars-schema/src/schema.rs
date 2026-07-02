@@ -4,6 +4,7 @@ use core::hash::{Hash, Hasher};
 use indexmap::map::MutableKeys;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
+use polars_utils::levenshtein::did_you_mean;
 use polars_utils::pl_str::PlSmallStr;
 
 #[derive(Debug, Clone)]
@@ -377,14 +378,29 @@ impl<Field, Metadata> Schema<Field, Metadata> {
 
     pub fn try_index_of(&self, name: &str) -> PolarsResult<usize> {
         let Some(i) = self.fields.get_index_of(name) else {
-            polars_bail!(
+            return Err(self.column_not_found_err(name));
+        };
+
+        Ok(i)
+    }
+
+    /// Build a [`PolarsError::ColumnNotFound`] for `name`, listing available columns
+    /// and a "did you mean" suggestion when one is close enough.
+    pub fn column_not_found_err(&self, name: &str) -> PolarsError {
+        let suggestion = did_you_mean(name, self.iter_names().map(|s| s.as_str()));
+        if let Some(s) = suggestion {
+            polars_err!(
+                ColumnNotFound:
+                "unable to find column {:?}; valid columns: {:?}\n\nDid you mean {:?}?",
+                name, self.iter_names().collect::<Vec<_>>(), s,
+            )
+        } else {
+            polars_err!(
                 ColumnNotFound:
                 "unable to find column {:?}; valid columns: {:?}",
                 name, self.iter_names().collect::<Vec<_>>(),
             )
-        };
-
-        Ok(i)
+        }
     }
 
     /// Compare the fields between two schema returning the additional columns that each schema has.
@@ -540,22 +556,20 @@ where
 
     /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
     /// evaluates to true.
-    pub fn filter<F: Fn(usize, &Field) -> bool>(self, predicate: F) -> Self {
-        let metadata = self.metadata().clone();
-        let fields = self
-            .fields
-            .into_iter()
-            .enumerate()
-            .filter_map(|(index, (name, d))| {
-                if (predicate)(index, &d) {
-                    Some((name, d))
-                } else {
-                    None
-                }
-            })
-            .collect();
+    pub fn retain<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&PlSmallStr, &Field) -> bool,
+    {
+        self.retain_mut(|k, v| f(k, v))
+    }
 
-        Self { fields, metadata }
+    /// Returns a new [`Schema`] with a subset of all fields whose `predicate`
+    /// evaluates to true.
+    pub fn retain_mut<F>(&mut self, f: F)
+    where
+        F: FnMut(&mut PlSmallStr, &mut Field) -> bool,
+    {
+        self.fields.retain2(f);
     }
 }
 

@@ -86,7 +86,6 @@ pub use self::struct_::IRStructFunction;
 #[cfg(feature = "trigonometry")]
 pub use self::trigonometry::IRTrigonometricFunction;
 use super::*;
-use crate::plans::optimizer::DynamicPred;
 
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug)]
@@ -160,6 +159,9 @@ pub enum IRFunctionExpr {
     Shift,
     DropNans,
     DropNulls,
+    Quantile {
+        method: QuantileMethod,
+    },
     #[cfg(feature = "mode")]
     Mode {
         maintain_order: bool,
@@ -391,7 +393,7 @@ pub enum IRFunctionExpr {
     #[cfg(feature = "dtype-struct")]
     RowDecode(Vec<Field>, RowEncodingVariant),
     DynamicPred {
-        pred: DynamicPred,
+        pred: DynamicPredWeakRef,
     },
 }
 
@@ -506,6 +508,9 @@ impl Hash for IRFunctionExpr {
             } => {
                 descending.hash(state);
                 nulls_last.hash(state);
+            },
+            Quantile { method } => {
+                method.hash(state);
             },
             #[cfg(feature = "mode")]
             Mode { maintain_order } => {
@@ -758,6 +763,7 @@ impl Display for IRFunctionExpr {
             ShiftAndFill => "shift_and_fill",
             DropNans => "drop_nans",
             DropNulls => "drop_nulls",
+            Quantile { method: _ } => "quantile",
             #[cfg(feature = "mode")]
             Mode { maintain_order } => {
                 if *maintain_order {
@@ -1068,6 +1074,9 @@ impl IRFunctionExpr {
             },
             F::DropNulls => FunctionOptions::row_separable()
                 .flag(FunctionFlags::ALLOW_EMPTY_INPUTS | FunctionFlags::NON_ORDER_PRODUCING),
+            F::Quantile { method: _ } => {
+                FunctionOptions::aggregation().flag(FunctionFlags::NON_ORDER_OBSERVING)
+            },
             #[cfg(feature = "mode")]
             F::Mode { maintain_order } => FunctionOptions::groupwise().with_flags(|f| {
                 let f = f | FunctionFlags::NON_ORDER_PRODUCING;
@@ -1180,7 +1189,11 @@ impl IRFunctionExpr {
             #[cfg(feature = "peaks")]
             F::PeakMin | F::PeakMax => FunctionOptions::length_preserving(),
             #[cfg(feature = "cutqcut")]
-            F::Cut { .. } | F::QCut { .. } => FunctionOptions::length_preserving()
+            F::Cut { .. } => {
+                FunctionOptions::elementwise().with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY)
+            },
+            #[cfg(feature = "cutqcut")]
+            F::QCut { .. } => FunctionOptions::length_preserving()
                 .with_flags(|f| f | FunctionFlags::PASS_NAME_TO_APPLY),
             #[cfg(feature = "rle")]
             F::RLE => FunctionOptions::groupwise(),

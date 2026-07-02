@@ -1,4 +1,4 @@
-use apache_avro::Codec;
+use apache_avro::{Codec, DeflateSettings};
 use arrow::io::avro::avro_schema::read_async::{block_stream, read_metadata};
 use arrow::io::avro::read;
 use futures::{StreamExt, pin_mut};
@@ -33,7 +33,7 @@ async fn read_without_codec() -> PolarsResult<()> {
 
 #[tokio::test]
 async fn read_deflate() -> PolarsResult<()> {
-    test(Codec::Deflate).await
+    test(Codec::Deflate(DeflateSettings::default())).await
 }
 
 #[tokio::test]

@@ -25,7 +25,7 @@ impl ProjectionExec {
         // Vertical and horizontal parallelism.
         let df = if self.allow_vertical_parallelism
             && df.first_col_n_chunks() > 1
-            && df.height() > POOL.current_num_threads() * 2
+            && df.height() > RAYON.current_num_threads() * 2
             && self.options.run_parallel
         {
             let chunks = df.split_chunks().collect::<Vec<_>>();
@@ -46,7 +46,7 @@ impl ProjectionExec {
                 )
             });
 
-            let df = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let df = RAYON.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
             accumulate_dataframes_vertical_unchecked(df)
         }
         // Only horizontal parallelism.

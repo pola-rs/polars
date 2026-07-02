@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         RankMethod,
         TimeUnit,
     )
+    from tests.conftest import PlMonkeyPatch
 
 
 @pytest.fixture
@@ -1441,11 +1442,8 @@ def test_rolling_aggs(
             )
         )
         expected_dict["ts"].append(ts)
-        if window.is_empty():
-            expected_dict["value"].append(None)
-        else:
-            value = getattr(window["value"], aggregation)()
-            expected_dict["value"].append(value)
+        value = getattr(window["value"], aggregation)()
+        expected_dict["value"].append(value)
     expected = pl.DataFrame(expected_dict).select(
         pl.col("ts").cast(pl.Datetime(time_unit)),
         pl.col("value").cast(result["value"].dtype),
@@ -2428,3 +2426,26 @@ def test_rolling_corr_ddof_invariant_27013() -> None:
 
     assert r0 == pytest.approx(1.0)
     assert r2 == pytest.approx(1.0)
+
+
+def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", "2")
+    df = pl.LazyFrame({"index": [1, 4, 2, 3], "values": [1, 2, 3, 4]})
+    q = df.rolling("index", period="2i").agg(pl.col("values"))
+    with pytest.raises(
+        InvalidOperationError,
+        match="argument in operation 'rolling' is not sorted",
+    ):
+        q.collect(engine="streaming")
+
+
+def test_rolling_rank_min_samples_28102() -> None:
+    s = pl.Series("a", [None, 1.0, 2.0, 3.0, 4.0])
+    out = s.rolling_rank(
+        window_size=3,
+        method="max",
+        min_samples=3,
+    )
+    assert_series_equal(
+        out, pl.Series("a", [None, None, None, 3, 3], dtype=pl.get_index_type())
+    )

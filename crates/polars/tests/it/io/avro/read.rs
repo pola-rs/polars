@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use apache_avro::types::{Record, Value};
-use apache_avro::{Codec, Days, Duration, Millis, Months, Schema as AvroSchema, Writer};
+use apache_avro::{
+    Codec, Days, DeflateSettings, Duration, Millis, Months, Schema as AvroSchema, Writer,
+};
 use arrow::array::*;
 use arrow::datatypes::*;
 use arrow::io::avro::avro_schema::read::read_metadata;
@@ -243,7 +245,7 @@ fn read_without_codec() -> PolarsResult<()> {
 
 #[test]
 fn read_deflate() -> PolarsResult<()> {
-    test(Codec::Deflate)
+    test(Codec::Deflate(DeflateSettings::default()))
 }
 
 #[test]

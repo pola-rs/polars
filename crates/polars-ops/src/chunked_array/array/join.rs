@@ -55,7 +55,7 @@ fn join_many(
     let mut builder = StringChunkedBuilder::new(ca.name().clone(), ca.len());
 
     { ca.amortized_iter() }
-        .zip(separator)
+        .zip(separator.iter())
         .for_each(|(opt_s, opt_sep)| match opt_sep {
             Some(separator) => {
                 let opt_val = opt_s.and_then(|s| {

@@ -813,6 +813,11 @@ def format(f_string: str, *args: IntoExpr) -> Expr:
     args
         Expression(s) that fill the placeholders
 
+    Notes
+    -----
+    If any input expression evaluates to null for a row, the output of
+    ``pl.format`` is null for that row.
+
     Examples
     --------
     >>> df = pl.DataFrame(
@@ -836,6 +841,18 @@ def format(f_string: str, *args: IntoExpr) -> Expr:
     │ foo_b_bar_2 │
     │ foo_c_bar_3 │
     └─────────────┘
+    >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, None, 6]})
+    >>> df.select(pl.format("{}_{}", "a", "b").alias("fmt"))
+    shape: (3, 1)
+    ┌──────┐
+    │ fmt  │
+    │ ---  │
+    │ str  │
+    ╞══════╡
+    │ 1_4  │
+    │ null │
+    │ 3_6  │
+    └──────┘
     """
     exprs = [parse_into_expression(arg) for arg in args]
     return wrap_expr(plr.PyExpr.str_format(f_string, exprs))

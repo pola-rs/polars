@@ -45,6 +45,9 @@ fn create_rand_index_no_replacement(
             #[cfg(target_pointer_width = "64")]
             IndexVec::U64(v) => v.into_iter().map(|x| x as IdxSize).collect(),
         };
+        if !shuffle {
+            buf.sort_unstable();
+        }
     }
     IdxCa::new_vec(PlSmallStr::EMPTY, buf)
 }

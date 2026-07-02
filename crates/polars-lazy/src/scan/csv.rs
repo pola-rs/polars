@@ -285,9 +285,9 @@ impl LazyCsvReader {
                 // TODO: Path expansion should happen when converting to the IR
                 // https://github.com/pola-rs/polars/issues/17634
 
-                use polars_io::pl_async::get_runtime;
+                use polars_core::runtime::ASYNC;
 
-                let paths = get_runtime().block_on(expand_paths(
+                let paths = ASYNC.block_on(expand_paths(
                     &paths[..],
                     self.glob(),
                     &[], // hidden_file_prefix

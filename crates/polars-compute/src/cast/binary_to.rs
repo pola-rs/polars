@@ -20,7 +20,7 @@ macro_rules! impl_parse {
     ($primitive_type:ident) => {
         impl Parse for $primitive_type {
             fn parse(val: &[u8]) -> Option<Self> {
-                atoi_simd::parse_skipped(val).ok()
+                atoi_simd::parse::<_, true, true>(val).ok()
             }
         }
     };
@@ -143,9 +143,11 @@ where
 /// in the array.
 pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &BinaryArray<O>,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableBinaryArray<O>>::empty_with_value_dtype(
         from.dtype().clone(),
+        ordered,
     );
     array.reserve(from.len());
     array.try_extend(from.iter())?;
@@ -155,9 +157,10 @@ pub fn binary_to_dictionary<O: Offset, K: DictionaryKey>(
 
 pub(super) fn binary_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
     from: &dyn Array,
+    ordered: bool,
 ) -> PolarsResult<Box<dyn Array>> {
     let values = from.as_any().downcast_ref().unwrap();
-    binary_to_dictionary::<O, K>(values).map(|x| Box::new(x) as Box<dyn Array>)
+    binary_to_dictionary::<O, K>(values, ordered).map(|x| Box::new(x) as Box<dyn Array>)
 }
 
 fn fixed_size_to_offsets<O: Offset>(values_len: usize, fixed_size: usize) -> Offsets<O> {

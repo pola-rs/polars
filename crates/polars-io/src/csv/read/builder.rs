@@ -50,66 +50,66 @@ impl PrimitiveParser for Float64Type {
 impl PrimitiveParser for UInt8Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u8> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 #[cfg(feature = "dtype-u16")]
 impl PrimitiveParser for UInt16Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u16> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 impl PrimitiveParser for UInt32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u32> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 impl PrimitiveParser for UInt64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u64> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 #[cfg(feature = "dtype-u128")]
 impl PrimitiveParser for UInt128Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<u128> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 #[cfg(feature = "dtype-i8")]
 impl PrimitiveParser for Int8Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i8> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 #[cfg(feature = "dtype-i16")]
 impl PrimitiveParser for Int16Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i16> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 impl PrimitiveParser for Int32Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i32> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 impl PrimitiveParser for Int64Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i64> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 #[cfg(feature = "dtype-i128")]
 impl PrimitiveParser for Int128Type {
     #[inline]
     fn parse(bytes: &[u8]) -> Option<i128> {
-        atoi_simd::parse_skipped(bytes).ok()
+        atoi_simd::parse::<_, true, true>(bytes).ok()
     }
 }
 

@@ -74,12 +74,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 None,
             )
-            .over([col("Movie"), col("Theatre")])
+            .over([col("Movie"), col("Theatre")])?
             .alias("Rank")])
         // .filter(as_struct(&[col("Movie"), col("Theatre")]).is_duplicated())
         // Error: .is_duplicated() not available if you try that
         // https://github.com/pola-rs/polars/issues/3803
-        .filter(len().over([col("Movie"), col("Theatre")]).gt(lit(1)))
+        .filter(len().over([col("Movie"), col("Theatre")])?.gt(lit(1)))
         .collect()?;
     println!("{result}");
     // --8<-- [end:struct_ranking]
@@ -111,8 +111,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                         // iterate both `ChunkedArrays`
                         let result: Int32Chunked = ca_a
-                            .into_iter()
-                            .zip(ca_b)
+                            .iter()
+                            .zip(ca_b.iter())
                             .map(|(opt_a, opt_b)| match (opt_a, opt_b) {
                                 (Some(a), Some(b)) => Some(a.len() as i32 + b),
                                 _ => None,

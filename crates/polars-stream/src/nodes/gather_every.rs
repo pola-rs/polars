@@ -1,9 +1,9 @@
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_error::polars_ensure;
 
 use super::compute_node_prelude::*;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::wait_group::WaitGroup;
 
 pub struct GatherEveryNode {
     n: usize,
@@ -57,7 +57,7 @@ impl ComputeNode for GatherEveryNode {
         // To figure out the correct offsets we need to be serial.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
-                let height = morsel.df().height();
+                let height = morsel.height();
                 if self.offset >= height {
                     self.offset -= height;
                     continue;

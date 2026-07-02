@@ -36,7 +36,6 @@ use polars_utils::aliases::PlSeedableRandomStateQuality;
 
 use super::*;
 use crate::chunked_array::AsSinglePtr;
-use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
@@ -86,15 +85,6 @@ macro_rules! impl_dyn_series {
 
             fn _set_flags(&mut self, flags: StatisticsFlags) {
                 self.0.set_flags(flags)
-            }
-
-            unsafe fn equal_element(
-                &self,
-                idx_self: usize,
-                idx_other: usize,
-                other: &Series,
-            ) -> bool {
-                self.0.equal_element(idx_self, idx_other, other)
             }
 
             #[cfg(feature = "zip_with")]
@@ -328,6 +318,10 @@ macro_rules! impl_dyn_series {
                 self.0.rechunk().into_owned().into_series()
             }
 
+            fn with_validity(&self, validity: Option<Bitmap>) -> Series {
+                self.0.clone().with_validity(validity).into_series()
+            }
+
             fn new_from_index(&self, index: usize, length: usize) -> Series {
                 ChunkExpandAtIndex::new_from_index(&self.0, index, length).into_series()
             }
@@ -372,6 +366,7 @@ macro_rules! impl_dyn_series {
                 ChunkUnique::arg_unique(&self.0)
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
                 ChunkUnique::unique_id(&self.0)
             }

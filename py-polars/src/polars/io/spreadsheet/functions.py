@@ -19,7 +19,12 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.various import deduplicate_names, normalize_filepath, parse_version
+from polars._utils.various import (
+    deduplicate_names,
+    is_non_empty_sequence_of,
+    normalize_filepath,
+    parse_version,
+)
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -49,7 +54,7 @@ if TYPE_CHECKING:
     from polars._typing import ExcelSpreadsheetEngine, FileSource, SchemaDict
 
 
-def _sources(source: FileSource) -> tuple[Any, bool]:
+def _sources(source: FileSource | memoryview[int]) -> tuple[Any, bool]:
     """Unpack any glob patterns, standardise file paths."""
     read_multiple_workbooks = True
     sources: list[Any] = []
@@ -111,7 +116,7 @@ def _unpack_read_results(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -132,7 +137,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -153,7 +158,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int,
     sheet_name: str,
@@ -176,7 +181,7 @@ def read_excel(
 # Literal[0] overlaps with the return value for other integers
 @overload
 def read_excel(  # type: ignore[overload-overlap]
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -197,7 +202,7 @@ def read_excel(  # type: ignore[overload-overlap]
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -218,7 +223,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: None = ...,
     sheet_name: list[str] | tuple[str, ...],
@@ -240,7 +245,7 @@ def read_excel(
 @deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
 @deprecate_renamed_parameter("read_csv_options", "read_options", version="0.20.7")
 def read_excel(
-    source: FileSource,
+    source: FileSource | memoryview[int],
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str, ...] | None = None,
@@ -921,7 +926,9 @@ def _csv_buffer_to_frame(
                 version="0.20.31",
             )
 
-        csv_schema_overrides = read_options.get("schema_overrides", csv_dtypes)
+        csv_schema_overrides = cast(
+            "SchemaDict", read_options.get("schema_overrides", csv_dtypes)
+        )
         if set(csv_schema_overrides).intersection(schema_overrides):
             msg = "cannot specify columns in both `schema_overrides` and `read_options['dtypes']`"
             raise ParameterCollisionError(msg)
@@ -1010,7 +1017,11 @@ def _reorder_columns(
     if columns:
         from polars.selectors import by_index, by_name
 
-        cols = by_index(*columns) if isinstance(columns[0], int) else by_name(*columns)
+        cols = (
+            by_index(*columns)
+            if is_non_empty_sequence_of(columns, int)
+            else by_name(*columns)
+        )
         df = df.select(cols)
     return df
 
@@ -1193,13 +1204,13 @@ def _read_spreadsheet_openpyxl(
     header: list[str | None] = []
 
     if table_name and not sheet_name:
-        sheet_name, n_tables = None, 0
+        ws, sheet_name, n_tables = None, None, 0
         for sheet in parser.worksheets:
             n_tables += 1
             if table_name in sheet.tables:
                 ws, sheet_name = sheet, sheet.title
                 break
-        if sheet_name is None:
+        if ws is None:
             msg = (
                 f"table named {table_name!r} not found in sheet {sheet_name!r}"
                 if n_tables

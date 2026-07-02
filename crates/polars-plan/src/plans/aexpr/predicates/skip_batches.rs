@@ -1,6 +1,8 @@
 //! This module creates predicates that can skip record batches of rows based on statistics about
 //! that record batch.
 
+use std::borrow::Cow;
+
 use polars_core::prelude::{AnyValue, DataType, Scalar};
 use polars_core::schema::Schema;
 use polars_utils::aliases::PlIndexMap;
@@ -8,11 +10,146 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::super::evaluate::{constant_evaluate, into_column};
+#[cfg(feature = "dtype-struct")]
+use super::super::IRStructFunction;
+use super::super::evaluate::constant_evaluate;
 use super::super::{AExpr, IRBooleanFunction, IRFunctionExpr, LiteralValue, Operator};
 use crate::plans::aexpr::builder::IntoAExprBuilder;
-use crate::plans::predicates::get_binary_expr_col_and_lv;
+#[cfg(feature = "dtype-struct")]
+use crate::plans::expr_ir::ExprIR;
+#[cfg(feature = "is_in")]
+use crate::plans::predicates::try_extract_is_in_haystack;
 use crate::plans::{AExprBuilder, aexpr_to_leaf_names_iter, is_scalar_ae, rename_columns};
+
+/// A resolved reference to a (possibly nested) statistics target: a top-level column,
+/// optionally followed by a struct-field path.
+///
+/// The skip-batch statistics frame carries `<col>_min` / `<col>_max` / `<col>_nc` columns
+/// whose shape mirrors the data column. A struct field `s.a` is therefore read out of the
+/// struct-typed statistics column as `col("s_min").struct.field("a")` (and likewise for
+/// `_max` / `_nc`), letting the existing scalar handlers prune on an individual field even
+/// when sibling fields vary.
+#[derive(Clone)]
+struct StatTarget {
+    col: PlSmallStr,
+    /// Field path into a struct column, outermost first. Empty for a whole column.
+    #[cfg_attr(not(feature = "dtype-struct"), allow(dead_code))]
+    path: Vec<PlSmallStr>,
+}
+
+impl StatTarget {
+    /// Build the `<col>_<suffix>` statistics accessor, indexing into the struct field path.
+    fn stat(&self, suffix: &str, arena: &mut Arena<AExpr>) -> AExprBuilder {
+        #[allow(unused_mut)]
+        let mut b = AExprBuilder::new_from_node(
+            arena.add(AExpr::Column(format_pl_smallstr!("{}_{suffix}", self.col))),
+        );
+        #[cfg(feature = "dtype-struct")]
+        {
+            for field in &self.path {
+                b = struct_field(b, field.clone(), arena);
+            }
+        }
+        b
+    }
+
+    fn min(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
+        self.stat("min", arena)
+    }
+    fn max(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
+        self.stat("max", arena)
+    }
+    fn null_count(&self, arena: &mut Arena<AExpr>) -> AExprBuilder {
+        self.stat("nc", arena)
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn struct_field(base: AExprBuilder, name: PlSmallStr, arena: &mut Arena<AExpr>) -> AExprBuilder {
+    AExprBuilder::function(
+        vec![ExprIR::from_node(base.node(), arena)],
+        IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)),
+        arena,
+    )
+}
+
+/// Resolve a `col(..)` or chained `col(..).struct.field(..)` expression to a [`StatTarget`].
+/// Returns `None` for anything else (literals, computed expressions, ...).
+fn resolve_stat_target(e: Node, arena: &Arena<AExpr>) -> Option<StatTarget> {
+    match arena.get(e) {
+        AExpr::Column(c) => Some(StatTarget {
+            col: c.clone(),
+            path: Vec::new(),
+        }),
+        #[cfg(feature = "dtype-struct")]
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::StructExpr(IRStructFunction::FieldByName(name)),
+            ..
+        } if input.len() == 1 => {
+            let mut inner = resolve_stat_target(input[0].node(), arena)?;
+            inner.path.push(name.clone());
+            Some(inner)
+        },
+        _ => None,
+    }
+}
+
+/// The leaf dtype a [`StatTarget`] points at, walking the struct-field path through `schema`.
+fn target_leaf_dtype<'a>(target: &StatTarget, schema: &'a Schema) -> Option<&'a DataType> {
+    #[allow(unused_mut)]
+    let mut dtype = schema.get(&target.col)?;
+    #[cfg(feature = "dtype-struct")]
+    {
+        for field in &target.path {
+            let DataType::Struct(fields) = dtype else {
+                return None;
+            };
+            dtype = fields
+                .iter()
+                .find(|f| f.name() == field)
+                .map(|f| f.dtype())?;
+        }
+    }
+    Some(dtype)
+}
+
+/// Collect every scalar leaf reachable from `base` under a struct `dtype`. Used to express
+/// whole-struct null tests as a conjunction over the per-field null counts.
+#[cfg(feature = "dtype-struct")]
+fn struct_leaf_targets(base: &StatTarget, dtype: &DataType, out: &mut Vec<StatTarget>) {
+    match dtype {
+        DataType::Struct(fields) => {
+            for f in fields {
+                let mut child = base.clone();
+                child.path.push(f.name().clone());
+                struct_leaf_targets(&child, f.dtype(), out);
+            }
+        },
+        _ => out.push(base.clone()),
+    }
+}
+
+/// Like `get_binary_expr_col_and_lv`, but resolving the column side to a [`StatTarget`] so a
+/// `struct.field(..)` comparison is recognised too.
+#[allow(clippy::type_complexity)]
+fn get_binary_expr_target_and_lv<'a>(
+    left: Node,
+    right: Node,
+    arena: &'a Arena<AExpr>,
+    schema: &Schema,
+) -> Option<((StatTarget, Node), (Option<Cow<'a, LiteralValue>>, Node))> {
+    match (
+        resolve_stat_target(left, arena),
+        resolve_stat_target(right, arena),
+        constant_evaluate(left, arena, schema, 0),
+        constant_evaluate(right, arena, schema, 0),
+    ) {
+        (Some(target), _, _, Some(lv)) => Some(((target, left), (lv, right))),
+        (_, Some(target), Some(lv), _) => Some(((target, right), (lv, left))),
+        _ => None,
+    }
+}
 
 /// Return a new boolean expression determines whether a batch can be skipped based on min, max and
 /// null count statistics.
@@ -35,6 +172,7 @@ pub fn aexpr_to_skip_batch_predicate(
 /// Rejects nested, null, and categorical types. For floats, Parquet stats exclude NaN
 /// but data may contain it. Since NaN is largest under TotalOrd, `col < x` is safe
 /// (NaN never matches) but `col > x` is not (NaN always matches).
+/// col >= NaN matches NaN == NaN, but stats exclude NaN so max < NaN can't detect them -> unsafe
 fn can_use_min_max_stats(
     dtype: &DataType,
     op: Option<&Operator>,
@@ -54,7 +192,7 @@ fn can_use_min_max_stats(
     match op {
         Some(O::Lt | O::LtEq) => true,
         None | Some(O::Eq | O::EqValidity) => !lv_is_nan && lv.is_some(),
-        Some(O::Gt | O::GtEq) => lv_is_nan,
+        Some(O::Gt) => lv_is_nan,
         _ => false,
     }
 }
@@ -146,16 +284,15 @@ fn aexpr_to_skip_batch_predicate_rec(
 
                 match op {
                     O::Eq | O::EqValidity => {
-                        let ((col, _), (lv, lv_node)) =
-                            get_binary_expr_col_and_lv(left, right, arena, schema)?;
-                        let dtype = schema.get(col)?;
+                        let ((target, _), (lv, lv_node)) =
+                            get_binary_expr_target_and_lv(left, right, arena, schema)?;
+                        let dtype = target_leaf_dtype(&target, schema)?;
 
                         if !can_use_min_max_stats(dtype, Some(op), lv.as_deref()) {
                             return None;
                         }
 
                         let op = *op;
-                        let col = col.clone();
 
                         // col(A) == B -> {
                         //     null_count(A) == 0                              , if B.is_null(),
@@ -168,14 +305,14 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 if matches!(op, O::Eq) {
                                     lv!(false).node()
                                 } else {
-                                    let col_nc = col!(null_count: col);
+                                    let col_nc = target.null_count(arena);
                                     let idx_zero = lv!(idx: 0);
                                     col_nc.eq(idx_zero, arena).node()
                                 }
                             },
                             not_null: {
-                                let col_min = col!(min: col);
-                                let col_max = col!(max: col);
+                                let col_min = target.min(arena);
+                                let col_max = target.max(arena);
 
                                 let min_is_defined = is_stat_defined(col_min.node(), dtype, arena);
                                 let max_is_defined = is_stat_defined(col_max.node(), dtype, arena);
@@ -186,7 +323,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 let max_lt = col_max.lt(lv_node, arena);
                                 let max_lt = max_lt.and(max_is_defined, arena);
 
-                                let col_nc = col!(null_count: col);
+                                let col_nc = target.null_count(arena);
                                 let len = col!(len);
                                 let all_nulls = col_nc.eq(len, arena);
 
@@ -195,16 +332,15 @@ fn aexpr_to_skip_batch_predicate_rec(
                         ))
                     },
                     O::NotEq | O::NotEqValidity => {
-                        let ((col, _), (lv, lv_node)) =
-                            get_binary_expr_col_and_lv(left, right, arena, schema)?;
-                        let dtype = schema.get(col)?;
+                        let ((target, _), (lv, lv_node)) =
+                            get_binary_expr_target_and_lv(left, right, arena, schema)?;
+                        let dtype = target_leaf_dtype(&target, schema)?;
 
                         if !can_use_min_max_stats(dtype, Some(op), lv.as_deref()) {
                             return None;
                         }
 
                         let op = *op;
-                        let col = col.clone();
 
                         // col(A) != B -> {
                         //     null_count(A) == LEN                            , if B.is_null(),
@@ -217,18 +353,18 @@ fn aexpr_to_skip_batch_predicate_rec(
                                 if matches!(op, O::NotEq) {
                                     lv!(false).node()
                                 } else {
-                                    let col_nc = col!(null_count: col);
+                                    let col_nc = target.null_count(arena);
                                     let len = col!(len);
                                     col_nc.eq(len, arena).node()
                                 }
                             },
                             not_null: {
-                                let col_min = col!(min: col);
-                                let col_max = col!(max: col);
+                                let col_min = target.min(arena);
+                                let col_max = target.max(arena);
                                 let min_eq = col_min.eq(lv_node, arena);
                                 let max_eq = col_max.eq(lv_node, arena);
 
-                                let col_nc = col!(null_count: col);
+                                let col_nc = target.null_count(arena);
                                 let idx_zero = lv!(idx: 0);
                                 let no_nulls = col_nc.eq(idx_zero, arena);
 
@@ -237,9 +373,9 @@ fn aexpr_to_skip_batch_predicate_rec(
                         ))
                     },
                     O::Lt | O::Gt | O::LtEq | O::GtEq => {
-                        let ((col, col_node), (lv, lv_node)) =
-                            get_binary_expr_col_and_lv(left, right, arena, schema)?;
-                        let dtype = schema.get(col)?;
+                        let ((target, col_node), (lv, lv_node)) =
+                            get_binary_expr_target_and_lv(left, right, arena, schema)?;
+                        let dtype = target_leaf_dtype(&target, schema)?;
                         let col_is_left = col_node == left;
 
                         let effective_op = if col_is_left { *op } else { op.swap_operands() };
@@ -248,7 +384,6 @@ fn aexpr_to_skip_batch_predicate_rec(
                         }
 
                         let op = *op;
-                        let col = col.clone();
                         let lv_may_be_null = lv.is_none_or(|lv| lv.is_null());
 
                         // If B is null, this is always true.
@@ -266,8 +401,8 @@ fn aexpr_to_skip_batch_predicate_rec(
                         //     null_count(A) == LEN || max(A) < B
 
                         let stat = match (op, col_is_left) {
-                            (O::Lt | O::LtEq, true) | (O::Gt | O::GtEq, false) => col!(min: col),
-                            (O::Lt | O::LtEq, false) | (O::Gt | O::GtEq, true) => col!(max: col),
+                            (O::Lt | O::LtEq, true) | (O::Gt | O::GtEq, false) => target.min(arena),
+                            (O::Lt | O::LtEq, false) | (O::Gt | O::GtEq, true) => target.max(arena),
                             _ => unreachable!(),
                         };
                         let cmp_op = match (op, col_is_left) {
@@ -338,26 +473,42 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let nulls_equal = *nulls_equal;
                         let lv_node = input[1].node();
                         match (
-                            into_column(input[0].node(), arena),
+                            resolve_stat_target(input[0].node(), arena),
                             constant_evaluate(lv_node, arena, schema, 0),
                         ) {
-                            (Some(col), Some(_)) => {
+                            (Some(target), Some(_)) => {
                                 use polars_core::prelude::ExplodeOptions;
 
-                                let dtype = schema.get(col)?;
+                                let dtype = target_leaf_dtype(&target, schema)?;
                                 if !can_use_min_max_stats(dtype, None, None) {
                                     return None;
                                 }
 
-                                // col(A).is_in([B1, ..., Bn]) ->
-                                //      ([B1, ..., Bn].has_no_nulls() || null_count(A) == 0) &&
-                                //      (
-                                //          min(A) > max[B1, ..., Bn] ||
-                                //          max(A) < min[B1, ..., Bn]
-                                //      )
-                                let col = col.clone();
-                                let lv_node = lv_node.into_aexpr_builder();
+                                // col(A).is_in([B1, ..., Bn]) -> {
+                                //     min(A) == max(A) && null_count(A) == 0 && !min(A).is_in(lv),
+                                //     (!lv.has_nulls() || null_count(A) == 0) &&
+                                //         (null_count(A) == LEN ||
+                                //             AND_i (min(A) > Bi || max(A) < Bi)) , if N <= LIMIT,
+                                //         (null_count(A) == LEN ||
+                                //             min(A) > max(lv) || max(A) < min(lv)) , otherwise,
+                                // }
+                                // Branch 1 mirrors the generic min==max fallback for const-col rgs.
+                                // `min(A) > X` / `max(A) < X` elide an `is_defined(stat) &&` guard.
+                                // Helper drops haystack nulls; the `(!lv.has_nulls() || null_count(A)
+                                // == 0)` gate is applied only when needed: per-case under
+                                // nulls_equal=true in the unrolled path (when a null was dropped),
+                                // and conditionally in the fallback path.
+                                const LIST_ITEM_LIMIT: usize = 100;
 
+                                let values = try_extract_is_in_haystack(
+                                    lv_node,
+                                    arena,
+                                    schema,
+                                    dtype,
+                                    LIST_ITEM_LIMIT,
+                                );
+
+                                let lv_node = lv_node.into_aexpr_builder();
                                 let lv_node_exploded = lv_node.explode(
                                     arena,
                                     ExplodeOptions {
@@ -365,70 +516,158 @@ fn aexpr_to_skip_batch_predicate_rec(
                                         keep_nulls: true,
                                     },
                                 );
-                                let lv_min = lv_node_exploded.min(arena);
-                                let lv_max = lv_node_exploded.max(arena);
 
-                                let col_min = col!(min: col);
-                                let col_max = col!(max: col);
-
+                                let col_min = target.min(arena);
+                                let col_max = target.max(arena);
                                 let min_is_defined = is_stat_defined(col_min, dtype, arena);
                                 let max_is_defined = is_stat_defined(col_max, dtype, arena);
 
-                                let min_gt = col_min.gt(lv_max, arena);
-                                let min_gt = min_is_defined.and(min_gt, arena);
+                                // all_nulls disjunct skips row groups whose column is entirely
+                                // null in this group. Sound for both paths; the per-case
+                                // null_count(A) == 0 guards suppress skip when haystack and column
+                                // both have nulls under nulls_equal=true.
+                                let col_nc = target.null_count(arena);
+                                let len = col!(len);
+                                let idx_zero = lv!(idx: 0);
+                                let all_nulls = col_nc.eq(len, arena);
+                                let col_has_no_nulls = col_nc.eq(idx_zero, arena);
 
-                                let max_lt = col_max.lt(lv_min, arena);
-                                let max_lt = max_is_defined.and(max_lt, arena);
+                                let min_max_not_in = if let Some((values, had_nulls)) = values {
+                                    // Per-element AND. Empty list folds to `true` (AND identity);
+                                    // `is_in([])` is unconditionally false. The helper has dropped
+                                    // any haystack nulls; the per-case `null_count(A) == 0` guard
+                                    // below handles the column-has-nulls × haystack-has-null
+                                    // interaction under nulls_equal=true.
+                                    let inner = values.iter().fold(lv!(true), |acc, av| {
+                                        let scalar = Scalar::new(dtype.clone(), av.into_static());
+                                        let bi = AExprBuilder::lit_scalar(scalar, arena);
+                                        let below =
+                                            min_is_defined.and(col_min.gt(bi, arena), arena);
+                                        let above =
+                                            max_is_defined.and(col_max.lt(bi, arena), arena);
+                                        acc.and(below.or(above, arena), arena)
+                                    });
+                                    let expr = all_nulls.or(inner, arena);
+                                    if had_nulls && nulls_equal {
+                                        expr.and(col_has_no_nulls, arena)
+                                    } else {
+                                        expr
+                                    }
+                                } else {
+                                    let lv_min = lv_node_exploded.min(arena);
+                                    let lv_max = lv_node_exploded.max(arena);
+                                    let below =
+                                        min_is_defined.and(col_min.gt(lv_max, arena), arena);
+                                    let above =
+                                        max_is_defined.and(col_max.lt(lv_min, arena), arena);
+                                    let inner = below.or(above, arena);
+                                    let expr = all_nulls.or(inner, arena);
 
-                                let expr = min_gt.or(max_lt, arena);
-
-                                let col_nc = col!(null_count: col);
-                                let col_has_no_nulls = col_nc.has_no_nulls(arena);
-
-                                let lv_has_not_nulls = lv_node_exploded.has_no_nulls(arena);
-                                let null_case = lv_has_not_nulls.or(col_has_no_nulls, arena);
-
-                                let min_max_is_in = null_case.and(expr, arena);
-
-                                let col_nc = col!(null_count: col);
+                                    if nulls_equal {
+                                        let lv_has_not_nulls = lv_node_exploded.has_no_nulls(arena);
+                                        let null_case =
+                                            lv_has_not_nulls.or(col_has_no_nulls, arena);
+                                        null_case.and(expr, arena)
+                                    } else {
+                                        expr
+                                    }
+                                };
 
                                 let min_is_max = col_min.eq(col_max, arena); // Eq so that (None == None) == None
-                                let idx_zero = lv!(idx: 0);
-                                let has_no_nulls = col_nc.eq(idx_zero, arena);
 
                                 // The above case does always cover the fallback path. Since there
                                 // is code that relies on the `min==max` always filtering normally,
                                 // we add it here.
                                 let exact_not_in =
                                     col_min.is_in(lv_node, nulls_equal, arena).not(arena);
-                                let exact_not_in =
-                                    min_is_max.and(has_no_nulls, arena).and(exact_not_in, arena);
+                                let exact_not_in = min_is_max
+                                    .and(col_has_no_nulls, arena)
+                                    .and(exact_not_in, arena);
 
-                                Some(exact_not_in.or(min_max_is_in, arena).node())
+                                Some(exact_not_in.or(min_max_not_in, arena).node())
                             },
                             _ => None,
                         }
                     },
+                    IRBooleanFunction::Not => {
+                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let dtype = target_leaf_dtype(&target, schema)?;
+                        if !matches!(dtype, DataType::Boolean) {
+                            return None;
+                        }
+
+                        let col_nc = target.null_count(arena);
+                        let len = col!(len);
+                        let col_min = target.min(arena);
+                        let col_min_is_true = col_min.eq(lv!(true), arena);
+                        let min_is_defined = is_stat_defined(col_min, dtype, arena);
+
+                        // col(A).Not() ->
+                        //     null_count(A) == LEN || min(A) == True
+                        let all_null = col_nc.eq(len, arena);
+                        let min = min_is_defined.and(col_min_is_true, arena);
+
+                        Some(all_null.or(min, arena).node())
+                    },
                     IRBooleanFunction::IsNull => {
-                        let col = into_column(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena)?;
 
                         // col(A).is_null() -> null_count(A) == 0
-                        let col_nc = col!(null_count: col);
+                        //
+                        // For a struct target the row-level null count is unrecoverable from
+                        // per-field counts. But a null struct nulls *every* field, so a single
+                        // field that is never null proves no struct row is null either
+                        // (null_count(field) bounds the struct null count from above). Skip when
+                        // *any* per-field `null_count == 0`: the disjunction over the leaves.
+                        #[cfg(feature = "dtype-struct")]
+                        {
+                            let dtype = target_leaf_dtype(&target, schema)?;
+                            if matches!(dtype, DataType::Struct(_)) {
+                                let mut leaves = Vec::new();
+                                struct_leaf_targets(&target, dtype, &mut leaves);
+                                let mut acc: Option<AExprBuilder> = None;
+                                for leaf in &leaves {
+                                    let leaf_nc = leaf.null_count(arena);
+                                    let idx_zero = lv!(idx: 0);
+                                    let term = leaf_nc.eq(idx_zero, arena);
+                                    acc = Some(match acc {
+                                        Some(acc) => acc.or(term, arena),
+                                        None => term,
+                                    });
+                                }
+                                // Empty struct: no leaves to reason about -> cannot skip.
+                                return acc.map(|acc| acc.node());
+                            }
+                        }
+
+                        let col_nc = target.null_count(arena);
                         let idx_zero = lv!(idx: 0);
                         Some(col_nc.eq(idx_zero, arena).node())
                     },
                     IRBooleanFunction::IsNotNull => {
-                        let col = into_column(input[0].node(), arena)?;
+                        let target = resolve_stat_target(input[0].node(), arena)?;
+
+                        // A struct row with null *fields* is still a non-null *struct*, and the
+                        // struct's row-level null count is unrecoverable from per-field counts, so
+                        // whole-struct is_not_null cannot be pruned. A scalar struct *field* is
+                        // fine: its per-field null count is exact.
+                        #[cfg(feature = "dtype-struct")]
+                        {
+                            let dtype = target_leaf_dtype(&target, schema)?;
+                            if matches!(dtype, DataType::Struct(_)) {
+                                return None;
+                            }
+                        }
 
                         // col(A).is_not_null() -> null_count(A) == LEN
-                        let col_nc = col!(null_count: col);
+                        let col_nc = target.null_count(arena);
                         let len = col!(len);
                         Some(col_nc.eq(len, arena).node())
                     },
                     #[cfg(feature = "is_between")]
                     IRBooleanFunction::IsBetween { closed } => {
-                        let col = into_column(input[0].node(), arena)?;
-                        let dtype = schema.get(col)?;
+                        let target = resolve_stat_target(input[0].node(), arena)?;
+                        let dtype = target_leaf_dtype(&target, schema)?;
 
                         // col(A).is_between(X, Y) ->
                         //     null_count(A) == LEN ||
@@ -447,14 +686,13 @@ fn aexpr_to_skip_batch_predicate_rec(
                             return None;
                         }
 
-                        let col = col.clone();
                         let closed = *closed;
 
                         let lhs_no_nulls = left_node.into_aexpr_builder().has_no_nulls(arena);
                         let rhs_no_nulls = right_node.into_aexpr_builder().has_no_nulls(arena);
 
-                        let col_min = col!(min: col);
-                        let col_max = col!(max: col);
+                        let col_min = target.min(arena);
+                        let col_max = target.max(arena);
 
                         use polars_ops::series::ClosedInterval;
                         let (left, right) = match closed {
@@ -510,11 +748,13 @@ fn aexpr_to_skip_batch_predicate_rec(
     }));
 
     // We cannot do proper equalities for these. For floats, min/max stats exclude
-    // NaN, so substituting col=min doesn't account for hidden NaN values.
+    // NaN, so substituting col=min doesn't account for hidden NaN values. Nested columns
+    // (e.g. structs) carry struct-shaped stats that cannot be substituted as a whole; their
+    // individual fields are handled by the specialized per-field handlers above.
     if live_columns.iter().any(|(c, _)| {
         schema
             .get(c)
-            .is_none_or(|dt| dt.is_categorical() || dt.is_float())
+            .is_none_or(|dt| dt.is_categorical() || dt.is_float() || dt.is_nested())
     }) {
         return None;
     }

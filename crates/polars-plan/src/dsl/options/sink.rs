@@ -8,9 +8,10 @@ use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::PlHashSet;
 use polars_core::schema::Schema;
+use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::file::Writeable;
+use polars_io::utils::file::Writable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
@@ -19,11 +20,12 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::FileWriteFormat;
 use crate::dsl::file_provider::FileProviderType;
+use crate::dsl::iceberg_sink_state::IcebergSinkState;
 use crate::dsl::{AExpr, Expr, SpecialEq};
 use crate::plans::{ExprIR, ToFieldContext};
 use crate::prelude::PlanCallback;
 
-type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writeable>>>>;
+type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writable>>>>;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -85,21 +87,21 @@ impl SinkTarget {
         }
     }
 
-    pub fn open_into_writeable(
+    pub fn open_into_writable(
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
         cloud_upload_chunk_size: usize,
         cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
-    ) -> PolarsResult<Writeable> {
+    ) -> PolarsResult<Writable> {
         match self {
             SinkTarget::Path(path) => {
                 if mkdir {
                     polars_io::utils::mkdir::mkdir_recursive(path)?;
                 }
 
-                polars_io::utils::file::Writeable::try_new(
+                polars_io::utils::file::Writable::try_new(
                     path.clone(),
                     cloud_options,
                     cloud_upload_chunk_size,
@@ -111,14 +113,14 @@ impl SinkTarget {
         }
     }
 
-    pub async fn open_into_writeable_async(
+    pub async fn open_into_writable_async(
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
         cloud_upload_chunk_size: usize,
         cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
-    ) -> PolarsResult<Writeable> {
+    ) -> PolarsResult<Writable> {
         #[cfg(feature = "cloud")]
         {
             match self {
@@ -127,7 +129,7 @@ impl SinkTarget {
                         polars_io::utils::mkdir::tokio_mkdir_recursive(path).await?;
                     }
 
-                    polars_io::utils::file::Writeable::try_new(
+                    polars_io::utils::file::Writable::try_new(
                         path.clone(),
                         cloud_options,
                         cloud_upload_chunk_size,
@@ -141,7 +143,7 @@ impl SinkTarget {
 
         #[cfg(not(feature = "cloud"))]
         {
-            self.open_into_writeable(
+            self.open_into_writable(
                 cloud_options,
                 mkdir,
                 cloud_upload_chunk_size,
@@ -227,6 +229,7 @@ pub enum SinkType {
     Callback(CallbackSinkType),
     File(FileSinkOptions),
     Partitioned(PartitionedSinkOptions),
+    Iceberg(IcebergSinkState),
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -465,7 +468,13 @@ pub struct FileSinkOptions {
     pub unified_sink_args: UnifiedSinkArgs,
 }
 
-pub type SinkedPathsCallback = PlanCallback<SinkedPathsCallbackArgs, ()>;
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Hash, PartialEq)]
+pub enum SinkedPathsCallback {
+    IcebergCommit(IcebergSinkState),
+    Callback(PlanCallback<SinkedPathsCallbackArgs, ()>),
+}
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -482,18 +491,47 @@ pub struct SinkedPathInfo {
 }
 
 impl SinkedPathsCallback {
-    pub fn call_(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<()> {
+    pub fn call(&self, args: SinkedPathsCallbackArgs) -> PolarsResult<()> {
+        use PlanCallback as CB;
+
         match self {
-            Self::Rust(func) => (func)(args),
+            Self::IcebergCommit(sink_state) => {
+                feature_gated!("python", {
+                    use pyo3::Python;
+
+                    Python::attach(|py| {
+                        use pyo3::intern;
+                        use pyo3::types::PyList;
+
+                        let py_paths = PyList::empty(py);
+
+                        let SinkedPathsCallbackArgs { path_info_list } = args;
+
+                        for SinkedPathInfo { path } in path_info_list {
+                            use pyo3::types::PyListMethods;
+
+                            let path: &str = path.as_str();
+
+                            py_paths.append(path)?;
+                        }
+
+                        sink_state.clone().into_sink_state_obj()?.call_method1(
+                            py,
+                            intern!(py, "commit"),
+                            (py_paths,),
+                        )?;
+
+                        PolarsResult::Ok(())
+                    })
+                })
+            },
+            Self::Callback(CB::Rust(func)) => (func)(args),
             #[cfg(feature = "python")]
-            Self::Python(object) => pyo3::Python::attach(|py| {
+            Self::Callback(CB::Python(object)) => pyo3::Python::attach(|py| {
                 use pyo3::intern;
                 use pyo3::types::{PyAnyMethods, PyDict, PyList};
 
                 let SinkedPathsCallbackArgs { path_info_list } = args;
-
-                let convert_registry =
-                    polars_utils::python_convert_registry::get_python_convert_registry();
 
                 let py_paths = PyList::empty(py);
 
@@ -508,9 +546,10 @@ impl SinkedPathsCallback {
                 let kwargs = PyDict::new(py);
                 kwargs.set_item(intern!(py, "paths"), py_paths)?;
 
-                let args_dataclass = convert_registry
-                    .py_sinked_paths_callback_args_dataclass()
-                    .call(py, (), Some(&kwargs))?;
+                let args_dataclass =
+                    polars_utils::python_convert_registry::get_python_convert_registry()
+                        .py_sinked_paths_callback_args_dataclass()
+                        .call(py, (), Some(&kwargs))?;
 
                 object.call1(py, (args_dataclass,))?;
 

@@ -208,29 +208,12 @@ impl Expr {
 
     /// Compute the quantile per group.
     pub fn quantile(self, quantile: Expr, method: QuantileMethod) -> Self {
-        AggExpr::Quantile {
-            expr: Arc::new(self),
-            quantile: Arc::new(quantile),
-            method,
-        }
-        .into()
+        self.map_binary(FunctionExpr::Quantile { method }, quantile)
     }
 
     /// Get the group indexes of the group by operation.
     pub fn agg_groups(self) -> Self {
         AggExpr::AggGroups(Arc::new(self)).into()
-    }
-
-    /// Alias for `explode`.
-    #[deprecated(
-        since = "0.53.0",
-        note = "Use `explode()` with `ExplodeOptions { empty_as_null: false, keep_nulls: false }` instead. Will be removed in version 2.0."
-    )]
-    pub fn flatten(self) -> Self {
-        self.explode(ExplodeOptions {
-            empty_as_null: true,
-            keep_nulls: true,
-        })
     }
 
     /// Explode the String/List column.
@@ -359,12 +342,12 @@ impl Expr {
     }
 
     /// Take the values by idx.
-    pub fn gather<E: Into<Expr>>(self, idx: E) -> Self {
+    pub fn gather<E: Into<Expr>>(self, idx: E, null_on_oob: bool) -> Self {
         Expr::Gather {
             expr: Arc::new(self),
             idx: Arc::new(idx.into()),
             returns_scalar: false,
-            null_on_oob: false,
+            null_on_oob,
         }
     }
 
@@ -832,9 +815,11 @@ impl Expr {
     /// │ 1      ┆ 16     │
     /// ╰────────┴────────╯
     /// ```
-    pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(self, partition_by: E) -> Self {
+    pub fn over<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
+        self,
+        partition_by: E,
+    ) -> PolarsResult<Self> {
         self.over_with_options(Some(partition_by), None, Default::default())
-            .expect("We explicitly passed `partition_by`")
     }
 
     pub fn over_with_options<E: AsRef<[IE]>, IE: Into<Expr> + Clone>(
@@ -843,7 +828,10 @@ impl Expr {
         order_by: Option<(E, SortOptions)>,
         mapping: WindowMapping,
     ) -> PolarsResult<Self> {
-        polars_ensure!(partition_by.is_some() || order_by.is_some(), InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
+        let order_by_is_set = order_by
+            .as_ref()
+            .is_some_and(|(e, _)| !e.as_ref().is_empty());
+        polars_ensure!(partition_by.is_some() || order_by_is_set, InvalidOperation: "At least one of `partition_by` and `order_by` must be specified in `over`");
         let partition_by = if let Some(partition_by) = partition_by {
             partition_by
                 .as_ref()
@@ -854,8 +842,11 @@ impl Expr {
             vec![lit(1)]
         };
 
-        let order_by = order_by.map(|(e, options)| {
+        let order_by = order_by.and_then(|(e, options)| {
             let e = e.as_ref();
+            if e.is_empty() {
+                return None;
+            }
             let e = if e.len() == 1 {
                 Arc::new(e[0].clone().into())
             } else {
@@ -864,7 +855,7 @@ impl Expr {
                     Arc::new(functions::as_struct(e))
                 }]
             };
-            (e, options)
+            Some((e, options))
         });
 
         Ok(Expr::Over {
@@ -975,6 +966,13 @@ impl Expr {
             },
             expr.into(),
         )
+    }
+
+    pub fn is_sorted(self, descending: Option<bool>, nulls_last: Option<bool>) -> Self {
+        self.map_unary(BooleanFunction::IsSorted {
+            descending,
+            nulls_last,
+        })
     }
 
     /// Get the approximate count of unique values.
@@ -1533,6 +1531,19 @@ impl Expr {
     /// [Kleene logic]: https://en.wikipedia.org/wiki/Three-valued_logic
     pub fn all(self, ignore_nulls: bool) -> Self {
         self.map_unary(BooleanFunction::All { ignore_nulls })
+    }
+
+    /// Returns whether this column is empty.
+    ///
+    /// If `ignore_nulls` is True, the column is also considered empty if it
+    /// only consists of nulls.
+    pub fn is_empty(self, ignore_nulls: bool) -> Self {
+        self.map_unary(BooleanFunction::IsEmpty { ignore_nulls })
+    }
+
+    /// Returns whether the column contains one or more null values.
+    pub fn has_nulls(self) -> Self {
+        self.map_unary(BooleanFunction::HasNulls)
     }
 
     #[cfg(feature = "dtype-struct")]

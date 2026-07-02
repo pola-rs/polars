@@ -29,7 +29,7 @@ fn test_describe() {
         .unwrap()
         .str()
         .unwrap()
-        .into_iter()
+        .iter()
         .collect::<Vec<_>>();
 
     assert_eq!(actual, expected);

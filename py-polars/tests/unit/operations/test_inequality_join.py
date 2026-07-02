@@ -772,7 +772,7 @@ def test_range_join_single_parametric(
     ],
 )
 def test_range_join_dtypes(
-    s: pl.DataType,
+    s: pl.Series,
     lower_op: str | None,
     upper_op: str | None,
 ) -> None:
@@ -781,7 +781,9 @@ def test_range_join_dtypes(
     # 50 samples should ensure that this join will have plenty of matches
     lo_df = point_df.sample(50, with_replacement=True, seed=0).rename({"point": "lo"})
     hi_df = point_df.sample(50, with_replacement=True, seed=1).rename({"point": "hi"})
-    interval_lf = pl.concat([lo_df, hi_df], how="horizontal").with_row_index().lazy()
+    interval_lf = (
+        pl.concat([lo_df, hi_df], how="horizontal", strict=True).with_row_index().lazy()
+    )
     point_lf = point_df.with_row_index().lazy()
     predicates = [
         _inequality_expression_col("point", op, col)
@@ -864,7 +866,7 @@ def test_cross_join_validity_bitmap_offset_26925(
     plmonkeypatch: PlMonkeyPatch,
 ) -> None:
     plmonkeypatch.setenv("POLARS_MAX_THREADS", "2")
-    plmonkeypatch.setenv("POLARS_AUTO_NEW_STREAMING", "1")
+    plmonkeypatch.setenv("POLARS_AUTO_STREAMING", "1")
 
     left = pl.DataFrame({"id": [0, 1], "x": pl.Series([0, 0], dtype=pl.Int64)})
     right = pl.DataFrame(

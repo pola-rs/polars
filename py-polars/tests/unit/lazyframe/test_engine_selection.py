@@ -33,7 +33,7 @@ def test_engine_selection_background_warns(
     expect = df.collect()
     with pytest.warns(
         UserWarning,
-        match="GPU engine does not support streaming or background",
+        match="GPU engine does not support background",
     ):
         got = df.collect(engine=engine, background=True)
     assert_frame_equal(expect, got.fetch_blocking())

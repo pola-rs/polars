@@ -40,28 +40,8 @@ impl PyExpr {
         self.inner.clone().arr().median().into()
     }
 
-    fn arr_unique(&self, maintain_order: bool) -> Self {
-        if maintain_order {
-            self.inner.clone().arr().unique_stable().into()
-        } else {
-            self.inner.clone().arr().unique().into()
-        }
-    }
-
-    fn arr_n_unique(&self) -> Self {
-        self.inner.clone().arr().n_unique().into()
-    }
-
     fn arr_to_list(&self) -> Self {
         self.inner.clone().arr().to_list().into()
-    }
-
-    fn arr_all(&self) -> Self {
-        self.inner.clone().arr().all().into()
-    }
-
-    fn arr_any(&self) -> Self {
-        self.inner.clone().arr().any().into()
     }
 
     fn arr_sort(&self, descending: bool, nulls_last: bool) -> Self {
@@ -74,10 +54,6 @@ impl PyExpr {
                 ..Default::default()
             })
             .into()
-    }
-
-    fn arr_reverse(&self) -> Self {
-        self.inner.clone().arr().reverse().into()
     }
 
     fn arr_arg_min(&self) -> Self {

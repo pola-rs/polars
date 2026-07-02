@@ -12,6 +12,7 @@ Boolean
     Expr.is_between
     Expr.is_close
     Expr.is_duplicated
+    Expr.is_empty
     Expr.is_finite
     Expr.is_first_distinct
     Expr.is_in

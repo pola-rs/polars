@@ -1,8 +1,8 @@
+use polars_async::executor::AbortOnDropHandle;
+use polars_async::primitives::connector;
+use polars_async::primitives::wait_group::WaitToken;
 use polars_error::PolarsResult;
 
-use crate::async_executor::AbortOnDropHandle;
-use crate::async_primitives::connector;
-use crate::async_primitives::wait_group::WaitToken;
 use crate::nodes::io_sources::multi_scan::components::bridge::BridgeRecvPort;
 use crate::nodes::io_sources::multi_scan::pipeline::models::StartedReaderState;
 

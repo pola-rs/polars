@@ -732,3 +732,40 @@ def test_pivot_unsupported_agg_raises_25860() -> None:
     df = pl.DataFrame({"index": [0, 0], "data": ["foo", "bar"]})
     with pytest.raises(pl.exceptions.InvalidOperationError, match="sum"):
         df.pivot("index", index="index", aggregate_function=pl.element().sum())
+
+
+def test_pivot_null_on_values_27272() -> None:
+    df = pl.DataFrame(
+        {
+            "id": ["a", "a", "b"],
+            "cat": ["X", None, None],
+            "val": [1, 2, 3],
+        }
+    )
+
+    result = df.pivot(on="cat", index="id", values="val", aggregate_function="sum")
+    expected = pl.DataFrame({"id": ["a", "b"], "X": [1, 0], "null": [2, 3]})
+    assert_frame_equal(result, expected)
+
+    result = df.pivot(on="cat", index="id", values="val", aggregate_function="first")
+    expected = pl.DataFrame(
+        {"id": ["a", "b"], "X": [1, None], "null": [2, 3]},
+        schema={"id": pl.String, "X": pl.Int64, "null": pl.Int64},
+    )
+    assert_frame_equal(result, expected)
+
+    df2 = pl.DataFrame(
+        {
+            "id": ["a", "a", "b"],
+            "c1": ["X", None, None],
+            "c2": ["p", "p", "p"],
+            "val": [1, 2, 3],
+        }
+    )
+    result2 = df2.pivot(
+        on=["c1", "c2"], index="id", values="val", aggregate_function="sum"
+    )
+    expected2 = pl.DataFrame(
+        {"id": ["a", "b"], '{"X","p"}': [1, 0], "null": [2, 3]},
+    )
+    assert_frame_equal(result2, expected2)

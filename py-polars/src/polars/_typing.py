@@ -19,14 +19,17 @@ if TYPE_CHECKING:
     from typing import TypeAlias
 
     from sqlalchemy.engine import Connection, Engine
-    from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, AsyncSession
+    from sqlalchemy.ext.asyncio import (
+        AsyncConnection,
+        AsyncEngine,
+        AsyncSession,
+        async_sessionmaker,
+    )
     from sqlalchemy.orm import Session
+    from xlsxwriter.format import Format
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._dependencies import numpy as np
-    from polars._dependencies import pandas as pd
-    from polars._dependencies import pyarrow as pa
-    from polars._dependencies import torch
     from polars.datatypes import DataType, DataTypeClass, IntegerType, TemporalType
     from polars.lazyframe.engine_config import GPUEngine
     from polars.selectors import Selector
@@ -50,6 +53,99 @@ class ArrowSchemaExportable(Protocol):
     """Type protocol for Arrow C Schema Interface via Arrow PyCapsule Interface."""
 
     def __arrow_c_schema__(self) -> object: ...
+
+
+class NumpyArray(Protocol):
+    """Protocol to match NumPy Arrays without needing NumPy installed."""
+
+    def byteswap(self, *args: Any, **kwargs: Any) -> Any: ...
+    def conjugate(self, *args: Any, **kwargs: Any) -> Any: ...
+    def ravel(self, *args: Any, **kwargs: Any) -> Any: ...
+    def searchsorted(self, *args: Any, **kwargs: Any) -> Any: ...
+    def swapaxes(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowArray(Protocol):
+    """
+    Protocol to match PyArrow arrays without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def buffers(self, *args: Any, **kwargs: Any) -> Any: ...
+    def tolist(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowChunkedArray(Protocol):
+    """
+    Protocol to match PyArrow chunked arrays without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def iterchunks(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PyArrowTable(Protocol):
+    """
+    Protocol to match PyArrow tables without needing PyArrow installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def filter(self, *args: Any, **kwargs: Any) -> Any: ...
+    def group_by(self, *args: Any, **kwargs: Any) -> Any: ...
+    def add_column(self, *args: Any, **kwargs: Any) -> Any: ...
+    def remove_column(self, *args: Any, **kwargs: Any) -> Any: ...
+    def take(self, *args: Any, **kwargs: Any) -> Any: ...
+    def to_pandas(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasDataFrame(Protocol):
+    """
+    Protocol to match pandas dataframes without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def where(self, *args: Any, **kwargs: Any) -> Any: ...
+    def groupby(self, *args: Any, **kwargs: Any) -> Any: ...
+    def unstack(self, *args: Any, **kwargs: Any) -> Any: ...
+    def pivot_table(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasSeries(Protocol):
+    """
+    Protocol to match pandas series without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def to_frame(self, *args: Any, **kwargs: Any) -> Any: ...
+    def isna(self, *args: Any, **kwargs: Any) -> Any: ...
+    def rename_axis(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class PandasIndex(Protocol):
+    """
+    Protocol to match pandas indexes without needing pandas-stubs installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def to_series(self, *args: Any, **kwargs: Any) -> Any: ...
+    def isna(self, *args: Any, **kwargs: Any) -> Any: ...
+
+
+class TorchTensor(Protocol):
+    """
+    Protocol to match PyTorch tensors without needing PyTorch installed.
+
+    Only use for function arguments, not return types.
+    """
+
+    def cuda(self, *args: Any, **kwargs: Any) -> Any: ...
+    def backward(self, *args: Any, **kwargs: Any) -> Any: ...
 
 
 # Data types
@@ -129,6 +225,9 @@ Label: TypeAlias = Literal["left", "right", "datapoint"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
 ]
+JoinBuildSide: TypeAlias = Literal[
+    "auto", "prefer_left", "prefer_right", "force_left", "force_right"
+]
 NdjsonCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
@@ -195,6 +294,7 @@ ConcatMethod = Literal[
     "diagonal",
     "diagonal_relaxed",
     "horizontal",
+    "horizontal_extend",
     "align",
     "align_full",
     "align_inner",
@@ -214,18 +314,30 @@ TransferEncoding: TypeAlias = Literal["hex", "base64"]
 WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
 ExplainFormat: TypeAlias = Literal["plain", "tree"]
 
-# type signature for allowed frame init
-FrameInitTypes: TypeAlias = Union[
-    Mapping[
-        str, Union[Sequence[object], Mapping[str, Sequence[object]], "Series", None]
-    ],
-    Sequence[Any],
-    "np.ndarray[Any, Any]",
-    "pa.Table",
-    "pd.DataFrame",
+# type signature for allowed series init
+ArrayLike: TypeAlias = Union[
+    Iterable[Any],
+    "Series",
+    "PyArrowArray",
+    "PyArrowChunkedArray",
+    "NumpyArray",
+    "PandasSeries",
+    "PandasIndex",
     "ArrowArrayExportable",
     "ArrowStreamExportable",
-    "torch.Tensor",
+]
+
+
+# type signature for allowed frame init
+FrameInitTypes: TypeAlias = Union[
+    Mapping[str, ArrayLike | NonNestedLiteral | None],
+    Iterable[Any],
+    NumpyArray,
+    PyArrowTable,
+    PandasDataFrame,
+    "ArrowArrayExportable",
+    "ArrowStreamExportable",
+    TorchTensor,
     "DataFrame",
 ]
 
@@ -233,7 +345,7 @@ FrameInitTypes: TypeAlias = Union[
 ColumnFormatDict: TypeAlias = Mapping[
     # dict of colname(s) or selector(s) to format string or dict
     ColumnNameOrSelector | tuple[ColumnNameOrSelector, ...],
-    str | Mapping[str, str],
+    Union[str, Mapping[str, str], "Format"],
 ]
 ConditionalFormatDict: TypeAlias = Mapping[
     # dict of colname(s) to str, dict, or sequence of str/dict
@@ -294,7 +406,7 @@ class Cursor(BasicCursor):
 
 AlchemyConnection: TypeAlias = Union["Connection", "Engine", "Session"]
 AlchemyAsyncConnection: TypeAlias = Union[
-    "AsyncConnection", "AsyncEngine", "AsyncSession"
+    "AsyncConnection", "AsyncEngine", "AsyncSession", "async_sessionmaker[AsyncSession]"
 ]
 ConnectionOrCursor: TypeAlias = (
     BasicConnection | BasicCursor | Cursor | AlchemyConnection | AlchemyAsyncConnection

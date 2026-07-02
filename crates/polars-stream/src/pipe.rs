@@ -2,15 +2,15 @@ use std::cmp::Reverse;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::connector::{ReceiverExt, SenderExt, connector_with};
+use polars_async::primitives::distributor_channel::distributor_channel;
+use polars_async::primitives::linearizer::Linearizer;
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_error::PolarsResult;
 use polars_utils::priority::Priority;
 use polars_utils::relaxed_cell::RelaxedCell;
 
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::connector::{ReceiverExt, SenderExt, connector_with};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::linearizer::Linearizer;
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::graph::LogicalPipeKey;
 use crate::metrics::GraphMetrics;
 use crate::morsel::{Morsel, MorselSeq};
@@ -27,7 +27,7 @@ pub struct PortReceiver(ReceiverExt<Morsel, Option<Arc<PipeMetrics>>>);
 impl PortSender {
     #[inline]
     pub async fn send(&mut self, morsel: Morsel) -> Result<(), Morsel> {
-        let rows = morsel.df().height() as u64;
+        let rows = morsel.height() as u64;
         self.0.send(morsel).await?;
         if let Some(metrics) = self.0.shared() {
             metrics.morsels_sent.fetch_add(1);
@@ -42,7 +42,7 @@ impl PortReceiver {
     #[inline]
     pub async fn recv(&mut self) -> Result<Morsel, ()> {
         let morsel = self.0.recv().await?;
-        let rows = morsel.df().height() as u64;
+        let rows = morsel.height() as u64;
         if let Some(metrics) = self.0.shared() {
             metrics.morsels_received.fetch_add(1);
             metrics.rows_received.fetch_add(rows);

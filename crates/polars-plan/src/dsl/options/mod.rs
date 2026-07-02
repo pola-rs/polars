@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 pub mod file_provider;
+pub mod iceberg_sink_state;
 pub mod sink;
 pub use polars_config::Engine;
 use polars_core::error::PolarsResult;

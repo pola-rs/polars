@@ -188,7 +188,7 @@ def test_fused_arithm() -> None:
     )
     # the extra aliases are because the fma does operation reordering
     assert (
-        """col("c").fma([col("a"), col("b")]).alias("a"), col("a").fma([col("b"), col("c")]).alias("2")"""
+        """col("a").fma([col("b"), col("c")]), col("b").fma([col("c"), col("a")]).alias("2")"""
         in q.explain()
     )
     assert q.collect().to_dict(as_series=False) == {

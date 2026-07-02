@@ -15,6 +15,7 @@ from polars._utils.convert import (
     time_to_int,
     timedelta_to_int,
 )
+from polars._utils.reduce_balanced import reduce_balanced
 from polars._utils.various import (
     _in_notebook,
     is_bool_sequence,
@@ -296,3 +297,82 @@ def test_is_str_sequence_check(
     assert is_str_sequence(sequence, include_series=include_series) == expected
     if expected:
         assert is_sequence(sequence, include_series=include_series)
+
+
+@pytest.mark.parametrize(
+    ("values", "expected_acc", "expected_seen"),
+    [
+        pytest.param(
+            [[0], [1], [2], [3], [4]],
+            [0, 1, 2, 3, 4],
+            [
+                ([0], [1]),
+                ([0, 1], [2]),
+                ([3], [4]),
+                ([0, 1, 2], [3, 4]),
+            ],
+            id="length_5",
+        ),
+        pytest.param(
+            [[0], [1], [2], [3], [4], [5]],
+            [0, 1, 2, 3, 4, 5],
+            [
+                ([0], [1]),
+                ([3], [4]),
+                ([0, 1], [2]),
+                ([3, 4], [5]),
+                ([0, 1, 2], [3, 4, 5]),
+            ],
+            id="length_6",
+        ),
+        pytest.param(
+            [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            [
+                ([0], [1]),
+                ([5], [6]),
+                ([0, 1], [2]),
+                ([3], [4]),
+                ([5, 6], [7]),
+                ([8], [9]),
+                ([0, 1, 2], [3, 4]),
+                ([5, 6, 7], [8, 9]),
+                ([0, 1, 2, 3, 4], [5, 6, 7, 8, 9]),
+            ],
+            id="length_10",
+        ),
+    ],
+)
+def test_reduce_balanced(
+    values: list[list[int]],
+    expected_acc: list[int],
+    expected_seen: list[tuple[list[int], list[int]]],
+) -> None:
+    seen = []
+
+    def reducer(left: list[int], right: list[int]) -> list[int]:
+        seen.append((left, right))
+        return left + right
+
+    assert reduce_balanced(reducer, values) == expected_acc
+    assert seen == expected_seen
+
+    with pytest.raises(TypeError):
+        reduce_balanced(reducer, [])
+
+
+@pytest.mark.parametrize("n", range(1, 99))
+def test_reduce_balanced_parametric(n: int) -> None:
+    values = [[i] for i in range(n)]
+    expected_acc = [*range(n)]
+
+    seen = []
+
+    def reducer(left: list[int], right: list[int]) -> list[int]:
+        seen.append((left, right))
+        return left + right
+
+    assert reduce_balanced(reducer, values) == expected_acc
+
+    for seq_lsubtree, seq_rsubtree in seen:
+        assert abs(len(seq_lsubtree) - len(seq_rsubtree)) <= 1

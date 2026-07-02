@@ -37,14 +37,15 @@ from polars._utils.parse import (
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
+    NO_DEFAULT,
+    _Omitted,
     extend_bool,
-    find_stacklevel,
-    no_default,
     normalize_filepath,
     sphinx_accessor,
     warn_null_comparison,
 )
 from polars._utils.wrap import wrap_expr, wrap_s
+from polars._warnings import find_stacklevel
 from polars.datatypes import (
     Decimal as PolarsDecimal,
 )
@@ -55,7 +56,6 @@ from polars.datatypes import (
 from polars.exceptions import (
     CustomUFuncWarning,
     OutOfBoundsError,
-    PolarsInefficientMapWarning,
 )
 from polars.expr.array import ExprArrayNameSpace
 from polars.expr.binary import ExprBinaryNameSpace
@@ -749,6 +749,45 @@ class Expr:
         └──────┴───────┴──────┘
         """
         return wrap_expr(self._pyexpr.all(ignore_nulls))
+
+    @unstable()
+    def is_empty(self, *, ignore_nulls: bool = False) -> Expr:
+        """
+        Return whether the column is empty.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        ignore_nulls
+            If true a column containing only nulls will also be considered empty.
+            The default is false.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"x": [None, None]})
+        >>> df.select(
+        ...     a=pl.col.x.is_empty(),
+        ...     b=pl.col.x.drop_nulls().is_empty(),
+        ...     c=pl.col.x.is_empty(ignore_nulls=True),
+        ... )
+        shape: (1, 3)
+        ┌───────┬──────┬──────┐
+        │ a     ┆ b    ┆ c    │
+        │ ---   ┆ ---  ┆ ---  │
+        │ bool  ┆ bool ┆ bool │
+        ╞═══════╪══════╪══════╡
+        │ false ┆ true ┆ true │
+        └───────┴──────┴──────┘
+        """
+        return wrap_expr(self._pyexpr.is_empty(ignore_nulls))
 
     def arg_true(self) -> Expr:
         """
@@ -2881,7 +2920,10 @@ class Expr:
         )
 
     def gather(
-        self, indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any]
+        self,
+        indices: int | Sequence[int] | IntoExpr | Series | np.ndarray[Any, Any],
+        *,
+        null_on_oob: bool = False,
     ) -> Expr:
         """
         Take values by index.
@@ -2890,6 +2932,11 @@ class Expr:
         ----------
         indices
             An expression that leads to a UInt32 dtyped Series.
+        null_on_oob
+            Behavior if an index is out of bounds:
+
+            - True  -> set the result to null
+            - False -> raise an error
 
         Returns
         -------
@@ -2927,6 +2974,21 @@ class Expr:
         │ one   ┆ [2, 98]   │
         │ two   ┆ [4, 99]   │
         └───────┴───────────┘
+
+        Use `null_on_oob=True` to return null for out-of-bounds indices.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3]})
+        >>> df.select(pl.col("a").gather([0, 1, 10], null_on_oob=True))
+        shape: (3, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ i64  │
+        ╞══════╡
+        │ 1    │
+        │ 2    │
+        │ null │
+        └──────┘
         """
         if (isinstance(indices, Sequence) and not isinstance(indices, str)) or (
             _check_for_numpy(indices) and isinstance(indices, np.ndarray)
@@ -2934,7 +2996,7 @@ class Expr:
             indices_lit_pyexpr = F.lit(pl.Series("", indices, dtype=Int64))._pyexpr
         else:
             indices_lit_pyexpr = parse_into_expression(indices)
-        return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr))
+        return wrap_expr(self._pyexpr.gather(indices_lit_pyexpr, null_on_oob))
 
     def get(self, index: int | Expr, *, null_on_oob: bool = False) -> Expr:
         """
@@ -3694,7 +3756,7 @@ class Expr:
         │ true ┆ true ┆ false │
         └──────┴──────┴───────┘
         """
-        return self.null_count() > 0
+        return wrap_expr(self._pyexpr.has_nulls())
 
     def arg_unique(self) -> Expr:
         """
@@ -3735,6 +3797,8 @@ class Expr:
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
         Get unique values of this expression.
+
+        `null` is considered to be a unique value for the purposes of this operation.
 
         Parameters
         ----------
@@ -3903,8 +3967,9 @@ class Expr:
         *more_exprs
             Additional columns to group by, specified as positional arguments.
         order_by
-            Order the window functions/aggregations with the partitioned groups by the
-            result of the expression passed to `order_by`.
+            Order rows within each partition group before evaluating the expression.
+            Useful for order-sensitive operations such as
+            :func:`cum_sum` or :func:`diff`.
         descending
             In case 'order_by' is given, indicate whether to order in
             ascending or descending order.
@@ -3915,9 +3980,9 @@ class Expr:
             - group_to_rows
                 If the aggregation results in multiple values per group, map them back
                 to their row position in the DataFrame. This can only be done if each
-                group yields the same elements before aggregation as after. If the
-                aggregation results in one scalar value per group, this value will be
-                mapped to every row.
+                group yields the same number of elements before aggregation as after. If
+                the aggregation results in one scalar value per group, this value will
+                be mapped to every row.
             - join
                 If the aggregation may result in multiple values per group, join the
                 values as 'List<group_dtype>' to each row position. Warning: this can be
@@ -4467,13 +4532,13 @@ class Expr:
             Set the intervals to be left-closed instead of right-closed.
         include_breaks
             Include a column with the right endpoint of the bin each observation falls
-            in. This will change the data type of the output from a
-            :class:`Categorical` to a :class:`Struct`.
+            in. This will change the data type of the output from an
+            :class:`Enum` to a :class:`Struct`.
 
         Returns
         -------
         Expr
-            Expression of data type :class:`Categorical` if `include_breaks` is set to
+            Expression of data type :class:`Enum` if `include_breaks` is set to
             `False` (default), otherwise an expression of data type :class:`Struct`.
 
         See Also
@@ -4489,17 +4554,17 @@ class Expr:
         ...     pl.col("foo").cut([-1, 1], labels=["a", "b", "c"]).alias("cut")
         ... )
         shape: (5, 2)
-        ┌─────┬─────┐
-        │ foo ┆ cut │
-        │ --- ┆ --- │
-        │ i64 ┆ cat │
-        ╞═════╪═════╡
-        │ -2  ┆ a   │
-        │ -1  ┆ a   │
-        │ 0   ┆ b   │
-        │ 1   ┆ b   │
-        │ 2   ┆ c   │
-        └─────┴─────┘
+        ┌─────┬──────┐
+        │ foo ┆ cut  │
+        │ --- ┆ ---  │
+        │ i64 ┆ enum │
+        ╞═════╪══════╡
+        │ -2  ┆ a    │
+        │ -1  ┆ a    │
+        │ 0   ┆ b    │
+        │ 1   ┆ b    │
+        │ 2   ┆ c    │
+        └─────┴──────┘
 
         Add both the category and the breakpoint.
 
@@ -4510,7 +4575,7 @@ class Expr:
         ┌─────┬────────────┬────────────┐
         │ foo ┆ breakpoint ┆ category   │
         │ --- ┆ ---        ┆ ---        │
-        │ i64 ┆ f64        ┆ cat        │
+        │ i64 ┆ f64        ┆ enum       │
         ╞═════╪════════════╪════════════╡
         │ -2  ┆ -1.0       ┆ (-inf, -1] │
         │ -1  ┆ -1.0       ┆ (-inf, -1] │
@@ -5146,7 +5211,7 @@ Consider using {self}.implode() instead"""
         ...     scaled=pl.col("val")
         ...     .implode()
         ...     .map_elements(lambda s: s * len(s), return_dtype=pl.List(pl.Int64))
-        ...     .explode()
+        ...     .explode(empty_as_null=False)
         ...     .over("key"),
         ... ).sort("key")
         shape: (6, 3)
@@ -5194,24 +5259,27 @@ Consider using {self}.implode() instead"""
                 def inner(s: Series | Any) -> Series:  # pragma: no cover
                     if isinstance(s, pl.Series):
                         s = s.alias(x.name)
+
                     return function(s)
 
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
-                    return x.map_elements(
-                        inner, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.map_elements(
+                    inner,
+                    return_dtype=return_dtype,
+                    skip_nulls=skip_nulls,
+                    _disable_inefficient_map_warning=True,
+                )
 
         else:
 
             def wrap_f(x: Series, **kwargs: Any) -> Series:  # pragma: no cover
                 return_dtype = kwargs["return_dtype"]
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", PolarsInefficientMapWarning)
 
-                    return x.map_elements(
-                        function, return_dtype=return_dtype, skip_nulls=skip_nulls
-                    )
+                return x.map_elements(
+                    function,
+                    return_dtype=return_dtype,
+                    skip_nulls=skip_nulls,
+                    _disable_inefficient_map_warning=True,
+                )
 
         if strategy == "thread_local":
             return self.map_batches(
@@ -5310,7 +5378,9 @@ Consider using {self}.implode() instead"""
         """
         return self.explode(empty_as_null=True, keep_nulls=True)
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
+    ) -> Expr:
         """
         Explode a list expression.
 
@@ -5343,7 +5413,7 @@ Consider using {self}.implode() instead"""
         ...         ],
         ...     }
         ... )
-        >>> df.select(pl.col("values").explode())
+        >>> df.select(pl.col("values").explode(empty_as_null=False))
         shape: (4, 1)
         ┌────────┐
         │ values │
@@ -5356,6 +5426,13 @@ Consider using {self}.implode() instead"""
         │ 4      │
         └────────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )
@@ -5484,9 +5561,13 @@ Consider using {self}.implode() instead"""
         """
         # This cast enables tail with expressions that return unsigned integers,
         # for which negate otherwise raises InvalidOperationError.
-        offset = -(
-            wrap_expr(parse_into_expression(n)).cast(
-                Int64, strict=False, wrap_numerical=True
+        offset = (
+            -n
+            if isinstance(n, int)
+            else -(
+                wrap_expr(parse_into_expression(n)).cast(
+                    Int64, strict=False, wrap_numerical=True
+                )
             )
         )
         return self.slice(offset, n)
@@ -6593,6 +6674,77 @@ Consider using {self}.implode() instead"""
             self._pyexpr.is_close(other_pyexpr, abs_tol, rel_tol, nans_equal)
         )
 
+    def is_sorted(
+        self,
+        *,
+        descending: bool | None = False,
+        nulls_last: bool | None = False,
+    ) -> Expr:
+        """
+        Checks if an expression is sorted.
+
+        If `descending` and/or `nulls_last` are None, it will check `True` and `False`
+        for the unspecified option(s), and return `True` if the expression is sorted
+        under any combination of those settings.
+
+        Parameters
+        ----------
+        descending
+            Checks if the expression is sorted in descending order.
+            Defaults to False.
+        nulls_last
+            Consider null values as being ordered last when checking sortedness.
+            Defaults to False.
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Boolean`.
+
+        Examples
+        --------
+        Check if a column is sorted in ascending order.
+
+        >>> df = pl.DataFrame({"a": [1, 2, 3, 4]})
+        >>> df.select(pl.col("a").is_sorted())
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        Check if a column is sorted in descending order.
+
+        >>> df = pl.DataFrame({"a": [4, 3, 2, 1]})
+        >>> df.select(pl.col("a").is_sorted(descending=True))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        Check if a column is sorted in either direction.
+
+        >>> df = pl.DataFrame({"a": [4, 3, 2, 1]})
+        >>> df.select(pl.col("a").is_sorted(descending=None))
+        shape: (1, 1)
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ bool │
+        ╞══════╡
+        │ true │
+        └──────┘
+
+        """
+        return wrap_expr(self._pyexpr.is_sorted(descending, nulls_last))
+
     def hash(
         self,
         seed: int = 0,
@@ -7300,7 +7452,7 @@ Consider using {self}.implode() instead"""
         by: IntoExpr,
         window_size: timedelta | str_,
         *,
-        min_samples: int = 1,
+        min_samples: int = 0,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -11294,9 +11446,9 @@ Consider using {self}.implode() instead"""
     def replace(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | None = None,
     ) -> Expr:
         """
@@ -11337,10 +11489,6 @@ Consider using {self}.implode() instead"""
         --------
         replace_strict
         str.replace
-
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------
@@ -11437,7 +11585,7 @@ Consider using {self}.implode() instead"""
                 " Use `replace_strict` instead to set a return data type while replacing values.",
                 version="1.0.0",
             )
-        if default is not no_default:
+        if default is not NO_DEFAULT:
             issue_deprecation_warning(
                 "the `default` parameter for `replace` is deprecated."
                 " Use `replace_strict` instead to set a default while replacing values.",
@@ -11447,7 +11595,7 @@ Consider using {self}.implode() instead"""
                 old, new, default=default, return_dtype=return_dtype
             )
 
-        if new is no_default:
+        if new is NO_DEFAULT:
             if not isinstance(old, Mapping):
                 msg = (
                     "`new` argument is required if `old` argument is not a Mapping type"
@@ -11474,9 +11622,9 @@ Consider using {self}.implode() instead"""
     def replace_strict(
         self,
         old: IntoExpr | Sequence[Any] | Mapping[Any, Any],
-        new: IntoExpr | Sequence[Any] | NoDefault = no_default,
+        new: IntoExpr | Sequence[Any] | NoDefault = NO_DEFAULT,
         *,
-        default: IntoExpr | NoDefault = no_default,
+        default: IntoExpr | NoDefault = NO_DEFAULT,
         return_dtype: PolarsDataType | pl.DataTypeExpr | None = None,
     ) -> Expr:
         """
@@ -11513,10 +11661,6 @@ Consider using {self}.implode() instead"""
         --------
         replace
         str.replace
-
-        Notes
-        -----
-        The global string cache must be enabled when replacing categorical values.
 
         Examples
         --------
@@ -11643,7 +11787,7 @@ Consider using {self}.implode() instead"""
         │ 3   ┆ 1.0 ┆ 10.0     │
         └─────┴─────┴──────────┘
         """  # noqa: W505
-        if new is no_default:
+        if new is NO_DEFAULT:
             if not isinstance(old, Mapping):
                 msg = (
                     "`new` argument is required if `old` argument is not a Mapping type"
@@ -11663,7 +11807,7 @@ Consider using {self}.implode() instead"""
 
         default_pyexpr = (
             None
-            if default is no_default
+            if default is NO_DEFAULT
             else parse_into_expression(default, str_as_lit=True)
         )
 

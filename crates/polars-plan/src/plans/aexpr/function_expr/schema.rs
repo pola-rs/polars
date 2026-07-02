@@ -5,11 +5,7 @@ use polars_core::utils::materialize_dyn_int;
 use super::*;
 
 impl IRFunctionExpr {
-    pub(crate) fn get_field(
-        &self,
-        _input_schema: &Schema,
-        fields: &[Field],
-    ) -> PolarsResult<Field> {
+    pub(crate) fn get_field(&self, fields: &[Field]) -> PolarsResult<Field> {
         use IRFunctionExpr::*;
 
         let mapper = FieldsMapper { fields };
@@ -135,6 +131,7 @@ impl IRFunctionExpr {
                 has_min: _,
                 has_max: _,
             } => mapper.with_same_dtype(),
+            Quantile { method: _ } => mapper.moment_dtype(),
             #[cfg(feature = "mode")]
             Mode { maintain_order: _ } => mapper.with_same_dtype(),
             #[cfg(feature = "moment")]
@@ -291,22 +288,29 @@ impl IRFunctionExpr {
             PeakMin | PeakMax => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "cutqcut")]
             Cut {
-                include_breaks: false,
-                ..
-            } => mapper.with_dtype(DataType::from_categories(Categories::global())),
-            #[cfg(feature = "cutqcut")]
-            Cut {
-                include_breaks: true,
-                ..
+                breaks,
+                labels,
+                left_closed,
+                include_breaks,
             } => {
-                let struct_dt = DataType::Struct(vec![
-                    Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
-                    Field::new(
-                        PlSmallStr::from_static("category"),
-                        DataType::from_categories(Categories::global()),
-                    ),
-                ]);
-                mapper.with_dtype(struct_dt)
+                let cut_labels: Vec<PlSmallStr> = if let Some(l) = labels {
+                    polars_ensure!(l.len() == breaks.len() + 1, ShapeMismatch: "provide len(breaks) + 1 labels");
+                    l.clone()
+                } else {
+                    compute_labels(breaks, *left_closed)?
+                };
+                let enum_dtype = DataType::from_frozen_categories(FrozenCategories::new(
+                    cut_labels.iter().map(|s| s.as_str()),
+                )?);
+                if *include_breaks {
+                    let struct_dt = DataType::Struct(vec![
+                        Field::new(PlSmallStr::from_static("breakpoint"), DataType::Float64),
+                        Field::new(PlSmallStr::from_static("category"), enum_dtype),
+                    ]);
+                    mapper.with_dtype(struct_dt)
+                } else {
+                    mapper.with_dtype(enum_dtype)
+                }
             },
             #[cfg(feature = "repeat_by")]
             RepeatBy => mapper.map_dtype(|dt| DataType::List(dt.clone().into())),

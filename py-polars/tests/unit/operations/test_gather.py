@@ -472,3 +472,17 @@ def test_get_typed_index_default_raises_out_of_bounds(idx_dtype: pl.DataType) ->
 
     with pytest.raises(OutOfBoundsError, match="gather indices are out of bounds"):
         df.select(pl.col("value").get(pl.lit(5, dtype=idx_dtype)))
+
+
+def test_expr_gather_null_on_oob() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    result = df.select(pl.col("a").gather([0, 1, 10], null_on_oob=True))
+    assert result["a"].to_list() == [1, 2, None]
+
+
+def test_series_gather_null_on_oob() -> None:
+    s = pl.Series("a", [1, 2, 3])
+
+    result = s.gather([0, 1, 10], null_on_oob=True)
+    assert result.to_list() == [1, 2, None]

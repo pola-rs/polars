@@ -126,6 +126,7 @@ macro_rules! impl_relaxed_cell {
 impl_relaxed_cell!(u8, new_u8, AtomicU8);
 impl_relaxed_cell!(u32, new_u32, AtomicU32);
 impl_relaxed_cell!(u64, new_u64, AtomicU64);
+impl_relaxed_cell!(i64, new_i64, AtomicI64);
 impl_relaxed_cell!(usize, new_usize, AtomicUsize);
 
 impl RelaxedCell<bool> {
