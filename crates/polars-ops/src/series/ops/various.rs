@@ -102,15 +102,25 @@ pub trait SeriesMethods: SeriesSealed {
 fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     let null_count = s.null_count();
 
-    if (options.descending
-        && (options.nulls_last || null_count == 0)
-        && matches!(s.is_sorted_flag(), IsSorted::Descending))
-        || (!options.descending
-            && (!options.nulls_last || null_count == 0)
-            && matches!(s.is_sorted_flag(), IsSorted::Ascending))
-    {
-        return Ok(true);
+    if null_count == 0 {
+        if (options.descending && matches!(s.is_sorted_flag(), IsSorted::Descending))
+            || (!options.descending && matches!(s.is_sorted_flag(), IsSorted::Ascending))
+        {
+            return Ok(true);
+        }
     }
+    // else {
+    //     if options.nulls_last {
+    //         if s.slice((s.len() - null_count) as i64, null_count)
+    //             .null_count()
+    //             != null_count
+    //         {
+    //             return Ok(false);
+    //         }
+    //     } else if s.slice(0, null_count).null_count() != null_count {
+    //         return Ok(false);
+    //     }
+    // }
 
     #[cfg(feature = "dtype-struct")]
     if matches!(s.dtype(), DataType::Struct(_)) {
@@ -457,3 +467,49 @@ fn is_sorted_ca_num<T: PolarsNumericType>(ca: &ChunkedArray<T>, options: SortOpt
 }
 
 impl SeriesMethods for Series {}
+
+#[cfg(test)]
+mod test {
+    use polars_core::prelude::*;
+
+    use crate::series::ops::various::SeriesMethods;
+
+    #[test]
+    fn test_is_sorted() {
+        fn check(
+            descending: bool,
+            nulls_last: bool,
+            descending_check: bool,
+            nulls_last_check: bool,
+        ) {
+            let actual_sort_options = SortOptions::default()
+                .with_order_descending(descending)
+                .with_nulls_last(nulls_last);
+            let checked_sort_options = SortOptions::default()
+                .with_order_descending(descending_check)
+                .with_nulls_last(nulls_last_check);
+
+            let s = Series::new("a".into(), &[Some(1), Some(2), None])
+                .sort(actual_sort_options)
+                .unwrap();
+
+            assert_eq!(
+                s.is_sorted(checked_sort_options).unwrap(),
+                actual_sort_options == checked_sort_options,
+                "actual=({descending}, {nulls_last}), checked=({descending_check}, {nulls_last_check}), content={:?}",
+                s.iter().collect::<Vec<_>>()
+            );
+        }
+
+        // Test all permutations
+        for descending in [false, true] {
+            for nulls_last in [false, true] {
+                for descending_check in [false, true] {
+                    for nulls_last_check in [false, true] {
+                        check(descending, nulls_last, descending_check, nulls_last_check);
+                    }
+                }
+            }
+        }
+    }
+}
