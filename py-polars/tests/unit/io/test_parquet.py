@@ -3432,7 +3432,7 @@ def test_scan_parquet_skip_row_groups_with_cast(
         cast_options=pl.ScanCastOptions(
             integer_cast="upcast",
             float_cast=["upcast", "downcast"],
-            datetime_cast=["convert-timezone", "nanosecond-downcast"],
+            datetime_cast=("convert-timezone", "nanosecond-downcast"),
             missing_struct_fields="insert",
         ),
     ).filter(filter_expr)
@@ -3489,7 +3489,7 @@ def test_scan_parquet_skip_row_groups_with_cast_inclusions(
         cast_options=pl.ScanCastOptions(
             integer_cast="upcast",
             float_cast=["upcast", "downcast"],
-            datetime_cast=["convert-timezone", "nanosecond-downcast"],
+            datetime_cast=("convert-timezone", "nanosecond-downcast"),
             missing_struct_fields="insert",
         ),
     ).filter(filter_expr)
