@@ -43,29 +43,37 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         python-version: ['3.10', '3.12', '3.13', '3.14', '3.14t']
+        variant: [null]
         ideal_morsel_size: [100000]
-        auto_new_streaming: [false]
         include:
           - os: windows-latest
             python-version: '3.14'
             ideal_morsel_size: 100000
-            auto_new_streaming: false
+            variant: null
           - os: windows-latest
             python-version: '3.14'
+            variant: auto_new_streaming
             ideal_morsel_size: 100000
-            auto_new_streaming: true
-          - os: ubuntu-latest
+          - os: windows-latest
             python-version: '3.14'
-            ideal_morsel_size: 4
-            auto_new_streaming: false
-          - os: ubuntu-latest
-            python-version: '3.14'
+            variant: engine_affinity_in_memory
             ideal_morsel_size: 100000
-            auto_new_streaming: true
           - os: ubuntu-latest
             python-version: '3.14'
+            variant: null
             ideal_morsel_size: 4
-            auto_new_streaming: true
+          - os: ubuntu-latest
+            python-version: '3.14'
+            variant: auto_new_streaming
+            ideal_morsel_size: 100000
+          - os: ubuntu-latest
+            python-version: '3.14'
+            variant: auto_new_streaming
+            ideal_morsel_size: 4
+          - os: ubuntu-latest
+            python-version: '3.14'
+            variant: engine_affinity_in_memory
+            ideal_morsel_size: 100000
 
     steps:
       - uses: actions/checkout@v7
@@ -132,40 +140,40 @@ jobs:
           maturin develop --manifest-path runtime/polars-runtime-32/Cargo.toml
 
       - name: Run doctests
-        if: github.event_name == 'pull_request' && matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.python-version == '3.14' && matrix.os == 'ubuntu-latest' && !matrix.variant
         run: |
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
 
       - name: Run tests
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.variant
         env:
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs"
 
       - name: Run Python tests - POLARS_ENGINE_AFFINITY=in-memory
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.variant == 'engine_affinity_in_memory'
         env:
           POLARS_ENGINE_AFFINITY: in-memory
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs"
 
       - name: Run tests with new streaming engine
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && matrix.variant == 'auto_new_streaming'
         env:
           POLARS_AUTO_STREAMING: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not may_fail_auto_streaming and not release and not benchmark and not docs"
 
       - name: Run tests async reader tests
-        if: github.event_name == 'pull_request' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.os != 'windows-latest' && matrix.python-version != '3.14t' && !matrix.variant
         env:
           POLARS_FORCE_ASYNC: 1
           POLARS_TIMEOUT_MS: 60000
         run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
 
       - name: Run tests multiscan force empty capabilities
-        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.auto_new_streaming
+        if: github.event_name == 'pull_request' && matrix.python-version != '3.14t' && !matrix.variant
         env:
           POLARS_FORCE_EMPTY_READER_CAPABILITIES: 1
           POLARS_TIMEOUT_MS: 60000
