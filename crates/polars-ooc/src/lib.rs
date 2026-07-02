@@ -7,6 +7,7 @@ mod spill_token;
 
 pub use global_alloc::{Allocator, estimate_memory_usage};
 pub use memory_manager::memory_manager;
+use polars_utils::relaxed_cell::RelaxedCell;
 pub use spill_context::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, RandomSpillContext,
     SpillContext,
@@ -27,3 +28,5 @@ pub trait Spillable: Send + Sync + 'static {
     /// Given a previously spilled representation
     fn unspill(location: &Self::Spilled) -> impl Future<Output = Self> + Send;
 }
+
+static BYTES_SPILLED_TO_DISK: RelaxedCell<u64> = RelaxedCell::new_u64(0);
