@@ -265,14 +265,25 @@ fn expand_expression_rec(
     match &expr {
         Expr::Element => out.push(expr.clone()),
         Expr::Alias(subexpr, name) => {
-            _ = expand_single(
+            let start_len = out.len();
+
+            let expanded = expand_single(
                 subexpr.as_ref(),
                 ignored_selector_columns,
                 schema,
                 out,
                 opt_flags,
                 |e| Expr::Alias(Arc::new(e), name.clone()),
-            )?
+            )?;
+
+            if expanded > 1 && matches!(subexpr.as_ref(), Expr::Agg(_)) {
+                out.truncate(start_len);
+                polars_bail!(
+                    Duplicate:
+                    "cannot assign the same alias to multiple aggregated columns: '{}'",
+                    name
+                );
+            }
         },
 
         // Backwards compatibility. We previously allowed `pl.col("")` and `pl.first()`
