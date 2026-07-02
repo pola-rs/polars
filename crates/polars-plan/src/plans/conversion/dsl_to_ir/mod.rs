@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
@@ -112,6 +114,11 @@ async fn fetch_metadata(
     verbose: bool,
 ) -> PolarsResult<()> {
     use futures::stream::StreamExt;
+    #[cfg(feature = "python")]
+    let py_scan_resolve_threadpool: Arc<
+        LazyLock<PyScanResolveThreadPool, fn() -> PyScanResolveThreadPool>,
+    > = Arc::new(LazyLock::new(PyScanResolveThreadPool::new));
+
     let mut futures = lp
         .into_iter()
         .filter_map(|dsl| {
@@ -130,6 +137,8 @@ async fn fetch_metadata(
                 scan_type.clone(),
                 cached_ir.clone(),
                 cache_file_info.clone(),
+                #[cfg(feature = "python")]
+                Arc::clone(&py_scan_resolve_threadpool),
                 verbose,
             ))
         })
