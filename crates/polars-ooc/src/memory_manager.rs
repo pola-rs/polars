@@ -177,7 +177,9 @@ impl MemoryManager {
                 break;
             }
 
-            let Some(strong) = ctx.upgrade() else { continue };
+            let Some(strong) = ctx.upgrade() else {
+                continue;
+            };
             strong.stats().start_exploration_event();
 
             let mut total_est_spill = 0;

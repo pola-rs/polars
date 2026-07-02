@@ -217,7 +217,9 @@ impl<T: Spillable> SpillTokenInner<T> {
             };
 
             if let Some(strong) = spill_ctx.upgrade() {
-                strong.stats().add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start);
+                strong
+                    .stats()
+                    .add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start);
             }
             if reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
                 let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
@@ -265,11 +267,18 @@ impl<T: Spillable> SpillTokenInner<T> {
                 let value = T::unspill(&spilled).await;
 
                 if let Some(strong) = spill_ctx.upgrade() {
-                    strong.stats().add_unspill(*n_bytes, *spill_time_ns, *spilled_start, unspill_start);
+                    strong.stats().add_unspill(
+                        *n_bytes,
+                        *spill_time_ns,
+                        *spilled_start,
+                        unspill_start,
+                    );
                 }
                 if *reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
                     let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                    spill_ctx.0.reinsert(&dyn_slf, *reinsert_reg_id, spill_ctx.1);
+                    spill_ctx
+                        .0
+                        .reinsert(&dyn_slf, *reinsert_reg_id, spill_ctx.1);
                 }
 
                 *value_slot = ValueSlot::InMemory(value);

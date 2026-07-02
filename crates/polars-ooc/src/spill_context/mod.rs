@@ -189,7 +189,7 @@ static SPILL_CONTEXT_REUSE_ARENA: Mutex<Vec<&'static SpillContextInner>> = Mutex
 
 // A generic strong reference to a context without knowing which kind it is, preventing it from
 // resetting and getting re-used.
-pub struct StrongSpillContext(&'static SpillContextInner);
+pub(crate) struct StrongSpillContext(&'static SpillContextInner);
 
 impl StrongSpillContext {
     fn new(name: PlSmallStr, policy: SpillContextPolicy) -> Self {
@@ -239,7 +239,7 @@ impl Drop for StrongSpillContext {
 pub struct WeakSpillContext(pub(crate) &'static SpillContextInner, pub(crate) u64);
 
 impl WeakSpillContext {
-    pub fn upgrade(&self) -> Option<StrongSpillContext> {
+    pub(crate) fn upgrade(&self) -> Option<StrongSpillContext> {
         if self.0.context_id() != self.1 {
             return None;
         }
@@ -254,6 +254,7 @@ impl WeakSpillContext {
 
         Some(strong)
     }
+
     pub(crate) fn is_dead(&self) -> bool {
         self.0.context_id() != self.1
     }
