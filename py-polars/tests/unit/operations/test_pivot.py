@@ -769,3 +769,12 @@ def test_pivot_null_on_values_27272() -> None:
         {"id": ["a", "b"], '{"X","p"}': [1, 0], "null": [2, 3]},
     )
     assert_frame_equal(result2, expected2)
+
+
+def test_pivot_fill_null_type_coercion_26843() -> None:
+    df = pl.DataFrame({"x": [1, 2], "y": [3, 4], "z": [5, 6]})
+    result = df.pivot(
+        "x", index="y", aggregate_function=pl.element().first().fill_null(0)
+    )
+    expected = pl.DataFrame({"y": [3, 4], "1": [5, 0], "2": [0, 6]})
+    assert_frame_equal(result, expected, check_row_order=False)
