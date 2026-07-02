@@ -109,18 +109,6 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
             return Ok(true);
         }
     }
-    // else {
-    //     if options.nulls_last {
-    //         if s.slice((s.len() - null_count) as i64, null_count)
-    //             .null_count()
-    //             != null_count
-    //         {
-    //             return Ok(false);
-    //         }
-    //     } else if s.slice(0, null_count).null_count() != null_count {
-    //         return Ok(false);
-    //     }
-    // }
 
     #[cfg(feature = "dtype-struct")]
     if matches!(s.dtype(), DataType::Struct(_)) {
