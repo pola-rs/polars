@@ -11,8 +11,8 @@ use polars_core::error::{PolarsResult, polars_bail, polars_ensure};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::{
-    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, Float64Chunked, GroupPositions,
-    GroupsType, IDX_DTYPE, IntoColumn,
+    AnyValue, BooleanChunked, ChunkCast, Column, CompatLevel, DataType, Float64Chunked,
+    GroupPositions, GroupsType, IDX_DTYPE, IntoColumn,
 };
 use polars_core::runtime::RAYON;
 use polars_core::scalar::Scalar;
@@ -515,41 +515,75 @@ pub fn quantile<'a>(
     // AggregatedScalar has no defined group structure. We fix it up here, so that we can
     // reliably call `agg_quantile` functions with the groups.
     let mut ac = inputs[0].evaluate_on_groups(df, groups, state)?;
+    let quantile_ac = inputs[1].evaluate_on_groups(df, groups, state)?;
     ac.set_groups_for_undefined_agg_states();
 
     // Don't change names by aggregations as is done in polars-core.
     let keep_name = ac.get_values().name().clone();
 
-    let quantile_column = inputs[1].evaluate(df, state)?;
-    polars_ensure!(
-        quantile_column.len() <= 1,
-        ComputeError:
-            "polars only supports computing a single quantile in a groupby aggregation context"
-    );
-    polars_ensure!(
-        quantile_column.dtype().is_numeric(),
-        SchemaMismatch:
-            "expected expression of dtype 'numeric' for quantile, got '{}'",
-        quantile_column.dtype()
-    );
-    let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
+    match quantile_ac.agg_state() {
+        AggState::LiteralScalar(_) => {
+            // Fast path: single quantile value for all groups.
+            let quantile_column = quantile_ac.get_values();
+            polars_ensure!(
+                quantile_column.len() <= 1,
+                ComputeError:
+                    "polars only supports computing a single quantile; \
+                    make sure the 'quantile' expression input produces a single quantile"
+            );
+            polars_ensure!(
+                quantile_column.dtype().is_numeric(),
+                SchemaMismatch:
+                    "expected expression of dtype 'numeric' for quantile, got '{}'",
+                quantile_column.dtype()
+            );
+            let quantile: f64 = quantile_column.get(0).unwrap().try_extract()?;
 
-    if let AggState::LiteralScalar(c) = &mut ac.state {
-        *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
-        return Ok(ac);
+            if let AggState::LiteralScalar(c) = &mut ac.state {
+                *c = c.quantile_reduce(quantile, method)?.into_column(keep_name);
+                return Ok(ac);
+            }
+
+            // SAFETY: groups are in bounds.
+            let mut agg = unsafe {
+                ac.flat_naive()
+                    .into_owned()
+                    .agg_quantile(ac.groups(), quantile, method)
+            };
+            agg.rename(keep_name);
+            Ok(AggregationContext::from_agg_state(
+                AggState::AggregatedScalar(agg),
+                Cow::Borrowed(groups),
+            ))
+        },
+        AggState::AggregatedScalar(_) => {
+            // Different quantile value per group.
+            let quantile_column = quantile_ac.get_values().cast(&DataType::Float64)?;
+            let quantiles: Vec<f64> = quantile_column
+                .f64()?
+                .iter()
+                .map(|v| v.unwrap_or(f64::NAN))
+                .collect();
+
+            // SAFETY: groups are in bounds.
+            let mut agg = unsafe {
+                ac.flat_naive()
+                    .into_owned()
+                    .agg_varying_quantile(ac.groups(), &quantiles, method)
+            };
+            agg.rename(keep_name);
+            Ok(AggregationContext::from_agg_state(
+                AggState::AggregatedScalar(agg),
+                Cow::Borrowed(groups),
+            ))
+        },
+        _ => {
+            polars_bail!(ComputeError:
+                "quantile expression in group_by must produce a scalar per group; \
+                use .first() or another aggregation to reduce to a scalar"
+            );
+        },
     }
-
-    // SAFETY: groups are in bounds.
-    let mut agg = unsafe {
-        ac.flat_naive()
-            .into_owned()
-            .agg_quantile(ac.groups(), quantile, method)
-    };
-    agg.rename(keep_name);
-    Ok(AggregationContext::from_agg_state(
-        AggState::AggregatedScalar(agg),
-        Cow::Borrowed(groups),
-    ))
 }
 
 #[cfg(feature = "moment")]
