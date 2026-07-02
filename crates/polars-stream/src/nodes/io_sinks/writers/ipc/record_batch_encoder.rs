@@ -3,33 +3,40 @@ use std::sync::Arc;
 
 use arrow::array::Array;
 use arrow::datatypes::Field as ArrowField;
-use arrow::io::ipc::write::encode_dictionary_values;
+use arrow::io::ipc::write2::array::{IpcBatchSerializationContext, write_array};
+use arrow::io::ipc::write2::message::{
+    finish_encode_ipc_dictionary_batch, finish_encode_ipc_record_batch,
+};
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
 use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
 use polars_core::prelude::CompatLevel;
 use polars_core::series::arrow_export::ToArrowConverter;
 use polars_core::utils::arrow;
-use polars_core::utils::arrow::io::ipc::write::{
-    EncodedData, WriteOptions, commit_encoded_arrays, encode_array, schema,
-};
+use polars_core::utils::arrow::io::ipc::write::{WriteOptions, schema};
 use polars_error::PolarsResult;
+use polars_io::utils::bytes_bufferer::{BytesBufferer, BytesBuffererConfig};
 use polars_utils::IdxSize;
-use polars_utils::concat_vec::ConcatVec as _;
 
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::writers::interface::IPC_RW_RECORD_BATCH_FLAGS_KEY;
-use crate::nodes::io_sinks::writers::ipc::IpcBatch;
+use crate::nodes::io_sinks::writers::ipc::{IpcBatch, IpcBatchType};
 
 pub struct RecordBatchEncoder {
     pub morsel_rx: connector::Receiver<SinkMorsel>,
-    pub ipc_batch_tx: tokio::sync::mpsc::Sender<IpcBatch>,
+    pub ipc_batch_tx: tokio::sync::mpsc::Sender<(
+        executor::AbortOnDropHandle<PolarsResult<IpcBatch>>,
+        Option<WaitToken>,
+    )>,
     pub arrow_converters: Vec<(ToArrowConverter, ArrowField)>,
     pub compat_level: CompatLevel,
     pub dictionary_id_offsets: Arc<[usize]>,
     pub write_options: WriteOptions,
     // Unstable.
     pub write_statistics_flags: bool,
+    pub bytes_bufferer_config: BytesBuffererConfig,
+    pub finish_record_batch_write_wg: WaitGroup,
 }
 
 impl RecordBatchEncoder {
@@ -42,10 +49,11 @@ impl RecordBatchEncoder {
             dictionary_id_offsets,
             write_options,
             write_statistics_flags,
+            bytes_bufferer_config,
+            finish_record_batch_write_wg,
         } = self;
 
-        let mut record_batch_arrow_arrays: Vec<Box<dyn Array>> =
-            Vec::with_capacity(arrow_converters.len());
+        let compression = write_options.compression;
 
         while let Ok(morsel) = morsel_rx.recv().await {
             let (df, permit) = morsel.into_inner();
@@ -64,8 +72,10 @@ impl RecordBatchEncoder {
                 )]
             });
 
-            assert!(record_batch_arrow_arrays.is_empty());
             assert_eq!(arrow_converters.len(), columns.len());
+
+            let mut record_batch_arrow_arrays: Vec<Box<dyn Array>> =
+                Vec::with_capacity(arrow_converters.len());
 
             // Rechunk and convert to arrow in parallel.
             for fut in parallelize_first_to_local(
@@ -92,144 +102,119 @@ impl RecordBatchEncoder {
                 record_batch_arrow_arrays.push(array);
             }
 
-            // Construct the iterator here so that the loop retains ownership of `record_batch_arrow_arrays`.
-            let array_encode_fut_iter = parallelize_first_to_local(
-                TaskPriority::High,
-                record_batch_arrow_arrays.drain(..).map(|array| async move {
-                    let mut out = EncodedArrayData::default();
+            let bytes_bufferer_config = bytes_bufferer_config.clone();
 
-                    let EncodedArrayData {
-                        variadic_buffer_counts,
-                        buffers,
-                        arrow_data,
-                        nodes,
-                        offset,
-                    } = &mut out;
-
-                    encode_array(
-                        &array,
-                        &write_options,
-                        variadic_buffer_counts,
-                        buffers,
-                        arrow_data,
-                        nodes,
-                        offset,
+            let serialize_handle =
+                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
+                    let mut arrow_data = BytesBufferer::new(&bytes_bufferer_config);
+                    let mut ipc_message = BytesBufferer::new(&bytes_bufferer_config);
+                    let mut ctx = IpcBatchSerializationContext::new(
+                        &mut ipc_message,
+                        &mut arrow_data,
+                        compression,
                     );
 
-                    out
-                }),
-            );
-
-            let array_combine_handle =
-                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, async move {
-                    let mut buffers: Vec<arrow::io::ipc::format::ipc::Buffer> = vec![];
-                    let mut buffer_offset: i64 = 0;
-
-                    let num_results = array_encode_fut_iter.len();
-                    let mut variadic_buffer_counts: Vec<Vec<i64>> = Vec::with_capacity(num_results);
-                    let mut arrow_data: Vec<Vec<u8>> = Vec::with_capacity(num_results);
-                    let mut nodes: Vec<Vec<arrow::io::ipc::format::ipc::FieldNode>> =
-                        Vec::with_capacity(num_results);
-
-                    for fut in array_encode_fut_iter {
-                        let v: EncodedArrayData = fut.await;
-
-                        variadic_buffer_counts.push(v.variadic_buffer_counts);
-                        arrow_data.push(v.arrow_data);
-                        nodes.push(v.nodes);
-
-                        buffers.extend(v.buffers.into_iter().map(|mut b| {
-                            b.offset += buffer_offset;
-                            b
-                        }));
-
-                        buffer_offset += v.offset;
+                    for array in record_batch_arrow_arrays {
+                        write_array(&mut ctx, array.as_ref())?;
                     }
 
-                    let variadic_buffer_counts = variadic_buffer_counts.concat_vec();
-                    let arrow_data = arrow_data.concat_vec();
-                    let nodes = nodes.concat_vec();
+                    let continuation_bytes =
+                        finish_encode_ipc_record_batch(&mut ctx, height, custom_metadata)?;
 
-                    let mut encoded_data = EncodedData {
-                        ipc_message: Vec::new(),
-                        arrow_data,
-                    };
+                    let message_num_bytes = ipc_message.len();
+                    let arrow_data_num_bytes = arrow_data.len();
 
-                    commit_encoded_arrays(
-                        height,
-                        &write_options,
-                        variadic_buffer_counts,
-                        buffers,
-                        nodes,
-                        custom_metadata,
-                        &mut encoded_data,
-                    );
-
-                    encoded_data
+                    Ok(IpcBatch {
+                        batch_type: IpcBatchType::Record,
+                        num_rows: height as IdxSize,
+                        continuation_bytes,
+                        message_bytes: ipc_message.into_iter(),
+                        message_num_bytes,
+                        arrow_data_bytes: arrow_data.into_iter(),
+                        arrow_data_num_bytes,
+                        morsel_permit: Some(permit),
+                    })
                 }));
 
-            if ipc_batch_tx
-                .send(IpcBatch::Record {
-                    encoded_data: array_combine_handle,
-                    morsel_permit: permit,
-                    num_rows: height as IdxSize,
-                })
-                .await
-                .is_err()
-            {
+            // Wait -> acquire here applies backpressure from slow I/O.
+            // However, if I/O is faster than record batch encoding, then acquiring a token here
+            // will unnecessarily restrict record batch encoding parallelism to 2 threads.
+            let token = if compression.is_none() {
+                // Uncompressed: Encoding should be 0-copy and complete instantly.
+                finish_record_batch_write_wg.wait().await;
+                Some(finish_record_batch_write_wg.token())
+            } else {
+                // Comperssed: Encoding will require CPU effort, allow parallelism across all threads.
+                None
+            };
+
+            if ipc_batch_tx.send((serialize_handle, token)).await.is_err() {
                 return Ok(());
             }
         }
 
-        for fut in parallelize_first_to_local(
-            TaskPriority::High,
-            arrow_converters
-                .into_iter()
-                .zip(dictionary_id_offsets.iter().copied())
-                .filter(|((arrow_converter, _), _)| {
-                    !arrow_converter.categorical_converter.converters.is_empty()
-                })
-                .flat_map(|((arrow_converter, _), dictionary_id_offset)| {
-                    let ipc_batch_tx = ipc_batch_tx.clone();
+        for encode_fut in arrow_converters
+            .into_iter()
+            .zip(dictionary_id_offsets.iter().copied())
+            .filter(|((arrow_converter, _), _)| {
+                !arrow_converter.categorical_converter.converters.is_empty()
+            })
+            .flat_map(|((arrow_converter, _), dictionary_id_offset)| {
+                let bytes_bufferer_config = bytes_bufferer_config.clone();
 
-                    arrow_converter
-                        .categorical_converter
-                        .converters
-                        .into_iter()
-                        .enumerate()
-                        .map(move |(i, (_, categorical_converter))| {
-                            let ipc_batch_tx = ipc_batch_tx.clone();
+                arrow_converter
+                    .categorical_converter
+                    .converters
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(i, (_, categorical_converter))| {
+                        let bytes_bufferer_config = bytes_bufferer_config.clone();
 
-                            async move {
-                                let encoded_data = encode_dictionary_values(
-                                    i64::try_from(i + dictionary_id_offset).unwrap(),
-                                    categorical_converter
-                                        .build_values_array(compat_level.uses_binview_types())
-                                        .as_ref(),
-                                    &write_options,
-                                )?;
+                        async move {
+                            let mut arrow_data = BytesBufferer::new(&bytes_bufferer_config);
+                            let mut ipc_message = BytesBufferer::new(&bytes_bufferer_config);
+                            let mut ctx = IpcBatchSerializationContext::new(
+                                &mut ipc_message,
+                                &mut arrow_data,
+                                compression,
+                            );
 
-                                // Dictionary batches can be placed anywhere in an IPC file, so we
-                                // can have each task send their encoded data as soon as it's ready.
-                                let _ = ipc_batch_tx.send(IpcBatch::Dictionary(encoded_data)).await;
+                            let categorical_values_array = categorical_converter
+                                .build_values_array(compat_level.uses_binview_types());
 
-                                PolarsResult::Ok(())
-                            }
-                        })
-                }),
-        ) {
-            fut.await?;
+                            write_array(&mut ctx, categorical_values_array.as_ref())?;
+
+                            let continuation_bytes = finish_encode_ipc_dictionary_batch(
+                                &mut ctx,
+                                categorical_values_array.len(),
+                                i64::try_from(i + dictionary_id_offset).unwrap(),
+                            )?;
+
+                            let message_num_bytes = ipc_message.len();
+                            let arrow_data_num_bytes = arrow_data.len();
+
+                            Ok(IpcBatch {
+                                batch_type: IpcBatchType::Dictionary,
+                                num_rows: categorical_values_array.len() as IdxSize,
+                                continuation_bytes,
+                                message_bytes: ipc_message.into_iter(),
+                                message_num_bytes,
+                                arrow_data_bytes: arrow_data.into_iter(),
+                                arrow_data_num_bytes,
+                                morsel_permit: None,
+                            })
+                        }
+                    })
+            })
+        {
+            let encode_handle =
+                executor::AbortOnDropHandle::new(executor::spawn(TaskPriority::High, encode_fut));
+
+            if ipc_batch_tx.send((encode_handle, None)).await.is_err() {
+                return Ok(());
+            }
         }
 
         Ok(())
     }
-}
-
-#[derive(Default)]
-struct EncodedArrayData {
-    variadic_buffer_counts: Vec<i64>,
-    buffers: Vec<arrow::io::ipc::format::ipc::Buffer>,
-    arrow_data: Vec<u8>,
-    nodes: Vec<arrow::io::ipc::format::ipc::FieldNode>,
-    offset: i64,
 }

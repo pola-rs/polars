@@ -98,6 +98,21 @@ impl CloudWriterIoTraitWrap {
         Ok(())
     }
 
+    pub async fn write_multiple_owned_unbuffered<I, T>(&mut self, bytes: I) -> std::io::Result<()>
+    where
+        I: IntoIterator<Item = T>,
+        Bytes: From<T>,
+    {
+        self.finish_active_poll().await?;
+
+        self.get_writer_mut_from_ready_state()
+            .unwrap()
+            .write_multiple_owned_unbuffered(bytes)
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn into_cloud_writer(mut self) -> std::io::Result<CloudWriter> {
         self.finish_active_poll().await?;
 
