@@ -464,7 +464,7 @@ impl CloudOptions {
                                 .head(format!("https://{bucket}.s3.amazonaws.com"))
                                 .send()
                                 .await
-                                .map_err(to_compute_err)
+                                .map_err(|e| PolarsError::from(std::io::Error::other(e)))
                         })
                         .await?;
                         if let Some(region) = result.headers().get("x-amz-bucket-region") {
