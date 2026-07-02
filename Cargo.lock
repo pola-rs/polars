@@ -3590,6 +3590,7 @@ dependencies = [
  "pyo3",
  "rayon",
  "recursive",
+ "serde",
  "serde_json",
  "uuid",
  "version_check",

@@ -33,6 +33,7 @@ use polars_lazy::prelude::*;
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
+use polars_utils::pl_serialize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -40,9 +41,11 @@ use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedStr;
+use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
+use pyo3::types::{IntoPyDict, PyBytes, PyDict, PyList, PySequence, PyString};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -126,6 +129,30 @@ pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny
     let series = pl_series(py).bind(py);
     let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
     constructor.call1((s,))
+}
+
+pub(crate) fn serde_pickle<'py, T: Serialize>(
+    val: &T,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    // For pickling we set FC is false, as that is used for caching (compact is faster) and is not
+    // intended to be used across different versions.
+    let mut writer: Vec<u8> = vec![];
+    pl_serialize::SerializeOptions::default()
+        .serialize_into_writer::<_, _, false>(&mut writer, &val)
+        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    Ok(PyBytes::new(py, &writer))
+}
+
+pub(crate) fn serde_unpickle<T: DeserializeOwned>(
+    val: &mut T,
+    state: &Bound<PyAny>,
+) -> PyResult<()> {
+    let bytes = state.extract::<PyBackedBytes>()?;
+    *val = pl_serialize::SerializeOptions::default()
+        .deserialize_from_reader::<_, _, false>(&*bytes)
+        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    Ok(())
 }
 
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlSmallStr> {
