@@ -997,18 +997,18 @@ def test_bitwise_bool_ops_deprecated(
     lf = pl.LazyFrame(
         {"int": [], "bool": []}, schema={"int": pl.Int32, "bool": pl.Boolean}
     )
-    hint = "Hint: cast the boolean to i32 using pl.Expr.cast()."
+    hint = "Hint: cast the Boolean to Int32 using pl.Expr.cast()."
 
     msg = (
-        f"{op_str} on bool and i32 is deprecated and will raise a ComputeError in Polars 2.0\n"
+        f"{op_str} on Boolean and Int32 is deprecated and will raise a ComputeError in Polars 2.0\n"
         + hint
     )
     with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
         lf.select(op(pl.col("bool"), pl.col("int"))).collect_schema()
 
     msg = (
-        f"{op_str} on bool and i32 is deprecated and will raise a ComputeError in Polars 2.0\n"
+        f"{op_str} on Int32 and Boolean is deprecated and will raise a ComputeError in Polars 2.0\n"
         + hint
     )
     with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
-        lf.select(op(pl.col("bool"), pl.col("int"))).collect_schema()
+        lf.select(op(pl.col("int"), pl.col("bool"))).collect_schema()

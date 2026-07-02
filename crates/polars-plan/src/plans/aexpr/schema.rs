@@ -642,19 +642,15 @@ fn get_arithmetic_field(
             if (left_field.dtype.is_bool() ^ right_field.dtype.is_bool())
                 && (left_field.dtype.is_numeric() ^ right_field.dtype.is_numeric()) =>
         {
-            let int_dt = match (&left_field.dtype, &right_field.dtype) {
-                (DataType::Boolean, right) => right,
-                (left, DataType::Boolean) => left,
-                _ => unreachable!(),
-            };
+            let supertype = try_get_supertype(&left_field.dtype, &right_field.dtype)?;
             polars_warn!(
                 Deprecation,
-                "{op} on {} and {} is deprecated and will raise a ComputeError in Polars 2.0\n\
-                Hint: cast the boolean to {int_dt} using pl.Expr.cast().",
+                "{op} on {:?} and {:?} is deprecated and will raise a ComputeError in Polars 2.0\n\
+                Hint: cast the Boolean to {supertype:?} using pl.Expr.cast().",
                 left_field.dtype,
                 right_field.dtype,
             );
-            try_get_supertype(&left_field.dtype, &right_field.dtype)?
+            supertype
         },
         _ => {
             match (&left_field.dtype, &right_field.dtype) {
