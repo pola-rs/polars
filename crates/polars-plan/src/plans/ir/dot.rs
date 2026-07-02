@@ -341,10 +341,15 @@ impl<'a> IRDotDisplay<'a> {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
+                let key = key
+                    .iter()
+                    .map(|k| format!("'{k}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 write_label(f, id, |f| {
                     write!(
                         f,
-                        "MERGE_SORTED[maintain_order: {maintain_order}] ON '{key}'",
+                        "MERGE_SORTED[maintain_order: {maintain_order}] ON [{key}]",
                     )
                 })?;
             },

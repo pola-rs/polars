@@ -690,7 +690,7 @@ def union(
 @unstable()
 def merge_sorted(
     items: Iterable[PolarsType],
-    key: str,
+    key: str | Sequence[str],
     *,
     maintain_order: bool = False,
 ) -> PolarsType:
@@ -699,7 +699,7 @@ def merge_sorted(
 
     The output of this operation will also be sorted.
     It is the callers responsibility that the frames
-    are sorted in ascending order by that key otherwise
+    are sorted in ascending order by that key(s) otherwise
     the output will not make sense.
 
     .. warning::
@@ -711,7 +711,9 @@ def merge_sorted(
     items
         DataFrames or LazyFrames to merge.
     key
-        Key that is sorted.
+        Key column(s) that the frames are sorted by. A single column name or a
+        sequence of column names can be passed. When multiple keys are given the
+        frames are merged as if sorted by those keys in order.
     maintain_order
         If ``True``, the output is guaranteed to have left-biased ordering
         for equal keys: rows from the left frame appear before rows from
@@ -750,7 +752,7 @@ def merge_sorted(
     Unless ``maintain_order=True``, no guarantee is given over the output
     row order when the key is equal between dataframes.
 
-    The key must be sorted in ascending order.
+    The key(s) must be sorted in ascending order.
     """
     elems: Sequence[PolarsType] = list(items)
 

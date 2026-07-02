@@ -1951,16 +1951,22 @@ impl LazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    pub fn merge_sorted<S>(
+    pub fn merge_sorted<I, S>(
         self,
         other: LazyFrame,
-        key: S,
+        key: I,
         maintain_order: bool,
     ) -> PolarsResult<LazyFrame>
     where
+        I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let key = key.into();
+        let key: Arc<[PlSmallStr]> = key.into_iter().map(Into::into).collect();
+
+        polars_ensure!(
+            !key.is_empty(),
+            ComputeError: "merge_sorted requires at least one key column"
+        );
 
         let lp = DslPlan::MergeSorted {
             input_left: Arc::new(self.logical_plan),
