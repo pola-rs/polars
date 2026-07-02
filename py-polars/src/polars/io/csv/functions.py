@@ -17,6 +17,7 @@ from polars._utils.deprecation import (
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.various import (
     _process_null_values,
+    is_int_sequence,
     is_path_or_str_sequence,
     is_str_sequence,
     normalize_filepath,
@@ -40,11 +41,12 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars._plr import PyDataFrame, PyLazyFrame
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Iterable, Mapping
 
     from polars import DataFrame, LazyFrame
     from polars._typing import (
         CsvEncoding,
+        IntoExpr,
         PolarsDataType,
         SchemaDict,
         StorageOptionsDict,
@@ -66,7 +68,11 @@ def read_csv(
     source: str | Path | IO[str] | IO[bytes] | bytes,
     *,
     has_header: bool = True,
-    columns: Sequence[int] | Sequence[str] | None = None,
+    columns: Sequence[int]
+    | Sequence[str]
+    | IntoExpr
+    | Iterable[IntoExpr]
+    | None = None,
     new_columns: Sequence[str] | None = None,
     separator: str = ",",
     comment_prefix: str | None = None,
@@ -128,7 +134,13 @@ def read_csv(
         `x` being an enumeration over every column in the dataset, starting at 1.
     columns
         Columns to select. Accepts a list of column indices (starting
-        at zero) or a list of column names.
+        at zero) or a list of column names. Also accepts a single expression,
+        or any other selection supported by :meth:`LazyFrame.select`, such as
+        a selector (e.g. `polars.selectors.numeric()`); in that case the file
+        is read via `scan_csv` and the selection is applied afterwards, so
+        `use_pyarrow` is not supported in combination with this kind of
+        `columns` value. A plain string or list of strings is always treated
+        as a literal column name (or names), not a selector.
     new_columns
         Rename columns right after parsing the CSV file. If the given
         list is shorter than the width of the DataFrame the remaining
@@ -303,6 +315,57 @@ def read_csv(
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
     _check_arg_is_1byte("eol_char", eol_char, can_be_empty=False)
+
+    if columns is not None and not (
+        isinstance(columns, (str, int))
+        or is_str_sequence(columns, allow_str=False)
+        or is_int_sequence(columns)
+    ):
+        # `columns` is some other `.select`-compatible value (e.g. a regex
+        # pattern, `Expr`, or selector); the native reader only understands
+        # column names/indices, so read the full file lazily and apply the
+        # selection afterwards, same as `read_parquet` does for this case.
+        if use_pyarrow:
+            msg = (
+                "`use_pyarrow=True` is not supported when `columns` is not a "
+                "sequence of column names or indices"
+            )
+            raise TypeError(msg)
+
+        lf = scan_csv(
+            source,
+            has_header=has_header,
+            separator=separator,
+            comment_prefix=comment_prefix,
+            quote_char=quote_char,
+            skip_rows=skip_rows,
+            skip_lines=skip_lines,
+            schema=schema,
+            schema_overrides=schema_overrides,
+            null_values=null_values,
+            empty_string_is_null=empty_string_is_null,
+            ignore_errors=ignore_errors,
+            infer_schema=infer_schema,
+            infer_schema_length=infer_schema_length,
+            n_rows=n_rows,
+            encoding=encoding,  # type: ignore[arg-type]
+            low_memory=low_memory,
+            rechunk=rechunk,
+            skip_rows_after_header=skip_rows_after_header,
+            row_index_name=row_index_name,
+            row_index_offset=row_index_offset,
+            try_parse_dates=try_parse_dates,
+            eol_char=eol_char,
+            raise_if_empty=raise_if_empty,
+            truncate_ragged_lines=truncate_ragged_lines,
+            decimal_comma=decimal_comma,
+            glob=glob,
+            storage_options=storage_options,
+        )
+        df = lf.select(columns).collect()
+        if new_columns:
+            return _update_columns(df, new_columns)
+        return df
 
     projection, columns = parse_columns_arg(columns)
     storage_options = storage_options or {}
