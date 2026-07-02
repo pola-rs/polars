@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import operator
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,33 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from polars._typing import PolarsDataType
+
+
+@pytest.mark.parametrize(
+    "op",
+    [operator.add, operator.sub, operator.mul, operator.floordiv, operator.mod],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_list_arithmetic_dynamic_literal_schema_26054(
+    op: Callable[[Any, Any], Any],
+    *,
+    reverse: bool,
+) -> None:
+    lf = pl.LazyFrame({"x": pl.Series([[2], [3]], dtype=pl.List(pl.Int16))})
+    expr = op(1, pl.col("x")) if reverse else op(pl.col("x"), 1)
+    query = lf.select(expr.alias("x"))
+
+    expected_schema = pl.Schema({"x": pl.List(pl.Int32)})
+    assert query.collect_schema() == expected_schema
+    assert query.collect().schema == expected_schema
+
+
+def test_list_arithmetic_dynamic_literal_sink_26054() -> None:
+    query = pl.LazyFrame({"x": pl.Series([[1], [2]], dtype=pl.List(pl.Int16))}).select(
+        pl.col("x") + 1
+    )
+
+    query.sink_parquet(io.BytesIO())
 
 
 @pytest.mark.parametrize(
