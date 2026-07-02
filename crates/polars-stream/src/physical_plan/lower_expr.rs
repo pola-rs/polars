@@ -2483,6 +2483,7 @@ fn lower_exprs_with_ctx(
                 input: input_exprs,
                 function:
                     ewm_variant @ IRFunctionExpr::EwmMean { options }
+                    | ewm_variant @ IRFunctionExpr::EwmSum { options }
                     | ewm_variant @ IRFunctionExpr::EwmVar { options }
                     | ewm_variant @ IRFunctionExpr::EwmStd { options },
                 options: _,
@@ -2504,6 +2505,7 @@ fn lower_exprs_with_ctx(
 
                 let kind = match ewm_variant {
                     IRFunctionExpr::EwmMean { .. } => PhysNodeKind::EwmMean { input, options },
+                    IRFunctionExpr::EwmSum { .. } => PhysNodeKind::EwmSum { input, options },
                     IRFunctionExpr::EwmVar { .. } => PhysNodeKind::EwmVar { input, options },
                     IRFunctionExpr::EwmStd { .. } => PhysNodeKind::EwmStd { input, options },
                     _ => unreachable!(),

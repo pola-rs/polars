@@ -1487,6 +1487,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::EwmMean { options: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm mean"));
                 },
+                IRFunctionExpr::EwmSum { options: _ } => {
+                    return Err(PyNotImplementedError::new_err("ewm sum"));
+                },
                 IRFunctionExpr::EwmStd { options: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm std"));
                 },
@@ -1536,6 +1539,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::TopKBy { descending } => ("top_k_by", descending).into_py_any(py),
                 IRFunctionExpr::EwmMeanBy { half_life: _ } => {
                     return Err(PyNotImplementedError::new_err("ewm_mean_by"));
+                },
+                IRFunctionExpr::EwmSumBy { half_life: _ } => {
+                    return Err(PyNotImplementedError::new_err("ewm_sum_by"));
                 },
                 IRFunctionExpr::RowEncode(..) => {
                     return Err(PyNotImplementedError::new_err("row_encode"));

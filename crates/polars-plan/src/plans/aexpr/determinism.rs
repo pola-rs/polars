@@ -213,9 +213,9 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::MaxHorizontal | F::MinHorizontal => false,
         F::SumHorizontal { .. } | F::MeanHorizontal { .. } => false,
         #[cfg(feature = "ewma")]
-        F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } => false,
+        F::EwmMean { .. } | F::EwmStd { .. } | F::EwmVar { .. } | F::EwmSum { .. } => false,
         #[cfg(feature = "ewma_by")]
-        F::EwmMeanBy { .. } => false,
+        F::EwmMeanBy { .. } | F::EwmSumBy { .. } => false,
         #[cfg(feature = "replace")]
         F::Replace | F::ReplaceStrict { .. } => false,
         F::GatherEvery { .. } => false,

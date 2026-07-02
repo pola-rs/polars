@@ -836,6 +836,16 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
+    fn ewm_sum(&self, alpha: f64, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+        let options = EWMOptions {
+            alpha,
+            adjust,
+            bias: false,
+            min_periods,
+            ignore_nulls,
+        };
+        self.inner.clone().ewm_sum(options).into()
+    }
     fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
         let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
         Ok(self
@@ -843,6 +853,10 @@ impl PyExpr {
             .clone()
             .ewm_mean_by(times.inner, half_life)
             .into())
+    }
+    fn ewm_sum_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
+        let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
+        Ok(self.inner.clone().ewm_sum_by(times.inner, half_life).into())
     }
 
     fn ewm_std(

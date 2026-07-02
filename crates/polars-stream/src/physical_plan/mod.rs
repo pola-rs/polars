@@ -535,6 +535,12 @@ pub enum PhysNodeKind {
     },
 
     #[cfg(feature = "ewma")]
+    EwmSum {
+        input: PhysStream,
+        options: polars_ops::series::EWMOptions,
+    },
+
+    #[cfg(feature = "ewma")]
     EwmVar {
         input: PhysStream,
         options: polars_ops::series::EWMOptions,
@@ -768,6 +774,7 @@ fn visit_node_inputs_mut(
 
             #[cfg(feature = "ewma")]
             PhysNodeKind::EwmMean { input, options: _ }
+            | PhysNodeKind::EwmSum { input, options: _ }
             | PhysNodeKind::EwmVar { input, options: _ }
             | PhysNodeKind::EwmStd { input, options: _ } => {
                 rec!(input.node);

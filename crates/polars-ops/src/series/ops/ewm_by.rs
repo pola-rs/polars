@@ -92,6 +92,212 @@ pub fn ewm_mean_by(
     }
 }
 
+pub fn ewm_sum_by(
+    s: &Series,
+    times: &Series,
+    half_life: i64,
+    times_is_sorted: bool,
+) -> PolarsResult<Series> {
+    fn func<T>(
+        values: &ChunkedArray<T>,
+        times: &Int64Chunked,
+        half_life: i64,
+        times_is_sorted: bool,
+    ) -> PolarsResult<Series>
+    where
+        T: PolarsFloatType,
+        T::Native: Float + Zero + One,
+    {
+        if times_is_sorted {
+            Ok(ewm_sum_by_impl_sorted(values, times, half_life).into_series())
+        } else {
+            Ok(ewm_sum_by_impl(values, times, half_life).into_series())
+        }
+    }
+
+    polars_ensure!(
+        s.len() == times.len(),
+        length_mismatch = "ewm_sum_by",
+        s.len(),
+        times.len()
+    );
+
+    match (s.dtype(), times.dtype()) {
+        (DataType::Float64, DataType::Int64) => func(
+            s.f64().unwrap(),
+            times.i64().unwrap(),
+            half_life,
+            times_is_sorted,
+        ),
+        (DataType::Float32, DataType::Int64) => func(
+            s.f32().unwrap(),
+            times.i64().unwrap(),
+            half_life,
+            times_is_sorted,
+        ),
+        #[cfg(feature = "dtype-f16")]
+        (DataType::Float16, DataType::Int64) => func(
+            s.f16().unwrap(),
+            times.i64().unwrap(),
+            half_life,
+            times_is_sorted,
+        ),
+        #[cfg(feature = "dtype-datetime")]
+        (_, DataType::Datetime(time_unit, _)) => {
+            let half_life = adjust_half_life_to_time_unit(half_life, time_unit);
+            ewm_sum_by(
+                s,
+                &times.cast(&DataType::Int64)?,
+                half_life,
+                times_is_sorted,
+            )
+        },
+        #[cfg(feature = "dtype-date")]
+        (_, DataType::Date) => ewm_sum_by(
+            s,
+            &times.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
+            half_life,
+            times_is_sorted,
+        ),
+        (_, DataType::UInt64 | DataType::UInt32 | DataType::Int32) => ewm_sum_by(
+            s,
+            &times.cast(&DataType::Int64)?,
+            half_life,
+            times_is_sorted,
+        ),
+        (DataType::UInt64 | DataType::UInt32 | DataType::Int64 | DataType::Int32, _) => ewm_sum_by(
+            &s.cast(&DataType::Float64)?,
+            times,
+            half_life,
+            times_is_sorted,
+        ),
+        _ => {
+            polars_bail!(InvalidOperation: "expected series to be Float64, Float32, Float16, \
+                Int64, Int32, UInt64, UInt32, and `by` to be Date, Datetime, Int64, Int32, \
+                UInt64, or UInt32")
+        },
+    }
+}
+
+fn update_sum<T>(value: T, prev_result: T, time: i64, prev_time: i64, half_life: i64) -> T
+where
+    T: Float + Zero + One + FromPrimitive,
+{
+    let delta_time = time - prev_time;
+    let lambda = T::from_f64(0.5)
+        .unwrap()
+        .powf(T::from_i64(delta_time).unwrap() / T::from_i64(half_life).unwrap());
+    value + lambda * prev_result
+}
+
+/// Sort on behalf of user
+fn ewm_sum_by_impl<T>(
+    values: &ChunkedArray<T>,
+    times: &Int64Chunked,
+    half_life: i64,
+) -> ChunkedArray<T>
+where
+    T: PolarsFloatType,
+    T::Native: Float + Zero + One + FromPrimitive,
+    ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
+{
+    let sorting_indices = times.arg_sort(Default::default());
+    let sorted_values = unsafe { values.take_unchecked(&sorting_indices) };
+    let sorted_times = unsafe { times.take_unchecked(&sorting_indices) };
+    let sorting_indices = sorting_indices
+        .cont_slice()
+        .expect("`arg_sort` should have returned a single chunk");
+
+    let mut out: Vec<_> = zeroed_vec(sorted_times.len());
+
+    let mut skip_rows: usize = 0;
+    let mut prev_time: i64 = 0;
+    let mut prev_result = T::Native::zero();
+    for (idx, (value, time)) in sorted_values.iter().zip(sorted_times.iter()).enumerate() {
+        if let (Some(time), Some(value)) = (time, value) {
+            prev_time = time;
+            prev_result = value;
+            unsafe {
+                let out_idx = sorting_indices.get_unchecked(idx);
+                *out.get_unchecked_mut(*out_idx as usize) = prev_result;
+            }
+            skip_rows = idx + 1;
+            break;
+        };
+    }
+    sorted_values
+        .iter()
+        .zip(sorted_times.iter())
+        .enumerate()
+        .skip(skip_rows)
+        .for_each(|(idx, (value, time))| {
+            if let (Some(time), Some(value)) = (time, value) {
+                let result = update_sum(value, prev_result, time, prev_time, half_life);
+                prev_time = time;
+                prev_result = result;
+                unsafe {
+                    let out_idx = sorting_indices.get_unchecked(idx);
+                    *out.get_unchecked_mut(*out_idx as usize) = result;
+                }
+            };
+        });
+    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(CompatLevel::newest()));
+    if (times.null_count() > 0) || (values.null_count() > 0) {
+        let validity = binary_concatenate_validities(times, values);
+        arr = arr.with_validity_typed(validity);
+    }
+    ChunkedArray::with_chunk(values.name().clone(), arr)
+}
+
+/// Fastpath if `times` is known to already be sorted.
+fn ewm_sum_by_impl_sorted<T>(
+    values: &ChunkedArray<T>,
+    times: &Int64Chunked,
+    half_life: i64,
+) -> ChunkedArray<T>
+where
+    T: PolarsFloatType,
+    T::Native: Float + Zero + One + FromPrimitive,
+{
+    let mut out: Vec<_> = zeroed_vec(times.len());
+
+    let mut skip_rows: usize = 0;
+    let mut prev_time: i64 = 0;
+    let mut prev_result = T::Native::zero();
+    for (idx, (value, time)) in values.iter().zip(times.iter()).enumerate() {
+        if let (Some(time), Some(value)) = (time, value) {
+            prev_time = time;
+            prev_result = value;
+            unsafe {
+                *out.get_unchecked_mut(idx) = prev_result;
+            }
+            skip_rows = idx + 1;
+            break;
+        }
+    }
+    values
+        .iter()
+        .zip(times.iter())
+        .enumerate()
+        .skip(skip_rows)
+        .for_each(|(idx, (value, time))| {
+            if let (Some(time), Some(value)) = (time, value) {
+                let result = update_sum(value, prev_result, time, prev_time, half_life);
+                prev_time = time;
+                prev_result = result;
+                unsafe {
+                    *out.get_unchecked_mut(idx) = result;
+                }
+            };
+        });
+    let mut arr = T::Array::from_zeroable_vec(out, values.dtype().to_arrow(CompatLevel::newest()));
+    if (times.null_count() > 0) || (values.null_count() > 0) {
+        let validity = binary_concatenate_validities(times, values);
+        arr = arr.with_validity_typed(validity);
+    }
+    ChunkedArray::with_chunk(values.name().clone(), arr)
+}
+
 /// Sort on behalf of user
 fn ewm_mean_by_impl<T>(
     values: &ChunkedArray<T>,
@@ -222,5 +428,41 @@ where
         alpha * value + one_minus_alpha * prev_result
     } else {
         value
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_ewm_sum_by_uniform_times() {
+        let values = Series::new("x".into(), [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let times = Series::new("t".into(), [0i64, 1, 2, 5, 6, 10]);
+        let result = ewm_sum_by(&values, &times, 1, true).unwrap();
+        let out = result.f64().unwrap();
+        let actual: Vec<f64> = out.iter().map(|v| v.unwrap()).collect();
+        let expected = [1.0, 2.5, 4.25, 4.53125, 7.265625, 6.4541015625];
+        for (a, b) in actual.iter().zip(expected) {
+            assert!((a - b).abs() < 1e-10, "actual={actual:?}");
+        }
+    }
+
+    #[test]
+    fn test_ewm_sum_by_constant() {
+        let values = Series::new("values".into(), [1.0f64, 1.0, 1.0]);
+        let times = Series::new("times".into(), [0i64, 7, 12]);
+        let result = ewm_sum_by(&values, &times, 2, true).unwrap();
+        let out = result.f64().unwrap();
+        let actual: Vec<f64> = out.iter().map(|v| v.unwrap()).collect();
+        assert!((actual[0] - 1.0).abs() < 1e-10, "actual={actual:?}");
+        assert!(
+            (actual[1] - 1.0883883476483184).abs() < 1e-10,
+            "actual={actual:?}"
+        );
+        assert!(
+            (actual[2] - 1.192401695296637).abs() < 1e-10,
+            "actual={actual:?}"
+        );
     }
 }

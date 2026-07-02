@@ -947,6 +947,11 @@ pub(super) fn ewm_mean(
 }
 
 #[cfg(feature = "ewma")]
+pub(super) fn ewm_sum(s: &Column, options: polars_ops::series::EWMOptions) -> PolarsResult<Column> {
+    polars_ops::prelude::ewm_sum(s.as_materialized_series(), options).map(Column::from)
+}
+
+#[cfg(feature = "ewma")]
 pub(super) fn ewm_std(s: &Column, options: polars_ops::series::EWMOptions) -> PolarsResult<Column> {
     polars_ops::prelude::ewm_std(s.as_materialized_series(), options).map(Column::from)
 }
@@ -974,6 +979,31 @@ pub(super) fn ewm_mean_by(s: &[Column], half_life: polars_time::Duration) -> Pol
         .as_materialized_series()
         .is_sorted(Default::default())?;
     polars_ops::prelude::ewm_mean_by(
+        values.as_materialized_series(),
+        times.as_materialized_series(),
+        half_life,
+        times_is_sorted,
+    )
+    .map(Column::from)
+}
+
+#[cfg(feature = "ewma_by")]
+pub(super) fn ewm_sum_by(s: &[Column], half_life: polars_time::Duration) -> PolarsResult<Column> {
+    use polars_ops::series::SeriesMethods;
+
+    let time_zone = match s[1].dtype() {
+        DataType::Datetime(_, Some(time_zone)) => Some(time_zone),
+        _ => None,
+    };
+    polars_ensure!(!half_life.negative(), InvalidOperation: "half_life cannot be negative");
+    polars_time::prelude::ensure_is_constant_duration(half_life, time_zone, "half_life")?;
+    let half_life = half_life.duration_ns();
+    let values = &s[0];
+    let times = &s[1];
+    let times_is_sorted = times
+        .as_materialized_series()
+        .is_sorted(Default::default())?;
+    polars_ops::prelude::ewm_sum_by(
         values.as_materialized_series(),
         times.as_materialized_series(),
         half_life,

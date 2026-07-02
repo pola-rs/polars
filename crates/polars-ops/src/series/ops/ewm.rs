@@ -1,5 +1,6 @@
 pub use polars_compute::ewm::EWMOptions;
 use polars_compute::ewm::mean::ewm_mean as kernel_ewm_mean;
+use polars_compute::ewm::sum::ewm_sum as kernel_ewm_sum;
 use polars_compute::ewm::{ewm_std as kernel_ewm_std, ewm_var as kernel_ewm_var};
 use polars_core::prelude::*;
 
@@ -53,6 +54,54 @@ pub fn ewm_mean(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
         },
         dt if cfg!(debug_assertions) => panic!("{:?}", dt),
         _ => ewm_mean(&s.cast(&DataType::Float64)?, options),
+    }
+}
+
+pub fn ewm_sum(s: &Series, options: EWMOptions) -> PolarsResult<Series> {
+    check_alpha(options.alpha).inspect_err(|_| {
+        if cfg!(debug_assertions) {
+            panic!()
+        }
+    })?;
+    match s.dtype() {
+        #[cfg(feature = "dtype-f16")]
+        DataType::Float16 => {
+            use num_traits::AsPrimitive;
+
+            let xs = s.f16().unwrap();
+            let result = kernel_ewm_sum(
+                xs.iter(),
+                options.alpha.as_(),
+                options.adjust,
+                options.min_periods,
+                options.ignore_nulls,
+            );
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+        },
+        DataType::Float32 => {
+            let xs = s.f32().unwrap();
+            let result = kernel_ewm_sum(
+                xs.iter(),
+                options.alpha as f32,
+                options.adjust,
+                options.min_periods,
+                options.ignore_nulls,
+            );
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+        },
+        DataType::Float64 => {
+            let xs = s.f64().unwrap();
+            let result = kernel_ewm_sum(
+                xs.iter(),
+                options.alpha,
+                options.adjust,
+                options.min_periods,
+                options.ignore_nulls,
+            );
+            Series::try_from((s.name().clone(), Box::new(result) as ArrayRef))
+        },
+        dt if cfg!(debug_assertions) => panic!("{:?}", dt),
+        _ => ewm_sum(&s.cast(&DataType::Float64)?, options),
     }
 }
 

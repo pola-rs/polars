@@ -1057,6 +1057,10 @@ pub(super) fn convert_functions(
         #[cfg(feature = "ewma_by")]
         F::EwmMeanBy { half_life } => I::EwmMeanBy { half_life },
         #[cfg(feature = "ewma")]
+        F::EwmSum { options } => I::EwmSum { options },
+        #[cfg(feature = "ewma_by")]
+        F::EwmSumBy { half_life } => I::EwmSumBy { half_life },
+        #[cfg(feature = "ewma")]
         F::EwmStd { options } => I::EwmStd { options },
         #[cfg(feature = "ewma")]
         F::EwmVar { options } => I::EwmVar { options },

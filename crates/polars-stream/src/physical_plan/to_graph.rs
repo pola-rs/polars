@@ -1627,10 +1627,12 @@ fn to_graph_rec<'a>(
 
         #[cfg(feature = "ewma")]
         ewm_variant @ EwmMean { input, options }
+        | ewm_variant @ EwmSum { input, options }
         | ewm_variant @ EwmVar { input, options }
         | ewm_variant @ EwmStd { input, options } => {
             use nodes::ewm::EwmNode;
             use polars_compute::ewm::mean::EwmMeanState;
+            use polars_compute::ewm::sum::EwmSumState;
             use polars_compute::ewm::{EwmCovState, EwmStateUpdate, EwmStdState, EwmVarState};
             use polars_core::with_match_physical_float_type;
 
@@ -1642,6 +1644,18 @@ fn to_graph_rec<'a>(
                 EwmMean { .. } => {
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmMeanState<$T> = EwmMeanState::new(
+                            AsPrimitive::<$T>::as_(options.alpha),
+                            options.adjust,
+                            options.min_periods,
+                            options.ignore_nulls,
+                        );
+
+                        Box::new(state)
+                    })
+                },
+                EwmSum { .. } => {
+                    with_match_physical_float_type!(dtype, |$T| {
+                        let state: EwmSumState<$T> = EwmSumState::new(
                             AsPrimitive::<$T>::as_(options.alpha),
                             options.adjust,
                             options.min_periods,
@@ -1670,6 +1684,7 @@ fn to_graph_rec<'a>(
 
             let name = match ewm_variant {
                 EwmMean { .. } => "ewm-mean",
+                EwmSum { .. } => "ewm-sum",
                 EwmVar { .. } => "ewm-var",
                 EwmStd { .. } => "ewm-std",
                 _ => unreachable!(),
