@@ -9,7 +9,6 @@ import warnings
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
-from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING, TypedDict
 
 import numpy as np
@@ -20,7 +19,6 @@ import zstandard
 import polars as pl
 from polars._utils.various import normalize_filepath
 from polars.exceptions import ComputeError, InvalidOperationError, NoDataError
-from polars.io.csv import BatchedCsvReader
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.conftest import PlMonkeyPatch
 
@@ -1573,45 +1571,6 @@ def test_csv_categorical_categorical_merge(chunk_override: None) -> None:
     assert pl.read_csv(f, schema_overrides={"x": pl.Categorical}).unique(
         maintain_order=True
     )["x"].to_list() == ["A", "B"]
-
-
-@pytest.mark.write_disk
-def test_batched_csv_reader(chunk_override: None, foods_file_path: Path) -> None:
-    with pytest.deprecated_call():
-        reader = pl.read_csv_batched(foods_file_path, batch_size=4)
-        assert isinstance(reader, BatchedCsvReader)
-
-        batches = reader.next_batches(5)
-        assert batches is not None
-        out = pl.concat(batches)
-        assert_frame_equal(out, pl.read_csv(foods_file_path).head(out.height))
-
-        # the final batch of the low-memory variant is different
-        reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-        batches = reader.next_batches(10)
-        assert batches is not None
-
-        assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))
-
-        reader = pl.read_csv_batched(foods_file_path, batch_size=4, low_memory=True)
-        batches = reader.next_batches(10)
-        assert_frame_equal(pl.concat(batches), pl.read_csv(foods_file_path))  # type: ignore[arg-type]
-
-        # ragged lines
-        with NamedTemporaryFile() as tmp:
-            data = b"A\nB,ragged\nC"
-            tmp.write(data)
-            tmp.seek(0)
-
-            expected = pl.DataFrame({"A": ["B", "C"]})
-            batches = pl.read_csv_batched(
-                tmp.name,
-                has_header=True,
-                truncate_ragged_lines=True,
-            ).next_batches(1)
-
-            assert batches is not None
-            assert_frame_equal(pl.concat(batches), expected)
 
 
 def test_batched_csv_reader_empty(chunk_override: None, io_files_path: Path) -> None:
