@@ -15,7 +15,7 @@ const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
 use crate::WeakSpillContext;
-use crate::spill_context::{SpillContextInner, UNEXPLORED_SCORE};
+use crate::spill_context::UNEXPLORED_SCORE;
 use crate::spill_token::{DynSpillToken, TrySpillError};
 
 static MEMORY_MANAGER: LazyLock<MemoryManager> = LazyLock::new(MemoryManager::new);
@@ -82,15 +82,17 @@ impl MemoryManager {
     #[cold]
     async fn do_spill(&self) {
         while self.should_spill() {
-            let Some((ctx, ctx_id, spillables)) = self.find_spillables().await else {
+            let Some((ctx, spillables)) = self.find_spillables().await else {
                 return;
             };
 
             let successful_spill = Arc::new(WithDrop::new(
-                (AtomicBool::new(false), ctx.stats().clone()),
-                move |(success, stats)| {
+                (AtomicBool::new(false), ctx.clone()),
+                move |(success, weak_ctx)| {
                     if !success.load(Ordering::Relaxed) {
-                        stats.finish_exploration_event(false, ctx_id);
+                        if let Some(strong) = weak_ctx.upgrade() {
+                            strong.stats().finish_exploration_event(false);
+                        }
                     }
                 },
             ));
@@ -99,21 +101,24 @@ impl MemoryManager {
                 let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
 
                 let successful_spill = successful_spill.clone();
+                let ctx = ctx.clone();
 
                 polars_async::executor::spawn(TaskPriority::High, async move {
                     // Spill, or reinsert if a failure.
-                    match spillable.try_spill(ctx, ctx_id, reg_id) {
+                    match spillable.try_spill(ctx.clone(), reg_id) {
                         Ok(spill_success) => {
                             if spill_success.await {
                                 if !successful_spill.0.swap(true, Ordering::Relaxed) {
-                                    ctx.stats().finish_exploration_event(true, ctx_id);
+                                    if let Some(strong) = ctx.upgrade() {
+                                        strong.stats().finish_exploration_event(true);
+                                    }
                                 }
                             } else {
-                                ctx.reinsert(&spillable, reg_id, ctx_id);
+                                ctx.0.reinsert(&spillable, reg_id, ctx.1);
                             }
                         },
                         Err(TrySpillError::Pinned) => {
-                            ctx.reinsert(&spillable, reg_id, ctx_id);
+                            ctx.0.reinsert(&spillable, reg_id, ctx.1);
                         },
                         Err(TrySpillError::AlreadySpilled) => {},
                     }
@@ -132,11 +137,7 @@ impl MemoryManager {
     #[cold]
     async fn find_spillables(
         &self,
-    ) -> Option<(
-        &'static SpillContextInner,
-        u64,
-        Vec<(Arc<dyn DynSpillToken>, u32, usize)>,
-    )> {
+    ) -> Option<(WeakSpillContext, Vec<(Arc<dyn DynSpillToken>, u32, usize)>)> {
         // TODO: don't block here under a certain memory threshold.
         let finding_spill_guard = self.finding_spill_lock.lock().await;
 
@@ -176,7 +177,8 @@ impl MemoryManager {
                 break;
             }
 
-            ctx.0.stats().start_exploration_event(ctx.1);
+            let Some(strong) = ctx.upgrade() else { continue };
+            strong.stats().start_exploration_event();
 
             let mut total_est_spill = 0;
             let mut candidates = Vec::new();
@@ -195,12 +197,12 @@ impl MemoryManager {
             }
 
             if candidates.is_empty() {
-                ctx.0.stats().finish_exploration_event(false, ctx.1);
+                strong.stats().finish_exploration_event(false);
             } else {
                 // Increment the spill-in-progress to avoid eager over-spilling.
                 self.est_spill_in_progress
                     .fetch_add(total_est_spill, Ordering::Relaxed);
-                out = Some((ctx.0, ctx.1, candidates));
+                out = Some((ctx, candidates));
                 break;
             }
         }

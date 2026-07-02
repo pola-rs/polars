@@ -10,7 +10,6 @@ use polars_async::ASYNC;
 use polars_utils::UnitVec;
 use polars_utils::with_drop::WithDrop;
 
-use crate::spill_context::SpillContextInner;
 use crate::{SpillContextParam, Spillable, WeakSpillContext};
 
 // SpillTokenInner's state
@@ -25,8 +24,7 @@ enum ValueSlot<T> {
     InMemory(T),
     Spilled {
         n_bytes: usize,
-        spill_ctx: &'static SpillContextInner,
-        spill_ctx_id: u64,
+        spill_ctx: WeakSpillContext,
         reinsert_reg_id: u32,
         spill_time_ns: u64,
         spilled_start: Instant,
@@ -210,7 +208,6 @@ impl<T: Spillable> SpillTokenInner<T> {
             let ValueSlot::Spilled {
                 n_bytes,
                 spill_ctx,
-                spill_ctx_id,
                 reinsert_reg_id,
                 spill_time_ns,
                 spilled_start,
@@ -219,16 +216,12 @@ impl<T: Spillable> SpillTokenInner<T> {
                 unreachable!()
             };
 
-            spill_ctx.stats().add_unspill(
-                n_bytes,
-                spill_time_ns,
-                spilled_start,
-                unspill_start,
-                spill_ctx_id,
-            );
+            if let Some(strong) = spill_ctx.upgrade() {
+                strong.stats().add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start);
+            }
             if reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
                 let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                spill_ctx.reinsert(&dyn_slf, reinsert_reg_id, spill_ctx_id);
+                spill_ctx.0.reinsert(&dyn_slf, reinsert_reg_id, spill_ctx.1);
             }
 
             WithDrop::dismiss(lock_guard);
@@ -261,7 +254,6 @@ impl<T: Spillable> SpillTokenInner<T> {
             if let ValueSlot::Spilled {
                 n_bytes,
                 spill_ctx,
-                spill_ctx_id,
                 reinsert_reg_id,
                 spill_time_ns,
                 spilled_start,
@@ -272,16 +264,12 @@ impl<T: Spillable> SpillTokenInner<T> {
                 let spilled = (*slf.spilled_value.get()).take().unwrap();
                 let value = T::unspill(&spilled).await;
 
-                spill_ctx.stats().add_unspill(
-                    *n_bytes,
-                    *spill_time_ns,
-                    *spilled_start,
-                    unspill_start,
-                    *spill_ctx_id,
-                );
+                if let Some(strong) = spill_ctx.upgrade() {
+                    strong.stats().add_unspill(*n_bytes, *spill_time_ns, *spilled_start, unspill_start);
+                }
                 if *reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
                     let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                    spill_ctx.reinsert(&dyn_slf, *reinsert_reg_id, *spill_ctx_id);
+                    spill_ctx.0.reinsert(&dyn_slf, *reinsert_reg_id, spill_ctx.1);
                 }
 
                 *value_slot = ValueSlot::InMemory(value);
@@ -367,8 +355,7 @@ pub(crate) trait DynSpillToken: Send + Sync + 'static {
     /// occurred during spilling.
     fn try_spill(
         &self,
-        context: &'static SpillContextInner,
-        ctx_id: u64,
+        context: WeakSpillContext,
         registration_id: u32,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError>;
 }
@@ -405,8 +392,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
 
     fn try_spill(
         &self,
-        ctx: &'static SpillContextInner,
-        ctx_id: u64,
+        ctx: WeakSpillContext,
         registration_id: u32,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError> {
         // First, we try setting the lock bit. If anyone else has a pin we don't bother.
@@ -450,7 +436,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                         .fetch_add(RO_PIN_COUNT_UNIT - LOCK_BIT, Ordering::AcqRel),
                 );
                 let pin_guard = PinnedRef { inner: self };
-                let spilled = pin_guard.spill(&ctx.stats().name()).await;
+                let spilled = pin_guard.spill(&ctx.0.stats().name()).await;
                 core::mem::forget(pin_guard);
                 // We can simply re-acquire the lock here blindly, as we still hold
                 // our pin meaning no one else could've gotten the lock.
@@ -472,14 +458,16 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                     ValueSlot::InMemory(val) => val.estimate_byte_size(),
                     _ => unreachable!(),
                 };
-                let (spill_time_ns, spilled_start) =
-                    ctx.stats()
-                        .add_successful_spill(n_bytes, spill_start, ctx_id);
+                let (spill_time_ns, spilled_start) = if let Some(strong) = ctx.upgrade() {
+                    strong.stats().add_successful_spill(n_bytes, spill_start)
+                } else {
+                    // Dummy, context is already dead.
+                    (0, Instant::now())
+                };
                 unsafe {
                     self.value_slot.get().replace(ValueSlot::Spilled {
                         n_bytes,
                         spill_ctx: ctx,
-                        spill_ctx_id: ctx_id,
                         reinsert_reg_id: registration_id,
                         spill_time_ns,
                         spilled_start,
@@ -488,7 +476,9 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                 self.state
                     .fetch_add(SPILLED_BIT.wrapping_sub(LOCK_BIT), Ordering::AcqRel)
             } else {
-                ctx.stats().add_failed_spill(spill_start, ctx_id);
+                if let Some(strong) = ctx.upgrade() {
+                    strong.stats().add_failed_spill(spill_start);
+                }
                 self.state.fetch_sub(LOCK_BIT, Ordering::AcqRel)
             };
             self.wake_waiters(state);

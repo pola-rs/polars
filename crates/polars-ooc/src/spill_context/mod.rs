@@ -121,7 +121,7 @@ impl SpillContextInner {
         let ctx_id = new_context_id();
         Self {
             local: ThreadLocal::default(),
-            stats: Arc::new(SpillContextStatistics::new(name, ctx_id)),
+            stats: Arc::new(SpillContextStatistics::new(name)),
             policy: AtomicU8::new(policy as u8),
             refcount: AtomicU64::new(0),
             context_id: AtomicU64::new(ctx_id),
@@ -138,7 +138,7 @@ impl SpillContextInner {
                 token.0.unregister();
             }
         }
-        self.stats.reset(name, ctx_id);
+        self.stats.reset(name);
     }
 
     pub fn context_id(&self) -> u64 {
@@ -210,6 +210,12 @@ impl StrongSpillContext {
 
     pub fn downgrade(&self) -> WeakSpillContext {
         WeakSpillContext(self.0, self.0.context_id())
+    }
+}
+
+impl StrongSpillContext {
+    pub fn stats(&self) -> &Arc<SpillContextStatistics> {
+        self.0.stats()
     }
 }
 
