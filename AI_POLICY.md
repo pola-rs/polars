@@ -14,8 +14,8 @@ The Polars project has strict rules for AI usage:
   suspects its use, the PR will be closed. If you want to share code for a non-accepted issue, open
   a discussion or attach it to an existing discussion.
 
-- **AI may not be used for issues marked as "good first issue".** These issues are intended for
-  new contributors to learn the codebase, and are thus wasted if AI solves them.
+- **AI may not be used for issues marked as "good first issue".** These issues are intended for new
+  contributors to learn the codebase, and are thus wasted if AI solves them.
 
 - **AI-generated code must have been fully verified with human use.** AI must not create
   hypothetically correct code that hasn't been tested. Importantly, you must not allow AI to write
