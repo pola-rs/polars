@@ -1402,7 +1402,12 @@ def test_grouped_slice_literals(maintain_order: bool) -> None:
     )
     out = q.collect()
     expected = pl.DataFrame(
-        {"literal": [True], "x": [[[1, 2]]], "x2": [[2]], "x3": [[[1, 2]]]}
+        {
+            "literal": [True],
+            "x": pl.Series("x", [[[1, 2]]], dtype=pl.List(pl.List(pl.Int32))),
+            "x2": [[2]],
+            "x3": [[[1, 2]]],
+        }
     )
     assert_frame_equal(
         out,
