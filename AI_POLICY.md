@@ -2,19 +2,22 @@
 
 The Polars project has strict rules for AI usage:
 
+- **Agents are strictly forbidden from interacting with our repository.** This includes but is not
+  limited to posting issues, making pull requests, posting comments, posting code reviews, adding
+  reactions, etc. Any interaction on our repository must be done by a human.
+
 - **All AI usage in any form must be disclosed.** You must state the tool(s) you used (e.g. Claude
   Code, Cursor, Amp) along with the extent that the work was AI-assisted.
 
-- **Pull requests created in any way by AI can only be for accepted issues.** Drive-by pull requests
+- **Pull requests with AI-generated code can only be for accepted issues.** Drive-by pull requests
   that do not reference an accepted issue will be closed. If AI isn't disclosed but a maintainer
   suspects its use, the PR will be closed. If you want to share code for a non-accepted issue, open
   a discussion or attach it to an existing discussion.
 
-- **Pull requests created in any way by AI may not be opened for issues marked as "good first
-  issue".** These issues are intended for new contributors to learn the codebase, and are thus
-  wasted if AI solves them.
+- **AI may not be used for issues marked as "good first issue".** These issues are intended for
+  new contributors to learn the codebase, and are thus wasted if AI solves them.
 
-- **Pull requests created by AI must have been fully verified with human use.** AI must not create
+- **AI-generated code must have been fully verified with human use.** AI must not create
   hypothetically correct code that hasn't been tested. Importantly, you must not allow AI to write
   code for platforms or environments you don't have access to manually test on.
 
