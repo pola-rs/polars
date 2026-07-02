@@ -271,7 +271,9 @@ impl WeakSpillContext {
     {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.register(self.clone()));
+        if self.0.context_id() == self.1 {
+            local.push_back(&dyn_arc, dyn_arc.register(self.clone()));
+        }
     }
 }
 
