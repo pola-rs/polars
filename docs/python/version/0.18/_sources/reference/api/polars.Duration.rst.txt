@@ -1,0 +1,32 @@
+﻿polars.Duration
+===============
+
+.. currentmodule:: polars
+
+.. autoclass:: Duration
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Duration.__init__
+      ~Duration.base_type
+      ~Duration.is_
+      ~Duration.is_not
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~Duration.is_nested
+      ~Duration.time_unit
+   
+   

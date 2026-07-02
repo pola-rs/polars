@@ -1,0 +1,6 @@
+﻿polars.Series.\_\_setitem\_\_
+=============================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.__setitem__

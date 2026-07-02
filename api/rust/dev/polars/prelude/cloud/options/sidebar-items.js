@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CloudConfig","CloudType"],"static":["USER_AGENT"],"struct":["CloudOptions","CloudRetryConfig"]};

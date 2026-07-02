@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PYTHON_SERDE_MAGIC_BYTE_MARK"],"static":["PYTHON3_VERSION"],"struct":["PySerializeWrap","PythonObject"],"trait":["TrySerializeToBytes"],"type":["PythonFunction"]};

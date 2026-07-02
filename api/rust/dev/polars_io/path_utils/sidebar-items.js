@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["create_dir_owner_only","decode_file_uri_paths","expand_paths","expand_paths_hive","expanded_from_single_directory","resolve_homedir"],"static":["POLARS_TEMP_DIR_BASE_PATH"]};

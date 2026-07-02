@@ -1,0 +1,6 @@
+﻿polars.escape\_regex
+====================
+
+.. currentmodule:: polars
+
+.. autofunction:: escape_regex

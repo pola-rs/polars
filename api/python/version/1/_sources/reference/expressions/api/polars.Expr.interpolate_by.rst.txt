@@ -1,0 +1,6 @@
+﻿polars.Expr.interpolate\_by
+===========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.interpolate_by

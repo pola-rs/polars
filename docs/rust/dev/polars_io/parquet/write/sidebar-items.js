@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ParquetCompression"],"struct":["BatchedWriter","BrotliLevel","GzipLevel","ParquetWriteOptions","ParquetWriter","StatisticsOptions","ZstdLevel"],"type":["RowGroupIterColumns"]};

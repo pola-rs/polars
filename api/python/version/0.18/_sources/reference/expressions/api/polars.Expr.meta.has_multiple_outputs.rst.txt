@@ -1,0 +1,6 @@
+﻿polars.Expr.meta.has_multiple_outputs
+=====================================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.meta.has_multiple_outputs

@@ -1,0 +1,6 @@
+﻿polars.Expr.list.drop_nulls
+===========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.list.drop_nulls

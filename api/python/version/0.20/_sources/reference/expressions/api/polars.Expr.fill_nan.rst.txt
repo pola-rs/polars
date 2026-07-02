@@ -1,0 +1,6 @@
+﻿polars.Expr.fill\_nan
+=====================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.fill_nan

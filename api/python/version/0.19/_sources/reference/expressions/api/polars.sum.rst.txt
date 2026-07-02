@@ -1,0 +1,6 @@
+﻿polars.sum
+==========
+
+.. currentmodule:: polars
+
+.. autofunction:: sum

@@ -1,0 +1,6 @@
+﻿polars.mean\_horizontal
+=======================
+
+.. currentmodule:: polars
+
+.. autofunction:: mean_horizontal

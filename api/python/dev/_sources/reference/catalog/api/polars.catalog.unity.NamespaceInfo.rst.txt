@@ -1,0 +1,35 @@
+﻿polars.catalog.unity.NamespaceInfo
+==================================
+
+.. currentmodule:: polars.catalog.unity
+
+.. autoclass:: NamespaceInfo
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~NamespaceInfo.__init__
+   
+   
+
+   
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~NamespaceInfo.name
+      ~NamespaceInfo.comment
+      ~NamespaceInfo.properties
+      ~NamespaceInfo.storage_location
+      ~NamespaceInfo.created_at
+      ~NamespaceInfo.created_by
+      ~NamespaceInfo.updated_at
+      ~NamespaceInfo.updated_by
+   
+   

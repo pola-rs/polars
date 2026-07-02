@@ -1,0 +1,6 @@
+﻿polars.Series.bin.contains
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.bin.contains

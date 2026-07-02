@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["compile_regex","with_regex_cache"],"macro":["cached_regex"],"struct":["RegexCache"]};

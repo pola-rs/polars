@@ -1,0 +1,6 @@
+﻿polars.Series.str.explode
+=========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.str.explode

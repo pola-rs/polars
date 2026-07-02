@@ -1,0 +1,6 @@
+﻿polars.sql
+==========
+
+.. currentmodule:: polars
+
+.. autofunction:: sql

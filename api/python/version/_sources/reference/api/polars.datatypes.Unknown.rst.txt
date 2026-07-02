@@ -1,0 +1,35 @@
+﻿polars.datatypes.Unknown
+========================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Unknown
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Unknown.__init__
+      ~Unknown.base_type
+      ~Unknown.from_python
+      ~Unknown.is_
+      ~Unknown.is_decimal
+      ~Unknown.is_float
+      ~Unknown.is_integer
+      ~Unknown.is_nested
+      ~Unknown.is_numeric
+      ~Unknown.is_object
+      ~Unknown.is_signed_integer
+      ~Unknown.is_temporal
+      ~Unknown.is_unsigned_integer
+      ~Unknown.to_python
+   
+   
+
+   
+   
+   

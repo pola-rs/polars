@@ -1,0 +1,6 @@
+﻿polars.Expr.arr.to_list
+=======================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.arr.to_list

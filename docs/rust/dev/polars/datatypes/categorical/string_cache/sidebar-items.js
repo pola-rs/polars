@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["disable_string_cache","enable_string_cache","using_string_cache"],"struct":["StringCacheHolder"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WINDOWS_EXTPATH_PREFIX"],"enum":["CloudScheme"],"fn":["ext_scheme_allowed","format_file_uri"],"static":["ALLOWED_EXT_SCHEMES"],"struct":["PlPath","PlRefPath"]};
