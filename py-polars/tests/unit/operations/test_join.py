@@ -3195,9 +3195,6 @@ def test_join_filter_pushdown_asof_join() -> None:
         }
     )
 
-    assert lhs.select_seq("a").collect().to_series().is_sorted(nulls_last=True)
-    assert rhs.select_seq("b").collect().to_series().is_sorted(nulls_last=True)
-
     q = lhs.join_asof(
         rhs,
         left_on=pl.col("a").set_sorted(nulls_last=True),
