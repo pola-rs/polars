@@ -498,11 +498,13 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         let v = sc.value().as_duration(self.0.time_unit());
         Ok(Scalar::new(self.dtype().clone(), v))
     }
+
     fn min_reduce(&self) -> PolarsResult<Scalar> {
         let sc = self.0.physical().min_reduce();
         let v = sc.value().as_duration(self.0.time_unit());
         Ok(Scalar::new(self.dtype().clone(), v))
     }
+
     fn mean_reduce(&self) -> PolarsResult<Scalar> {
         let mean = self.mean().map(|v| v as i64);
         let av = AnyValue::from(mean).as_duration(self.0.time_unit());

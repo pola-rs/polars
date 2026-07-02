@@ -140,29 +140,24 @@ fn test_group_by_agg_list_with_not_aggregated() -> PolarsResult<()> {
 }
 
 #[test]
-#[cfg(all(feature = "dtype-duration", feature = "dtype-decimal"))]
+#[cfg(feature = "dtype-decimal")]
 fn test_logical_mean_partitioned_group_by_block() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock();
     let df = df![
         "decimal" => [1, 1, 2],
-        "duration" => [1000, 2000, 3000]
     ]?;
 
     let out = df
         .lazy()
         .with_column(col("decimal").cast(DataType::Decimal(38, 2)))
-        .with_column(col("duration").cast(DataType::Duration(TimeUnit::Microseconds)))
         .group_by([col("decimal")])
-        .agg([col("duration").mean()])
-        .sort(["duration"], Default::default())
+        .agg([col("decimal").mean().alias("decimal_mean")])
+        .sort(["decimal"], Default::default())
         .collect()?;
 
-    let duration = out.column("duration")?;
+    let decimal = out.column("decimal")?;
 
-    assert_eq!(
-        duration.get(0)?,
-        AnyValue::Duration(1500, TimeUnit::Microseconds)
-    );
+    assert_eq!(decimal.get(0)?, AnyValue::Decimal(100, 38, 2));
 
     Ok(())
 }

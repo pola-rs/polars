@@ -69,8 +69,8 @@ impl IRArrayFunction {
             ToList => mapper
                 .ensure_is_array()?
                 .try_map_dtype(map_array_dtype_to_list_dtype),
-            Std(_) => mapper.ensure_is_array()?.var_dtype(),
-            Var(_) => mapper.ensure_is_array()?.var_dtype(),
+            Std(_) => mapper.ensure_is_array()?.var_dtype("std"),
+            Var(_) => mapper.ensure_is_array()?.var_dtype("var"),
             Mean => mapper.ensure_is_array()?.moment_dtype(),
             Median => mapper.ensure_is_array()?.moment_dtype(),
             Sort(_) => mapper.ensure_is_array()?.with_same_dtype(),
