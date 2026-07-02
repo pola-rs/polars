@@ -91,8 +91,8 @@ impl IRListFunction {
             Max => mapper.ensure_is_list()?.map_to_list_and_array_inner_dtype(),
             Mean => mapper.nested_mean_median_type(),
             Median => mapper.nested_mean_median_type(),
-            Std(_) => mapper.ensure_is_list()?.var_dtype(), // Need to also have this sometimes marked as float32 or duration..
-            Var(_) => mapper.ensure_is_list()?.var_dtype(),
+            Std(_) => mapper.ensure_is_list()?.var_dtype("std"),
+            Var(_) => mapper.ensure_is_list()?.var_dtype("var"),
             ArgMin => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             ArgMax => mapper.ensure_is_list()?.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
