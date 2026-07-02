@@ -222,7 +222,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
         deregister_object_store_builder, register_object_store_builder,
     };
     use polars_io::prelude::ParquetWriter;
-    use polars_io::utils::file::WriteableTrait;
+    use polars_io::utils::file::WritableTrait;
     use polars_utils::pl_path::PlRefPath;
 
     struct MemoryBuilder {

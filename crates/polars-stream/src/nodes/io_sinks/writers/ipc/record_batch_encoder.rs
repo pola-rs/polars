@@ -72,7 +72,7 @@ impl RecordBatchEncoder {
                 TaskPriority::High,
                 columns.into_iter().zip(arrow_converters.drain(..)).map(
                     |(column, (mut arrow_converter, arrow_field))| async move {
-                        let rechunked = column.take_materialized_series().rechunk();
+                        let rechunked = column.as_materialized_series().rechunk();
                         let dtype = rechunked.dtype();
 
                         let array: Box<dyn Array> = arrow_converter

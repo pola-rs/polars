@@ -309,7 +309,7 @@ def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> No
     n_rows = 100
     buf = io.BytesIO()
 
-    df0 = pl.DataFrame({"a": list(range(n_rows))})
+    df0 = pl.DataFrame({"a": range(n_rows)})
     df = df0
     while n_chunks > 1:
         df = pl.concat([df, df0])
@@ -322,12 +322,14 @@ def test_sink_ipc_record_batch_size(record_batch_size: int, n_chunks: int) -> No
     assert_frame_equal(out, df)
 
     buf.seek(0)
-    reader = pyarrow.ipc.open_file(buf)
-    n_batches = reader.num_record_batches
-    for i in range(n_batches):
-        n_rows = reader.get_batch(i).num_rows
+    with pyarrow.ipc.open_file(buf) as reader:
+        record_batch_lengths = [
+            reader.get_batch(i).num_rows for i in range(reader.num_record_batches)
+        ]
+
+    for i, n_rows in enumerate(record_batch_lengths):
         assert n_rows == record_batch_size or (
-            i + 1 == n_batches and n_rows <= record_batch_size
+            i + 1 == len(record_batch_lengths) and n_rows <= record_batch_size
         )
 
 

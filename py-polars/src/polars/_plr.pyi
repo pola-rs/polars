@@ -765,7 +765,7 @@ class PyDataFrame:
         comment_prefix: str | None,
         quote_char: str | None,
         null_values: Any | None,
-        missing_utf8_is_empty_string: bool,
+        empty_string_is_null: bool,
         try_parse_dates: bool,
         skip_rows_after_header: int,
         row_index: tuple[str, int] | None,
@@ -863,7 +863,7 @@ class PyLazyFrame:
         comment_prefix: str | None,
         quote_char: str | None,
         null_values: Any | None,
-        missing_utf8_is_empty_string: bool,
+        empty_string_is_null: bool,
         infer_schema_length: int | None,
         with_schema_modify: Any | None,
         rechunk: bool,
@@ -2369,6 +2369,8 @@ class PyWhen:
 class PyThen:
     def when(self, condition: PyExpr) -> PyChainedWhen: ...
     def otherwise(self, statement: PyExpr) -> PyExpr: ...
+    def __getstate__(self) -> bytes: ...
+    def __setstate__(self, state: bytes) -> None: ...
 
 class PyChainedWhen:
     def then(self, statement: PyExpr) -> PyChainedThen: ...
@@ -2376,6 +2378,8 @@ class PyChainedWhen:
 class PyChainedThen:
     def when(self, condition: PyExpr) -> PyChainedWhen: ...
     def otherwise(self, statement: PyExpr) -> PyExpr: ...
+    def __getstate__(self) -> bytes: ...
+    def __setstate__(self, state: bytes) -> None: ...
 
 def when(condition: PyExpr) -> PyWhen: ...
 
