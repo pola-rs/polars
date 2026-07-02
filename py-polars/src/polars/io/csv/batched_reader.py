@@ -29,7 +29,7 @@ class BatchedCsvReader:
         skip_lines: int = 0,
         schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
         null_values: str | Sequence[str] | dict[str, str] | None = None,
-        missing_utf8_is_empty_string: bool = False,
+        empty_string_is_null: bool = True,
         ignore_errors: bool = False,
         try_parse_dates: bool = False,
         n_threads: int | None = None,  # noqa: ARG002
@@ -64,7 +64,7 @@ class BatchedCsvReader:
             comment_prefix=comment_prefix,
             quote_char=quote_char,
             null_values=null_values,
-            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+            empty_string_is_null=empty_string_is_null,
             try_parse_dates=try_parse_dates,
             skip_rows_after_header=skip_rows_after_header,
             row_index_name=row_index_name,
