@@ -842,6 +842,7 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "round_series")]
         F::Clip { has_min, has_max } => I::Clip { has_min, has_max },
+        F::AsList => I::AsList,
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => I::AsStruct,
         #[cfg(feature = "top_k")]

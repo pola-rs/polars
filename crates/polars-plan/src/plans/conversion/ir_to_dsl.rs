@@ -939,6 +939,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Repeat => F::Repeat,
         #[cfg(feature = "round_series")]
         IF::Clip { has_min, has_max } => F::Clip { has_min, has_max },
+        IF::AsList => F::AsList,
         #[cfg(feature = "dtype-struct")]
         IF::AsStruct => F::AsStruct,
         #[cfg(feature = "top_k")]
