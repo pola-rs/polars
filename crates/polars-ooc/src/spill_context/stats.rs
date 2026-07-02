@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::relaxed_cell::RelaxedCell;
 use rand::{Rng, RngExt};
@@ -18,18 +19,26 @@ pub struct SpillContextStatistics {
 }
 
 impl SpillContextStatistics {
-    pub(crate) fn new(name: PlSmallStr) -> Self {
+    pub(crate) fn new(name: PlSmallStr, context_id: u64) -> Self {
         Self {
             // TODO: starting score based on context.
             score_cache: RelaxedCell::new_u64(UNEXPLORED_SCORE.to_bits()),
-            stats: Mutex::new(Statistics { name, ..Default::default() }),
+            stats: Mutex::new(Statistics {
+                name,
+                context_id,
+                ..Default::default()
+            }),
         }
     }
-    
-    pub(crate) fn reset(&self, name: PlSmallStr) {
+
+    pub(crate) fn reset(&self, name: PlSmallStr, context_id: u64) {
         let mut stats = self.stats.lock().unwrap();
         self.score_cache.store(UNEXPLORED_SCORE.to_bits());
-        *stats = Statistics { name, ..Default::default() };
+        *stats = Statistics {
+            name,
+            context_id,
+            ..Default::default()
+        };
     }
 }
 
@@ -59,6 +68,7 @@ impl Drop for SpillContextStatistics {
 
 struct Statistics {
     name: PlSmallStr,
+    context_id: u64,
 
     // Total stats.
     spilled_byte_seconds: f64,
@@ -129,22 +139,34 @@ impl SpillContextStatistics {
         }
     }
 
-    pub fn start_exploration_event(&self) {
+    pub fn start_exploration_event(&self, context_id: u64) {
         // We don't bother stepping time here as it's already done in score sampling.
         let mut stats = self.stats.lock().unwrap();
+        if context_id != stats.context_id {
+            return;
+        }
+
         stats.total_explorations += 1;
         stats.bandit_explore_weight += 1.0;
     }
 
-    pub fn finish_exploration_event(&self, success: bool) {
+    pub fn finish_exploration_event(&self, success: bool, context_id: u64) {
         // We don't bother stepping time here as it's already done in score sampling.
         let mut stats = self.stats.lock().unwrap();
+        if context_id != stats.context_id {
+            return;
+        }
+
         stats.successful_explorations += success as u64;
         stats.bandit_explore_success += success as u64 as f64;
     }
 
-    pub fn add_failed_spill(&self, spill_start: Instant) {
+    pub fn add_failed_spill(&self, spill_start: Instant, context_id: u64) {
         let mut stats = self.stats.lock().unwrap();
+        if context_id != stats.context_id {
+            return;
+        }
+
         let now = Instant::now();
         stats.step_time(now); // Important: step time before mutating.
 
@@ -158,17 +180,26 @@ impl SpillContextStatistics {
     /// Instant from which we consider this value to be spilled. Both must be
     /// given back as arguments to `add_unspill`, to prevent accidental
     /// statistics drift and keep the accumulators precise.
-    pub fn add_successful_spill(&self, n_bytes: usize, spill_start: Instant) -> (u64, Instant) {
+    pub fn add_successful_spill(
+        &self,
+        n_bytes: usize,
+        spill_start: Instant,
+        context_id: u64,
+    ) -> (u64, Instant) {
         let mut stats = self.stats.lock().unwrap();
         let now = Instant::now();
+        let spill_time = now - spill_start;
+        let spill_time_ns = spill_time.as_nanos() as u64;
+        if context_id != stats.context_id {
+            return (spill_time_ns, now);
+        }
+
         stats.step_time(now); // Important: step time before mutating.
 
         let mean_b_before = stats.active_spills_bytes as f64 / stats.active_spills.max(1) as f64;
         let mean_r_before = stats.active_spills_bytes_ns as f64
             / (stats.active_spills.max(1) as f64 * NANOSECONDS_IN_SECOND);
 
-        let spill_time = now - spill_start;
-        let spill_time_ns = spill_time.as_nanos() as u64;
         stats.spill_time += spill_time.as_secs_f64();
         stats.successful_spills += 1;
         stats.active_spills += 1;
@@ -193,8 +224,13 @@ impl SpillContextStatistics {
         spill_time_ns: u64,
         spilled_start: Instant,
         unspill_start: Instant,
+        context_id: u64,
     ) {
         let mut stats = self.stats.lock().unwrap();
+        if context_id != stats.context_id {
+            return;
+        }
+
         let now = Instant::now();
         stats.step_time(now); // Important: step time before mutating.
 
@@ -401,6 +437,7 @@ impl Default for Statistics {
     fn default() -> Self {
         Self {
             name: PlSmallStr::EMPTY,
+            context_id: 0,
 
             spilled_byte_seconds: 0.0,
             spill_time: 0.0,

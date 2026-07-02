@@ -14,6 +14,7 @@ const EXPLORE_BEYOND_BEST_SCORE_THRESHOLD: f64 = 20.0;
 
 const MAX_PARALLEL_SPILL_TASKS: usize = 64;
 
+use crate::WeakSpillContext;
 use crate::spill_context::{SpillContextInner, UNEXPLORED_SCORE};
 use crate::spill_token::{DynSpillToken, TrySpillError};
 
@@ -25,7 +26,7 @@ pub fn memory_manager() -> &'static MemoryManager {
 }
 
 pub struct MemoryManager {
-    contexts: RwLock<Vec<&'static SpillContextInner>>,
+    contexts: RwLock<Vec<WeakSpillContext>>,
     finding_spill_lock: AsyncMutex<()>,
     spill_semaphore: Arc<AsyncSemaphore>,
     est_spill_in_progress: AtomicU64,
@@ -53,7 +54,7 @@ impl MemoryManager {
         }
     }
 
-    pub(crate) fn register_ctx(&self, ctx: &'static SpillContextInner) {
+    pub(crate) fn register_ctx(&self, ctx: WeakSpillContext) {
         self.contexts.write().unwrap().push(ctx);
     }
 
@@ -81,38 +82,38 @@ impl MemoryManager {
     #[cold]
     async fn do_spill(&self) {
         while self.should_spill() {
-            let Some((ctx, spillables)) = self.find_spillables().await else {
+            let Some((ctx, ctx_id, spillables)) = self.find_spillables().await else {
                 return;
             };
 
             let successful_spill = Arc::new(WithDrop::new(
                 (AtomicBool::new(false), ctx.stats().clone()),
-                |(success, stats)| {
+                move |(success, stats)| {
                     if !success.load(Ordering::Relaxed) {
-                        stats.finish_exploration_event(false);
+                        stats.finish_exploration_event(false, ctx_id);
                     }
                 },
             ));
 
-            for (spillable, id, sz) in spillables {
+            for (spillable, reg_id, sz) in spillables {
                 let permit = self.spill_semaphore.clone().acquire_owned().await.unwrap();
 
                 let successful_spill = successful_spill.clone();
 
                 polars_async::executor::spawn(TaskPriority::High, async move {
                     // Spill, or reinsert if a failure.
-                    match spillable.try_spill(ctx.stats(), ctx, id) {
+                    match spillable.try_spill(ctx, ctx_id, reg_id) {
                         Ok(spill_success) => {
                             if spill_success.await {
                                 if !successful_spill.0.swap(true, Ordering::Relaxed) {
-                                    ctx.stats().finish_exploration_event(true);
+                                    ctx.stats().finish_exploration_event(true, ctx_id);
                                 }
                             } else {
-                                ctx.reinsert(&spillable, id);
+                                ctx.reinsert(&spillable, reg_id, ctx_id);
                             }
                         },
                         Err(TrySpillError::Pinned) => {
-                            ctx.reinsert(&spillable, id);
+                            ctx.reinsert(&spillable, reg_id, ctx_id);
                         },
                         Err(TrySpillError::AlreadySpilled) => {},
                     }
@@ -133,6 +134,7 @@ impl MemoryManager {
         &self,
     ) -> Option<(
         &'static SpillContextInner,
+        u64,
         Vec<(Arc<dyn DynSpillToken>, u32, usize)>,
     )> {
         // TODO: don't block here under a certain memory threshold.
@@ -150,9 +152,9 @@ impl MemoryManager {
             };
 
             // Thompson sampling.
-            let score_sample = ctx.stats().sample_score(&mut rng);
+            let score_sample = ctx.0.stats().sample_score(&mut rng);
             assert!(!score_sample.is_nan());
-            live_contexts.push((*ctx, score_sample));
+            live_contexts.push((ctx.clone(), score_sample));
         }
         drop(contexts);
 
@@ -174,31 +176,31 @@ impl MemoryManager {
                 break;
             }
 
-            ctx.stats().start_exploration_event();
+            ctx.0.stats().start_exploration_event(ctx.1);
 
             let mut total_est_spill = 0;
             let mut candidates = Vec::new();
-            for (cand, id) in ctx.pop() {
+            for (cand, reg_id) in ctx.0.pop() {
                 if cand.can_spill()
                     && let Some(sz) = cand.estimate_byte_size()
                     && sz as u64 >= min_spill
                 {
                     total_est_spill += sz as u64;
-                    candidates.push((cand, id, sz));
+                    candidates.push((cand, reg_id, sz));
                 } else {
                     if !cand.is_spilled_or_dropped() {
-                        ctx.reinsert(&cand, id);
+                        ctx.0.reinsert(&cand, reg_id, ctx.1);
                     }
                 }
             }
 
             if candidates.is_empty() {
-                ctx.stats().finish_exploration_event(false);
+                ctx.0.stats().finish_exploration_event(false, ctx.1);
             } else {
                 // Increment the spill-in-progress to avoid eager over-spilling.
                 self.est_spill_in_progress
                     .fetch_add(total_est_spill, Ordering::Relaxed);
-                out = Some((ctx, candidates));
+                out = Some((ctx.0, ctx.1, candidates));
                 break;
             }
         }
