@@ -331,8 +331,9 @@ We unfortunately are overwhelmed by the amount of low-quality contributions crea
 AI. These cost us a lot of time (and regularly simply don't work), while the author has barely spent
 any effort, so for first-time contributors there are some more rules:
 
-- You must post a screenshot of you successfully running the test suite (`make test`), locally on
-  your machine (not the CI).
+- You must post a screenshot of you successfully running the test suite (`make test`),
+  locally on your machine (not the CI). The screenshot must show your terminal window
+  borders clearly, it must not be cropped to only show text.
 - You may not have more than one open PR at a time.
 
 ## Contributing to documentation
