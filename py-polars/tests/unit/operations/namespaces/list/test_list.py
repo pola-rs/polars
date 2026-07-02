@@ -983,8 +983,8 @@ def test_list_get_with_null() -> None:
 
     expected = pl.DataFrame(
         {
-            "layout1": [None, 1],
-            "layout2": [None, 1],
+            "layout1": pl.Series("layout1", [None, 1], dtype=pl.Int32),
+            "layout2": pl.Series("layout2", [None, 1], dtype=pl.Int64),
         }
     )
 

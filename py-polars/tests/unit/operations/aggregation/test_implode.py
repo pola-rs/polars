@@ -17,7 +17,12 @@ def test_implode_agg_lit() -> None:
         pl.DataFrame()
         .group_by(pl.lit(1, pl.Int64))
         .agg(x=pl.lit([3]).list.set_union(pl.lit(1).implode())),
-        pl.DataFrame({"literal": [1], "x": [[3, 1]]}),
+        pl.DataFrame(
+            {
+                "literal": [1],
+                "x": pl.Series("x", [[3, 1]], dtype=pl.List(pl.Int32)),
+            }
+        ),
     )
 
 

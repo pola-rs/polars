@@ -378,9 +378,9 @@ def test_explode_nullable_list() -> None:
     explode_df = df.explode("layout1", "layout2", empty_as_null=True)
     expected_df = pl.DataFrame(
         {
-            "layout1": [None, 1, 2],
+            "layout1": pl.Series("layout1", [None, 1, 2], dtype=pl.Int64),
             "b": [False, True, True],
-            "layout2": [None, 1, 2],
+            "layout2": pl.Series("layout2", [None, 1, 2], dtype=pl.Int32),
         }
     )
     assert_frame_equal(explode_df, expected_df)
@@ -391,8 +391,8 @@ def test_explode_nullable_list() -> None:
     )
     expected_df = pl.DataFrame(
         {
-            "layout1": [None, 1, 2],
-            "layout2": [None, 1, 2],
+            "layout1": pl.Series("layout1", [None, 1, 2], dtype=pl.Int64),
+            "layout2": pl.Series("layout2", [None, 1, 2], dtype=pl.Int32),
         }
     )
     assert_frame_equal(explode_expr, expected_df)
