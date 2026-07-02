@@ -66,7 +66,8 @@ impl IRFunctionExpr {
                 match function {
                     Min | Max => mapper.with_same_dtype(),
                     Mean | Quantile => mapper.moment_dtype(),
-                    Std | Var => mapper.var_dtype(),
+                    Std => mapper.var_dtype("std"),
+                    Var => mapper.var_dtype("var"),
                     Sum => mapper.sum_dtype(),
                     Rank => match options.fn_params {
                         Some(RollingFnParams::Rank {
@@ -110,7 +111,8 @@ impl IRFunctionExpr {
                 match function_by {
                     MinBy | MaxBy => mapper.with_same_dtype(),
                     MeanBy | QuantileBy => mapper.moment_dtype(),
-                    StdBy | VarBy => mapper.var_dtype(),
+                    StdBy => mapper.var_dtype("std"),
+                    VarBy => mapper.var_dtype("var"),
                     SumBy => mapper.sum_dtype(),
                     RankBy => match options.fn_params {
                         Some(RollingFnParams::Rank {
@@ -430,9 +432,9 @@ impl IRFunctionExpr {
             #[cfg(feature = "ewma_by")]
             EwmMeanBy { .. } => mapper.map_numeric_to_float_dtype(true),
             #[cfg(feature = "ewma")]
-            EwmStd { .. } => mapper.map_numeric_to_float_dtype(true),
+            EwmStd { .. } => mapper.ewm_var_dtype("ewm_std", true),
             #[cfg(feature = "ewma")]
-            EwmVar { .. } => mapper.var_dtype(),
+            EwmVar { .. } => mapper.ewm_var_dtype("ewm_var", true),
             #[cfg(feature = "replace")]
             Replace => mapper.with_same_dtype(),
             #[cfg(feature = "replace")]
@@ -507,24 +509,12 @@ impl<'a> FieldsMapper<'a> {
         func(&self.fields[0])
     }
 
-    pub fn var_dtype(&self) -> PolarsResult<Field> {
-        if self.fields[0].dtype().leaf_dtype().is_duration() {
-            let map_inner = |dt: &DataType| match dt {
-                dt if dt.is_temporal() => {
-                    polars_bail!(InvalidOperation: "operation `var` is not supported for `{dt}`")
-                },
-                dt => Ok(dt.clone()),
-            };
-
-            self.try_map_dtype(|dt| match dt {
-                #[cfg(feature = "dtype-array")]
-                DataType::Array(inner, _) => map_inner(inner),
-                DataType::List(inner) => map_inner(inner),
-                _ => map_inner(dt),
-            })
-        } else {
-            self.moment_dtype()
+    pub fn var_dtype(&self, op: &'static str) -> PolarsResult<Field> {
+        let leaf_dtype = self.fields[0].dtype().leaf_dtype();
+        if leaf_dtype.is_duration() {
+            polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{leaf_dtype}`");
         }
+        self.moment_dtype()
     }
 
     pub fn moment_dtype(&self) -> PolarsResult<Field> {
@@ -566,6 +556,14 @@ impl<'a> FieldsMapper<'a> {
             DataType::Float32 => DataType::Float32,
             _ => DataType::Float64,
         })
+    }
+
+    pub fn ewm_var_dtype(&self, op: &'static str, coerce_decimal: bool) -> PolarsResult<Field> {
+        let leaf_dtype = self.fields[0].dtype().leaf_dtype();
+        if leaf_dtype.is_duration() {
+            polars_bail!(InvalidOperation: "operation `{op}` is not supported for `{leaf_dtype}`");
+        }
+        self.map_numeric_to_float_dtype(coerce_decimal)
     }
 
     /// Map to a float supertype if numeric, else preserve
