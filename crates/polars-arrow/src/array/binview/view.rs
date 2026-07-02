@@ -153,7 +153,9 @@ impl View {
                 let num_buffers = buffers.len();
                 if let Some(buf) = buffers.last_mut() {
                     if buf.len() + bytes.len() <= buf.capacity() {
-                        let buf_idx = buffer_idx_offset + num_buffers as u32 - 1;
+                        let buf_idx = buffer_idx_offset
+                            .checked_add(num_buffers as u32 - 1)
+                            .expect("buffer_idx overflow");
                         let offset = buf.len() as u32;
                         buf.extend_from_slice(bytes);
                         return Self::new_noninline_unchecked(bytes, buf_idx, offset);
@@ -186,14 +188,18 @@ impl View {
         let old_cap = buffers.last().unwrap().capacity();
         let new_cap = (old_cap + old_cap).clamp(bytes.len(), u32::MAX as usize);
         if new_cap <= RESIZE_LIMIT {
-            let buffer_idx = buffer_idx_offset + num_buffers as u32 - 1;
+            let buffer_idx = buffer_idx_offset
+                .checked_add(num_buffers as u32 - 1)
+                .expect("buffer_idx overflow");
             let buf = buffers.last_mut().unwrap();
             let offset = buf.len() as u32;
             buf.reserve(new_cap - buf.len());
             buf.extend_from_slice(bytes);
             View::new_noninline_unchecked(bytes, buffer_idx, offset)
         } else {
-            let buffer_idx = buffer_idx_offset + num_buffers as u32;
+            let buffer_idx = buffer_idx_offset
+                .checked_add(num_buffers as u32)
+                .expect("buffer_idx overflow");
             let mut buf = Vec::with_capacity(new_cap);
             buf.extend_from_slice(bytes);
             buffers.push(buf);

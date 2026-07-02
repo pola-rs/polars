@@ -242,7 +242,10 @@ impl<T: NativeType> PrimitiveArray<T> {
     #[inline]
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
-            offset + length <= self.len(),
+            match offset.checked_add(length) {
+                Some(end) => end <= self.len(),
+                None => false,
+            },
             "offset + length may not exceed length of array"
         );
         unsafe { self.slice_unchecked(offset, length) }

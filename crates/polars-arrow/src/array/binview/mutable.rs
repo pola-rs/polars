@@ -766,7 +766,13 @@ impl MutableBinaryViewArray<[u8]> {
     ) {
         let (min, max, sum) = lengths_iterator.clone().map(|v| (v, v, v)).fold(
             (usize::MAX, usize::MIN, 0usize),
-            |(cmin, cmax, csum), (emin, emax, esum)| (cmin.min(emin), cmax.max(emax), csum + esum),
+            |(cmin, cmax, csum), (emin, emax, esum)| {
+                (
+                    cmin.min(emin),
+                    cmax.max(emax),
+                    csum.checked_add(esum).expect("total length overflow"),
+                )
+            },
         );
 
         // SAFETY: We just collected the right stats.
