@@ -278,5 +278,7 @@ def test_unknown_resolve() -> None:
 def test_unknown_lit_right_arithmetic_28180() -> None:
     lf = pl.LazyFrame({"u": pl.Series([1, 2], dtype=pl.UInt32)})
     q = lf.select(x=pl.col.u * -2)
-    assert_frame_equal(q.collect(), pl.DataFrame({"x": pl.Series([-2, -4], dtype=pl.Int64)}))
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"x": pl.Series([-2, -4], dtype=pl.Int64)})
+    )
     assert_schema_equal(q.collect_schema(), pl.Schema({"x": pl.Int64}))
