@@ -9,7 +9,7 @@
 ```toml
 cluster_id = "cluster-1"
 instance_id = "node-1"
-license = "/etc/polars/license.json"
+license.on_prem_enterprise.license_path = "/etc/polars/license.json"
 
 [scheduler]
 enabled = true
