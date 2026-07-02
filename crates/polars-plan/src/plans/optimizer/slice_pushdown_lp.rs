@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::{ScratchUnitVec, ScratchVec};
 use polars_utils::slice_enum::Slice;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use crate::plans::optimizer::slice_pushdown_expr;
@@ -14,6 +15,7 @@ pub(super) struct SlicePushDown {
     pub(super) ae_nodes_scratch: ScratchVec<Node>,
     pub(super) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
     pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchHashSet<Node>,
+    optimized_cache_inputs: PlHashMap<UniqueId, Node>,
 }
 
 impl SlicePushDown {
@@ -29,6 +31,7 @@ impl SlicePushDown {
             ae_nodes_scratch: ScratchVec::default(),
             ae_slice_pd_state_scratch: ScratchVec::default(),
             ae_slice_pd_direct_col_slice_nodes: ScratchHashSet::default(),
+            optimized_cache_inputs: PlHashMap::default(),
         }
     }
 }
@@ -180,17 +183,8 @@ impl SlicePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
-
-        let new_inputs = inputs
-            .into_iter()
-            .map(|node| {
-                // No state, so we do not push down the slice here.
-                let state = None;
-                let alp = self.pushdown(node, state, lp_arena, expr_arena)?;
-                lp_arena.replace(node, alp);
-                Ok(node)
-            })
-            .collect::<PolarsResult<UnitVec<_>>>()?;
+        let new_inputs: UnitVec<Node> =
+            self.pushdown_unique_inputs(inputs, None, lp_arena, expr_arena)?;
         let lp = lp.with_inputs(new_inputs);
 
         self.no_pushdown_finish_opt(lp, state, lp_arena)
@@ -205,16 +199,33 @@ impl SlicePushDown {
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.get_inputs();
+        let new_inputs: UnitVec<Node> =
+            self.pushdown_unique_inputs(inputs, state, lp_arena, expr_arena)?;
+        Ok(lp.with_inputs(new_inputs))
+    }
 
-        let new_inputs = inputs
+    fn pushdown_unique_inputs<C>(
+        &mut self,
+        inputs: impl IntoIterator<Item = Node>,
+        state: Option<State>,
+        lp_arena: &mut Arena<IR>,
+        expr_arena: &mut Arena<AExpr>,
+    ) -> PolarsResult<C>
+    where
+        C: FromIterator<Node>,
+    {
+        let mut seen = PlHashSet::default();
+
+        inputs
             .into_iter()
             .map(|node| {
-                let alp = self.pushdown(node, state, lp_arena, expr_arena)?;
-                lp_arena.replace(node, alp);
+                if seen.insert(node) {
+                    let alp = self.pushdown(node, state, lp_arena, expr_arena)?;
+                    lp_arena.replace(node, alp);
+                }
                 Ok(node)
             })
-            .collect::<PolarsResult<UnitVec<_>>>()?;
-        Ok(lp.with_inputs(new_inputs))
+            .collect::<PolarsResult<C>>()
     }
 
     /// This will take the `ir_node` from the `lp_arena`, replacing it with `IR::Invalid` (except if
@@ -229,14 +240,22 @@ impl SlicePushDown {
     ) -> PolarsResult<IR> {
         use IR::*;
 
-        // Don't take this, the node can be referenced multiple times in the tree.
-        if let IR::Cache { .. } = lp_arena.get(ir_node) {
-            return self.no_pushdown_restart_opt(
-                lp_arena.get(ir_node).clone(),
-                state,
-                lp_arena,
-                expr_arena,
-            );
+        // Cache nodes with the same cache id share one logical input.
+        // Optimize that input once, then reuse it for later cache nodes
+        // to avoid traversing a subtree that may already have been taken
+        // from the arena.
+        if let IR::Cache { input, id } = lp_arena.get(ir_node) {
+            let (mut input, id) = (*input, *id);
+            input = if let Some(input) = self.optimized_cache_inputs.get(&id) {
+                *input
+            } else {
+                let alp = self.pushdown(input, None, lp_arena, expr_arena)?;
+                lp_arena.replace(input, alp);
+                self.optimized_cache_inputs.insert(id, input);
+                input
+            };
+
+            return self.no_pushdown_finish_opt(IR::Cache { input, id }, state, lp_arena);
         }
 
         let maintain_errors = self.maintain_errors;
@@ -475,10 +494,8 @@ impl SlicePushDown {
                     .and_then(|x| x.len.checked_add(x.offset.try_into().unwrap()))
                     .map(|len| State { offset: 0, len });
 
-                for input in &mut inputs {
-                    let input_lp = self.pushdown(*input, subplan_slice, lp_arena, expr_arena)?;
-                    lp_arena.replace(*input, input_lp);
-                }
+                inputs =
+                    self.pushdown_unique_inputs(inputs, subplan_slice, lp_arena, expr_arena)?;
                 options.slice = opt_state.map(|x| (x.offset, x.len.try_into().unwrap()));
                 let lp = Union { inputs, options };
                 Ok(lp)
