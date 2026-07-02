@@ -20,8 +20,10 @@ ignore = [
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
 
-  # error[vulnerability]: Quadratic run time when checking a start tag for duplicate attribute names
+  # error[vulnerability]: Quadratic run time when checking a start tag for duplicate attribute names in quick-xml
   "RUSTSEC-2026-0194",
+  # error[vulnerability]: Unbounded namespace-declaration allocation in `NsReader` enables memory-exhaustion denial of service in quick-xml
+  "RUSTSEC-2026-0195",
 ]
 
 [licenses]
