@@ -4,15 +4,15 @@ use std::sync::LazyLock;
 use polars_core::config::verbose;
 use polars_utils::sys::total_memory;
 
-pub fn upload_chunk_size() -> usize {
+pub fn upload_chunk_size() -> NonZeroUsize {
     return *UPLOAD_CHUNK_SIZE;
 
-    static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-        let mut v: usize = 32 * 1024 * 1024;
+    static UPLOAD_CHUNK_SIZE: LazyLock<NonZeroUsize> = LazyLock::new(|| {
+        let mut v: NonZeroUsize = const { NonZeroUsize::new(32 * 1024 * 1024).unwrap() };
 
         if let Ok(s) = std::env::var("POLARS_UPLOAD_CHUNK_SIZE") {
             v = s
-                .parse::<usize>()
+                .parse::<NonZeroUsize>()
                 .unwrap_or_else(|_| panic!("invalid value for POLARS_UPLOAD_CHUNK_SIZE: {s}"))
         }
 
@@ -24,14 +24,14 @@ pub fn upload_chunk_size() -> usize {
     });
 }
 
-pub fn partitioned_upload_chunk_size() -> usize {
+pub fn partitioned_upload_chunk_size() -> NonZeroUsize {
     return *PARTITIONED_UPLOAD_CHUNK_SIZE;
 
-    static PARTITIONED_UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
-        let mut v: usize = 6 * 1024 * 1024;
+    static PARTITIONED_UPLOAD_CHUNK_SIZE: LazyLock<NonZeroUsize> = LazyLock::new(|| {
+        let mut v: NonZeroUsize = const { NonZeroUsize::new(6 * 1024 * 1024).unwrap() };
 
         if let Ok(s) = std::env::var("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE") {
-            v = s.parse::<usize>().unwrap_or_else(|_| {
+            v = s.parse::<NonZeroUsize>().unwrap_or_else(|_| {
                 panic!("invalid value for POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE: {s}")
             })
         }
