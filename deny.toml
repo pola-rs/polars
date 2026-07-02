@@ -19,6 +19,9 @@ ignore = [
 
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
+
+  # error[vulnerability]: Quadratic run time when checking a start tag for duplicate attribute names
+  "RUSTSEC-2026-0194",
 ]
 
 [licenses]
