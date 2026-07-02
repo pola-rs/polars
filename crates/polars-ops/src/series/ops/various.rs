@@ -103,10 +103,9 @@ fn is_sorted_impl(s: &Series, options: SortOptions) -> PolarsResult<bool> {
     let null_count = s.null_count();
 
     if null_count == 0 {
-        if (options.descending && matches!(s.is_sorted_flag(), IsSorted::Descending))
-            || (!options.descending && matches!(s.is_sorted_flag(), IsSorted::Ascending))
-        {
-            return Ok(true);
+        match (options.descending, s.is_sorted_flag()) {
+            (true, IsSorted::Descending) | (false, IsSorted::Ascending) => return Ok(true),
+            _ => (),
         }
     }
 
