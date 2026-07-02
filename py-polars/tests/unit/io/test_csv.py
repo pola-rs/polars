@@ -2200,6 +2200,39 @@ def test_read_csv_single_column(chunk_override: None, columns: list[str] | str) 
     assert_frame_equal(df, expected)
 
 
+def test_read_csv_columns_selector_28098() -> None:
+    import polars.selectors as cs
+
+    csv = textwrap.dedent(
+        """\
+        a0,a1,b0
+        1,x,3
+        2,y,4
+        """
+    )
+
+    df = pl.read_csv(io.StringIO(csv), columns=pl.col("a0"))
+    assert_frame_equal(df, pl.DataFrame({"a0": [1, 2]}))
+
+    df = pl.read_csv(io.StringIO(csv), columns=cs.numeric())
+    assert_frame_equal(df, pl.DataFrame({"a0": [1, 2], "b0": [3, 4]}))
+
+    df = pl.read_csv(io.StringIO(csv), columns=[pl.col("a0"), pl.col("b0")])
+    assert_frame_equal(df, pl.DataFrame({"a0": [1, 2], "b0": [3, 4]}))
+
+    # `new_columns` renames after the selector-based selection is applied
+    df = pl.read_csv(io.StringIO(csv), columns=cs.numeric(), new_columns=["x", "y"])
+    assert_frame_equal(df, pl.DataFrame({"x": [1, 2], "y": [3, 4]}))
+
+    with pytest.raises(TypeError, match="use_pyarrow=True"):
+        pl.read_csv(io.StringIO(csv), columns=pl.col("a0"), use_pyarrow=True)
+
+    # plain str/int (and sequences thereof) are unaffected and keep going
+    # through the native reader's column projection, not `.select`
+    df = pl.read_csv(io.StringIO(csv), columns="a0")
+    assert_frame_equal(df, pl.DataFrame({"a0": [1, 2]}))
+
+
 def test_csv_invalid_escape_utf8_14960(chunk_override: None) -> None:
     with pytest.raises(ComputeError, match=r"Field .* is not properly escaped"):
         pl.read_csv('col1\n""•'.encode())
