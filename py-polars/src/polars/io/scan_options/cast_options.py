@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from collections.abc import Collection
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 from polars._utils.unstable import issue_unstable_warning
 
 if TYPE_CHECKING:
-    from collections.abc import Collection
     from typing import TypeAlias
 
 
@@ -13,24 +13,28 @@ FloatCastOption: TypeAlias = Literal["upcast", "downcast"]
 IntegerCastOption: TypeAlias = Literal["upcast", "allow-float"]
 DatetimeCastOption: TypeAlias = Literal["nanosecond-downcast", "convert-timezone"]
 
+_OptionT = TypeVar("_OptionT", bound=str)
+_CastConfig: TypeAlias = Literal["forbid"] | _OptionT | Collection[_OptionT]
+
 _DEFAULT_CAST_OPTIONS_ICEBERG: ScanCastOptions | None = None
 
 
 class ScanCastOptions:
     """Options for scanning files."""
 
+    integer_cast: _CastConfig[IntegerCastOption]
+    float_cast: _CastConfig[FloatCastOption]
+    datetime_cast: _CastConfig[DatetimeCastOption]
+    missing_struct_fields: Literal["insert", "raise"]
+    extra_struct_fields: Literal["ignore", "raise"]
+    categorical_to_string: Literal["allow", "forbid"]
+
     def __init__(
         self,
         *,
-        integer_cast: Literal["forbid"]
-        | IntegerCastOption
-        | Collection[IntegerCastOption] = "forbid",
-        float_cast: Literal["forbid"]
-        | FloatCastOption
-        | Collection[FloatCastOption] = "forbid",
-        datetime_cast: Literal["forbid"]
-        | DatetimeCastOption
-        | Collection[DatetimeCastOption] = "forbid",
+        integer_cast: _CastConfig[IntegerCastOption] = "forbid",
+        float_cast: _CastConfig[FloatCastOption] = "forbid",
+        datetime_cast: _CastConfig[DatetimeCastOption] = "forbid",
         missing_struct_fields: Literal["insert", "raise"] = "raise",
         extra_struct_fields: Literal["ignore", "raise"] = "raise",
         categorical_to_string: Literal["allow", "forbid"] = "forbid",
