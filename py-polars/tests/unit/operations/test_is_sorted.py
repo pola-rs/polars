@@ -291,13 +291,28 @@ def test_series_is_sorted() -> None:
     )
 
 
-@given(s=series(), descending=st.booleans(), nulls_last=st.booleans())
+@given(
+    s=series(),
+    descending=st.booleans(),
+    nulls_last=st.booleans(),
+    descending_check=st.booleans(),
+    nulls_last_check=st.booleans(),
+)
 def test_series_is_sorted_parametric(
-    s: pl.Series, descending: bool, nulls_last: bool
+    s: pl.Series,
+    descending: bool,
+    nulls_last: bool,
+    descending_check: bool,
+    nulls_last_check: bool,
 ) -> None:
     s = s.sort(descending=descending, nulls_last=nulls_last)
     s = pl.Series(s.to_list(), dtype=s.dtype)  # Remove the sorted flags
-    assert s.is_sorted(descending=descending, nulls_last=nulls_last)
+
+    if descending == descending_check and nulls_last == nulls_last_check:
+        assert s.is_sorted(descending=descending, nulls_last=nulls_last)
+    else:
+        assert not s.is_sorted(descending=descending_check, nulls_last=nulls_last_check)
+
     if s.drop_nulls().n_unique() > 1:
         assert not s.is_sorted(descending=not descending, nulls_last=nulls_last)
     if s.n_unique() > 1 and s.null_count() > 0:
