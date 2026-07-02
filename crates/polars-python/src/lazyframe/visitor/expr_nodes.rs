@@ -10,11 +10,12 @@ use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
 use polars_plan::plans::{
-    DynLiteralValue, FusedOperator, IRBooleanFunction, IRFunctionExpr, IRPowFunction,
-    IRRollingFunction, IRRollingFunctionBy, IRStringFunction, IRStructFunction, IRTemporalFunction,
+    DynLiteralValue, FusedOperator, IRBooleanFunction, IRFunctionExpr, IRListFunction,
+    IRPowFunction, IRRollingFunction, IRRollingFunctionBy, IRStringFunction, IRStructFunction,
+    IRTemporalFunction,
 };
 use polars_plan::prelude::{
-    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping,
+    AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, PlanCallback, WindowMapping,
 };
 use polars_time::prelude::RollingGroupOptions;
 use polars_time::{ClosedWindow, Duration, DynamicGroupOptions};
@@ -177,6 +178,7 @@ pub enum PyStringFunction {
     ReplaceMany,
     EscapeRegex,
     Normalize,
+    Format,
 }
 
 #[pymethods]
@@ -290,6 +292,25 @@ pub enum PyStructFunction {
 
 #[pymethods]
 impl PyStructFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pyclass(name = "ListFunction", eq, frozen, skip_from_py_object)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyListFunction {
+    Concat,
+    Contains,
+    DropNulls,
+    Get,
+    Length,
+    Sort,
+    SetOperation,
+}
+
+#[pymethods]
+impl PyListFunction {
     fn __hash__(&self) -> isize {
         *self as isize
     }
@@ -421,6 +442,15 @@ pub struct Slice {
 
 #[pyclass(frozen)]
 pub struct Len {}
+
+#[pyclass(frozen)]
+pub struct Explode {
+    #[pyo3(get)]
+    expr: usize,
+    #[pyo3(get)]
+    // empty_as_null, keep_nulls
+    options: (bool, bool),
+}
 
 #[pyclass(frozen)]
 pub struct Window {
@@ -612,7 +642,11 @@ impl PyGroupbyOptions {
 pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
     match expr {
         AExpr::Element => Err(PyNotImplementedError::new_err("element")),
-        AExpr::Explode { .. } => Err(PyNotImplementedError::new_err("explode")),
+        AExpr::Explode { expr, options } => Explode {
+            expr: expr.0,
+            options: (options.empty_as_null, options.keep_nulls),
+        }
+        .into_py_any(py),
         AExpr::Column(name) => Column {
             name: name.into_py_any(py)?,
         }
@@ -837,16 +871,40 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Extension(_) => {
                     return Err(PyNotImplementedError::new_err("extension expr"));
                 },
-                IRFunctionExpr::ListExpr(_) => {
-                    return Err(PyNotImplementedError::new_err("list expr"));
+                IRFunctionExpr::ListExpr(listfun) => match listfun {
+                    IRListFunction::Concat => (PyListFunction::Concat,).into_py_any(py),
+                    #[cfg(feature = "is_in")]
+                    IRListFunction::Contains { nulls_equal } => {
+                        (PyListFunction::Contains, nulls_equal).into_py_any(py)
+                    },
+                    #[cfg(feature = "list_drop_nulls")]
+                    IRListFunction::DropNulls => (PyListFunction::DropNulls,).into_py_any(py),
+                    IRListFunction::Get(null_on_oob) => {
+                        (PyListFunction::Get, null_on_oob).into_py_any(py)
+                    },
+                    IRListFunction::Length => (PyListFunction::Length,).into_py_any(py),
+                    IRListFunction::Sort(options) => {
+                        (PyListFunction::Sort, options.descending, options.nulls_last)
+                            .into_py_any(py)
+                    },
+                    #[cfg(feature = "list_sets")]
+                    IRListFunction::SetOperation(set_operation) => (
+                        PyListFunction::SetOperation,
+                        Into::<&str>::into(set_operation),
+                    )
+                        .into_py_any(py),
+                    _ => return Err(PyNotImplementedError::new_err("list expr")),
                 },
                 IRFunctionExpr::Bitwise(_) => {
                     return Err(PyNotImplementedError::new_err("bitwise expr"));
                 },
                 IRFunctionExpr::StringExpr(strfun) => match strfun {
-                    IRStringFunction::Format { .. } => {
-                        return Err(PyNotImplementedError::new_err("bitwise expr"));
-                    },
+                    IRStringFunction::Format { format, insertions } => (
+                        PyStringFunction::Format,
+                        format.as_str(),
+                        insertions.to_vec(),
+                    )
+                        .into_py_any(py),
                     IRStringFunction::ConcatHorizontal {
                         delimiter,
                         ignore_nulls,
@@ -1020,8 +1078,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     #[cfg(feature = "json")]
                     IRStructFunction::JsonEncode => (PyStructFunction::JsonEncode,).into_py_any(py),
-                    IRStructFunction::MapFieldNames(_) => {
-                        return Err(PyNotImplementedError::new_err("map_field_names"));
+                    IRStructFunction::MapFieldNames(function) => match function {
+                        PlanCallback::Python(lambda) => {
+                            (PyStructFunction::MapFieldNames, lambda.0.clone_ref(py))
+                                .into_py_any(py)
+                        },
+                        PlanCallback::Rust(_) => {
+                            return Err(PyNotImplementedError::new_err("map_field_names"));
+                        },
                     },
                 },
                 IRFunctionExpr::TemporalExpr(fun) => match fun {
@@ -1435,9 +1499,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     };
                     ("fused", op_name).into_py_any(py)
                 },
-                IRFunctionExpr::ConcatExpr { .. } => {
-                    return Err(PyNotImplementedError::new_err("concat expr"));
-                },
+                IRFunctionExpr::ConcatExpr { rechunk } => ("concat", rechunk).into_py_any(py),
                 IRFunctionExpr::Correlation { .. } => {
                     return Err(PyNotImplementedError::new_err("corr"));
                 },
