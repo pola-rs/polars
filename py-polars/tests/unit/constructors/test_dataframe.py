@@ -11,6 +11,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import DataOrientationWarning, InvalidOperationError
+from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -252,3 +253,10 @@ def test_temporal_string_schema_overrides(schema_param: dict[str, SchemaDict]) -
             "datetime": datetime(2024, 1, 2, 13, 30, 0, 123456),
         },
     ]
+
+
+def test_bytes_scalar_broadcast_27620() -> None:
+    # https://github.com/pola-rs/polars/issues/27620
+    result = pl.DataFrame({"a": b"foo", "b": "foo", "c": [10, 20, 30]})
+    expected = pl.DataFrame({"a": [b"foo"] * 3, "b": ["foo"] * 3, "c": [10, 20, 30]})
+    assert_frame_equal(result, expected)

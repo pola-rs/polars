@@ -1,10 +1,10 @@
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_compute::ewm::EwmStateUpdate;
 use polars_core::prelude::IntoColumn;
 use polars_core::series::Series;
 use polars_error::PolarsResult;
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::pipe::{RecvPort, SendPort};

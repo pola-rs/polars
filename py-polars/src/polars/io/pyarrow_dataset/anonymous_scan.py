@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
-import polars._reexport as pl
+import polars as pl
 from polars._dependencies import pyarrow as pa
 
 if TYPE_CHECKING:
@@ -90,13 +90,12 @@ def _scan_pyarrow_dataset_impl(
     -------
     tuple[Iterator[DataFrame], bool]
     A generator over the DataFrames and a boolean indicating if the
-    predicates could be parsed.
-    This boolean is always `False` as there might be some predicates
-    that could not be converted
-    to pyarrow and need to be applied as post-predicate.
+    predicates is applied.
     """
+    # If this is None, the engine will post-apply a predicate if there is one.
+    # If the dataset cannot do it at the source, we want that to happen in the engine
+    # so that we have better parallelism
     filter_ = None
-    filter_post_slice_ = None
 
     if allow_pyarrow_filter and predicate is not None:
         from polars._utils.convert import (
@@ -123,8 +122,6 @@ def _scan_pyarrow_dataset_impl(
 
         if n_rows is None:
             filter_ = v
-        else:
-            filter_post_slice_ = v
 
     common_params: dict[str, Any] = {"columns": with_columns, "filter": filter_}
     batch_size = user_batch_size if user_batch_size is not None else batch_size
@@ -132,14 +129,25 @@ def _scan_pyarrow_dataset_impl(
         common_params["batch_size"] = batch_size
 
     def frames() -> Iterator[DataFrame]:
-        yield pl.DataFrame(
-            (
-                ds.head(n_rows, **common_params).filter(filter_post_slice_)
-                if filter_post_slice_ is not None
-                else ds.head(n_rows, **common_params)
-            )
-            if n_rows is not None
-            else ds.to_table(**common_params)
-        )
+        if n_rows == 0:
+            yield pl.DataFrame(ds.head(n_rows, **common_params))
+            return
 
-    return frames(), False
+        remaining = n_rows  # None = unlimited
+
+        for batch in ds.to_batches(**common_params):
+            if batch.num_rows == 0:
+                continue
+
+            # 1. Slice to row limit first (zero-copy)
+            if remaining is not None:
+                if remaining <= 0:
+                    break
+                if batch.num_rows > remaining:
+                    batch = batch.slice(0, remaining)
+                remaining -= batch.num_rows
+
+            yield pl.from_arrow(batch)  # type: ignore[misc]
+
+    applies_predicate_in_this_function = filter_ is not None
+    return frames(), applies_predicate_in_this_function

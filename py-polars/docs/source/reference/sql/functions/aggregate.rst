@@ -32,10 +32,58 @@ Aggregate
        value associated with the subinterval where the quantile value falls.
    * - :ref:`STDDEV <stddev>`
      - Returns the standard deviation of all the elements in the grouping.
+   * - :ref:`STRING_AGG <string_agg>`
+     - Concatenates the input string values into a single string, separated by a delimiter.
    * - :ref:`SUM <sum>`
      - Returns the sum of all the elements in the grouping.
    * - :ref:`VARIANCE <variance>`
      - Returns the variance of all the elements in the grouping.
+
+
+.. _filter:
+
+Filtering aggregates
+--------------------
+Any aggregate function call can be qualified with a ``FILTER (WHERE …)`` clause
+that restricts it to the rows where the predicate is true. The clause is attached
+to an individual aggregate call and is independent of the query's ``WHERE`` clause,
+so multiple aggregates in the same ``SELECT`` can see different row sets.
+
+.. note::
+
+   ``FILTER`` cannot be combined with ``OVER`` on the same aggregate call.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {
+            "category": ["A", "B", "A", "B", "A", "B"],
+            "value":    [10, 20, 30, 40, 50, 60],
+        }
+    )
+    df.sql("""
+      SELECT
+        category,
+        SUM(value) AS total,
+        SUM(value) FILTER (WHERE value > 25) AS total_high,
+        SUM(value) FILTER (WHERE value <= 25) AS total_low,
+        COUNT(*) FILTER (WHERE value >= 40) AS n_top
+      FROM self
+      GROUP BY category
+      ORDER BY category
+    """)
+    # shape: (2, 5)
+    # ┌──────────┬───────┬────────────┬───────────┬───────┐
+    # │ category ┆ total ┆ total_high ┆ total_low ┆ n_top │
+    # │ ---      ┆ ---   ┆ ---        ┆ ---       ┆ ---   │
+    # │ str      ┆ i64   ┆ i64        ┆ i64       ┆ u32   │
+    # ╞══════════╪═══════╪════════════╪═══════════╪═══════╡
+    # │ A        ┆ 90    ┆ 80         ┆ 10        ┆ 1     │
+    # │ B        ┆ 120   ┆ 100        ┆ 20        ┆ 2     │
+    # └──────────┴───────┴────────────┴───────────┴───────┘
+
 
 .. _avg:
 
@@ -119,12 +167,12 @@ Returns the amount of elements in the grouping.
 .. _covar:
 
 COVAR
----
+-----
 Returns the covariance between two columns.
 
 .. admonition:: Aliases
     
-   `COVAR`, `COVAR_SAMP`
+   `COVAR_SAMP`
 
 **Example:**
 
@@ -349,6 +397,50 @@ Returns the sample standard deviation of all the elements in the grouping.
     # ╞══════════╪══════════╡
     # │ 6.429101 ┆ 5.686241 │
     # └──────────┴──────────┘
+
+.. _string_agg:
+
+STRING_AGG
+----------
+Concatenates the input string values into a single string, separated by the given
+delimiter. Supports ``DISTINCT`` and in-argument ``ORDER BY`` and ``LIMIT``
+clauses to control which values are concatenated and in what order; the
+separator is optional, defaulting to ``","``.
+
+.. admonition:: Aliases
+
+   `GROUP_CONCAT`, `LISTAGG`
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame(
+        {
+            "category": ["A", "B", "A", "B", "A", "B"],
+            "label": ["x1", "y1", "x2", "y2", "x3", "y3"],
+            "value": [10, 20, 30, 40, 50, 60],
+        }
+    )
+    df.sql("""
+      SELECT
+        category,
+        STRING_AGG(label LIMIT 2) AS two_labels,
+        STRING_AGG(label, ':' ORDER BY value DESC) AS labels_desc,
+        STRING_AGG(label, ',' ORDER BY value ASC) FILTER(WHERE label !~ '1$') AS labels_omit_1,
+      FROM self
+      GROUP BY category
+      ORDER BY category
+    """)
+    # shape: (2, 4)
+    # ┌──────────┬────────────┬─────────────┬───────────────┐
+    # │ category ┆ two_labels ┆ labels_desc ┆ labels_omit_1 │
+    # │ ---      ┆ ---        ┆ ---         ┆ ---           │
+    # │ str      ┆ str        ┆ str         ┆ str           │
+    # ╞══════════╪════════════╪═════════════╪═══════════════╡
+    # │ A        ┆ x1,x2      ┆ x3:x2:x1    ┆ x2,x3         │
+    # │ B        ┆ y1,y2      ┆ y3:y2:y1    ┆ y2,y3         │
+    # └──────────┴────────────┴─────────────┴───────────────┘
 
 .. _sum:
 

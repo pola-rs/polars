@@ -399,6 +399,7 @@ def test_join_chunks_alignment_4720() -> None:
     )
 
 
+@pytest.mark.may_fail_auto_streaming  # SORTED_ASC flags
 def test_jit_sort_joins() -> None:
     n = 200
     # Explicitly specify numpy dtype because of different defaults on Windows
@@ -1265,7 +1266,9 @@ def test_join_key_type_coercion_19597() -> None:
 
 def test_array_explode_join_19763() -> None:
     q = pl.LazyFrame().select(
-        pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1))).explode().alias("k")
+        pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1)))
+        .explode(empty_as_null=False)
+        .alias("k")
     )
 
     q = q.join(pl.LazyFrame({"k": [1, 2]}), on="k")
@@ -3156,16 +3159,22 @@ def test_join_filter_pushdown_iejoin() -> None:
         'RIGHT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("b"), col("a")]',
     }
-    assert extract[3] in {
-        'LEFT PLAN ON: [col("a"), col("b")]',
-        'LEFT PLAN ON: [col("b"), col("a")]',
-    }
-    assert extract[4] == 'FILTER [(col("a")) > (0)]'
-    assert extract[5] in {
-        'RIGHT PLAN ON: [col("a"), col("b")]',
-        'RIGHT PLAN ON: [col("b"), col("a")]',
-    }
-    assert len(extract) == 6
+
+    cse_applied = plan.count("CACHE") == 2
+
+    if cse_applied:
+        assert len(extract) == 3
+    else:
+        assert extract[3] in {
+            'LEFT PLAN ON: [col("a"), col("b")]',
+            'LEFT PLAN ON: [col("b"), col("a")]',
+        }
+        assert extract[4] == 'FILTER [(col("a")) > (0)]'
+        assert extract[5] in {
+            'RIGHT PLAN ON: [col("a"), col("b")]',
+            'RIGHT PLAN ON: [col("b"), col("a")]',
+        }
+        assert len(extract) == 6
 
     assert_frame_equal(q.collect().sort(pl.all()), expect)
     assert_frame_equal(
@@ -3188,8 +3197,8 @@ def test_join_filter_pushdown_asof_join() -> None:
 
     q = lhs.join_asof(
         rhs,
-        left_on=pl.col("a").set_sorted(),
-        right_on=pl.col("b").set_sorted(),
+        left_on=pl.col("a").set_sorted(nulls_last=True),
+        right_on=pl.col("b").set_sorted(nulls_last=True),
         tolerance=0,
     ).filter(
         pl.col("a") >= 2,
@@ -4024,3 +4033,28 @@ def test_full_join_rewrite_to_right_with_cast() -> None:
         },
     )
     assert_frame_equal(out, ret, check_column_order=True, check_row_order=False)
+
+
+def test_full_join_coalesce_empty_suffix_succeeds_27368() -> None:
+    df1 = pl.DataFrame({"a": [0, 1], "b": [10, 11]})
+    df2 = pl.DataFrame({"a": [1, 2], "c": [11, 12]})
+
+    result = df1.join(df2, how="full", on="a", coalesce=True, suffix="")
+
+    expected = pl.DataFrame(
+        {
+            "a": [0, 1, 2],
+            "b": [10, 11, None],
+            "c": [None, 11, 12],
+        }
+    )
+
+    assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_full_join_coalesce_empty_suffix_non_key_collision_27368() -> None:
+    df1 = pl.DataFrame({"a": [0, 1], "b": [10, 11]})
+    df2 = pl.DataFrame({"a": [1, 2], "b": [11, 12]})
+
+    with pytest.raises(DuplicateError):
+        df1.join(df2, how="full", on="a", coalesce=True, suffix="")

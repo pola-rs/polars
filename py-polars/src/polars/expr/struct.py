@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING
 
-from polars._utils.parse import parse_into_list_of_expressions
-from polars._utils.various import qualified_type_name
+from polars._utils.parse import (
+    parse_into_list_of_expressions,
+)
+from polars._utils.various import _NamespaceSuggestMixin, qualified_type_name
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -14,7 +15,7 @@ if TYPE_CHECKING:
     from polars._typing import IntoExpr
 
 
-class ExprStructNameSpace:
+class ExprStructNameSpace(_NamespaceSuggestMixin):
     """Namespace for struct related expressions."""
 
     _accessor = "struct"
@@ -388,10 +389,5 @@ class ExprStructNameSpace:
         --------
         field
         """
-        structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
-
-        pyexprs = parse_into_list_of_expressions(
-            *exprs, **named_exprs, __structify=structify
-        )
-
+        pyexprs = parse_into_list_of_expressions(*exprs, **named_exprs)
         return wrap_expr(self._pyexpr.struct_with_fields(pyexprs))

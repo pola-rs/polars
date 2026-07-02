@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import functools
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import pytest
 from hypothesis import example, given
@@ -13,6 +13,9 @@ from hypothesis import example, given
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
+
+if TYPE_CHECKING:
+    from polars._typing import ArrayLike, PolarsDataType
 
 Element = (
     None
@@ -223,9 +226,9 @@ def test_df_sort_parametric(df: pl.DataFrame) -> None:
 
 
 def assert_order_series(
-    lhs: pl.series.series.ArrayLike,
-    rhs: pl.series.series.ArrayLike,
-    dtype: pl._typing.PolarsDataType,
+    lhs: ArrayLike,
+    rhs: ArrayLike,
+    dtype: PolarsDataType,
 ) -> None:
     lhs_s = pl.Series("lhs", lhs, dtype)
     rhs_s = pl.Series("rhs", rhs, dtype)

@@ -3,8 +3,8 @@ use std::sync::Mutex;
 
 use arrow::record_batch::RecordBatch;
 use polars_buffer::Buffer;
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_parquet::read::{ParquetError, fallible_streaming_iterator};
 use polars_parquet::write::{
     CompressedPage, Compressor, DynIter, DynStreamingIterator, Encoding, FallibleStreamingIterator,
@@ -222,7 +222,7 @@ fn create_serializer(
     };
 
     let columns = if parallel {
-        POOL.install(|| {
+        RAYON.install(|| {
             batch
                 .columns()
                 .par_iter()

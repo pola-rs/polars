@@ -414,16 +414,13 @@ def test_list_drop_nulls_lazy(engine: EngineType, data: list[Any]) -> None:
 def test_list_sample() -> None:
     s = pl.Series("values", [[1, 2, 3, None], [None, None], [1, 2], None])
 
-    expected_sample_n = pl.Series("values", [[None, 3], [None], [2], None])
-    assert_series_equal(
-        s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1), expected_sample_n
-    )
+    expected_sample_n = pl.Series("values", [[3, None], [None], [2], None])
+    result_n = s.list.sample(n=pl.Series([2, 1, 1, 1]), seed=1)
+    assert_series_equal(result_n, expected_sample_n)
 
-    expected_sample_frac = pl.Series("values", [[None, 3], [None], [1, 2], None])
-    assert_series_equal(
-        s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1),
-        expected_sample_frac,
-    )
+    expected_sample_frac = pl.Series("values", [[3, None], [None], [1, 2], None])
+    result_frac = s.list.sample(fraction=pl.Series([0.5, 0.5, 1.0, 0.3]), seed=1)
+    assert_series_equal(result_frac, expected_sample_frac)
 
     df = pl.DataFrame(
         {
@@ -438,8 +435,8 @@ def test_list_sample() -> None:
     )
     expected_df = pl.DataFrame(
         {
-            "sample_n": [[None, 3], [None], [3, 4]],
-            "sample_frac": [[None, 3], [None], [3, 4]],
+            "sample_n": [[3, None], [None], [3, 4]],
+            "sample_frac": [[3, None], [None], [3, 4]],
         }
     )
     assert_frame_equal(df, expected_df)
@@ -1001,7 +998,10 @@ def test_list_sum_bool_schema() -> None:
 
 def test_list_concat_struct_19279() -> None:
     df = pl.select(
-        pl.struct(s=pl.lit("abcd").str.split("").explode(), i=pl.int_range(0, 4))
+        pl.struct(
+            s=pl.lit("abcd").str.split("").explode(empty_as_null=True),
+            i=pl.int_range(0, 4),
+        )
     )
     df = pl.concat([df[:2], df[-2:]])
     assert df.select(pl.concat_list("s")).to_dict(as_series=False) == {
@@ -1099,14 +1099,17 @@ def test_list_sample_fraction_unequal_lengths_22018() -> None:
 
 
 def test_list_sample_n_self_broadcast() -> None:
-    assert pl.Series("a", [[1, 2]]).list.sample(pl.Series([1, 2, 1])).len() == 3
+    result = pl.Series("a", [[1, 2, 3, 4]]).list.sample(pl.Series([1, 2, 3]), seed=0)
+    assert result.len() == 3
+    assert [len(row) for row in result] == [1, 2, 3]
 
 
 def test_list_sample_fraction_self_broadcast() -> None:
-    assert (
-        pl.Series("a", [[1, 2]]).list.sample(fraction=pl.Series([0.5, 0.2, 0.4])).len()
-        == 3
+    result = pl.Series("a", [[1, 2, 3, 4]]).list.sample(
+        fraction=pl.Series([0.25, 0.5, 1.0]), seed=0
     )
+    assert result.len() == 3
+    assert [len(row) for row in result] == [1, 2, 4]
 
 
 def test_list_shift_unequal_lengths_22018() -> None:
@@ -1115,7 +1118,20 @@ def test_list_shift_unequal_lengths_22018() -> None:
 
 
 def test_list_shift_self_broadcast() -> None:
-    assert pl.Series("a", [[1, 2]]).list.shift(pl.Series([1, 2, 1])).len() == 3
+    assert_series_equal(
+        pl.Series("a", [[1, 2]]).list.shift(pl.Series([-5, -1, 0, 1, 5, None])),
+        pl.Series(
+            "a",
+            [
+                [None, None],
+                [2, None],
+                [1, 2],
+                [None, 1],
+                [None, None],
+                None,
+            ],
+        ),
+    )
 
 
 def test_list_filter_simple() -> None:
@@ -1163,7 +1179,6 @@ def test_list_filter_null() -> None:
     ]
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:
@@ -1362,3 +1377,45 @@ def test_list_sample_fraction_boundary_values_22024() -> None:
     s.list.sample(fraction=0.0)
     s.list.sample(fraction=1.0)
     s.list.sample(fraction=pl.Series([0.0, 1.0]))
+
+
+def test_list_sample_fraction_with_replacement_27344() -> None:
+    df = pl.DataFrame({"x": [[1]]})
+
+    result = df.select(pl.col("x").list.sample(fraction=2, with_replacement=True))
+    assert result["x"][0].to_list() == [1, 1]
+
+
+def test_list_eval_exceed_idx_size() -> None:
+    s = pl.Series([None])
+    s = s.new_from_index(0, 2**31)
+    assert (
+        pl.Series("a", [s, s.head(-1), s.head(-2)])
+        .to_frame()
+        .select(
+            count=pl.col("a").list.eval(pl.element().count()),
+            len=pl.col("a").list.eval(pl.element().len()),
+            unique=pl.col("a").list.eval(pl.element().unique()),
+        )
+    ).to_dict(as_series=False) == {
+        "count": [[0], [0], [0]],
+        "len": [[2147483648], [2147483647], [2147483646]],
+        "unique": [[None], [None], [None]],
+    }
+
+
+@pytest.mark.parametrize(
+    ("offset", "length"),
+    [
+        (0, pl.lit(pl.Series([1, 2, 3]))),
+        (pl.lit(pl.Series([0, 1, 2])), 2),
+        (pl.lit(pl.Series([0, 1, 2])), pl.lit(pl.Series([3, 2, 1]))),
+    ],
+)
+def test_list_slice_broadcast_27480(offset: Any, length: Any) -> None:
+    result = pl.select(pl.lit([0, 1, 2]).list.slice(offset, length).alias("broadcast"))
+    expected = pl.select(
+        pl.repeat(pl.lit([0, 1, 2]), 3).list.slice(offset, length).alias("broadcast")
+    )
+
+    assert_frame_equal(result, expected)

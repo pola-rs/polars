@@ -3,7 +3,70 @@ use polars_core::chunked_array::builder::CategoricalChunkedBuilder;
 use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 
-fn map_cats(
+fn map_enum_cats(
+    s: &Series,
+    labels: &[PlSmallStr],
+    sorted_breaks: &[f64],
+    left_closed: bool,
+    include_breaks: bool,
+) -> PolarsResult<Series> {
+    let out_name = PlSmallStr::from_static("category");
+
+    let s2 = s.cast(&DataType::Float64)?;
+    let s_iter = s2.f64()?.iter();
+
+    let op: fn(&f64, &f64) -> bool = if left_closed {
+        PartialOrd::ge
+    } else {
+        PartialOrd::gt
+    };
+
+    let fcats = FrozenCategories::new(labels.iter().map(|s| s.as_str()))?;
+    let enum_dtype = DataType::from_frozen_categories(fcats.clone());
+
+    with_match_categorical_physical_type!(fcats.physical(), |$C| {
+        if include_breaks {
+            let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
+            let mut bld = CategoricalChunkedBuilder::<$C>::new(out_name.clone(), enum_dtype);
+            let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new(
+                PlSmallStr::from_static("breakpoint"),
+                s.len(),
+            );
+            s_iter
+                .map(|opt| {
+                    opt.filter(|x| !x.is_nan())
+                        .map(|x| sorted_breaks.partition_point(|v| op(&x, v)))
+                })
+                .for_each(|idx| match idx {
+                    None => {
+                        bld.append_null();
+                        brk_vals.append_null();
+                    },
+                    Some(idx) => unsafe {
+                        bld.append_str(labels.get_unchecked(idx)).unwrap();
+                        brk_vals.append_value(*right_ends.get_unchecked(idx));
+                    },
+                });
+
+            let outvals = [brk_vals.finish().into_series(), bld.finish().into_series()];
+            Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
+        } else {
+            Ok(CategoricalChunked::<$C>::from_str_iter(
+                out_name,
+                enum_dtype,
+                s_iter.map(|opt| {
+                    opt.filter(|x| !x.is_nan()).map(|x| {
+                        let pt = sorted_breaks.partition_point(|v| op(&x, v));
+                        unsafe { labels.get_unchecked(pt).as_str() }
+                    })
+                }),
+            )?
+            .into_series())
+        }
+    })
+}
+
+fn map_categorical_cats(
     s: &Series,
     labels: &[PlSmallStr],
     sorted_breaks: &[f64],
@@ -14,23 +77,23 @@ fn map_cats(
 
     let s2 = s.cast(&DataType::Float64)?;
     // It would be nice to parallelize this
-    let s_iter = s2.f64()?.into_iter();
+    let s_iter = s2.f64()?.iter();
 
-    let op = if left_closed {
+    let op: fn(&f64, &f64) -> bool = if left_closed {
         PartialOrd::ge
     } else {
         PartialOrd::gt
     };
+
+    let cat_dtype = DataType::from_categories(Categories::global());
 
     if include_breaks {
         // This is to replicate the behavior of the old buggy version that only worked on series and
         // returned a dataframe. That included a column of the right endpoint of the interval. So we
         // return a struct series instead which can be turned into a dataframe later.
         let right_ends = [sorted_breaks, &[f64::INFINITY]].concat();
-        let mut bld = CategoricalChunkedBuilder::<Categorical32Type>::new(
-            out_name.clone(),
-            DataType::from_categories(Categories::global()),
-        );
+        let mut bld =
+            CategoricalChunkedBuilder::<Categorical32Type>::new(out_name.clone(), cat_dtype);
         let mut brk_vals = PrimitiveChunkedBuilder::<Float64Type>::new(
             PlSmallStr::from_static("breakpoint"),
             s.len(),
@@ -56,7 +119,7 @@ fn map_cats(
     } else {
         Ok(CategoricalChunked::<Categorical32Type>::from_str_iter(
             out_name,
-            DataType::from_categories(Categories::global()),
+            cat_dtype,
             s_iter.map(|opt| {
                 opt.filter(|x| !x.is_nan()).map(|x| {
                     let pt = sorted_breaks.partition_point(|v| op(&x, v));
@@ -108,7 +171,7 @@ pub fn cut(
     } else {
         compute_labels(&breaks, left_closed)?
     };
-    map_cats(s, &cut_labels, &breaks, left_closed, include_breaks)
+    map_enum_cats(s, &cut_labels, &breaks, left_closed, include_breaks)
 }
 
 pub fn qcut(
@@ -121,6 +184,11 @@ pub fn qcut(
 ) -> PolarsResult<Series> {
     polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
 
+    let s = s.cast(&DataType::Float64)?;
+    let s2 = s.sort(SortOptions::default())?;
+    let ca = s2.f64()?;
+    let ca = ca.set(&ca.is_nan(), None)?;
+
     if s.null_count() == s.len() {
         // If we only have nulls we don't have any breakpoints.
         return Ok(Series::full_null(
@@ -129,10 +197,6 @@ pub fn qcut(
             &DataType::from_categories(Categories::global()),
         ));
     }
-
-    let s = s.cast(&DataType::Float64)?;
-    let s2 = s.sort(SortOptions::default())?;
-    let ca = s2.f64()?;
 
     let mut qbreaks: Vec<_> = ca
         .quantiles(&probs, QuantileMethod::Linear)?
@@ -153,7 +217,7 @@ pub fn qcut(
         compute_labels(&qbreaks, left_closed)?
     };
 
-    map_cats(&s, &cut_labels, &qbreaks, left_closed, include_breaks)
+    map_categorical_cats(&s, &cut_labels, &qbreaks, left_closed, include_breaks)
 }
 
 mod test {
@@ -165,7 +229,7 @@ mod test {
         // as it is not visible to Python.
         use polars_core::prelude::*;
 
-        use super::map_cats;
+        use super::{map_categorical_cats, map_enum_cats};
 
         let s = Series::new("x".into(), &[1, 2, 3, 4, 5]);
 
@@ -174,11 +238,20 @@ mod test {
         let left_closed = false;
 
         let include_breaks = false;
-        let out = map_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
+        let out = map_enum_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
+        out.cat8().unwrap();
+
+        let include_breaks = true;
+        let out = map_enum_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
+        let out = out.struct_().unwrap().fields_as_series()[1].clone();
+        out.cat8().unwrap();
+
+        let include_breaks = false;
+        let out = map_categorical_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
         out.cat32().unwrap();
 
         let include_breaks = true;
-        let out = map_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
+        let out = map_categorical_cats(&s, labels, breaks, left_closed, include_breaks).unwrap();
         let out = out.struct_().unwrap().fields_as_series()[1].clone();
         out.cat32().unwrap();
     }

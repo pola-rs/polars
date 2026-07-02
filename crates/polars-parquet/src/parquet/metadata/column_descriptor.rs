@@ -61,7 +61,7 @@ impl Deref for BaseType {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(Deserialize, Serialize))]
 pub struct ColumnDescriptor {
-    /// The descriptor this columns' leaf.
+    /// The descriptor at this column's leaf.
     pub descriptor: Descriptor,
 
     /// The path of this column. For instance, "a.b.c.d".
@@ -83,5 +83,33 @@ impl ColumnDescriptor {
             path_in_schema,
             base_type,
         }
+    }
+}
+
+/// Reference to one [`ColumnDescriptor`] inside a shared schema.
+///
+/// Held by [`super::ColumnChunkMetadata`] so all column chunks of a file
+/// can share a single `Vec<ColumnDescriptor>` allocation. `Clone` is a
+/// refcount-bump; `Deref` resolves to `&ColumnDescriptor` transparently.
+///
+/// Crate-internal: external code never sees this type. The chunk's public
+/// `descriptor()` accessor returns `&ColumnDescriptor` via `Deref`.
+#[derive(Debug, Clone)]
+pub(crate) struct ColumnDescriptorRef {
+    descrs: Arc<Vec<ColumnDescriptor>>,
+    idx: usize,
+}
+
+impl ColumnDescriptorRef {
+    pub(crate) fn new(descrs: Arc<Vec<ColumnDescriptor>>, idx: usize) -> Self {
+        Self { descrs, idx }
+    }
+}
+
+impl Deref for ColumnDescriptorRef {
+    type Target = ColumnDescriptor;
+    #[inline]
+    fn deref(&self) -> &ColumnDescriptor {
+        &self.descrs[self.idx]
     }
 }

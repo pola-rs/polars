@@ -292,7 +292,9 @@ pub(super) fn expand_datasets(
                             #[cfg(feature = "parquet")]
                             FileScanDsl::Parquet { options } => FileScanIR::Parquet {
                                 options,
-                                metadata: None,
+                                // Metadata is resolved later in `parquet_file_info`.
+                                first_metadata: None,
+                                metadata_per_source: None,
                             },
 
                             #[cfg(feature = "json")]
@@ -366,6 +368,11 @@ pub(super) fn expand_datasets(
             },
 
             _ => {},
+        }
+
+        if let Some((physical, deleted)) = unified_scan_args.row_count {
+            let row_count = u64::saturating_sub(physical, deleted) as usize;
+            file_info.row_estimation = (Some(row_count), row_count);
         }
 
         apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
@@ -442,7 +449,7 @@ impl Debug for ExpandedDataset {
                      scan_fn: _,
                      variant,
                  }| {
-                    format_pl_smallstr!("python-scan[{} @ {:?}]", name, variant)
+                    format_pl_smallstr!("streaming-python-scan[{} @ {:?}]", name, variant)
                 },
             ),
         }

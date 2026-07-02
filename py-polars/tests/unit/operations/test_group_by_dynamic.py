@@ -1429,3 +1429,11 @@ def test_group_by_dynamic_gather_every_lazy_iter_25567() -> None:
         {"index": [1, 2, 3, 4], "value": [[[4]], [[5]], [[5], [6]], [[6]]]}
     )
     assert_frame_equal(out, expected)
+
+
+def test_group_by_having_27364() -> None:
+    df = pl.DataFrame({"g": [10, 10, 20], "i": [1, 1, 2], "a": [1, 2, 3]})
+
+    assert len(list(df.group_by("g").having(pl.len() == 2))) == 1
+    assert len(list(df.group_by_dynamic("i", every="1i").having(pl.len() == 2))) == 1
+    assert len(list(df.rolling("i", period="1i").having(pl.len() == 2))) == 2

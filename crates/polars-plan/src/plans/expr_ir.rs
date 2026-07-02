@@ -283,6 +283,10 @@ impl ExprIR {
         is_length_preserving_ae(self.node, expr_arena)
     }
 
+    pub fn is_known_length(&self, expr_arena: &Arena<AExpr>) -> bool {
+        is_known_length_ae(self.node, expr_arena)
+    }
+
     pub fn dtype(&self, schema: &Schema, expr_arena: &Arena<AExpr>) -> PolarsResult<&DataType> {
         match self.output_dtype.get() {
             Some(dtype) => Ok(dtype),
@@ -327,22 +331,4 @@ impl From<&ExprIR> for Node {
     fn from(value: &ExprIR) -> Self {
         value.node()
     }
-}
-
-pub(crate) fn name_to_expr_ir(name: PlSmallStr, expr_arena: &mut Arena<AExpr>) -> ExprIR {
-    ExprIR::from_column_name(name, expr_arena)
-}
-
-pub(crate) fn names_to_expr_irs<I, S>(names: I, expr_arena: &mut Arena<AExpr>) -> Vec<ExprIR>
-where
-    I: IntoIterator<Item = S>,
-    S: Into<PlSmallStr>,
-{
-    names
-        .into_iter()
-        .map(|name| {
-            let name = name.into();
-            name_to_expr_ir(name, expr_arena)
-        })
-        .collect()
 }

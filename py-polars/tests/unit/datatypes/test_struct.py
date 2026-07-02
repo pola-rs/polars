@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import DuplicateError, InvalidOperationError
+from polars.exceptions import ComputeError, DuplicateError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -502,7 +502,8 @@ def test_list_of_struct_unique() -> None:
     assert {"a": 1, "b": 11} in unique_el
 
 
-def test_nested_explode_4026() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_nested_explode_4026(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "data": [
@@ -515,7 +516,7 @@ def test_nested_explode_4026() -> None:
         }
     )
 
-    assert df.explode("data").to_dict(as_series=False) == {
+    assert df.explode("data", empty_as_null=empty_as_null).to_dict(as_series=False) == {
         "data": [
             {"account_id": 10, "values": [1, 2]},
             {"account_id": 11, "values": [10, 20]},
@@ -955,9 +956,13 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
     )
 
     # ensure wildcard expansion is on input
-    assert df.lazy().select(
-        pl.col("meta_data").struct.with_fields("*")
-    ).collect().schema["meta_data"].fields == [  # type: ignore[attr-defined]
+    schema_dtype = (
+        df.lazy()
+        .select(pl.col("meta_data").struct.with_fields("*"))
+        .collect()
+        .schema["meta_data"]
+    )
+    assert schema_dtype.fields == [  # type: ignore[attr-defined]
         pl.Field("system_data", pl.String),
         pl.Field("user_data", pl.String),
         pl.Field("id", pl.Int64),
@@ -1077,7 +1082,7 @@ def test_struct_chunked_zip_18119() -> None:
     b = pl.concat([b_dfs[4], b_dfs[1]])
     mask = pl.concat([mask_dfs[3], mask_dfs[2]])
 
-    df = pl.concat([a, b, mask], how="horizontal")
+    df = pl.concat([a, b, mask], how="horizontal", strict=True)
 
     assert_frame_equal(
         df.select(pl.when(pl.col.f).then(pl.col.a).otherwise(pl.col.b)),
@@ -1342,7 +1347,8 @@ def test_zip_outer_validity_infinite_recursion_21267() -> None:
     )
 
 
-def test_struct_arithmetic_broadcast_21376() -> None:
+@pytest.mark.parametrize("empty_as_null", [False, True])
+def test_struct_arithmetic_broadcast_21376(empty_as_null: bool) -> None:
     df = pl.DataFrame(
         {
             "struct1": [{"low": 1, "mid": 2, "up": 3}],
@@ -1358,7 +1364,7 @@ def test_struct_arithmetic_broadcast_21376() -> None:
     )
     out = (
         df.with_row_index()
-        .explode("list_struct")
+        .explode("list_struct", empty_as_null=empty_as_null)
         .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
     )
     assert_frame_equal(out, expected)
@@ -1431,7 +1437,7 @@ def test_struct_equal_missing_null_25360() -> None:
     q1 = lf.select(a1=pl.col.a.slice(1, 1).first())
     q2 = lf.group_by(pl.lit(1)).agg(a2=pl.col.a.slice(1, 1).first()).drop("literal")
 
-    q = pl.concat([q1, q2], how="horizontal").collect()
+    q = pl.concat([q1, q2], how="horizontal", strict=True).collect()
 
     result = q.select(
         eq=pl.col.a1.eq(pl.col.a2),
@@ -1897,3 +1903,25 @@ def test_join_struct_error_lazy_26276() -> None:
 
     with pytest.raises(pl.exceptions.SchemaError, match=r"struct \{.*\}"):
         lhs.join(rhs, on="x").collect()
+
+
+def test_from_dicts_mixed_struct_schema_raises_not_panics_27170() -> None:
+    records = [{"id": f"id_{i}", "vals": [{"value": i}]} for i in range(200)]
+    records += [{"id": f"bad_{i}", "vals": [{"value": {"key": i}}]} for i in range(5)]
+
+    with pytest.raises(ComputeError):
+        pl.DataFrame(records)
+
+
+def test_with_fields_optimize_expr_fused_multiply_add_27233() -> None:
+    df = pl.DataFrame({"s": [{"x": 10, "y": 11}, {"x": 20, "y": 21}]})
+
+    out = df.select(
+        pl.col.s.struct.with_fields(fma=pl.field("x") * pl.lit(2) + pl.field("y"))
+    )
+    expected = pl.concat(
+        [df.unnest("s"), pl.DataFrame({"fma": [31, 61]})],
+        how="horizontal",
+        strict=True,
+    )
+    assert_frame_equal(out.unnest("s"), expected)

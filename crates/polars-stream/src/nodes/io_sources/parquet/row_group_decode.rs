@@ -1,6 +1,7 @@
-use std::ops::Deref;
 use std::sync::Arc;
 
+use polars_async::executor::TaskPriority;
+use polars_async::primitives::opt_spawned_future::parallelize_first_to_local;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{ArrowField, BooleanChunked, ChunkFilter, Column, DataType, IntoColumn};
 use polars_core::series::Series;
@@ -12,13 +13,11 @@ use polars_io::predicates::{
 };
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
-use polars_parquet::read::{Filter, ParquetType, PredicateFilter, PrimitiveLogicalType};
+use polars_parquet::read::{Filter, PredicateFilter, PrimitiveLogicalType};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, UnitVec};
 
 use super::row_group_data_fetch::RowGroupData;
-use crate::async_executor::TaskPriority;
-use crate::async_primitives::opt_spawned_future::parallelize_first_to_local;
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
 
 /// Turns row group data into DataFrames.
@@ -426,10 +425,10 @@ impl RowGroupDecoder {
                 .parquet_columns()
                 .iter()
                 .any(|c| {
-                    let ParquetType::PrimitiveType(pt) = c.descriptor().base_type.deref() else {
-                        return false;
-                    };
-                    matches!(pt.logical_type, Some(PrimitiveLogicalType::Float16))
+                    matches!(
+                        c.descriptor().descriptor.primitive_type.logical_type,
+                        Some(PrimitiveLogicalType::Float16)
+                    )
                 });
 
         let cols_per_thread = (self

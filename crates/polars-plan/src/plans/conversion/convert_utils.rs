@@ -1,4 +1,13 @@
 use super::*;
+use crate::plans::aexpr::or_factoring;
+
+/// Lift conjuncts shared across every OR branch to top-level ANDs
+/// (`(A∧X) ∨ (A∧Y) → A ∧ (X∨Y)`), so the `MintermIter` walk in
+/// `SplitPredicates::new` can split them into independent `IR::Filter`
+/// nodes for predicate-pushdown to route.
+pub(super) fn simplify_predicate(predicate: Node, expr_arena: &mut Arena<AExpr>) {
+    or_factoring::factor_or_in_aexpr(predicate, expr_arena);
+}
 
 /// Split expression that are ANDed into multiple Filter nodes as the optimizer can then
 /// push them down independently. Especially if they refer columns from different tables
@@ -16,7 +25,10 @@ pub(super) struct SplitPredicates {
 }
 
 impl SplitPredicates {
-    /// Returns None if a barrier expression is encountered
+    /// Walk `predicate`'s AND chain via `MintermIter`, route each conjunct
+    /// through `ExprPushdownGroup`, and bucket into `pushable` / `fallible`.
+    /// Returns `None` if any conjunct classifies as `Barrier` (caller falls
+    /// back to a single un-split Filter).
     pub(super) fn new(
         predicate: Node,
         expr_arena: &mut Arena<AExpr>,

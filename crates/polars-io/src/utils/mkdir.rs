@@ -13,7 +13,6 @@ pub fn mkdir_recursive(path: &PlRefPath) -> io::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "tokio")]
 pub async fn tokio_mkdir_recursive(path: &PlRefPath) -> io::Result<()> {
     if !path.has_scheme() {
         tokio::fs::DirBuilder::new()

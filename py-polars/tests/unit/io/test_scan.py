@@ -1333,6 +1333,49 @@ def test_scan_file_uri_hostname_component() -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.parametrize(
+    ("scan_func", "write_func", "subdir", "raw_char", "encoded_char"),
+    [
+        # the reported issue: hive `key=value` directory
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "foo=bar", "=", "%3D"),
+        # the decoded `?` (from `%3F`) must stay literal, not act as a glob wildcard
+        pytest.param(
+            pl.scan_parquet,
+            pl.DataFrame.write_parquet,
+            "foo?bar",
+            "?",
+            "%3F",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="'?' is not a legal filename character on Windows",
+            ),
+        ),
+        # the other expansion method (`expand_paths`)
+        (pl.scan_csv, pl.DataFrame.write_csv, "foo=bar", "=", "%3D"),
+    ],
+)
+def test_scan_percent_encoded_file_uri_27840(
+    tmp_path: Path,
+    scan_func: Callable[[Any], pl.LazyFrame],
+    write_func: Callable[[pl.DataFrame, Path], None],
+    subdir: str,
+    raw_char: str,
+    encoded_char: str,
+) -> None:
+    # `file://` URIs are percent-decoded (RFC 3986) before reaching the filesystem.
+    d = tmp_path / subdir
+    d.mkdir()
+
+    df = pl.DataFrame({"a": 1})
+    path = d / "data.bin"
+    write_func(df, path)
+
+    encoded_uri = format_file_uri(path).replace(raw_char, encoded_char)
+
+    assert_frame_equal(scan_func(encoded_uri).collect(), df)
+
+
+@pytest.mark.write_disk
 @pytest.mark.parametrize("polars_force_async", ["0", "1"])
 @pytest.mark.parametrize("n_repeats", [1, 2])
 @pytest.mark.parametrize("use_expand_paths_pyfn", [True, False])

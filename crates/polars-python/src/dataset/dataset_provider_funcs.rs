@@ -11,6 +11,7 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyListMethods};
 use pyo3::{Py, PyAny, PyResult, Python, intern};
 
+use crate::interned;
 use crate::interop::arrow::to_rust::field_to_rust;
 use crate::prelude::{Wrap, get_lf};
 
@@ -18,8 +19,8 @@ pub fn name(dataset_object: &PythonObject) -> PlSmallStr {
     Python::attach(|py| {
         PyResult::Ok(PlSmallStr::from_str(
             &dataset_object
-                .getattr(py, intern!(py, "__class__"))?
-                .getattr(py, intern!(py, "__name__"))?
+                .getattr(py, interned::DUNDER_CLASS.get(py))?
+                .getattr(py, interned::DUNDER_NAME.get(py))?
                 .extract::<PyBackedStr>(py)?,
         ))
     })
@@ -35,7 +36,7 @@ pub fn schema(dataset_object: &PythonObject) -> PolarsResult<SchemaRef> {
 
         let schema_obj = dataset_object.getattr(py, "schema")?.call0(py)?;
 
-        let schema_cls = schema_obj.getattr(py, "__class__")?;
+        let schema_cls = schema_obj.getattr(py, interned::DUNDER_CLASS.get(py))?;
 
         // PyIceberg returns arrow schemas, we convert them here.
         if let Some(pyarrow_schema_cls) = pyarrow_schema_cls {

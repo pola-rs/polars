@@ -33,7 +33,7 @@ pub(super) fn sort_and_groups(
         // If not sorted on keys, sort.
         let idx_s = idx.clone().into_series();
         if !idx_s.is_sorted(Default::default()).unwrap() {
-            let (df_ordered, keys_ordered) = POOL.join(
+            let (df_ordered, keys_ordered) = RAYON.join(
                 || df.take_unchecked(&idx),
                 || {
                     keys.iter()

@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
+use polars_async::executor::{self, AbortOnDropHandle, TaskPriority};
+use polars_async::primitives::distributor_channel::distributor_channel;
 use polars_error::PolarsResult;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::row_counter::RowCounter;
 use polars_utils::slice_enum::Slice;
 
-use crate::async_executor::{self, AbortOnDropHandle, TaskPriority};
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::morsel_linearizer::MorselLinearizer;
-use crate::morsel::Morsel;
+use crate::morsel::{Morsel, MorselLinearizer};
 use crate::nodes::io_sources::multi_scan::components::apply_extra_ops::ApplyExtraOps;
 use crate::nodes::io_sources::multi_scan::reader_interface::output::FileReaderOutputRecv;
 
@@ -41,7 +40,7 @@ impl PostApplyExtraOps {
         // Distributor
         {
             let ops_applier = ops_applier.clone();
-            async_executor::spawn(TaskPriority::Low, async move {
+            executor::spawn(TaskPriority::Low, async move {
                 // Position tracking
                 let mut row_counter: RowCounter = first_morsel_position;
 
@@ -65,7 +64,7 @@ impl PostApplyExtraOps {
 
                 loop {
                     let row_count_this_morsel = {
-                        let physical_rows = morsel.df().height();
+                        let physical_rows = morsel.height();
                         // # Multiple cases
                         // * If row deletions are being done in post-apply, we'll have the deleted row count here.
                         // * If row deletions were pushed to the reader, `external_filter_mask` here is `None`, so we'll
@@ -75,7 +74,7 @@ impl PostApplyExtraOps {
                         let deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
                             let Slice::Positive { offset, len } = Slice::Positive {
                                 offset: row_counter.num_physical_rows(),
-                                len: morsel.df().height(),
+                                len: morsel.height(),
                             }
                             .restrict_to_bounds(mask.len()) else {
                                 unreachable!()
@@ -123,11 +122,11 @@ impl PostApplyExtraOps {
                 let rows_before = rows_before.clone();
                 let rows_after = rows_after.clone();
 
-                AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
+                AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                     while let Ok((mut morsel, row_offset)) = morsel_rx.recv().await {
-                        rows_before.fetch_add(morsel.df().height() as u64);
+                        rows_before.fetch_add(morsel.height() as u64);
                         ops_applier.apply_to_df(morsel.df_mut(), row_offset)?;
-                        rows_after.fetch_add(morsel.df().height() as u64);
+                        rows_after.fetch_add(morsel.height() as u64);
                         if morsel_tx.insert(morsel).await.is_err() {
                             break;
                         }
@@ -138,7 +137,7 @@ impl PostApplyExtraOps {
             })
             .collect::<Vec<_>>();
 
-        let handle = AbortOnDropHandle::new(async_executor::spawn(TaskPriority::Low, async move {
+        let handle = AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
             for handle in worker_handles {
                 handle.await?;
             }

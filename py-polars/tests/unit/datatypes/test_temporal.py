@@ -507,7 +507,7 @@ def test_explode_date() -> None:
         out = (
             df.group_by("b", maintain_order=True)
             .agg([pl.col("a"), pl.col("c").pct_change()])
-            .explode(["a", "c"])
+            .explode(["a", "c"], empty_as_null=True)
         )
         assert out.shape == (4, 3)
         assert out.rows() == [
@@ -861,7 +861,7 @@ def test_timelike_init() -> None:
     dates = [date(2022, 1, 1), date(2022, 1, 2)]
     datetimes = [datetime(2022, 1, 1), datetime(2022, 1, 2)]
 
-    for ts in [durations, dates, datetimes]:
+    for ts in (durations, dates, datetimes):
         s = pl.Series(ts)
         assert s.to_list() == ts
 
@@ -2526,3 +2526,22 @@ def test_timezone_ignore_error(
         match="unable to parse time zone: 'non-existent'",
     ):
         pl.DataFrame(tbl)
+
+
+def test_string_to_temporal_cast_deprecated() -> None:
+    with pytest.warns(
+        DeprecationWarning, match="Casting from String to DateTime is deprecated"
+    ):
+        pl.Series(["2022-08-30T10:30:45"]).cast(pl.Datetime("us"))
+
+    with pytest.warns(
+        DeprecationWarning, match="Casting from String to DateTime is deprecated"
+    ):
+        pl.Series(["2022-08-30T10:30:45+00:00"]).cast(
+            pl.Datetime("us", "Europe/Amsterdam")
+        )
+
+    with pytest.warns(
+        DeprecationWarning, match="Casting from String to Date is deprecated"
+    ):
+        pl.Series(["2022-08-30"]).cast(pl.Date)

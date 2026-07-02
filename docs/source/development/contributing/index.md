@@ -309,7 +309,7 @@ in the Polars repository. Please adhere to the following guidelines:
     - Explicitly state that you yourself have reviewed *all* changes in your pull request, and believe
       that they are relevant and correct.
     - Not try to solve an issue marked as "good first issue".
-    - Adhere to the rest of our [AI policy](/AI_POLICY.md).
+    - Adhere to the rest of our [AI policy](https://github.com/pola-rs/polars/blob/main/AI_POLICY.md).
   If you fail either requirement the maintainer may simply close your pull request.
 <!-- dprint-ignore-end -->
 
@@ -319,6 +319,11 @@ will be part of the next Polars release!
 
 Keep in mind that your work does not have to be perfect right away! If you are stuck or unsure about
 your solution, feel free to open a draft pull request and ask for help.
+
+During review, some of our maintainers will use
+[_conventional comments_](https://conventionalcomments.org) in their reviews. The meanings of the
+comment labels (like **issue**: or **nit:**) are documented at
+<https://conventionalcomments.org/#labels>
 
 ### First-time contributions
 

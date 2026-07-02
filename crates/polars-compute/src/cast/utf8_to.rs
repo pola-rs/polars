@@ -10,9 +10,10 @@ pub(super) const RFC3339: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 
 pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
     from: &dyn Array,
+    ordered: bool,
 ) -> PolarsResult<Box<dyn Array>> {
     let values = from.as_any().downcast_ref().unwrap();
-    utf8_to_dictionary::<O, K>(values).map(|x| Box::new(x) as Box<dyn Array>)
+    utf8_to_dictionary::<O, K>(values, ordered).map(|x| Box::new(x) as Box<dyn Array>)
 }
 
 /// Cast [`Utf8Array`] to [`DictionaryArray`], also known as packing.
@@ -21,9 +22,11 @@ pub(super) fn utf8_to_dictionary_dyn<O: Offset, K: DictionaryKey>(
 /// in the array.
 pub fn utf8_to_dictionary<O: Offset, K: DictionaryKey>(
     from: &Utf8Array<O>,
+    ordered: bool,
 ) -> PolarsResult<DictionaryArray<K>> {
     let mut array = MutableDictionaryArray::<K, MutableUtf8Array<O>>::empty_with_value_dtype(
         from.dtype().clone(),
+        ordered,
     );
     array.reserve(from.len());
     array.try_extend(from.iter())?;

@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import pickle
 from datetime import datetime, time, timedelta
+from decimal import Decimal as D
 from typing import TYPE_CHECKING, Any, Optional, Union
 
 import pytest
@@ -259,3 +260,15 @@ def test_max_min(
     df = pl.select(min=dtype.min(), max=dtype.max())
     assert df.to_series(0).item() == lower
     assert df.to_series(1).item() == upper
+
+
+def test_unknown_resolve() -> None:
+
+    q = pl.LazyFrame({"dec": [D("0.25")]})
+    assert "Float64" in q.select(pl.col("dec") * (1.0 * 1)).explain()
+    q = pl.LazyFrame({"x": 76}, schema={"x": pl.Int32}).select(
+        pl.col.x * (pl.lit(100.0) * pl.lit(1))
+    )
+    plan = q.explain()
+    assert "Float64" in plan
+    assert "dyn" not in plan

@@ -53,7 +53,7 @@ use crate::prelude::*;
 use crate::py_modules::{pl_series, polars};
 use crate::series::{PySeries, import_schema_pycapsule};
 use crate::utils::to_py_err;
-use crate::{PyDataFrame, PyLazyFrame};
+use crate::{PyDataFrame, PyLazyFrame, interned};
 
 /// # Safety
 /// Should only be implemented for transparent types
@@ -360,11 +360,11 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Field> {
     fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
         let py = ob.py();
         let name = ob
-            .getattr(intern!(py, "name"))?
+            .getattr(interned::NAME.get(py))?
             .str()?
             .extract::<PyBackedStr>()?;
         let dtype = ob
-            .getattr(intern!(py, "dtype"))?
+            .getattr(interned::DTYPE.get(py))?
             .extract::<Wrap<DataType>>()?;
         Ok(Wrap(Field::new((&*name).into(), dtype.0)))
     }
@@ -381,7 +381,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DataType> {
             "DataTypeClass" => {
                 // just the class, not an object
                 let name = ob
-                    .getattr(intern!(py, "__name__"))?
+                    .getattr(interned::DUNDER_NAME.get(py))?
                     .str()?
                     .extract::<PyBackedStr>()?;
                 match &*name {
@@ -1355,6 +1355,26 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MaintainOrderJoin> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`maintain_order` must be one of {{'none', 'left', 'right', 'left_right', 'right_left'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Option<JoinBuildSide>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => None,
+            "prefer_left" => Some(JoinBuildSide::PreferLeft),
+            "prefer_right" => Some(JoinBuildSide::PreferRight),
+            "force_left" => Some(JoinBuildSide::ForceLeft),
+            "force_right" => Some(JoinBuildSide::ForceRight),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`build_side` must be one of {{'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}}, got {v}",
                 )));
             },
         };

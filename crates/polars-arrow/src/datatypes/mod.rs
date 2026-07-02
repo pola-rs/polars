@@ -159,7 +159,7 @@ pub enum ArrowDataType {
     /// This type mostly used to represent low cardinality string
     /// arrays or a limited set of primitive types as integers.
     ///
-    /// The `bool` value indicates the `Dictionary` is sorted if set to `true`.
+    /// The `bool` value indicates the `Dictionary` keys are considered ordered.
     Dictionary(IntegerType, Box<ArrowDataType>, bool),
     /// Decimal value with precision and scale
     /// precision is the number of digits in the number and
@@ -413,8 +413,8 @@ impl ArrowDataType {
                     })
                     .collect(),
             ),
-            Dictionary(keys, values, is_sorted) => {
-                Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_sorted)
+            Dictionary(keys, values, is_ordered) => {
+                Dictionary(*keys, Box::new(values.to_storage_recursive()), *is_ordered)
             },
             Union(_) => unimplemented!(),
             Map(_, _) => unimplemented!(),

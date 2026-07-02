@@ -9,7 +9,14 @@ from typing import TYPE_CHECKING, get_args
 import polars._reexport as pl
 from polars import functions as F
 from polars._typing import ConcatMethod
-from polars._utils.various import ordered_unique, qualified_type_name
+from polars._utils.deprecation import issue_deprecation_warning
+from polars._utils.reduce_balanced import reduce_balanced
+from polars._utils.unstable import unstable
+from polars._utils.various import (
+    is_non_empty_sequence_of,
+    ordered_unique,
+    qualified_type_name,
+)
 from polars._utils.wrap import wrap_df, wrap_expr, wrap_ldf, wrap_s
 from polars.exceptions import InvalidOperationError
 
@@ -17,10 +24,41 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars._plr as plr
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+    from collections.abc import Iterable
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import FrameType, JoinStrategy, PolarsType
+
+
+def _normalize_horizontal_concat(
+    function_name: str, how: ConcatMethod, *, strict: bool | None
+) -> ConcatMethod:
+    """Normalize deprecated horizontal concat arguments."""
+    if how == "horizontal":
+        if strict is None:
+            issue_deprecation_warning(
+                f"the default behavior of `how='horizontal'` for `{function_name}` "
+                "is deprecated and will require equal heights in the next breaking "
+                "release. "
+                "Use `how='horizontal_extend'` to keep the current behavior.",
+                version="1.42.1",
+            )
+            return "horizontal_extend"
+        elif strict is False:
+            issue_deprecation_warning(
+                f"the `strict` parameter for `{function_name}` is deprecated. "
+                "Use `how='horizontal_extend'` instead.",
+                version="1.42.1",
+            )
+            return "horizontal_extend"
+        else:
+            return "horizontal"
+
+    if how == "horizontal_extend" and strict is not None:
+        msg = "`strict` cannot be used with `how='horizontal_extend'`"
+        raise ValueError(msg)
+
+    return how
 
 
 def concat(
@@ -29,7 +67,7 @@ def concat(
     how: ConcatMethod = "vertical",
     rechunk: bool = False,
     parallel: bool = True,
-    strict: bool = False,
+    strict: bool | None = None,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -38,7 +76,7 @@ def concat(
     ----------
     items
         DataFrames, LazyFrames, or Series to concatenate.
-    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
+    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'horizontal_extend', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
         Note that `Series` only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
@@ -48,7 +86,9 @@ def concat(
           values with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
+        * horizontal: Stacks Series from DataFrames horizontally. All input frames
+          must have the same height; raises a `ShapeError` otherwise.
+        * horizontal_extend: Same as `horizontal`, but pads shorter frames with `null`
           if the lengths don't match.
         * align, align_full, align_left, align_right: Combines frames horizontally,
           auto-determining the common key columns and aligning rows using the same
@@ -65,6 +105,10 @@ def concat(
         lazy computations may be executed in parallel.
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
+
+        .. deprecated:: 1.42.1
+            Use `how='horizontal'` (equal heights) or
+            `how='horizontal_extend'` (pad with null) instead.
 
     Examples
     --------
@@ -96,7 +140,7 @@ def concat(
 
     >>> df_h1 = pl.DataFrame({"l1": [1, 2], "l2": [3, 4]})
     >>> df_h2 = pl.DataFrame({"r1": [5, 6], "r2": [7, 8], "r3": [9, 10]})
-    >>> pl.concat([df_h1, df_h2], how="horizontal")
+    >>> pl.concat([df_h1, df_h2], how="horizontal_extend")
     shape: (2, 5)
     ┌─────┬─────┬─────┬─────┬─────┐
     │ l1  ┆ l2  ┆ r1  ┆ r2  ┆ r3  │
@@ -169,18 +213,23 @@ def concat(
     └─────┴─────┴─────┴─────┘
     """  # noqa: W505
     # unpack/standardise (handles generator input)
-    elems = list(items)
+    elems: Sequence[PolarsType] = list(items)
 
     if not elems:
         msg = "cannot concat empty list"
         raise ValueError(msg)
-    elif len(elems) == 1 and isinstance(
+
+    if len(elems) == 1 and isinstance(
         elems[0], (pl.DataFrame, pl.Series, pl.LazyFrame)
     ):
         return elems[0]
 
     if how.startswith("align"):
-        if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
+        if not is_non_empty_sequence_of(
+            elems, pl.DataFrame
+        ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+            elems, pl.LazyFrame
+        ):
             msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
             raise TypeError(msg)
 
@@ -218,7 +267,7 @@ def concat(
 
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
-            lf = _balanced_reduce(join_frames, join_fn)
+            lf = reduce_balanced(join_fn, join_frames)
         else:
             # not associative => linear chain, recursion depth is O(n)
             lf = reduce(join_fn, join_frames)
@@ -228,11 +277,12 @@ def concat(
         return lf.collect() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
-    first = elems[0]
 
     from polars.lazyframe.opt_flags import QueryOptFlags
 
-    if isinstance(first, pl.DataFrame):
+    if is_non_empty_sequence_of(elems, pl.DataFrame):
+        how = _normalize_horizontal_concat("concat", how, strict=strict)
+
         if how == "vertical":
             out = wrap_df(plr.concat_df(elems))
         elif how == "vertical_relaxed":
@@ -259,13 +309,17 @@ def concat(
                 )
             ).collect(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
-            out = wrap_df(plr.concat_df_horizontal(elems, strict=strict))
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=True))
+        elif how == "horizontal_extend":
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=False))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
-    elif isinstance(first, pl.LazyFrame):
+    elif is_non_empty_sequence_of(elems, pl.LazyFrame):
+        how = _normalize_horizontal_concat("concat", how, strict=strict)
+
         if how in ("vertical", "vertical_relaxed"):
             return wrap_ldf(
                 plr.concat_lf(
@@ -291,7 +345,15 @@ def concat(
                 plr.concat_lf_horizontal(
                     elems,
                     parallel=parallel,
-                    strict=strict,
+                    strict=True,
+                )
+            )
+        elif how == "horizontal_extend":
+            return wrap_ldf(
+                plr.concat_lf_horizontal(
+                    elems,
+                    parallel=parallel,
+                    strict=False,
                 )
             )
         else:
@@ -299,17 +361,17 @@ def concat(
             msg = f"LazyFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
-    elif isinstance(first, pl.Series):
+    elif is_non_empty_sequence_of(elems, pl.Series):
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
             msg = "Series only supports 'vertical' concat strategy"
             raise ValueError(msg)
 
-    elif isinstance(first, pl.Expr):
+    elif is_non_empty_sequence_of(elems, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], rechunk))
     else:
-        msg = f"did not expect type: {qualified_type_name(first)!r} in `concat`"
+        msg = f"did not expect type: {qualified_type_name(elems[0])!r} in `concat`"
         raise TypeError(msg)
 
     if rechunk:
@@ -321,7 +383,7 @@ def union(
     items: Iterable[PolarsType],
     *,
     how: ConcatMethod = "vertical",
-    strict: bool = False,
+    strict: bool | None = None,
 ) -> PolarsType:
     """
     Combine multiple DataFrames, LazyFrames, or Series into a single object.
@@ -334,7 +396,7 @@ def union(
     ----------
     items
         DataFrames, LazyFrames, or Series to concatenate.
-    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
+    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'horizontal_extend', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
         Note that `Series` only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
@@ -344,7 +406,9 @@ def union(
           values with `null`.
         * diagonal_relaxed: Same as `diagonal`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
-        * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
+        * horizontal: Stacks Series from DataFrames horizontally. All input frames
+          must have the same height; raises a `ShapeError` otherwise.
+        * horizontal_extend: Same as `horizontal`, but pads shorter frames with `null`
           if the lengths don't match.
         * align, align_full, align_left, align_right: Combines frames horizontally,
           auto-determining the common key columns and aligning rows using the same
@@ -356,6 +420,10 @@ def union(
           a suitable `join` method directly).
     strict
         When how=`horizontal`, require all DataFrames to be the same height, raising an error if not.
+
+        .. deprecated:: 1.42.1
+            Use `how='horizontal'` (equal heights) or
+            `how='horizontal_extend'` (pad with null) instead.
 
     Examples
     --------
@@ -387,7 +455,7 @@ def union(
 
     >>> df_h1 = pl.DataFrame({"l1": [1, 2], "l2": [3, 4]})
     >>> df_h2 = pl.DataFrame({"r1": [5, 6], "r2": [7, 8], "r3": [9, 10]})
-    >>> pl.union([df_h1, df_h2], how="horizontal")
+    >>> pl.union([df_h1, df_h2], how="horizontal_extend")
     shape: (2, 5)
     ┌─────┬─────┬─────┬─────┬─────┐
     │ l1  ┆ l2  ┆ r1  ┆ r2  ┆ r3  │
@@ -460,18 +528,23 @@ def union(
     └─────┴─────┴─────┴─────┘
     """  # noqa: W505
     # unpack/standardise (handles generator input)
-    elems = list(items)
+    elems: Sequence[PolarsType] = list(items)
 
     if not elems:
         msg = "cannot concat empty list"
         raise ValueError(msg)
-    elif len(elems) == 1 and isinstance(
+
+    if len(elems) == 1 and isinstance(
         elems[0], (pl.DataFrame, pl.Series, pl.LazyFrame)
     ):
         return elems[0]
 
     if how.startswith("align"):
-        if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
+        if not is_non_empty_sequence_of(
+            elems, pl.DataFrame
+        ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+            elems, pl.LazyFrame
+        ):
             msg = f"{how!r} strategy is not supported for {qualified_type_name(elems[0])!r}"
             raise TypeError(msg)
 
@@ -509,7 +582,7 @@ def union(
 
         if join_method in ("full", "inner"):
             # associative => balanced tree, recursion depth is O(log(n))
-            lf = _balanced_reduce(join_frames, join_fn)
+            lf = reduce_balanced(join_fn, join_frames)
         else:
             # not associative => linear chain, recursion depth is O(n)
             lf = reduce(join_fn, join_frames)
@@ -519,11 +592,12 @@ def union(
         return lf.collect() if eager else lf  # type: ignore[return-value]
 
     out: Series | DataFrame | LazyFrame | Expr
-    first = elems[0]
 
     from polars.lazyframe.opt_flags import QueryOptFlags
 
-    if isinstance(first, pl.DataFrame):
+    if is_non_empty_sequence_of(elems, pl.DataFrame):
+        how = _normalize_horizontal_concat("union", how, strict=strict)
+
         if how in ("vertical", "vertical_relaxed"):
             out = wrap_ldf(
                 plr.concat_lf(
@@ -545,13 +619,17 @@ def union(
                 )
             ).collect(optimizations=QueryOptFlags._eager())
         elif how == "horizontal":
-            out = wrap_df(plr.concat_df_horizontal(elems, strict=strict))
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=True))
+        elif how == "horizontal_extend":
+            out = wrap_df(plr.concat_df_horizontal(elems, strict=False))
         else:
             allowed = ", ".join(repr(m) for m in get_args(ConcatMethod))
             msg = f"DataFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
-    elif isinstance(first, pl.LazyFrame):
+    elif is_non_empty_sequence_of(elems, pl.LazyFrame):
+        how = _normalize_horizontal_concat("union", how, strict=strict)
+
         if how in ("vertical", "vertical_relaxed"):
             return wrap_ldf(
                 plr.concat_lf(
@@ -577,7 +655,15 @@ def union(
                 plr.concat_lf_horizontal(
                     elems,
                     parallel=True,
-                    strict=strict,
+                    strict=True,
+                )
+            )
+        elif how == "horizontal_extend":
+            return wrap_ldf(
+                plr.concat_lf_horizontal(
+                    elems,
+                    parallel=True,
+                    strict=False,
                 )
             )
         else:
@@ -585,20 +671,111 @@ def union(
             msg = f"LazyFrame `how` must be one of {{{allowed}}}, got {how!r}"
             raise ValueError(msg)
 
-    elif isinstance(first, pl.Series):
+    elif is_non_empty_sequence_of(elems, pl.Series):
         if how == "vertical":
             out = wrap_s(plr.concat_series(elems))
         else:
             msg = "Series only supports 'vertical' concat strategy"
             raise ValueError(msg)
 
-    elif isinstance(first, pl.Expr):
+    elif is_non_empty_sequence_of(elems, pl.Expr):
         return wrap_expr(plr.concat_expr([e._pyexpr for e in elems], False))
     else:
-        msg = f"did not expect type: {qualified_type_name(first)!r} in `concat`"
+        msg = f"did not expect type: {qualified_type_name(elems[0])!r} in `concat`"
         raise TypeError(msg)
 
     return out
+
+
+@unstable()
+def merge_sorted(
+    items: Iterable[PolarsType],
+    key: str,
+    *,
+    maintain_order: bool = False,
+) -> PolarsType:
+    """
+    Merge multiple sorted DataFrames or LazyFrames by the sorted key.
+
+    The output of this operation will also be sorted.
+    It is the callers responsibility that the frames
+    are sorted in ascending order by that key otherwise
+    the output will not make sense.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    items
+        DataFrames or LazyFrames to merge.
+    key
+        Key that is sorted.
+    maintain_order
+        If ``True``, the output is guaranteed to have left-biased ordering
+        for equal keys: rows from the left frame appear before rows from
+        the right frame when their keys are equal.
+
+    Examples
+    --------
+    >>> df0 = pl.DataFrame(
+    ...     {"name": ["steve", "elise", "bob"], "age": [42, 44, 18]}
+    ... ).sort("age")
+    >>> df1 = pl.DataFrame(
+    ...     {"name": ["anna", "megan", "steve", "thomas"], "age": [21, 33, 17, 20]}
+    ... ).sort("age")
+    >>> df2 = pl.DataFrame({"name": ["ida", "maya"], "age": [37, 27]}).sort("age")
+    >>> pl.merge_sorted([df0, df1, df2], key="age")
+    shape: (9, 2)
+    ┌────────┬─────┐
+    │ name   ┆ age │
+    │ ---    ┆ --- │
+    │ str    ┆ i64 │
+    ╞════════╪═════╡
+    │ steve  ┆ 17  │
+    │ bob    ┆ 18  │
+    │ thomas ┆ 20  │
+    │ anna   ┆ 21  │
+    │ maya   ┆ 27  │
+    │ megan  ┆ 33  │
+    │ ida    ┆ 37  │
+    │ steve  ┆ 42  │
+    │ elise  ┆ 44  │
+    └────────┴─────┘
+
+
+    Notes
+    -----
+    Unless ``maintain_order=True``, no guarantee is given over the output
+    row order when the key is equal between dataframes.
+
+    The key must be sorted in ascending order.
+    """
+    elems: Sequence[PolarsType] = list(items)
+
+    if not elems:
+        msg = "cannot merge_sort empty list"
+        raise ValueError(msg)
+    if len(elems) == 1 and isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
+        return elems[0]
+
+    if not is_non_empty_sequence_of(
+        elems, pl.DataFrame
+    ) and not is_non_empty_sequence_of(  # type: ignore[redundant-expr]
+        elems, pl.LazyFrame
+    ):
+        msg = f"merge_sorted is not supported for {qualified_type_name(elems[0])!r}"
+        raise TypeError(msg)
+
+    frames = [df.lazy() for df in elems]
+
+    def reduce_fn(x: pl.LazyFrame, y: pl.LazyFrame) -> pl.LazyFrame:
+        return x.merge_sorted(y, key=key, maintain_order=maintain_order)
+
+    lf = reduce_balanced(reduce_fn, frames)
+    eager = isinstance(elems[0], pl.DataFrame)
+    return lf.collect() if eager else lf  # type: ignore[return-value]
 
 
 def _alignment_join(
@@ -817,18 +994,3 @@ def align_frames(
         aligned_frames.append(f)
 
     return F.collect_all(aligned_frames) if eager else aligned_frames  # type: ignore[return-value]
-
-
-def _balanced_reduce(
-    frames: list[LazyFrame], join_fn: Callable[[LazyFrame, LazyFrame], LazyFrame]
-) -> LazyFrame:
-    """Reduce a list of frames into a single frame using a balanced binary tree."""
-    while len(frames) > 1:
-        next_level = []
-        for i in range(0, len(frames), 2):
-            if i + 1 < len(frames):
-                next_level.append(join_fn(frames[i], frames[i + 1]))
-            else:
-                next_level.append(frames[i])
-        frames = next_level
-    return frames[0]

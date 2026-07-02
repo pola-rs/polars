@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING, Any
 import polars._reexport as pl
 from polars import exceptions
 from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
-from polars._utils.various import issue_warning
+from polars._utils.various import _NamespaceSuggestMixin, _Omitted
 from polars._utils.wrap import wrap_expr
+from polars._warnings import issue_warning
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -24,7 +26,7 @@ if TYPE_CHECKING:
     )
 
 
-class ExprListNameSpace:
+class ExprListNameSpace(_NamespaceSuggestMixin):
     """Namespace for list related expressions."""
 
     _accessor = "list"
@@ -33,15 +35,47 @@ class ExprListNameSpace:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: int) -> Expr:
+        """
+        Get the value by index in the sublists.
+
+        This is syntactic sugar for :meth:`Expr.list.get`.
+
+        Parameters
+        ----------
+        item
+            Index to return per sublist. Index ``0`` returns the first item, and
+            index ``-1`` returns the last item.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"a": [[3, 2, 1], [4, 5, 6]]})
+        >>> df.with_columns(get=pl.col("a").list[0])
+        shape: (2, 2)
+        ┌───────────┬─────┐
+        │ a         ┆ get │
+        │ ---       ┆ --- │
+        │ list[i64] ┆ i64 │
+        ╞═══════════╪═════╡
+        │ [3, 2, 1] ┆ 3   │
+        │ [4, 5, 6] ┆ 4   │
+        └───────────┴─────┘
+        """
         return self.get(item)
 
-    def all(self) -> Expr:
+    def all(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether all boolean values in a list are true.
 
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `True`.
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -63,15 +97,22 @@ class ExprListNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.list_all())
+        return self.agg(F.element().all(ignore_nulls=ignore_nulls))
 
-    def any(self) -> Expr:
+    def any(self, *, ignore_nulls: bool = True) -> Expr:
         """
         Evaluate whether any boolean value in a list is true.
 
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `False`.
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Examples
         --------
@@ -93,7 +134,7 @@ class ExprListNameSpace:
         │ null           ┆ null  │
         └────────────────┴───────┘
         """
-        return wrap_expr(self._pyexpr.list_any())
+        return self.agg(F.element().any(ignore_nulls=ignore_nulls))
 
     def len(self) -> Expr:
         """
@@ -426,7 +467,7 @@ class ExprListNameSpace:
         │ [9, 1, 2] ┆ [2, 1, 9] │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_reverse())
+        return self.eval(F.element().reverse())
 
     def unique(self, *, maintain_order: bool = False) -> Expr:
         """
@@ -454,7 +495,7 @@ class ExprListNameSpace:
         │ [1, 1, 2] ┆ [1, 2]    │
         └───────────┴───────────┘
         """
-        return wrap_expr(self._pyexpr.list_unique(maintain_order))
+        return self.eval(F.element().unique(maintain_order=maintain_order))
 
     def n_unique(self) -> Expr:
         """
@@ -478,7 +519,7 @@ class ExprListNameSpace:
         │ [2, 3, 4] ┆ 3        │
         └───────────┴──────────┘
         """
-        return wrap_expr(self._pyexpr.list_n_unique())
+        return self.agg(F.element().n_unique())
 
     def concat(self, other: list[Expr | str] | Expr | str | Series | list[Any]) -> Expr:
         """
@@ -1073,7 +1114,9 @@ class ExprListNameSpace:
         n_pyexpr = parse_into_expression(n)
         return wrap_expr(self._pyexpr.list_tail(n_pyexpr))
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Expr:
+    def explode(
+        self, *, empty_as_null: bool = _Omitted, keep_nulls: bool = True
+    ) -> Expr:
         """
         Returns a column with a separate row for every list element.
 
@@ -1096,7 +1139,7 @@ class ExprListNameSpace:
         Examples
         --------
         >>> df = pl.DataFrame({"a": [[1, 2, 3], [4, 5, 6]]})
-        >>> df.select(pl.col("a").list.explode())
+        >>> df.select(pl.col("a").list.explode(empty_as_null=False))
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -1111,6 +1154,13 @@ class ExprListNameSpace:
         │ 6   │
         └─────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
+
         return wrap_expr(
             self._pyexpr.explode(empty_as_null=empty_as_null, keep_nulls=keep_nulls)
         )

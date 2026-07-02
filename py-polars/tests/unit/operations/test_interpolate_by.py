@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import hypothesis.strategies as st
 import numpy as np
@@ -218,7 +218,7 @@ def test_interpolate_vs_numpy(data: st.DataObject, x_dtype: pl.DataType) -> None
     x = dataframe["ts"].to_numpy().astype(np_dtype)
     xp = dataframe["ts"].filter(mask).to_numpy().astype(np_dtype)
     yp = dataframe["value"].filter(mask).to_numpy().astype("float64")
-    interp = np.interp(x, xp, yp)
+    interp = cast("np.ndarray[Any, Any]", np.interp(x, xp, yp))
     # Polars preserves nulls on boundaries, but NumPy doesn't.
     first_non_null = dataframe["value"].is_not_null().arg_max()
     last_non_null = len(dataframe) - dataframe["value"][::-1].is_not_null().arg_max()  # type: ignore[operator]

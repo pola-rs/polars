@@ -1,17 +1,18 @@
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
+use polars_async::executor::{self, TaskPriority};
+use polars_async::primitives::connector;
 use polars_core::config;
+use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_io::pl_async;
 use polars_io::prelude::{CsvSerializer, CsvWriterOptions};
 use polars_utils::index::NonZeroIdxSize;
 
-use crate::async_executor::{self, TaskPriority};
-use crate::async_primitives::connector;
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
 use crate::nodes::io_sinks::components::size::{
-    NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
+    NonZeroRowCountAndSize, SplitMode, TargetSinkMorselSize,
 };
 use crate::nodes::io_sinks::writers::interface::{
     FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
@@ -42,9 +43,10 @@ impl CsvWriterStarter {
         if initialized_state.is_none() {
             let (env_num_rows, env_num_bytes) = ideal_sink_morsel_size_env();
 
-            let ideal_morsel_size = RowCountAndSize {
-                num_rows: env_num_rows.unwrap_or(25 * 1024),
-                num_bytes: env_num_bytes.unwrap_or(8 * 1024 * 1024),
+            let ideal_morsel_size = NonZeroRowCountAndSize {
+                num_rows: env_num_rows.unwrap_or(const { NonZeroIdxSize::new(25 * 1024).unwrap() }),
+                num_bytes: env_num_bytes
+                    .unwrap_or(const { NonZeroU64::new(8 * 1024 * 1024).unwrap() }),
             };
 
             let serialized_row_size_estimate = u64::saturating_mul(self.schema.len() as _, 25);
@@ -52,10 +54,14 @@ impl CsvWriterStarter {
             let base_allocation_size: usize = u64::min(
                 64 * 1024 * 1024,
                 u64::min(
-                    ideal_morsel_size.num_bytes.div_ceil(2).saturating_mul(5),
+                    ideal_morsel_size
+                        .num_bytes
+                        .get()
+                        .div_ceil(2)
+                        .saturating_mul(5),
                     u64::saturating_mul(
                         serialized_row_size_estimate,
-                        ideal_morsel_size.num_rows as _,
+                        ideal_morsel_size.num_rows.get() as _,
                     ),
                 ),
             ) as _;
@@ -63,8 +69,6 @@ impl CsvWriterStarter {
             if config::verbose() {
                 eprintln!("[CsvWriterStarter]: base_allocation_size: {base_allocation_size}")
             }
-
-            let ideal_morsel_size = NonZeroRowCountAndSize::new(ideal_morsel_size).unwrap();
 
             *initialized_state = Some(InitializedState {
                 ideal_morsel_size,
@@ -81,11 +85,14 @@ impl FileWriterStarter for CsvWriterStarter {
         "csv"
     }
 
-    fn takeable_rows_provider(&self) -> TakeableRowsProvider {
-        TakeableRowsProvider {
-            max_size: self.initialized_state().ideal_morsel_size,
-            byte_size_min_rows: NonZeroIdxSize::new(256).unwrap(),
-            allow_non_max_size: true,
+    fn target_sink_morsel_size(&self) -> TargetSinkMorselSize {
+        let ideal_morsel_size = self.initialized_state().ideal_morsel_size;
+
+        TargetSinkMorselSize {
+            target_num_rows: ideal_morsel_size.num_rows,
+            target_num_bytes: ideal_morsel_size.num_bytes,
+            target_num_bytes_min_rows: const { NonZeroIdxSize::new(256).unwrap() },
+            target_num_rows_mode: SplitMode::Approximate,
         }
     }
 
@@ -94,9 +101,9 @@ impl FileWriterStarter for CsvWriterStarter {
         morsel_rx: connector::Receiver<SinkMorsel>,
         file: FileOpenTaskHandle,
         num_pipelines: std::num::NonZeroUsize,
-    ) -> PolarsResult<async_executor::JoinHandle<PolarsResult<()>>> {
+    ) -> PolarsResult<executor::JoinHandle<PolarsResult<()>>> {
         let (filled_serializer_tx, filled_serializer_rx) = tokio::sync::mpsc::channel::<(
-            async_executor::AbortOnDropHandle<PolarsResult<morsel_serializer::MorselSerializer>>,
+            executor::AbortOnDropHandle<PolarsResult<morsel_serializer::MorselSerializer>>,
             SinkMorselPermit,
         )>(num_pipelines.get());
 
@@ -105,7 +112,7 @@ impl FileWriterStarter for CsvWriterStarter {
             tokio::sync::mpsc::channel::<morsel_serializer::MorselSerializer>(max_serializers);
 
         let io_handle = tokio_handle_ext::AbortOnDropHandle(
-            pl_async::get_runtime().spawn(
+            ASYNC.spawn(
                 io_writer::IOWriter {
                     file,
                     filled_serializer_rx,
@@ -120,7 +127,7 @@ impl FileWriterStarter for CsvWriterStarter {
         let base_csv_serializer = { self.base_serializer.lock().unwrap().clone() };
         let base_allocation_size = self.initialized_state().base_allocation_size;
 
-        let serializer_handle = async_executor::spawn(
+        let serializer_handle = executor::spawn(
             TaskPriority::High,
             morsel_serializer::MorselSerializerPipeline {
                 morsel_rx,
@@ -133,7 +140,7 @@ impl FileWriterStarter for CsvWriterStarter {
             .run(),
         );
 
-        Ok(async_executor::spawn(TaskPriority::Low, async move {
+        Ok(executor::spawn(TaskPriority::Low, async move {
             io_handle.await.unwrap()?;
             serializer_handle.await;
             Ok(())

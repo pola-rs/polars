@@ -1,5 +1,5 @@
-use polars_core::POOL;
 use polars_core::prelude::*;
+use polars_core::runtime::RAYON;
 use polars_expr::state::ExecutionState;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::prelude::sink::CallbackSinkType;
@@ -111,9 +111,9 @@ impl MultiplePhysicalPlans {
             cache_prefiller.execute(&mut state)?;
         }
         // Chunked iter to avoid rayon stack overflow.
-        let out = POOL.install(|| {
+        let out = RAYON.install(|| {
             self.physical_plans
-                .chunks_mut(POOL.current_num_threads() * 3)
+                .chunks_mut(RAYON.current_num_threads() * 3)
                 .map(|chunk| {
                     chunk
                         .into_par_iter()
@@ -198,50 +198,59 @@ pub fn python_scan_predicate(
             use polars_core::config::verbose_print_sensitive;
             use polars_plan::plans::MintermIter;
 
-            // Split into AND-minterms and convert each independently.
-            let mut residual_predicate_nodes: Vec<Node> = vec![];
-            let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
-                .filter_map(|node| {
-                    let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
-                        node,
-                        expr_arena,
-                        Default::default(),
-                    );
-                    if result.is_none() {
-                        residual_predicate_nodes.push(node);
-                    }
-                    result
-                })
-                .collect();
-
-            let predicate_pa = match parts.len() {
-                0 => None,
-                1 => Some(parts.into_iter().next().unwrap()),
-                _ => Some(format!("({})", parts.join(" & "))),
-            };
-
-            let residual_predicate_expr_ir = if let Some(eval_str) = predicate_pa {
-                options.predicate = PythonPredicate::PyArrow(eval_str);
-
-                residual_predicate_nodes
-                    .into_iter()
-                    .fold(None, |acc, node| {
-                        Some(acc.map_or(node, |acc_node| {
-                            expr_arena.add(AExpr::BinaryExpr {
-                                left: acc_node,
-                                op: Operator::And,
-                                right: node,
-                            })
-                        }))
+            // If there is a `head`, that comes before the filter and we post-apply
+            // the predicate in the engine. No need to transpile to `pyarrow.predicate`
+            let residual_predicate_expr_ir = if options.n_rows.is_none() {
+                // Split into AND-minterms and convert each independently.
+                let mut residual_predicate_nodes: Vec<Node> = vec![];
+                let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
+                    .filter_map(|node| {
+                        let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
+                            node,
+                            expr_arena,
+                            Default::default(),
+                        );
+                        if result.is_none() {
+                            residual_predicate_nodes.push(node);
+                        }
+                        result
                     })
-                    .map(|node| ExprIR::from_node(node, expr_arena))
+                    .collect();
+
+                let predicate_pa = match parts.len() {
+                    0 => None,
+                    1 => Some(parts.into_iter().next().unwrap()),
+                    _ => Some(format!("({})", parts.join(" & "))),
+                };
+
+                if let Some(eval_str) = predicate_pa {
+                    options.predicate = PythonPredicate::PyArrow {
+                        predicate: eval_str,
+                        has_residual: !residual_predicate_nodes.is_empty(),
+                    };
+
+                    residual_predicate_nodes
+                        .into_iter()
+                        .fold(None, |acc, node| {
+                            Some(acc.map_or(node, |acc_node| {
+                                expr_arena.add(AExpr::BinaryExpr {
+                                    left: acc_node,
+                                    op: Operator::And,
+                                    right: node,
+                                })
+                            }))
+                        })
+                        .map(|node| ExprIR::from_node(node, expr_arena))
+                } else {
+                    Some(e.clone())
+                }
             } else {
                 Some(e.clone())
             };
 
             verbose_print_sensitive(|| {
                 let predicate_pa_verbose_msg = match &options.predicate {
-                    PythonPredicate::PyArrow(p) => p,
+                    PythonPredicate::PyArrow { predicate, .. } => predicate,
                     _ => "<conversion failed>",
                 };
 
@@ -488,7 +497,8 @@ fn create_physical_plan_impl(
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
             let input = recurse!(input, state)?;
-            let mut state = ExpressionConversionState::new(POOL.current_num_threads() > expr.len());
+            let mut state =
+                ExpressionConversionState::new(RAYON.current_num_threads() > expr.len());
             let phys_expr =
                 create_physical_expressions_from_irs(&expr, expr_arena, &input_schema, &mut state)?;
 
@@ -739,6 +749,19 @@ fn create_physical_plan_impl(
                 join_type_options,
             )))
         },
+        Gather {
+            input,
+            idxs,
+            null_on_oob,
+        } => {
+            let input = recurse!(input, state)?;
+            let idxs = recurse!(idxs, state)?;
+            Ok(Box::new(executors::GatherExec::new(
+                input,
+                idxs,
+                null_on_oob,
+            )))
+        },
         HStack {
             input,
             exprs,
@@ -754,7 +777,7 @@ fn create_physical_plan_impl(
                     .all(|e| is_elementwise_rec(e.node(), expr_arena));
 
             let mut state =
-                ExpressionConversionState::new(POOL.current_num_threads() > exprs.len());
+                ExpressionConversionState::new(RAYON.current_num_threads() > exprs.len());
 
             let phys_exprs = create_physical_expressions_from_irs(
                 &exprs,
@@ -798,6 +821,8 @@ fn create_physical_plan_impl(
             input_left,
             input_right,
             key,
+            // In the in-memory engine, merge_sorted is always order-maintaining.
+            maintain_order: _,
         } => {
             let (input_left, input_right) = state.with_new_branch(|new_state| {
                 (
@@ -815,6 +840,7 @@ fn create_physical_plan_impl(
             };
             Ok(Box::new(exec))
         },
+        UnoptimizedDispatch { .. } => get_streaming_executor_builder()(root, lp_arena, expr_arena),
         Invalid => unreachable!(),
     }
 }

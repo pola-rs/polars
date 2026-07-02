@@ -38,7 +38,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # https://github.com/pola-rs/polars/pull/21829.
     import os
 
-    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:-1"
+    jemalloc_conf = "dirty_decay_ms:500,muzzy_decay_ms:1000"
     if os.environ.get("POLARS_THP") == "1":
         jemalloc_conf += ",thp:always,metadata_thp:always"
     if override := os.environ.get("_RJEM_MALLOC_CONF"):
@@ -48,8 +48,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # Initialize polars on the rust side. This function is highly
     # unsafe and should only be called once.
     from polars._plr import __register_startup_deps
+    from polars._warnings import _polars_warn
 
-    __register_startup_deps()
+    __register_startup_deps(_polars_warn)
 
 from typing import TYPE_CHECKING, Any
 
@@ -180,6 +181,7 @@ from polars.functions import (
     mean,
     mean_horizontal,
     median,
+    merge_sorted,
     min,
     min_horizontal,
     n_unique,
@@ -389,6 +391,7 @@ __all__ = [
     "datetime_range",
     "datetime_ranges",
     "element",
+    "merge_sorted",
     "ones",
     "repeat",
     "self_dtype",

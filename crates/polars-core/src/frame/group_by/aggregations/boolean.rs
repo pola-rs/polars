@@ -8,7 +8,7 @@ pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where
     F: Fn((IdxSize, &IdxVec)) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = POOL.install(|| groups.into_par_iter().map(f).collect());
+    let ca: BooleanChunked = RAYON.install(|| groups.into_par_iter().map(f).collect());
     ca.into_series()
 }
 
@@ -16,7 +16,7 @@ pub fn _agg_helper_slice_bool<F>(groups: &[[IdxSize; 2]], f: F) -> Series
 where
     F: Fn([IdxSize; 2]) -> Option<bool> + Send + Sync,
 {
-    let ca: BooleanChunked = POOL.install(|| groups.par_iter().copied().map(f).collect());
+    let ca: BooleanChunked = RAYON.install(|| groups.par_iter().copied().map(f).collect());
     ca.into_series()
 }
 
@@ -76,7 +76,7 @@ impl BooleanChunked {
 impl BooleanChunked {
     pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_first_non_null(groups);
@@ -123,7 +123,7 @@ impl BooleanChunked {
     }
     pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => return self.clone().into_series().agg_last_non_null(groups),
                 IsSorted::Descending => {
@@ -170,7 +170,7 @@ impl BooleanChunked {
 
     pub(crate) unsafe fn agg_arg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_first_non_null(groups);
@@ -219,7 +219,7 @@ impl BooleanChunked {
 
     pub(crate) unsafe fn agg_arg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
-        if groups.is_sorted_flag() {
+        if !self.has_nulls() || matches!(groups, GroupsType::Slice { .. }) {
             match self.is_sorted_flag() {
                 IsSorted::Ascending => {
                     return self.clone().into_series().agg_arg_last_non_null(groups);
@@ -293,7 +293,7 @@ impl BooleanChunked {
         let values = self.rechunk();
         let values = values.downcast_as_array();
 
-        let ca: BooleanChunked = POOL.install(|| {
+        let ca: BooleanChunked = RAYON.install(|| {
             let validity = values
                 .validity()
                 .filter(|v| v.unset_bits() > 0)

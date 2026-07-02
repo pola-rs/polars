@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.unstable import unstable
+from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 
 @expr_dispatch
-class ListNameSpace:
+class ListNameSpace(_NamespaceSuggestMixin):
     """Namespace for list related methods."""
 
     _accessor = "list"
@@ -30,18 +31,25 @@ class ListNameSpace:
     def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
-    def all(self) -> Series:
+    def all(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether all boolean values in a list are true.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `True`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `False` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `True`.
 
         Examples
         --------
@@ -62,18 +70,25 @@ class ListNameSpace:
         ]
         """
 
-    def any(self) -> Series:
+    def any(self, *, ignore_nulls: bool = True) -> Series:
         """
         Evaluate whether any boolean value in a list is true.
+
+        Parameters
+        ----------
+        ignore_nulls
+            * If set to `True` (default), null values are ignored. If there
+              are no non-null values, the output is `False`.
+            * If set to `False`, `Kleene logic`_ is used to deal with nulls:
+              if the column contains any null values and no `True` values,
+              the output is null.
+
+            .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
 
         Returns
         -------
         Series
             Series of data type :class:`Boolean`.
-
-        Notes
-        -----
-        If there are no non-null elements in a row, the output is `False`.
 
         Examples
         --------
@@ -818,7 +833,9 @@ class ListNameSpace:
         ]
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Series:
         """
         Returns a column with a separate row for every list element.
 
@@ -841,7 +858,7 @@ class ListNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-        >>> s.list.explode()
+        >>> s.list.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [

@@ -1,16 +1,8 @@
 # Distributed queries
 
-With the introduction of Polars Cloud, we also introduced the distributed engine. This engine
-enables users to horizontally scale workloads across multiple machines.
-
-Polars has always been optimized for fast and efficient performance on a single machine. However,
-when querying large datasets from cloud storage, performance is often constrained by the I/O
-limitations of a single node. By scaling horizontally, these download limitations can be
-significantly reduced, allowing users to process data at scale.
-
-!!! info "Distributed engine is in open beta"
-
-    The distributed engine currently supports most of Polars API and datatypes. Follow [the tracking issue](https://github.com/pola-rs/polars/issues/21487) to stay up to date.
+Polars has always been optimized for fast and efficient performance on a single machine. The
+distributed engine extends this to datasets that are too large to fit on a single node, spreading
+both computation and memory across a cluster so you can query at any scale.
 
 ## Using distributed engine
 
@@ -34,7 +26,7 @@ of data) using Polars Cloud distributed engine.
 
 !!! example "Run the example yourself"
 
-    Copy and paste the code to you environment and run it. The data is hosted in S3 buckets that use [AWS Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html), meaning you pay only for pays the cost of the request and the data download from the bucket. The storage costs are covered.
+    Copy and paste the code to you environment and run it. The data is hosted in S3 buckets that use [AWS Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html), meaning you pay only for the transfer cost of the request and the data download from the bucket. The storage costs are covered.
 
 First import the required packages and point to the S3 bucket. In this example, we take one of the
 PDS-H benchmarks queries for demonstration purposes.

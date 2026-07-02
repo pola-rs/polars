@@ -3,10 +3,10 @@ use std::task::{Poll, ready};
 
 use bytes::Bytes;
 use futures::FutureExt;
+use polars_core::runtime::ASYNC;
 
 use crate::cloud::cloud_writer::CloudWriter;
-use crate::pl_async;
-use crate::utils::file::WriteableTrait;
+use crate::utils::file::WritableTrait;
 
 /// Wrapper on [`CloudWriter`] that implements [`std::io::Write`] and [`tokio::io::AsyncWrite`].
 pub struct CloudWriterIoTraitWrap {
@@ -112,9 +112,7 @@ impl CloudWriterIoTraitWrap {
         if !matches!(self.state, WriterState::Ready(_)) {
             match &mut self.state {
                 WriterState::Ready(_) => unreachable!(),
-                WriterState::Poll(..) => {
-                    pl_async::get_runtime().block_in_place_on(self.finish_active_poll())?
-                },
+                WriterState::Poll(..) => ASYNC.block_in_place_on(self.finish_active_poll())?,
                 WriterState::Finished => panic!(),
             };
         }
@@ -149,7 +147,7 @@ impl std::io::Write for CloudWriterIoTraitWrap {
             }
         }
 
-        pl_async::get_runtime().block_in_place_on(async {
+        ASYNC.block_in_place_on(async {
             self.finish_active_poll().await?;
 
             let writer = self.get_writer_mut_from_ready_state().unwrap();
@@ -176,7 +174,7 @@ impl std::io::Write for CloudWriterIoTraitWrap {
             return Ok(());
         }
 
-        pl_async::get_runtime().block_in_place_on(async {
+        ASYNC.block_in_place_on(async {
             self.finish_active_poll().await?;
 
             self.get_writer_mut_from_ready_state()
@@ -189,9 +187,9 @@ impl std::io::Write for CloudWriterIoTraitWrap {
     }
 }
 
-impl WriteableTrait for CloudWriterIoTraitWrap {
+impl WritableTrait for CloudWriterIoTraitWrap {
     fn close(&mut self) -> std::io::Result<()> {
-        pl_async::get_runtime().block_in_place_on(async {
+        ASYNC.block_in_place_on(async {
             self.finish_active_poll().await?;
 
             let mut writer = self.take_writer_from_ready_state().unwrap();

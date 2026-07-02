@@ -9,6 +9,7 @@ from operator import itemgetter
 from typing import (
     TYPE_CHECKING,
     Any,
+    cast,
 )
 
 import polars._reexport as pl
@@ -37,9 +38,9 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
-    issue_warning,
     parse_version,
 )
+from polars._warnings import issue_warning
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
@@ -64,6 +65,8 @@ if TYPE_CHECKING:
     from polars import DataFrame, Series
     from polars._plr import PySeries
     from polars._typing import (
+        ArrayLike,
+        NonNestedLiteral,
         Orientation,
         PolarsDataType,
         SchemaDefinition,
@@ -74,7 +77,7 @@ _MIN_NUMPY_SIZE_FOR_MULTITHREADING = 1000
 
 
 def dict_to_pydf(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     schema: SchemaDefinition | None = None,
     *,
     schema_overrides: SchemaDict | None = None,
@@ -112,36 +115,23 @@ def dict_to_pydf(
         if count_numpy >= 3:
             # yes, multi-threading was easier in python here; we cannot have multiple
             # threads running python and release the gil in pyo3 (it will deadlock).
+            from concurrent.futures import ThreadPoolExecutor
 
-            # (note: 'dummy' is threaded)
-            # We catch FileNotFoundError: see 16675
-            try:
-                import multiprocessing.dummy
-
-                pool_size = thread_pool_size()
-                with multiprocessing.dummy.Pool(pool_size) as pool:
-                    data = dict(
-                        zip(
-                            column_names,
-                            pool.map(
-                                lambda t: (
-                                    pl.Series(t[0], t[1], nan_to_null=nan_to_null)
-                                    if isinstance(t[1], np.ndarray)
-                                    else t[1]
-                                ),
-                                list(data.items()),
+            pool_size = thread_pool_size()
+            with ThreadPoolExecutor(max_workers=pool_size) as pool:
+                data = dict(
+                    zip(
+                        column_names,
+                        pool.map(
+                            lambda t: (
+                                pl.Series(t[0], t[1], nan_to_null=nan_to_null)
+                                if isinstance(t[1], np.ndarray)
+                                else t[1]
                             ),
-                            strict=True,
-                        )
+                            list(data.items()),
+                        ),
+                        strict=True,
                     )
-            except FileNotFoundError:
-                return dict_to_pydf(
-                    data=data,
-                    schema=schema,
-                    schema_overrides=schema_overrides,
-                    strict=strict,
-                    nan_to_null=nan_to_null,
-                    allow_multithreaded=False,
                 )
 
     if not data and schema_overrides:
@@ -318,13 +308,15 @@ def _post_apply_columns(
     for i, col in enumerate(columns):
         dtype = dtypes.get(col)
         pydf_dtype = pydf_dtypes[i]
+        if dtype is None:
+            continue
         if dtype == Categorical != pydf_dtype:
             column_casts.append(F.col(col).cast(Categorical, strict=strict)._pyexpr)
         elif dtype == Enum != pydf_dtype:
             column_casts.append(F.col(col).cast(dtype, strict=strict)._pyexpr)
         elif structs and (struct := structs.get(col)) and struct != pydf_dtype:
             column_casts.append(F.col(col).cast(struct, strict=strict)._pyexpr)
-        elif dtype is not None and dtype != Unknown and dtype != pydf_dtype:
+        elif dtype != Unknown and dtype != pydf_dtype:
             if dtype.is_temporal() and dtype != Duration and pydf_dtype == String:
                 temporal_cast = F.col(col).str.strptime(dtype, strict=strict)._pyexpr  # type: ignore[arg-type]
                 column_casts.append(temporal_cast)
@@ -343,7 +335,7 @@ def _post_apply_columns(
 
 
 def _expand_dict_values(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     *,
     schema_overrides: SchemaDict | None = None,
     strict: bool = True,
@@ -391,6 +383,7 @@ def _expand_dict_values(
                     updated_data[name] = s
 
                 elif arrlen(val) is not None or _is_generator(val):
+                    val = cast("Iterable[Any]", val)  # help type-checkers
                     updated_data[name] = pl.Series(
                         name=name,
                         values=val,
@@ -398,8 +391,8 @@ def _expand_dict_values(
                         strict=strict,
                         nan_to_null=nan_to_null,
                     )
-                elif val is None or isinstance(  # type: ignore[redundant-expr]
-                    val, (int, float, str, bool, date, datetime, time, timedelta)
+                elif val is None or isinstance(
+                    val, (int, float, str, bytes, bool, date, datetime, time, timedelta)
                 ):
                     updated_data[name] = F.repeat(
                         val, array_len, dtype=dtype, eager=True
@@ -411,8 +404,12 @@ def _expand_dict_values(
 
         elif all((arrlen(val) == 0) for val in data.values()):
             for name, val in data.items():
+                val = cast("Iterable[Any]", val)  # help type-checkers
                 updated_data[name] = pl.Series(
-                    name, values=val, dtype=dtypes.get(name), strict=strict
+                    name,
+                    values=val,
+                    dtype=dtypes.get(name),
+                    strict=strict,
                 )
 
         elif all((arrlen(val) is None) for val in data.values()):
@@ -429,19 +426,17 @@ def _expand_dict_values(
 
 
 def _expand_dict_data(
-    data: Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series],
+    data: Mapping[str, ArrayLike | NonNestedLiteral | None],
     dtypes: SchemaDict,
     *,
     strict: bool = True,
-) -> Mapping[str, Sequence[object] | Mapping[str, Sequence[object]] | Series]:
+) -> Mapping[str, ArrayLike | NonNestedLiteral | None]:
     """
     Expand any unsized generators/iterators.
 
     (Note that `range` is sized, and will take a fast-path on Series init).
     """
-    expanded_data: dict[
-        str, Sequence[object] | Mapping[str, Sequence[object]] | Series
-    ] = {}
+    expanded_data: dict[str, ArrayLike | NonNestedLiteral | None] = {}
     for name, val in data.items():
         expanded_data[name] = (
             pl.Series(name, val, dtypes.get(name), strict=strict)
@@ -703,7 +698,7 @@ def _sequence_of_tuple_to_pydf(
 @_sequence_to_pydf_dispatcher.register(Mapping)
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: dict[str, Any],  # noqa: ARG001
+    first_element: Mapping[str, Any],  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,

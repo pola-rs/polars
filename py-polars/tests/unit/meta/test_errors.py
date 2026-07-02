@@ -40,6 +40,14 @@ def test_error_on_reducing_map() -> None:
             pl.map_batches(["t", "y"], np.mean, return_dtype=pl.Float64)
         )
 
+    enum = pl.Enum(
+        [
+            "(-inf, 1]",
+            "(1, 2]",
+            "(2, 3]",
+            "(3, inf]",
+        ]
+    )
     df = pl.DataFrame({"x": [1, 2, 3, 4], "group": [1, 2, 1, 2]})
     with pytest.raises(TypeError, match=r"`map` with `returns_scalar=False`"):
         df.select(
@@ -48,7 +56,10 @@ def test_error_on_reducing_map() -> None:
                 lambda x: x.cut(breaks=[1, 2, 3], include_breaks=True).struct.unnest(),
                 is_elementwise=True,
                 return_dtype=pl.Struct(
-                    {"breakpoint": pl.Int64, "cat": pl.Categorical()}
+                    {
+                        "breakpoint": pl.Int64,
+                        "category": enum,
+                    }
                 ),
             )
             .over("group")
@@ -69,7 +80,7 @@ def test_error_on_reducing_map() -> None:
                 "breakpoint": [1.0, 2.0, 3.0, float("inf")],
                 "category": ["(-inf, 1]", "(1, 2]", "(2, 3]", "(3, inf]"],
             },
-            schema_overrides={"category": pl.Categorical()},
+            schema_overrides={"category": enum},
         ),
     )
 
@@ -439,7 +450,8 @@ def test_take_negative_index_is_oob() -> None:
 def test_string_numeric_arithmetic_err() -> None:
     df = pl.DataFrame({"s": ["x"]})
     with pytest.raises(
-        InvalidOperationError, match=r"arithmetic on string and numeric not allowed"
+        InvalidOperationError,
+        match=r"arithmetic on dtypes str and dyn int is not allowed \(lhs: column 's'",
     ):
         df.select(pl.col("s") + 1)
 
@@ -762,3 +774,44 @@ def test_raies_on_mismatch_column_length_binary_expr() -> None:
                 pl.col("c").head(pl.col("c").first()),
             )
         )
+
+
+def test_column_not_found_lists_available() -> None:
+    df = pl.DataFrame({"foo": [1, 2], "bar": [3, 4], "baz": [5, 6]})
+    with pytest.raises(ColumnNotFoundError, match=r"(?s).*foo.*bar.*baz.*"):
+        df.select("missing")
+
+
+def test_column_not_found_suggests_similar() -> None:
+    df = pl.DataFrame({"alpha": [1, 2], "beta": [3, 4]})
+    with pytest.raises(ColumnNotFoundError, match=r"Did you mean \"alpha\""):
+        df.select("alphe")
+
+
+def test_str_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'split'"):
+        pl.col("a").str.spliit("x")  # type: ignore[attr-defined]
+
+
+def test_dt_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'hour'"):
+        pl.col("a").dt.houur()  # type: ignore[attr-defined]
+
+
+def test_list_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'shift'"):
+        pl.col("a").list.shiift()  # type: ignore[attr-defined]
+
+
+def test_struct_namespace_typo_suggests() -> None:
+    with pytest.raises(AttributeError, match="Did you mean: 'rename_fields'"):
+        pl.col("a").struct.renam_fields([])  # type: ignore[attr-defined]
+
+
+def test_dtype_mismatch_names_column_and_dtypes() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    with pytest.raises(
+        InvalidOperationError,
+        match=r"arithmetic on dtypes i64 and str is not allowed \(lhs: column 'a', rhs: column 'b'\)",
+    ):
+        df.select(pl.col("a") + pl.col("b"))

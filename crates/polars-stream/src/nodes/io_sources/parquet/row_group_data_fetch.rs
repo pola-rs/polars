@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use polars_buffer::Buffer;
 use polars_core::prelude::PlHashMap;
+use polars_core::runtime::ASYNC;
 use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
@@ -41,6 +42,46 @@ pub(super) struct RowGroupDataFetcher {
 }
 
 impl RowGroupDataFetcher {
+    /// Returns the projected byte size of the next row group to be fetched, without advancing
+    /// state or spawning any I/O. Returns None if there are no more row groups.
+    pub(super) fn peek_next_bytes(&self) -> Option<u64> {
+        // Walk forward from current position to find the next unmasked row group
+        let mut slice_start = self.row_group_slice.start;
+        let mut mask_offset = 0;
+
+        while slice_start < self.row_group_slice.end {
+            // Check mask
+            if let Some(mask) = &self.row_group_mask {
+                if mask.get_bit(mask_offset) {
+                    // masked out, skip
+                    slice_start += 1;
+                    mask_offset += 1;
+                    continue;
+                }
+            }
+
+            let row_group_metadata = &self.metadata.row_groups[slice_start];
+
+            let n_bytes = match self.byte_source.as_ref() {
+                DynByteSource::Buffer(_) => 0, // in-memory, no budget needed
+                _ if !self.is_full_projection => get_row_group_byte_ranges_for_projection(
+                    row_group_metadata,
+                    &mut self.projection.iter().map(|x| &x.arrow_field().name),
+                )
+                .map(|r| r.len() as u64)
+                .sum(),
+                _ => row_group_metadata
+                    .byte_ranges_iter()
+                    .map(|x| x.end - x.start)
+                    .sum(),
+            };
+
+            return Some(n_bytes);
+        }
+
+        None
+    }
+
     pub(super) async fn next(
         &mut self,
     ) -> Option<PolarsResult<tokio_handle_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
@@ -82,9 +123,8 @@ impl RowGroupDataFetcher {
             let projection = self.projection.clone();
             let is_full_projection = self.is_full_projection;
             let memory_prefetch_func = self.memory_prefetch_func;
-            let io_runtime = polars_io::pl_async::get_runtime();
 
-            let handle = io_runtime.spawn(async move {
+            let handle = ASYNC.spawn(async move {
                 let row_group_metadata = &metadata.row_groups[idx];
                 let fetched_bytes =
                     if let DynByteSource::Buffer(mem_slice) = current_byte_source.as_ref() {

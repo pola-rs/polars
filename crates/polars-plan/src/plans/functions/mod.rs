@@ -135,15 +135,18 @@ impl FunctionIR {
     pub fn is_streamable(&self) -> bool {
         use FunctionIR::*;
         match self {
-            Rechunk => false,
-            FastCount { .. } | Unnest { .. } | Explode { .. } => true,
+            Unnest { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
+            Hint(_) => true,
+
             Opaque { streamable, .. } => *streamable,
             #[cfg(feature = "python")]
             OpaquePython(OpaquePythonUdf { streamable, .. }) => *streamable,
+
+            Rechunk => false,
+            FastCount { .. } => false,
             RowIndex { .. } => false,
-            Hint(_) => true,
         }
     }
 
@@ -209,7 +212,10 @@ impl FunctionIR {
                 scan_type,
                 alias,
                 cloud_options,
-            } => count::count_rows(sources, scan_type, alias.clone(), cloud_options.as_ref()),
+            } => {
+                debug_assert_eq!(df.shape(), (0, 0));
+                count::count_rows(sources, scan_type, alias.clone(), cloud_options.as_ref())
+            },
             Rechunk => {
                 df.rechunk_mut_par();
                 Ok(df)

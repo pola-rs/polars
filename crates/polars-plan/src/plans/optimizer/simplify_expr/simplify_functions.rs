@@ -4,11 +4,12 @@ pub(super) fn optimize_functions(
     input: Vec<ExprIR>,
     function: IRFunctionExpr,
     options: FunctionOptions,
+    ctx: OptimizeExprContext,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<AExpr>> {
     let out = match function {
         // is_null().any() -> null_count() > 0
-        // is_not_null().any() ->  null_count() < len()
+        // is_not_null().any() -> ~is_empty(ignore_nulls=True)
         // CORRECTNESS: we can ignore 'ignore_nulls' since is_null/is_not_null never produces NULLS
         IRFunctionExpr::Boolean(IRBooleanFunction::Any { ignore_nulls: _ }) => {
             let input_node = expr_arena.get(input[0].node());
@@ -26,26 +27,12 @@ pub(super) fn optimize_functions(
                     input,
                     function: IRFunctionExpr::Boolean(IRBooleanFunction::IsNotNull),
                     options: _,
-                } => {
-                    // we should perform optimization only if the original expression is a column
-                    // so in case of disabled CSE, we will not suffer from performance regression
-                    if input.len() == 1 {
-                        let is_not_null_input_node = input[0].node();
-                        match expr_arena.get(is_not_null_input_node) {
-                            AExpr::Column(_) => Some(AExpr::BinaryExpr {
-                                op: Operator::Lt,
-                                left: expr_arena.add(new_null_count(input)),
-                                right: expr_arena.add(AExpr::Agg(IRAggExpr::Count {
-                                    input: is_not_null_input_node,
-                                    include_nulls: true,
-                                })),
-                            }),
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    }
-                },
+                } => Some(
+                    AExprBuilder::new_from_node(input[0].node())
+                        .is_empty(true, expr_arena)
+                        .not(expr_arena)
+                        .build(expr_arena),
+                ),
                 _ => None,
             }
         },
@@ -98,6 +85,7 @@ pub(super) fn optimize_functions(
                 AExpr::Sort { expr, options } => {
                     let mut options = *options;
                     options.descending = !options.descending;
+                    options.nulls_last = !options.nulls_last;
                     Some(AExpr::Sort {
                         expr: *expr,
                         options,
@@ -109,8 +97,8 @@ pub(super) fn optimize_functions(
                     sort_options,
                 } => {
                     let mut sort_options = sort_options.clone();
-                    let reversed_descending = sort_options.descending.iter().map(|x| !*x).collect();
-                    sort_options.descending = reversed_descending;
+                    sort_options.descending = sort_options.descending.iter().map(|x| !*x).collect();
+                    sort_options.nulls_last = sort_options.nulls_last.iter().map(|x| !*x).collect();
                     Some(AExpr::SortBy {
                         expr: *expr,
                         by: by.clone(),
@@ -147,6 +135,30 @@ pub(super) fn optimize_functions(
             } else {
                 None
             }
+        },
+        #[cfg(feature = "is_in")]
+        IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }) if ctx.in_filter => {
+            let haystack = expr_arena.get(input[1].node());
+            let empty = match haystack {
+                AExpr::Literal(LiteralValue::Series(s)) => s.is_empty(),
+                AExpr::Literal(LiteralValue::Scalar(s)) => match s.value() {
+                    AnyValue::List(inner) => inner.is_empty(),
+                    #[cfg(feature = "dtype-array")]
+                    AnyValue::Array(inner, _) => inner.is_empty(),
+                    _ => false,
+                },
+                AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::List(list))) => match list {
+                    DynListLiteralValue::Str(vs) => vs.is_empty(),
+                    DynListLiteralValue::Int(vs) => vs.is_empty(),
+                    DynListLiteralValue::Float(vs) => vs.is_empty(),
+                    DynListLiteralValue::List(vs) => vs.is_empty(),
+                },
+                _ => false,
+            };
+            if empty {
+                return Ok(Some(AExpr::Literal(Scalar::from(false).into())));
+            }
+            None
         },
         IRFunctionExpr::Boolean(IRBooleanFunction::Not) => {
             let y = expr_arena.get(input[0].node());

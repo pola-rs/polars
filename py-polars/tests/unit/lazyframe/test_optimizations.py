@@ -1,7 +1,6 @@
 import datetime as dt
 import io
 import itertools
-import typing
 
 import pyarrow as pa
 import pyarrow.dataset as pad
@@ -47,6 +46,10 @@ def test_is_null_followed_by_any() -> None:
     result_lf = lf.group_by("group", maintain_order=True).agg(
         pl.col("val").is_null().any()
     )
+    plan = result_lf.explain()
+    assert ".has_nulls()" in plan
+    assert "null_count" not in plan
+    assert "is_null" not in plan
     assert_frame_equal(expected_df, result_lf.collect())
 
     # edge case of empty series
@@ -85,7 +88,7 @@ def test_is_not_null_followed_by_any() -> None:
         pl.col("val").is_not_null().any()
     )
 
-    assert r'[[(col("val").null_count()) < (col("val").len())]]' in result_lf.explain()
+    assert ".is_empty_ignore_nulls().not()" in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -96,7 +99,7 @@ def test_is_not_null_followed_by_any() -> None:
         .explain()
     )
     assert "null_count" not in non_optimized_result_plan
-    assert "is_not_null" in non_optimized_result_plan
+    assert "is_empty_ignore_nulls().not()" in non_optimized_result_plan
 
     # edge case of empty series
     lf = pl.LazyFrame({"val": []}, schema={"val": pl.Int32})
@@ -207,6 +210,68 @@ def test_drop_nulls_followed_by_count() -> None:
     )
     assert "null_count" not in non_optimized_result_plan
     assert "drop_nulls" in non_optimized_result_plan
+
+
+@pytest.mark.parametrize(
+    ("expr", "optimized_expr"),
+    [
+        (pl.col("val").len() == 0, ".is_empty()"),
+        (pl.col("val").len() < 1, ".is_empty()"),
+        (pl.col("val").len() <= 0, ".is_empty()"),
+        (pl.col("val").len() != 0, ".is_empty().not()"),
+        (pl.col("val").len() > 0, ".is_empty().not()"),
+        (pl.col("val").len() >= 0, "true"),
+        (pl.col("val").len() >= 1, ".is_empty().not()"),
+        (pl.col("val").len() < 0, "false"),
+        (pl.col("val").len() == -1, "false"),
+        (pl.col("val").len() != -1, "true"),
+        (pl.lit(0) == pl.col("val").len(), ".is_empty()"),
+        (pl.lit(1) > pl.col("val").len(), ".is_empty()"),
+        (pl.lit(0) >= pl.col("val").len(), ".is_empty()"),
+        (pl.lit(0) <= pl.col("val").len(), "true"),
+        (pl.lit(0) > pl.col("val").len(), "false"),
+        (pl.lit(-1) == pl.col("val").len(), "false"),
+        (pl.lit(-1) != pl.col("val").len(), "true"),
+        (pl.lit(0) != pl.col("val").len(), ".is_empty().not()"),
+        (pl.lit(0) < pl.col("val").len(), ".is_empty().not()"),
+        (pl.lit(1) <= pl.col("val").len(), ".is_empty().not()"),
+        (pl.col("val").null_count() == 0, ".has_nulls().not()"),
+        (pl.col("val").null_count() < 1, ".has_nulls().not()"),
+        (pl.col("val").null_count() <= 0, ".has_nulls().not()"),
+        (pl.col("val").null_count() != 0, ".has_nulls()"),
+        (pl.col("val").null_count() > 0, ".has_nulls()"),
+        (pl.col("val").null_count() >= 0, "true"),
+        (pl.col("val").null_count() >= 1, ".has_nulls()"),
+        (pl.col("val").null_count() < 0, "false"),
+        (pl.col("val").null_count() == -1, "false"),
+        (pl.col("val").null_count() != -1, "true"),
+        (pl.lit(0) == pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(1) > pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(0) >= pl.col("val").null_count(), ".has_nulls().not()"),
+        (pl.lit(0) <= pl.col("val").null_count(), "true"),
+        (pl.lit(0) > pl.col("val").null_count(), "false"),
+        (pl.lit(-1) == pl.col("val").null_count(), "false"),
+        (pl.lit(-1) != pl.col("val").null_count(), "true"),
+        (pl.lit(0) != pl.col("val").null_count(), ".has_nulls()"),
+        (pl.lit(0) < pl.col("val").null_count(), ".has_nulls()"),
+        (pl.lit(1) <= pl.col("val").null_count(), ".has_nulls()"),
+    ],
+)
+def test_len_null_count_comparison_optimized(
+    expr: pl.Expr, optimized_expr: str
+) -> None:
+    lf = pl.LazyFrame({"group": [0, 0, 1, 2], "val": [6, None, 5, None]})
+    result_lf = lf.group_by("group", maintain_order=True).agg(expr.alias("out"))
+
+    plan = result_lf.explain()
+    assert optimized_expr in plan
+    assert ".len()" not in plan
+    assert ".null_count()" not in plan
+
+    assert_frame_equal(
+        result_lf.collect(),
+        result_lf.collect(optimizations=pl.QueryOptFlags(simplify_expression=False)),
+    )
 
 
 def test_collapse_joins() -> None:
@@ -444,6 +509,10 @@ def test_slice_pushdown_expr_25473() -> None:
     )
 
     assert_frame_equal(
+        lf.select((pl.col("a") + 1).slice(1, 2)).collect(), pl.DataFrame({"a": [2, 3]})
+    )
+
+    assert_frame_equal(
         lf.select(
             a=(
                 pl.when(pl.col("a") == 1).then(pl.lit("one")).otherwise(pl.lit("other"))
@@ -579,7 +648,7 @@ def test_concat_str_sortedness_26466() -> None:
         .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
     )
 
-    assert "sorted-group-by" in typing.cast("str", dot)
+    assert "sorted-group-by" in dot
 
     for e in [pl.concat_str("x", pl.lit("c")), pl.concat_str("x", ignore_nulls=True)]:
         dot = (
@@ -589,7 +658,7 @@ def test_concat_str_sortedness_26466() -> None:
             .show_graph(engine="streaming", plan_stage="physical", raw_output=True)
         )
 
-        assert "sorted-group-by" not in typing.cast("str", dot)
+        assert "sorted-group-by" not in dot
 
 
 def test_select_all_columns_no_projection() -> None:
@@ -628,3 +697,532 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
         q.collect(),
         pl.DataFrame({"x": [4, 5]}),
     )
+
+
+def test_drop_nulls_first_last_optimization_25478() -> None:
+    lf = pl.LazyFrame({"a": [None, 1, None, 3, None]})
+    lf = lf.select(a=pl.col.a.drop_nulls().first(), b=pl.col.a.drop_nulls().last())
+
+    explain = lf.explain(engine="streaming")
+    assert "first(" not in explain
+    assert "first_non_null(" in explain
+    assert "last(" not in explain
+    assert "last_non_null(" in explain
+
+    assert_frame_equal(lf.collect(), pl.DataFrame({"a": [1], "b": [3]}))
+
+
+def test_fast_count_predicate_27168() -> None:
+    csv = b"""a,b
+true,1
+false,2
+"""
+    assert pl.scan_csv(csv).filter(pl.col.a).select(pl.len()).collect().item() == 1
+
+
+def test_slice_pushdown_expr_create_ir_slice_26592() -> None:
+    lf = pl.scan_csv(
+        pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}).write_csv().encode()
+    )
+
+    q = lf.select(
+        a_first=pl.min_horizontal(
+            pl.min_horizontal(pl.all()), 99, pl.col("a") + pl.col("b") + 999
+        ).first()
+    )
+    plan = q.explain(optimizations=pl.QueryOptFlags(comm_subexpr_elim=False))
+
+    assert "SLICE: Positive { offset: 0, len: 1 }" in plan
+    # Temporarily inserted expr slice should be pruned
+    assert ".slice(" not in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_first", [0], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(a_first=pl.first("a"), b_first=pl.first("b"))
+    plan = q.explain()
+
+    assert "SLICE: Positive { offset: 0, len: 1 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame({"a_first": 0, "b_first": 9}),
+    )
+
+    q = lf.select(
+        a_first=pl.first("a"),
+        a_head1=pl.col("a").head(1),
+        a_head3_sum=pl.col("a").head(3).sum(),
+    )
+    plan = q.explain()
+    assert "SLICE: Positive { offset: 0, len: 3 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_first", [0], dtype=pl.Int64),
+                pl.Series("a_head1", [0], dtype=pl.Int64),
+                pl.Series("a_head3_sum", [3], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(
+        a_first=pl.first("a"),
+        a_slice3=pl.col("a").slice(3, 1).sum(),
+    )
+    plan = q.explain()
+    assert "SLICE: Positive { offset: 0, len: 4 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_first", [0], dtype=pl.Int64),
+                pl.Series("a_slice3", [3], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(a_last=pl.last("a"))
+    plan = q.explain()
+    assert "SLICE: Negative { offset_from_end: 1, len: 1 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_last", [4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(a_last=pl.last("a"), tail_3=pl.col("a").tail(3))
+    plan = q.explain()
+    assert "SLICE: Negative { offset_from_end: 3, len: 3 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_last", [4, 4, 4], dtype=pl.Int64),
+                pl.Series("tail_3", [2, 3, 4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    # NULL length with negative offset -> set len to (-offset) as IdxSize
+    q = lf.select(a_off_neg3=pl.col("a").slice(-3))
+    plan = q.explain()
+    assert "SLICE: Negative { offset_from_end: 3, len: 3 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_off_neg3", [2, 3, 4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_slice_pushdown_expr_no_common_26592() -> None:
+    lf = pl.scan_csv(
+        pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}).write_csv().encode()
+    )
+
+    q = lf.select(
+        a_first=pl.first("a"),
+        b_sort_first=pl.col("b").sort().first(),
+    )
+    plan = q.explain()
+    assert "SLICE: " not in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a_first": 0, "b_sort_first": 5}))
+
+
+def test_slice_pushdown_expr_prune_slice_26592() -> None:
+    lf = pl.scan_csv(
+        pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}).write_csv().encode()
+    )
+
+    q = lf.select(
+        a_1_1=pl.col("a").slice(1, 1).max(),
+        b_1_2=pl.col("b").slice(1, 2),
+    )
+    plan = q.explain()
+
+    # slice(1, 2) should be pruned from the expression tree
+    assert 'col("b").alias("b_1_2")' in plan
+    assert '.slice(offset=0, length=1).max().alias("a_1_1")' in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a_1_1": [1, 1],
+                "b_1_2": [8, 7],
+            }
+        ),
+    )
+
+    q = lf.select(
+        a_n2_1=pl.col("a").slice(-2, 1).max(),
+        b_n2_2=pl.col("b").slice(-2, 2),
+    )
+    plan = q.explain()
+
+    # slice(-2, 2) should be pruned from the expression tree
+    assert 'col("b").alias("b_n2_2")' in plan
+    assert '.slice(offset=-2, length=1).max().alias("a_n2_1")' in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {
+                "a_n2_1": [3, 3],
+                "b_n2_2": [6, 5],
+            }
+        ),
+    )
+
+
+def test_slice_pushdown_expr_create_ir_slice_offset_correction_26592() -> None:
+    lf = pl.scan_csv(
+        pl.DataFrame({"a": [0, 1, 2, 3, 4], "b": [9, 8, 7, 6, 5]}).write_csv().encode()
+    )
+
+    q = lf.select(a_off2=pl.col("a").slice(2, 1), a_off3=pl.col("a").slice(3, 1))
+    plan = q.explain()
+    assert "SLICE: Positive { offset: 2, len: 2 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_off2", [2], dtype=pl.Int64),
+                pl.Series("a_off3", [3], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lf.select(a_off2=pl.col("a").slice(-2, 1), a_off3=pl.col("a").slice(-3, 1))
+    plan = q.explain()
+    assert "SLICE: Negative { offset_from_end: 3, len: 2 }" in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_off2", [3], dtype=pl.Int64),
+                pl.Series("a_off3", [2], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    # NULL length -> IdxSize::MAX
+    q = lf.select(a_off2=pl.col("a").slice(2))
+    plan = q.explain()
+    assert "SLICE: Positive { offset: 2, len: " in plan
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("a_off2", [2, 3, 4], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_slice_pushdown_expr_height_rules() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4]})
+
+    # Single unknown height - push
+    q = lf.select((((pl.lit(pl.Series("x", [0, 1, 2, 3, 4])) + 1) + 2) + 3).head(1))
+    plan = q.explain()
+    assert "Series[x].slice(offset=0, length=1)" in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 6}))
+
+    # Multiple unknown heights - block at binary expr
+    q = lf.select(
+        (
+            (
+                (
+                    (pl.lit(pl.Series("x", [0, 1, 2, 3, 4])) + 1)
+                    + pl.lit(pl.Series([9, 9, 9, 9, 9]))
+                )
+                + 311
+            )
+            + 312
+        ).head(1)
+    )
+    plan = q.explain()
+    assert (
+        plan.index(".slice(offset=0, length=1)") < plan.index("311") < plan.index("312")
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"x": 633}))
+
+    # Mixed column<>unknown, do not push
+    q = lf.select((pl.col("a") + pl.lit(pl.Series("x", [0, 1, 2, 3, 4]))).slice(1, 1))
+    plan = q.explain()
+    assert plan.index(".slice(offset=1, length=1)]") > plan.index("Series")
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 2}))
+
+    # All column, push
+    q = lf.select((pl.col("a") + (pl.col("a") + 1)).slice(1, 1))
+    plan = q.explain()
+    assert ".slice(" not in plan
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 3}))
+
+
+def test_slice_pushdown_expr_leaf_ae_without_col_input_27820() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]})
+    q = lf.select(pl.first("a"), pl.len().cast(pl.Int64))
+    out = q.collect()
+
+    assert_frame_equal(out, pl.DataFrame({"a": 1, "len": 3}))
+
+    q = lf.select(pl.first("a"), pl.lit(pl.Series("s", [-1, -2, -3])).first())
+    out = q.collect()
+
+    assert_frame_equal(out, pl.DataFrame({"a": 1, "s": -1}))
+
+
+def test_slice_pushdown_joins_27199() -> None:
+    lhs = pl.LazyFrame({"a": [0, 0]})
+    rhs = pl.LazyFrame({"a": [0, 0]})
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    # Left join, push to left
+    q = lhs.join(rhs, on="a", how="left").head(1)
+    plan = q.explain()
+
+    assert plan.index("SLICE") > plan.index("LEFT PLAN")
+    assert q.collect().height == 1
+
+    # Right join, push to right
+    q = rhs.join(lhs, on="a", how="right").head(1)
+    plan = q.explain()
+
+    assert plan.index("SLICE") > plan.index("RIGHT PLAN")
+    assert q.collect().height == 1
+
+    # Full join, push to both
+    q = lhs.join(rhs, on="a", how="full").head(1)
+    plan = q.explain()
+
+    i = plan.index("RIGHT PLAN ON")
+    assert plan[:i].index("SLICE") > plan[:i].index("LEFT PLAN")
+    assert plan[i:].index("SLICE") > plan[i:].index("RIGHT PLAN")
+
+    assert q.collect().height == 1
+
+
+def test_slice_pushdown_joins_nonzero_offset_27199() -> None:
+    lhs = pl.LazyFrame({"a": [0, 1]}).with_row_index()
+    rhs = pl.LazyFrame({"a": [0, 0, 1, 1]}).with_row_index()
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left").slice(1, 2)
+    plan = q.explain()
+
+    assert "SLICE: Positive { offset: 0, len: 3 }" in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index", [0, 1], dtype=pl.Int64),
+                pl.Series("a", [0, 1], dtype=pl.Int64),
+                pl.Series("index_right", [1, 2], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+    q = lhs.join(rhs, on="a", how="left", maintain_order="left").slice(-3, 2)
+    plan = q.explain()
+
+    assert "SLICE: Negative { offset_from_end: 3, len: 3 }" in plan
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            [
+                pl.Series("index", [0, 1], dtype=pl.Int64),
+                pl.Series("a", [0, 1], dtype=pl.Int64),
+                pl.Series("index_right", [1, 2], dtype=pl.Int64),
+            ]
+        ),
+    )
+
+
+def test_slice_pushdown_from_expr_to_join_26553() -> None:
+    lhs = pl.LazyFrame({"a": [0, 0]})
+    rhs = pl.LazyFrame({"a": [0, 0]})
+
+    lhs = pl.scan_csv(lhs.collect().write_csv().encode())
+    rhs = pl.scan_csv(rhs.collect().write_csv().encode())
+
+    # Left join, push to left
+    q = lhs.join(rhs, on="a", how="left").select(pl.last("*"))
+
+    plan = q.explain()
+    assert plan.index("SLICE") > plan.index("LEFT PLAN")
+
+    assert q.collect().height == 1
+
+
+def test_forbid_flatten_sliced_union_27455() -> None:
+    df = pl.DataFrame({"a": [0, 0, 0, 0, 0]})
+    q1 = pl.concat([(df + 1).lazy(), (df + 10).lazy()])
+    q2 = pl.concat([(df + 100).lazy(), (df + 1000).lazy()])
+    q = pl.concat([q1.head(1), q2.head(1)])
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [1, 100]}))
+
+
+def test_lazyframe_gather_select_len() -> None:
+    lf = pl.LazyFrame({"a": [0, 1, 2, 3, 4], "b": True})
+
+    q = lf.gather([1, None, 99], null_on_oob=True).select(pl.len())
+    plan = q.explain()
+
+    assert "GATHER" not in plan
+    assert q.collect().item() == 3
+
+    q = lf.gather([1, None, 99], null_on_oob=False).select(pl.len())
+
+    with pytest.raises(pl.exceptions.OutOfBoundsError):
+        q.collect()
+
+
+def test_hconcat_reorder_projection_push_to_inputs() -> None:
+    hconcat = pl.concat(
+        [
+            pl.LazyFrame(schema={"a": pl.Null, "b": pl.Null}),
+            pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
+        ],
+        how="horizontal",
+        strict=True,
+    )
+
+    q = hconcat.select("b", "a", "d", "c")
+    plan = q.explain()
+
+    assert plan.startswith("HCONCAT")
+    assert q.collect().columns == ["b", "a", "d", "c"]
+
+    q = hconcat.select("b", "d", "c")
+    plan = q.explain()
+
+    assert plan.startswith("HCONCAT")
+    assert q.collect().columns == ["b", "d", "c"]
+
+    # Columns are not in input order so we need to project in post.
+    q = hconcat.select("c", "a")
+    plan = q.explain()
+
+    assert plan.startswith("simple π")
+    assert q.collect().columns == ["c", "a"]
+
+
+def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
+    q = pl.concat(
+        [
+            pl.LazyFrame(
+                [{"B": None, "C": None}],
+                {"B": pl.Boolean, "C": pl.Categorical()},
+            ).select("C", "B"),
+            pl.LazyFrame(
+                [{"D": "1"}],
+                {"D": pl.String()},
+            ),
+        ],
+        how="horizontal",
+        strict=True,
+    ).select("B", "C")
+
+    f = io.BytesIO()
+    q.sink_parquet(f)
+
+    assert_frame_equal(
+        pl.scan_parquet(f).collect(),
+        pl.DataFrame(
+            {"B": None, "C": None}, schema={"B": pl.Boolean, "C": pl.Categorical}
+        ),
+    )
+
+
+def test_projection_pushdown_with_columns_27914() -> None:
+    q = (
+        pl.LazyFrame({"x": [1, 2], "y": [1, 2]})
+        .with_row_index("index")
+        .with_columns(pl.col.y)
+        .group_by("index")
+        .agg(pl.col.y.sum())
+    )
+
+    assert_frame_equal(
+        q.collect().sort("index"),
+        pl.DataFrame(
+            {"index": [0, 1], "y": [1, 2]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )
+
+    q = (
+        pl.LazyFrame({"x": [1, 2], "y": [1, 2]})
+        .with_row_index("index")
+        .with_columns(pl.col.y)
+        .select("y", "index")
+    )
+
+    assert_frame_equal(
+        q.collect(),
+        pl.DataFrame(
+            {"y": [1, 2], "index": [0, 1]},
+            schema_overrides={"index": pl.get_index_type()},
+        ),
+    )
+
+
+def test_projection_pushdown_row_index_reorder_28015() -> None:
+    lf = pl.LazyFrame({"key": [10, 11], "value": [1, 2]}).with_row_index()
+    q1 = lf.join(lf.select("index"), on="index")
+    q2 = q1.drop("index").with_row_index()
+    q3 = q2.join(q2.join(q2.select("key"), on="key").select("index"), on="index")
+    out = q3.join(q3, on="key").collect(engine="streaming")
+
+    assert_frame_equal(
+        out.sort("index"),
+        pl.DataFrame(
+            {
+                "index": [0, 1],
+                "key": [10, 11],
+                "value": [1, 2],
+                "index_right": [0, 1],
+                "value_right": [1, 2],
+            },
+            schema=out.schema,
+        ),
+    )
+
+
+def test_projection_pushdown_groupby_len_28094() -> None:
+    q = (
+        pl.LazyFrame(
+            {"i128": [1], "u128": [1], "bool": [True]},
+            schema={"i128": pl.Int128, "u128": pl.UInt128, "bool": pl.Boolean},
+        )
+        .group_by("i128", "u128")
+        .agg(pl.first("bool"))
+        .select(pl.len())
+    )
+
+    assert q.collect().item() == 1

@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     from polars import Expr
-    from polars._typing import JoinStrategy, UniqueKeepStrategy
+    from polars._typing import JoinStrategy, PolarsDataType, UniqueKeepStrategy
     from tests.conftest import PlMonkeyPatch
 
 
@@ -190,7 +190,7 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
         }
     )
     record_batches = tbl.to_batches(max_chunksize=1)
-    expected_schema = {
+    expected_schema: dict[str, PolarsDataType] = {
         "a": pl.Datetime("ms"),
         "b": pl.Datetime("ms"),
         "c": pl.Datetime("us"),
@@ -241,7 +241,7 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     # try a single column dtype override
     for t in (tbl, empty_tbl):
         df = pl.DataFrame(t, schema_overrides={"e": pl.Int8})
-        override_schema = expected_schema.copy()
+        override_schema: dict[str, PolarsDataType] = expected_schema.copy()
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
         assert df.rows() == expected_data[: (df.height)]
@@ -273,7 +273,6 @@ def test_from_arrow(plmonkeypatch: PlMonkeyPatch) -> None:
     assert df2.rows() == df.rows()[:3]
 
     assert df0.schema == {"id": pl.String, "points": pl.Int64}
-    print(df1.schema)
     assert df1.schema == {"x": pl.String, "y": pl.Int32}
     assert df2.schema == {"x": pl.String, "y": pl.Int32}
 
@@ -644,7 +643,7 @@ def test_map_columns() -> None:
 
 def test_explode() -> None:
     df = pl.DataFrame({"letters": ["c", "a"], "nrs": [[1, 2], [1, 3]]})
-    out = df.explode("nrs")
+    out = df.explode("nrs", empty_as_null=False)
     assert out["letters"].to_list() == ["c", "c", "a", "a"]
     assert out["nrs"].to_list() == [1, 2, 1, 3]
 
@@ -996,7 +995,7 @@ def test_head_group_by() -> None:
         df.sort(by="price", descending=True)
         .group_by(keys, maintain_order=True)
         .agg([pl.col("*").exclude(keys).head(2).name.keep()])
-        .explode(cs.all().exclude(keys))
+        .explode(cs.all().exclude(keys), empty_as_null=False)
     )
 
     assert out.shape == (5, 4)
@@ -1916,7 +1915,7 @@ def test_group_by_cat_list() -> None:
         .agg([pl.col("cat_column")])["cat_column"]
     )
 
-    out = grouped.explode()
+    out = grouped.explode(empty_as_null=False)
     assert out.dtype == pl.Categorical
     assert out[0] == "a"
 
@@ -2078,14 +2077,14 @@ def test_extension() -> None:
     out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 2
-    s = out["a"].list.explode()
+    s = out["a"].list.explode(empty_as_null=False)
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 3
     del s
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 2
 
-    assert out["a"].list.explode().to_list() == foos
+    assert out["a"].list.explode(empty_as_null=False).to_list() == foos
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 2
     del out
@@ -2408,7 +2407,7 @@ def test_group_by_slice_expression_args() -> None:
     out = (
         df.group_by("groups", maintain_order=True)
         .agg([pl.col("vals").slice((pl.len() * 0.1).cast(int), (pl.len() // 5))])
-        .explode("vals")
+        .explode("vals", empty_as_null=False)
     )
 
     expected = pl.DataFrame(
@@ -2435,14 +2434,14 @@ def test_explode_empty() -> None:
         .group_by("x", maintain_order=True)
         .agg(pl.col("y").gather([]))
     )
-    assert df.explode("y").to_dict(as_series=False) == {
+    assert df.explode("y", empty_as_null=True).to_dict(as_series=False) == {
         "x": ["a", "b"],
         "y": [None, None],
     }
 
     df = pl.DataFrame({"x": ["1", "2", "4"], "y": [["a", "b", "c"], ["d"], []]})
     assert_frame_equal(
-        df.explode("y"),
+        df.explode("y", empty_as_null=True),
         pl.DataFrame({"x": ["1", "1", "1", "2", "4"], "y": ["a", "b", "c", "d", None]}),
     )
 
@@ -2452,7 +2451,7 @@ def test_explode_empty() -> None:
             "numbers": [[]],
         }
     )
-    assert df.explode("numbers").to_dict(as_series=False) == {
+    assert df.explode("numbers", empty_as_null=True).to_dict(as_series=False) == {
         "letters": ["a"],
         "numbers": [None],
     }
@@ -2810,7 +2809,7 @@ def test_set() -> None:
 
     # needs to be a 2 element tuple
     with pytest.raises(ValueError):
-        df[1, 2, 3] = 1
+        df[1, 2, 3] = 1  # type: ignore[index]
 
     # we cannot index with any type, such as bool
     with pytest.raises(TypeError):
@@ -2860,6 +2859,7 @@ def test_init_datetimes_with_timezone() -> None:
     tz_europe = "Europe/Amsterdam"
 
     dtm = datetime(2022, 10, 12, 12, 30)
+    type_overrides: dict[str, Any]
     for time_unit in DTYPE_TEMPORAL_UNITS:
         for type_overrides in (
             {

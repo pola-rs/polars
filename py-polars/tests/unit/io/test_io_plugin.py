@@ -103,10 +103,7 @@ def test_scan_lines() -> None:
                     n_rows -= remaining_rows
 
                 while remaining_rows != 0 and (line := x.readline().rstrip()):
-                    if isinstance(line, str):
-                        batch_lines += [batch_lines]
-                    else:
-                        batch_lines += [line.decode()]
+                    batch_lines += [line.decode()]
                     remaining_rows -= 1
 
                 df = pl.Series("line", batch_lines, pl.String()).to_frame()

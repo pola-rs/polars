@@ -1,11 +1,11 @@
+use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
+use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, IntoColumn};
 use polars_error::PolarsResult;
 use polars_ops::prelude::peaks;
 
 use super::ComputeNode;
-use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::wait_group::WaitGroup;
 use crate::execute::StreamingExecutionState;
 use crate::graph::PortState;
 use crate::morsel::{Morsel, MorselSeq, SourceToken};

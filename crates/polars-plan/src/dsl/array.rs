@@ -55,51 +55,15 @@ impl ArrayNameSpace {
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Median))
     }
 
-    /// Keep only the unique values in every sub-array.
-    pub fn unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Unique(false)))
-    }
-
-    /// Keep only the unique values in every sub-array.
-    pub fn unique_stable(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Unique(true)))
-    }
-
-    pub fn n_unique(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::NUnique))
-    }
-
     /// Cast the Array column to List column with the same inner data type.
     pub fn to_list(self) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::ToList))
     }
 
-    #[cfg(feature = "array_any_all")]
-    /// Evaluate whether all boolean values are true for every subarray.
-    pub fn all(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::All))
-    }
-
-    #[cfg(feature = "array_any_all")]
-    /// Evaluate whether any boolean value is true for every subarray
-    pub fn any(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Any))
-    }
-
     pub fn sort(self, options: SortOptions) -> Expr {
         self.0
             .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Sort(options)))
-    }
-
-    pub fn reverse(self) -> Expr {
-        self.0
-            .map_unary(FunctionExpr::ArrayExpr(ArrayFunction::Reverse))
     }
 
     pub fn arg_min(self) -> Expr {

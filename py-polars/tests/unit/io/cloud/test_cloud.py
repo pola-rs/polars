@@ -92,6 +92,7 @@ def test_is_aws_cloud() -> None:
     )
 
 
+@pytest.mark.slow
 def test_storage_options_retry_config(
     plmonkeypatch: PlMonkeyPatch,
     capfd: pytest.CaptureFixture[str],

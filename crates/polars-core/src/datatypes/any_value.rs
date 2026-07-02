@@ -797,6 +797,19 @@ impl<'a> AnyValue<'a> {
     }
 }
 
+impl IsNull for AnyValue<'_> {
+    const HAS_NULLS: bool = true;
+    type Inner = Self;
+
+    fn is_null(&self) -> bool {
+        AnyValue::is_null(self)
+    }
+
+    fn unwrap_inner(self) -> Self::Inner {
+        self
+    }
+}
+
 impl From<AnyValue<'_>> for DataType {
     fn from(value: AnyValue<'_>) -> Self {
         value.dtype()
@@ -1324,11 +1337,7 @@ impl AnyValue<'_> {
                 l.to_f64().unwrap().to_total_ord() == r.to_f64().unwrap().to_total_ord()
             },
 
-            (_, _) => {
-                unimplemented!(
-                    "scalar eq_missing for mixed dtypes {self:?} and {other:?} is not supported"
-                )
-            },
+            (_, _) => false,
         }
     }
 }

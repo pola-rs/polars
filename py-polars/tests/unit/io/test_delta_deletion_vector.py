@@ -820,7 +820,7 @@ def test_scan_delta_dv_from_parquet_mock(
     # order is preserved in the case of parquet file-by-file
     out = pl.scan_parquet(
         paths,
-        _deletion_files=("delta-deletion-vector", dv_callback),  # type: ignore[arg-type]
+        _deletion_files=("delta-deletion-vector", dv_callback),
     ).collect()
 
     expected = pl.concat(

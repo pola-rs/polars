@@ -19,6 +19,122 @@ fn new_null_count(input: &[ExprIR]) -> AExpr {
     }
 }
 
+fn integer_literal_value(ae: &AExpr) -> Option<i64> {
+    match ae {
+        AExpr::Literal(lv) => lv.extract_i64().ok(),
+        _ => None,
+    }
+}
+
+enum CountCmpInput {
+    Len(Node),
+    NullCount(Node),
+}
+
+fn maybe_negate(ae: AExpr, negate: bool, expr_arena: &mut Arena<AExpr>) -> AExpr {
+    if negate {
+        AExprBuilder::new_from_aexpr(ae, expr_arena)
+            .not(expr_arena)
+            .build(expr_arena)
+    } else {
+        ae
+    }
+}
+
+fn bool_literal(value: bool) -> AExpr {
+    AExpr::Literal(Scalar::from(value).into())
+}
+
+fn non_negative_count_cmp_literal(op: Operator, literal: i64) -> Option<AExpr> {
+    let value = match op {
+        Operator::Eq if literal < 0 => false,
+        Operator::NotEq if literal < 0 => true,
+        Operator::Gt if literal < 0 => true,
+        Operator::GtEq if literal <= 0 => true,
+        Operator::Lt if literal <= 0 => false,
+        Operator::LtEq if literal < 0 => false,
+        _ => return None,
+    };
+    Some(bool_literal(value))
+}
+
+fn optimize_len_or_null_count_cmp(
+    left: Node,
+    op: Operator,
+    right: Node,
+    expr_arena: &mut Arena<AExpr>,
+) -> Option<AExpr> {
+    let left_ae = expr_arena.get(left);
+    let right_ae = expr_arena.get(right);
+
+    let (count_expr_node, op, literal) = if let Some(value) = integer_literal_value(right_ae) {
+        (left, op, value)
+    } else if let Some(value) = integer_literal_value(left_ae) {
+        let op = match op {
+            Operator::Eq => Operator::Eq,
+            Operator::NotEq => Operator::NotEq,
+            Operator::Gt => Operator::Lt,
+            Operator::GtEq => Operator::LtEq,
+            Operator::Lt => Operator::Gt,
+            Operator::LtEq => Operator::GtEq,
+            _ => return None,
+        };
+        (right, op, value)
+    } else {
+        return None;
+    };
+
+    let input = match expr_arena.get(count_expr_node) {
+        AExpr::Agg(IRAggExpr::Count {
+            input,
+            include_nulls: true,
+        }) => CountCmpInput::Len(*input),
+        AExpr::Function {
+            input,
+            function: IRFunctionExpr::NullCount,
+            ..
+        } if input.len() == 1 => CountCmpInput::NullCount(input[0].node()),
+        _ => return None,
+    };
+
+    if let Some(out) = non_negative_count_cmp_literal(op, literal) {
+        return Some(out);
+    }
+
+    match input {
+        CountCmpInput::Len(input) => {
+            let is_empty = match op {
+                Operator::Eq if literal == 0 => true,
+                Operator::Lt if literal == 1 => true,
+                Operator::LtEq if literal == 0 => true,
+                Operator::NotEq | Operator::Gt if literal == 0 => false,
+                Operator::GtEq if literal == 1 => false,
+                _ => return None,
+            };
+
+            let out = AExprBuilder::new_from_node(input)
+                .is_empty(false, expr_arena)
+                .build(expr_arena);
+            Some(maybe_negate(out, !is_empty, expr_arena))
+        },
+        CountCmpInput::NullCount(input) => {
+            let has_nulls = match op {
+                Operator::Eq if literal == 0 => false,
+                Operator::Lt if literal == 1 => false,
+                Operator::LtEq if literal == 0 => false,
+                Operator::NotEq | Operator::Gt if literal == 0 => true,
+                Operator::GtEq if literal == 1 => true,
+                _ => return None,
+            };
+
+            let out = AExprBuilder::new_from_node(input)
+                .has_nulls(expr_arena)
+                .build(expr_arena);
+            Some(maybe_negate(out, !has_nulls, expr_arena))
+        },
+    }
+}
+
 macro_rules! eval_binary_same_type {
     ($lhs:expr, $rhs:expr, |$l: ident, $r: ident| $ret: expr) => {{
         if let (AExpr::Literal(lit_left), AExpr::Literal(lit_right)) = ($lhs, $rhs) {
@@ -141,9 +257,41 @@ macro_rules! eval_binary_cmp_same_type {
     }}
 }
 
-pub struct SimplifyBooleanRule {}
+pub struct SimplifyBooleanRule {
+    pub maintain_errors: bool,
+}
 
 impl OptimizationRule for SimplifyBooleanRule {
+    fn optimize_plan(
+        &mut self,
+        lp_arena: &mut Arena<IR>,
+        expr_arena: &mut Arena<AExpr>,
+        node: Node,
+    ) -> PolarsResult<Option<IR>> {
+        let (input_node, predicate_node) = match lp_arena.get(node) {
+            IR::Filter { input, predicate } => (*input, predicate.node()),
+            _ => return Ok(None),
+        };
+
+        let lv = match expr_arena.get(predicate_node) {
+            AExpr::Literal(lv) => lv,
+            _ => return Ok(None),
+        };
+
+        match lv.bool() {
+            Some(false) => {
+                let schema = lp_arena.get(input_node).schema(lp_arena).into_owned();
+                Ok(Some(IR::DataFrameScan {
+                    df: Arc::new(DataFrame::empty_with_schema(&schema)),
+                    schema,
+                    output_schema: None,
+                }))
+            },
+            Some(true) => Ok(Some(lp_arena.get(input_node).clone())),
+            _ => Ok(None),
+        }
+    }
+
     fn optimize_expr(
         &mut self,
         expr_arena: &mut Arena<AExpr>,
@@ -156,7 +304,14 @@ impl OptimizationRule for SimplifyBooleanRule {
         let out = match expr {
             // true AND x => x
             AExpr::BinaryExpr { left, op, right } => {
-                return Ok(arity::simplify_binary(*left, *op, *right, ctx, expr_arena));
+                return Ok(arity::simplify_binary(
+                    *left,
+                    *op,
+                    *right,
+                    ctx,
+                    self.maintain_errors,
+                    expr_arena,
+                ));
             },
             AExpr::Ternary {
                 predicate,
@@ -175,6 +330,15 @@ impl OptimizationRule for SimplifyBooleanRule {
                 let input = &input[0];
                 let ae = expr_arena.get(input.node());
                 eval_negate(ae)
+            },
+            AExpr::Function {
+                input,
+                function: IRFunctionExpr::DynamicPred { pred },
+                options,
+            } if pred.id().is_none() => {
+                // The sender of this dynamic predicate was dropped,
+                // so the result is always true.
+                Some(AExpr::Literal(Scalar::from(true).into()))
             },
             _ => None,
         };
@@ -362,8 +526,17 @@ impl OptimizationRule for SimplifyExprRule {
         expr_arena: &mut Arena<AExpr>,
         expr_node: Node,
         schema: &Schema,
-        _ctx: OptimizeExprContext,
+        ctx: OptimizeExprContext,
     ) -> PolarsResult<Option<AExpr>> {
+        let expr = expr_arena.get(expr_node);
+
+        if let AExpr::BinaryExpr { left, op, right } = expr {
+            let (left, op, right) = (*left, *op, *right);
+            if let Some(out) = optimize_len_or_null_count_cmp(left, op, right, expr_arena) {
+                return Ok(Some(out));
+            }
+        }
+
         let expr = expr_arena.get(expr_node);
 
         let out = match &expr {
@@ -440,11 +613,66 @@ impl OptimizationRule for SimplifyExprRule {
                     _ => None,
                 }
             },
+            // drop_nulls().first() -> first(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::First(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::FirstNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
+            // drop_nulls().last()  -> last(ignore_nulls=True)
+            AExpr::Agg(IRAggExpr::Last(input)) => {
+                let input_node = expr_arena.get(*input);
+                match input_node {
+                    AExpr::Function {
+                        input,
+                        function: IRFunctionExpr::DropNulls,
+                        options: _,
+                    } => Some(AExpr::Agg(IRAggExpr::LastNonNull(input[0].node()))),
+                    _ => None,
+                }
+            },
             // lit(left) + lit(right) => lit(left + right)
             // and null propagation
             AExpr::BinaryExpr { left, op, right } => {
                 let left_aexpr = expr_arena.get(*left);
                 let right_aexpr = expr_arena.get(*right);
+
+                // Inline dynamic value casts
+                // Ensure that dynamic values upcast in lined
+                // This will allow const folding later
+                if let (
+                    AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))),
+                    AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(r))),
+                ) = (left_aexpr, right_aexpr)
+                {
+                    let left = *left;
+                    let op = *op;
+                    let right = expr_arena.add(AExpr::Literal(LiteralValue::Dyn(
+                        DynLiteralValue::Float(*r as _),
+                    )));
+                    return Ok(Some(AExpr::BinaryExpr { left, op, right }));
+                };
+
+                // Ensure that dynamic values upcast inlined
+                // This will allow const folding later
+                if let (
+                    AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Int(l))),
+                    AExpr::Literal(LiteralValue::Dyn(DynLiteralValue::Float(_))),
+                ) = (left_aexpr, right_aexpr)
+                {
+                    let right = *right;
+                    let op = *op;
+                    let left = expr_arena.add(AExpr::Literal(LiteralValue::Dyn(
+                        DynLiteralValue::Float(*l as _),
+                    )));
+                    return Ok(Some(AExpr::BinaryExpr { left, op, right }));
+                };
 
                 // lit(left) + lit(right) => lit(left + right)
                 use Operator::*;
@@ -712,7 +940,13 @@ impl OptimizationRule for SimplifyExprRule {
                 options,
                 ..
             } => {
-                return optimize_functions(input.clone(), function.clone(), *options, expr_arena);
+                return optimize_functions(
+                    input.clone(),
+                    function.clone(),
+                    *options,
+                    ctx,
+                    expr_arena,
+                );
             },
             _ => None,
         };

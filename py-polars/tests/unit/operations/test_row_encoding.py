@@ -16,7 +16,7 @@ from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 if TYPE_CHECKING:
     from typing import Any
 
-    from polars._typing import PolarsDataType
+    from polars._typing import ArrayLike, PolarsDataType
 
 FIELD_COMBS = [
     (descending, nulls_last, False)
@@ -60,7 +60,7 @@ def roundtrip_re(
 
 
 def roundtrip_series_re(
-    values: pl.series.series.ArrayLike,
+    values: ArrayLike,
     dtype: PolarsDataType,
     *,
     unordered: bool = False,

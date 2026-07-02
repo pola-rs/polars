@@ -1,14 +1,15 @@
 use chrono::NaiveTime;
 use polars_compute::decimal::DecimalFmtBuffer;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
+use pyo3::BoundObject;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyNone};
-use pyo3::{BoundObject, intern};
 
 use super::datetime::{
     datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
 };
 use super::struct_dict;
+use crate::interned;
 use crate::prelude::*;
 use crate::py_modules::pl_utils;
 
@@ -114,7 +115,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DateChunked> {
         let iter = self
             .0
             .physical()
-            .into_iter()
+            .iter()
             .map(|opt_v| opt_v.map(date32_to_date));
         PyList::new(py, iter)
     }
@@ -135,7 +136,7 @@ pub(crate) fn decimal_to_pyobject_iter<'py, 'a>(
     ca: &'a DecimalChunked,
 ) -> PyResult<impl ExactSizeIterator<Item = Option<Bound<'py, PyAny>>> + use<'py, 'a>> {
     let utils = pl_utils(py).bind(py);
-    let convert = utils.getattr(intern!(py, "to_py_decimal"))?;
+    let convert = utils.getattr(interned::TO_PY_DECIMAL.get(py))?;
     let py_precision = ca.precision().into_pyobject(py)?;
     let mut buf = DecimalFmtBuffer::new();
     Ok(ca.physical().iter().map(move |opt_v| {

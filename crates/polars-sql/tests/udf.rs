@@ -1,7 +1,7 @@
 use polars_core::prelude::*;
 use polars_lazy::prelude::IntoLazy;
 use polars_plan::dsl::BaseColumnUdf;
-use polars_plan::prelude::UserDefinedFunction;
+use polars_plan::prelude::{FunctionOptions, UserDefinedFunction};
 use polars_sql::SQLContext;
 use polars_sql::function_registry::FunctionRegistry;
 
@@ -110,6 +110,47 @@ fn test_udfs() -> PolarsResult<()> {
         "a" => &[1, 2, 3],
         "b" => &[1, 2, 3],
         "my_div" => &[1, 1, 1]
+    }?;
+    assert!(expected.equals_missing(&res));
+
+    Ok(())
+}
+
+#[test]
+fn test_group_by_aggregate_udfs() -> PolarsResult<()> {
+    let mut agg_plugin = UserDefinedFunction::new(
+        "agg_plugin".into(),
+        BaseColumnUdf::new(
+            move |c: &mut [Column]| {
+                let series = c[0].as_materialized_series();
+                let scalar = series.sum_reduce()?;
+                Ok(Column::new_scalar(series.name().clone(), scalar, 1))
+            },
+            |_: &Schema, fs: &[Field]| {
+                polars_ensure!(fs.len() == 1, SchemaMismatch: "expected one argument");
+                Ok(fs[0].clone())
+            },
+        ),
+    );
+    agg_plugin.options = FunctionOptions::aggregation();
+
+    let mut ctx = SQLContext::new()
+        .with_function_registry(Arc::new(MyFunctionRegistry::new(vec![agg_plugin])));
+
+    let df = df! {
+        "g" => &["x", "x", "y"],
+        "v" => &[1i64, 2, 3],
+    }?
+    .lazy();
+    ctx.register("foo", df);
+
+    let res = ctx
+        .execute("SELECT g, agg_plugin(v) AS total FROM foo GROUP BY g")?
+        .collect()?
+        .sort(["g"], Default::default())?;
+    let expected = df! {
+        "g" => &["x", "y"],
+        "total" => &[3i64, 3],
     }?;
     assert!(expected.equals_missing(&res));
 

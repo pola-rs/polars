@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from collections.abc import Collection, Iterable, Mapping
 from typing import TYPE_CHECKING, Any, Literal, overload
 
@@ -84,8 +85,6 @@ def _structify_expression(expr: Expr) -> Expr:
 
 def parse_into_list_of_expressions(
     *inputs: IntoExpr | Iterable[IntoExpr],
-    __structify: bool = False,
-    __require_selectors: bool = False,
     **named_inputs: IntoExpr,
 ) -> list[PyExpr]:
     """
@@ -98,23 +97,46 @@ def parse_into_list_of_expressions(
     **named_inputs
         Additional inputs to be parsed as expressions, specified as keyword arguments.
         The expressions will be renamed to the keyword used.
-    __structify
-        Convert multi-column expressions to a single struct expression.
-    __require_selectors
-        Require that all inputs are valid selectors (eg: column names or selector
-        expressions), disallowing literals.
 
     Returns
     -------
     list of PyExpr
     """
+    structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
+    exprs = _parse_positional_inputs(inputs, structify=structify)  # type: ignore[arg-type]
+    if named_inputs:
+        named_exprs = _parse_named_inputs(named_inputs, structify=structify)
+        exprs.extend(named_exprs)
+    return exprs
+
+
+def parse_into_list_of_expressions_require_selectors(
+    *inputs: IntoExpr | Iterable[IntoExpr],
+    **named_inputs: IntoExpr,
+) -> list[PyExpr]:
+    """
+    Parse multiple inputs (required to be valid selectors) into a list of expressions.
+
+    Parameters
+    ----------
+    *inputs
+        Inputs to be parsed as expressions, specified as positional arguments.
+    **named_inputs
+        Additional inputs to be parsed as expressions, specified as keyword arguments.
+        The expressions will be renamed to the keyword used.
+
+    Returns
+    -------
+    list of PyExpr
+    """
+    structify = bool(int(os.environ.get("POLARS_AUTO_STRUCTIFY", 0)))
     exprs = _parse_positional_inputs(
         inputs,  # type: ignore[arg-type]
-        require_selectors=__require_selectors,
-        structify=__structify,
+        structify=structify,
+        require_selectors=True,
     )
     if named_inputs:
-        named_exprs = _parse_named_inputs(named_inputs, structify=__structify)
+        named_exprs = _parse_named_inputs(named_inputs, structify=structify)
         exprs.extend(named_exprs)
     return exprs
 

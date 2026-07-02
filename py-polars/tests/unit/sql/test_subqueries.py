@@ -285,3 +285,155 @@ def test_derived_table_alias_errors() -> None:
             query="SELECT a FROM (SELECT a, b FROM df) ORDER BY sq.a",
             eager=True,
         )
+
+
+def _subquery_ctx() -> pl.SQLContext[pl.LazyFrame]:
+    # One shared fixture for all subquery-to-join tests. The data placement is
+    # deliberate: NULL keys on both sides (the NULL-semantics rows) and the
+    # same-named composite columns a/b in both tables (the correlation-
+    # resolution rows) — several expectations depend on exactly this layout.
+    customer = pl.LazyFrame(
+        {
+            "c_custkey": [1, 2, 3, 4, 5, None],
+            "c_acctbal": [10, 20, 30, 40, 50, 60],
+            "a": [1, 1, 2, 1, 2, 2],
+            "b": [10, 20, 10, 20, 20, 30],
+        }
+    )
+    orders = pl.LazyFrame(
+        {
+            "o_custkey": [2, 3, 5, None],
+            "o_amt": [20, 99, 99, 99],
+            "a": [1, 2, 2, 9],
+            "b": [20, 20, 30, 9],
+        }
+    )
+    lineitem = pl.LazyFrame({"l_okey": [2, 5]})
+    return pl.SQLContext(customer=customer, orders=orders, lineitem=lineitem)
+
+
+@pytest.mark.parametrize(
+    ("query", "expect_join", "expected"),
+    [
+        # Positive EXISTS must map to a semi join (every other EXISTS row
+        # below is anti).
+        (
+            "SELECT c_custkey FROM customer WHERE EXISTS"
+            " (SELECT 1 FROM orders WHERE o_custkey = c_custkey)",
+            "SEMI JOIN",
+            [2, 3, 5],
+        ),
+        # A subquery conjunct must rewrite even when AND-combined with
+        # ordinary predicates (which must stay behind as a filter).
+        (
+            "SELECT c_custkey FROM customer WHERE c_custkey > 1 AND NOT EXISTS"
+            " (SELECT 1 FROM orders WHERE o_custkey = c_custkey)",
+            "ANTI JOIN",
+            [4],
+        ),
+        # DISTINCT must not prevent the rewrite (only DISTINCT ON bails).
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE c_custkey IN (SELECT DISTINCT o_custkey FROM orders)",
+            "SEMI JOIN",
+            [2, 3, 5],
+        ),
+        # Inner-only predicates must filter the inner relation before the join.
+        (
+            "SELECT c_custkey FROM customer WHERE NOT EXISTS"
+            " (SELECT 1 FROM orders WHERE o_custkey = c_custkey AND o_amt = 99)",
+            "ANTI JOIN",
+            [1, 2, 4, None],
+        ),
+        # A correlated IN must join on both the membership key and the
+        # correlation key.
+        (
+            "SELECT c_custkey FROM customer WHERE c_acctbal IN"
+            " (SELECT o_amt FROM orders WHERE o_custkey = c_custkey)",
+            "SEMI JOIN",
+            [2],
+        ),
+        (
+            "SELECT c_custkey FROM customer WHERE NOT EXISTS (SELECT 1 FROM"
+            " orders JOIN lineitem ON o_custkey = l_okey WHERE o_custkey = c_custkey)",
+            "ANTI JOIN",
+            [1, 3, 4, None],
+        ),
+        # Same-named correlation columns must resolve via the qualifier
+        # (schema membership alone is ambiguous), and composite correlation
+        # must join on all key pairs, not just the first.
+        (
+            "SELECT a, b FROM customer c"
+            " WHERE NOT EXISTS (SELECT 1 FROM orders o WHERE o.a = c.a AND o.b = c.b)",
+            "ANTI JOIN",
+            [(1, 10), (2, 10)],
+        ),
+        # NOT IN must drop a NULL key (its membership test is NULL, not true;
+        # the bare anti-join would keep it), while a NULL in the haystack must
+        # not poison the other rows (polars' is_in semantics, not strict SQL).
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE c_custkey NOT IN (SELECT o_custkey FROM orders)",
+            "ANTI JOIN",
+            [1, 4],
+        ),
+        # NOT EXISTS, by contrast, must keep a NULL outer key — even with a
+        # NULL in the haystack (NULL = NULL must not count as a match).
+        (
+            "SELECT c_custkey FROM customer"
+            " WHERE NOT EXISTS (SELECT 1 FROM orders WHERE o_custkey = c_custkey)",
+            "ANTI JOIN",
+            [1, 4, None],
+        ),
+        # DELETE must keep rows whose predicate is NULL (it drops only the
+        # predicate-true rows; DELETE yields whole rows).
+        (
+            "DELETE FROM customer WHERE c_custkey IN (SELECT o_custkey FROM orders)",
+            "ANTI JOIN",
+            [(1, 10, 1, 10), (4, 40, 1, 20), (None, 60, 2, 30)],
+        ),
+        (
+            "DELETE FROM customer"
+            " WHERE EXISTS (SELECT 1 FROM orders WHERE o_custkey = c_custkey)",
+            "ANTI JOIN",
+            [(1, 10, 1, 10), (4, 40, 1, 20), (None, 60, 2, 30)],
+        ),
+    ],
+)
+def test_sql_subquery_to_join(
+    query: str,
+    expect_join: str,
+    expected: list[int | None | tuple[int | None, ...]],
+) -> None:
+    lf = _subquery_ctx().execute(query)
+
+    plan = lf.explain(optimized=True)
+    assert expect_join in plan, plan
+    assert "implode" not in plan.lower(), plan
+
+    result = lf.collect()
+    expected_rows = [t if isinstance(t, tuple) else (t,) for t in expected]
+    expected_df = pl.DataFrame(expected_rows, schema=result.schema, orient="row")
+    assert_frame_equal(result, expected_df, check_row_order=False)
+
+
+@pytest.mark.parametrize(
+    "subquery",
+    [
+        # A nested subquery must not rewrite (its SubPlan node is only valid
+        # after subquery lowering, not inside a plain filter expression).
+        "SELECT 1 FROM orders WHERE o_custkey = c_custkey"
+        " AND o_custkey IN (SELECT l_okey FROM lineitem)",
+        # Clauses that change which rows the subquery yields must make the
+        # rewrite bail, never be silently ignored. Each clause here empties
+        # the subquery, so a rewrite that ignored it would get every row's
+        # NOT EXISTS wrong.
+        "SELECT 1 FROM orders WHERE o_custkey = c_custkey LIMIT 0",
+        "SELECT TOP 0 1 FROM orders WHERE o_custkey = c_custkey",
+        "SELECT 1 FROM orders WHERE o_custkey = c_custkey QUALIFY FALSE",
+    ],
+)
+def test_sql_subquery_not_rewritten(subquery: str) -> None:
+    sql = f"SELECT c_custkey FROM customer WHERE NOT EXISTS ({subquery})"
+    with pytest.raises(SQLInterfaceError, match="not currently supported"):
+        _subquery_ctx().execute(sql, eager=True)

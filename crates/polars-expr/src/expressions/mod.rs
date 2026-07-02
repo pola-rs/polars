@@ -12,6 +12,7 @@ mod field;
 mod filter;
 mod gather;
 mod group_iter;
+mod len;
 mod literal;
 #[cfg(feature = "dynamic_group_by")]
 mod rolling;
@@ -42,6 +43,7 @@ pub(crate) use eval::*;
 pub(crate) use field::*;
 pub(crate) use filter::*;
 pub(crate) use gather::*;
+pub(crate) use len::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
 use polars_io::predicates::PhysicalIoExpr;
@@ -150,7 +152,7 @@ pub struct AggregationContext<'a> {
     pub(crate) update_groups: UpdateGroups,
     /// This is true when the Series and Groups still have all
     /// their original values. Not the case when filtered
-    pub(crate) original_len: bool,
+    pub(crate) original_groups: bool,
 }
 
 impl<'a> AggregationContext<'a> {
@@ -254,7 +256,7 @@ impl<'a> AggregationContext<'a> {
             state: series,
             groups,
             update_groups: UpdateGroups::No,
-            original_len: true,
+            original_groups: true,
         }
     }
 
@@ -266,7 +268,7 @@ impl<'a> AggregationContext<'a> {
         self.state.rename(name);
     }
 
-    fn from_agg_state(
+    pub(crate) fn from_agg_state(
         agg_state: AggState,
         groups: Cow<'a, GroupPositions>,
     ) -> AggregationContext<'a> {
@@ -274,12 +276,12 @@ impl<'a> AggregationContext<'a> {
             state: agg_state,
             groups,
             update_groups: UpdateGroups::No,
-            original_len: true,
+            original_groups: true,
         }
     }
 
-    pub(crate) fn set_original_len(&mut self, original_len: bool) -> &mut Self {
-        self.original_len = original_len;
+    pub(crate) fn set_original_groups(&mut self, original_groups: bool) -> &mut Self {
+        self.original_groups = original_groups;
         self
     }
 
@@ -418,12 +420,14 @@ impl<'a> AggregationContext<'a> {
         self.groups = Cow::Owned(groups);
         // make sure that previous setting is not used
         self.update_groups = UpdateGroups::No;
+        // Conservatively set `false`, there's no guarantee `groups` matches the original.
+        self.original_groups = false;
         self
     }
 
     /// Ensure that each group is represented by contiguous values in memory.
     pub fn normalize_values(&mut self) {
-        self.set_original_len(false);
+        self.set_original_groups(false);
         self.groups();
         let values = self.flat_naive();
         let values = unsafe { values.agg_list(&self.groups) };
@@ -651,12 +655,12 @@ impl<'a> AggregationContext<'a> {
 
     /// Fixes groups for `AggregatedScalar` and `LiteralScalar` so that they point to valid
     /// data elements in the `AggState` values.
-    fn set_groups_for_undefined_agg_states(&mut self) {
+    pub(crate) fn set_groups_for_undefined_agg_states(&mut self) {
         match &self.state {
             AggState::AggregatedList(_) | AggState::NotAggregated(_) => {},
             AggState::AggregatedScalar(c) => {
                 assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned({
+                self.with_groups({
                     let groups = (0..c.len() as IdxSize).map(|i| [i, 1]).collect();
                     GroupsType::new_slice(groups, false, true).into_sliceable()
                 });
@@ -664,7 +668,7 @@ impl<'a> AggregationContext<'a> {
             AggState::LiteralScalar(c) => {
                 assert_eq!(c.len(), 1);
                 assert_eq!(self.update_groups, UpdateGroups::No);
-                self.groups = Cow::Owned({
+                self.with_groups({
                     let groups = vec![[0, 1]; self.groups.len()];
                     GroupsType::new_slice(groups, true, true).into_sliceable()
                 });
@@ -679,7 +683,7 @@ impl<'a> AggregationContext<'a> {
             state: self.state.clone(),
             groups,
             update_groups: self.update_groups,
-            original_len: self.original_len,
+            original_groups: self.original_groups,
         }
     }
 }

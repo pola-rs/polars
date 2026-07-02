@@ -10,12 +10,12 @@ from polars._utils.deprecation import deprecate_nonkeyword_arguments, deprecated
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import (
-    find_stacklevel,
-    issue_warning,
-    no_default,
+    NO_DEFAULT,
+    _NamespaceSuggestMixin,
     qualified_type_name,
 )
 from polars._utils.wrap import wrap_expr
+from polars._warnings import find_stacklevel, issue_warning
 from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
 from polars.exceptions import ChronoFormatWarning
 
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
         from typing_extensions import deprecated  # noqa: TC004
 
 
-class ExprStringNameSpace:
+class ExprStringNameSpace(_NamespaceSuggestMixin):
     """Namespace for string related expressions."""
 
     _accessor = "str"
@@ -511,7 +511,7 @@ class ExprStringNameSpace:
         Notes
         -----
         This is a form of case transform where the first letter of each word is
-        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        capitalized, with the rest of the word in lowercase. Non-alphabetical
         characters define the word boundaries.
 
         Examples
@@ -2481,20 +2481,15 @@ class ExprStringNameSpace:
         return wrap_expr(self._pyexpr.str_tail(n_pyexpr))
 
     @deprecated(
-        '`str.explode` is deprecated; use `str.split("").explode()` instead.'
-        " Note that empty strings will result in null instead of being preserved."
-        " To get the exact same behavior, split first and then use a `pl.when...then...otherwise`"
-        " expression to handle the empty list before exploding."
+        '`str.explode` is deprecated; use `str.split("").explode(empty_as_null=False)` instead.'
     )
     def explode(self) -> Expr:
         """
         Returns a column with a separate row for every string character.
 
         .. deprecated:: 0.20.31
-            Use the `.str.split("").explode()` method instead. Note that empty strings
-            will result in null instead of being preserved. To get the exact same
-            behavior, split first and then use a `pl.when...then...otherwise`
-            expression to handle the empty list before exploding.
+            '`str.explode` is deprecated; use
+            `str.split("").explode(empty_as_null=False)` instead.'
 
         Returns
         -------
@@ -2646,7 +2641,7 @@ class ExprStringNameSpace:
     def replace_many(
         self,
         patterns: IntoExpr | Mapping[str, str],
-        replace_with: IntoExpr | NoDefault = no_default,
+        replace_with: IntoExpr | NoDefault = NO_DEFAULT,
         *,
         ascii_case_insensitive: bool = False,
         leftmost: bool = False,
@@ -2826,7 +2821,7 @@ class ExprStringNameSpace:
         │ abcd     ┆ z        │
         └──────────┴──────────┘
         """  # noqa: W505
-        if replace_with is no_default:
+        if replace_with is NO_DEFAULT:
             if not isinstance(patterns, Mapping):
                 msg = "`replace_with` argument is required if `patterns` argument is not a Mapping type"
                 raise TypeError(msg)
