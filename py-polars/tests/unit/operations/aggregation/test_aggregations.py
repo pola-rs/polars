@@ -10,6 +10,7 @@ from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.asserts.schema import assert_schema_equal
 from polars.testing.parametric import dataframes
 
 if TYPE_CHECKING:
@@ -1088,6 +1089,7 @@ def test_agg_invalid_same_engines_behavior(
 
     inmemory_result, inmemory_error = None, None
     streaming_result, streaming_error = None, None
+    lazy_schema_result, lazy_schema_error = None, None
 
     try:
         if grouped:
@@ -1107,8 +1109,20 @@ def test_agg_invalid_same_engines_behavior(
     except pl.exceptions.PolarsError as e:
         streaming_error = e
 
-    assert (streaming_error is None) == (inmemory_error is None), (
-        f"mismatch in errors for: {streaming_error} != {inmemory_error}"
+    try:
+        if grouped:
+            lazy_schema_result = df.lazy().group_by("a").agg(expr).collect_schema()
+        else:
+            lazy_schema_result = df.lazy().select(expr).collect_schema()
+    except pl.exceptions.PolarsError as e:
+        lazy_schema_error = e
+
+    assert (
+        (streaming_error is None)
+        == (inmemory_error is None)
+        == (lazy_schema_error is None)
+    ), (
+        f"mismatch in errors for: {streaming_error = }, {inmemory_error = }, {lazy_schema_error = }"
     )
     if inmemory_error:
         assert streaming_error, (
@@ -1116,10 +1130,17 @@ def test_agg_invalid_same_engines_behavior(
         )
         assert streaming_error.__class__ == inmemory_error.__class__
 
+        assert lazy_schema_error, (
+            f"schema resolve did not error (expected in-memory error: {inmemory_error})"
+        )
+        assert lazy_schema_error.__class__ == inmemory_error.__class__
+
     if not inmemory_error:
         assert streaming_result is not None
         assert inmemory_result is not None
+        assert lazy_schema_result is not None
         assert_frame_equal(streaming_result, inmemory_result)
+        assert_schema_equal(lazy_schema_result, inmemory_result.schema)
 
 
 @pytest.mark.parametrize(
@@ -1156,6 +1177,10 @@ def test_invalid_agg_dtypes_should_raise(
         pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
     ):
         df.lazy().select(expr).collect(engine="streaming")
+    with pytest.raises(
+        pl.exceptions.PolarsError, match=rf"`{op}` operation not supported for dtype"
+    ):
+        df.lazy().select(expr).collect_schema()
 
 
 @given(
