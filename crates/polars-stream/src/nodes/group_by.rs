@@ -526,7 +526,7 @@ pub struct GroupByNode {
     num_inputs: usize,
     num_pipelines: usize,
     output_schema: Arc<Schema>,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl GroupByNode {
