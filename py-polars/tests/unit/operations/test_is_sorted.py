@@ -297,28 +297,34 @@ def test_series_is_sorted_parametric(
 ) -> None:
     s = s.sort(descending=descending, nulls_last=nulls_last)
     s = pl.Series(s.to_list(), dtype=s.dtype)  # Remove the sorted flags
-    
+
     s_non_null = s.drop_nulls()
     if s_non_null.n_unique() > 1:
         assert s_non_null.is_sorted(descending=descending, nulls_last=nulls_last)
         assert s_non_null.is_sorted(descending=descending, nulls_last=not nulls_last)
-        assert not s_non_null.is_sorted(descending=not descending, nulls_last=nulls_last)
+        assert not s_non_null.is_sorted(
+            descending=not descending, nulls_last=nulls_last
+        )
 
     s_non_unique = s.map_elements(lambda x: s.first() if x is not None else None)
     if s_non_unique.null_count() > 0:
         assert s_non_unique.is_sorted(descending=descending, nulls_last=nulls_last)
         assert s_non_unique.is_sorted(descending=not descending, nulls_last=nulls_last)
-        assert not s_non_unique.is_sorted(descending=descending, nulls_last=not nulls_last)
+        assert not s_non_unique.is_sorted(
+            descending=descending, nulls_last=not nulls_last
+        )
 
     if s_non_unique.null_count() > 0 and s_non_null.n_unique() > 1:
         assert s.is_sorted(descending=descending, nulls_last=nulls_last)
         assert not s.is_sorted(descending=not descending, nulls_last=nulls_last)
         assert not s.is_sorted(descending=descending, nulls_last=not nulls_last)
-    
+
     s_single_value = s_non_unique.drop_nulls()
     assert s_single_value.is_sorted(descending=descending, nulls_last=nulls_last)
     assert s_single_value.is_sorted(descending=not descending, nulls_last=nulls_last)
-    assert s_single_value.is_sorted(descending=not descending, nulls_last=not nulls_last)
+    assert s_single_value.is_sorted(
+        descending=not descending, nulls_last=not nulls_last
+    )
 
 
 @given(data=st.data())
@@ -337,6 +343,7 @@ def test_dataframe_is_sorted_parametric(data: st.DataObject) -> None:
         assert not (
             df.is_sorted(by=df.columns, descending=descending, nulls_last=nulls_last)
         )
+
 
 def test_sorted_flag() -> None:
     s = pl.arange(0, 7, eager=True)
