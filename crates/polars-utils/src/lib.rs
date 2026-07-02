@@ -15,6 +15,7 @@ pub mod async_utils;
 pub mod binary_search;
 pub mod bool;
 pub mod cache;
+pub mod calc_morsel_split;
 pub mod cardinality_sketch;
 pub mod cell;
 pub mod chunks;
