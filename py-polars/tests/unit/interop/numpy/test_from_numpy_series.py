@@ -101,9 +101,7 @@ def test_from_numpy_records_2d(
     "dtype",
     [">f4", ">f8", ">i4", ">i8", "<f4", "<i4"],
 )
-def test_from_numpy_non_native_byteorder(dtype: str) -> None:
-    # non-native byte order previously raised an opaque PyO3 TypeError instead of
-    # being normalized like any other numpy array (issue #28174)
+def test_from_numpy_non_native_byteorder_28174(dtype: str) -> None:
     arr = np.arange(5, dtype=dtype)
     s = pl.Series("data", arr)
     assert s.to_list() == list(range(5))

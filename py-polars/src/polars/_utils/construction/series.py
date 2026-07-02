@@ -504,8 +504,7 @@ def numpy_to_pyseries(
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
     if not values.dtype.isnative:
-        # the Rust <-> numpy bridge only accepts native byte order; swap to a
-        # native-order copy instead of failing with an opaque PyO3 type error
+        # Only native byte order is supported, so swap to a native-order copy.
         values = values.astype(values.dtype.newbyteorder("="))
     values = np.ascontiguousarray(values)
 
