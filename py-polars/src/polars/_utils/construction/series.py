@@ -503,6 +503,9 @@ def numpy_to_pyseries(
     nan_to_null: bool = False,
 ) -> PySeries:
     """Construct a PySeries from a numpy array."""
+    if not values.dtype.isnative:
+        # Only native byte order is supported, so swap to a native-order copy.
+        values = values.astype(values.dtype.newbyteorder("="))
     values = np.ascontiguousarray(values)
 
     if values.ndim == 1:
