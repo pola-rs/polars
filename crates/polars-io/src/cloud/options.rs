@@ -271,6 +271,8 @@ impl CloudType {
     }
 }
 
+/// Default product token for the object_store client, used for Amazon S3 and
+/// any S3-compatible object store. Resolved from the crate version.
 pub static USER_AGENT: &str = concat!("polars", "/", env!("CARGO_PKG_VERSION"),);
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
@@ -295,6 +297,7 @@ pub(super) fn get_client_options() -> ClientOptions {
                 })
                 .unwrap_or(5 * 60),
         ))
+        // Default; a user-supplied `user_agent` in storage_options overrides this.
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
         .with_dns_resolver(Arc::new(CachingResolver::new(get_dns_cache_ttl())))
