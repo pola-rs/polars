@@ -116,7 +116,9 @@ pub fn to_dataset_scan(
             kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
         }
 
-        kwargs.set_item(intern!(py, "pyarrow_predicate"), pyarrow_predicate)?;
+        if let Some(pyarrow_predicate) = pyarrow_predicate {
+            kwargs.set_item(intern!(py, "pyarrow_predicate"), pyarrow_predicate)?;
+        }
 
         let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = dataset_object
             .getattr(py, intern!(py, "to_dataset_scan"))?

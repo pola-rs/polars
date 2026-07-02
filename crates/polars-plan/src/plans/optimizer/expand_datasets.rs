@@ -68,8 +68,6 @@ pub(super) fn expand_datasets(
                 dataset_object,
                 cached_ir,
             } => {
-                use crate::plans::pyarrow::predicate_to_pa;
-
                 let cached_ir = cached_ir.clone();
                 let mut guard = cached_ir.lock().unwrap();
 
@@ -125,10 +123,11 @@ pub(super) fn expand_datasets(
                     && let Some(predicate) = &predicate
                 {
                     use crate::plans::aexpr::MintermIter;
+                    use crate::plans::python::pyarrow::predicate_to_pa;
 
                     // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
                     let parts: Vec<String> = MintermIter::new(predicate.node(), expr_arena)
-                        .filter_map(|node| predicate_to_pa(node, expr_arena, Default::default()))
+                        .filter_map(|node| predicate_to_pa(node, expr_arena))
                         .collect();
                     match parts.len() {
                         0 => None,
