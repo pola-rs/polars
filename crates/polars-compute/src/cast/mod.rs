@@ -497,6 +497,8 @@ pub fn cast(
         },
 
         (_, List(to)) => {
+            warn_cast_to_list_deprecated(from_type);
+
             // cast primitive to list's primitive
             let values = cast(array, &to.dtype, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
@@ -510,6 +512,8 @@ pub fn cast(
         },
 
         (_, LargeList(to)) if from_type != &LargeBinary => {
+            warn_cast_to_list_deprecated(from_type);
+
             // cast primitive to list's primitive
             let values = cast(array, &to.dtype, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
@@ -1263,4 +1267,12 @@ mod tests {
             vec![vec![10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10],]
         );
     }
+}
+
+fn warn_cast_to_list_deprecated(from_type: &ArrowDataType) {
+    polars_warn!(
+        Deprecation,
+        "casting from {from_type:?} to list type is deprecated\n\
+        Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
+    )
 }
