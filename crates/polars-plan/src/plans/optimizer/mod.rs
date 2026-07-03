@@ -21,7 +21,7 @@ mod join_utils;
 pub(crate) use join_utils::ExprOrigin;
 mod expand_datasets;
 #[cfg(feature = "python")]
-pub use expand_datasets::ExpandedPythonScan;
+pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
 pub mod deep_copy;
 mod ir_traversal;
