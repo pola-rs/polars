@@ -526,10 +526,10 @@ fn propagate_equalities(
             let [Some(ca), Some(cb)] = constraints.get_disjoint_mut([a, b]) else {
                 continue;
             };
-            let (emitted_ba, any_ba) = cb.merge_from(ca);
-            let (emitted_ab, any_ab) = ca.merge_from(cb);
-            emitted_changed |= emitted_ba || emitted_ab;
-            progressed |= any_ba || any_ab;
+            let (emitted_into_b, any_into_b) = cb.merge_from(ca);
+            let (emitted_into_a, any_into_a) = ca.merge_from(cb);
+            emitted_changed |= emitted_into_b || emitted_into_a;
+            progressed |= any_into_b || any_into_a;
         }
         if !progressed {
             return emitted_changed;
