@@ -118,25 +118,31 @@ impl Resolve for CachingResolver {
                     .map_err(DynErr::from)??,
             );
             let elapsed = t0.elapsed();
-            if let Some(threshold) = POLARS_DNS_LOG_THRESHOLD.as_ref()
-                && elapsed.gt(threshold)
-            {
-                eprintln!(
-                    "[dns_cache] dns lookup for {} took {:.1} ms, exceeded threshold of {} ms",
-                    &key,
-                    elapsed.as_secs_f64() * 1000.0,
-                    threshold.as_secs_f64() * 1000.0
-                )
-            }
 
             write_guard.insert(
-                key,
+                key.clone(),
                 CachedAddrs {
                     addrs: addrs.clone(),
                     fetched_at: Instant::now(),
                 },
             );
             drop(write_guard);
+
+            if let Some(threshold) = POLARS_DNS_LOG_THRESHOLD.as_ref()
+                && elapsed.gt(threshold)
+            {
+                let display_key = if polars_config::config().verbose_sensitive() {
+                    key.as_str()
+                } else {
+                    "<name suppressed>"
+                };
+                eprintln!(
+                    "[dns_cache] dns lookup for {} took {:.1} ms, exceeded threshold of {} ms",
+                    display_key,
+                    elapsed.as_secs_f64() * 1000.0,
+                    threshold.as_secs_f64() * 1000.0
+                )
+            }
 
             Ok(shuffle_addrs(&addrs))
         })
