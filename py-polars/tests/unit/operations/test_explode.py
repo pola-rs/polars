@@ -435,37 +435,6 @@ def test_fast_explode_merge_left_16923() -> None:
     assert df.height == 4
 
 
-@pytest.mark.parametrize(
-    ("values", "exploded"),
-    [
-        (["foobar", None], ["f", "o", "o", "b", "a", "r", None]),
-        ([None, "foo", "bar"], [None, "f", "o", "o", "b", "a", "r"]),
-        (
-            [None, "foo", "bar", None, "ham"],
-            [None, "f", "o", "o", "b", "a", "r", None, "h", "a", "m"],
-        ),
-        (["foo", "bar", "ham"], ["f", "o", "o", "b", "a", "r", "h", "a", "m"]),
-        (["", None, "foo", "bar"], ["", None, "f", "o", "o", "b", "a", "r"]),
-        (["", "foo", "bar"], ["", "f", "o", "o", "b", "a", "r"]),
-    ],
-)
-def test_series_str_explode_deprecated(
-    values: list[str | None], exploded: list[str | None]
-) -> None:
-    with pytest.deprecated_call():
-        result = pl.Series(values).str.explode()
-    assert result.to_list() == exploded
-
-
-def test_expr_str_explode_deprecated() -> None:
-    df = pl.Series("a", ["Hello", "World"])
-    with pytest.deprecated_call():
-        result = df.to_frame().select(pl.col("a").str.explode()).to_series()
-
-    expected = pl.Series("a", ["H", "e", "l", "l", "o", "W", "o", "r", "l", "d"])
-    assert_series_equal(result, expected)
-
-
 def test_undefined_col_15852() -> None:
     lf = pl.LazyFrame({"foo": [1]})
 
