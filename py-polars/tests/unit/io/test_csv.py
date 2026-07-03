@@ -3218,14 +3218,6 @@ def test_read_csv_mixed_i128_float_infers_float64_27654(chunk_override: None) ->
     assert df.schema["value"] == pl.Float64
 
 
-def test_read_csv_missing_utf8_is_empty_string_deprecated() -> None:
-    with pytest.warns(
-        DeprecationWarning,
-        match=r"`missing_utf8_is_empty_string` for `read_csv` is deprecated",
-    ):
-        pl.read_csv(b"a,b\n1,2", missing_utf8_is_empty_string=True)  # type: ignore[call-arg]
-
-
 def test_read_csv_name_deduplication_conflict_28310() -> None:
     err_msg = "de-duplication of occurrence #2 of column name 'a' failed; the name 'a_duplicated_0' also exists in the file."
 
