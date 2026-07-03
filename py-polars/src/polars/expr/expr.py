@@ -10684,15 +10684,15 @@ Consider using {self}.implode() instead"""
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
         >>> df.select(pl.col("a").ewm_sum(alpha=0.5))
         shape: (3, 1)
-        ┌───────┐
-        │ a     │
-        │ ---   │
-        │ f64   │
-        ╞═══════╡
-        │ 1.0   │
-        │ 2.5   │
-        │ 4.25  │
-        └───────┘
+        ┌──────┐
+        │ a    │
+        │ ---  │
+        │ f64  │
+        ╞══════╡
+        │ 1.0  │
+        │ 2.5  │
+        │ 4.25 │
+        └──────┘
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return wrap_expr(self._pyexpr.ewm_sum(alpha, adjust, min_samples, ignore_nulls))
