@@ -279,9 +279,11 @@ pub struct CastColumnsPolicy {
     pub datetime_microseconds_downcast: bool,
 
     /// Allow datetime[ms] to be cast to datetime[us] or datetime[ns].
+    #[cfg_attr(feature = "serde", serde(default))]
     pub datetime_milliseconds_upcast: bool,
 
     /// Allow datetime[us] to be cast to datetime[ns].
+    #[cfg_attr(feature = "serde", serde(default))]
     pub datetime_microseconds_upcast: bool,
 
     /// Allow casting to change time units.
