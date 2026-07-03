@@ -816,13 +816,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for ObjectValue {
     }
 }
 
-/// # Safety
-///
-/// The caller is responsible for checking that val is Object otherwise UB
 #[cfg(feature = "object")]
-impl From<&dyn PolarsObjectSafe> for &ObjectValue {
-    fn from(val: &dyn PolarsObjectSafe) -> Self {
-        unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
+impl<'a> From<&'a dyn PolarsObjectSafe> for &'a ObjectValue {
+    fn from(val: &'a dyn PolarsObjectSafe) -> Self {
+        val.as_any().downcast_ref().unwrap()
     }
 }
 
