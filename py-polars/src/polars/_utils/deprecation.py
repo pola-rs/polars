@@ -107,7 +107,6 @@ def deprecate_renamed_parameter(
     new_name: str,
     *,
     version: str,
-    mapper: Callable[[object], object] = lambda x: x,
 ) -> IdentityFunction:
     """
     Decorator to mark a function parameter as deprecated due to being renamed.
@@ -127,7 +126,7 @@ def deprecate_renamed_parameter(
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             _rename_keyword_argument(
-                old_name, new_name, kwargs, function.__qualname__, version, mapper
+                old_name, new_name, kwargs, function.__qualname__, version
             )
             return function(*args, **kwargs)
 
@@ -143,7 +142,6 @@ def _rename_keyword_argument(
     kwargs: dict[str, object],
     func_name: str,
     version: str,
-    mapper: Callable[[object], object],
 ) -> None:
     """Rename a keyword argument of a function."""
     if old_name in kwargs:
@@ -162,7 +160,7 @@ def _rename_keyword_argument(
             f"the argument `{old_name}` for `{func_name}` is deprecated. "
             f"It was renamed to `{new_name}`{in_version}."
         )
-        kwargs[new_name] = mapper(kwargs.pop(old_name))
+        kwargs[new_name] = kwargs.pop(old_name)
 
 
 def deprecate_nonkeyword_arguments(
