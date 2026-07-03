@@ -119,13 +119,13 @@ impl Resolve for CachingResolver {
             );
             let elapsed = t0.elapsed();
             if let Some(threshold) = POLARS_DNS_LOG_THRESHOLD.as_ref()
-                && elapsed.gt(&threshold)
+                && elapsed.gt(threshold)
             {
                 eprintln!(
                     "[dns_cache] dns lookup for {} took {:.1} ms, exceeded threshold of {} ms",
                     &key,
-                    elapsed.as_secs_f64() as f64 * 1000.0,
-                    threshold.as_secs_f64() as f64 * 1000.0
+                    elapsed.as_secs_f64() * 1000.0,
+                    threshold.as_secs_f64() * 1000.0
                 )
             }
 
