@@ -1517,21 +1517,27 @@ def test_filter_contradiction_collapses() -> None:
         lf.filter(
             (pl.col("a") > pl.col("b")) & (pl.col("a") < pl.col("b"))
         ),  # disjoint comparisons on two columns (a > b AND a < b)
-        lf.filter(~(pl.col("a") < 3)).filter(
-            pl.col("a") < 2
-        ),  # negated bound: NOT(a < 3) is a >= 3, disjoint with a < 2
         lf.filter(pl.col("a") == 2).filter(
             ~pl.col("a").is_in([1, 2])
         ),  # point range ruled out by negated is_in
+        lf.filter(pl.col("a").is_in([2])).filter(
+            ~pl.col("a").is_in([2])
+        ),  # is_in haystack fully disallowed by negated is_in
         lf.filter(pl.col("a").is_null()).filter(
             pl.col("a") > 1
         ),  # is_null but a comparison requires non-null
+        lf.filter(pl.col("a").is_null()).filter(
+            ~pl.col("a").is_in([5])
+        ),  # is_null but a negated is_in also drops nulls
         lf.filter(pl.col("a").is_null()).filter(
             pl.col("a").is_not_null()
         ),  # is_null AND is_not_null
         lf.filter(
             (pl.col("a") == pl.col("b")) & pl.col("a").is_null()
         ),  # a == b makes both non-null, contradicting a.is_null()
+        lf.filter(
+            (pl.col("a") != pl.col("b")) & pl.col("b").is_null()
+        ),  # any comparison makes both non-null: a != b contradicts b.is_null()
     ]
     for q in collapsing:
         # The FILTER node is gone from the optimized plan and the result is empty;
@@ -1562,6 +1568,30 @@ def test_filter_contradiction_collapses() -> None:
     # so it is not collapsed even when this data happens to have no null rows.
     q = lf.filter(pl.col("a").is_null())
     assert "FILTER" in q.explain()
+
+    # `ne_missing` is null-safe (`null != 4` is True), so unlike a plain `!=` it is
+    # NOT a null-dropping value constraint: `a.is_null() AND a.ne_missing(4)` is
+    # satisfiable on the null rows and must not be collapsed.
+    nulls = pl.LazyFrame({"a": [None, 1, 4]}, schema={"a": pl.Int64})
+    q = nulls.filter(pl.col("a").is_null()).filter(pl.col("a").ne_missing(4))
+    assert "FILTER" in q.explain()
+    assert_frame_equal(
+        q.select("a").collect(),
+        pl.DataFrame({"a": [None]}, schema={"a": pl.Int64}),
+    )
+
+    # The null-safe `eq_missing` keeps nulls (`null == null` is True), so unlike a
+    # plain `==` it does NOT imply non-null: `a.eq_missing(b) AND a.is_null()` is
+    # satisfiable on the rows where both are null and must not be collapsed.
+    pairs = pl.LazyFrame(
+        {"a": [None, 1], "b": [None, 2]}, schema={"a": pl.Int64, "b": pl.Int64}
+    )
+    q = pairs.filter(pl.col("a").eq_missing(pl.col("b"))).filter(pl.col("a").is_null())
+    assert "FILTER" in q.explain()
+    assert_frame_equal(
+        q.select("a", "b").collect(),
+        pl.DataFrame({"a": [None], "b": [None]}, schema={"a": pl.Int64, "b": pl.Int64}),
+    )
 
 
 def test_filter_contradiction_fallible_error_handling(
@@ -1629,27 +1659,6 @@ def test_filter_range_tightening() -> None:
             lf.filter(~(pl.col("a") >= 3)),
             lf.filter(pl.col("a") < 3),
         ),
-        # A negated `is_in` folds to a `!=` per haystack member.
-        (
-            lf.filter(~pl.col("a").is_in([2, 4])),
-            lf.filter((pl.col("a") != 2) & (pl.col("a") != 4)),
-        ),
-        # A negated empty `is_in` is always true, so the whole filter drops away
-        # (the rebuilt `AND` chain is empty). The length-1 Series haystack is the
-        # SQL `IN (..)` shape, which reaches the rule directly; DSL `is_in([])`
-        # would instead fold to `false` at conversion.
-        (
-            lf.filter(~pl.col("a").is_in(pl.Series("", [[]], dtype=pl.List(pl.Int64)))),
-            lf,
-        ),
-        # The same always-true conjunct simply drops out alongside a real bound.
-        (
-            lf.filter(
-                (~pl.col("a").is_in(pl.Series("", [[]], dtype=pl.List(pl.Int64))))
-                & (pl.col("a") > 3)
-            ),
-            lf.filter(pl.col("a") > 3),
-        ),
     ]
     for redundant, minimal in cases:
         assert redundant.explain() == minimal.explain()
@@ -1659,6 +1668,16 @@ def test_filter_range_tightening() -> None:
             redundant.explain(optimizations=pl.QueryOptFlags(simplify_expression=False))
             != redundant.explain()
         )
+
+    # A `!is_in` kept verbatim preserves the engine's null semantics: `null.is_in(..)`
+    # is null, so `~` stays null and the row is dropped. Folding `!is_in(<empty>)` to
+    # always-true would instead keep the null row, which is why no such fold exists.
+    nulls = pl.LazyFrame({"a": [None, 1]}, schema={"a": pl.Int64})
+    q = nulls.filter(~pl.col("a").is_in(pl.Series("", [[]], dtype=pl.List(pl.Int64))))
+    assert "FILTER" in q.explain()
+    assert_frame_equal(
+        q.select("a").collect(), pl.DataFrame({"a": [1]}, schema={"a": pl.Int64})
+    )
 
 
 def test_filter_cross_column_equality_propagation() -> None:
@@ -1695,6 +1714,18 @@ def test_filter_cross_column_equality_propagation() -> None:
     q_noop = lf.filter(pl.col("a") == pl.col("b"))
     assert q_noop.explain() == q_noop.explain(optimizations=no_simplify)
     assert_frame_equal(q_noop.collect(), pl.DataFrame({"a": [5, 1], "b": [5, 1]}))
+
+    # `is_in` / `!is_in` propagate across `a == b` for contradiction detection only;
+    # nothing emittable changes, so the rule must not rewrite. (Counting them as a
+    # rewrite would re-fire the rule on its own output every pass and the optimizer
+    # would never converge, so these tests completing at all is the regression pin.)
+    q_set = lf.filter((pl.col("a") == pl.col("b")) & pl.col("a").is_in([1, 5]))
+    assert "FILTER" in q_set.explain()
+    assert_frame_equal(q_set.collect(), pl.DataFrame({"a": [5, 1], "b": [5, 1]}))
+
+    q_negset = lf.filter((pl.col("a") == pl.col("b")) & ~pl.col("a").is_in([9]))
+    assert "FILTER" in q_negset.explain()
+    assert_frame_equal(q_negset.collect(), pl.DataFrame({"a": [5, 1], "b": [5, 1]}))
 
     # Conflicting cross-column constraints collapse the filter to an empty scan.
     conflicting = [

@@ -8,8 +8,8 @@
 //!    per-column `ColumnConstraints`; unmodeled conjuncts kept aside.
 //! 2. **Propagate** (`propagate_equalities`): carry constraints across
 //!    `col == col` (`a == b AND a > 5` gives `b > 5`); needs all bounds first.
-//! 3. **Resolve** (`resolve_deferred`): resolve `!=` / `is_in` against the now
-//!    final bounds; needs propagated bounds, so runs after stage 2.
+//! 3. **Resolve** (`resolve_deferred`): resolve `!=` / `is_in` / `!is_in` against
+//!    the now final bounds; needs propagated bounds, so runs after stage 2.
 //! 4. **Emit**: `false` if impossible (gated on `maintain_errors`), else the
 //!    tightest rebuilt chain, or `None` if unchanged.
 
@@ -30,25 +30,26 @@ use crate::prelude::ClosedInterval;
 
 // How a single conjunct in the `AND` chain was classified.
 enum Classification {
-    // Impossible during the walk: bounds crossed (empty range), or `is_null` AND
-    // `is_not_null`. Other impossibilities surface later (not as this variant):
-    // cross-column conflicts in `propagate_equalities`; `!=` / `is_in` / `is_null`
-    // with a comparison in `resolve_deferred`.
+    // Impossible during the walk: bounds crossed (empty range), or conflicting
+    // nullability requirements (`is_null` vs `is_not_null`, or vs a comparison's
+    // implied non-null). Other impossibilities surface later (not as this variant):
+    // cross-column conflicts in `propagate_equalities`; `!=` / `is_in` / `!is_in` /
+    // `is_null` with a comparison in `resolve_deferred`.
     Unsat,
     // A bound folded into its column and rebuilt from the merged constraints,
     // so the original conjunct is dropped.
     Bound,
     // Like `Bound`, but the conjunct was a negation normalized into positive form
-    // (`!(x > 5)` to `x <= 5`, `!is_in(..)` to exclusions). Forces a rewrite even
-    // when nothing tightens, since the original `!` node is gone (and a positive
-    // `col op lit` prunes where a `!` node cannot).
+    // (`!(x > 5)` to `x <= 5`). Forces a rewrite even when nothing tightens, since
+    // the original `!` node is gone (and a positive `col op lit` prunes where a
+    // `!` node cannot).
     Normalized,
     // A `col == col` equality, whose two columns form a cross-column propagation
     // edge (the node is kept verbatim unless its class becomes fixed).
     Equality(PlSmallStr, PlSmallStr),
     // Node kept verbatim: either unmodeled (UDFs, null-aware ops, arithmetic) or
-    // modeled only for contradiction (`is_in` / `is_null` / `is_not_null` record but
-    // aren't rewritten).
+    // modeled only for contradiction (`is_in` / `!is_in` / `is_null` / `is_not_null` /
+    // non-`==` column-column comparisons record but aren't rewritten).
     Opaque,
 }
 
@@ -64,8 +65,8 @@ enum ExcludedResolution {
 }
 
 // What `is_null` / `is_not_null` require of the surviving rows. A value
-// constraint (bound, `!=`, `is_in`) drops nulls under K3, so any of them implies
-// the column is `NonNull` and contradicts a `Null` requirement.
+// constraint (bound, `!=`, `is_in`, `!is_in`) drops nulls under K3, so any of them
+// implies the column is `NonNull` and contradicts a `Null` requirement.
 #[derive(Clone, Copy, Default, PartialEq)]
 enum Nullability {
     #[default]
@@ -84,28 +85,25 @@ fn scalar_eq(a: &Scalar, b: &Scalar) -> bool {
     scalar_cmp(a, b) == Some(Ordering::Equal)
 }
 
-// Set key for `excluded` / `allowed`. `Scalar` is `Hash` + `PartialEq` but not `Eq`,
-// so it can't be a set key; this wrapper adds the `Eq` marker. Sound here because
-// `Scalar`'s `==` is reflexive (floats compare by total order, so `NaN == NaN`).
 // `PlIndexSet` (not a hash set) keeps insertion order so the rebuilt conjuncts stay
 // deterministic.
-#[derive(Clone, PartialEq, Hash)]
-struct ScalarKey(Scalar);
-impl Eq for ScalarKey {}
-
 #[derive(Clone, Default)]
 struct ColumnConstraints {
     // `bool` = inclusive (`>=`/`<=` vs `>`/`<`). `== x` is an inclusive `[x, x]`.
     lower: Option<(Scalar, bool)>,
     upper: Option<(Scalar, bool)>,
     // `!= x` values, resolved against the bounds in `resolve_deferred`.
-    excluded: PlIndexSet<ScalarKey>,
+    excluded: PlIndexSet<Scalar>,
     // Intersection of all `is_in` haystacks; resolved against bounds in `resolve_deferred`.
-    allowed: Option<PlIndexSet<ScalarKey>>,
+    allowed: Option<PlIndexSet<Scalar>>,
+    // Union of all `!is_in` haystacks; the dual of `allowed`. Used for contradiction
+    // detection only, never emitted (a large `!is_in` must not explode into N `!=`).
+    disallowed: PlIndexSet<Scalar>,
     // Nullability required by `is_null` / `is_not_null` on this column.
     nullability: Nullability,
-    // Empty value set (unsatisfiable). Set by any stage (crossed bounds, `!=`/`is_in`,
-    // cross-column conflict, null/value conflict) and sticky, so `add_*` bail early once set.
+    // Empty value set (unsatisfiable). Set by any stage (crossed bounds,
+    // `!=`/`is_in`/`!is_in`, cross-column conflict, null/value conflict) and sticky,
+    // so `add_*` bail early once set.
     unsat: bool,
 }
 
@@ -168,11 +166,11 @@ impl ColumnConstraints {
             return false;
         }
         // `insert` dedups, so repeated `!= x` collapse to one.
-        self.excluded.insert(ScalarKey(value))
+        self.excluded.insert(value)
     }
 
     #[cfg(feature = "is_in")]
-    fn add_allowed(&mut self, values: PlIndexSet<ScalarKey>) -> bool {
+    fn add_allowed(&mut self, values: PlIndexSet<Scalar>) -> bool {
         if self.unsat {
             return false;
         }
@@ -190,11 +188,24 @@ impl ColumnConstraints {
         }
     }
 
+    // Adds a `!is_in` haystack to the disallowed set (union: a value is disallowed
+    // if any `!is_in` excludes it).
+    #[cfg(feature = "is_in")]
+    fn add_disallowed(&mut self, values: impl IntoIterator<Item = Scalar>) -> bool {
+        if self.unsat {
+            return false;
+        }
+        let before = self.disallowed.len();
+        self.disallowed.extend(values);
+        self.disallowed.len() != before
+    }
+
     fn has_value_constraint(&self) -> bool {
         self.lower.is_some()
             || self.upper.is_some()
             || !self.excluded.is_empty()
             || self.allowed.is_some()
+            || !self.disallowed.is_empty()
     }
 
     // Records an `is_null` (`Null`) / `is_not_null` (`NonNull`) requirement. The first
@@ -213,27 +224,38 @@ impl ColumnConstraints {
     }
 
     // Intersects another column's constraints into this one (for `col == col`: on a
-    // surviving row the two are equal, so each bound/exclusion/`is_in` holds for both).
-    // Returns whether anything changed.
-    fn merge_from(&mut self, other: &ColumnConstraints) -> bool {
+    // surviving row the two are equal, so each bound/exclusion/`is_in`/`!is_in` holds
+    // for both). Returns `(emitted, any)` change flags. The split matters: bounds and
+    // `!=` feed the rebuilt chain, so they may trigger a rewrite; `is_in`/`!is_in`
+    // only detect contradictions and are never emitted, so counting them as a rewrite
+    // trigger would re-fire the rule on its own (unchanged) output every pass, and
+    // the optimizer would never converge. They still drive the propagation fixpoint
+    // via `any` so transitive chains complete.
+    fn merge_from(&mut self, other: &ColumnConstraints) -> (bool, bool) {
         if self.unsat {
-            return false;
+            return (false, false);
         }
-        let mut changed = false;
+        let mut emitted = false;
+        let mut any = false;
         if let Some((value, inclusive)) = &other.lower {
-            changed |= self.add_lower(value.clone(), *inclusive);
+            emitted |= self.add_lower(value.clone(), *inclusive);
         }
         if let Some((value, inclusive)) = &other.upper {
-            changed |= self.add_upper(value.clone(), *inclusive);
+            emitted |= self.add_upper(value.clone(), *inclusive);
         }
         for value in &other.excluded {
-            changed |= self.add_excluded(value.0.clone());
+            emitted |= self.add_excluded(value.clone());
         }
         #[cfg(feature = "is_in")]
         if let Some(values) = &other.allowed {
-            changed |= self.add_allowed(values.clone());
+            any |= self.add_allowed(values.clone());
         }
-        changed
+        #[cfg(feature = "is_in")]
+        {
+            any |= self.add_disallowed(other.disallowed.iter().cloned());
+        }
+        any |= emitted;
+        (emitted, any)
     }
 
     // Marks the column impossible when the lower bound exceeds the upper (empty range).
@@ -259,7 +281,12 @@ impl ColumnConstraints {
     fn resolve_deferred(&mut self) {
         // A value constraint drops nulls, so it can't coexist with an `is_null`
         // requirement (`a.is_null() AND a > 5`). Checked here so it holds regardless
-        // of the order the conjuncts arrived in.
+        // of the order the conjuncts arrived in. Soundness rests on every source of a
+        // value constraint being null-dropping under K3 (bounds, `!=`, `is_in`,
+        // `!is_in`); the null-*preserving* ops `eq_missing` / `ne_missing`
+        // (`EqValidity` / `NotEqValidity`) must therefore stay `Opaque` and never feed
+        // `has_value_constraint`, or `a.is_null() AND a.ne_missing(4)` would wrongly
+        // collapse (it's satisfiable on the null rows).
         if self.nullability == Nullability::Null && self.has_value_constraint() {
             self.unsat = true;
             return;
@@ -269,22 +296,34 @@ impl ColumnConstraints {
             if self.unsat {
                 break;
             }
-            match self.classify_excluded(&key.0) {
+            match self.classify_excluded(&key) {
                 ExcludedResolution::Drop => {},
                 ExcludedResolution::Keep => {
                     self.excluded.insert(key);
                 },
-                ExcludedResolution::TightenLower => self.lower = Some((key.0, false)),
-                ExcludedResolution::TightenUpper => self.upper = Some((key.0, false)),
+                ExcludedResolution::TightenLower => self.lower = Some((key, false)),
+                ExcludedResolution::TightenUpper => self.upper = Some((key, false)),
             }
             self.check_bound_consistency();
         }
 
         // `is_in` confines the column to a finite set; impossible if no member is
-        // feasible (disjoint `is_in`, or `is_in([1, 2]) AND a != 1 AND a != 2`).
+        // feasible (disjoint `is_in`, or `is_in([1, 2]) AND a != 1 AND a != 2`). The
+        // `is_feasible` check also rejects any `!is_in`-disallowed value.
         if !self.unsat {
             if let Some(allowed) = &self.allowed {
-                if !allowed.iter().any(|v| self.is_feasible(&v.0)) {
+                if !allowed.iter().any(|v| self.is_feasible(v)) {
+                    self.unsat = true;
+                }
+            }
+        }
+
+        // A value pinned by `== v` and also `!is_in`-disallowed is impossible
+        // (`x == 2 AND !x.is_in([2])`). The `allowed` scan above covers the
+        // `is_in`-confined case; this covers the bound-pinned one.
+        if !self.unsat {
+            if let Some(v) = self.fixed_value() {
+                if self.disallowed.contains(v) {
                     self.unsat = true;
                 }
             }
@@ -308,14 +347,13 @@ impl ColumnConstraints {
                 _ => {},
             }
         }
-        let key = ScalarKey(value.clone());
-        if self.excluded.contains(&key) {
+        if self.excluded.contains(value) || self.disallowed.contains(value) {
             return false;
         }
         // Confined to the `is_in` set when one is present.
         self.allowed
             .as_ref()
-            .is_none_or(|allowed| allowed.contains(&key))
+            .is_none_or(|allowed| allowed.contains(value))
     }
 
     // The single value the column is pinned to (`== v`, an inclusive `[v, v]`), if any.
@@ -430,8 +468,9 @@ pub(crate) fn merge_filter_constraints(
     if unsat {
         // Collapsing to `false` drops the filter, so an expression that would have
         // errored no longer runs; only do it when errors needn't be kept (same rule
-        // as predicate pushdown). No determinism check needed: only `col op lit`
-        // parts decide the contradiction, and a plain column is deterministic.
+        // as predicate pushdown). No determinism check needed: contradictions are
+        // decided only by bare `col`/`lit` shapes (comparisons, `is_in`, null checks),
+        // and a plain column is deterministic.
         let mut group = ExprPushdownGroup::Pushable;
         group.update_with_expr_rec(expr_arena.get(predicate), expr_arena, None);
         if group.blocks_pushdown(maintain_errors) {
@@ -460,13 +499,6 @@ pub(crate) fn merge_filter_constraints(
     for (name, op, value) in comparisons {
         opaque.push(comparison_node(name, op, value.clone(), expr_arena));
     }
-    // A negation that normalizes to no constraints (`!col.is_in(<empty>)`, always
-    // true) can leave nothing to rebuild; the conjunction of all-true conjuncts is
-    // just `true`. Mirrors the `false` collapse above, and is infallible (a plain
-    // column is deterministic, the dropped conjunct pure), so it needs no gate.
-    if opaque.is_empty() {
-        return Some(expr_arena.add(AExpr::Literal(Scalar::from(true).into())));
-    }
     Some(fold_and(opaque, expr_arena))
 }
 
@@ -474,12 +506,14 @@ pub(crate) fn merge_filter_constraints(
 // transitive chains (`a == b AND b == c`) propagate. Carries bounds (`a > 5` to
 // `b > 5`), folds equal fixed values, and flags conflicts impossible via the
 // bound-consistency check (`a == b AND a == 5 AND b == 6`). Each merge only
-// tightens, so it terminates. Returns whether anything was propagated.
+// tightens, so it terminates. Returns whether anything *emittable* (a bound or
+// `!=`) was propagated; see `merge_from` for why `is_in`/`!is_in` propagation
+// advances the fixpoint but must not report as a change.
 fn propagate_equalities(
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
     edges: &[(PlSmallStr, PlSmallStr, Node)],
 ) -> bool {
-    let mut changed = false;
+    let mut emitted_changed = false;
     loop {
         let mut progressed = false;
         for (a, b, _) in edges {
@@ -492,12 +526,13 @@ fn propagate_equalities(
             let [Some(ca), Some(cb)] = constraints.get_disjoint_mut([a, b]) else {
                 continue;
             };
-            progressed |= cb.merge_from(ca);
-            progressed |= ca.merge_from(cb);
+            let (emitted_ba, any_ba) = cb.merge_from(ca);
+            let (emitted_ab, any_ab) = ca.merge_from(cb);
+            emitted_changed |= emitted_ba || emitted_ab;
+            progressed |= any_ba || any_ab;
         }
-        changed |= progressed;
         if !progressed {
-            return changed;
+            return emitted_changed;
         }
     }
 }
@@ -554,7 +589,7 @@ fn classify_into_constraints(
                 IRBooleanFunction::IsIn { .. } => {
                     if let Some(col_name) = as_column(expr_arena.get(input[0].node())) {
                         if let Some(values) = as_value_set(expr_arena.get(input[1].node())) {
-                            let allowed = values.into_iter().map(ScalarKey).collect();
+                            let allowed = values.into_iter().collect();
                             constraints
                                 .entry(col_name)
                                 .or_default()
@@ -623,25 +658,36 @@ fn classify_comparison(
             (name, lit, op)
         } else if let (Some(lit), Some(name)) = (as_scalar_lit(left_ae), as_column(right_ae)) {
             (name, lit, flip_comparison(op))
-        } else {
-            // Both sides columns under `==`: a cross-column equality edge. Create
-            // both column entries here (as the bound path does); the driver only
-            // records the edge. A regular `==` drops nulls (the null-safe form is
-            // `EqValidity`, which stays opaque), so both columns are non-null on
-            // surviving rows; recording that lets `a == b AND a.is_null()` collapse.
-            if op == Operator::Eq {
-                if let (Some(a), Some(b)) = (as_column(left_ae), as_column(right_ae)) {
-                    constraints
-                        .entry(a.clone())
-                        .or_default()
-                        .require_nullability(Nullability::NonNull);
-                    constraints
-                        .entry(b.clone())
-                        .or_default()
-                        .require_nullability(Nullability::NonNull);
+        } else if let (Some(a), Some(b)) = (as_column(left_ae), as_column(right_ae)) {
+            // Both sides columns. Any ordinary comparison drops rows where either
+            // operand is null (K3), so both columns are non-null on surviving rows;
+            // recording that lets e.g. `a <= b AND a.is_null()` collapse. The null-safe
+            // forms (`EqValidity` / `NotEqValidity`) keep nulls, so they're excluded.
+            // `==` additionally yields a cross-column propagation edge (both ends share
+            // a value on every surviving row); the others are kept verbatim.
+            if matches!(
+                op,
+                Operator::Eq
+                    | Operator::NotEq
+                    | Operator::Lt
+                    | Operator::LtEq
+                    | Operator::Gt
+                    | Operator::GtEq
+            ) {
+                constraints
+                    .entry(a.clone())
+                    .or_default()
+                    .require_nullability(Nullability::NonNull);
+                constraints
+                    .entry(b.clone())
+                    .or_default()
+                    .require_nullability(Nullability::NonNull);
+                if op == Operator::Eq {
                     return Classification::Equality(a, b);
                 }
             }
+            return Classification::Opaque;
+        } else {
             return Classification::Opaque;
         };
 
@@ -668,7 +714,10 @@ fn classify_comparison(
         Operator::NotEq => {
             cc.add_excluded(lit);
         },
-        // Null-aware comparisons don't map to a simple range.
+        // Null-aware comparisons (`eq_missing` / `ne_missing`) keep nulls, so they
+        // don't map to a value constraint. Must stay `Opaque`: modeling `ne_missing`
+        // as an exclusion would break the `is_null`-vs-value contradiction in
+        // `resolve_deferred` (see the invariant noted there).
         Operator::EqValidity | Operator::NotEqValidity => return Classification::Opaque,
         // And/or and arithmetic aren't a `col op lit` comparison.
         Operator::And
@@ -693,7 +742,7 @@ fn classify_comparison(
 
 // Pushes a logical `NOT` inward, the only negations we model:
 //   `!(x > 5)` to `x <= 5` (and the other comparisons),
-//   `!x.is_in([3, 5, 6])` to `x != 3 AND x != 5 AND x != 6`,
+//   `!x.is_in([3, 5, 6])` records 3, 5, 6 as disallowed (node kept verbatim),
 //   `!x.is_null()` / `!x.is_not_null()` to the flipped nullability requirement.
 // Sound under K3 nulls (both sides drop nulls) and polars' total-order NaN
 // handling (NaN is the greatest value, so the complementary comparison agrees on
@@ -718,27 +767,26 @@ fn classify_negation(
                 other => other,
             }
         },
-        // `!is_in(haystack)` keeps the values outside the haystack: each member is
-        // an exclusion. Same conservatism as positive `is_in` (literal, null-free
-        // haystack only, enforced by `as_value_set`), but rewritten into `!=` terms,
-        // so it folds into the bounds in `resolve_deferred`.
+        // `!is_in(haystack)` disallows each haystack member: recorded for
+        // contradiction detection only, the node kept verbatim (never rewritten
+        // into `!=` terms). Same conservatism as positive `is_in` (literal,
+        // null-free haystack only, enforced by `as_value_set`).
         #[cfg(feature = "is_in")]
         AExpr::Function {
             input,
             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsIn { .. }),
             ..
         } => {
-            let (Some(col_name), Some(values)) = (
+            if let (Some(col_name), Some(values)) = (
                 as_column(expr_arena.get(input[0].node())),
                 as_value_set(expr_arena.get(input[1].node())),
-            ) else {
-                return Classification::Opaque;
-            };
-            let cc = constraints.entry(col_name).or_default();
-            for value in values {
-                cc.add_excluded(value);
+            ) {
+                constraints
+                    .entry(col_name)
+                    .or_default()
+                    .add_disallowed(values);
             }
-            Classification::Normalized
+            Classification::Opaque
         },
         // `!(is_null)` is `is_not_null` and vice versa; record the flipped
         // nullability (node kept verbatim, like the direct `is_null` case).
@@ -966,7 +1014,7 @@ fn collect_column_comparisons<'a>(
         out.push((name, op, hi));
     }
     for value in &cc.excluded {
-        out.push((name, Operator::NotEq, &value.0));
+        out.push((name, Operator::NotEq, value));
     }
 }
 
@@ -982,8 +1030,8 @@ fn comparison_node(
     expr_arena.add(AExpr::BinaryExpr { left, op, right })
 }
 
-// Folds the conjuncts into a left-deep `AND` chain. The caller guards the empty
-// case (an all-true rewrite returns `true` directly), so there is always one node.
+// Folds the conjuncts into a left-deep `AND` chain. Every rewrite trigger keeps an
+// opaque node or emits a comparison, so there is always at least one conjunct.
 fn fold_and(nodes: Vec<Node>, expr_arena: &mut Arena<AExpr>) -> Node {
     let mut nodes = nodes.into_iter();
     let mut acc = nodes.next().expect("at least one conjunct");
