@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use hashbrown::HashMap;
@@ -9,6 +9,35 @@ use tokio::sync::RwLock;
 type DynErr = Box<dyn std::error::Error + Send + Sync>;
 
 const DEFAULT_DNS_CACHE_TTL_SECS: u64 = 5;
+
+static POLARS_DNS_LOG_THRESHOLD: LazyLock<Option<Duration>> = LazyLock::new(|| {
+    let v: Option<Duration> =
+        std::env::var("POLARS_DNS_LOG_THRESHOLD_MS")
+            .ok()
+            .and_then(|x| match x.trim().parse::<u64>() {
+                Ok(ms) => Some(Duration::from_millis(ms)),
+                Err(_) => {
+                    if polars_config::config().verbose() {
+                        eprintln!(
+                            "[dns_cache] ignoring invalid POLARS_DNS_LOG_THRESHOLD_MS={x:?} \
+                         (expected integer milliseconds)"
+                        );
+                    }
+                    None
+                },
+            });
+
+    if let Some(v) = v
+        && polars_config::config().verbose()
+    {
+        eprintln!(
+            "[dns_cache] dns log threshold: {} ms",
+            v.as_secs_f64() * 1000.0
+        )
+    }
+
+    v
+});
 
 pub(crate) fn get_dns_cache_ttl() -> Duration {
     let ttl = Duration::from_secs(
@@ -77,6 +106,7 @@ impl Resolve for CachingResolver {
                 }
             }
 
+            let t0 = Instant::now();
             let addrs = Arc::new(
                 polars_core::runtime::ASYNC
                     .spawn_blocking(move || {
@@ -87,6 +117,17 @@ impl Resolve for CachingResolver {
                     .await
                     .map_err(DynErr::from)??,
             );
+            let elapsed = t0.elapsed();
+            if let Some(threshold) = POLARS_DNS_LOG_THRESHOLD.as_ref()
+                && elapsed.gt(&threshold)
+            {
+                eprintln!(
+                    "[dns_cache] dns lookup for {} took {:.1} ms, exceeded threshold of {} ms",
+                    &key,
+                    elapsed.as_secs_f64() as f64 * 1000.0,
+                    threshold.as_secs_f64() as f64 * 1000.0
+                )
+            }
 
             write_guard.insert(
                 key,
