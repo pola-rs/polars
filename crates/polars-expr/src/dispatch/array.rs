@@ -1,8 +1,6 @@
 use polars_core::error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_core::prelude::{Column, DataType, ExplodeOptions, IntoColumn, SortOptions};
 use polars_ops::prelude::array::ArrayNameSpace;
-#[cfg(feature = "array_to_struct")]
-use polars_plan::dsl::DslNameGenerator;
 use polars_plan::dsl::{ColumnsUdf, SpecialEq};
 use polars_plan::plans::IRArrayFunction;
 use polars_utils::pl_str::PlSmallStr;
@@ -35,7 +33,7 @@ pub fn function_expr_to_udf(func: IRArrayFunction) -> SpecialEq<Arc<dyn ColumnsU
         Explode(options) => map_as_slice!(explode, options),
         Slice(offset, length) => map!(slice, offset, length),
         #[cfg(feature = "array_to_struct")]
-        ToStruct(ng) => map!(arr_to_struct, ng.clone()),
+        ToStruct { fields } => map!(arr_to_struct, &fields),
     }
 }
 
@@ -215,12 +213,8 @@ fn concat_arr_output_dtype(
 }
 
 #[cfg(feature = "array_to_struct")]
-fn arr_to_struct(s: &Column, name_generator: Option<DslNameGenerator>) -> PolarsResult<Column> {
+fn arr_to_struct(s: &Column, fields: &[PlSmallStr]) -> PolarsResult<Column> {
     use polars_ops::prelude::array::ToStruct;
 
-    let name_generator =
-        name_generator.map(|f| Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>);
-    s.array()?
-        .to_struct(name_generator)
-        .map(IntoColumn::into_column)
+    s.array()?.to_struct(fields).map(IntoColumn::into_column)
 }

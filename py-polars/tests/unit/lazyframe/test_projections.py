@@ -143,7 +143,7 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
+        .list.to_struct(["genre1", "genre2", "genre3", "genre4"])
     ).unnest("genres")
 
     out = q.collect()

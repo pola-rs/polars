@@ -1,7 +1,6 @@
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
-use polars_utils::python_function::PythonObject;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -514,26 +513,12 @@ impl PySeries {
         })
     }
 
-    pub fn list_to_struct(
-        &self,
-        py: Python<'_>,
-        width_strat: Wrap<ListToStructWidthStrategy>,
-        name_gen: Option<Py<PyAny>>,
-    ) -> PyResult<Self> {
+    pub fn list_to_struct(&self, py: Python<'_>, fields: Vec<PlSmallStr>) -> PyResult<Self> {
         py.enter_polars(|| {
-            let get_index_name =
-                name_gen.map(|f| PlanCallback::<usize, String>::new_python(PythonObject(f)));
-            let get_index_name = get_index_name.map(|f| {
-                NameGenerator(Arc::new(move |i| f.call(i).map(PlSmallStr::from)) as Arc<_>)
-            });
             self.series
                 .read()
                 .list()?
-                .to_struct(&ListToStructArgs::InferWidth {
-                    infer_field_strategy: width_strat.0,
-                    get_index_name,
-                    max_fields: None,
-                })
+                .to_struct(&fields)
                 .map(IntoSeries::into_series)
         })
         .map(Into::into)

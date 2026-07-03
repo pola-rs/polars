@@ -2,12 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars import functions as F
-from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from polars import Series
     from polars._plr import PySeries
@@ -723,59 +721,79 @@ class ArrayNameSpace:
 
         """
 
-    def to_struct(
-        self,
-        fields: Callable[[int], str] | Sequence[str] | None = None,
-    ) -> Series:
+    def to_struct(self, fields: Sequence[str]) -> Series:
         """
         Convert the series of type `Array` to a series of type `Struct`.
 
         Parameters
         ----------
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+            Field names to use for the output. The number of names given must
+            match the width of the input array. If unset, the fields will be
+            named as "field_0", "field_1" .. "field_n".
 
         Examples
         --------
-        Convert array to struct with default field name assignment:
-
-        >>> s1 = pl.Series("n", [[0, 1, 2], [3, 4, 5]], dtype=pl.Array(pl.Int8, 3))
-        >>> s2 = s1.arr.to_struct()
-        >>> s2
-        shape: (2,)
-        Series: 'n' [struct[3]]
+        >>> s = pl.Series(
+        ...     [
+        ...         [1, 0, 0],
+        ...         [0, 1, 0],
+        ...         [0, 0, 1],
+        ...         [None, None, None],
+        ...         None,
+        ...     ],
+        ...     dtype=pl.Array(pl.Int64, 3),
+        ... )
+        >>> print(result := s.arr.to_struct())
+        shape: (5,)
+        Series: '' [struct[3]]
         [
-            {0,1,2}
-            {3,4,5}
+                {1,0,0}
+                {0,1,0}
+                {0,0,1}
+                {null,null,null}
+                {null,null,null}
         ]
-        >>> s2.struct.fields
-        ['field_0', 'field_1', 'field_2']
+        >>> print(result.struct.unnest())
+        shape: (5, 3)
+        ┌─────────┬─────────┬─────────┐
+        │ field_0 ┆ field_1 ┆ field_2 │
+        │ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ i64     │
+        ╞═════════╪═════════╪═════════╡
+        │ 1       ┆ 0       ┆ 0       │
+        │ 0       ┆ 1       ┆ 0       │
+        │ 0       ┆ 0       ┆ 1       │
+        │ null    ┆ null    ┆ null    │
+        │ null    ┆ null    ┆ null    │
+        └─────────┴─────────┴─────────┘
 
-        Convert array to struct with field name assignment by function/index:
+        Convert to struct with custom field names:
 
-        >>> s3 = s1.arr.to_struct(fields=lambda idx: f"n{idx:02}")
-        >>> s3.struct.fields
-        ['n00', 'n01', 'n02']
-
-        Convert array to struct with field name assignment by
-        index from a list of names:
-
-        >>> s1.arr.to_struct(fields=["one", "two", "three"]).struct.unnest()
-        shape: (2, 3)
-        ┌─────┬─────┬───────┐
-        │ one ┆ two ┆ three │
-        │ --- ┆ --- ┆ ---   │
-        │ i8  ┆ i8  ┆ i8    │
-        ╞═════╪═════╪═══════╡
-        │ 0   ┆ 1   ┆ 2     │
-        │ 3   ┆ 4   ┆ 5     │
-        └─────┴─────┴───────┘
+        >>> print(result := s.arr.to_struct(["x", "y", "z"]))
+        shape: (5,)
+        Series: '' [struct[3]]
+        [
+                {1,0,0}
+                {0,1,0}
+                {0,0,1}
+                {null,null,null}
+                {null,null,null}
+        ]
+        >>> print(result.struct.unnest())
+        shape: (5, 3)
+        ┌──────┬──────┬──────┐
+        │ x    ┆ y    ┆ z    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ i64  │
+        ╞══════╪══════╪══════╡
+        │ 1    ┆ 0    ┆ 0    │
+        │ 0    ┆ 1    ┆ 0    │
+        │ 0    ┆ 0    ┆ 1    │
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
         """
-        s = wrap_s(self._s)
-        return s.to_frame().select(F.col(s.name).arr.to_struct(fields)).to_series()
 
     def shift(self, n: int | IntoExprColumn = 1) -> Series:
         """

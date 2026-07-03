@@ -455,6 +455,22 @@ mod _serde_impl {
     }
 }
 
+#[cfg(feature = "schemars")]
+impl<T: schemars::JsonSchema> schemars::JsonSchema for Buffer<T> {
+    fn inline_schema() -> bool {
+        Vec::<T>::inline_schema()
+    }
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        Vec::<T>::schema_name()
+    }
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        Vec::<T>::schema_id()
+    }
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        Vec::<T>::json_schema(generator)
+    }
+}
+
 impl<T: Copy> IntoIterator for Buffer<T> {
     type Item = T;
 

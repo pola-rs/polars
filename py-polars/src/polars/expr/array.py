@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from polars import functions as F
@@ -8,7 +7,7 @@ from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Sequence
 
     from polars import Expr
     from polars._typing import IntoExpr, IntoExprColumn
@@ -892,63 +891,102 @@ class ExprArrayNameSpace:
         element_pyexpr = parse_into_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.arr_count_matches(element_pyexpr))
 
-    def to_struct(
-        self, fields: Sequence[str] | Callable[[int], str] | None = None
-    ) -> Expr:
+    def to_struct(self, fields: Sequence[str] | None = None) -> Expr:
         """
         Convert the Series of type `Array` to a Series of type `Struct`.
 
         Parameters
         ----------
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+            Field names to use for the output. The number of names given must
+            match the width of the input array. If unset, the fields will be
+            named as "field_0", "field_1" .. "field_n".
 
         Examples
         --------
-        Convert array to struct with default field name assignment:
-
         >>> df = pl.DataFrame(
-        ...     {"n": [[0, 1, 2], [3, 4, 5]]}, schema={"n": pl.Array(pl.Int8, 3)}
+        ...     {
+        ...         "c": pl.Series(
+        ...             [
+        ...                 [1, 0, 0],
+        ...                 [0, 1, 0],
+        ...                 [0, 0, 1],
+        ...                 [None, None, None],
+        ...                 None,
+        ...             ],
+        ...             dtype=pl.Array(pl.Int64, 3),
+        ...         )
+        ...     }
         ... )
-        >>> df.with_columns(struct=pl.col("n").arr.to_struct())
-        shape: (2, 2)
-        ┌──────────────┬───────────┐
-        │ n            ┆ struct    │
-        │ ---          ┆ ---       │
-        │ array[i8, 3] ┆ struct[3] │
-        ╞══════════════╪═══════════╡
-        │ [0, 1, 2]    ┆ {0,1,2}   │
-        │ [3, 4, 5]    ┆ {3,4,5}   │
-        └──────────────┴───────────┘
+        >>> print(result := df.with_columns(c_struct=pl.col("c").arr.to_struct()))
+        shape: (5, 2)
+        ┌────────────────────┬──────────────────┐
+        │ c                  ┆ c_struct         │
+        │ ---                ┆ ---              │
+        │ array[i64, 3]      ┆ struct[3]        │
+        ╞════════════════════╪══════════════════╡
+        │ [1, 0, 0]          ┆ {1,0,0}          │
+        │ [0, 1, 0]          ┆ {0,1,0}          │
+        │ [0, 0, 1]          ┆ {0,0,1}          │
+        │ [null, null, null] ┆ {null,null,null} │
+        │ null               ┆ {null,null,null} │
+        └────────────────────┴──────────────────┘
+        >>> print(result["c_struct"].struct.unnest())
+        shape: (5, 3)
+        ┌─────────┬─────────┬─────────┐
+        │ field_0 ┆ field_1 ┆ field_2 │
+        │ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ i64     │
+        ╞═════════╪═════════╪═════════╡
+        │ 1       ┆ 0       ┆ 0       │
+        │ 0       ┆ 1       ┆ 0       │
+        │ 0       ┆ 0       ┆ 1       │
+        │ null    ┆ null    ┆ null    │
+        │ null    ┆ null    ┆ null    │
+        └─────────┴─────────┴─────────┘
 
-        Convert array to struct with field name assignment by function/index:
+        Convert to struct with custom field names:
 
-        >>> df = pl.DataFrame(
-        ...     {"n": [[0, 1, 2], [3, 4, 5]]}, schema={"n": pl.Array(pl.Int8, 3)}
+        >>> print(
+        ...     result := df.with_columns(
+        ...         c_struct=pl.col("c").arr.to_struct(["x", "y", "z"]),
+        ...     )
         ... )
-        >>> df.select(pl.col("n").arr.to_struct(fields=lambda idx: f"n{idx}")).rows(
-        ...     named=True
-        ... )
-        [{'n': {'n0': 0, 'n1': 1, 'n2': 2}}, {'n': {'n0': 3, 'n1': 4, 'n2': 5}}]
-
-        Convert array to struct with field name assignment by
-        index from a list of names:
-
-        >>> df.select(pl.col("n").arr.to_struct(fields=["c1", "c2", "c3"])).rows(
-        ...     named=True
-        ... )
-        [{'n': {'c1': 0, 'c2': 1, 'c3': 2}}, {'n': {'c1': 3, 'c2': 4, 'c3': 5}}]
+        shape: (5, 2)
+        ┌────────────────────┬──────────────────┐
+        │ c                  ┆ c_struct         │
+        │ ---                ┆ ---              │
+        │ array[i64, 3]      ┆ struct[3]        │
+        ╞════════════════════╪══════════════════╡
+        │ [1, 0, 0]          ┆ {1,0,0}          │
+        │ [0, 1, 0]          ┆ {0,1,0}          │
+        │ [0, 0, 1]          ┆ {0,0,1}          │
+        │ [null, null, null] ┆ {null,null,null} │
+        │ null               ┆ {null,null,null} │
+        └────────────────────┴──────────────────┘
+        >>> print(result["c_struct"].struct.unnest())
+        shape: (5, 3)
+        ┌──────┬──────┬──────┐
+        │ x    ┆ y    ┆ z    │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ i64  │
+        ╞══════╪══════╪══════╡
+        │ 1    ┆ 0    ┆ 0    │
+        │ 0    ┆ 1    ┆ 0    │
+        │ 0    ┆ 0    ┆ 1    │
+        │ null ┆ null ┆ null │
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
         """
-        if isinstance(fields, Sequence):
-            field_names = list(fields)
-            pyexpr = self._pyexpr.arr_to_struct(None)
-            return wrap_expr(pyexpr).struct.rename_fields(field_names)
-        else:
-            pyexpr = self._pyexpr.arr_to_struct(fields)
-            return wrap_expr(pyexpr)
+        if isinstance(fields, str):
+            msg = (
+                "list.to_struct() got a str instead of a list. "
+                f"hint: pass ['{fields}'] instead of '{fields}'"
+            )
+            raise TypeError(msg)
+
+        pyexpr = self._pyexpr.arr_to_struct(fields)
+        return wrap_expr(pyexpr)
 
     def shift(self, n: int | IntoExprColumn = 1) -> Expr:
         """
