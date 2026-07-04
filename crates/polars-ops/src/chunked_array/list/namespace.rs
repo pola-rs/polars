@@ -1,8 +1,8 @@
+use std::borrow::Cow;
 use std::fmt::Write;
 
-use arrow::array::ValueSize;
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
-use polars_core::chunked_array::builder::get_list_builder;
+use polars_compute::horizontal_concat_list::horizontal_concat_list_unchecked;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::{CustomIterTools, try_get_supertype};
@@ -685,7 +685,6 @@ pub trait ListNameSpaceImpl: AsList {
 
     fn lst_concat(&self, other: &[Column]) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
-        let other_len = other.len();
         let length = ca.len();
         let mut other = other.to_vec();
         let mut inner_super_type = ca.inner_dtype().clone();
@@ -701,127 +700,33 @@ pub trait ListNameSpaceImpl: AsList {
             }
         }
 
-        // cast lhs
         let dtype = &DataType::List(Box::new(inner_super_type.clone()));
-        let ca = ca.cast(dtype)?;
-        let ca = ca.list().unwrap();
 
-        // broadcasting path in case all unit length
-        // this path will not expand the series, so saves memory
-        let out = if other.iter().all(|s| s.len() == 1) && ca.len() != 1 {
-            cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
-            let to_append = other
-                .iter()
-                .filter_map(|s| {
-                    let lst = s.list().unwrap();
-                    // SAFETY: previous rhs_cast ensures the type is correct
-                    unsafe {
-                        lst.get_as_series(0)
-                            .map(|s| s.from_physical_unchecked(&inner_super_type).unwrap())
-                    }
-                })
-                .collect::<Vec<_>>();
+        // Cast lhs and rhs to a common `list[supertype]`. Unit-length rhs columns
+        // are left un-expanded (`allow_broadcast=false`); the kernel broadcasts
+        // them in-place, which avoids materializing the broadcast.
+        let ca_series = ca.cast(dtype)?;
+        let ca = ca_series.list().unwrap();
+        cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
 
-            // there was a None, so all values will be None
-            if to_append.len() != other_len {
-                return Ok(ListChunked::full_null_with_dtype(
-                    ca.name().clone(),
-                    length,
-                    &inner_super_type,
-                ));
-            }
+        // Collect single-chunk list arrays: `self` first, then the rhs columns.
+        let mut list_chunkeds: Vec<Cow<'_, ListChunked>> = Vec::with_capacity(other.len() + 1);
+        list_chunkeds.push(ca.rechunk());
+        for s in &other {
+            list_chunkeds.push(s.list()?.rechunk());
+        }
+        let arrays: Vec<_> = list_chunkeds
+            .iter()
+            .map(|lc| lc.downcast_iter().next().unwrap().clone())
+            .collect();
 
-            let vals_size_other = other
-                .iter()
-                .map(|s| s.list().unwrap().get_values_size())
-                .sum::<usize>();
+        // SAFETY: after casting all arrays share the same inner (super)type, and
+        // each has length `length` (== output height) or 1 (broadcast).
+        let out_arr = unsafe { horizontal_concat_list_unchecked(&arrays) };
 
-            let mut builder = get_list_builder(
-                &inner_super_type,
-                ca.get_values_size() + vals_size_other + 1,
-                length,
-                ca.name().clone(),
-            );
-            ca.series_iter().for_each(|opt_s| {
-                let opt_s = opt_s.map(|mut s| {
-                    for append in &to_append {
-                        s.append(append).unwrap();
-                    }
-                    match inner_super_type {
-                        // structs don't have chunks, so we must first rechunk the underlying series
-                        #[cfg(feature = "dtype-struct")]
-                        DataType::Struct(_) => s = s.rechunk(),
-                        // nothing
-                        _ => {},
-                    }
-                    s
-                });
-                builder.append_opt_series(opt_s.as_ref()).unwrap();
-            });
-            builder.finish()
-        } else {
-            // normal path which may contain same length list or unit length lists
-            cast_rhs(&mut other, &inner_super_type, dtype, length, true)?;
-
-            let vals_size_other = other
-                .iter()
-                .map(|s| s.list().unwrap().get_values_size())
-                .sum::<usize>();
-            let mut iters = Vec::with_capacity(other_len + 1);
-
-            for s in other.iter_mut() {
-                iters.push(s.list()?.amortized_iter())
-            }
-            let mut first_iter = ca.series_iter();
-            let mut builder = get_list_builder(
-                &inner_super_type,
-                ca.get_values_size() + vals_size_other + 1,
-                length,
-                ca.name().clone(),
-            );
-
-            for _ in 0..ca.len() {
-                let mut acc = match first_iter.next().unwrap() {
-                    Some(s) => s,
-                    None => {
-                        builder.append_null();
-                        // make sure that the iterators advance before we continue
-                        for it in &mut iters {
-                            it.next().unwrap();
-                        }
-                        continue;
-                    },
-                };
-
-                let mut has_nulls = false;
-                for it in &mut iters {
-                    match it.next().unwrap() {
-                        Some(s) => {
-                            if !has_nulls {
-                                acc.append(s.as_ref())?;
-                            }
-                        },
-                        None => {
-                            has_nulls = true;
-                        },
-                    }
-                }
-                if has_nulls {
-                    builder.append_null();
-                    continue;
-                }
-
-                match inner_super_type {
-                    // structs don't have chunks, so we must first rechunk the underlying series
-                    #[cfg(feature = "dtype-struct")]
-                    DataType::Struct(_) => acc = acc.rechunk(),
-                    // nothing
-                    _ => {},
-                }
-                builder.append_series(&acc).unwrap();
-            }
-            builder.finish()
-        };
+        let mut out = ListChunked::with_chunk(ca.name().clone(), out_arr);
+        // The kernel operates on physical arrays; restore the logical inner dtype.
+        unsafe { out.to_logical(inner_super_type) };
         Ok(out)
     }
 }
