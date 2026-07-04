@@ -75,14 +75,14 @@ enum Nullability {
     NonNull,
 }
 
-// Orders two scalars; incomparable types give `None` (neither equal nor ordered),
-// so we never declare a contradiction we aren't sure of.
+// Orders two scalars; incomparable pairs give `None`, so we never declare a
+// contradiction we aren't sure of. The dtype guard is load-bearing: `AnyValue`'s
+// `PartialOrd` panics on nested/mixed/object dtypes rather than returning `None`.
 fn scalar_cmp(a: &Scalar, b: &Scalar) -> Option<Ordering> {
+    if a.dtype() != b.dtype() || a.dtype().is_nested() || a.dtype().is_object() {
+        return None;
+    }
     a.as_any_value().partial_cmp(&b.as_any_value())
-}
-
-fn scalar_eq(a: &Scalar, b: &Scalar) -> bool {
-    scalar_cmp(a, b) == Some(Ordering::Equal)
 }
 
 // `PlIndexSet` (not a hash set) keeps insertion order so the rebuilt conjuncts stay
@@ -359,7 +359,7 @@ impl ColumnConstraints {
     // The single value the column is pinned to (`== v`, an inclusive `[v, v]`), if any.
     fn fixed_value(&self) -> Option<&Scalar> {
         match (&self.lower, &self.upper) {
-            (Some((lo, true)), Some((hi, true))) if scalar_eq(lo, hi) => Some(lo),
+            (Some((lo, true)), Some((hi, true))) if lo == hi => Some(lo),
             _ => None,
         }
     }

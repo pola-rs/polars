@@ -1745,6 +1745,20 @@ def test_filter_cross_column_equality_propagation() -> None:
         assert "FILTER" in q.explain(optimizations=no_simplify)
 
 
+def test_filter_constraint_nested_scalar_no_panic() -> None:
+    # Repeated comparisons against a List scalar reach the constraint model's
+    # scalar ordering, and `AnyValue`'s partial ordering panics on nested dtypes
+    # ("ordering for List dtype is not supported"). Nested scalars must be
+    # treated as incomparable (no tightening, no contradiction) instead.
+    lf = pl.LazyFrame({"a": [[1, 2], [3]], "b": [1, 2]})
+
+    q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") == [1, 2]))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [[1, 2]], "b": [1]}))
+
+    q = lf.filter((pl.col("a") == [1, 2]) & (pl.col("a") != [3]))
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [[1, 2]], "b": [1]}))
+
+
 def test_predicate_pushdown_after_collect_schema_26882() -> None:
     # Resolving schema mid-build caches DSL->IR conversion with schema-only `opt_flags`
     # (eg: no predicate pushdown); subsequent `collect` should NOT skip optimisations
