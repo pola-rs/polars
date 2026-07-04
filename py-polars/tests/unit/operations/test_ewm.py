@@ -113,17 +113,16 @@ def test_ewm_mean_leading_nulls() -> None:
 def test_ewm_sum() -> None:
     s = pl.Series([1, 2, 3, 4, 5])
     expected = pl.Series([1.0, 2.5, 4.25, 6.125, 8.0625])
-    assert_series_equal(s.ewm_sum(alpha=0.5, adjust=True), expected)
-    assert_series_equal(s.ewm_sum(alpha=0.5, adjust=False), expected)
+    assert_series_equal(s.ewm_sum(alpha=0.5), expected)
 
     s = pl.Series([2, 5, 3])
     expected = pl.Series([2.0, 6.0, 6.0])
-    assert_series_equal(s.ewm_sum(alpha=0.5, adjust=True, ignore_nulls=True), expected)
-    assert_series_equal(s.ewm_sum(alpha=0.5, adjust=True, ignore_nulls=False), expected)
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=True), expected)
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=False), expected)
 
     expected = pl.Series([None, 6.0, 6.0])
     assert_series_equal(
-        s.ewm_sum(alpha=0.5, adjust=True, min_samples=2, ignore_nulls=True), expected
+        s.ewm_sum(alpha=0.5, min_samples=2, ignore_nulls=True), expected
     )
 
     s = pl.Series([None, None, 5.0, 7.0, None, 2.0, 1.0, 4.0])
@@ -139,7 +138,7 @@ def test_ewm_sum() -> None:
             5.59375,
         ],
     )
-    assert_series_equal(s.ewm_sum(alpha=0.5, adjust=True, ignore_nulls=False), expected)
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=False), expected)
 
     expected = pl.Series(
         [
@@ -153,7 +152,7 @@ def test_ewm_sum() -> None:
             6.1875,
         ],
     )
-    assert_series_equal(s.ewm_sum(alpha=0.5, adjust=True, ignore_nulls=True), expected)
+    assert_series_equal(s.ewm_sum(alpha=0.5, ignore_nulls=True), expected)
 
 
 def test_ewm_mean_min_samples() -> None:
@@ -349,7 +348,8 @@ def test_ewm_methods(
             assert_series_equal(ewm_mean_pl, ewm_mean_pd, abs_tol=1e-07)
 
             if adjust:
-                ewm_sum_pl = s.ewm_sum(**pl_params).fill_nan(None)
+                ewm_sum_params = {k: v for k, v in pl_params.items() if k != "adjust"}
+                ewm_sum_pl = s.ewm_sum(**ewm_sum_params).fill_nan(None)
                 ewm_sum_pd = pl.Series(p.ewm(**pd_params).sum())
                 if ignore_nulls:
                     ewm_sum_pl = ewm_sum_pl.fill_null(strategy="forward")

@@ -9192,7 +9192,6 @@ class Series:
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        adjust: bool = True,
         min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
@@ -9222,8 +9221,6 @@ class Series:
                     \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
-        adjust
-            Parameter included for API compatibility with :func:`ewm_mean`.
         min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).

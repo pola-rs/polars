@@ -1657,7 +1657,6 @@ fn to_graph_rec<'a>(
                     with_match_physical_float_type!(dtype, |$T| {
                         let state: EwmSumState<$T> = EwmSumState::new(
                             AsPrimitive::<$T>::as_(options.alpha),
-                            options.adjust,
                             options.min_periods,
                             options.ignore_nulls,
                         );

@@ -6,7 +6,6 @@ use crate::ewm::EwmStateUpdate;
 pub fn ewm_sum<I, T>(
     xs: I,
     alpha: T,
-    adjust: bool,
     min_periods: usize,
     ignore_nulls: bool,
 ) -> PrimitiveArray<T>
@@ -14,7 +13,7 @@ where
     I: IntoIterator<Item = Option<T>>,
     T: num_traits::Float + NativeType + std::ops::MulAssign,
 {
-    let mut state: EwmSumState<T> = EwmSumState::new(alpha, adjust, min_periods, ignore_nulls);
+    let mut state: EwmSumState<T> = EwmSumState::new(alpha, min_periods, ignore_nulls);
     state.update_iter(xs).collect()
 }
 
@@ -30,7 +29,7 @@ impl<T> EwmSumState<T>
 where
     T: NativeType + num_traits::Float + std::ops::MulAssign,
 {
-    pub fn new(alpha: T, _adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    pub fn new(alpha: T, min_periods: usize, ignore_nulls: bool) -> Self {
         Self {
             sum: T::zero(),
             alpha,
@@ -90,19 +89,17 @@ mod test {
     fn test_ewm_sum_without_null() {
         let xs: Vec<Option<f64>> = vec![Some(1.0), Some(2.0), Some(3.0)];
 
-        for adjust in [false, true] {
-            for ignore_nulls in [false, true] {
-                for min_periods in [0, 1] {
-                    let result = ewm_sum(xs.clone(), ALPHA, adjust, min_periods, ignore_nulls);
-                    let expected =
-                        PrimitiveArray::from(vec![Some(1.0f64), Some(2.5f64), Some(4.25f64)]);
-                    assert_allclose!(result, expected, EPS);
-                }
-
-                let result = ewm_sum(xs.clone(), ALPHA, adjust, 2, ignore_nulls);
-                let expected = PrimitiveArray::from(vec![None, Some(2.5f64), Some(4.25f64)]);
+        for ignore_nulls in [false, true] {
+            for min_periods in [0, 1] {
+                let result = ewm_sum(xs.clone(), ALPHA, min_periods, ignore_nulls);
+                let expected =
+                    PrimitiveArray::from(vec![Some(1.0f64), Some(2.5f64), Some(4.25f64)]);
                 assert_allclose!(result, expected, EPS);
             }
+
+            let result = ewm_sum(xs.clone(), ALPHA, 2, ignore_nulls);
+            let expected = PrimitiveArray::from(vec![None, Some(2.5f64), Some(4.25f64)]);
+            assert_allclose!(result, expected, EPS);
         }
     }
 
@@ -119,9 +116,8 @@ mod test {
             Some(4.0f64),
         ];
 
-        for adjust in [false, true] {
-            assert_allclose!(
-                ewm_sum(xs1.clone(), ALPHA, adjust, 0, true),
+        assert_allclose!(
+            ewm_sum(xs1.clone(), ALPHA, 0, true),
                 PrimitiveArray::from(vec![
                     None,
                     None,
@@ -133,10 +129,10 @@ mod test {
                     Some(6.1875),
                 ]),
                 EPS
-            );
+        );
 
-            assert_allclose!(
-                ewm_sum(xs1.clone(), ALPHA, adjust, 0, false),
+        assert_allclose!(
+            ewm_sum(xs1.clone(), ALPHA, 0, false),
                 PrimitiveArray::from(vec![
                     None,
                     None,
@@ -148,7 +144,6 @@ mod test {
                     Some(5.59375),
                 ]),
                 EPS
-            );
-        }
+        );
     }
 }

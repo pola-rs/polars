@@ -836,13 +836,13 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_sum(&self, alpha: f64, adjust: bool, min_periods: usize, ignore_nulls: bool) -> Self {
+    fn ewm_sum(&self, alpha: f64, min_periods: usize, ignore_nulls: bool) -> Self {
         let options = EWMOptions {
             alpha,
-            adjust,
             bias: false,
             min_periods,
             ignore_nulls,
+            ..Default::default()
         };
         self.inner.clone().ewm_sum(options).into()
     }

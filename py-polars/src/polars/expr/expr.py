@@ -10641,7 +10641,6 @@ Consider using {self}.implode() instead"""
         span: float | None = None,
         half_life: float | None = None,
         alpha: float | None = None,
-        adjust: bool = True,
         min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Expr:
@@ -10671,8 +10670,6 @@ Consider using {self}.implode() instead"""
                     \forall \; \tau > 0
         alpha
             Specify smoothing factor alpha directly, :math:`0 < \alpha \leq 1`.
-        adjust
-            Parameter included for API compatibility with :func:`ewm_mean`.
         min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
@@ -10695,7 +10692,7 @@ Consider using {self}.implode() instead"""
         └──────┘
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
-        return wrap_expr(self._pyexpr.ewm_sum(alpha, adjust, min_samples, ignore_nulls))
+        return wrap_expr(self._pyexpr.ewm_sum(alpha, min_samples, ignore_nulls))
 
     def ewm_mean_by(
         self,
