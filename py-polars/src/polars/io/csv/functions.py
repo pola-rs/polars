@@ -509,10 +509,7 @@ def read_csv(
             str(v).startswith("hf://")
             # Also dispatch on FORCE_ASYNC, so that this codepath gets run
             # through by our test suite during CI.
-            or (
-                os.getenv("POLARS_FORCE_ASYNC") == "1"
-                and encoding_supported_in_lazy
-            )
+            or (os.getenv("POLARS_FORCE_ASYNC") == "1" and encoding_supported_in_lazy)
             # TODO: We can't dispatch this for all paths due to a few reasons:
             # * `scan_csv` does not support compressed files
             # * The `storage_options` configuration keys are different between
