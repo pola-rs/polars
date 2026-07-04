@@ -157,9 +157,7 @@ def test_qcut_nan_input_values() -> None:
 
 
 def test_qcut_full_nan() -> None:
-    # All-NaN input used to panic (unwrap on None): NaN is converted to null
-    # internally, but the all-null early-return checked the original series,
-    # where NaN is not null, so it slipped through to quantile computation.
+    # Regression: all-NaN used to panic (all-null check used the pre-NaN-drop series).
     s = pl.Series("a", [float("nan"), float("nan")])
 
     result = s.qcut([0.25, 0.50])
@@ -169,18 +167,14 @@ def test_qcut_full_nan() -> None:
 
 
 def test_qcut_inf_breakpoint_raises() -> None:
-    # A quantile that interpolates across an infinite value yields a NaN
-    # breakpoint; this used to panic (unwrap on None in the sort). It now raises.
+    # Regression: inf gives a NaN breakpoint that used to panic; now raises.
     s = pl.Series("a", [float("inf"), float("-inf")])
     with pytest.raises(ComputeError):
         s.qcut([0.3, 0.6])
 
 
 def test_qcut_full_nan_include_breaks() -> None:
-    # All-NaN with include_breaks must still return the Struct dtype, matching
-    # the non-degenerate path and the lazy schema (a bare Categorical would
-    # mismatch and panic downstream). The struct fields are all-null and the
-    # series keeps the input name.
+    # include_breaks must return the Struct dtype even on all-NaN input.
     s = pl.Series("a", [float("nan"), float("nan")])
 
     result = s.qcut([0.25, 0.50], include_breaks=True)
@@ -195,14 +189,12 @@ def test_qcut_full_nan_include_breaks() -> None:
 
 
 def test_qcut_nan_and_inf_mixed() -> None:
-    # NaN is dropped internally, leaving the infinities, whose interpolated
-    # quantile is NaN; this must raise rather than panic.
+    # NaN dropped, infinities remain, so the breakpoint is NaN -> raises.
     s = pl.Series("a", [float("nan"), float("inf"), float("-inf")])
     with pytest.raises(ComputeError):
         s.qcut([0.5])
 
 
-# https://github.com/pola-rs/polars/issues/27284
 def test_qcut_empty_include_breaks_27284() -> None:
     empty = pl.Series("x", [], dtype=pl.Float64)
 
@@ -214,7 +206,6 @@ def test_qcut_empty_include_breaks_27284() -> None:
     assert result.len() == 0
 
 
-# https://github.com/pola-rs/polars/issues/27284
 def test_qcut_empty_include_breaks_lazy_27284() -> None:
     lf = pl.LazyFrame({"x": pl.Series([], dtype=pl.Float64)})
 
@@ -226,7 +217,6 @@ def test_qcut_empty_include_breaks_lazy_27284() -> None:
     assert result.height == 0
 
 
-# https://github.com/pola-rs/polars/issues/27284
 def test_qcut_full_null_include_breaks_27284() -> None:
     s = pl.Series("x", [None, None, None], dtype=pl.Float64)
 
@@ -238,11 +228,8 @@ def test_qcut_full_null_include_breaks_27284() -> None:
     assert result.len() == 3
 
 
-# https://github.com/pola-rs/polars/issues/27284
 def test_qcut_full_null_include_breaks_lazy_unnest_27284() -> None:
-    # Unnesting the (Struct-typed) include_breaks result of an all-null series in
-    # a lazy query used to panic with a schema mismatch (bare Categorical vs the
-    # declared Struct).
+    # Regression: lazy unnest of an all-null include_breaks result used to panic.
     lf = pl.LazyFrame({"a": [None, None]})
 
     result = lf.select(

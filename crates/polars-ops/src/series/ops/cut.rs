@@ -190,12 +190,8 @@ pub fn qcut(
     let ca = ca.set(&ca.is_nan(), None)?;
 
     if ca.null_count() == ca.len() {
-        // No usable values (all null, all NaN, or empty): there are no
-        // breakpoints. Return nulls of the output dtype. With `include_breaks`
-        // this must be a Struct to match the non-degenerate path and the lazy
-        // schema, otherwise a downstream `.struct.field(...)` fails with a dtype
-        // mismatch. Guard on `ca` (post-NaN-removal), since an all-NaN input has
-        // no nulls in `s`.
+        // No usable values (all null/NaN/empty): no breakpoints. With
+        // `include_breaks` the output must still be a Struct to match the schema.
         let cat_dtype = DataType::from_categories(Categories::global());
         if include_breaks {
             let brk = Series::full_null(
@@ -220,10 +216,8 @@ pub fn qcut(
         .map(|opt| opt.unwrap())
         .collect();
 
-    // A quantile that interpolates across an infinite value produces a NaN
-    // breakpoint, which would panic the sort below (partial_cmp returns None)
-    // and yield nonsensical bins. Reject it, mirroring the "breaks cannot be
-    // NaN" check in `cut`.
+    // Interpolating across an infinity gives a NaN breakpoint that would panic
+    // the sort below; reject it, as `cut` already does.
     polars_ensure!(
         !qbreaks.iter().any(|x| x.is_nan()),
         ComputeError: "quantile breakpoint is NaN (the input may contain infinite values)"
