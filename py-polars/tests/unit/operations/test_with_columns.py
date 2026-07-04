@@ -177,3 +177,20 @@ def test_with_columns_scalar_20981() -> None:
     lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0]})
     assert_frame_equal(lf.with_columns(a=2.0).collect(), expected)
     assert_frame_equal(lf.with_columns(pl.col.a.mean()).collect(), expected)
+
+
+def test_with_columns_empty_dataframe_scalar_broadcast_17107() -> None:
+    # with_columns on empty DataFrame should broadcast scalars to 0 rows
+    result = pl.DataFrame().with_columns(c=pl.lit(1))
+    assert result.shape == (0, 1)
+    assert result.columns == ["c"]
+
+    # Empty Series should also work
+    result = pl.DataFrame().with_columns(c=pl.Series([], dtype=pl.Int64))
+    assert result.shape == (0, 1)
+
+    # Non-scalar Series should raise ShapeError
+    with pytest.raises(
+        pl.exceptions.ShapeError, match='unable to add column "c" of length 2'
+    ):
+        pl.DataFrame().with_columns(c=pl.Series([1, 2]))
