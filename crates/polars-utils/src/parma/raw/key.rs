@@ -35,7 +35,7 @@ impl<T: Copy> Key for [T] {
 
     #[inline(always)]
     fn size(&self) -> usize {
-        size_of::<usize>().next_multiple_of(align_of::<T>()) + self.len()
+        size_of::<usize>().next_multiple_of(align_of::<T>()) + self.len() * size_of::<T>()
     }
 
     #[inline(always)]
