@@ -3,12 +3,7 @@ use arrow::types::NativeType;
 
 use crate::ewm::EwmStateUpdate;
 
-pub fn ewm_sum<I, T>(
-    xs: I,
-    alpha: T,
-    min_periods: usize,
-    ignore_nulls: bool,
-) -> PrimitiveArray<T>
+pub fn ewm_sum<I, T>(xs: I, alpha: T, min_periods: usize, ignore_nulls: bool) -> PrimitiveArray<T>
 where
     I: IntoIterator<Item = Option<T>>,
     T: num_traits::Float + NativeType + std::ops::MulAssign,
@@ -118,32 +113,32 @@ mod test {
 
         assert_allclose!(
             ewm_sum(xs1.clone(), ALPHA, 0, true),
-                PrimitiveArray::from(vec![
-                    None,
-                    None,
-                    Some(5.0),
-                    Some(9.5),
-                    None,
-                    Some(6.75),
-                    Some(4.375),
-                    Some(6.1875),
-                ]),
-                EPS
+            PrimitiveArray::from(vec![
+                None,
+                None,
+                Some(5.0),
+                Some(9.5),
+                None,
+                Some(6.75),
+                Some(4.375),
+                Some(6.1875),
+            ]),
+            EPS
         );
 
         assert_allclose!(
             ewm_sum(xs1.clone(), ALPHA, 0, false),
-                PrimitiveArray::from(vec![
-                    None,
-                    None,
-                    Some(5.0),
-                    Some(9.5),
-                    None,
-                    Some(4.375),
-                    Some(3.1875),
-                    Some(5.59375),
-                ]),
-                EPS
+            PrimitiveArray::from(vec![
+                None,
+                None,
+                Some(5.0),
+                Some(9.5),
+                None,
+                Some(4.375),
+                Some(3.1875),
+                Some(5.59375),
+            ]),
+            EPS
         );
     }
 }
