@@ -721,7 +721,7 @@ class ArrayNameSpace:
 
         """
 
-    def to_struct(self, fields: Sequence[str]) -> Series:
+    def to_struct(self, fields: Sequence[str] | None = None) -> Series:
         """
         Convert the series of type `Array` to a series of type `Struct`.
 
