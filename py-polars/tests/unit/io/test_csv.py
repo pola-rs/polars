@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import io
-import os
 import sys
 import textwrap
 import warnings
@@ -2143,15 +2142,10 @@ def test_read_csv_invalid_schema_overrides_length(chunk_override: None) -> None:
     )
     f = io.StringIO(csv)
 
-    # streaming dispatches read_csv -> _scan_csv_impl which does not accept a list
-    if os.getenv("POLARS_AUTO_STREAMING", os.getenv("POLARS_FORCE_STREAMING")) == "1":
-        err = TypeError
-        match = "expected 'schema_overrides' dict, found 'list'"
-    else:
-        err = InvalidOperationError  # type: ignore[assignment]
-        match = "The number of schema overrides must be less than or equal to the number of fields"
-
-    with pytest.raises(err, match=match):
+    with pytest.raises(
+        InvalidOperationError,
+        match="The number of schema overrides must be less than or equal to the number of fields",
+    ):
         pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 
 
