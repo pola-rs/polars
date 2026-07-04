@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import tempfile
+import textwrap
 from collections import OrderedDict
 from pathlib import Path
 from typing import IO, TYPE_CHECKING
@@ -10,7 +11,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, ShapeError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -191,6 +192,45 @@ def test_scan_csv_schema_new_columns_dtypes(
             new_columns=["category", "calories", "fats", "sugars"],
             with_column_names=lambda cols: [col.capitalize() for col in cols],
         ).collect()
+
+
+def test_scan_csv_schema_overrides_dtype_list_17813() -> None:
+    csv_data = textwrap.dedent(
+        """\
+        a,b,c,d,e
+        1,2,3,4,5
+        6,7,8,9,10
+        """
+    )
+    csv = io.StringIO(csv_data)
+
+    df = pl.scan_csv(csv, schema_overrides=4 * [pl.String]).collect()
+
+    assert df.dtypes == [pl.String, pl.String, pl.String, pl.String, pl.Int64]
+
+    # Recreate StringIO because the first scan consumes the stream.
+    csv = io.StringIO(csv_data)
+    df = pl.scan_csv(csv, schema_overrides=[pl.Int64()]).collect()
+
+    assert df.dtypes == [pl.Int64, pl.Int64, pl.Int64, pl.Int64, pl.Int64]
+
+
+def test_scan_csv_invalid_schema_overrides_length() -> None:
+    csv = io.StringIO(
+        textwrap.dedent(
+            """\
+            a,b
+            1,foo
+            2,bar
+            """
+        )
+    )
+
+    with pytest.raises(
+        InvalidOperationError,
+        match="The number of schema overrides must be less than or equal to the number of fields",
+    ):
+        pl.scan_csv(csv, schema_overrides=[pl.Int64, pl.String, pl.Boolean]).collect()
 
 
 def test_lazy_n_rows(foods_file_path: Path) -> None:

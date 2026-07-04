@@ -494,8 +494,6 @@ def read_csv(
     if not infer_schema:
         infer_schema_length = 0
 
-    # TODO: scan_csv doesn't support a "dtype slice" (i.e. list[DataType])
-    schema_overrides_is_list = isinstance(schema_overrides, Sequence)
     encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
 
     streaming = (
@@ -513,7 +511,6 @@ def read_csv(
             # through by our test suite during CI.
             or (
                 os.getenv("POLARS_FORCE_ASYNC") == "1"
-                and not schema_overrides_is_list
                 and encoding_supported_in_lazy
             )
             # TODO: We can't dispatch this for all paths due to a few reasons:
@@ -534,9 +531,6 @@ def read_csv(
             source_normalized = source
 
         if not streaming:
-            if schema_overrides_is_list:
-                msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
-                raise ValueError(msg)
             if not encoding_supported_in_lazy:
                 msg = f"unsupported encoding {encoding} for hf:// paths"
                 raise ValueError(msg)
@@ -677,7 +671,7 @@ def _read_csv_impl(
             for k, v in schema_overrides.items():
                 dtype_list.append((k, parse_into_dtype(v)))
         elif isinstance(schema_overrides, Sequence):
-            dtype_slice = schema_overrides
+            dtype_slice = [parse_into_dtype(v) for v in schema_overrides]
         else:
             msg = f"`schema_overrides` should be of type list or dict, got {qualified_type_name(schema_overrides)!r}"
             raise TypeError(msg)
@@ -1408,10 +1402,7 @@ def scan_csv(
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
 
-    if not new_columns and isinstance(schema_overrides, Sequence):
-        msg = f"expected 'schema_overrides' dict, found {qualified_type_name(schema_overrides)!r}"
-        raise TypeError(msg)
-    elif new_columns:
+    if new_columns:
         if with_column_names:
             msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             raise ValueError(msg)
@@ -1513,7 +1504,7 @@ def _scan_csv_impl(
     skip_rows: int = 0,
     skip_lines: int = 0,
     schema: SchemaDict | None = None,
-    schema_overrides: SchemaDict | None = None,
+    schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     empty_string_is_null: bool = True,
     ignore_errors: bool = False,
@@ -1539,13 +1530,17 @@ def _scan_csv_impl(
     missing_columns: Literal["insert", "raise"] | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
+    dtype_slice: Sequence[PolarsDataType] | None = None
     if schema_overrides is not None:
-        if not isinstance(schema_overrides, dict):
-            msg = "expected 'schema_overrides' dict, found 'list'"
+        if isinstance(schema_overrides, dict):
+            dtype_list = []
+            for k, v in schema_overrides.items():
+                dtype_list.append((k, parse_into_dtype(v)))
+        elif isinstance(schema_overrides, Sequence):
+            dtype_slice = [parse_into_dtype(v) for v in schema_overrides]
+        else:
+            msg = f"`schema_overrides` should be of type list or dict, got {qualified_type_name(schema_overrides)!r}"
             raise TypeError(msg)
-        dtype_list = []
-        for k, v in schema_overrides.items():
-            dtype_list.append((k, parse_into_dtype(v)))
     processed_null_values = _process_null_values(null_values)
 
     if isinstance(source, list):
@@ -1571,6 +1566,7 @@ def _scan_csv_impl(
         n_rows=n_rows,
         cache=cache,
         overwrite_dtype=dtype_list,
+        overwrite_dtype_slice=dtype_slice,
         low_memory=low_memory,
         comment_prefix=comment_prefix,
         quote_char=quote_char,
