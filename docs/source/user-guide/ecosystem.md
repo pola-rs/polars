@@ -41,6 +41,13 @@ you to write standard Polars queries against a DeltaTable.
 Read how to use Delta Lake with Polars
 [at Delta Lake](https://delta-io.github.io/delta-rs/integrations/delta-lake-polars/#reading-a-delta-lake-table-with-polars).
 
+#### SigilYX
+
+[SigilYX](https://github.com/Sigilweaver/SigilYX) is a reader and writer for Alteryx `.yxdb` files,
+with a Rust core and Python bindings built on `pyo3-polars`. It integrates natively with Polars:
+`pl.read_yxdb()` / `df.yxdb.write()` for eager reads and writes, and `pl.scan_yxdb()` for lazy scans
+with projection and row-limit pushdown - no Alteryx installation required.
+
 ### Machine Learning
 
 #### Scikit Learn
