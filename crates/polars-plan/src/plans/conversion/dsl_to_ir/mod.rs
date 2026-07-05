@@ -1009,6 +1009,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 dsl: input,
                 version: ctxt.lp_arena.version(),
                 node: Some(input_node),
+                opt_flags: Some(*ctxt.opt_flags),
             };
             let lp = DslPlan::GroupBy {
                 input: Arc::new(input),
