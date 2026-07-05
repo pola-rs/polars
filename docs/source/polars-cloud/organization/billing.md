@@ -102,8 +102,8 @@ link the subscription to your organization.
 
 Alternatively, revisit the
 [Polars Cloud listing on AWS Marketplace](https://aws.amazon.com/marketplace/pp/prodview-xrx4wmwctfrcc).
-A banner will show "You have access to this product". Click **View subscription** to get back to
-the account setup.
+A banner will show "You have access to this product". Click **View subscription** to get back to the
+account setup.
 
 <!-- dprint-ignore -->
 ![Polars Cloud listing with the View subscription banner](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/billing/aws-marketplace-listing.png){ width="91%" style="display: block; margin: 0 auto;" }
