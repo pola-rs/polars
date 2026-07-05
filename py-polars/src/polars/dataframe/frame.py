@@ -5563,7 +5563,9 @@ class DataFrame:
         Parameters
         ----------
         predicates
-            Expression that evaluates to a boolean Series.
+            Expression(s) that evaluate to a boolean Series. When multiple predicates
+            are provided they are combined using `&` (logical AND), so a row is only
+            removed when *every* predicate evaluates to True for that row.
         constraints
             Column filters; use `name = value` to filter columns using the supplied
             value. Each constraint behaves the same as `pl.col(name).eq(value)`,
@@ -12632,7 +12634,7 @@ class DataFrame:
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
         are sorted in ascending order by the key, with null
-        keys at the end, otherwise the order of the output
+        keys at the start, otherwise the order of the output
         will not make sense.
 
         The schemas of both DataFrames must be equal.

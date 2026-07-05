@@ -141,6 +141,8 @@ impl OptimizationRule for TypeCoercionRule {
                             float_downcast: true,
                             datetime_nanoseconds_downcast: true,
                             datetime_microseconds_downcast: true,
+                            datetime_milliseconds_upcast: true,
+                            datetime_microseconds_upcast: true,
                             datetime_convert_timezone: true,
                             null_upcast: true,
                             categorical_to_string: true,

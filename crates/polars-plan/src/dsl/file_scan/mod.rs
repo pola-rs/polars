@@ -271,11 +271,20 @@ pub struct CastColumnsPolicy {
     /// Allow downcasting from big floats to smaller floats
     pub float_downcast: bool,
 
-    /// Allow datetime[ns] to be casted to any lower precision. Important for
-    /// being able to read datasets written by spark.
+    /// Allow datetime[ns] to be cast to any lower precision.
+    /// (Important for being able to read datasets written by Spark).
     pub datetime_nanoseconds_downcast: bool,
-    /// Allow datetime[us] to datetime[ms]
+
+    /// Allow datetime[us] to be cast to datetime[ms]
     pub datetime_microseconds_downcast: bool,
+
+    /// Allow datetime[ms] to be cast to datetime[us] or datetime[ns].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub datetime_milliseconds_upcast: bool,
+
+    /// Allow datetime[us] to be cast to datetime[ns].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub datetime_microseconds_upcast: bool,
 
     /// Allow casting to change time units.
     pub datetime_convert_timezone: bool,
@@ -299,6 +308,8 @@ impl CastColumnsPolicy {
         float_downcast: false,
         datetime_nanoseconds_downcast: false,
         datetime_microseconds_downcast: false,
+        datetime_milliseconds_upcast: false,
+        datetime_microseconds_upcast: false,
         datetime_convert_timezone: false,
         null_upcast: true,
         categorical_to_string: false,
@@ -770,7 +781,6 @@ impl CastColumnsPolicy {
                         )
                     }
                 },
-
                 (DataType::Float16, DataType::Float32)
                 | (DataType::Float16, DataType::Float64)
                 | (DataType::Float32, DataType::Float64) => {
@@ -823,19 +833,35 @@ impl CastColumnsPolicy {
                             )
                         }
                     },
-
                     (TimeUnit::Microseconds, TimeUnit::Milliseconds) => {
                         if self.datetime_microseconds_downcast {
                             Ok(true)
                         } else {
-                            // TODO
                             mismatch_err(
-                                "unimplemented: 'microsecond-downcast' in scan cast options",
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-downcast')",
                             )
                         }
                     },
-
-                    _ => mismatch_err(""),
+                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => {
+                        if self.datetime_microseconds_upcast {
+                            Ok(true)
+                        } else {
+                            mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-upcast')",
+                            )
+                        }
+                    },
+                    (TimeUnit::Milliseconds, TimeUnit::Microseconds | TimeUnit::Nanoseconds) => {
+                        if self.datetime_milliseconds_upcast {
+                            Ok(true)
+                        } else {
+                            mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='millisecond-upcast')",
+                            )
+                        }
+                    },
+                    // All distinct-unit pairs are covered above.
+                    _ => unreachable!(),
                 };
             }
 

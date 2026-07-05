@@ -1,10 +1,11 @@
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsResult, polars_ensure};
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::file::Writeable;
+use polars_io::utils::file::Writable;
 use polars_plan::dsl::file_provider::{FileProviderReturn, FileProviderType};
 use polars_plan::dsl::sink::SinkedPathInfo;
 use polars_plan::prelude::file_provider::FileProviderArgs;
@@ -16,16 +17,16 @@ pub struct FileProvider {
     pub base_path: PlRefPath,
     pub cloud_options: Option<Arc<CloudOptions>>,
     pub provider_type: FileProviderType,
-    pub upload_chunk_size: usize,
-    pub upload_max_concurrency: usize,
+    pub upload_chunk_size: NonZeroUsize,
+    pub upload_max_concurrency: NonZeroUsize,
     pub io_metrics: Option<Arc<IOMetrics>>,
     pub sinked_path_info_list: Option<SinkedPathInfoList>,
 }
 
 impl FileProvider {
-    pub async fn open_file(&self, args: FileProviderArgs) -> PolarsResult<Writeable> {
+    pub async fn open_file(&self, args: FileProviderArgs) -> PolarsResult<Writable> {
         let provided_path: String = 'provided_path: {
-            let provided_writeable = match &self.provider_type {
+            let provided_writable = match &self.provider_type {
                 FileProviderType::Hive(p) => break 'provided_path p.get_path(args)?,
                 FileProviderType::Iceberg(p) => break 'provided_path p.get_path(args)?,
                 FileProviderType::Function(f) => {
@@ -38,7 +39,7 @@ impl FileProvider {
 
                     match out {
                         FileProviderReturn::Path(p) => break 'provided_path p,
-                        FileProviderReturn::Writeable(v) => v,
+                        FileProviderReturn::Writable(v) => v,
                     }
                 },
             };
@@ -47,7 +48,7 @@ impl FileProvider {
                 return Err(v.non_path_error());
             }
 
-            return Ok(provided_writeable);
+            return Ok(provided_writable);
         };
 
         let path = self.base_path.join(&provided_path);
@@ -73,7 +74,7 @@ impl FileProvider {
         if !path.has_scheme()
             && let Some(path) = path.parent()
         {
-            // Ignore errors from directory creation - the `Writeable::try_new()` below will raise
+            // Ignore errors from directory creation - the `Writable::try_new()` below will raise
             // appropriate errors.
             let _ = tokio::fs::DirBuilder::new()
                 .recursive(true)
@@ -87,11 +88,11 @@ impl FileProvider {
                 .push(SinkedPathInfo { path: path.clone() });
         }
 
-        Writeable::try_new(
+        Writable::try_new(
             path,
             self.cloud_options.as_deref(),
-            self.upload_chunk_size,
-            self.upload_max_concurrency,
+            self.upload_chunk_size.get(),
+            self.upload_max_concurrency.get(),
             self.io_metrics.clone(),
         )
     }
