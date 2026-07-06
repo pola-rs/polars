@@ -20,6 +20,7 @@ pub(super) async fn dsl_to_ir(
     scan_type: Box<FileScanDsl>,
     cached_ir: Arc<Mutex<Option<IR>>>,
     cache_file_info: SourcesToFileInfo,
+    #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<LazyLock<PyScanResolveThreadPool>>,
     verbose: bool,
 ) -> PolarsResult<()> {
     // Note that the first metadata can still end up being `None` later if the files were
@@ -88,6 +89,8 @@ pub(super) async fn dsl_to_ir(
                     &sources,
                     sources_before_expansion,
                     unified_scan_args,
+                    #[cfg(feature = "python")]
+                    py_scan_resolve_threadpool,
                     verbose,
                 )
                 .await?
@@ -1075,6 +1078,9 @@ impl SourcesToFileInfo {
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
+        #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
+            LazyLock<PyScanResolveThreadPool>,
+        >,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         let require_first_source = |failed_operation_name: &'static str, hint: &'static str| {
             sources.first_or_empty_expand_err(
@@ -1269,12 +1275,22 @@ this scan to succeed with an empty DataFrame.",
             }
             .map_err(|e| e.context(failed_here!(ndjson scan)))?,
             #[cfg(feature = "python")]
-            FileScanDsl::PythonDataset { dataset_object } => (|| {
+            FileScanDsl::PythonDataset { dataset_object } => async {
+                use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
+
                 if crate::dsl::DATASET_PROVIDER_VTABLE.get().is_none() {
                     polars_bail!(ComputeError: "DATASET_PROVIDER_VTABLE (python) not initialized")
-                }
+                };
 
-                let mut schema = dataset_object.schema()?;
+                let mut schema =
+                    {
+                        let dataset_object = Arc::clone(&dataset_object);
+                        AbortOnDropHandle(ASYNC.spawn_blocking(move || {
+                            dataset_object.schema(&py_scan_resolve_threadpool)
+                        }))
+                        .await
+                        .unwrap()?
+                    };
                 let reader_schema = schema.clone();
 
                 if let Some(row_index) = &unified_scan_args.row_index {
@@ -1292,7 +1308,8 @@ this scan to succeed with an empty DataFrame.",
                         cached_ir: Default::default(),
                     },
                 ))
-            })()
+            }
+            .await
             .map_err(|e| e.context(failed_here!(python dataset scan)))?,
             #[cfg(feature = "scan_lines")]
             FileScanDsl::Lines { name } => {
@@ -1339,6 +1356,9 @@ this scan to succeed with an empty DataFrame.",
         sources: &ScanSources,
         sources_before_expansion: &ScanSources,
         unified_scan_args: &mut UnifiedScanArgs,
+        #[cfg(feature = "python")] py_scan_resolve_threadpool: Arc<
+            LazyLock<PyScanResolveThreadPool>,
+        >,
         verbose: bool,
     ) -> PolarsResult<(FileInfo, FileScanIR)> {
         // Only cache non-empty paths. Others are directly parsed.
@@ -1352,6 +1372,8 @@ this scan to succeed with an empty DataFrame.",
                         sources,
                         sources_before_expansion,
                         unified_scan_args,
+                        #[cfg(feature = "python")]
+                        py_scan_resolve_threadpool,
                     )
                     .await;
             },
@@ -1409,6 +1431,8 @@ this scan to succeed with an empty DataFrame.",
                         sources,
                         sources_before_expansion,
                         unified_scan_args,
+                        #[cfg(feature = "python")]
+                        py_scan_resolve_threadpool,
                     )
                     .await;
             },
@@ -1426,6 +1450,8 @@ this scan to succeed with an empty DataFrame.",
                     sources,
                     sources_before_expansion,
                     unified_scan_args,
+                    #[cfg(feature = "python")]
+                    py_scan_resolve_threadpool,
                 )
                 .await?;
             self.inner.write().unwrap().insert(k, v.clone());

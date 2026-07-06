@@ -1573,3 +1573,33 @@ def test_predicate_pushdown_after_collect_schema_26882() -> None:
     join_idx = expected_plan.index("INNER JOIN")
     assert "FILTER" not in expected_plan[:join_idx]
     assert_frame_equal(cached.collect(), _build().collect(), check_row_order=False)
+
+
+def test_predicate_normalization() -> None:
+    DATA = pl.DataFrame({"a": [1, 2, 3, 4], "b": [10, 20, 30, 40], "c": [5, 6, 7, 8]})
+    A, B, C = pl.col("a") > 0, pl.col("b") > 0, pl.col("c") > 0
+
+    def make_source(counter: Any) -> Any:
+        def source(
+            with_columns: Any, predicate: Any, n_rows: Any, batch_size: Any
+        ) -> Any:
+            counter[0] += 1  # one physical scan
+            out = DATA
+            if predicate is not None:
+                out = out.filter(predicate)
+            if with_columns is not None:
+                out = out.select(with_columns)
+            yield out
+
+        return register_io_source(source, schema=DATA.schema, is_pure=True)
+
+    def scans(branch1: Any, branch2: Any) -> Any:
+        counter = [0]
+        lf = make_source(counter)
+        pl.collect_all([branch1(lf), branch2(lf)])
+        return counter[0]
+
+    out = scans(lambda lf: lf.filter((A & B) & C), lambda lf: lf.filter(A & (B & C)))
+    assert out == 1
+    out = scans(lambda lf: lf.filter(A & B & C), lambda lf: lf.filter(C & B & A))
+    assert out == 1

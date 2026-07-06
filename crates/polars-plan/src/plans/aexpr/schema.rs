@@ -742,10 +742,6 @@ fn get_arithmetic_field(
                                 left_field.coerce(right_field.dtype);
                                 return Ok(left_field);
                             },
-                            (_, AExpr::Literal(_)) if right_field.dtype.is_unknown() => {
-                                // literal will be coerced to match right type
-                                return Ok(left_field);
-                            },
                             _ => {},
                         }
                     }

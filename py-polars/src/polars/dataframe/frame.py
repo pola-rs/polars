@@ -4529,7 +4529,9 @@ class DataFrame:
                     raise ModuleUpgradeRequiredError(msg)
                 mode = "replace"
             elif if_table_exists == "append":
-                mode = "append" if driver_manager_version < (0, 7) else "create_append"
+                # 'append' inserts into an existing table; the table-existence
+                # check below can upgrade this to 'create_append'.
+                mode = "append"
             else:
                 msg = (
                     f"unexpected value for `if_table_exists`: {if_table_exists!r}"
@@ -4597,6 +4599,25 @@ class DataFrame:
                     ):
                         cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
                         mode = "create"
+
+                # 'append' requires the table to exist; if it doesn't, upgrade the mode
+                # to 'create_append'; only do this when the table is confirmed missing.
+                if mode == "append" and driver_manager_version >= (0, 7):
+                    schema_filter = {"db_schema_filter": db_schema} if db_schema else {}
+                    try:
+                        conn.adbc_get_table_schema(
+                            unpacked_table_name,
+                            catalog_filter=catalog,
+                            **schema_filter,
+                        )
+                    except driver_manager.Error as err:
+                        # only a definitive 'not found' status confirms the table is
+                        # missing; any other error is left for `adbc_ingest` to raise
+                        if (
+                            getattr(err, "status_code", None)
+                            == driver_manager.AdbcStatusCode.NOT_FOUND
+                        ):
+                            mode = "create_append"
 
                 # For Snowflake, we convert to PyArrow until string_view columns can be
                 # written. Ref: https://github.com/apache/arrow-adbc/issues/3420
@@ -5563,7 +5584,9 @@ class DataFrame:
         Parameters
         ----------
         predicates
-            Expression that evaluates to a boolean Series.
+            Expression(s) that evaluate to a boolean Series. When multiple predicates
+            are provided they are combined using `&` (logical AND), so a row is only
+            removed when *every* predicate evaluates to True for that row.
         constraints
             Column filters; use `name = value` to filter columns using the supplied
             value. Each constraint behaves the same as `pl.col(name).eq(value)`,
@@ -12632,7 +12655,7 @@ class DataFrame:
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
         are sorted in ascending order by the key, with null
-        keys at the end, otherwise the order of the output
+        keys at the start, otherwise the order of the output
         will not make sense.
 
         The schemas of both DataFrames must be equal.
