@@ -312,7 +312,7 @@ def test_series_is_sorted_parametric(
     assert s_non_unique.is_sorted(descending=descending, nulls_last=nulls_last)
     assert s_non_unique.is_sorted(descending=not descending, nulls_last=nulls_last)
     # Skip negative assertion if the series is trivially sorted.
-    if s.len() > s.null_count() > 0:
+    if s_non_unique.len() > s_non_unique.null_count() > 0:
         assert not s_non_unique.is_sorted(
             descending=descending, nulls_last=not nulls_last
         )
@@ -322,6 +322,7 @@ def test_series_is_sorted_parametric(
     # Skip negative assertions if the series is trivially sorted.
     if s_non_null.n_unique() > 1:
         assert not s.is_sorted(descending=not descending, nulls_last=nulls_last)
+
     s_single_value = s_non_unique.drop_nulls()
     assert s_single_value.is_sorted(descending=descending, nulls_last=nulls_last)
     assert s_single_value.is_sorted(descending=not descending, nulls_last=nulls_last)
