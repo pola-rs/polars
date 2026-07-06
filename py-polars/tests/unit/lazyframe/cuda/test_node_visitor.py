@@ -6,7 +6,7 @@ from functools import lru_cache, partial
 from typing import TYPE_CHECKING, Any
 
 import polars as pl
-from polars._plr import _ir_nodes
+from polars._plr import _expr_nodes, _ir_nodes  # type: ignore[attr-defined]
 from polars._utils.wrap import wrap_df
 from tests.unit.io.conftest import format_file_uri
 
@@ -168,3 +168,134 @@ def test_node_traverse_sink(tmp_path: Path) -> None:
     q.collect(  # pyrefly: ignore[no-matching-overload]
         post_opt_callback=callback  # type: ignore[call-overload]
     )
+
+
+def _collect_rolling_function_data(
+    query: pl.LazyFrame,
+) -> list[tuple[Any, ...]]:
+    """Traverse a query's IR and return function_data tuples for rolling expressions."""
+    results: list[tuple[Any, ...]] = []
+
+    def callback(node_traverser: Any, query_start: int | None) -> None:
+        for expr_ir in node_traverser.get_exprs():
+            expr_node = node_traverser.view_expression(expr_ir.node)
+            if isinstance(expr_node, _expr_nodes.Function):
+                name, *options = expr_node.function_data
+                if isinstance(name, _expr_nodes.RollingFunction):
+                    results.append((name, *options))
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+def test_rolling_expr_visitor() -> None:
+    """Test that fixed-size rolling expressions are exposed via the visitor."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").rolling_sum(window_size=3).alias("rolling_sum"),
+    )
+    rolling_exprs = _collect_rolling_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, window_size, min_periods, weights, center, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunction.Sum
+    assert window_size == 3
+    assert min_periods == 3
+    assert weights is None
+    assert center is False
+    assert fn_params == ()
+
+
+def test_rolling_expr_visitor_var() -> None:
+    """Test that rolling_var serializes ddof in fn_params."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").rolling_var(window_size=3, ddof=2).alias("rolling_var"),
+    )
+    rolling_exprs = _collect_rolling_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, window_size, min_periods, weights, center, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunction.Var
+    assert window_size == 3
+    assert min_periods == 3
+    assert weights is None
+    assert center is False
+    assert fn_params == (2,)
+
+
+def test_rolling_expr_visitor_min_centered() -> None:
+    """Test rolling_min with center=True."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").rolling_min(window_size=3, center=True).alias("rmin"),
+    )
+    rolling_exprs = _collect_rolling_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, window_size, _, _, center, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunction.Min
+    assert window_size == 3
+    assert center is True
+    assert fn_params == ()
+
+
+def test_rolling_expr_visitor_quantile() -> None:
+    """Test that rolling_quantile serializes probability and method."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x")
+        .rolling_quantile(0.75, window_size=3, interpolation="linear")
+        .alias("rq"),
+    )
+    rolling_exprs = _collect_rolling_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, window_size, _, _, _, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunction.Quantile
+    assert window_size == 3
+    assert fn_params == (0.75, "linear")
+
+
+def test_rolling_expr_visitor_std() -> None:
+    """Test that rolling_std serializes ddof in fn_params."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").rolling_std(window_size=3, ddof=0).alias("rstd"),
+    )
+    rolling_exprs = _collect_rolling_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, _, _, _, _, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunction.Std
+    assert fn_params == (0,)
+
+
+def test_rolling_expr_visitor_skew() -> None:
+    """Test that rolling_skew serializes the bias parameter."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").rolling_skew(window_size=3, bias=False).alias("rskew"),
+    )
+    rolling_exprs = _collect_rolling_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, _, _, _, _, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunction.Skew
+    assert fn_params == (False,)
+
+
+def test_rolling_expr_visitor_kurtosis() -> None:
+    """Test that rolling_kurtosis serializes fisher and bias parameters."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x")
+        .rolling_kurtosis(window_size=3, fisher=False, bias=True)
+        .alias("rkurt"),
+    )
+    rolling_exprs = _collect_rolling_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, _, _, _, _, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunction.Kurtosis
+    assert fn_params == (False, True)
+
+
+def test_rolling_expr_visitor_rank() -> None:
+    """Test that rolling_rank serializes method and seed parameters."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").rolling_rank(window_size=3, method="dense", seed=42).alias("rrank"),
+    )
+    rolling_exprs = _collect_rolling_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, _, _, _, _, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunction.Rank
+    assert fn_params == ("dense", 42)

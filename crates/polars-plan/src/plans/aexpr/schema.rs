@@ -98,7 +98,7 @@ impl AExpr {
             Column(name) => ctx
                 .schema
                 .get_field(name)
-                .ok_or_else(|| PolarsError::ColumnNotFound(name.to_string().into())),
+                .ok_or_else(|| ctx.schema.column_not_found_err(name)),
             #[cfg(feature = "dtype-struct")]
             StructField(name) => {
                 let struct_field = ctx
@@ -729,10 +729,6 @@ fn get_arithmetic_field(
                             (AExpr::Literal(_), _) if left_field.dtype.is_unknown() => {
                                 // literal will be coerced to match right type
                                 left_field.coerce(right_type);
-                                return Ok(left_field);
-                            },
-                            (_, AExpr::Literal(_)) if right_type.is_unknown() => {
-                                // literal will be coerced to match right type
                                 return Ok(left_field);
                             },
                             _ => {},

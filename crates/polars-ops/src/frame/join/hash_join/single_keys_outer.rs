@@ -233,7 +233,7 @@ where
         create_hash_and_keys_threaded_vectorized(probe, Some(random_state.clone()));
 
     let n_tables = hash_tbls.len();
-    try_raise_keyboard_interrupt();
+    try_raise_polars_abort();
 
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)

@@ -45,6 +45,10 @@ pub enum IRBooleanFunction {
         rel_tol: TotalOrdWrap<f64>,
         nans_equal: bool,
     },
+    IsSorted {
+        descending: Option<bool>,
+        nulls_last: Option<bool>,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
@@ -107,6 +111,7 @@ impl IRBooleanFunction {
                     (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
                 )
                 .with_flags(|f| f | FunctionFlags::PRESERVES_NULL_ALL_INPUTS),
+            B::IsSorted { .. } => FunctionOptions::aggregation(),
             B::AllHorizontal | B::AnyHorizontal => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::INPUT_WILDCARD_EXPANSION | FunctionFlags::ALLOW_EMPTY_INPUTS
             }),
@@ -153,6 +158,7 @@ impl Display for IRBooleanFunction {
             IsIn { .. } => "is_in",
             #[cfg(feature = "is_close")]
             IsClose { .. } => "is_close",
+            IsSorted { .. } => "is_sorted",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",

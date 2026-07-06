@@ -1,20 +1,21 @@
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
-use polars_core::config;
+use polars_async::primitives::wait_group::{WaitGroup, WaitToken};
+use polars_buffer::Buffer;
 use polars_core::runtime::ASYNC;
 use polars_core::schema::SchemaRef;
-use polars_core::utils::arrow::io::ipc::write::{EncodedData, WriteOptions};
+use polars_core::utils::arrow::io::ipc::write::WriteOptions;
 use polars_error::PolarsResult;
 use polars_io::ipc::IpcWriterOptions;
+use polars_io::utils::bytes_bufferer::BytesBuffererConfig;
 use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
-use crate::nodes::io_sinks::components::size::{
-    NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
-};
+use crate::nodes::io_sinks::components::size::{SplitMode, TargetSinkMorselSize};
 use crate::nodes::io_sinks::writers::interface::{
     FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
 };
@@ -29,15 +30,23 @@ pub struct IpcWriterStarter {
     pub options: Arc<IpcWriterOptions>,
     pub schema: SchemaRef,
     pub record_batch_size: Option<IdxSize>,
+    pub bytes_bufferer_config: BytesBuffererConfig,
 }
 
-enum IpcBatch {
-    Record {
-        encoded_data: executor::AbortOnDropHandle<EncodedData>,
-        morsel_permit: SinkMorselPermit,
-        num_rows: IdxSize,
-    },
-    Dictionary(EncodedData),
+pub enum IpcBatchType {
+    Dictionary,
+    Record,
+}
+
+pub struct IpcBatch {
+    pub batch_type: IpcBatchType,
+    pub num_rows: IdxSize,
+    pub continuation_bytes: Vec<u8>,
+    pub message_bytes: <Vec<Buffer<u8>> as IntoIterator>::IntoIter,
+    pub message_num_bytes: usize,
+    pub arrow_data_bytes: <Vec<Buffer<u8>> as IntoIterator>::IntoIter,
+    pub arrow_data_num_bytes: usize,
+    pub morsel_permit: Option<SinkMorselPermit>,
 }
 
 impl FileWriterStarter for IpcWriterStarter {
@@ -45,29 +54,28 @@ impl FileWriterStarter for IpcWriterStarter {
         "ipc"
     }
 
-    fn takeable_rows_provider(&self) -> TakeableRowsProvider {
-        let max_size = if let Some(record_batch_size) = self.record_batch_size
+    fn target_sink_morsel_size(&self) -> TargetSinkMorselSize {
+        let target_num_bytes_min_rows = const { NonZeroIdxSize::new(16384).unwrap() };
+
+        if let Some(record_batch_size) = self.record_batch_size
             && record_batch_size > 0
         {
-            NonZeroRowCountAndSize::new(RowCountAndSize {
-                num_rows: record_batch_size,
-                num_bytes: u64::MAX,
-            })
-            .unwrap()
+            TargetSinkMorselSize {
+                target_num_rows: record_batch_size.try_into().unwrap(),
+                target_num_bytes: NonZeroU64::MAX,
+                target_num_bytes_min_rows,
+                target_num_rows_mode: SplitMode::Exact,
+            }
         } else {
-            let (num_rows, num_bytes) = ideal_sink_morsel_size_env();
+            let (env_num_rows, env_num_bytes) = ideal_sink_morsel_size_env();
 
-            NonZeroRowCountAndSize::new(RowCountAndSize {
-                num_rows: num_rows.unwrap_or(122_880),
-                num_bytes: num_bytes.unwrap_or(u64::MAX),
-            })
-            .unwrap()
-        };
-
-        TakeableRowsProvider {
-            max_size,
-            byte_size_min_rows: NonZeroIdxSize::new(16384).unwrap(),
-            allow_non_max_size: false,
+            TargetSinkMorselSize {
+                target_num_rows: env_num_rows
+                    .unwrap_or(const { NonZeroIdxSize::new(122_880).unwrap() }),
+                target_num_bytes: env_num_bytes.unwrap_or(NonZeroU64::MAX),
+                target_num_bytes_min_rows,
+                target_num_rows_mode: SplitMode::Approximate,
+            }
         }
     }
 
@@ -83,16 +91,15 @@ impl FileWriterStarter for IpcWriterStarter {
 
         // Note. Environment variable is unstable.
         let write_statistics_flags = self.options.record_batch_statistics;
+        let bytes_bufferer_config = self.bytes_bufferer_config.clone();
 
-        if write_statistics_flags && config::verbose() {
-            eprintln!(
-                "[IpcWriterStarter]: write_record_batch_statistics_flags: {write_statistics_flags}"
-            )
-        }
+        let finish_record_batch_write_wg = WaitGroup::default();
 
         let handle = executor::spawn(TaskPriority::High, async move {
-            let (ipc_batch_tx, ipc_batch_rx) =
-                tokio::sync::mpsc::channel::<IpcBatch>(num_pipelines.get());
+            let (ipc_batch_tx, ipc_batch_rx) = tokio::sync::mpsc::channel::<(
+                executor::AbortOnDropHandle<PolarsResult<IpcBatch>>,
+                Option<WaitToken>,
+            )>(num_pipelines.get());
 
             let (arrow_converters, ipc_fields, dictionary_id_offsets) =
                 build_ipc_write_components(file_schema.as_ref(), options.compat_level);
@@ -123,6 +130,8 @@ impl FileWriterStarter for IpcWriterStarter {
                     dictionary_id_offsets,
                     write_options: WriteOptions { compression },
                     write_statistics_flags,
+                    bytes_bufferer_config,
+                    finish_record_batch_write_wg,
                 }
                 .run(),
             ));

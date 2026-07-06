@@ -223,3 +223,10 @@ def test_concat_list_lit_first_returns_empty_df_26428() -> None:
     expected = pl.DataFrame({"literal": pl.Series([], dtype=pl.List(pl.String))})
 
     assert_frame_equal(out, expected)
+
+
+def test_concat_list_broadcast_empty() -> None:
+    df = pl.DataFrame({"a": []}, schema={"a": pl.Float64})
+    out = df.select(pl.concat_list(pl.lit(0.0), pl.lit(0.0), pl.col("a")))
+    expected = pl.DataFrame(schema={"literal": pl.List(pl.Float64)})
+    assert_frame_equal(out, expected)

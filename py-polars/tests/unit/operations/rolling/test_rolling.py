@@ -2437,3 +2437,15 @@ def test_rolling_streaming_ensures_sorted_27231(plmonkeypatch: PlMonkeyPatch) ->
         match="argument in operation 'rolling' is not sorted",
     ):
         q.collect(engine="streaming")
+
+
+def test_rolling_rank_min_samples_28102() -> None:
+    s = pl.Series("a", [None, 1.0, 2.0, 3.0, 4.0])
+    out = s.rolling_rank(
+        window_size=3,
+        method="max",
+        min_samples=3,
+    )
+    assert_series_equal(
+        out, pl.Series("a", [None, None, None, 3, 3], dtype=pl.get_index_type())
+    )

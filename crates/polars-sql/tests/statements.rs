@@ -593,3 +593,64 @@ fn test_compound_invalid_2() {
     let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
     let _ = ctx.execute(sql).unwrap();
 }
+
+#[test]
+fn test_implicit_join_basic() {
+    let mut ctx = prepare_compound_join_context();
+
+    // Implicit join: equivalent to INNER JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+    let implicit_sql = r#"
+        SELECT * FROM df1, df2
+        WHERE df1.a = df2.a AND df1.b = df2.b
+    "#;
+    let explicit_sql = r#"
+        SELECT * FROM df1
+        INNER JOIN df2 ON df1.a = df2.a AND df1.b = df2.b
+    "#;
+
+    let actual = ctx.execute(implicit_sql).unwrap().collect().unwrap();
+    let expected = ctx.execute(explicit_sql).unwrap().collect().unwrap();
+
+    assert!(
+        actual.equals(&expected),
+        "implicit join should match explicit join\nimplicit={actual:?}\nexplicit={expected:?}"
+    );
+}
+
+#[test]
+fn test_join_non_equi_range() {
+    // Range join (two inequalities resolved via `join_where`): amount in [lo, hi]
+    let orders = df! {
+        "id" => [1, 2, 3, 4, 5],
+        "amount" => [50, 100, 200, 150, 300],
+    }
+    .unwrap();
+    let ranges = df! {
+        "label" => ["low", "mid", "high"],
+        "lo" => [0, 100, 200],
+        "hi" => [99, 199, 500],
+    }
+    .unwrap();
+    let mut ctx = SQLContext::new();
+    ctx.register("orders", orders.lazy());
+    ctx.register("ranges", ranges.lazy());
+
+    let sql = r#"
+        SELECT orders.id, orders.amount, ranges.label
+        FROM orders
+        INNER JOIN ranges ON orders.amount >= ranges.lo AND orders.amount <= ranges.hi
+        ORDER BY orders.id
+    "#;
+    let actual = ctx.execute(sql).unwrap().collect().unwrap();
+    let expected = df! {
+        "id" => [1, 2, 3, 4, 5],
+        "amount" => [50, 100, 200, 150, 300],
+        "label" => ["low", "mid", "high", "mid", "high"],
+    }
+    .unwrap();
+
+    assert!(
+        actual.equals(&expected),
+        "expected = {expected:?}\nactual={actual:?}"
+    );
+}

@@ -998,7 +998,10 @@ def test_list_sum_bool_schema() -> None:
 
 def test_list_concat_struct_19279() -> None:
     df = pl.select(
-        pl.struct(s=pl.lit("abcd").str.split("").explode(), i=pl.int_range(0, 4))
+        pl.struct(
+            s=pl.lit("abcd").str.split("").explode(empty_as_null=True),
+            i=pl.int_range(0, 4),
+        )
     )
     df = pl.concat([df[:2], df[-2:]])
     assert df.select(pl.concat_list("s")).to_dict(as_series=False) == {
@@ -1176,7 +1179,6 @@ def test_list_filter_null() -> None:
     ]
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.may_fail_cloud  # reason: time check
 @pytest.mark.slow
 def test_list_struct_field_perf() -> None:

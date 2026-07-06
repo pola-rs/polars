@@ -370,7 +370,7 @@ pub fn drop_items<'a>(
         return Ok(ac);
     }
 
-    ac.set_original_len(false);
+    ac.set_original_groups(false);
 
     // All elements are filtered out.
     if predicate.set_bits() == 0 {
@@ -391,7 +391,7 @@ pub fn drop_items<'a>(
 
     if let AggState::AggregatedScalar(c) = &mut ac.state {
         ac.state = AggState::NotAggregated(std::mem::take(c));
-        ac.groups = Cow::Owned(
+        ac.with_groups(
             {
                 let groups = predicate
                     .iter()

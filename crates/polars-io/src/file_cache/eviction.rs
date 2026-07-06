@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use fs4::fs_std::FileExt;
 use polars_core::runtime::ASYNC;
 use polars_error::{PolarsError, PolarsResult};
 use polars_utils::pl_path::PlRefPath;
@@ -122,7 +121,7 @@ impl EvictionCandidate {
         {
             let file = std::fs::OpenOptions::new().read(true).open(path).unwrap();
 
-            if file.try_lock_exclusive().is_err() {
+            if file.try_lock().is_err() {
                 if verbose {
                     eprintln!(
                         "[EvictionManager] evict_files: skipping {} (file is locked)",

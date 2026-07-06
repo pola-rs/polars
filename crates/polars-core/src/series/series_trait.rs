@@ -470,7 +470,9 @@ pub trait SeriesTrait:
     /// Get dense ids for each unique value.
     ///
     /// Returns: (n_unique, unique_ids)
-    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)>;
+    fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
+        polars_bail!(opq = unique_id, self._dtype());
+    }
 
     /// Get a mask of the null values.
     fn is_null(&self) -> BooleanChunked;

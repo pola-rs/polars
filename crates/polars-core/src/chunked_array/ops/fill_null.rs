@@ -142,11 +142,12 @@ where
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
+    let mut last = T::ZeroablePhysical::zeroed();
     let values: Vec<T::ZeroablePhysical<'a>> = ca
         .iter()
-        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
-            *prev = v.map(|v| v.into()).unwrap_or(*prev);
-            Some(*prev)
+        .map(|v| {
+            last = v.map(|v| v.into()).unwrap_or(last);
+            last
         })
         .collect_trusted();
 
@@ -170,12 +171,13 @@ where
     T::ZeroablePhysical<'a>: Copy,
 {
     // Compute values.
+    let mut last = T::ZeroablePhysical::zeroed();
     let values: Vec<T::ZeroablePhysical<'a>> = ca
         .iter()
         .rev()
-        .scan(T::ZeroablePhysical::zeroed(), |prev, v| {
-            *prev = v.map(|v| v.into()).unwrap_or(*prev);
-            Some(*prev)
+        .map(|v| {
+            last = v.map(|v| v.into()).unwrap_or(last);
+            last
         })
         .collect_reversed();
 

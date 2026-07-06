@@ -302,6 +302,7 @@ macro_rules! impl_cat_series {
                 self.0.physical().arg_unique()
             }
 
+            #[cfg(feature = "algorithm_group_by")]
             fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
                 ChunkUnique::unique_id(self.0.physical())
             }

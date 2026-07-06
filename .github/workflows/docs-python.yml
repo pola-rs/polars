@@ -37,8 +37,10 @@ jobs:
         id: version
         if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         shell: bash
+        env:
+          POLARS_VERSION_TAG: ${{ github.event.inputs.polars_version || github.event.client_payload.tag }}
         run: |
-          tag="${{ github.event.inputs.polars_version || github.event.client_payload.tag }}"
+          tag="$POLARS_VERSION_TAG"
           regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
           if [[ $tag =~ $regex ]]; then
             major=${BASH_REMATCH[1]}
