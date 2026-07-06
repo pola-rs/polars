@@ -111,9 +111,13 @@ where
             (opt_xy.is_some() && self.non_null_count >= self.min_periods)
                 .then_some(self.cov)
                 .and_then(|cov| {
-                    if self.bias || self.non_null_count == 1 {
+                    if self.bias {
                         Some(cov)
                     } else {
+                        // Unbiased variance needs the debiasing factor
+                        // 1 / (1 - sum(w^2)/sum(w)^2). With a single observation
+                        // that denominator is 0, so the estimate is undefined and
+                        // we return null (matching pandas) instead of 0.
                         let numerator = self.weight_sum * self.weight_sum;
                         let denominator = numerator - self.weight_square_sum;
                         if denominator > T::zero() {
@@ -295,7 +299,7 @@ mod test {
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, true, false, 0, true),
             PrimitiveArray::from([
-                Some(0.0),
+                None,
                 Some(8.0),
                 Some(7.428_571_428_571_429),
                 Some(11.542_857_142_857_143),
@@ -308,7 +312,7 @@ mod test {
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, true, false, 0, false),
             PrimitiveArray::from([
-                Some(0.0),
+                None,
                 Some(8.0),
                 Some(7.428_571_428_571_429),
                 Some(11.542_857_142_857_143),
@@ -360,7 +364,7 @@ mod test {
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, false, false, 0, true),
             PrimitiveArray::from([
-                Some(0.0),
+                None,
                 Some(8.0),
                 Some(9.600_000_000_000_001),
                 Some(10.666_666_666_666_666),
@@ -373,7 +377,7 @@ mod test {
         assert_allclose!(
             ewm_var(XS.to_vec(), ALPHA, false, false, 0, false),
             PrimitiveArray::from([
-                Some(0.0),
+                None,
                 Some(8.0),
                 Some(9.600_000_000_000_001),
                 Some(10.666_666_666_666_666),
@@ -413,7 +417,7 @@ mod test {
             ewm_var(YS.to_vec(), ALPHA, true, false, 0, true),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(2.0),
                 None,
                 None,
@@ -426,7 +430,7 @@ mod test {
             ewm_var(YS.to_vec(), ALPHA, true, false, 0, false),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(2.0),
                 None,
                 None,
@@ -457,7 +461,7 @@ mod test {
             ewm_var(YS.to_vec(), ALPHA, false, false, 0, true),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(2.0),
                 None,
                 None,
@@ -470,7 +474,7 @@ mod test {
             ewm_var(YS.to_vec(), ALPHA, false, false, 0, false),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(2.0),
                 None,
                 None,
@@ -513,7 +517,7 @@ mod test {
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, true, false, 0, true),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(2.0),
                 None,
                 None,
@@ -526,7 +530,7 @@ mod test {
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, true, false, 0, false),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(2.0),
                 None,
                 None,
@@ -557,7 +561,7 @@ mod test {
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, false, false, 0, true),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(2.0),
                 None,
                 None,
@@ -570,7 +574,7 @@ mod test {
             ewm_cov(XS.to_vec(), YS.to_vec(), ALPHA, false, false, 0, false),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(2.0),
                 None,
                 None,
@@ -612,7 +616,7 @@ mod test {
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, true, false, 0, true),
             PrimitiveArray::from([
-                Some(0.0),
+                None,
                 Some(2.828_427_124_746_190_3),
                 Some(2.725_540_575_476_987_5),
                 Some(3.397_478_056_273_085_3),
@@ -625,7 +629,7 @@ mod test {
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, true, false, 0, false),
             PrimitiveArray::from([
-                Some(0.0),
+                None,
                 Some(2.828_427_124_746_190_3),
                 Some(2.725_540_575_476_987_5),
                 Some(3.397_478_056_273_085_3),
@@ -664,7 +668,7 @@ mod test {
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, false, false, 0, true),
             PrimitiveArray::from([
-                Some(0.0),
+                None,
                 Some(2.828_427_124_746_190_3),
                 Some(3.098_386_676_965_933_6),
                 Some(3.265_986_323_710_904),
@@ -677,7 +681,7 @@ mod test {
         assert_allclose!(
             ewm_std(XS.to_vec(), ALPHA, false, false, 0, false),
             PrimitiveArray::from([
-                Some(0.0),
+                None,
                 Some(2.828_427_124_746_190_3),
                 Some(3.098_386_676_965_933_6),
                 Some(3.265_986_323_710_904),
@@ -717,7 +721,7 @@ mod test {
             ewm_std(YS.to_vec(), ALPHA, true, false, 0, true),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(SQRT_2),
                 None,
                 None,
@@ -730,7 +734,7 @@ mod test {
             ewm_std(YS.to_vec(), ALPHA, true, false, 0, false),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(SQRT_2),
                 None,
                 None,
@@ -769,7 +773,7 @@ mod test {
             ewm_std(YS.to_vec(), ALPHA, false, false, 0, true),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(SQRT_2),
                 None,
                 None,
@@ -782,7 +786,7 @@ mod test {
             ewm_std(YS.to_vec(), ALPHA, false, false, 0, false),
             PrimitiveArray::from([
                 None,
-                Some(0.0),
+                None,
                 Some(SQRT_2),
                 None,
                 None,
