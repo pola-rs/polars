@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import warnings
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -518,8 +517,7 @@ def test_array_to_struct() -> None:
     df = pl.DataFrame(
         {"a": [[1, 2, None], [1, 2, 3]]}, schema={"a": pl.Array(pl.Int8, 3)}
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert df.select(
             pl.col("a").arr.to_struct(fields=lambda idx: f"col_name_{idx}")
         ).to_series().to_list() == [

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -561,11 +560,9 @@ def test_series_to_list() -> None:
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
             "n00",
             "n01",

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import operator
-import warnings
 from dataclasses import dataclass
 from datetime import datetime, time
 from typing import TYPE_CHECKING, Any
@@ -266,16 +265,14 @@ def test_from_dicts_struct() -> None:
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert df.to_series().list.to_struct().to_list() == [
             {"field_0": 1, "field_1": 2, "field_2": 3},
             {"field_0": 1, "field_1": 2, "field_2": None},
         ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert df.to_series().list.to_struct(
             fields=lambda idx: f"col_name_{idx}"
         ).to_list() == [
@@ -284,8 +281,7 @@ def test_list_to_struct() -> None:
         ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert df.to_series().list.to_struct("max_width").to_list() == [
             {"field_0": 1, "field_1": 2, "field_2": None},
             {"field_0": 1, "field_1": 2, "field_2": 3},
@@ -293,8 +289,7 @@ def test_list_to_struct() -> None:
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
             "lists"
         ).sum().collect().columns == ["field_0", "field_1", "field_2"]
@@ -1238,8 +1233,7 @@ def test_list_to_struct_19208() -> None:
             ]
         }
     )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert pl.concat([df[0], df[1], df[2]]).select(
             pl.col("nested").list.to_struct(upper_bound=1)
         ).to_dict(as_series=False) == {

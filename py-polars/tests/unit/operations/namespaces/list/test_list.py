@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import warnings
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -682,8 +681,7 @@ def test_list_unique2() -> None:
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert df.select(pl.col("n").list.to_struct(upper_bound=3)).rows(
             named=True
         ) == [
@@ -691,8 +689,7 @@ def test_list_to_struct() -> None:
             {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
         ]
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         assert df.select(
             pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=3)
         ).rows(named=True) == [
@@ -717,8 +714,7 @@ def test_list_to_struct() -> None:
     # * Specifying an upper bound calls the field name getter function to
     #   retrieve the lazy schema
     # * The upper bound is respected during execution
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         q = df.lazy().select(
             pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
         )

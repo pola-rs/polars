@@ -1,5 +1,4 @@
 import io
-import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
@@ -141,8 +140,7 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
+    with pytest.warns(DeprecationWarning, match="to_struct"):
         q = df.with_columns(
             pl.col("genres")
             .str.split("|")
