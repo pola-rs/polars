@@ -179,13 +179,12 @@ def test_qcut_full_nan_include_breaks() -> None:
 
     result = s.qcut([0.25, 0.50], include_breaks=True)
 
-    assert result.name == "a"
-    assert result.dtype == pl.Struct(
-        {"breakpoint": pl.Float64, "category": pl.Categorical}
+    expected = pl.Series(
+        "a",
+        [{"breakpoint": None, "category": None}] * 2,
+        dtype=pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical}),
     )
-    assert result.len() == 2
-    assert result.struct.field("breakpoint").null_count() == 2
-    assert result.struct.field("category").null_count() == 2
+    assert_series_equal(result, expected, categorical_as_str=True)
 
 
 def test_qcut_nan_and_inf_mixed() -> None:
@@ -200,10 +199,10 @@ def test_qcut_empty_include_breaks_27284() -> None:
 
     result = empty.qcut(3, include_breaks=True)
 
-    assert result.dtype == pl.Struct(
-        {"breakpoint": pl.Float64, "category": pl.Categorical}
+    expected = pl.Series(
+        "x", [], dtype=pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical})
     )
-    assert result.len() == 0
+    assert_series_equal(result, expected, categorical_as_str=True)
 
 
 def test_qcut_empty_include_breaks_lazy_27284() -> None:
@@ -213,8 +212,7 @@ def test_qcut_empty_include_breaks_lazy_27284() -> None:
         pl.col("x").qcut(3, include_breaks=True).struct.field("breakpoint")
     ).collect()
 
-    assert result.schema == {"breakpoint": pl.Float64}
-    assert result.height == 0
+    assert_frame_equal(result, pl.DataFrame(schema={"breakpoint": pl.Float64}))
 
 
 def test_qcut_full_null_include_breaks_27284() -> None:
@@ -222,10 +220,12 @@ def test_qcut_full_null_include_breaks_27284() -> None:
 
     result = s.qcut([0.25, 0.50], include_breaks=True)
 
-    assert result.dtype == pl.Struct(
-        {"breakpoint": pl.Float64, "category": pl.Categorical}
+    expected = pl.Series(
+        "x",
+        [{"breakpoint": None, "category": None}] * 3,
+        dtype=pl.Struct({"breakpoint": pl.Float64, "category": pl.Categorical}),
     )
-    assert result.len() == 3
+    assert_series_equal(result, expected, categorical_as_str=True)
 
 
 def test_qcut_full_null_include_breaks_lazy_unnest_27284() -> None:
@@ -237,5 +237,8 @@ def test_qcut_full_null_include_breaks_lazy_unnest_27284() -> None:
     ).unnest("q")
 
     out = result.collect()
-    assert out.schema["breakpoint"] == pl.Float64
-    assert out.height == 2
+    expected = pl.DataFrame(
+        {"breakpoint": [None, None], "category": [None, None]},
+        schema={"breakpoint": pl.Float64, "category": pl.Categorical},
+    )
+    assert_frame_equal(out, expected, categorical_as_str=True)
