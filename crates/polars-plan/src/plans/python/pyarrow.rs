@@ -302,7 +302,7 @@ fn anyvalue_to_py<'py>(py: Python<'py>, av: AnyValue<'_>) -> Option<Bound<'py, P
         AnyValue::Datetime(value, time_unit, time_zone) => {
             use chrono::{Datelike, Timelike};
             let micros: i64 = match time_unit {
-                TimeUnit::Nanoseconds => value / 1000,
+                TimeUnit::Nanoseconds => (value % 1000 == 0).then_some(value / 1000)?,
                 TimeUnit::Microseconds => value,
                 TimeUnit::Milliseconds => value * 1000,
             };
