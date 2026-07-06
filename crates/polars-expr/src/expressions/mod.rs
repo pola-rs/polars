@@ -440,7 +440,9 @@ impl<'a> AggregationContext<'a> {
         self.aggregated();
         let out = self.get_values();
         match self.agg_state() {
-            AggState::AggregatedScalar(_) => Cow::Owned(out.as_list()),
+            AggState::AggregatedScalar(_) => {
+                Cow::Owned(out.as_materialized_series().to_unit_list())
+            },
             _ => Cow::Borrowed(out.list().unwrap()),
         }
     }
