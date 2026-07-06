@@ -1201,7 +1201,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     table: Box<dyn IdxTable>,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl EquiJoinNode {

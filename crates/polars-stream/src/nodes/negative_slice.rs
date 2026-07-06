@@ -26,7 +26,7 @@ pub struct NegativeSliceNode {
     state: NegativeSliceState,
     slice_offset: i64,
     length: usize,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl NegativeSliceNode {
@@ -136,7 +136,7 @@ impl ComputeNode for NegativeSliceNode {
                         buffer.total_len += morsel.height();
                         buffer
                             .frames
-                            .push_back(SpillFrame::new(morsel.into_df(), &*spill_ctx).await);
+                            .push_back(SpillFrame::new(morsel.into_df(), &spill_ctx).await);
 
                         if buffer.total_len - buffer.frames.front().unwrap().height()
                             >= max_buffer_needed

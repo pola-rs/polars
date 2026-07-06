@@ -63,8 +63,6 @@ pub(super) fn expand_datasets(
             FileScanIR::PythonDataset { .. } => {
                 use polars_core::runtime::ASYNC;
 
-                use crate::plans::pyarrow::predicate_to_pa;
-
                 let mut projection = unified_scan_args.projection.clone();
 
                 if let Some(row_index) = &unified_scan_args.row_index
@@ -122,10 +120,11 @@ pub(super) fn expand_datasets(
                     && let Some(predicate) = &predicate
                 {
                     use crate::plans::aexpr::MintermIter;
+                    use crate::plans::python::pyarrow::predicate_to_pa;
 
                     // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
                     let parts: Vec<String> = MintermIter::new(predicate.node(), expr_arena)
-                        .filter_map(|node| predicate_to_pa(node, expr_arena, Default::default()))
+                        .filter_map(|node| predicate_to_pa(node, expr_arena))
                         .collect();
                     match parts.len() {
                         0 => None,
