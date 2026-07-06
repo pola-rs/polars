@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
+import warnings
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
-import warnings
 
 import numpy as np
 import pytest

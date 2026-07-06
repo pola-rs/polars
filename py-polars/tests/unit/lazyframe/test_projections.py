@@ -1,8 +1,8 @@
 import io
+import warnings
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
-import warnings
 
 import numpy as np
 import pytest

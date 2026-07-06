@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import math
+import warnings
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
-import warnings
 from zoneinfo import ZoneInfo
 
 import numpy as np
