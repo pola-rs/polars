@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crossbeam_queue::ArrayQueue;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
@@ -33,7 +31,7 @@ const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 struct BufferedStream {
     morsels: ArrayQueue<(SpillFrame, MorselSeq)>,
     post_buffer_offset: MorselSeq,
-    _spill_ctx: Option<Arc<MostRecentSpillContext>>,
+    _spill_ctx: Option<MostRecentSpillContext>,
 }
 
 impl BufferedStream {
@@ -43,7 +41,7 @@ impl BufferedStream {
         let ctx = MostRecentSpillContext::new(name);
         let queue = ArrayQueue::new(morsels.len().max(1));
         for morsel in morsels {
-            let sf = SpillFrame::new_blocking(morsel.into_df(), &*ctx);
+            let sf = SpillFrame::new_blocking(morsel.into_df(), &ctx);
             queue.push((sf, seq)).unwrap();
             seq = seq.successor();
         }
