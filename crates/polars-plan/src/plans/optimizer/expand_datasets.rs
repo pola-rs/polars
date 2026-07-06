@@ -63,8 +63,6 @@ pub(super) fn expand_datasets(
             FileScanIR::PythonDataset { .. } => {
                 use polars_core::runtime::ASYNC;
 
-                use crate::plans::pyarrow::predicate_to_pa;
-
                 let mut projection = unified_scan_args.projection.clone();
 
                 if let Some(row_index) = &unified_scan_args.row_index
