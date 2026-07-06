@@ -2,6 +2,7 @@ import io
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
+import warnings
 
 import numpy as np
 import pytest
@@ -140,11 +141,13 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    q = df.with_columns(
-        pl.col("genres")
-        .str.split("|")
-        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
-    ).unnest("genres")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        q = df.with_columns(
+            pl.col("genres")
+            .str.split("|")
+            .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
+        ).unnest("genres")
 
     out = q.collect()
     assert out.to_dict(as_series=False) == {

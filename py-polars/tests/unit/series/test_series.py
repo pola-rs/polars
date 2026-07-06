@@ -4,6 +4,7 @@ import math
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
+import warnings
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -560,11 +561,15 @@ def test_series_to_list() -> None:
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
-    assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
-    assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
-        "n00",
-        "n01",
-    ]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
+            "n00",
+            "n01",
+        ]
     assert_frame_equal(
         s.list.to_struct(fields=["one", "two"]).struct.unnest(),
         pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
