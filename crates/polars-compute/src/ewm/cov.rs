@@ -114,10 +114,6 @@ where
                     if self.bias {
                         Some(cov)
                     } else {
-                        // Unbiased variance needs the debiasing factor
-                        // 1 / (1 - sum(w^2)/sum(w)^2). With a single observation
-                        // that denominator is 0, so the estimate is undefined and
-                        // we return null (matching pandas) instead of 0.
                         let numerator = self.weight_sum * self.weight_sum;
                         let denominator = numerator - self.weight_square_sum;
                         if denominator > T::zero() {
