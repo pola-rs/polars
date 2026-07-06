@@ -958,6 +958,10 @@ class ExprArrayNameSpace:
             pyexpr = self._pyexpr.arr_to_struct(None)
             return wrap_expr(pyexpr).struct.rename_fields(field_names)
         else:
+            issue_deprecation_warning(
+                "arr.to_struct() with a callable is deprecated. Please pass a list "
+                "of field names."
+            )
             pyexpr = self._pyexpr.arr_to_struct(fields)
             return wrap_expr(pyexpr)
 

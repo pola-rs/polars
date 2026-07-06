@@ -1299,6 +1299,11 @@ class ExprListNameSpace(_NamespaceSuggestMixin):
                 msg = "`Expr.list.to_struct` requires either `fields` to be a sequence or `upper_bound` to be set.\n\nThis used to be allowed but produced unpredictable results."
                 raise exceptions.InvalidOperationError(msg)
 
+            issue_deprecation_warning(
+                "list.to_struct() without a list of field names is deprecated. Please "
+                "pass a list of field names."
+            )
+
             if fields is None:
                 fields = [f"field_{i}" for i in range(upper_bound)]
             else:
