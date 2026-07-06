@@ -220,6 +220,10 @@ impl AExpr {
                         maintain_order: _,
                     } => {
                         let mut field = ctx.arena.get(*input).to_field_impl(ctx)?;
+                        polars_ensure!(
+                            !field.dtype().is_object(),
+                            InvalidOperation: "cannot implode 'object' dtype; nested objects are not supported"
+                        );
                         field.coerce(DataType::List(field.dtype().clone().into()));
                         Ok(field)
                     },

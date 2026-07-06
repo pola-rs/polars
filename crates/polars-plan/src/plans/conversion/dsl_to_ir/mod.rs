@@ -1756,6 +1756,10 @@ fn resolve_group_by(
     assert!(aggs_schema.len() == aggs.len());
     for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(aggs.iter_mut()) {
         if !expr.is_scalar(expr_arena) {
+            polars_ensure!(
+                !dtype.is_object(),
+                InvalidOperation: "cannot aggregate 'object' dtype into a list; nested objects are not supported"
+            );
             expr.set_node(expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
                 input: expr.node(),
                 maintain_order: true,
