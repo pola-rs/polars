@@ -157,8 +157,8 @@ impl ExecutionState {
     }
 
     /// Toggle this to measure execution times.
-    pub fn time_nodes(&mut self, start: std::time::Instant) {
-        self.node_timer = Some(NodeTimer::new(start))
+    pub fn time_nodes(&mut self, query_start: std::time::Instant, optimization_duration: Duration) {
+        self.node_timer = Some(NodeTimer::new(query_start, optimization_duration))
     }
     pub fn has_node_timer(&self) -> bool {
         self.node_timer.is_some()
