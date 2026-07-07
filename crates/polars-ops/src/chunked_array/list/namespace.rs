@@ -722,7 +722,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         // SAFETY: after casting all arrays share the same inner (super)type, and
         // each has length `length` (== output height) or 1 (broadcast).
-        let out_arr = unsafe { horizontal_concat_list_unchecked(&arrays) };
+        let out_arr = unsafe { horizontal_concat_list_unchecked(&arrays) }?;
 
         let mut out = ListChunked::with_chunk(ca.name().clone(), out_arr);
         // The kernel operates on physical arrays; restore the logical inner dtype.
