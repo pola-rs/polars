@@ -76,12 +76,12 @@ impl IOSinkNodeConfig {
                 let mut n = || iter.next().flatten();
 
                 let ret = BytesBuffererConfig {
-                    target_size: n()?..n()?,
-                    copy_buffer_reserve_size: n()?..n()?,
+                    target_size: n()?..=n()?,
+                    copy_buffer_reserve_size: n()?..=n()?,
                 };
 
-                let valid = ret.target_size.end >= ret.target_size.start
-                    && ret.copy_buffer_reserve_size.end >= ret.copy_buffer_reserve_size.start;
+                let valid = ret.target_size.end() >= ret.target_size.start()
+                    && ret.copy_buffer_reserve_size.end() >= ret.copy_buffer_reserve_size.start();
 
                 (valid && iter.next().is_none()).then_some(ret)
             })()
@@ -92,16 +92,16 @@ impl IOSinkNodeConfig {
             let cloud_upload_chunk_size = self.cloud_upload_chunk_size();
 
             BytesBuffererConfig {
-                target_size: cloud_upload_chunk_size..cloud_upload_chunk_size,
+                target_size: cloud_upload_chunk_size..=cloud_upload_chunk_size,
                 copy_buffer_reserve_size: cloud_upload_chunk_size
                     .div_ceil(const { NonZeroUsize::new(8).unwrap() })
-                    ..cloud_upload_chunk_size,
+                    ..=cloud_upload_chunk_size,
             }
         } else {
             const {
                 BytesBuffererConfig {
-                    target_size: NonZeroUsize::new(8192).unwrap()..NonZeroUsize::MAX,
-                    copy_buffer_reserve_size: NonZeroUsize::new(8192).unwrap()..NonZeroUsize::MAX,
+                    target_size: NonZeroUsize::new(8192).unwrap()..=NonZeroUsize::MAX,
+                    copy_buffer_reserve_size: NonZeroUsize::new(8192).unwrap()..=NonZeroUsize::MAX,
                 }
             }
         }
