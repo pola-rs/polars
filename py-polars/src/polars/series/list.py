@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
+from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
 from polars._utils.wrap import wrap_s
@@ -858,7 +859,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]])
-        >>> s.list.explode()
+        >>> s.list.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
@@ -985,6 +986,11 @@ class ListNameSpace(_NamespaceSuggestMixin):
                 .select_seq(F.col(s.name).list.to_struct(fields=fields))
                 .to_series()
             )
+
+        issue_deprecation_warning(
+            "list.to_struct() without a list of field names is deprecated. Please "
+            "pass a list of field names."
+        )
 
         return wrap_s(self._s.list_to_struct(n_field_strategy, fields))
 

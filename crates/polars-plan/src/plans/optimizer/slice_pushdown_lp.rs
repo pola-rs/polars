@@ -2,6 +2,7 @@ use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::{ScratchUnitVec, ScratchVec};
 use polars_utils::slice_enum::Slice;
+use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
 
 use crate::plans::optimizer::slice_pushdown_expr;
@@ -14,6 +15,7 @@ pub(super) struct SlicePushDown {
     pub(super) ae_nodes_scratch: ScratchVec<Node>,
     pub(super) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
     pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchHashSet<Node>,
+    optimized_cache_inputs: PlHashMap<UniqueId, Node>,
 }
 
 impl SlicePushDown {
@@ -29,6 +31,7 @@ impl SlicePushDown {
             ae_nodes_scratch: ScratchVec::default(),
             ae_slice_pd_state_scratch: ScratchVec::default(),
             ae_slice_pd_direct_col_slice_nodes: ScratchHashSet::default(),
+            optimized_cache_inputs: PlHashMap::default(),
         }
     }
 }
@@ -229,14 +232,22 @@ impl SlicePushDown {
     ) -> PolarsResult<IR> {
         use IR::*;
 
-        // Don't take this, the node can be referenced multiple times in the tree.
-        if let IR::Cache { .. } = lp_arena.get(ir_node) {
-            return self.no_pushdown_restart_opt(
-                lp_arena.get(ir_node).clone(),
-                state,
-                lp_arena,
-                expr_arena,
-            );
+        // Cache nodes with the same cache id share one logical input.
+        // Optimize that input once, then reuse it for later cache nodes
+        // to avoid traversing a subtree that may already have been taken
+        // from the arena.
+        if let IR::Cache { input, id } = lp_arena.get(ir_node) {
+            let (mut input, id) = (*input, *id);
+            input = if let Some(input) = self.optimized_cache_inputs.get(&id) {
+                *input
+            } else {
+                let alp = self.pushdown(input, None, lp_arena, expr_arena)?;
+                lp_arena.replace(input, alp);
+                self.optimized_cache_inputs.insert(id, input);
+                input
+            };
+
+            return self.no_pushdown_finish_opt(IR::Cache { input, id }, state, lp_arena);
         }
 
         let maintain_errors = self.maintain_errors;

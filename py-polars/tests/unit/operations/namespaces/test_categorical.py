@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError, SchemaError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -250,3 +251,35 @@ def test_cat_order_flag_csv_read_23823() -> None:
         schema_overrides={"colx": pl.Categorical},
     )
     assert_frame_equal(expected, lf.sort("colx", descending=False).collect())
+
+
+@pytest.mark.parametrize("cat_kind", ["enum", "cat"])
+def test_cat_to_from_physical(cat_kind: str) -> None:
+    values = ["foobar", "barfoo", "foobar", "x", None]
+
+    if cat_kind == "cat":
+        categories = pl.Categories.random()
+        dtype: pl.DataType = pl.Categorical(categories)
+        _dummy = pl.Series(values, dtype=dtype)
+        cats = [categories[s] for s in values if s is not None]
+        phys: type[pl.UInt32 | pl.UInt8] = pl.UInt32
+    else:
+        dtype = pl.Enum(sorted({x for x in values if x is not None}))
+        cats = [1, 0, 1, 2]
+        phys = pl.UInt8
+
+    df = pl.DataFrame({"a": pl.Series(values, dtype=dtype)})
+
+    assert_series_equal(
+        df["a"].cat.physical(), pl.Series("a", cats + [None], dtype=phys)
+    )
+
+    assert_series_equal(
+        pl.Series("a", cats + [4], dtype=phys).cat.to(dtype, strict=False), df["a"]
+    )
+
+    with pytest.raises(ComputeError):
+        pl.Series(cats + [4], dtype=phys).cat.to(dtype)
+
+    with pytest.raises(SchemaError):
+        pl.Series(cats + [4], dtype=pl.UInt16).cat.to(dtype)

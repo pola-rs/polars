@@ -699,6 +699,13 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
     )
 
 
+def test_slice_pushdown_shared_join_input_28127() -> None:
+    lf = pl.LazyFrame({"a": ["x"]}).filter(pl.lit(True)).select("a").slice(0, 1)
+    q = lf.join(lf, on="a", how="inner")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
 def test_drop_nulls_first_last_optimization_25478() -> None:
     lf = pl.LazyFrame({"a": [None, 1, None, 3, None]})
     lf = lf.select(a=pl.col.a.drop_nulls().first(), b=pl.col.a.drop_nulls().last())

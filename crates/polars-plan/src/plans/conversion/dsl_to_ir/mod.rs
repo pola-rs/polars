@@ -1,3 +1,5 @@
+use std::sync::LazyLock;
+
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::rewrite_projections;
@@ -112,6 +114,11 @@ async fn fetch_metadata(
     verbose: bool,
 ) -> PolarsResult<()> {
     use futures::stream::StreamExt;
+    #[cfg(feature = "python")]
+    let py_scan_resolve_threadpool: Arc<
+        LazyLock<PyScanResolveThreadPool, fn() -> PyScanResolveThreadPool>,
+    > = Arc::new(LazyLock::new(PyScanResolveThreadPool::new));
+
     let mut futures = lp
         .into_iter()
         .filter_map(|dsl| {
@@ -130,6 +137,8 @@ async fn fetch_metadata(
                 scan_type.clone(),
                 cached_ir.clone(),
                 cache_file_info.clone(),
+                #[cfg(feature = "python")]
+                Arc::clone(&py_scan_resolve_threadpool),
                 verbose,
             ))
         })
@@ -1747,6 +1756,10 @@ fn resolve_group_by(
     assert!(aggs_schema.len() == aggs.len());
     for ((_name, dtype), expr) in aggs_schema.iter_mut().zip(aggs.iter_mut()) {
         if !expr.is_scalar(expr_arena) {
+            polars_ensure!(
+                !dtype.is_object(),
+                InvalidOperation: "cannot aggregate 'object' dtype into a list; nested objects are not supported"
+            );
             expr.set_node(expr_arena.add(AExpr::Agg(IRAggExpr::Implode {
                 input: expr.node(),
                 maintain_order: true,

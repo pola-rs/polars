@@ -33,6 +33,7 @@ use polars_lazy::prelude::*;
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
+use polars_utils::pl_serialize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -40,9 +41,11 @@ use pyo3::basic::CompareOp;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedStr;
+use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
 use pyo3::sync::PyOnceLock;
-use pyo3::types::{IntoPyDict, PyDict, PyList, PySequence, PyString};
+use pyo3::types::{IntoPyDict, PyBytes, PyDict, PyList, PySequence, PyString};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::error::PyPolarsErr;
 use crate::expr::PyExpr;
@@ -126,6 +129,30 @@ pub(crate) fn to_series(py: Python<'_>, s: PySeries) -> PyResult<Bound<'_, PyAny
     let series = pl_series(py).bind(py);
     let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
     constructor.call1((s,))
+}
+
+pub(crate) fn serde_pickle<'py, T: Serialize>(
+    val: &T,
+    py: Python<'py>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    // For pickling we set FC is false, as that is used for caching (compact is faster) and is not
+    // intended to be used across different versions.
+    let mut writer: Vec<u8> = vec![];
+    pl_serialize::SerializeOptions::default()
+        .serialize_into_writer::<_, _, false>(&mut writer, &val)
+        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    Ok(PyBytes::new(py, &writer))
+}
+
+pub(crate) fn serde_unpickle<T: DeserializeOwned>(
+    val: &mut T,
+    state: &Bound<PyAny>,
+) -> PyResult<()> {
+    let bytes = state.extract::<PyBackedBytes>()?;
+    *val = pl_serialize::SerializeOptions::default()
+        .deserialize_from_reader::<_, _, false>(&*bytes)
+        .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
+    Ok(())
 }
 
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<PlSmallStr> {
@@ -789,13 +816,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for ObjectValue {
     }
 }
 
-/// # Safety
-///
-/// The caller is responsible for checking that val is Object otherwise UB
 #[cfg(feature = "object")]
-impl From<&dyn PolarsObjectSafe> for &ObjectValue {
-    fn from(val: &dyn PolarsObjectSafe) -> Self {
-        unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
+impl<'a> From<&'a dyn PolarsObjectSafe> for &'a ObjectValue {
+    fn from(val: &'a dyn PolarsObjectSafe) -> Self {
+        val.as_any().downcast_ref().unwrap()
     }
 }
 
@@ -1362,6 +1386,26 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<MaintainOrderJoin> {
     }
 }
 
+impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Option<JoinBuildSide>> {
+    type Error = PyErr;
+
+    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "auto" => None,
+            "prefer_left" => Some(JoinBuildSide::PreferLeft),
+            "prefer_right" => Some(JoinBuildSide::PreferRight),
+            "force_left" => Some(JoinBuildSide::ForceLeft),
+            "force_right" => Some(JoinBuildSide::ForceRight),
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`build_side` must be one of {{'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}}, got {v}",
+                )));
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "csv")]
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<QuoteStyle> {
     type Error = PyErr;
@@ -1473,6 +1517,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
         })?;
 
         let mut datetime_nanoseconds_downcast = false;
+        let mut datetime_microseconds_downcast = false;
+        let mut datetime_milliseconds_upcast = false;
+        let mut datetime_microseconds_upcast = false;
         let mut datetime_convert_timezone = false;
 
         let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
@@ -1481,6 +1528,17 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
             match v {
                 "forbid" => {},
                 "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
+                "microsecond-downcast" => datetime_microseconds_downcast = true,
+                "millisecond-upcast" => datetime_milliseconds_upcast = true,
+                "microsecond-upcast" => datetime_microseconds_upcast = true,
+                "downcast" => {
+                    datetime_nanoseconds_downcast = true;
+                    datetime_microseconds_downcast = true;
+                },
+                "upcast" => {
+                    datetime_milliseconds_upcast = true;
+                    datetime_microseconds_upcast = true;
+                },
                 "convert-timezone" => datetime_convert_timezone = true,
                 v => {
                     return Err(PyValueError::new_err(format!(
@@ -1537,7 +1595,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
             float_upcast,
             float_downcast,
             datetime_nanoseconds_downcast,
-            datetime_microseconds_downcast: false,
+            datetime_microseconds_downcast,
+            datetime_milliseconds_upcast,
+            datetime_microseconds_upcast,
             datetime_convert_timezone,
             null_upcast: true,
             categorical_to_string,

@@ -89,8 +89,8 @@ where
         self.policy.rank(&self.ost, &self.slice[idx])
     }
 
-    fn is_valid(&self, _min_periods: usize) -> bool {
-        self.validity.get(self.end - 1).unwrap()
+    fn is_valid(&self, min_periods: usize) -> bool {
+        self.validity.get(self.end - 1).unwrap() && self.ost.len() >= min_periods
     }
 
     fn slice_len(&self) -> usize {
