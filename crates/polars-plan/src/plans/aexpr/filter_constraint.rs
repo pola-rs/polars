@@ -15,9 +15,8 @@
 
 use std::cmp::Ordering;
 
-use polars_core::prelude::AnyValue;
 #[cfg(feature = "is_in")]
-use polars_core::prelude::Series;
+use polars_core::prelude::{AnyValue, Series};
 use polars_core::scalar::Scalar;
 use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
@@ -649,31 +648,26 @@ fn classify_comparison(
     expr_arena: &Arena<AExpr>,
     constraints: &mut PlIndexMap<PlSmallStr, ColumnConstraints>,
 ) -> Classification {
-    let left_ae = expr_arena.get(left);
-    let right_ae = expr_arena.get(right);
-
-    // Normalize to `col op lit`; both-columns or both-literals has no single-column bound.
-    let (col_name, lit, op) =
-        if let (Some(name), Some(lit)) = (as_column(left_ae), as_scalar_lit(right_ae)) {
-            (name, lit, op)
-        } else if let (Some(lit), Some(name)) = (as_scalar_lit(left_ae), as_column(right_ae)) {
-            (name, lit, flip_comparison(op))
-        } else if let (Some(a), Some(b)) = (as_column(left_ae), as_column(right_ae)) {
-            // Both sides columns. Any ordinary comparison drops rows where either
-            // operand is null (K3), so both columns are non-null on surviving rows;
-            // recording that lets e.g. `a <= b AND a.is_null()` collapse. The null-safe
-            // forms (`EqValidity` / `NotEqValidity`) keep nulls, so they're excluded.
-            // `==` additionally yields a cross-column propagation edge (both ends share
-            // a value on every surviving row); the others are kept verbatim.
-            if matches!(
-                op,
-                Operator::Eq
-                    | Operator::NotEq
-                    | Operator::Lt
-                    | Operator::LtEq
-                    | Operator::Gt
-                    | Operator::GtEq
-            ) {
+    // Normalize to `col op lit`; both-columns or both-literals has no single-column
+    // bound. Null literals are skipped so we only reason about real values.
+    let (col_name, lit, op) = match (expr_arena.get(left), expr_arena.get(right)) {
+        (AExpr::Column(name), AExpr::Literal(LiteralValue::Scalar(lit))) if !lit.is_null() => {
+            (name.clone(), lit.clone(), op)
+        },
+        (AExpr::Literal(LiteralValue::Scalar(lit)), AExpr::Column(name)) if !lit.is_null() => {
+            let Some(op) = op.swap_operands() else {
+                return Classification::Opaque;
+            };
+            (name.clone(), lit.clone(), op)
+        },
+        (AExpr::Column(a), AExpr::Column(b)) => {
+            // Both sides columns. A null-propagating comparison drops rows where
+            // either operand is null (K3), so both columns are non-null on surviving
+            // rows; recording that lets e.g. `a <= b AND a.is_null()` collapse (the
+            // validity forms keep nulls, hence the restriction). `==` additionally
+            // yields a cross-column propagation edge (both ends share a value on
+            // every surviving row); the others are kept verbatim.
+            if op.is_null_propagating_comparison() {
                 constraints
                     .entry(a.clone())
                     .or_default()
@@ -683,13 +677,13 @@ fn classify_comparison(
                     .or_default()
                     .require_nullability(Nullability::NonNull);
                 if op == Operator::Eq {
-                    return Classification::Equality(a, b);
+                    return Classification::Equality(a.clone(), b.clone());
                 }
             }
             return Classification::Opaque;
-        } else {
-            return Classification::Opaque;
-        };
+        },
+        _ => return Classification::Opaque,
+    };
 
     let cc = constraints.entry(col_name).or_default();
     match op {
@@ -756,7 +750,7 @@ fn classify_negation(
 ) -> Classification {
     match expr_arena.get(inner) {
         AExpr::BinaryExpr { left, op, right } => {
-            let Some(negated) = negate_comparison(*op) else {
+            let Some(negated) = op.negate() else {
                 return Classification::Opaque;
             };
             // A folded bound becomes `Normalized` (forces the rewrite that drops the
@@ -833,33 +827,6 @@ fn classify_negation(
     }
 }
 
-// The complementary comparison for negating `!(col op lit)`. `None` for operators
-// whose negation we don't model (null-aware, boolean, arithmetic).
-fn negate_comparison(op: Operator) -> Option<Operator> {
-    match op {
-        Operator::Gt => Some(Operator::LtEq),
-        Operator::GtEq => Some(Operator::Lt),
-        Operator::Lt => Some(Operator::GtEq),
-        Operator::LtEq => Some(Operator::Gt),
-        Operator::Eq => Some(Operator::NotEq),
-        Operator::NotEq => Some(Operator::Eq),
-        Operator::EqValidity
-        | Operator::NotEqValidity
-        | Operator::And
-        | Operator::Or
-        | Operator::Xor
-        | Operator::LogicalAnd
-        | Operator::LogicalOr
-        | Operator::Plus
-        | Operator::Minus
-        | Operator::Multiply
-        | Operator::RustDivide
-        | Operator::TrueDivide
-        | Operator::FloorDivide
-        | Operator::Modulus => None,
-    }
-}
-
 // Records an `is_null` (`Null`) / `is_not_null` (`NonNull`) requirement on a bare
 // column, for contradiction detection only; the node is kept verbatim. A non-column
 // argument (e.g. `(a + b).is_null()`) stays opaque.
@@ -925,9 +892,10 @@ fn as_column(ae: &AExpr) -> Option<PlSmallStr> {
 }
 
 // Returns `None` for a null literal, so we only reason about real values.
+#[cfg(feature = "is_between")]
 fn as_scalar_lit(ae: &AExpr) -> Option<Scalar> {
     if let AExpr::Literal(LiteralValue::Scalar(s)) = ae {
-        if matches!(s.value(), AnyValue::Null) {
+        if s.is_null() {
             return None;
         }
         Some(s.clone())
@@ -976,7 +944,7 @@ fn as_value_set(ae: &AExpr) -> Option<Vec<Scalar>> {
     let dtype = values.dtype();
     let mut scalars = Vec::with_capacity(values.len());
     for av in values.iter() {
-        if matches!(av, AnyValue::Null) {
+        if av.is_null() {
             return None;
         }
         scalars.push(Scalar::new(dtype.clone(), av.into_static()));
@@ -1043,31 +1011,4 @@ fn fold_and(nodes: Vec<Node>, expr_arena: &mut Arena<AExpr>) -> Node {
         });
     }
     acc
-}
-
-fn flip_comparison(op: Operator) -> Operator {
-    match op {
-        Operator::Gt => Operator::Lt,
-        Operator::GtEq => Operator::LtEq,
-        Operator::Lt => Operator::Gt,
-        Operator::LtEq => Operator::GtEq,
-        Operator::Eq => Operator::Eq,
-        Operator::NotEq => Operator::NotEq,
-        // Other operators have no flipped form; return them unchanged. They
-        // never reach a real comparison, so the value doesn't matter.
-        Operator::EqValidity
-        | Operator::NotEqValidity
-        | Operator::And
-        | Operator::Or
-        | Operator::Xor
-        | Operator::LogicalAnd
-        | Operator::LogicalOr
-        | Operator::Plus
-        | Operator::Minus
-        | Operator::Multiply
-        | Operator::RustDivide
-        | Operator::TrueDivide
-        | Operator::FloorDivide
-        | Operator::Modulus => op,
-    }
 }
