@@ -1374,6 +1374,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Clip { has_min, has_max } => {
                     ("clip", has_min, has_max).into_py_any(py)
                 },
+                IRFunctionExpr::AsList => ("as_list",).into_py_any(py),
                 IRFunctionExpr::AsStruct => ("as_struct",).into_py_any(py),
                 #[cfg(feature = "top_k")]
                 IRFunctionExpr::TopK { descending } => ("top_k", descending).into_py_any(py),

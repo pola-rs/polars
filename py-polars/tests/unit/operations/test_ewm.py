@@ -198,8 +198,8 @@ def test_ewm_std_var() -> None:
 
     var = series.ewm_var(alpha=0.5, ignore_nulls=False)
     std = series.ewm_std(alpha=0.5, ignore_nulls=False)
-    expected = pl.Series("a", [0.0, 4.5, 1.9285714285714288])
-    assert np.allclose(var, std**2, rtol=1e-16)
+    expected = pl.Series("a", [None, 4.5, 1.9285714285714288])
+    assert np.allclose(var, std**2, rtol=1e-16, equal_nan=True)
     assert_series_equal(var, expected)
 
 
@@ -208,13 +208,13 @@ def test_ewm_std_var_with_nulls() -> None:
 
     var = series.ewm_var(alpha=0.5, ignore_nulls=True)
     std = series.ewm_std(alpha=0.5, ignore_nulls=True)
-    expected = pl.Series("a", [0.0, 4.5, None, 1.9285714285714288])
+    expected = pl.Series("a", [None, 4.5, None, 1.9285714285714288])
     assert_series_equal(var, expected)
     assert_series_equal(std**2, expected)
 
     var = series.ewm_var(alpha=0.5, ignore_nulls=False)
     std = series.ewm_std(alpha=0.5, ignore_nulls=False)
-    expected = pl.Series("a", [0.0, 4.5, None, 1.7307692307692308])
+    expected = pl.Series("a", [None, 4.5, None, 1.7307692307692308])
     assert_series_equal(var, expected)
     assert_series_equal(std**2, expected)
 
@@ -271,7 +271,9 @@ def test_ewm_with_multiple_chunks() -> None:
     ewm_std = df1.with_columns(
         pl.all().ewm_std(com=20, ignore_nulls=False).name.prefix("ewm_"),
     )
-    assert ewm_std.null_count().sum_horizontal()[0] == 4
+    # 2 nulls per column: the leading null from diff, plus the first valid
+    # value which is a single observation so unbiased std is undefined (null)
+    assert ewm_std.null_count().sum_horizontal()[0] == 6
 
 
 def alpha_guard(**decay_param: float) -> bool:

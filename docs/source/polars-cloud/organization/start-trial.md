@@ -30,4 +30,5 @@ When your 30-day trial concludes, you'll be prompted to subscribe via the AWS Ma
 and workspace configurations remain intact, but new query execution pauses until subscription
 activation. Once subscribed, all functionality immediately returns.
 
-For more information about subscription options, see the [Payment and Billing page](billing.md).
+For a step-by-step walkthrough of subscribing and linking your subscription to your organization,
+see [Subscribe to Polars Cloud](billing.md#subscribe-to-polars-cloud).

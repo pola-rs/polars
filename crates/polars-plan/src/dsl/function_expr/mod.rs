@@ -185,6 +185,7 @@ pub enum FunctionExpr {
         has_min: bool,
         has_max: bool,
     },
+    AsList,
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
@@ -511,6 +512,7 @@ impl Hash for FunctionExpr {
             ArgWhere => {},
             #[cfg(feature = "trigonometry")]
             Atan2 => {},
+            AsList => {},
             #[cfg(feature = "dtype-struct")]
             AsStruct => {},
             #[cfg(feature = "sign")]
@@ -784,6 +786,7 @@ impl Display for FunctionExpr {
                 (true, false) => "clip_min",
                 _ => unreachable!(),
             },
+            AsList => "as_list",
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]

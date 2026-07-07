@@ -195,6 +195,7 @@ pub enum IRFunctionExpr {
         has_min: bool,
         has_max: bool,
     },
+    AsList,
     #[cfg(feature = "dtype-struct")]
     AsStruct,
     #[cfg(feature = "top_k")]
@@ -532,6 +533,7 @@ impl Hash for IRFunctionExpr {
             ArgWhere => {},
             #[cfg(feature = "trigonometry")]
             Atan2 => {},
+            AsList => {},
             #[cfg(feature = "dtype-struct")]
             AsStruct => {},
             #[cfg(feature = "sign")]
@@ -805,6 +807,7 @@ impl Display for IRFunctionExpr {
                 (true, false) => "clip_min",
                 _ => unreachable!(),
             },
+            AsList => "as_list",
             #[cfg(feature = "dtype-struct")]
             AsStruct => "as_struct",
             #[cfg(feature = "top_k")]
@@ -1132,6 +1135,8 @@ impl IRFunctionExpr {
             },
             #[cfg(feature = "round_series")]
             F::Clip { .. } => FunctionOptions::elementwise(),
+            F::AsList => FunctionOptions::elementwise()
+                .with_flags(|f| f | FunctionFlags::INPUT_WILDCARD_EXPANSION),
             #[cfg(feature = "dtype-struct")]
             F::AsStruct => FunctionOptions::elementwise().with_flags(|f| {
                 f | FunctionFlags::PASS_NAME_TO_APPLY | FunctionFlags::INPUT_WILDCARD_EXPANSION

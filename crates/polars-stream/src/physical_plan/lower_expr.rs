@@ -1555,11 +1555,7 @@ fn lower_exprs_with_ctx(
                 transformed_exprs.push(row_idx_col_aexpr);
             },
 
-            #[cfg(any(
-                feature = "dtype-date",
-                feature = "dtype-datetime",
-                feature = "dtype-time"
-            ))]
+            #[cfg(all(feature = "strings", feature = "temporal"))]
             AExpr::Function {
                 input: ref inner_exprs,
                 function:
