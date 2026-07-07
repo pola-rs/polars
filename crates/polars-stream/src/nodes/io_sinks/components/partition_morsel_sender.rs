@@ -13,12 +13,12 @@ use crate::nodes::io_sinks::components::partition_sink_starter::PartitionSinkSta
 use crate::nodes::io_sinks::components::partition_state::PartitionState;
 use crate::nodes::io_sinks::components::sink_morsel::SinkMorsel;
 use crate::nodes::io_sinks::components::size::{
-    NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
+    NonZeroRowCountAndSize, RowCountAndSize, SplitMode, TargetSinkMorselSize,
 };
 
 pub struct PartitionMorselSender {
     /// Note: Must be <= `file_size_limit` if there is one.
-    pub takeable_rows_provider: TakeableRowsProvider,
+    pub target_sink_morsel_size: TargetSinkMorselSize,
     pub file_size_limit: NonZeroRowCountAndSize,
     pub inflight_morsel_semaphore: Arc<tokio::sync::Semaphore>,
     pub open_sinks_semaphore: Arc<tokio::sync::Semaphore>,
@@ -78,21 +78,15 @@ impl PartitionMorselSender {
 
             let buffered_size = partition.buffered_size();
 
-            if buffered_size.num_rows == 0 {
-                return Ok(());
-            }
-
-            let Some(num_rows_to_take) = self
-                .takeable_rows_provider
-                .num_rows_takeable_from(buffered_size, flush)
-            else {
+            let Some(num_rows_to_take) = self.next_rows_to_take(buffered_size, flush) else {
                 return Ok(());
             };
 
-            let file_min_available_rows_for_byte_size =
-                NonZeroRowCountAndSize::get(self.takeable_rows_provider.max_size)
-                    .num_rows
-                    .saturating_sub(used_row_capacity.num_rows);
+            let file_min_available_rows_for_byte_size = self
+                .target_sink_morsel_size
+                .target_num_rows
+                .get()
+                .saturating_sub(used_row_capacity.num_rows);
 
             let max_takeable_rows: IdxSize = available_row_capacity
                 .num_rows_takeable_from(buffered_size, file_min_available_rows_for_byte_size);
@@ -101,7 +95,7 @@ impl PartitionMorselSender {
             let num_rows_to_take = if start_new_sink {
                 num_rows_to_take
             } else {
-                num_rows_to_take.min(max_takeable_rows)
+                IdxSize::min(num_rows_to_take, max_takeable_rows)
             };
 
             if start_new_sink {
@@ -156,10 +150,13 @@ impl PartitionMorselSender {
             let morsel_height: IdxSize = IdxSize::try_from(morsel.height()).unwrap();
 
             debug_assert!(
-                self.takeable_rows_provider.max_size.get().num_rows
+                self.target_sink_morsel_size.target_num_rows.get()
                     <= self.file_size_limit.get().num_rows
             );
-            debug_assert!(morsel_height <= self.takeable_rows_provider.max_size.get().num_rows);
+
+            if self.target_sink_morsel_size.target_num_rows_mode == SplitMode::Exact {
+                debug_assert!(morsel_height <= self.target_sink_morsel_size.target_num_rows.get());
+            }
 
             assert!((1..=available_row_capacity.num_rows).contains(&morsel_height));
 
@@ -185,5 +182,18 @@ impl PartitionMorselSender {
                 .add_delta(morsel_height, partition.total_size)
                 .unwrap();
         }
+    }
+
+    pub fn next_rows_to_take(
+        &self,
+        buffered_size: RowCountAndSize,
+        flush: bool,
+    ) -> Option<IdxSize> {
+        self.target_sink_morsel_size
+            .calc_next_splits(RowCountAndSize::default(), buffered_size)
+            .1
+            .next()
+            .map(|n_rows| n_rows as IdxSize)
+            .or_else(|| (flush && buffered_size.num_rows != 0).then_some(buffered_size.num_rows))
     }
 }

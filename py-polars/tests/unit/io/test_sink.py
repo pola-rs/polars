@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
+import pyarrow.ipc
 import pytest
 
 import polars as pl
@@ -489,3 +490,92 @@ def test_sink_predicate_pushdown_streaming_flag_27922() -> None:
         pl.scan_ipc(f).collect(),
         pl.DataFrame({"role": ["ST"], "key": ["st"], "tags": [["ST"]]}),
     )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    ("input_chunk_lengths", "expected_written_chunk_lengths"),
+    [
+        ([0], []),
+        ([1], [1]),
+        # Note: Following numbers expect a default target sink morsel size (rows)
+        # of 122_880.
+        ([81_920], [81_920]),
+        ([163_840], [163_840]),
+        ([163_841], [81_921, 81_920]),  # Cutoff @ (4/3)*122_880
+        ([250_000, 250_000], [125_000, 125_000, 125_000, 125_000]),
+        # Tiny<>Large chunk splitting
+        ([1, 350], [351]),
+        ([1, 351], [1, 351]),
+        ([1, 351, 6475], [1, 6826]),
+        ([1, 351, 6476], [1, 351, 6476]),
+        ([1, 351, 6476, 25903], [1, 351, 32379]),
+        ([1, 351, 6476, 25904], [1, 351, 6476, 25904]),
+        ([1, 351, 6476, 25904, 51807], [1, 351, 6476, 77711]),
+        ([1, 351, 6476, 25904, 51808], [1, 351, 6476, 25904, 51808]),
+        ([1, 351, 6476, 25904, 51808, 71073], [1, 351, 6476, 25904, 51808, 71073]),
+        (
+            [1, 351, 6476, 25904, 51808, 71073, 71073],
+            [1, 351, 6476, 25904, 51808, 142146],
+        ),
+        (
+            [1, 351, 6476, 25904, 51808, 71073, 71074],
+            [1, 351, 6476, 25904, 51808, 71073, 71074],
+        ),
+        # Does not accept LHS(large)>RHS(tiny), this protects against
+        # [tiny, large, tiny, large] from creating too many chunks.
+        ([351, 1], [352]),
+        ([351, 1, 6474], [6826]),
+        # From 352<>6475 threshold at 3rd chunk prevents combining
+        ([351, 1, 6475], [352, 6475]),
+        # Ideal morsel size is 100_000; ensure we don't split morsels of this size.
+        ([100_000, 100_000, 100_000], [100_000, 100_000, 100_000]),
+    ],
+)
+def test_sink_morsel_splitting_without_user_configuration(
+    input_chunk_lengths: list[int],
+    expected_written_chunk_lengths: list[int],
+) -> None:
+    s = pl.Series("x", [1], dtype=pl.UInt8)
+    df = pl.concat(s.new_from_index(0, n) for n in input_chunk_lengths).to_frame()
+
+    assert df.to_series(0).chunk_lengths() == input_chunk_lengths
+
+    buf = io.BytesIO()
+    df.write_ipc(buf)
+
+    with pyarrow.ipc.open_file(buf) as f:
+        record_batch_lengths = [
+            f.get_record_batch(i).num_rows for i in range(f.num_record_batches)
+        ]
+
+    assert record_batch_lengths == expected_written_chunk_lengths
+
+
+@pytest.mark.parametrize(
+    ("input_chunk_lengths", "expected_written_chunk_lengths"),
+    [
+        ([250_000, 250_000], [122_880, 122_880, 122_880, 122_880, 8480]),
+    ],
+)
+def test_sink_morsel_splitting_with_user_configuration(
+    input_chunk_lengths: list[int],
+    expected_written_chunk_lengths: list[int],
+) -> None:
+
+    s = pl.Series("x", [1], dtype=pl.UInt8)
+    df = pl.concat(s.new_from_index(0, n) for n in input_chunk_lengths).to_frame()
+
+    assert df.to_series(0).chunk_lengths() == input_chunk_lengths
+
+    # We must split exactly when the user requests a specific record batch size,
+    # even if this causes the morsels to span across chunk boundaries.
+    buf = io.BytesIO()
+    df.write_ipc(buf, record_batch_size=122_880)
+
+    with pyarrow.ipc.open_file(buf) as f:
+        record_batch_lengths = [
+            f.get_record_batch(i).num_rows for i in range(f.num_record_batches)
+        ]
+
+    assert record_batch_lengths == expected_written_chunk_lengths

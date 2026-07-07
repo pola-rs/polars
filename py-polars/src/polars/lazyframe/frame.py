@@ -146,6 +146,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         IpcCompression,
+        JoinBuildSide,
         JoinStrategy,
         JoinValidation,
         Label,
@@ -5092,7 +5093,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         predicates
-            Expression that evaluates to a boolean Series.
+            Expression(s) that evaluate to a boolean Series. When multiple predicates
+            are provided they are combined using `&` (logical AND), so a row is only
+            removed when *every* predicate evaluates to True for that row.
         constraints
             Column filters; use `name = value` to filter columns using the supplied
             value. Each constraint behaves the same as `pl.col(name).eq(value)`,
@@ -6327,6 +6330,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         nulls_equal: bool = False,
         coalesce: bool | None = None,
         maintain_order: MaintainOrderJoin | None = None,
+        build_side: JoinBuildSide = "auto",
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> LazyFrame:
@@ -6428,6 +6432,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - First preserves the order of the left DataFrame, then the right.
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
+        build_side: {'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}
+            Which side of the join will be used as the build side. This side will be
+            likely be held in memory as a hash table. Note that unless a `force_`
+            variant is chosen, the chosen side might differ across Polars versions or
+            even between different runs.
+
+            .. list-table ::
+               :header-rows: 0
+
+               * - **auto**
+                 - *(Default)* Let Polars figure out the build side.
+               * - **prefer_left**
+                 - Unless there's a very good reason to believe that the right side is
+                   smaller, use the left side.
+               * - **prefer_right**
+                 - Unless there's a very good reason to believe that the left side is
+                   smaller, use the right side.
+               * - **force_left**
+                 - Always use the left side.
+               * - **force_right**
+                 - Always use the right side.
+
+            .. warning::
+                This functionality is considered **experimental**. It may be removed or
+                changed at any point without it being considered a breaking change.
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
@@ -6571,6 +6600,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     suffix,
                     validate,
                     maintain_order,
+                    build_side=build_side,
                     coalesce=None,
                 )
             )
@@ -6598,6 +6628,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 suffix,
                 validate,
                 maintain_order,
+                build_side,
                 coalesce,
             )
         )
@@ -9101,7 +9132,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
         are sorted in ascending order by the key, with null
-        keys at the end, otherwise the order of the output
+        keys at the start, otherwise the order of the output
         will not make sense.
 
         The schemas of both LazyFrames must be equal.

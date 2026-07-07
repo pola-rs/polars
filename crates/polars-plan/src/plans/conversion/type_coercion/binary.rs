@@ -316,7 +316,7 @@ pub(super) fn process_binary(
 
     // TODO! raise here?
     // We should at least never cast to Unknown.
-    if matches!(st, DataType::Unknown(UnknownKind::Any)) {
+    if matches!(st, DataType::Unknown(_)) {
         return Ok(None);
     }
 

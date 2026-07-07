@@ -152,7 +152,7 @@ impl ApplyExpr {
 
         // At this point, calling aggregated() will not lead to memory explosion.
         let agg = match ac.agg_state() {
-            AggState::AggregatedScalar(s) => s.as_list().into_column(),
+            AggState::AggregatedScalar(s) => s.to_unit_list(),
             _ => ac.aggregated(),
         };
 

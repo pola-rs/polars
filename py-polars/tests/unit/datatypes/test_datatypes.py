@@ -19,6 +19,7 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
+from polars.testing import assert_frame_equal, assert_schema_equal
 from tests.unit.conftest import DATETIME_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
@@ -264,5 +265,20 @@ def test_max_min(
 
 def test_unknown_resolve() -> None:
 
-    df = pl.LazyFrame({"dec": [D("0.25")]})
-    assert "Float64" in df.select(pl.col("dec") * (1.0 * 1)).explain()
+    q = pl.LazyFrame({"dec": [D("0.25")]})
+    assert "Float64" in q.select(pl.col("dec") * (1.0 * 1)).explain()
+    q = pl.LazyFrame({"x": 76}, schema={"x": pl.Int32}).select(
+        pl.col.x * (pl.lit(100.0) * pl.lit(1))
+    )
+    plan = q.explain()
+    assert "Float64" in plan
+    assert "dyn" not in plan
+
+
+def test_unknown_lit_right_arithmetic_28180() -> None:
+    lf = pl.LazyFrame({"u": pl.Series([1, 2], dtype=pl.UInt32)})
+    q = lf.select(x=pl.col.u * -2)
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"x": pl.Series([-2, -4], dtype=pl.Int64)})
+    )
+    assert_schema_equal(q.collect_schema(), pl.Schema({"x": pl.Int64}))

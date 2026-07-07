@@ -458,8 +458,10 @@ class Expr:
         return self._pyexpr.__getstate__()
 
     def __setstate__(self, state: bytes) -> None:
-        self._pyexpr = F.lit(0)._pyexpr  # Initialize with a dummy
-        self._pyexpr.__setstate__(state)
+        # Initialize with a dummy
+        tmp = F.lit(0)._pyexpr
+        tmp.__setstate__(state)
+        self._pyexpr = tmp
 
     def __array_ufunc__(
         self, ufunc: Callable[..., Any], method: str_, *inputs: Any, **kwargs: Any
@@ -10809,7 +10811,7 @@ Consider using {self}.implode() instead"""
         │ ---      │
         │ f64      │
         ╞══════════╡
-        │ 0.0      │
+        │ null     │
         │ 0.707107 │
         │ 0.963624 │
         └──────────┘
@@ -10904,7 +10906,7 @@ Consider using {self}.implode() instead"""
         │ ---      │
         │ f64      │
         ╞══════════╡
-        │ 0.0      │
+        │ null     │
         │ 0.5      │
         │ 0.928571 │
         └──────────┘

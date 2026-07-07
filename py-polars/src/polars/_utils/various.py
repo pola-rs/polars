@@ -226,7 +226,7 @@ def _in_notebook() -> bool:
 
         if (
             ipy := get_ipython()
-        ) and "IPKernelApp" not in ipy.config:  # pragma: no cover
+        ) is not None and "IPKernelApp" not in ipy.config:  # pragma: no cover
             return False
     except ImportError:
         return False

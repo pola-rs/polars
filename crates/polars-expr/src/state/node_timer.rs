@@ -17,10 +17,13 @@ pub(super) struct NodeTimer {
 }
 
 impl NodeTimer {
-    pub(super) fn new(query_start: Instant) -> Self {
+    pub(super) fn new(query_start: Instant, optimization_duration: Duration) -> Self {
+        let (mut nodes, mut ticks) = (Vec::with_capacity(16), Vec::with_capacity(16));
+        nodes.push("optimization".to_string());
+        ticks.push((Duration::ZERO, optimization_duration));
         Self {
             query_start,
-            data: Arc::new(Mutex::new((Vec::with_capacity(16), Vec::with_capacity(16)))),
+            data: Arc::new(Mutex::new((nodes, ticks))),
         }
     }
 
@@ -42,14 +45,8 @@ impl NodeTimer {
 
     pub(super) fn finish(self) -> PolarsResult<DataFrame> {
         let mut data = self.data.lock().unwrap();
-        let mut nodes = std::mem::take(&mut data.0);
-        nodes.push("optimization".to_string());
-
-        let mut ticks = std::mem::take(&mut data.1);
-        // first value is end of optimization
-        polars_ensure!(!ticks.is_empty(), ComputeError: "no data to time");
-        let start = ticks[0].0;
-        ticks.push((Duration::from_nanos(0), start));
+        let nodes = std::mem::take(&mut data.0);
+        let ticks = std::mem::take(&mut data.1);
         let nodes_s = Column::new(PlSmallStr::from_static("node"), nodes);
         let start: NoNull<UInt64Chunked> = ticks
             .iter()

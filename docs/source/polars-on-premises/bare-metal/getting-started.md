@@ -1,7 +1,7 @@
 !!! note "Enterprise only"
 
     Bare-metal deployment requires a Polars On-Prem Enterprise license.
-    [Sign up here](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide) to obtain one.
+    [Contact the team](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide) to discuss your setup.
 
 ## Downloading Polars On-Prem
 
@@ -63,7 +63,7 @@ directory.
 ```toml
 cluster_id = "polars-cluster"
 instance_id = "node-0"
-license = "./license.json" # Path to your Polars On-Prem license. This is a JSON file containing your company name, license expiry, and license signature.
+license.on_prem_enterprise.license_path = "./license.json" # Path to your Polars On-Prem license. This is a JSON file containing your company name, license expiry, and license signature.
 
 # Component that receives the Polars queries from the Python client.
 [scheduler]
