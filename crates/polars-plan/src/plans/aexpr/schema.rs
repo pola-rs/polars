@@ -507,11 +507,11 @@ fn get_arithmetic_field(
     //
     // further right_type is only determined when needed.
     let mut left_field = left_ae.to_field_impl(ctx)?;
+    let right_field = right_ae.to_field_impl(ctx)?;
 
     let super_type = match op {
         Operator::Minus => {
-            let right_type = right_ae.to_field_impl(ctx)?.dtype;
-            match (&left_field.dtype, &right_type) {
+            match (&left_field.dtype, &right_field.dtype) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
                     return Ok(left_field);
@@ -526,24 +526,24 @@ fn get_arithmetic_field(
                 | (Duration(_), Date)
                 | (Date, Duration(_))
                 | (Duration(_), Time)
-                | (Time, Duration(_)) => try_get_supertype(left_field.dtype(), &right_type)?,
+                | (Time, Duration(_)) => try_get_supertype(left_field.dtype(), &right_field.dtype)?,
                 (Datetime(tu, _), Date) | (Date, Datetime(tu, _)) => Duration(*tu),
                 // T - T != T if T is a datetime / date
                 (Datetime(tul, _), Datetime(tur, _)) => Duration(get_time_units(tul, tur)),
                 (_, Datetime(_, _)) | (Datetime(_, _), _) => {
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (Date, Date) => Duration(TimeUnit::Microseconds),
                 (_, Date) | (Date, _) => {
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (Duration(tul), Duration(tur)) => Duration(get_time_units(tul, tur)),
                 (_, Duration(_)) | (Duration(_), _) => {
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (Time, Time) => Duration(TimeUnit::Nanoseconds),
                 (_, Time) | (Time, _) => {
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (l @ List(a), r @ List(b))
                     if ![a, b]
@@ -582,8 +582,7 @@ fn get_arithmetic_field(
             }
         },
         Operator::Plus => {
-            let right_type = right_ae.to_field_impl(ctx)?.dtype;
-            match (&left_field.dtype, &right_type) {
+            match (&left_field.dtype, &right_field.dtype) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
                     return Ok(left_field);
@@ -598,18 +597,18 @@ fn get_arithmetic_field(
                 | (Duration(_), Date)
                 | (Date, Duration(_))
                 | (Duration(_), Time)
-                | (Time, Duration(_)) => try_get_supertype(left_field.dtype(), &right_type)?,
+                | (Time, Duration(_)) => try_get_supertype(left_field.dtype(), &right_field.dtype)?,
                 (_, Datetime(_, _))
                 | (Datetime(_, _), _)
                 | (_, Date)
                 | (Date, _)
                 | (Time, _)
                 | (_, Time) => {
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (Duration(tul), Duration(tur)) => Duration(get_time_units(tul, tur)),
                 (_, Duration(_)) | (Duration(_), _) => {
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (Boolean, Boolean) => IDX_DTYPE,
                 (l @ List(a), r @ List(b))
@@ -643,10 +642,22 @@ fn get_arithmetic_field(
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
+        op @ (Operator::Or | Operator::And | Operator::Xor)
+            if (left_field.dtype.is_bool() ^ right_field.dtype.is_bool())
+                && (left_field.dtype.is_numeric() ^ right_field.dtype.is_numeric()) =>
+        {
+            let supertype = try_get_supertype(&left_field.dtype, &right_field.dtype)?;
+            polars_warn!(
+                Deprecation,
+                "{op} on {:?} and {:?} is deprecated and will raise a ComputeError in Polars 2.0\n\
+                Hint: cast the Boolean to {supertype:?} using pl.Expr.cast().",
+                left_field.dtype,
+                right_field.dtype,
+            );
+            supertype
+        },
         _ => {
-            let right_type = right_ae.to_field_impl(ctx)?.dtype;
-
-            match (&left_field.dtype, &right_type) {
+            match (&left_field.dtype, &right_field.dtype) {
                 #[cfg(feature = "dtype-struct")]
                 (Struct(_), Struct(_)) => {
                     return Ok(left_field);
@@ -662,19 +673,19 @@ fn get_arithmetic_field(
                 | (_, Time)
                 | (Date, _)
                 | (_, Date) => {
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (Duration(_), Duration(_)) => {
                     // True divide handled somewhere else
-                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                 },
                 (l, Duration(_)) if l.is_primitive_numeric() => match op {
                     Operator::Multiply => {
-                        left_field.coerce(right_type);
+                        left_field.coerce(right_field.dtype);
                         return Ok(left_field);
                     },
                     _ => {
-                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                     },
                 },
                 (Duration(_), r) if r.is_primitive_numeric() => match op {
@@ -682,7 +693,7 @@ fn get_arithmetic_field(
                         return Ok(left_field);
                     },
                     _ => {
-                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_field.dtype)
                     },
                 },
                 #[cfg(feature = "dtype-decimal")]
@@ -725,14 +736,14 @@ fn get_arithmetic_field(
                 _ => {
                     // Avoid needlessly type casting numeric columns during arithmetic
                     // with literals.
-                    if (left_field.dtype.is_integer() && right_type.is_integer())
-                        || (left_field.dtype.is_float() && right_type.is_float())
+                    if (left_field.dtype.is_integer() && right_field.dtype.is_integer())
+                        || (left_field.dtype.is_float() && right_field.dtype.is_float())
                     {
                         match (left_ae, right_ae) {
                             (AExpr::Literal(_), AExpr::Literal(_)) => {},
                             (AExpr::Literal(_), _) if left_field.dtype.is_unknown() => {
                                 // literal will be coerced to match right type
-                                left_field.coerce(right_type);
+                                left_field.coerce(right_field.dtype);
                                 return Ok(left_field);
                             },
                             _ => {},
@@ -741,7 +752,7 @@ fn get_arithmetic_field(
                 },
             }
 
-            try_get_supertype(&left_field.dtype, &right_type)?
+            try_get_supertype(&left_field.dtype, &right_field.dtype)?
         },
     };
 
