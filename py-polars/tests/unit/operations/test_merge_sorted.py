@@ -1,4 +1,6 @@
+import re
 from datetime import time
+from itertools import product
 
 import pytest
 from hypothesis import given
@@ -443,3 +445,52 @@ def test_merge_sorted_with_list_27563() -> None:
         }
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("left_desc", "left_null_last", "right_desc", "right_null_last"),
+    [
+        params
+        for params in product((True, False), repeat=4)
+        # Exclude valid combination of sortedness and nulls_last
+        if params != (False, False, False, False)
+    ],
+)
+def test_merge_sorted_with_incorrectly_sorted_input_fails(
+    left_desc: bool, left_null_last: bool, right_desc: bool, right_null_last: bool
+) -> None:
+    dfl = pl.DataFrame({"key": [1, 3, None]})
+    dfr = pl.DataFrame({"key": [2, 4, None]})
+
+    # Intentionally sort the input dataframes incorrectly to trigger the error
+    dfl_sorted = dfl.sort("key", descending=left_desc, nulls_last=left_null_last)
+    dfr_sorted = dfr.sort("key", descending=right_desc, nulls_last=right_null_last)
+
+    left_correct = not left_desc and not left_null_last
+    right_correct = not right_desc and not right_null_last
+
+    print(f"{left_desc = }, {left_null_last = }, {left_correct = }")
+    print("left:", dfl)
+    print(f"{right_desc = }, {right_null_last = }, {right_correct = }")
+    print("right:", dfr)
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=re.escape(
+            f"merge-sort requires key columns to be sorted in ascending order and nulls first. left key sorted: {str(left_correct).lower()}, right key sorted: {str(right_correct).lower()}"
+        ),
+    ):
+        dfl_sorted.merge_sorted(dfr_sorted, key="key")
+
+
+def test_merge_sorted_with_unsorted_input_fails() -> None:
+    dfl = pl.DataFrame({"key": [5, 1, 3]})
+    dfr = pl.DataFrame({"key": [6, 2, 4]})
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=re.escape(
+            "merge-sort requires key columns to be sorted in ascending order and nulls first. left key sorted: false, right key sorted: false"
+        ),
+    ):
+        dfl.merge_sorted(dfr, key="key")

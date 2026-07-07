@@ -6,6 +6,8 @@ use polars_core::prelude::*;
 use polars_core::with_match_categorical_physical_type;
 use polars_core::with_match_physical_numeric_polars_type;
 
+use crate::series::SeriesMethods;
+
 pub fn _merge_sorted_dfs(
     left: &DataFrame,
     right: &DataFrame,
@@ -22,6 +24,19 @@ pub fn _merge_sorted_dfs(
     polars_ensure!(
         dtype_lhs == dtype_rhs,
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
+    );
+
+    let sort_options = SortOptions::default()
+        .with_order_descending(false)
+        .with_nulls_last(false);
+
+    let left_s_sorted = left_s.is_sorted(sort_options)?;
+    let right_s_sorted = right_s.is_sorted(sort_options)?;
+
+    polars_ensure!(
+        left_s_sorted && right_s_sorted,
+        ComputeError: "merge-sort requires key columns to be sorted in ascending order and nulls first. left key sorted: {}, right key sorted: {}",
+        left_s_sorted, right_s_sorted
     );
 
     // If one frame is empty, we can return the other immediately.
