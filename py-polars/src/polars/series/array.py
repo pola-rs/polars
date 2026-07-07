@@ -635,7 +635,9 @@ class ArrayNameSpace:
 
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = None, keep_nulls: bool = True
+    ) -> Series:
         """
         Returns a column with a separate row for every array element.
 
@@ -654,7 +656,7 @@ class ArrayNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
-        >>> s.arr.explode()
+        >>> s.arr.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [

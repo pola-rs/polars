@@ -17,3 +17,5 @@ The following methods are available under the `Series.cat` attribute.
     Series.cat.starts_with
     Series.cat.to_local
     Series.cat.uses_lexical_ordering
+    Series.cat.physical
+    Series.cat.to

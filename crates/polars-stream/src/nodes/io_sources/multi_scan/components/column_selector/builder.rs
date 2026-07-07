@@ -344,19 +344,44 @@ impl ColumnSelectorBuilder {
 
                     (TimeUnit::Microseconds, TimeUnit::Milliseconds) => {
                         if !self.cast_columns_policy.datetime_microseconds_downcast {
-                            // TODO
                             return mismatch_err(
-                                "unimplemented: 'microsecond-downcast' in scan cast options",
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-downcast')",
                             );
                         }
                     },
 
-                    _ => return mismatch_err(""),
+                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => {
+                        if !self.cast_columns_policy.datetime_microseconds_upcast {
+                            return mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-upcast')",
+                            );
+                        }
+                    },
+
+                    (TimeUnit::Milliseconds, TimeUnit::Microseconds | TimeUnit::Nanoseconds) => {
+                        if !self.cast_columns_policy.datetime_milliseconds_upcast {
+                            return mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='millisecond-upcast')",
+                            );
+                        }
+                    },
+
+                    // All distinct-unit pairs are covered above.
+                    _ => unreachable!(),
                 };
             }
 
+            // Upcasting to a finer unit (`target_unit < incoming_unit`) multiplies the values
+            // and can overflow, so use strict casting to raise if out-of-range. Downcasts and
+            // timezone-only casts only lose precision, so non-strict is fine.
+            let cast_options = if target_unit < incoming_unit {
+                CastOptions::Strict
+            } else {
+                CastOptions::NonStrict
+            };
+
             // Dtype differs and we are allowed to coerce
-            return attach_cast(CastOptions::NonStrict);
+            return attach_cast(cast_options);
         }
 
         if target_dtype.is_string() && incoming_dtype.is_categorical() {

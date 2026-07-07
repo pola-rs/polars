@@ -491,6 +491,7 @@ fn visualize_plan_rec(
             if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
             &[*input][..],
         ),
+        PhysNodeKind::IsSorted { input, .. } => ("is_sorted".to_owned(), &[*input][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::UnorderedUnion { inputs } => {
             ("unordered-union".to_string(), inputs.as_slice())

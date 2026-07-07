@@ -193,41 +193,67 @@ pub fn python_scan_predicate(
         // before mutating `options.predicate` below.
         let e = e.clone();
 
-        // Convert to a pyarrow eval string.
+        //  Convert to pyarrow expression if possible
         if matches!(options.python_source, PythonScanSource::Pyarrow) {
             use polars_core::config::verbose_print_sensitive;
             use polars_plan::plans::MintermIter;
+            use polars_plan::plans::python::ArrowPredicate;
+            use polars_plan::plans::python::pyarrow::aexpr_to_pyarrow;
+            use polars_utils::python_function::PythonObject;
+            use pyo3::prelude::*;
 
             // If there is a `head`, that comes before the filter and we post-apply
-            // the predicate in the engine. No need to transpile to `pyarrow.predicate`
+            // the predicate in the engine.
             let residual_predicate_expr_ir = if options.n_rows.is_none() {
-                // Split into AND-minterms and convert each independently.
                 let mut residual_predicate_nodes: Vec<Node> = vec![];
-                let parts: Vec<String> = MintermIter::new(e.node(), expr_arena)
-                    .filter_map(|node| {
-                        let result = polars_plan::plans::python::pyarrow::predicate_to_pa(
-                            node,
-                            expr_arena,
-                            Default::default(),
-                        );
-                        if result.is_none() {
-                            residual_predicate_nodes.push(node);
+                let mut convertible_nodes: Vec<Node> = vec![];
+
+                // Try converting all the nodes arena style
+                let pyarrow_predicate: Option<PythonObject> = Python::attach(
+                    |py| -> PolarsResult<Option<PythonObject>> {
+                        let pc = py.import("pyarrow.compute").map_err(
+                            |e| polars_err!(ComputeError: "could not import pyarrow.compute: {}", e),
+                        )?;
+                        let mut combined: Option<Bound<'_, PyAny>> = None;
+                        for node in MintermIter::new(e.node(), expr_arena) {
+                            if let Some(pa) = aexpr_to_pyarrow(py, &pc, node, expr_arena) {
+                                convertible_nodes.push(node);
+                                // Combine with and operator:
+                                // Need to catch error to satisfy rust, but I'm not sure how this would fail without
+                                // patching the and overload.
+                                combined = Some(match combined {
+                                    None => pa,
+                                    Some(prev) => prev.call_method1("__and__", (pa,)).map_err(
+                                        |e| polars_err!(ComputeError: "pyarrow __and__ failed: {}", e),
+                                    )?,
+                                });
+                            } else {
+                                residual_predicate_nodes.push(node);
+                            }
                         }
-                        result
-                    })
-                    .collect();
+                        Ok(combined.map(|b| PythonObject(b.unbind())))
+                    },
+                )?;
 
-                let predicate_pa = match parts.len() {
-                    0 => None,
-                    1 => Some(parts.into_iter().next().unwrap()),
-                    _ => Some(format!("({})", parts.join(" & "))),
-                };
+                if let Some(pyarrow_predicate) = pyarrow_predicate {
+                    let combined_node = convertible_nodes
+                        .into_iter()
+                        .reduce(|acc, node| {
+                            expr_arena.add(AExpr::BinaryExpr {
+                                left: acc,
+                                op: Operator::And,
+                                right: node,
+                            })
+                        })
+                        .unwrap();
+                    let predicate_expr_ir = ExprIR::from_node(combined_node, expr_arena);
 
-                if let Some(eval_str) = predicate_pa {
-                    options.predicate = PythonPredicate::PyArrow {
-                        predicate: eval_str,
-                        has_residual: !residual_predicate_nodes.is_empty(),
-                    };
+                    let has_residual = !residual_predicate_nodes.is_empty();
+                    options.predicate = PythonPredicate::PyArrow(ArrowPredicate {
+                        predicate: predicate_expr_ir,
+                        pyarrow_predicate,
+                        has_residual,
+                    });
 
                     residual_predicate_nodes
                         .into_iter()
@@ -250,8 +276,15 @@ pub fn python_scan_predicate(
 
             verbose_print_sensitive(|| {
                 let predicate_pa_verbose_msg = match &options.predicate {
-                    PythonPredicate::PyArrow { predicate, .. } => predicate,
-                    _ => "<conversion failed>",
+                    PythonPredicate::PyArrow(p) => Python::attach(|py| {
+                        p.pyarrow_predicate
+                            .bind(py)
+                            .repr()
+                            .ok()
+                            .and_then(|s| s.extract::<String>().ok())
+                            .unwrap_or_else(|| "<repr failed>".to_string())
+                    }),
+                    _ => "<conversion failed>".to_string(),
                 };
 
                 format!(

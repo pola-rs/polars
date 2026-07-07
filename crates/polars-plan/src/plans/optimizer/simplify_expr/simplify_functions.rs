@@ -85,6 +85,7 @@ pub(super) fn optimize_functions(
                 AExpr::Sort { expr, options } => {
                     let mut options = *options;
                     options.descending = !options.descending;
+                    options.nulls_last = !options.nulls_last;
                     Some(AExpr::Sort {
                         expr: *expr,
                         options,
@@ -96,8 +97,8 @@ pub(super) fn optimize_functions(
                     sort_options,
                 } => {
                     let mut sort_options = sort_options.clone();
-                    let reversed_descending = sort_options.descending.iter().map(|x| !*x).collect();
-                    sort_options.descending = reversed_descending;
+                    sort_options.descending = sort_options.descending.iter().map(|x| !*x).collect();
+                    sort_options.nulls_last = sort_options.nulls_last.iter().map(|x| !*x).collect();
                     Some(AExpr::SortBy {
                         expr: *expr,
                         by: by.clone(),

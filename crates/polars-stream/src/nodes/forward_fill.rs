@@ -71,7 +71,7 @@ impl ComputeNode for ForwardFillNode {
         // count for each morsel, then distributes (morsel, last, consecutive_nulls) to workers.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
-                if morsel.df().height() == 0 {
+                if morsel.height() == 0 {
                     continue;
                 }
 

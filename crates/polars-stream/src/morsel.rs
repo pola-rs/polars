@@ -109,6 +109,10 @@ impl Morsel {
         (self.df, self.seq, self.source_token, self.consume_token)
     }
 
+    pub fn height(&self) -> usize {
+        self.df.height()
+    }
+
     pub fn into_df(self) -> DataFrame {
         self.df
     }

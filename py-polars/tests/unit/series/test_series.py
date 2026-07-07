@@ -560,11 +560,13 @@ def test_series_to_list() -> None:
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
-    assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
-    assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
-        "n00",
-        "n01",
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
+            "n00",
+            "n01",
+        ]
     assert_frame_equal(
         s.list.to_struct(fields=["one", "two"]).struct.unnest(),
         pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
@@ -2490,6 +2492,23 @@ def test_full_null_cast_to_empty_struct_23276() -> None:
 
     s = pl.Series([None, None, None])
     assert s.cast(pl.Struct({})).to_list() == [None, None, None]
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ([pl.lit(1)], [2]),
+        ([1], [pl.lit(2)]),
+        ([pl.lit(1)], [pl.lit(2)]),
+    ],
+)
+def test_replace_with_expr_raises_22591(old: list[Any], new: list[Any]) -> None:
+    s = pl.Series([1])
+    with pytest.raises(
+        InvalidOperationError,
+        match="`replace` does not support `old`/`new` values of object dtype",
+    ):
+        s.replace(old, new)
 
 
 def test_is_sorted_struct_27613() -> None:

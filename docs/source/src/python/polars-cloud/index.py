@@ -21,7 +21,7 @@ query.remote(context=ctx).sink_parquet("s3://my-dst/")
 import polars as pl
 import polars_cloud as pc
 
-ctx = pc.ClusterContext(compute_address="...")
+ctx = pc.ClusterContext(uri="...")
 
 query = (
     pl.scan_parquet("s3://my-dataset/")

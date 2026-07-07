@@ -39,17 +39,18 @@ if TYPE_CHECKING:
     )
 
 
-T = TypeVar("T")
-R = TypeVar("R")
+R_co = TypeVar("R_co", covariant=True)
 
 
-class classinstmethod(Generic[R]):
+class classinstmethod(Generic[R_co]):
     """Decorator that allows a method to be called from the class OR instance."""
 
-    def __init__(self, func: Callable[..., R]) -> None:
+    func: Callable[..., R_co]
+
+    def __init__(self, func: Callable[..., R_co]) -> None:
         self.func = func
 
-    def __get__(self, instance: Any, type_: Any) -> Callable[..., R]:
+    def __get__(self, instance: Any, type_: Any) -> Callable[..., R_co]:
         if instance is not None:
             return self.func.__get__(instance, type_)
         return self.func.__get__(type_, type_)

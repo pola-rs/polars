@@ -386,6 +386,7 @@ fn convert_dsl_plan_to_serializable_plan(
             dsl,
             version: _,
             node: _,
+            opt_flags: _,
         } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
     }
 }

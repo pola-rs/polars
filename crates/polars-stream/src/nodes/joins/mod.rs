@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crossbeam_queue::ArrayQueue;
 use polars_async::executor::{JoinHandle, TaskPriority, TaskScope};
 use polars_async::primitives::wait_group::WaitGroup;
@@ -7,6 +5,7 @@ use polars_core::runtime::RAYON;
 use polars_error::PolarsResult;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
 use polars_utils::itertools::Itertools;
+use polars_utils::pl_str::PlSmallStr;
 use rayon::prelude::*;
 
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
@@ -32,17 +31,17 @@ const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 struct BufferedStream {
     morsels: ArrayQueue<(SpillFrame, MorselSeq)>,
     post_buffer_offset: MorselSeq,
-    _spill_ctx: Arc<MostRecentSpillContext>,
+    _spill_ctx: Option<MostRecentSpillContext>,
 }
 
 impl BufferedStream {
-    pub fn new(morsels: Vec<Morsel>, start_offset: MorselSeq) -> Self {
+    pub fn new(name: PlSmallStr, morsels: Vec<Morsel>, start_offset: MorselSeq) -> Self {
         // Relabel so we can insert into parallel streams later.
         let mut seq = start_offset;
-        let ctx = MostRecentSpillContext::new();
+        let ctx = MostRecentSpillContext::new(name);
         let queue = ArrayQueue::new(morsels.len().max(1));
         for morsel in morsels {
-            let sf = SpillFrame::new_blocking(morsel.into_df(), &*ctx);
+            let sf = SpillFrame::new_blocking(morsel.into_df(), &ctx);
             queue.push((sf, seq)).unwrap();
             seq = seq.successor();
         }
@@ -50,7 +49,7 @@ impl BufferedStream {
         Self {
             morsels: queue,
             post_buffer_offset: seq,
-            _spill_ctx: ctx,
+            _spill_ctx: Some(ctx),
         }
     }
 
@@ -122,7 +121,7 @@ impl Default for BufferedStream {
         Self {
             morsels: ArrayQueue::new(1),
             post_buffer_offset: MorselSeq::default(),
-            _spill_ctx: MostRecentSpillContext::new(),
+            _spill_ctx: None,
         }
     }
 }

@@ -110,6 +110,8 @@ pub(super) fn convert_functions(
                 C::EndsWith(v) => IC::EndsWith(v),
                 #[cfg(feature = "strings")]
                 C::Slice(s, e) => IC::Slice(s, e),
+                C::To(dt, strict) => IC::To(dt.into_datatype(ctx.schema)?, strict),
+                C::Physical => IC::Physical,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -467,6 +469,13 @@ pub(super) fn convert_functions(
                     abs_tol,
                     rel_tol,
                     nans_equal,
+                },
+                B::IsSorted {
+                    descending,
+                    nulls_last,
+                } => IB::IsSorted {
+                    descending,
+                    nulls_last,
                 },
                 B::AllHorizontal => {
                     let Some(fst) = e.first() else {
@@ -835,6 +844,7 @@ pub(super) fn convert_functions(
         },
         #[cfg(feature = "round_series")]
         F::Clip { has_min, has_max } => I::Clip { has_min, has_max },
+        F::AsList => I::AsList,
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => I::AsStruct,
         #[cfg(feature = "top_k")]

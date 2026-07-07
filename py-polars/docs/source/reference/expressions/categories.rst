@@ -14,3 +14,5 @@ The following methods are available under the `expr.cat` attribute.
     Expr.cat.len_bytes
     Expr.cat.len_chars
     Expr.cat.starts_with
+    Expr.cat.physical
+    Expr.cat.to

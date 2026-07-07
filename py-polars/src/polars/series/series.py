@@ -4532,7 +4532,9 @@ class Series:
         ]
         """
 
-    def explode(self, *, empty_as_null: bool = True, keep_nulls: bool = True) -> Series:
+    def explode(
+        self, *, empty_as_null: bool | None = True, keep_nulls: bool = True
+    ) -> Series:
         """
         Explode a list Series.
 
@@ -4564,7 +4566,7 @@ class Series:
             [1, 2, 3]
             [4, 5, 6]
         ]
-        >>> s.explode()
+        >>> s.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
@@ -6156,6 +6158,7 @@ class Series:
         return_dtype: PolarsDataType | None = None,
         *,
         skip_nulls: bool = True,
+        _disable_inefficient_map_warning: bool = False,
     ) -> Self:
         """
         Map a custom/user-defined function (UDF) over elements in this Series.
@@ -6238,7 +6241,9 @@ class Series:
         else:
             pl_return_dtype = parse_into_dtype(return_dtype)
 
-        warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+        if not _disable_inefficient_map_warning:
+            warn_on_inefficient_map(function, columns=[self.name], map_target="series")
+
         return self._from_pyseries(
             self._s.map_elements(
                 function, return_dtype=pl_return_dtype, skip_nulls=skip_nulls
@@ -9346,7 +9351,7 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-            0.0
+            null
             0.707107
             0.963624
         ]
@@ -9434,7 +9439,7 @@ class Series:
         shape: (3,)
         Series: 'a' [f64]
         [
-            0.0
+            null
             0.5
             0.928571
         ]

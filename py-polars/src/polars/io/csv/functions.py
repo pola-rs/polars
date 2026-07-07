@@ -56,6 +56,12 @@ if TYPE_CHECKING:
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@deprecate_renamed_parameter(
+    "missing_utf8_is_empty_string",
+    "empty_string_is_null",
+    version="1.43.0",
+    mapper=lambda x: not x,
+)
 def read_csv(
     source: str | Path | IO[str] | IO[bytes] | bytes,
     *,
@@ -72,7 +78,7 @@ def read_csv(
         Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
     ) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
     n_threads: int | None = None,
@@ -158,9 +164,10 @@ def read_csv(
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
 
-    missing_utf8_is_empty_string
-        By default a missing value is considered to be null; if you would prefer missing
-        utf8 values to be treated as the empty string you can set this param True.
+    empty_string_is_null
+        By default a missing string value is considered to be null. If
+        `empty_string_is_null` is set to False, missing string values are considered to
+        decoded as empty strings.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         Before using this option, try to increase the number of lines used for schema
@@ -230,9 +237,9 @@ def read_csv(
         .. deprecated:: 1.10.0
             This parameter is now a no-op.
     eol_char
-        Single byte end of line character (default: `\n`). When encountering a file
-        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
-        `\r` will be removed when processed.
+        Single byte end of line character (default: ``\n``). When encountering a file
+        with windows line endings (``\r\n``), one can go with the default ``\n``. The
+        extra ``\r`` will be removed when processed.
     raise_if_empty
         When there is no data in the source, `NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -545,7 +552,7 @@ def read_csv(
             schema_overrides=schema_overrides,  # type: ignore[arg-type]
             schema=schema,
             null_values=null_values,
-            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+            empty_string_is_null=empty_string_is_null,
             ignore_errors=ignore_errors,
             try_parse_dates=try_parse_dates,
             infer_schema_length=infer_schema_length,
@@ -590,7 +597,7 @@ def read_csv(
                 schema_overrides=schema_overrides,
                 schema=schema,
                 null_values=null_values,
-                missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+                empty_string_is_null=empty_string_is_null,
                 ignore_errors=ignore_errors,
                 try_parse_dates=try_parse_dates,
                 n_threads=n_threads,
@@ -628,7 +635,7 @@ def _read_csv_impl(
     schema: None | SchemaDict = None,
     schema_overrides: None | (SchemaDict | Sequence[PolarsDataType]) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
     n_threads: int | None = None,
@@ -702,7 +709,7 @@ def _read_csv_impl(
             schema=schema,
             schema_overrides=dtypes_dict,
             null_values=null_values,
-            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+            empty_string_is_null=empty_string_is_null,
             ignore_errors=ignore_errors,
             infer_schema_length=infer_schema_length,
             n_rows=n_rows,
@@ -752,7 +759,7 @@ def _read_csv_impl(
         comment_prefix,
         quote_char,
         processed_null_values,
-        missing_utf8_is_empty_string,
+        empty_string_is_null,
         try_parse_dates,
         skip_rows_after_header,
         parse_row_index_args(row_index_name, row_index_offset),
@@ -771,6 +778,12 @@ def _read_csv_impl(
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@deprecate_renamed_parameter(
+    "missing_utf8_is_empty_string",
+    "empty_string_is_null",
+    version="1.43.0",
+    mapper=lambda x: not x,
+)
 def read_csv_batched(
     source: str | Path,
     *,
@@ -786,7 +799,7 @@ def read_csv_batched(
         Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
     ) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
     n_threads: int | None = None,
@@ -866,9 +879,10 @@ def read_csv_batched(
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
 
-    missing_utf8_is_empty_string
-        By default a missing value is considered to be null; if you would prefer missing
-        utf8 values to be treated as the empty string you can set this param True.
+    empty_string_is_null
+        By default a missing string value is considered to be null. If
+        `empty_string_is_null` is set to False, missing string values are considered to
+        decoded as empty strings.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try `infer_schema_length=0` to read all columns as
@@ -917,9 +931,9 @@ def read_csv_batched(
         .. deprecated:: 1.10.0
             Is a no-op.
     eol_char
-        Single byte end of line character (default: `\n`). When encountering a file
-        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
-        `\r` will be removed when processed.
+        Single byte end of line character (default: ``\n``). When encountering a file
+        with windows line endings (``\r\n``), one can go with the default ``\n``. The
+        extra ``\r`` will be removed when processed.
     raise_if_empty
         When there is no data in the source,`NoDataError` is raised. If this parameter
         is set to False, `None` will be returned from `next_batches(n)` instead.
@@ -1075,7 +1089,7 @@ def read_csv_batched(
         skip_lines=skip_lines,
         schema_overrides=schema_overrides,
         null_values=null_values,
-        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+        empty_string_is_null=empty_string_is_null,
         ignore_errors=ignore_errors,
         try_parse_dates=try_parse_dates,
         n_threads=n_threads,
@@ -1099,6 +1113,12 @@ def read_csv_batched(
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@deprecate_renamed_parameter(
+    "missing_utf8_is_empty_string",
+    "empty_string_is_null",
+    version="1.43.0",
+    mapper=lambda x: not x,
+)
 def scan_csv(
     source: (
         str
@@ -1122,7 +1142,7 @@ def scan_csv(
     schema: SchemaDict | None = None,
     schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     cache: bool | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
@@ -1205,9 +1225,10 @@ def scan_csv(
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
 
-    missing_utf8_is_empty_string
-        By default a missing value is considered to be null; if you would prefer missing
-        utf8 values to be treated as the empty string you can set this param True.
+    empty_string_is_null
+        By default a missing string value is considered to be null. If
+        `empty_string_is_null` is set to False, missing string values are considered to
+        decoded as empty strings.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try `infer_schema=False` to read all columns as
@@ -1252,9 +1273,9 @@ def scan_csv(
         can be inferred, as well as a handful of others. If this does not succeed,
         the column remains of data type `pl.String`.
     eol_char
-        Single byte end of line character (default: `\n`). When encountering a file
-        with windows line endings (`\r\n`), one can go with the default `\n`. The extra
-        `\r` will be removed when processed.
+        Single byte end of line character (default: ``\n``). When encountering a file
+        with windows line endings (``\r\n``), one can go with the default ``\n``. The
+        extra ``\r`` will be removed when processed.
     new_columns
         Provide an explicit list of string column names to use (for example, when
         scanning a headerless CSV file). If the given list is shorter than the width of
@@ -1449,7 +1470,7 @@ def scan_csv(
         schema_overrides=schema_overrides,  # type: ignore[arg-type]
         schema=schema,
         null_values=null_values,
-        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+        empty_string_is_null=empty_string_is_null,
         ignore_errors=ignore_errors,
         cache=cache_deprecated,
         with_column_names=with_column_names,
@@ -1494,7 +1515,7 @@ def _scan_csv_impl(
     schema: SchemaDict | None = None,
     schema_overrides: SchemaDict | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     cache: bool = True,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
@@ -1554,7 +1575,7 @@ def _scan_csv_impl(
         comment_prefix=comment_prefix,
         quote_char=quote_char,
         null_values=processed_null_values,
-        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+        empty_string_is_null=empty_string_is_null,
         infer_schema_length=infer_schema_length,
         with_schema_modify=with_column_names,
         rechunk=rechunk,

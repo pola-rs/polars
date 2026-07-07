@@ -64,7 +64,7 @@ impl PostApplyExtraOps {
 
                 loop {
                     let row_count_this_morsel = {
-                        let physical_rows = morsel.df().height();
+                        let physical_rows = morsel.height();
                         // # Multiple cases
                         // * If row deletions are being done in post-apply, we'll have the deleted row count here.
                         // * If row deletions were pushed to the reader, `external_filter_mask` here is `None`, so we'll
@@ -74,7 +74,7 @@ impl PostApplyExtraOps {
                         let deleted_rows = external_filter_mask.as_ref().map_or(0, |mask| {
                             let Slice::Positive { offset, len } = Slice::Positive {
                                 offset: row_counter.num_physical_rows(),
-                                len: morsel.df().height(),
+                                len: morsel.height(),
                             }
                             .restrict_to_bounds(mask.len()) else {
                                 unreachable!()
@@ -124,9 +124,9 @@ impl PostApplyExtraOps {
 
                 AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                     while let Ok((mut morsel, row_offset)) = morsel_rx.recv().await {
-                        rows_before.fetch_add(morsel.df().height() as u64);
+                        rows_before.fetch_add(morsel.height() as u64);
                         ops_applier.apply_to_df(morsel.df_mut(), row_offset)?;
-                        rows_after.fetch_add(morsel.df().height() as u64);
+                        rows_after.fetch_add(morsel.height() as u64);
                         if morsel_tx.insert(morsel).await.is_err() {
                             break;
                         }

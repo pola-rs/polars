@@ -210,7 +210,7 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         # Sort the lists to make sure that the result is correctly ordered
         list_cols = [c for c in result.columns if c != "A"]
         result = (
-            result.explode(list_cols)
+            result.explode(list_cols, empty_as_null=False)
             .sort("Idx")
             .group_by("A", maintain_order=True)
             .all()
@@ -1269,7 +1269,7 @@ def test_cse_map_batches_distinct_functions() -> None:
         lambda df: df.select(pl.col("b").alias("y")),
         schema=pl.Schema({"y": pl.Int64}),
     )
-    result = pl.concat([lf1, lf2], how="horizontal").collect(
+    result = pl.concat([lf1, lf2], how="horizontal", strict=True).collect(
         optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
     assert result.columns == ["x", "y"]
@@ -1422,8 +1422,6 @@ def test_cspe_projection_between_filter_and_cache_drop_filter_column() -> None:
                 1,  # select(a + 1)
                 1,  # select(a + 1)
                 2,  # concat(lf2, lf2)
-                1,  # select(a + 1)
-                1,  # select(a + 1)
             ],
         ),
     ],
@@ -1519,7 +1517,7 @@ def test_cse_existing_predicate_at_scan_27748() -> None:
 
     plan = q.explain()
 
-    assert plan.count('SELECTION: col("y0")') == 2
+    assert plan.count('SELECTION: col("y0")') == 1
     assert plan.count('SELECTION: col("y1")') == 1
     assert plan.count("CACHE[") == 2
 

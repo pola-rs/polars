@@ -765,6 +765,19 @@ fn to_graph_rec<'a>(
             )
         },
 
+        IsSorted {
+            input,
+            descending,
+            nulls_last,
+            output_name,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::is_sorted::IsSortedNode::new(*descending, *nulls_last, output_name.clone()),
+                [(input_key, input.port)],
+            )
+        },
+
         OrderedUnion { inputs } => {
             let input_keys = inputs
                 .iter()
@@ -1450,16 +1463,12 @@ fn to_graph_rec<'a>(
 
                             let mut could_serialize_predicate = true;
                             let predicate = match &options.predicate {
-                                PythonPredicate::PyArrow {
-                                    predicate,
-                                    has_residual,
-                                } => {
-                                    if *has_residual {
-                                        // This will ensure we apply post-apply-predicate
+                                PythonPredicate::PyArrow(pred) => {
+                                    if pred.has_residual {
+                                        // Ensure the engine post-applies the residual predicate.
                                         could_serialize_predicate = false;
                                     }
-
-                                    predicate.into_bound_py_any(py).unwrap()
+                                    pred.pyarrow_predicate.bind(py).clone()
                                 },
                                 PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
                                 PythonPredicate::Polars(_) => {
