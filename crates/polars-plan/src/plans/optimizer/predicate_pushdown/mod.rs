@@ -318,7 +318,7 @@ impl PredicatePushDown {
                 };
 
                 if let Some(predicate) =
-                    combine_predicates(acc_predicates.into_values(), expr_arena)
+                    combine_keyed_predicates(acc_predicates.into_iter(), expr_arena)
                 {
                     let input = lp_arena.add(lp);
 
@@ -352,7 +352,10 @@ impl PredicatePushDown {
                     })
                 };
                 let predicate = combine_predicates(
-                    Option::into_iter(predicate.clone()).chain(acc_predicates.into_values()),
+                    Option::into_iter(predicate.clone()).chain(
+                        combine_keyed_predicates(acc_predicates.into_iter(), expr_arena)
+                            .into_iter(),
+                    ),
                     expr_arena,
                 );
 
@@ -653,7 +656,7 @@ impl PredicatePushDown {
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
                 if let Some(predicate) =
-                    combine_predicates(acc_predicates.into_values(), expr_arena)
+                    combine_keyed_predicates(acc_predicates.into_iter(), expr_arena)
                 {
                     match ExprPushdownGroup::Pushable.update_with_expr_rec(
                         expr_arena.get(predicate.node()),

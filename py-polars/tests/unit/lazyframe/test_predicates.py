@@ -1810,3 +1810,14 @@ def test_predicate_normalization() -> None:
     assert out == 1
     out = scans(lambda lf: lf.filter(A & B & C), lambda lf: lf.filter(C & B & A))
     assert out == 1
+
+
+def test_predicate_simplification_stable_28267() -> None:
+    df = pl.LazyFrame({"value": [2, 3, 3, None]})
+    q = df.filter(
+        pl.col("value").is_between(1, 2) & pl.col("value").is_between(2, 3).not_()
+    )
+
+    plan = q.explain()
+
+    assert plan.find("is_between") < plan.find("&")

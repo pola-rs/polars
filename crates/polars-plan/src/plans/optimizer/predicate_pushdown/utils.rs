@@ -74,14 +74,11 @@ pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<PlSmallStr, ExprIR
     PlSmallStr::from_string(out_key)
 }
 
-pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
+fn combine_predicates_ordered<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
 where
     I: IntoIterator<Item = ExprIR>,
 {
-    // Order the predicates so that CSE can hit them.
-    let mut exprs = iter.into_iter().collect_vec();
-    exprs.sort_unstable_by(|a, b| a.output_name().cmp(b.output_name()));
-    let mut iter = exprs.iter();
+    let mut iter = iter.into_iter();
     let mut out = iter.next()?.node();
 
     for e in iter {
@@ -93,6 +90,32 @@ where
     }
 
     Some(ExprIR::from_node(out, expr_arena))
+}
+
+pub(super) fn combine_keyed_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
+where
+    I: IntoIterator<Item = (PlSmallStr, ExprIR)>,
+{
+    let mut predicates = iter.into_iter().collect_vec();
+    // If we collected a hashmap of predicates that refer to expressions
+    // with the same output name, we need a tie-breaker to decide the sort order.
+    // The hashmap's key str is that thing.
+    predicates.sort_unstable_by(|(lk, l), (rk, r)| {
+        l.output_name()
+            .cmp(r.output_name())
+            .then_with(|| lk.cmp(rk))
+    });
+    combine_predicates_ordered(predicates.into_iter().map(|(_, expr)| expr), expr_arena)
+}
+
+pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
+where
+    I: IntoIterator<Item = ExprIR>,
+{
+    // Order the predicates so that CSE can hit them.
+    let mut exprs = iter.into_iter().collect_vec();
+    exprs.sort_unstable_by(|a, b| a.output_name().cmp(b.output_name()));
+    combine_predicates_ordered(exprs, expr_arena)
 }
 
 /// Evaluates a condition on the column name inputs of every predicate, where if
