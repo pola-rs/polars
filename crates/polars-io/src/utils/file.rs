@@ -1,5 +1,4 @@
 use std::io;
-#[cfg(feature = "cloud")]
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
