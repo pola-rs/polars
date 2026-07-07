@@ -91,7 +91,7 @@ impl SinkTarget {
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
-        cloud_upload_chunk_size: usize,
+        cloud_upload_chunk_size: Option<NonZeroUsize>,
         cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Writable> {
@@ -117,7 +117,7 @@ impl SinkTarget {
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
-        cloud_upload_chunk_size: usize,
+        cloud_upload_chunk_size: Option<NonZeroUsize>,
         cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Writable> {

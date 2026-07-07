@@ -5,10 +5,15 @@ use polars_io::utils::bytes_bufferer::BytesBuffererConfig;
 use polars_plan::dsl::file_provider::FileProviderType;
 use polars_plan::dsl::{FileWriteFormat, SinkTarget, UnifiedSinkArgs};
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
+use polars_utils::sys::total_memory;
 
 use crate::nodes::io_sinks::components::hstack_columns::HStackColumns;
 use crate::nodes::io_sinks::components::partitioner::Partitioner;
 use crate::nodes::io_sinks::components::size::NonZeroRowCountAndSize;
+
+const DEFAULT_UPLOAD_CHUNK_SIZE: NonZeroUsize = NonZeroUsize::new(32 * 1024 * 1024).unwrap();
+const DEFAULT_PARTITIONED_UPLOAD_CHUNK_SIZE: NonZeroUsize =
+    NonZeroUsize::new(6 * 1024 * 1024).unwrap();
 
 pub struct IOSinkNodeConfig {
     pub file_format: FileWriteFormat,
@@ -53,20 +58,41 @@ impl IOSinkNodeConfig {
         }
     }
 
-    pub fn cloud_upload_chunk_size(&self) -> NonZeroUsize {
-        polars_io::configs::upload_chunk_size()
+    pub fn cloud_upload_chunk_size(&self) -> Option<NonZeroUsize> {
+        // Only when `is_cloud_location() == true`. This excludes FORCE_ASYNC'ed local paths,
+        // to avoid unnecessary memory copying.
+        polars_io::configs::env_upload_chunk_size().or(self
+            .target
+            .is_cloud_location()
+            .then_some(DEFAULT_UPLOAD_CHUNK_SIZE))
     }
 
-    pub fn partitioned_upload_chunk_size(&self) -> NonZeroUsize {
-        polars_io::configs::partitioned_upload_chunk_size()
+    pub fn partitioned_upload_chunk_size(&self) -> Option<NonZeroUsize> {
+        polars_io::configs::env_partitioned_upload_chunk_size().or(self
+            .target
+            .is_cloud_location()
+            .then_some(DEFAULT_PARTITIONED_UPLOAD_CHUNK_SIZE))
     }
 
     pub fn upload_concurrency(&self) -> NonZeroUsize {
-        polars_io::configs::upload_concurrency()
+        polars_io::configs::env_upload_concurrency().unwrap_or_else(|| {
+            let buffer_limit: usize = (total_memory() / 32) as _;
+
+            NonZeroUsize::new(usize::clamp(
+                buffer_limit
+                    / self
+                        .cloud_upload_chunk_size()
+                        .unwrap_or(DEFAULT_UPLOAD_CHUNK_SIZE),
+                8,
+                256,
+            ))
+            .unwrap()
+        })
     }
 
     pub fn partitioned_upload_concurrency(&self) -> NonZeroUsize {
-        polars_io::configs::partitioned_upload_concurrency()
+        polars_io::configs::env_partitioned_upload_concurrency()
+            .unwrap_or(const { NonZeroUsize::new(64).unwrap() })
     }
 
     pub fn bytes_bufferer_config(&self) -> BytesBuffererConfig {
@@ -89,7 +115,9 @@ impl IOSinkNodeConfig {
                 panic!("invalid value for POLARS_IO_SINK_BYTES_BUFFERER_CONFIG: {v}")
             })
         } else if self.target.is_cloud_location() {
-            let cloud_upload_chunk_size = self.cloud_upload_chunk_size();
+            let cloud_upload_chunk_size = self
+                .cloud_upload_chunk_size()
+                .unwrap_or(DEFAULT_UPLOAD_CHUNK_SIZE);
 
             BytesBuffererConfig {
                 target_size: cloud_upload_chunk_size..=cloud_upload_chunk_size,
