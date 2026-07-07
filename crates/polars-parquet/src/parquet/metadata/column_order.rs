@@ -14,8 +14,10 @@ pub enum ColumnOrder {
     /// Column uses the order defined by its logical or physical type
     /// (if there is no logical type), parquet-format 2.4.0+.
     TypeDefinedOrder(SortOrder),
-    /// IEEE 754 total order for float columns (PARQUET-2249). Min/max include
-    /// NaN; NaN presence is reported by the statistics `nan_count` field.
+    /// IEEE 754 total order for float columns (PARQUET-2249). Min/max hold the
+    /// smallest/largest non-NaN values (or the NaN extremes only when all
+    /// non-null values are NaN); NaN presence is reported by the mandatory
+    /// `nan_count` statistic.
     IEEE754TotalOrder,
     /// Undefined column order, means legacy behaviour before parquet-format 2.4.0.
     /// Sort order is always SIGNED.
@@ -27,7 +29,8 @@ impl ColumnOrder {
     pub fn sort_order(&self) -> SortOrder {
         match *self {
             ColumnOrder::TypeDefinedOrder(order) => order,
-            ColumnOrder::IEEE754TotalOrder => SortOrder::Signed,
+            // Not signed comparison: total order positions NaNs and -0.0 < +0.0.
+            ColumnOrder::IEEE754TotalOrder => SortOrder::IEEE754TotalOrder,
             ColumnOrder::Undefined => SortOrder::Signed,
         }
     }

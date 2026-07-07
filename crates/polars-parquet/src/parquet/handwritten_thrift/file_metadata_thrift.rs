@@ -578,3 +578,34 @@ fn read_int_type(
         is_signed: is_signed.require("IntType.is_signed")?,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decode_column_order(bytes: &[u8]) -> ParquetResult<ColumnOrderTag> {
+        let mut prot = ThriftSliceInputProtocol::new(bytes);
+        read_column_order(&mut prot)
+    }
+
+    #[test]
+    fn column_order_type_defined() {
+        assert_eq!(
+            decode_column_order(&[0x1C, 0x00, 0x00]).unwrap(),
+            ColumnOrderTag::TypeDefined
+        );
+    }
+
+    #[test]
+    fn column_order_ieee754_total_order() {
+        assert_eq!(
+            decode_column_order(&[0x2C, 0x00, 0x00]).unwrap(),
+            ColumnOrderTag::IEEE754TotalOrder
+        );
+    }
+
+    #[test]
+    fn column_order_no_variant_is_an_error() {
+        assert!(decode_column_order(&[0x00]).is_err());
+    }
+}
