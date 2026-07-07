@@ -754,14 +754,8 @@ class ArrayNameSpace:
         >>> s2.struct.fields
         ['field_0', 'field_1', 'field_2']
 
-        Convert array to struct with field name assignment by function/index:
-
-        >>> s3 = s1.arr.to_struct(fields=lambda idx: f"n{idx:02}")
-        >>> s3.struct.fields
-        ['n00', 'n01', 'n02']
-
-        Convert array to struct with field name assignment by
-        index from a list of names:
+        Convert array to struct with field name assignment by index from a list of
+        names:
 
         >>> s1.arr.to_struct(fields=["one", "two", "three"]).struct.unnest()
         shape: (2, 3)

@@ -946,38 +946,16 @@ class ListNameSpace(_NamespaceSuggestMixin):
 
         Examples
         --------
-        Convert list to struct with default field name assignment:
+        Convert list to struct with field name assignment by index from a list of names:
 
-        >>> s1 = pl.Series("n", [[0, 1, 2], [0, 1]])
-        >>> s2 = s1.list.to_struct()
-        >>> s2
+        >>> s = pl.Series("n", [[0, 1, 2], [0, 1]])
+        >>> s.list.to_struct(fields=["one", "two", "three"])
         shape: (2,)
         Series: 'n' [struct[3]]
         [
             {0,1,2}
             {0,1,null}
         ]
-        >>> s2.struct.fields
-        ['field_0', 'field_1', 'field_2']
-
-        Convert list to struct with field name assignment by function/index:
-
-        >>> s3 = s1.list.to_struct(fields=lambda idx: f"n{idx:02}")
-        >>> s3.struct.fields
-        ['n00', 'n01', 'n02']
-
-        Convert list to struct with field name assignment by index from a list of names:
-
-        >>> s1.list.to_struct(fields=["one", "two", "three"]).struct.unnest()
-        shape: (2, 3)
-        ┌─────┬─────┬───────┐
-        │ one ┆ two ┆ three │
-        │ --- ┆ --- ┆ ---   │
-        │ i64 ┆ i64 ┆ i64   │
-        ╞═════╪═════╪═══════╡
-        │ 0   ┆ 1   ┆ 2     │
-        │ 0   ┆ 1   ┆ null  │
-        └─────┴─────┴───────┘
         """
         if isinstance(fields, Sequence):
             s = wrap_s(self._s)

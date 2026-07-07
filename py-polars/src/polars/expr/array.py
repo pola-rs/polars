@@ -925,18 +925,8 @@ class ExprArrayNameSpace:
         │ [3, 4, 5]    ┆ {3,4,5}   │
         └──────────────┴───────────┘
 
-        Convert array to struct with field name assignment by function/index:
-
-        >>> df = pl.DataFrame(
-        ...     {"n": [[0, 1, 2], [3, 4, 5]]}, schema={"n": pl.Array(pl.Int8, 3)}
-        ... )
-        >>> df.select(pl.col("n").arr.to_struct(fields=lambda idx: f"n{idx}")).rows(
-        ...     named=True
-        ... )
-        [{'n': {'n0': 0, 'n1': 1, 'n2': 2}}, {'n': {'n0': 3, 'n1': 4, 'n2': 5}}]
-
-        Convert array to struct with field name assignment by
-        index from a list of names:
+        Convert array to struct with field name assignment by index from a list of
+        names:
 
         >>> df.select(pl.col("n").arr.to_struct(fields=["c1", "c2", "c3"])).rows(
         ...     named=True
