@@ -173,7 +173,7 @@ impl PyDataFrame {
         let (mmap_bytes_r, mmap_path) = get_mmap_bytes_reader_and_path(&py_f)?;
 
         let mmap_path = if memory_map { mmap_path } else { None };
-        py.enter_polars_df(move || {
+        py.enter_polars_df(move || unsafe {
             IpcReader::new(mmap_bytes_r)
                 .with_projection(projection)
                 .with_columns(columns)
