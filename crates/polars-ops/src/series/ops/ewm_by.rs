@@ -3,26 +3,13 @@ use num_traits::{Float, FromPrimitive, One, Zero};
 use polars_core::prelude::*;
 use polars_core::utils::binary_concatenate_validities;
 
-#[derive(Copy, Clone)]
-enum EwmByUpdate {
-    Mean,
-    Sum,
-}
-
 pub fn ewm_mean_by(
     s: &Series,
     times: &Series,
     half_life: i64,
     times_is_sorted: bool,
 ) -> PolarsResult<Series> {
-    dispatch_ewm_by(
-        s,
-        times,
-        half_life,
-        times_is_sorted,
-        "ewm_mean_by",
-        EwmByUpdate::Mean,
-    )
+    dispatch_ewm_by::<true>(s, times, half_life, times_is_sorted, "ewm_mean_by")
 }
 
 pub fn ewm_sum_by(
@@ -31,30 +18,21 @@ pub fn ewm_sum_by(
     half_life: i64,
     times_is_sorted: bool,
 ) -> PolarsResult<Series> {
-    dispatch_ewm_by(
-        s,
-        times,
-        half_life,
-        times_is_sorted,
-        "ewm_sum_by",
-        EwmByUpdate::Sum,
-    )
+    dispatch_ewm_by::<false>(s, times, half_life, times_is_sorted, "ewm_sum_by")
 }
 
-fn dispatch_ewm_by(
+fn dispatch_ewm_by<const IS_MEAN: bool>(
     s: &Series,
     times: &Series,
     half_life: i64,
     times_is_sorted: bool,
     op_name: &'static str,
-    update: EwmByUpdate,
 ) -> PolarsResult<Series> {
-    fn func<T>(
+    fn func<T, const IS_MEAN: bool>(
         values: &ChunkedArray<T>,
         times: &Int64Chunked,
         half_life: i64,
         times_is_sorted: bool,
-        update: EwmByUpdate,
     ) -> PolarsResult<Series>
     where
         T: PolarsFloatType,
@@ -62,9 +40,9 @@ fn dispatch_ewm_by(
         ChunkedArray<T>: ChunkTakeUnchecked<IdxCa>,
     {
         let ca = if times_is_sorted {
-            ewm_by_impl_sorted(values, times, half_life, update)
+            ewm_by_impl_sorted::<T, IS_MEAN>(values, times, half_life)
         } else {
-            ewm_by_impl(values, times, half_life, update)
+            ewm_by_impl::<T, IS_MEAN>(values, times, half_life)
         };
         Ok(ca.into_series())
     }
@@ -77,65 +55,58 @@ fn dispatch_ewm_by(
     );
 
     match (s.dtype(), times.dtype()) {
-        (DataType::Float64, DataType::Int64) => func(
+        (DataType::Float64, DataType::Int64) => func::<_, IS_MEAN>(
             s.f64().unwrap(),
             times.i64().unwrap(),
             half_life,
             times_is_sorted,
-            update,
         ),
-        (DataType::Float32, DataType::Int64) => func(
+        (DataType::Float32, DataType::Int64) => func::<_, IS_MEAN>(
             s.f32().unwrap(),
             times.i64().unwrap(),
             half_life,
             times_is_sorted,
-            update,
         ),
         #[cfg(feature = "dtype-f16")]
-        (DataType::Float16, DataType::Int64) => func(
+        (DataType::Float16, DataType::Int64) => func::<_, IS_MEAN>(
             s.f16().unwrap(),
             times.i64().unwrap(),
             half_life,
             times_is_sorted,
-            update,
         ),
         #[cfg(feature = "dtype-datetime")]
         (_, DataType::Datetime(time_unit, _)) => {
             let half_life = adjust_half_life_to_time_unit(half_life, time_unit);
-            dispatch_ewm_by(
+            dispatch_ewm_by::<IS_MEAN>(
                 s,
                 &times.cast(&DataType::Int64)?,
                 half_life,
                 times_is_sorted,
                 op_name,
-                update,
             )
         },
         #[cfg(feature = "dtype-date")]
-        (_, DataType::Date) => dispatch_ewm_by(
+        (_, DataType::Date) => dispatch_ewm_by::<IS_MEAN>(
             s,
             &times.cast(&DataType::Datetime(TimeUnit::Microseconds, None))?,
             half_life,
             times_is_sorted,
             op_name,
-            update,
         ),
-        (_, DataType::UInt64 | DataType::UInt32 | DataType::Int32) => dispatch_ewm_by(
+        (_, DataType::UInt64 | DataType::UInt32 | DataType::Int32) => dispatch_ewm_by::<IS_MEAN>(
             s,
             &times.cast(&DataType::Int64)?,
             half_life,
             times_is_sorted,
             op_name,
-            update,
         ),
         (DataType::UInt64 | DataType::UInt32 | DataType::Int64 | DataType::Int32, _) => {
-            dispatch_ewm_by(
+            dispatch_ewm_by::<IS_MEAN>(
                 &s.cast(&DataType::Float64)?,
                 times,
                 half_life,
                 times_is_sorted,
                 op_name,
-                update,
             )
         },
         _ => {
@@ -146,11 +117,11 @@ fn dispatch_ewm_by(
     }
 }
 
-fn ewm_by_impl<T>(
+/// Sort on behalf of user
+fn ewm_by_impl<T, const IS_MEAN: bool>(
     values: &ChunkedArray<T>,
     times: &Int64Chunked,
     half_life: i64,
-    update: EwmByUpdate,
 ) -> ChunkedArray<T>
 where
     T: PolarsFloatType,
@@ -165,99 +136,74 @@ where
         .expect("`arg_sort` should have returned a single chunk");
 
     let mut out: Vec<_> = zeroed_vec(sorted_times.len());
-
-    let mut skip_rows: usize = 0;
-    let mut prev_time: i64 = 0;
-    let mut prev_result = T::Native::zero();
-    for (idx, (value, time)) in sorted_values.iter().zip(sorted_times.iter()).enumerate() {
-        if let (Some(time), Some(value)) = (time, value) {
-            prev_time = time;
-            prev_result = value;
-            unsafe {
-                let out_idx = sorting_indices.get_unchecked(idx);
-                *out.get_unchecked_mut(*out_idx as usize) = prev_result;
-            }
-            skip_rows = idx + 1;
-            break;
-        };
-    }
-    sorted_values
-        .iter()
-        .zip(sorted_times.iter())
-        .enumerate()
-        .skip(skip_rows)
-        .for_each(|(idx, (value, time))| {
-            if let (Some(time), Some(value)) = (time, value) {
-                let result = apply_update(update, value, prev_result, time, prev_time, half_life);
-                prev_time = time;
-                prev_result = result;
-                unsafe {
-                    let out_idx = sorting_indices.get_unchecked(idx);
-                    *out.get_unchecked_mut(*out_idx as usize) = result;
-                }
-            };
-        });
+    ewm_by_core::<T, IS_MEAN, _>(
+        sorted_values
+            .iter()
+            .zip(sorted_times.iter())
+            .enumerate()
+            .map(|(idx, (value, time))| (sorting_indices[idx] as usize, value, time)),
+        half_life,
+        |out_idx, result| unsafe {
+            *out.get_unchecked_mut(out_idx) = result;
+        },
+    );
     ewm_by_finish(values, times, out)
 }
 
-fn ewm_by_impl_sorted<T>(
+/// Fastpath if `times` is known to already be sorted.
+fn ewm_by_impl_sorted<T, const IS_MEAN: bool>(
     values: &ChunkedArray<T>,
     times: &Int64Chunked,
     half_life: i64,
-    update: EwmByUpdate,
 ) -> ChunkedArray<T>
 where
     T: PolarsFloatType,
     T::Native: Float + Zero + One + FromPrimitive,
 {
     let mut out: Vec<_> = zeroed_vec(times.len());
-
-    let mut skip_rows: usize = 0;
-    let mut prev_time: i64 = 0;
-    let mut prev_result = T::Native::zero();
-    for (idx, (value, time)) in values.iter().zip(times.iter()).enumerate() {
-        if let (Some(time), Some(value)) = (time, value) {
-            prev_time = time;
-            prev_result = value;
-            unsafe {
-                *out.get_unchecked_mut(idx) = prev_result;
-            }
-            skip_rows = idx + 1;
-            break;
-        }
-    }
-    values
-        .iter()
-        .zip(times.iter())
-        .enumerate()
-        .skip(skip_rows)
-        .for_each(|(idx, (value, time))| {
-            if let (Some(time), Some(value)) = (time, value) {
-                let result = apply_update(update, value, prev_result, time, prev_time, half_life);
-                prev_time = time;
-                prev_result = result;
-                unsafe {
-                    *out.get_unchecked_mut(idx) = result;
-                }
-            };
-        });
+    ewm_by_core::<T, IS_MEAN, _>(
+        values
+            .iter()
+            .zip(times.iter())
+            .enumerate()
+            .map(|(idx, (value, time))| (idx, value, time)),
+        half_life,
+        |idx, result| unsafe {
+            *out.get_unchecked_mut(idx) = result;
+        },
+    );
     ewm_by_finish(values, times, out)
 }
 
-fn apply_update<T>(
-    update: EwmByUpdate,
-    value: T,
-    prev_result: T,
-    time: i64,
-    prev_time: i64,
+#[inline]
+fn ewm_by_core<T, const IS_MEAN: bool, F>(
+    pairs: impl Iterator<Item = (usize, Option<T::Native>, Option<i64>)>,
     half_life: i64,
-) -> T
-where
-    T: Float + Zero + One + FromPrimitive,
+    mut write: F,
+) where
+    T: PolarsFloatType,
+    T::Native: Float + Zero + One + FromPrimitive,
+    F: FnMut(usize, T::Native),
 {
-    match update {
-        EwmByUpdate::Mean => update_mean(value, prev_result, time, prev_time, half_life),
-        EwmByUpdate::Sum => update_sum(value, prev_result, time, prev_time, half_life),
+    let mut prev_time: i64 = 0;
+    let mut prev_result = T::Native::zero();
+    let mut started = false;
+
+    for (out_idx, value, time) in pairs {
+        if let (Some(time), Some(value)) = (time, value) {
+            if !started {
+                prev_time = time;
+                prev_result = value;
+                write(out_idx, prev_result);
+                started = true;
+            } else {
+                let result =
+                    update::<T::Native, IS_MEAN>(value, prev_result, time, prev_time, half_life);
+                prev_time = time;
+                prev_result = result;
+                write(out_idx, result);
+            }
+        }
     }
 }
 
@@ -285,32 +231,31 @@ fn adjust_half_life_to_time_unit(half_life: i64, time_unit: &TimeUnit) -> i64 {
     }
 }
 
-fn update_sum<T>(value: T, prev_result: T, time: i64, prev_time: i64, half_life: i64) -> T
+#[inline]
+fn update<T, const IS_MEAN: bool>(
+    value: T,
+    prev_result: T,
+    time: i64,
+    prev_time: i64,
+    half_life: i64,
+) -> T
 where
     T: Float + Zero + One + FromPrimitive,
 {
+    if IS_MEAN && value == prev_result {
+        return value;
+    }
     let delta_time = time - prev_time;
-    let lambda = T::from_f64(0.5)
+    // equivalent to: alpha = 1 - exp(-delta_time*ln(2) / half_life)
+    let one_minus_alpha = T::from_f64(0.5)
         .unwrap()
         .powf(T::from_i64(delta_time).unwrap() / T::from_i64(half_life).unwrap());
-    value + lambda * prev_result
-}
-
-fn update_mean<T>(value: T, prev_result: T, time: i64, prev_time: i64, half_life: i64) -> T
-where
-    T: Float + Zero + One + FromPrimitive,
-{
-    if value != prev_result {
-        let delta_time = time - prev_time;
-        // equivalent to: alpha = 1 - exp(-delta_time*ln(2) / half_life)
-        let one_minus_alpha = T::from_f64(0.5)
-            .unwrap()
-            .powf(T::from_i64(delta_time).unwrap() / T::from_i64(half_life).unwrap());
-        let alpha = T::one() - one_minus_alpha;
-        alpha * value + one_minus_alpha * prev_result
+    let weight = if IS_MEAN {
+        T::one() - one_minus_alpha
     } else {
-        value
-    }
+        T::one()
+    };
+    one_minus_alpha * prev_result + weight * value
 }
 
 #[cfg(test)]
