@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from functools import lru_cache, partial
 from typing import TYPE_CHECKING, Any
 
@@ -302,3 +303,129 @@ def test_rolling_expr_visitor_rank() -> None:
     name, _, _, _, _, fn_params = rolling_exprs[0]
     assert name == _expr_nodes.RollingFunction.Rank
     assert fn_params == ("dense", 42)
+
+
+def _collect_ewm_functions(query: pl.LazyFrame) -> list[tuple[Any, list[Any]]]:
+    """Traverse a query's IR; return (Function, resolved input nodes) for ewm exprs."""
+    results: list[tuple[Any, list[Any]]] = []
+
+    def callback(node_traverser: Any, query_start: int | None) -> None:
+        for expr_ir in node_traverser.get_exprs():
+            expr_node = node_traverser.view_expression(expr_ir.node)
+            if isinstance(expr_node, _expr_nodes.Function):
+                function_data = expr_node.function_data
+                if function_data and isinstance(
+                    function_data[0], _expr_nodes.EwmFunction
+                ):
+                    inputs = [
+                        node_traverser.view_expression(i) for i in expr_node.input
+                    ]
+                    results.append((expr_node, inputs))
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+def test_ewm_mean_expr_visitor() -> None:
+    """Test that ewm_mean is exposed with its EWMOptions fields."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").ewm_mean(alpha=0.5).alias("ewm_mean"),
+    )
+    ewm_exprs = _collect_ewm_functions(q)
+    assert len(ewm_exprs) == 1
+    fn, _inputs = ewm_exprs[0]
+    name, alpha, adjust, bias, min_periods, ignore_nulls = fn.function_data
+    assert name == _expr_nodes.EwmFunction.Mean
+    assert alpha == 0.5
+    # `ewm_mean` has no `bias` kwarg; it is always serialized as False.
+    assert adjust is True
+    assert bias is False
+    assert min_periods == 1
+    assert ignore_nulls is False
+
+
+def test_ewm_std_expr_visitor() -> None:
+    """Test that ewm_std serializes all five EWMOptions fields, incl. non-defaults."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x")
+        .ewm_std(alpha=0.3, adjust=False, bias=True, min_samples=2, ignore_nulls=True)
+        .alias("ewm_std"),
+    )
+    ewm_exprs = _collect_ewm_functions(q)
+    assert len(ewm_exprs) == 1
+    fn, _inputs = ewm_exprs[0]
+    name, alpha, adjust, bias, min_periods, ignore_nulls = fn.function_data
+    assert name == _expr_nodes.EwmFunction.Std
+    assert alpha == pytest.approx(0.3)
+    assert adjust is False
+    assert bias is True
+    assert min_periods == 2
+    assert ignore_nulls is True
+
+
+def test_ewm_var_expr_visitor() -> None:
+    """Test that ewm_var is exposed and distinguished from ewm_std by its enum."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").ewm_var(alpha=0.3, bias=False).alias("ewm_var"),
+    )
+    ewm_exprs = _collect_ewm_functions(q)
+    assert len(ewm_exprs) == 1
+    fn, _inputs = ewm_exprs[0]
+    name, alpha, _adjust, bias, _min_periods, _ignore_nulls = fn.function_data
+    assert name == _expr_nodes.EwmFunction.Var
+    assert alpha == pytest.approx(0.3)
+    assert bias is False
+
+
+def test_ewm_mean_span_expr_visitor() -> None:
+    """Test that only the derived alpha (not span) is visible."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
+        pl.col("x").ewm_mean(span=3).alias("ewm_mean"),
+    )
+    ewm_exprs = _collect_ewm_functions(q)
+    assert len(ewm_exprs) == 1
+    fn, _inputs = ewm_exprs[0]
+    name, alpha, *_ = fn.function_data
+    assert name == _expr_nodes.EwmFunction.Mean
+    # span=3 -> alpha = 2 / (span + 1)
+    assert alpha == pytest.approx(2.0 / (3.0 + 1.0))
+
+
+def test_ewm_mean_by_expr_visitor() -> None:
+    """Test that ewm_mean_by exposes its half_life Duration and the `by` input."""
+    q = pl.LazyFrame(
+        {
+            "x": [1.0, 2.0, 3.0],
+            "t": [datetime(2020, 1, 1), datetime(2020, 2, 1), datetime(2020, 3, 1)],
+        }
+    ).with_columns(
+        pl.col("x").ewm_mean_by(by="t", half_life="1w2d3h4m5s6ms").alias("ewm_mean_by"),
+    )
+    ewm_exprs = _collect_ewm_functions(q)
+    assert len(ewm_exprs) == 1
+    fn, inputs = ewm_exprs[0]
+    # Two inputs: the values column, then the `by` column second.
+    assert len(inputs) == 2
+    by_node = inputs[1]
+    assert isinstance(by_node, _expr_nodes.Column)
+    assert by_node.name == "t"
+    name, half_life = fn.function_data
+    assert name == _expr_nodes.EwmFunction.MeanBy
+    # Wrap<Duration> 6-tuple: (months, weeks, days, nanoseconds, parsed_int, negative)
+    expected_ns = (3 * 3600 + 4 * 60 + 5) * 1_000_000_000 + 6 * 1_000_000
+    assert half_life == (0, 1, 2, expected_ns, False, False)
+
+
+def test_ewm_mean_by_parsed_int_expr_visitor() -> None:
+    """Test the parsed_int path of the half_life Duration tuple (the `i` unit)."""
+    q = pl.LazyFrame({"x": [1.0, 2.0, 3.0], "t": [1, 2, 3]}).with_columns(
+        pl.col("x").ewm_mean_by(by="t", half_life="2i").alias("ewm_mean_by"),
+    )
+    ewm_exprs = _collect_ewm_functions(q)
+    assert len(ewm_exprs) == 1
+    fn, _inputs = ewm_exprs[0]
+    name, half_life = fn.function_data
+    assert name == _expr_nodes.EwmFunction.MeanBy
+    assert half_life == (0, 0, 0, 2, True, False)

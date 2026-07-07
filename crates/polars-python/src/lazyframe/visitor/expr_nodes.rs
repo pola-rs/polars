@@ -317,6 +317,22 @@ impl PyRollingFunction {
     }
 }
 
+#[pyclass(name = "EwmFunction", eq, frozen, skip_from_py_object)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyEwmFunction {
+    Mean,
+    Std,
+    Var,
+    MeanBy,
+}
+
+#[pymethods]
+impl PyEwmFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
 #[pyclass(frozen)]
 pub struct BinaryExpr {
     #[pyo3(get)]
@@ -1485,15 +1501,35 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     ("mean_horizontal", ignore_nulls).into_py_any(py)
                 },
                 IRFunctionExpr::MinHorizontal => ("min_horizontal",).into_py_any(py),
-                IRFunctionExpr::EwmMean { options: _ } => {
-                    return Err(PyNotImplementedError::new_err("ewm mean"));
-                },
-                IRFunctionExpr::EwmStd { options: _ } => {
-                    return Err(PyNotImplementedError::new_err("ewm std"));
-                },
-                IRFunctionExpr::EwmVar { options: _ } => {
-                    return Err(PyNotImplementedError::new_err("ewm var"));
-                },
+                // Tuples consumed by external engines (e.g., cudf-polars):
+                // (EwmFunction, alpha, adjust, bias, min_periods, ignore_nulls)
+                IRFunctionExpr::EwmMean { options } => (
+                    PyEwmFunction::Mean,
+                    options.alpha,
+                    options.adjust,
+                    options.bias,
+                    options.min_periods,
+                    options.ignore_nulls,
+                )
+                    .into_py_any(py),
+                IRFunctionExpr::EwmStd { options } => (
+                    PyEwmFunction::Std,
+                    options.alpha,
+                    options.adjust,
+                    options.bias,
+                    options.min_periods,
+                    options.ignore_nulls,
+                )
+                    .into_py_any(py),
+                IRFunctionExpr::EwmVar { options } => (
+                    PyEwmFunction::Var,
+                    options.alpha,
+                    options.adjust,
+                    options.bias,
+                    options.min_periods,
+                    options.ignore_nulls,
+                )
+                    .into_py_any(py),
                 IRFunctionExpr::Replace => ("replace",).into_py_any(py),
                 IRFunctionExpr::ReplaceStrict { return_dtype: _ } => {
                     // Can ignore the return dtype because it is encoded in the schema.
@@ -1535,8 +1571,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 #[cfg(feature = "top_k")]
                 IRFunctionExpr::TopKBy { descending } => ("top_k_by", descending).into_py_any(py),
-                IRFunctionExpr::EwmMeanBy { half_life: _ } => {
-                    return Err(PyNotImplementedError::new_err("ewm_mean_by"));
+                IRFunctionExpr::EwmMeanBy { half_life } => {
+                    (PyEwmFunction::MeanBy, Wrap(*half_life)).into_py_any(py)
                 },
                 IRFunctionExpr::RowEncode(..) => {
                     return Err(PyNotImplementedError::new_err("row_encode"));
