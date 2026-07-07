@@ -38,7 +38,7 @@ use super::dns::get_dns_cache_ttl;
 #[cfg(feature = "cloud")]
 use crate::cloud::ObjectStoreErrorContext;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-use crate::cloud::dns::CachingResolver;
+use crate::cloud::dns::{CachingResolver, get_dns_max_stale};
 #[cfg(feature = "file_cache")]
 use crate::file_cache::get_env_file_cache_ttl;
 #[cfg(feature = "aws")]
@@ -305,7 +305,10 @@ pub(super) fn get_client_options() -> ClientOptions {
         ))
         .with_user_agent(HeaderValue::from_static(USER_AGENT))
         .with_allow_http(true)
-        .with_dns_resolver(Arc::new(CachingResolver::new(get_dns_cache_ttl())))
+        .with_dns_resolver(Arc::new(CachingResolver::new(
+            get_dns_cache_ttl(),
+            get_dns_max_stale(),
+        )))
 }
 
 #[cfg(feature = "aws")]
