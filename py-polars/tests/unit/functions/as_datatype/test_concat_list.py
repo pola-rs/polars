@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal as D
 
 import pytest
 
@@ -275,3 +276,33 @@ def test_concat_list_broadcast_rhs() -> None:
     df = pl.DataFrame({"a": [[1], [2], [3]]})
     out = df.select(pl.concat_list("a", pl.lit(pl.Series([[9, 9]])).first()).alias("c"))
     assert out["c"].to_list() == [[1, 9, 9], [2, 9, 9], [3, 9, 9]]
+
+
+def test_concat_list_multiple_chunks() -> None:
+    df = pl.concat(
+        [
+            pl.DataFrame({"a": [[1, 2]], "b": [[3]]}),
+            pl.DataFrame({"a": [[4]], "b": [[5, 6]]}),
+        ],
+        rechunk=False,
+    )
+    assert df.n_chunks() > 1
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out["c"].to_list() == [[1, 2, 3], [4, 5, 6]]
+
+
+def test_concat_list_decimal() -> None:
+    # Exercises restoring a logical inner dtype on the kernel output.
+    df = pl.DataFrame(
+        {"a": [[D("1.5")], [D("2.5")]], "b": [[D("0.1")], [None]]},
+        schema={
+            "a": pl.List(pl.Decimal(scale=1)),
+            "b": pl.List(pl.Decimal(scale=1)),
+        },
+    )
+    out = df.select(pl.concat_list("a", "b").alias("c"))
+    assert out.schema["c"] == pl.List(pl.Decimal(scale=1))
+    assert out["c"].to_list() == [
+        [D("1.5"), D("0.1")],
+        [D("2.5"), None],
+    ]
