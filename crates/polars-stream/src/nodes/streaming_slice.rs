@@ -72,7 +72,7 @@ impl ComputeNode for StreamingSliceNode {
                     } else {
                         df
                     }
-                });
+                }).await;
 
                 // Technically not necessary, but it's nice to already tell the
                 // source to stop producing more morsels as we won't be

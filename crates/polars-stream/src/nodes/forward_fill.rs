@@ -186,7 +186,7 @@ impl ComputeNode for ForwardFillNode {
                         };
 
                         PolarsResult::Ok(out.into_frame())
-                    })?;
+                    }).await?;
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

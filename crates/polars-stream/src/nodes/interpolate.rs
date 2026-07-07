@@ -3,6 +3,7 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::{AnyValue, Column, DataType, IntoColumn};
 use polars_core::scalar::Scalar;
 use polars_error::PolarsResult;
+use polars_ooc::SpillFrame;
 use polars_ops::series::{InterpolationMethod, interpolate};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -115,8 +116,9 @@ impl ComputeNode for InterpolateNode {
                     let chunk_size = morsel_size.min(*pending_nulls as usize);
                     let df =
                         Column::full_null(col_name.clone(), chunk_size, &output_dtype).into_frame();
+                    let sf = SpillFrame::new_unregistered(df);
                     if send
-                        .send(Morsel::new(df, *seq, source_token.clone()))
+                        .send(Morsel::new(sf, *seq, source_token.clone()))
                         .await
                         .is_err()
                     {
@@ -139,8 +141,8 @@ impl ComputeNode for InterpolateNode {
         // Serial receive and state handling thread.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
-                let (df, _, source_token, _) = morsel.into_inner();
-                let mut columns = df.into_columns();
+                let (sf, _, source_token, _) = morsel.into_inner();
+                let mut columns = sf.into_df().await.into_columns();
                 assert_eq!(columns.len(), 1);
                 let column = columns.pop().unwrap();
                 let height = column.len();
@@ -219,7 +221,8 @@ impl ComputeNode for InterpolateNode {
                         column = column.slice(1, usize::MAX);
                     }
 
-                    let mut morsel = Morsel::new(column.into_frame(), seq, source_token.clone());
+                    let sf = SpillFrame::new_unregistered(column.into_frame());
+                    let mut morsel = Morsel::new(sf, seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

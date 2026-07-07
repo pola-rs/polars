@@ -104,7 +104,7 @@ impl ComputeNode for GatherNode {
                             let morsel = morsel.try_map(|idx_df| {
                                 assert!(idx_df.width() == 1);
                                 input.gather_with_column(&idx_df.columns()[0], null_on_oob)
-                            })?;
+                            }).await?;
 
                             if send.send(morsel).await.is_err() {
                                 break;

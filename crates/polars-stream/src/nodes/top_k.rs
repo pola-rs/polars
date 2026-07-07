@@ -676,7 +676,7 @@ impl ComputeNode for TopKNode {
                     let key_selectors = &*key_selectors;
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
-                            let df = morsel.into_df();
+                            let df = morsel.into_df2().await;
                             let mut key_columns = Vec::new();
                             for selector in key_selectors {
                                 let s = selector.evaluate(&df, &state.in_memory_exec_state).await?;

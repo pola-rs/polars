@@ -3,6 +3,7 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, IntoColumn};
 use polars_error::PolarsResult;
+use polars_ooc::SpillFrame;
 use polars_ops::prelude::peaks;
 
 use super::ComputeNode;
@@ -112,7 +113,8 @@ impl ComputeNode for PeakMinMaxNode {
                     )?
                     .into_column();
                     let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
-                    _ = send.send(Morsel::new(df, seq, SourceToken::new())).await;
+                    let sf = SpillFrame::new_unregistered(df);
+                    _ = send.send(Morsel::new(sf, seq, SourceToken::new())).await;
 
                     self.state = State::Done;
                     Ok(())
@@ -125,7 +127,8 @@ impl ComputeNode for PeakMinMaxNode {
                     let source_token = SourceToken::new();
 
                     while let Ok(m) = recv.recv().await {
-                        let (df, seq, in_source_token, in_wait_token) = m.into_inner();
+                        let (sf, seq, in_source_token, in_wait_token) = m.into_inner();
+                        let df = sf.into_df().await;
                         drop(in_wait_token);
                         if df.height() == 0 {
                             continue;
@@ -152,8 +155,9 @@ impl ComputeNode for PeakMinMaxNode {
                             .into_column();
 
                         let wg = WaitGroup::default();
+                        let out = unsafe { DataFrame::new_unchecked(out.len(), vec![out]) };
                         let mut m = Morsel::new(
-                            unsafe { DataFrame::new_unchecked(out.len(), vec![out]) },
+                            SpillFrame::new_unregistered(out),
                             prev_seq,
                             source_token.clone(),
                         );

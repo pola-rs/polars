@@ -277,7 +277,7 @@ impl ComputeNode for MergeSortedNode {
                                 let seq = morsel.seq().offset_by(morsel_offset);
                                 max_seq = max_seq.max(seq);
 
-                                remove_key_column(morsel.df_mut());
+                                remove_key_column(&mut *morsel.get_df_mut().await);
 
                                 morsel.set_seq(seq);
                                 if send.send(morsel).await.is_err() {

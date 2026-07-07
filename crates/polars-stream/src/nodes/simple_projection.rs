@@ -71,7 +71,7 @@ impl ComputeNode for SimpleProjectionNode {
                             cols.push(col)
                         }
                         PolarsResult::Ok(DataFrame::new_unchecked(df.height(), cols))
-                    })?;
+                    }).await?;
 
                     if send.send(morsel).await.is_err() {
                         break;

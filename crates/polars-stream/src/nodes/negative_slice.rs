@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_ooc::{MostRecentSpillContext, SpillFrame};
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 
 use super::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
@@ -134,9 +134,9 @@ impl ComputeNode for NegativeSliceNode {
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         buffer.total_len += morsel.height();
-                        buffer
-                            .frames
-                            .push_back(SpillFrame::new(morsel.into_df(), &spill_ctx).await);
+                        let sf = morsel.into_sf();
+                        spill_ctx.register(&sf);
+                        buffer.frames.push_back(sf);
 
                         if buffer.total_len - buffer.frames.front().unwrap().height()
                             >= max_buffer_needed

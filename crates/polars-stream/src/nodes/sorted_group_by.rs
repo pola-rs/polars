@@ -9,6 +9,7 @@ use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_error::{PolarsError, PolarsResult};
 use polars_expr::state::ExecutionState;
+use polars_ooc::SpillFrame;
 use polars_ops::series::{SearchSortedSide, rle_lengths, search_sorted};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -164,8 +165,9 @@ impl ComputeNode for SortedGroupBy {
                 )
                 .await?;
 
+                let sf = SpillFrame::new_unregistered(df);
                 _ = send
-                    .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                    .send(Morsel::new(sf, self.seq.successor(), SourceToken::new()))
                     .await;
 
                 Ok(())
@@ -217,7 +219,8 @@ impl ComputeNode for SortedGroupBy {
             while let Ok(morsel) = recv.recv().await
                 && self.slice.is_none_or(|(_, l)| l > 0)
             {
-                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                let (sf, seq, source_token, wait_token) = morsel.into_inner();
+                let df = sf.into_df().await;
                 self.seq = seq;
                 drop(wait_token);
 
@@ -276,7 +279,7 @@ impl ComputeNode for SortedGroupBy {
 
                 if distributor
                     .send((
-                        Morsel::new(df, seq, source_token),
+                        Morsel::new_unregistered(df, seq, source_token),
                         (windows_offset, windows_length),
                     ))
                     .await

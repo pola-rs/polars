@@ -83,12 +83,12 @@ impl ComputeNode for SortedUnique {
         // Serial receiver.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(morsel) = receiver.recv().await {
-                let df = morsel.df();
-                let height = df.height();
+                let height = morsel.height();
                 if height == 0 {
                     continue;
                 }
 
+                let df = morsel.get_df().await;
                 let mut is_first_new_run = false;
                 for (key, last) in keys.iter().zip(last.iter_mut()) {
                     let column = &df[*key];
@@ -97,6 +97,7 @@ impl ComputeNode for SortedUnique {
                         .is_none_or(|last| column.get(0).unwrap().into_static() != last);
                     *last = Some(column.get(height - 1).unwrap().into_static());
                 }
+                drop(df);
 
                 if distributor.send((morsel, is_first_new_run)).await.is_err() {
                     break;
@@ -142,7 +143,7 @@ impl ComputeNode for SortedUnique {
 
                         // We already parallelize, call the sequential filter.
                         df.filter_seq(mask.as_ref())
-                    })?;
+                    }).await?;
 
                     if morsel.height() == 0 {
                         continue;

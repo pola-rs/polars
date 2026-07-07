@@ -8,6 +8,7 @@ use polars_core::scalar::Scalar;
 use polars_core::series::Series;
 use polars_core::series::builder::SeriesBuilder;
 use polars_error::PolarsResult;
+use polars_ooc::SpillFrame;
 use polars_ops::series::{RLE_LENGTH_COLUMN_NAME, RLE_VALUE_COLUMN_NAME};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -111,8 +112,9 @@ impl ComputeNode for RleNode {
                         .into_column(self.name.clone());
 
                         let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
+                        let sf = SpillFrame::new_unregistered(df);
                         _ = send
-                            .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                            .send(Morsel::new(sf, self.seq.successor(), SourceToken::new()))
                             .await;
 
                         self.last_length = 0;
@@ -132,8 +134,9 @@ impl ComputeNode for RleNode {
                             continue;
                         }
 
-                        assert_eq!(m.df().width(), 1);
-                        let column = &m.df()[0];
+                        let df_pin = m.get_df().await;
+                        assert_eq!(df_pin.width(), 1);
+                        let column = &df_pin[0];
 
                         lengths.clear();
                         polars_ops::series::rle_lengths(column, &mut lengths)?;
@@ -202,6 +205,7 @@ impl ComputeNode for RleNode {
                                 ShareStrategy::Always,
                             )
                         };
+                        drop(df_pin);
 
                         let lengths = Series::new(
                             PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME),
@@ -215,12 +219,12 @@ impl ComputeNode for RleNode {
                             [&lengths, &series].into_iter(),
                         )
                         .unwrap();
-                        *m.df_mut() = unsafe {
+                        m.set_df(unsafe {
                             DataFrame::new_unchecked(
                                 rle_struct.len(),
                                 vec![rle_struct.into_column()],
                             )
-                        };
+                        });
 
                         if send.send(m).await.is_err() {
                             break;

@@ -13,7 +13,7 @@ pub use spill_context::{
     SpillContextParam, WeakSpillContext,
 };
 pub use spill_file::{flush_ooc_cleanup, init_ooc_cleaner};
-pub use spill_frame::SpillFrame;
+pub use spill_frame::{SpillFrame, PinnedFrameMut};
 pub use spill_token::{PinnedMut, PinnedRef, SpillToken};
 
 pub trait Spillable: Send + Sync + 'static {

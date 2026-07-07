@@ -65,7 +65,7 @@ impl IsSortedNode {
                     return Ok(());
                 }
 
-                let df = morsel.into_df();
+                let df = morsel.into_df2().await;
                 if df.height() == 0 {
                     continue;
                 }

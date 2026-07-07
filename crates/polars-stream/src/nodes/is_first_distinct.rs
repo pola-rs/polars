@@ -91,7 +91,7 @@ impl ComputeNode for IsFirstDistinctNode {
                     let col = BooleanChunked::with_chunk(slf.out_name.clone(), arr).into_column();
                     df.with_column(col).unwrap();
                     df
-                });
+                }).await;
                 if send.send(morsel).await.is_err() {
                     break;
                 }
