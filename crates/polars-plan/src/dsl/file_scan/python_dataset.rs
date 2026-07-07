@@ -7,6 +7,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::python_function::PythonObject;
 
 use crate::dsl::DslPlan;
+use crate::plans::PyScanResolveThreadPool;
 
 /// This is for `polars-python` to inject so that the implementation can be done there:
 /// * The impls for converting from Python objects are there.
@@ -15,7 +16,10 @@ pub static DATASET_PROVIDER_VTABLE: OnceLock<PythonDatasetProviderVTable> = Once
 pub struct PythonDatasetProviderVTable {
     pub name: fn(dataset_object: &PythonObject) -> PlSmallStr,
 
-    pub schema: fn(dataset_object: &PythonObject) -> PolarsResult<SchemaRef>,
+    pub schema: fn(
+        dataset_object: &PythonObject,
+        py_scan_resolve_threadpool: &PyScanResolveThreadPool,
+    ) -> PolarsResult<SchemaRef>,
 
     #[expect(clippy::type_complexity)]
     pub to_dataset_scan: fn(
@@ -25,6 +29,7 @@ pub struct PythonDatasetProviderVTable {
         projection: Option<&[PlSmallStr]>,
         filter_columns: Option<&[PlSmallStr]>,
         pyarrow_predicate: Option<&str>,
+        py_scan_resolve_threadpool: &PyScanResolveThreadPool,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>>,
 }
 
@@ -51,8 +56,14 @@ impl PythonDatasetProvider {
         (dataset_provider_vtable().unwrap().name)(&self.dataset_object)
     }
 
-    pub fn schema(&self) -> PolarsResult<SchemaRef> {
-        (dataset_provider_vtable().unwrap().schema)(&self.dataset_object)
+    pub fn schema(
+        &self,
+        py_scan_resolve_threadpool: &PyScanResolveThreadPool,
+    ) -> PolarsResult<SchemaRef> {
+        (dataset_provider_vtable().unwrap().schema)(
+            &self.dataset_object,
+            py_scan_resolve_threadpool,
+        )
     }
 
     pub fn to_dataset_scan(
@@ -62,6 +73,7 @@ impl PythonDatasetProvider {
         projection: Option<&[PlSmallStr]>,
         filter_columns: Option<&[PlSmallStr]>,
         pyarrow_predicate: Option<&str>,
+        py_scan_resolve_threadpool: &PyScanResolveThreadPool,
     ) -> PolarsResult<Option<(DslPlan, PlSmallStr)>> {
         (dataset_provider_vtable().unwrap().to_dataset_scan)(
             &self.dataset_object,
@@ -70,6 +82,7 @@ impl PythonDatasetProvider {
             projection,
             filter_columns,
             pyarrow_predicate,
+            py_scan_resolve_threadpool,
         )
     }
 }

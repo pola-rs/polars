@@ -99,11 +99,37 @@ class DeltaDataset:
 
             dataset = table.to_pyarrow_dataset(**(self.pyarrow_options or {}))
 
+            pa_predicate_expr = None
+            if pyarrow_predicate is not None:
+                import pyarrow as pa
+
+                from polars._utils.convert import (
+                    to_py_date,
+                    to_py_datetime,
+                    to_py_time,
+                    to_py_timedelta,
+                )
+                from polars.datatypes import Date, Datetime, Duration
+
+                pa_predicate_expr = eval(
+                    pyarrow_predicate,
+                    {
+                        "pa": pa,
+                        "Date": Date,
+                        "Datetime": Datetime,
+                        "Duration": Duration,
+                        "to_py_date": to_py_date,
+                        "to_py_datetime": to_py_datetime,
+                        "to_py_time": to_py_time,
+                        "to_py_timedelta": to_py_timedelta,
+                    },
+                )
+
             func = partial(
                 polars.io.pyarrow_dataset.anonymous_scan._scan_pyarrow_dataset_impl,
                 dataset,
                 n_rows=limit,
-                predicate=pyarrow_predicate,
+                predicate=pa_predicate_expr,
                 with_columns=projection,
             )
 

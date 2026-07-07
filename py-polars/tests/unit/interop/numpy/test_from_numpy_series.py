@@ -95,3 +95,16 @@ def test_from_numpy_records_2d(
 
     round_trip_array = s.to_numpy()[0][1]
     assert_array_equal(round_trip_array, arr2d)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [">f4", ">f8", ">i4", ">i8", "<f4", "<i4"],
+)
+def test_from_numpy_non_native_byteorder_28174(dtype: str) -> None:
+    arr = np.arange(5, dtype=dtype)
+    s = pl.Series("data", arr)
+    assert s.to_list() == list(range(5))
+
+    df = pl.DataFrame(arr)
+    assert df.to_series().to_list() == list(range(5))

@@ -151,7 +151,7 @@ impl PyLazyFrame {
     #[staticmethod]
     #[cfg(feature = "csv")]
     #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype,
-        low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
+        low_memory, comment_prefix, quote_char, null_values, empty_string_is_null,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
         cloud_options, credential_provider, include_file_paths, missing_columns
@@ -172,7 +172,7 @@ impl PyLazyFrame {
         comment_prefix: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
-        missing_utf8_is_empty_string: bool,
+        empty_string_is_null: bool,
         infer_schema_length: Option<usize>,
         with_schema_modify: Option<Py<PyAny>>,
         rechunk: bool,
@@ -255,7 +255,7 @@ impl PyLazyFrame {
             .with_row_index(row_index)
             .with_try_parse_dates(try_parse_dates)
             .with_null_values(null_values)
-            .with_missing_is_null(!missing_utf8_is_empty_string)
+            .with_missing_is_null(empty_string_is_null)
             .with_truncate_ragged_lines(truncate_ragged_lines)
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)

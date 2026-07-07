@@ -12,6 +12,7 @@ use polars_ops::frame::{JoinCoalesce, JoinType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools as _;
+use polars_utils::itertools::iters_eq::iters_eq;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
 
@@ -2040,21 +2041,6 @@ fn compute_simple_projection_schema(
         let dtype = input_schema.get(name).unwrap().clone();
         (name.clone(), dtype)
     })))
-}
-
-/// Returns true if both iterators have the same length, and the items at each
-/// index are equal.
-fn iters_eq<L, R, T, U>(left: L, right: R) -> bool
-where
-    L: IntoIterator<Item = T>,
-    R: IntoIterator<Item = U>,
-    T: PartialEq<U>,
-    L::IntoIter: ExactSizeIterator,
-    R::IntoIter: ExactSizeIterator,
-{
-    let left = left.into_iter();
-    let right = right.into_iter();
-    left.len() == right.len() && left.zip(right).all(|(l, r)| l == r)
 }
 
 fn set_scan_projection(scan_ir: &mut IR, projection_schema: Arc<Schema>) {

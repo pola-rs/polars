@@ -23,7 +23,7 @@ file.
 ```toml
 cluster_id = "polars-cluster"
 instance_id = "node-0"
-license = "/etc/polars/license.json"
+license.on_prem_enterprise.license_path = "/etc/polars/license.json"
 memory_limit = 10737418240 # 10 GiB
 # ...
 ```

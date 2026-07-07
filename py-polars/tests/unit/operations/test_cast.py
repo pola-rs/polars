@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import operator
+import re
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
@@ -1072,3 +1073,14 @@ def test_strict_cast_nested() -> None:
         df.cast(struct, strict=False),
         pl.DataFrame({"a": [{"x": 42}, {"x": None}]}, schema={"a": struct}),
     )
+
+
+def test_cast_to_list_deprecated() -> None:
+    s = pl.Series("a", [1, 2, 3], dtype=pl.Int32)
+    msg = (
+        "casting from Int32 to list type is deprecated\n"
+        "Hint: Use pl.list(expr) to turn the Int32 column into a column of single-element lists."
+    )
+    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+        result = s.cast(pl.List(pl.Int32))
+    assert result.dtype == pl.List(pl.Int32)

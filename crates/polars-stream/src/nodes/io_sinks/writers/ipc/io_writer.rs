@@ -1,24 +1,35 @@
+use std::num::NonZeroUsize;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use arrow::io::ipc::IpcField;
-use arrow::io::ipc::write::common_sync::{push_footer, push_magic, push_message};
-use arrow::io::ipc::write::schema::schema_to_bytes;
-use arrow::io::ipc::write::{EncodedDataBytes, arrow_ipc_block};
+use arrow::io::ipc::write::arrow_ipc_block;
+use arrow::io::ipc::write::schema::serialize_schema;
+use arrow::io::ipc::write2::footer::serialize_ipc_footer_and_magic_bytes;
+use arrow::io::ipc::write2::message::finish_ipc_message_bytes;
+use arrow::io::ipc::write2::schema::serialize_ipc_schema_message_bytes;
+use arrow::io::ipc::{ARROW_MAGIC_V2_PADDED, IpcField};
 use bytes::Bytes;
+use polars_async::executor;
+use polars_async::primitives::wait_group::WaitToken;
+use polars_buffer::Buffer;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow;
 use polars_error::{PolarsResult, to_compute_err};
+use polars_io::ipc::IpcWriterOptions;
 use polars_io::ipc::pl_ipc_metadata::{POLARS_IPC_METADATA_KEY, PlIpcMetadata};
-use polars_io::ipc::{IpcWriter, IpcWriterOptions};
+use polars_io::schema_to_arrow_checked;
+use polars_io::utils::bytes_bufferer::{BytesBufferer, BytesBuffererConfig};
 use polars_io::utils::file::Writable;
-use polars_io::{SerWriter, schema_to_arrow_checked};
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
-use crate::nodes::io_sinks::writers::ipc::IpcBatch;
+use crate::nodes::io_sinks::writers::ipc::{IpcBatch, IpcBatchType};
 
 pub struct IOWriter {
     pub file: FileOpenTaskHandle,
-    pub ipc_batch_rx: tokio::sync::mpsc::Receiver<IpcBatch>,
+    pub ipc_batch_rx: tokio::sync::mpsc::Receiver<(
+        executor::AbortOnDropHandle<PolarsResult<IpcBatch>>,
+        Option<WaitToken>,
+    )>,
     pub options: Arc<IpcWriterOptions>,
     pub schema: SchemaRef,
     pub ipc_fields: Vec<IpcField>,
@@ -36,167 +47,158 @@ impl IOWriter {
             write_custom_pl_metadata,
         } = self;
 
-        let (file, sync_on_close) = file.await?;
+        let (mut writable, sync_on_close) = file.await?;
+
+        let mut writer = WritableWrap {
+            writable: &mut writable,
+        };
 
         let mut custom_pl_metadata = write_custom_pl_metadata.then_some(PlIpcMetadata::default());
 
-        match file {
-            Writable::Cloud(cloudwriter) => {
-                // The zero-copy implementation takes ownership of the encoded data and, after
-                // framing and aligning, passes it to the object_store via the BufWriter::put() method.
-                let mut cloud_writer = cloudwriter.into_cloud_writer().await?;
-                let mut record_blocks = vec![];
-                let mut dictionary_blocks = vec![];
-                let mut block_offsets = 0;
-                let mut sink_queue = Vec::new();
+        let mut record_blocks = vec![];
+        let mut dictionary_blocks = vec![];
 
-                // Start with header.
-                let offset = push_magic(&mut sink_queue, true);
-                for bytes in sink_queue.drain(..) {
-                    cloud_writer.write_all_owned(bytes).await?;
-                }
-                block_offsets += offset;
+        writer
+            .write_multiple_owned_unbuffered([Buffer::from_static(&ARROW_MAGIC_V2_PADDED)])
+            .await?;
 
-                // Add schema message.
-                let schema = schema_to_arrow_checked(&schema, options.compat_level, "ipc")?;
-                let encoded_data = EncodedDataBytes {
-                    ipc_message: Bytes::from(schema_to_bytes(&schema, &ipc_fields, None)),
-                    arrow_data: Bytes::new(),
+        let mut current_byte_offset: usize = ARROW_MAGIC_V2_PADDED.len();
+
+        let schema = schema_to_arrow_checked(&schema, options.compat_level, "ipc")?;
+        let serialized_ipc_schema = Box::new(serialize_schema(&schema, &ipc_fields, None));
+
+        let mut schema_bytes = BytesBufferer::new(schema_bytes_bufferer_config());
+
+        schema_bytes.push_owned(&serialize_ipc_schema_message_bytes(
+            serialized_ipc_schema.clone(),
+        ));
+        finish_ipc_message_bytes(&mut schema_bytes)?;
+
+        let schema_bytes_len = schema_bytes.len();
+
+        writer.write_multiple_owned_unbuffered(schema_bytes).await?;
+
+        current_byte_offset += schema_bytes_len;
+
+        while let Some((batch, finish_write_token)) = ipc_batch_rx.recv().await {
+            let IpcBatch {
+                batch_type,
+                num_rows,
+                continuation_bytes,
+                message_bytes,
+                message_num_bytes,
+                arrow_data_bytes,
+                arrow_data_num_bytes,
+                morsel_permit,
+            } = batch.await?;
+
+            let metadata_num_bytes = continuation_bytes.len() + message_num_bytes;
+
+            let ipc_block = arrow_ipc_block(
+                current_byte_offset,
+                metadata_num_bytes,
+                arrow_data_num_bytes,
+            );
+
+            match batch_type {
+                IpcBatchType::Record => record_blocks.push(ipc_block),
+                IpcBatchType::Dictionary => dictionary_blocks.push(ipc_block),
+            };
+
+            current_byte_offset += metadata_num_bytes + arrow_data_num_bytes;
+
+            writer
+                .write_multiple_owned_unbuffered(
+                    std::iter::once(Buffer::from_vec(continuation_bytes))
+                        .chain(message_bytes)
+                        .chain(arrow_data_bytes),
+                )
+                .await?;
+
+            if let Some(md) = custom_pl_metadata.as_mut() {
+                if let Some(end_offset) =
+                    num_rows.checked_add(md.record_batch_cum_len.last().copied().unwrap_or(0))
+                {
+                    md.record_batch_cum_len.push(end_offset);
+                } else {
+                    custom_pl_metadata = None;
                 };
-                let (meta, data) = push_message(&mut sink_queue, encoded_data);
-                for bytes in sink_queue.drain(..) {
-                    cloud_writer.write_all_owned(bytes).await?;
-                }
-                block_offsets += meta + data;
+            }
 
-                // Process each incoming batch as a message.
-                while let Some(batch) = ipc_batch_rx.recv().await {
-                    match batch {
-                        IpcBatch::Record {
-                            encoded_data,
-                            morsel_permit,
-                            num_rows,
-                        } => {
-                            let encoded_data = encoded_data.await;
-                            let encoded_data = EncodedDataBytes {
-                                ipc_message: Bytes::from(encoded_data.ipc_message),
-                                arrow_data: Bytes::from(encoded_data.arrow_data),
-                            };
+            drop(morsel_permit);
+            drop(finish_write_token);
+        }
 
-                            let (meta, data) = push_message(&mut sink_queue, encoded_data);
-                            for bytes in sink_queue.drain(..) {
-                                cloud_writer.write_all_owned(bytes).await?;
-                            }
+        let custom_metadata = if let Some(custom_pl_metadata) = custom_pl_metadata {
+            Some(vec![(
+                POLARS_IPC_METADATA_KEY.into(),
+                serde_json::to_string(&custom_pl_metadata).map_err(to_compute_err)?,
+            )])
+        } else {
+            None
+        };
 
-                            let block = arrow_ipc_block(block_offsets, meta, data);
-                            record_blocks.push(block);
-                            block_offsets += meta + data;
+        let mut schema_bytes = BytesBufferer::new(schema_bytes_bufferer_config());
 
-                            if let Some(md) = custom_pl_metadata.as_mut() {
-                                if let Some(end_offset) = num_rows.checked_add(
-                                    md.record_batch_cum_len.last().copied().unwrap_or(0),
-                                ) {
-                                    md.record_batch_cum_len.push(end_offset);
-                                } else {
-                                    custom_pl_metadata = None;
-                                };
-                            }
+        serialize_ipc_footer_and_magic_bytes(
+            &mut schema_bytes,
+            serialized_ipc_schema,
+            dictionary_blocks,
+            record_blocks,
+            custom_metadata,
+        )?;
 
-                            drop(morsel_permit);
-                        },
-                        IpcBatch::Dictionary(dictionary_data) => {
-                            let encoded_dictionary = EncodedDataBytes {
-                                ipc_message: Bytes::from(dictionary_data.ipc_message),
-                                arrow_data: Bytes::from(dictionary_data.arrow_data),
-                            };
+        writer.write_multiple_owned_unbuffered(schema_bytes).await?;
+        writable.close(sync_on_close)?;
 
-                            let (meta, data) = push_message(&mut sink_queue, encoded_dictionary);
-                            for bytes in sink_queue.drain(..) {
-                                cloud_writer.write_all_owned(bytes).await?;
-                            }
+        Ok(())
+    }
+}
 
-                            let block = arrow_ipc_block(block_offsets, meta, data);
-                            dictionary_blocks.push(block);
-                            block_offsets += meta + data;
-                        },
-                    }
-                }
+/// Use smaller limits for IPC schema messages.
+fn schema_bytes_bufferer_config() -> &'static BytesBuffererConfig {
+    &const {
+        BytesBuffererConfig {
+            target_size: NonZeroUsize::new(8192).unwrap()..NonZeroUsize::MAX,
+            copy_buffer_reserve_size: NonZeroUsize::new(8192).unwrap()..NonZeroUsize::MAX,
+        }
+    }
+}
 
-                // Write footer.
-                push_footer(
-                    &mut sink_queue,
-                    &schema,
-                    &ipc_fields,
-                    dictionary_blocks,
-                    record_blocks,
-                    if let Some(custom_pl_metadata) = custom_pl_metadata {
-                        Some(vec![(
-                            POLARS_IPC_METADATA_KEY.into(),
-                            serde_json::to_string(&custom_pl_metadata).map_err(to_compute_err)?,
-                        )])
-                    } else {
-                        None
-                    },
-                    None,
-                );
-                push_magic(&mut sink_queue, false);
-                for bytes in sink_queue.drain(..) {
-                    cloud_writer.write_all_owned(bytes).await?;
-                }
+struct WritableWrap<'a> {
+    writable: &'a mut Writable,
+}
 
-                // Finish.
-                cloud_writer.finish().await?;
+impl<'a> Deref for WritableWrap<'a> {
+    type Target = Writable;
+
+    fn deref(&self) -> &Self::Target {
+        self.writable
+    }
+}
+
+impl<'a> DerefMut for WritableWrap<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.writable
+    }
+}
+
+impl<'a> WritableWrap<'a> {
+    async fn write_multiple_owned_unbuffered<I>(&mut self, bytes: I) -> PolarsResult<()>
+    where
+        I: IntoIterator<Item = Buffer<u8>>,
+    {
+        use polars_io::utils::file::Writable::*;
+
+        match self.writable {
+            Cloud(v) => {
+                v.write_multiple_owned_unbuffered(bytes.into_iter().map(Bytes::from_owner))
+                    .await?;
             },
-            mut file => {
-                let mut buffered_file = file.as_buffered();
-
-                let mut ipc_writer = IpcWriter::new(&mut *buffered_file)
-                    .with_compression(options.compression)
-                    .with_compat_level(options.compat_level)
-                    .with_parallel(false)
-                    .batched(&schema, ipc_fields)?;
-
-                while let Some(batch) = ipc_batch_rx.recv().await {
-                    match batch {
-                        IpcBatch::Record {
-                            encoded_data,
-                            morsel_permit,
-                            num_rows,
-                        } => {
-                            let encoded_data = encoded_data.await;
-                            ipc_writer.write_encoded(&[], &encoded_data)?;
-
-                            if let Some(md) = custom_pl_metadata.as_mut() {
-                                if let Some(end_offset) = num_rows.checked_add(
-                                    md.record_batch_cum_len.last().copied().unwrap_or(0),
-                                ) {
-                                    md.record_batch_cum_len.push(end_offset);
-                                } else {
-                                    custom_pl_metadata = None;
-                                };
-                            }
-
-                            drop(encoded_data);
-                            drop(morsel_permit);
-                        },
-                        IpcBatch::Dictionary(dictionary_data) => {
-                            ipc_writer.write_encoded_dictionaries(&[dictionary_data])?
-                        },
-                    }
+            Dyn(_) | Local(_) => {
+                for buffer in bytes {
+                    self.write_all(Buffer::as_slice(&buffer))?;
                 }
-
-                if let Some(custom_pl_metadata) = custom_pl_metadata {
-                    ipc_writer.set_custom_metadata(vec![(
-                        POLARS_IPC_METADATA_KEY.into(),
-                        serde_json::to_string(&custom_pl_metadata).map_err(to_compute_err)?,
-                    )]);
-                }
-
-                ipc_writer.finish()?;
-
-                drop(ipc_writer);
-                drop(buffered_file);
-                file.close(sync_on_close)?;
             },
         }
 

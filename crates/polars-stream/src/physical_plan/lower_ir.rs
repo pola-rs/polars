@@ -290,6 +290,7 @@ pub fn lower_ir(
                 maintain_order,
                 chunk_size,
             }) => {
+                disable_morsel_split.get_or_insert(true);
                 let function = function.clone();
                 let maintain_order = *maintain_order;
                 let chunk_size = *chunk_size;
@@ -303,6 +304,10 @@ pub fn lower_ir(
             },
 
             SinkTypeIR::File(options) => {
+                // Defer to the chunk-aware morsel splitting strategy in morsel_resize_pipeline.
+                // This cannot currently be done by the InMemorySource as the morsel splitting
+                // is done against a configured TargetSinkMorselSize.
+                disable_morsel_split.get_or_insert(true);
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
                 PhysNodeKind::FileSink { input, options }

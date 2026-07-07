@@ -31,7 +31,7 @@ macro_rules! polars_warn {
         {{
         let func = $crate::get_warning_function();
         let warn = $crate::PolarsWarning::$variant;
-        func(format!($fmt, $($arg)*).as_ref(), warn)
+        func(format!($fmt, $($arg),*).as_ref(), warn)
         }}
     };
     ($fmt:literal $(, $arg:expr)*) => {

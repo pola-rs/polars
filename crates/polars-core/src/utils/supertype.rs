@@ -24,7 +24,7 @@ pub fn try_get_supertype_with_options(
     )
 }
 
-/// Returns the smallest numeric dtype that `l` and `r` can both be casted to without loss of data.
+/// Returns the smallest numeric dtype that `l` and `r` can both be cast to without loss of data.
 /// If no such dtype exists, or `l` and `r` are already matching, returns `None`.
 pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
     use DataType::*;

@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
+use polars_utils::itertools::Itertools;
 use polars_utils::unitvec;
 
 use super::keys::*;
@@ -77,7 +78,10 @@ pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> O
 where
     I: IntoIterator<Item = ExprIR>,
 {
-    let mut iter = iter.into_iter();
+    // Order the predicates so that CSE can hit them.
+    let mut exprs = iter.into_iter().collect_vec();
+    exprs.sort_unstable_by(|a, b| a.output_name().cmp(b.output_name()));
+    let mut iter = exprs.iter();
     let mut out = iter.next()?.node();
 
     for e in iter {
