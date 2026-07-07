@@ -114,8 +114,8 @@ def read_ipc(
 
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
     That means that;
-     - Arrow data in the file is not validated to be correct and invalid arrow data is UB!
-       Ensure this file is correct or set `memory_map=False`.
+     - Arrow data in the file is not validated to be correct and invalid arrow
+       data is UB! Ensure this file is correct or set `memory_map=False`.
      - You cannot write to the same filename.
        E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`
        will fail.

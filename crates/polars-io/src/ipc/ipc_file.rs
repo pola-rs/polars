@@ -33,7 +33,7 @@
 //! assert!(df.equals(&df_read));
 //! ```
 use std::io::{Read, Seek};
-use std::path::{self, PathBuf};
+use std::path::PathBuf;
 
 use arrow::datatypes::{ArrowSchemaRef, Metadata};
 use arrow::io::ipc::read::{self, get_row_count};
