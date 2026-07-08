@@ -130,7 +130,7 @@ impl LineBatchProcessorOutputPort {
         let result = async {
             match self {
                 Direct { tx, source_token } => {
-                    let morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                    let morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
                     tx.send_morsel(morsel).await.map_err(|_| ())?;
                     Ok(())
                 },

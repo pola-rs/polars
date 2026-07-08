@@ -75,12 +75,13 @@ impl ComputeNode for ForwardFillNode {
                     continue;
                 }
 
-                let column = &morsel.df()[0];
-                let height = column.len();
-                let null_count = column.null_count();
-
                 let morsel_last = last.clone();
                 let morsel_consecutive_nulls = *consecutive_nulls;
+
+                let df = morsel.get_df().await;
+                let column = &df[0];
+                let height = column.len();
+                let null_count = column.null_count();
 
                 if null_count == height {
                     // All null.
@@ -95,6 +96,7 @@ impl ComputeNode for ForwardFillNode {
                     *consecutive_nulls = 0;
                 }
                 *consecutive_nulls = IdxSize::min(*consecutive_nulls, limit);
+                drop(df);
 
                 if distributor
                     .send((morsel, morsel_last, morsel_consecutive_nulls))

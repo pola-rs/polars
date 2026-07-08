@@ -70,7 +70,11 @@ impl ApplyRowIndexOrLimit {
             // No wait group logic here, already attached by line batch processors.
 
             if morsel_tx
-                .send_morsel(Morsel::new(df, morsel_seq, SourceToken::new()))
+                .send_morsel(Morsel::new_unregistered(
+                    df,
+                    morsel_seq,
+                    SourceToken::new(),
+                ))
                 .await
                 .is_err()
             {

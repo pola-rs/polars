@@ -52,7 +52,7 @@ impl ComputeNode for EwmNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             while let Ok(mut morsel) = recv.recv().await {
-                let df = morsel.get_df_mut().await;
+                let mut df = morsel.get_df_mut().await;
 
                 debug_assert_eq!(df.width(), 1);
 
@@ -68,6 +68,7 @@ impl ComputeNode for EwmNode {
                     )
                     .into_column()
                 }
+                drop(df);
 
                 if send.send(morsel).await.is_err() {
                     break;

@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use polars_async::primitives::wait_group::WaitToken;
 use polars_core::functions::concat_df_horizontal;
 use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;

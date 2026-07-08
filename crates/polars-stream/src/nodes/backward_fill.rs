@@ -104,7 +104,7 @@ impl ComputeNode for BackwardFillNode {
                     let chunk_size = morsel_size.min(remaining);
                     let df = Column::full_null(col_name.clone(), chunk_size, &dtype).into_frame();
                     if send
-                        .send(Morsel::new(df, *seq, source_token.clone()))
+                        .send(Morsel::new_unregistered(df, *seq, source_token.clone()))
                         .await
                         .is_err()
                     {
@@ -135,7 +135,8 @@ impl ComputeNode for BackwardFillNode {
             let ideal_morsel_size = get_ideal_morsel_size() as IdxSize;
 
             while let Ok(morsel) = receiver.recv().await {
-                let column = &morsel.df()[0];
+                let df = morsel.get_df().await;
+                let column = &df[0];
                 let height = column.len();
                 if height == 0 {
                     continue;
@@ -151,7 +152,8 @@ impl ComputeNode for BackwardFillNode {
                 while *pending_nulls > limit {
                     let chunk_size = ideal_morsel_size.min(*pending_nulls - limit);
                     let col = Column::full_null(col_name.clone(), chunk_size as usize, &dtype);
-                    let null_morsel = Morsel::new(col.into_frame(), *seq, source_token.clone());
+                    let null_morsel =
+                        Morsel::new_unregistered(col.into_frame(), *seq, source_token.clone());
 
                     *seq = seq.successor();
                     *pending_nulls -= chunk_size;
@@ -187,7 +189,8 @@ impl ComputeNode for BackwardFillNode {
                     column = c;
                 }
 
-                let morsel = Morsel::new(column.into_frame(), *seq, source_token.clone());
+                let morsel =
+                    Morsel::new_unregistered(column.into_frame(), *seq, source_token.clone());
 
                 *seq = seq.successor();
                 *pending_nulls = new_pending_nulls;
@@ -204,12 +207,13 @@ impl ComputeNode for BackwardFillNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let wait_group = WaitGroup::default();
                 while let Ok(mut morsel) = recv.recv().await {
-                    let col = &morsel.df()[0];
-                    if col.has_nulls() {
-                        *morsel.df_mut() = col
+                    let mut df = morsel.get_df_mut().await;
+                    if df[0].has_nulls() {
+                        *df = df[0]
                             .fill_null(FillNullStrategy::Backward(Some(limit)))?
                             .into_frame();
                     }
+                    drop(df);
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

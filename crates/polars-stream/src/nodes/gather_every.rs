@@ -91,7 +91,7 @@ impl ComputeNode for GatherEveryNode {
                             df.set_height(height);
                         };
                         PolarsResult::Ok(df)
-                    })?;
+                    }).await?;
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

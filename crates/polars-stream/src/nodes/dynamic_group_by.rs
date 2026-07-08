@@ -10,7 +10,6 @@ use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_error::{PolarsError, PolarsResult, polars_bail, polars_ensure};
 use polars_expr::state::ExecutionState;
-use polars_ooc::SpillFrame;
 use polars_time::prelude::{GroupByDynamicWindower, Label, ensure_duration_matches_dtype};
 use polars_time::{DynamicGroupOptions, LB_NAME, UB_NAME};
 use polars_utils::IdxSize;
@@ -355,9 +354,12 @@ impl ComputeNode for DynamicGroupBy {
                     )
                     .await?;
                     
-                    let sf = SpillFrame::new_unregistered(df);
                     _ = send
-                        .send(Morsel::new(sf, self.seq.successor(), SourceToken::new()))
+                        .send(Morsel::new_unregistered(
+                            df,
+                            self.seq.successor(),
+                            SourceToken::new(),
+                        ))
                         .await;
                 }
 
@@ -465,7 +467,7 @@ impl ComputeNode for DynamicGroupBy {
                 if let Some((windows, lower_bound, upper_bound, df)) = self.next_windows(false)? {
                     if distributor
                         .send((
-                            Morsel::new(df, seq, source_token),
+                            Morsel::new_unregistered(df, seq, source_token),
                             windows,
                             lower_bound,
                             upper_bound,

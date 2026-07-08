@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_ooc::LeastRecentSpillContext;
+use polars_ooc::{LeastRecentSpillContext, ParameterFreeSpillContext};
 
 use super::compute_node_prelude::*;
 use crate::utils::in_memory_linearize::linearize;
@@ -68,6 +68,7 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
+                    slf.spill_ctx.register(morsel.sf());
                     morsels.push(morsel);
                 }
 

@@ -314,7 +314,7 @@ impl ComputeNode for MergeSortedNode {
                         // Request the port stop producing morsels.
                         morsel.source_token().stop();
                         // Buffer all the morsels that were already produced.
-                        unmerged.push_back(morsel.into_df());
+                        unmerged.push_back(morsel.into_df2().await);
                     }
                 }
 
@@ -342,7 +342,7 @@ impl ComputeNode for MergeSortedNode {
                             maintain_order,
                         )? {
                             let left_mergeable =
-                                Morsel::new(left_mergeable, *seq, source_token.clone());
+                                Morsel::new_unregistered(left_mergeable, *seq, source_token.clone());
                             *seq = seq.successor();
 
                             if distributor
@@ -390,7 +390,7 @@ impl ComputeNode for MergeSortedNode {
                             }
                             break;
                         };
-                        empty_unmerged.push_back(m.into_df());
+                        empty_unmerged.push_back(m.into_df2().await);
                     }
 
                     // Clear out buffers until we cannot anymore. This helps allows us to go to the
@@ -403,7 +403,7 @@ impl ComputeNode for MergeSortedNode {
                         maintain_order,
                     )? {
                         let left_mergeable =
-                            Morsel::new(left_mergeable, *seq, source_token.clone());
+                            Morsel::new_unregistered(left_mergeable, *seq, source_token.clone());
                         *seq = seq.successor();
 
                         if distributor
@@ -427,7 +427,7 @@ impl ComputeNode for MergeSortedNode {
                     };
                     if let Some((pass_port, pass_unmerged)) = pass {
                         for df in std::mem::take(pass_unmerged) {
-                            let m = Morsel::new(df, *seq, source_token.clone());
+                            let m = Morsel::new_unregistered(df, *seq, source_token.clone());
                             *seq = seq.successor();
                             if distributor.send((m, DataFrame::empty())).await.is_err() {
                                 return Ok(());
@@ -472,7 +472,7 @@ impl ComputeNode for MergeSortedNode {
                             // the input. We don't want to mess with the source token or wait group
                             // and just pass it on.
                             if right.shape_has_zero() {
-                                remove_key_column(left.df_mut());
+                                remove_key_column(&mut *left.get_df_mut().await);
 
                                 if send.send(left).await.is_err() {
                                     return Ok(());
@@ -480,7 +480,8 @@ impl ComputeNode for MergeSortedNode {
                                 continue;
                             }
 
-                            let (mut left, seq, source_token, _) = left.into_inner();
+                            let (left_sf, seq, source_token, _) = left.into_inner();
+                            let mut left = left_sf.into_df().await;
                             let left_s = left
                                 .columns()
                                 .last()
@@ -507,17 +508,19 @@ impl ComputeNode for MergeSortedNode {
 
                                 // MorselSeq have to be monotonely non-decreasing so we can
                                 // pass the same sequence token twice.
-                                let morsel = Morsel::new(m1, seq, source_token.clone());
+                                let morsel = Morsel::new_unregistered(m1, seq, source_token.clone());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
-                                let mut morsel = Morsel::new(m2, seq, source_token.clone());
+                                let mut morsel =
+                                    Morsel::new_unregistered(m2, seq, source_token.clone());
                                 morsel.set_consume_token(wait_group.token());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }
                             } else {
-                                let mut morsel = Morsel::new(merged, seq, source_token.clone());
+                                let mut morsel =
+                                    Morsel::new_unregistered(merged, seq, source_token.clone());
                                 morsel.set_consume_token(wait_group.token());
                                 if send.send(morsel).await.is_err() {
                                     break;
