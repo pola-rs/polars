@@ -189,7 +189,7 @@ impl BytesBufferer {
     }
 
     fn available_capacity_current_chunk(&self, incoming_len: usize) -> usize {
-        if self.target_output_size > 0 {
+        if self.target_output_size != 0 {
             self.target_output_size - self.num_bytes_buffered
         } else if self.is_empty() {
             incoming_len

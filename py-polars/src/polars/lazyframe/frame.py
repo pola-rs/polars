@@ -2039,6 +2039,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.bottom_k(k, by=by, reverse=reverse))
 
     @forward_old_opt_flags()
+    @deprecated(
+        "`LazyFrame.profile` is deprecated. "
+        "It was made for the older in-memory engine, but from version 2.0, "
+        "Polars uses a streaming engine by default. Due to the concurrent "
+        "nature of the streaming engine, the profiling information from this "
+        "function would be misleading.",
+    )
     def profile(
         self,
         *,
@@ -2061,6 +2068,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
+
+        .. deprecated:: 1.43.0
+            It was made for the older in-memory engine, but from version 2.0,
+            Polars uses a streaming engine by default. Due to the concurrent
+            nature of the streaming engine, the profiling information from this
+            function would be misleading.
 
         This will run the query and return a tuple
         containing the materialized DataFrame and a DataFrame that
@@ -9122,7 +9135,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def merge_sorted(
         self,
         other: LazyFrame,
-        key: str,
+        key: str | Sequence[str],
         *,
         maintain_order: bool = False,
     ) -> LazyFrame:
@@ -9131,8 +9144,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by the key, with null
-        keys at the start, otherwise the order of the output
+        are sorted in ascending order by the key(s), with null
+        keys at the end, otherwise the order of the output
         will not make sense.
 
         The schemas of both LazyFrames must be equal.
@@ -9142,7 +9155,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             Other DataFrame that must be merged
         key
-            Key that is sorted.
+            Key column(s) that the frames are sorted by. A single column name or a
+            sequence of column names can be passed. When multiple keys are given the
+            frames are merged as if sorted by those keys in order.
         maintain_order
             If ``True``, the output is guaranteed to have left-biased ordering
             for equal keys: rows from the left frame appear before rows from
@@ -9195,15 +9210,38 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ elise  ┆ 44  │
         └────────┴─────┘
 
+        Multiple keys can be passed to merge frames sorted by a composite key. The
+        frames are merged as if sorted by ``key_1``, then ``key_2``.
+
+        >>> df0 = pl.LazyFrame({"key_1": [1, 1, 3], "key_2": [1, 4, 2]})
+        >>> df1 = pl.LazyFrame({"key_1": [1, 2, 3], "key_2": [2, 1, 1]})
+        >>> df0.merge_sorted(df1, key=["key_1", "key_2"]).collect()
+        shape: (6, 2)
+        ┌───────┬───────┐
+        │ key_1 ┆ key_2 │
+        │ ---   ┆ ---   │
+        │ i64   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 1     │
+        │ 1     ┆ 2     │
+        │ 1     ┆ 4     │
+        │ 2     ┆ 1     │
+        │ 3     ┆ 1     │
+        │ 3     ┆ 2     │
+        └───────┴───────┘
+
         Notes
         -----
         Unless ``maintain_order=True``, no guarantee is given over the output
         row order when the key is equal between the both dataframes.
 
-        The key must be sorted in ascending order.
+        The key(s) must be sorted in ascending order.
         """
         require_same_type(self, other)
-        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order))
+        keys = [key] if isinstance(key, str) else list(key)
+        return self._from_pyldf(
+            self._ldf.merge_sorted(other._ldf, keys, maintain_order)
+        )
 
     def set_sorted(
         self,

@@ -4529,7 +4529,9 @@ class DataFrame:
                     raise ModuleUpgradeRequiredError(msg)
                 mode = "replace"
             elif if_table_exists == "append":
-                mode = "append" if driver_manager_version < (0, 7) else "create_append"
+                # 'append' inserts into an existing table; the table-existence
+                # check below can upgrade this to 'create_append'.
+                mode = "append"
             else:
                 msg = (
                     f"unexpected value for `if_table_exists`: {if_table_exists!r}"
@@ -4597,6 +4599,25 @@ class DataFrame:
                     ):
                         cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
                         mode = "create"
+
+                # 'append' requires the table to exist; if it doesn't, upgrade the mode
+                # to 'create_append'; only do this when the table is confirmed missing.
+                if mode == "append" and driver_manager_version >= (0, 7):
+                    schema_filter = {"db_schema_filter": db_schema} if db_schema else {}
+                    try:
+                        conn.adbc_get_table_schema(
+                            unpacked_table_name,
+                            catalog_filter=catalog,
+                            **schema_filter,
+                        )
+                    except driver_manager.Error as err:
+                        # only a definitive 'not found' status confirms the table is
+                        # missing; any other error is left for `adbc_ingest` to raise
+                        if (
+                            getattr(err, "status_code", None)
+                            == driver_manager.AdbcStatusCode.NOT_FOUND
+                        ):
+                            mode = "create_append"
 
                 # For Snowflake, we convert to PyArrow until string_view columns can be
                 # written. Ref: https://github.com/apache/arrow-adbc/issues/3420
@@ -12624,7 +12645,7 @@ class DataFrame:
     def merge_sorted(
         self,
         other: DataFrame,
-        key: str,
+        key: str | Sequence[str],
         *,
         maintain_order: bool = False,
     ) -> DataFrame:
@@ -12633,8 +12654,8 @@ class DataFrame:
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by the key, with null
-        keys at the end, otherwise the order of the output
+        are sorted in ascending order by the key(s), with null
+        keys at the start, otherwise the order of the output
         will not make sense.
 
         The schemas of both DataFrames must be equal.
@@ -12644,7 +12665,9 @@ class DataFrame:
         other
             Other DataFrame that must be merged
         key
-            Key that is sorted.
+            Key column(s) that the frames are sorted by. A single column name or a
+            sequence of column names can be passed. When multiple keys are given the
+            frames are merged as if sorted by those keys in order.
         maintain_order
             If ``True``, the output is guaranteed to have left-biased ordering
             for equal keys: rows from the left frame appear before rows from
@@ -12697,12 +12720,32 @@ class DataFrame:
         │ elise  ┆ 44  │
         └────────┴─────┘
 
+        Multiple keys can be passed to merge frames sorted by a composite key. The
+        frames are merged as if sorted by ``key_1``, then ``key_2``.
+
+        >>> df0 = pl.DataFrame({"key_1": [1, 1, 3], "key_2": [1, 4, 2]})
+        >>> df1 = pl.DataFrame({"key_1": [1, 2, 3], "key_2": [2, 1, 1]})
+        >>> df0.merge_sorted(df1, key=["key_1", "key_2"])
+        shape: (6, 2)
+        ┌───────┬───────┐
+        │ key_1 ┆ key_2 │
+        │ ---   ┆ ---   │
+        │ i64   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 1     │
+        │ 1     ┆ 2     │
+        │ 1     ┆ 4     │
+        │ 2     ┆ 1     │
+        │ 3     ┆ 1     │
+        │ 3     ┆ 2     │
+        └───────┴───────┘
+
         Notes
         -----
         Unless ``maintain_order=True``, no guarantee is given over the output
         row order when the key is equal between the both dataframes.
 
-        The key must be sorted in ascending order.
+        The key(s) must be sorted in ascending order.
         """
         from polars.lazyframe.opt_flags import QueryOptFlags
 

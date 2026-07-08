@@ -10,54 +10,49 @@ use pyo3::{Python, types::PyAnyMethods};
 use super::*;
 
 type PluginAndVersion = (Library, u16, u16);
-static LOADED: LazyLock<RwLock<PlHashMap<String, PluginAndVersion>>> =
+static LOADED: LazyLock<RwLock<PlHashMap<String, Arc<PluginAndVersion>>>> =
     LazyLock::new(Default::default);
 
-fn get_lib(lib: &str) -> PolarsResult<&'static PluginAndVersion> {
-    let lib_map = LOADED.read().unwrap();
-    if let Some(library) = lib_map.get(lib) {
-        // lifetime is static as we never remove libraries.
-        Ok(unsafe { std::mem::transmute::<&PluginAndVersion, &'static PluginAndVersion>(library) })
-    } else {
-        drop(lib_map);
-
-        #[cfg(feature = "python")]
-        let load_path = if !std::path::Path::new(lib).is_absolute() {
-            // Get python virtual environment path
-            let prefix = Python::attach(|py| {
-                let sys = py.import("sys").unwrap();
-                let prefix = sys.getattr("prefix").unwrap();
-                prefix.to_string()
-            });
-            let full_path = std::path::Path::new(&prefix).join(lib);
-            full_path.to_string_lossy().into_owned()
-        } else {
-            lib.to_string()
-        };
-        #[cfg(not(feature = "python"))]
-        let load_path = lib.to_string();
-
-        let library = unsafe {
-            Library::new(&load_path).map_err(|e| {
-                PolarsError::ComputeError(format!("error loading dynamic library: {e}").into())
-            })?
-        };
-        let version_function: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
-            library
-                .get("_polars_plugin_get_version".as_bytes())
-                .unwrap()
-        };
-
-        let version = unsafe { version_function() };
-        let major = (version >> 16) as u16;
-        let minor = version as u16;
-
-        let mut lib_map = LOADED.write().unwrap();
-        lib_map.insert(lib.to_string(), (library, major, minor));
-        drop(lib_map);
-
-        get_lib(lib)
+fn get_lib(lib: &str) -> PolarsResult<Arc<PluginAndVersion>> {
+    if let Some(library) = LOADED.read().unwrap().get(lib) {
+        return Ok(library.clone());
     }
+
+    #[cfg(feature = "python")]
+    let load_path = if !std::path::Path::new(lib).is_absolute() {
+        // Get python virtual environment path
+        let prefix = Python::attach(|py| {
+            let sys = py.import("sys").unwrap();
+            let prefix = sys.getattr("prefix").unwrap();
+            prefix.to_string()
+        });
+        let full_path = std::path::Path::new(&prefix).join(lib);
+        full_path.to_string_lossy().into_owned()
+    } else {
+        lib.to_string()
+    };
+    #[cfg(not(feature = "python"))]
+    let load_path = lib.to_string();
+
+    let library = unsafe {
+        Library::new(&load_path).map_err(|e| {
+            PolarsError::ComputeError(format!("error loading dynamic library: {e}").into())
+        })?
+    };
+    let version_function: libloading::Symbol<unsafe extern "C" fn() -> u32> = unsafe {
+        library
+            .get("_polars_plugin_get_version".as_bytes())
+            .unwrap()
+    };
+
+    let version = unsafe { version_function() };
+    let major = (version >> 16) as u16;
+    let minor = version as u16;
+
+    let ret = Arc::new((library, major, minor));
+    let mut lib_map = LOADED.write().unwrap();
+    lib_map.insert(lib.to_string(), ret.clone());
+    Ok(ret)
 }
 
 fn retrieve_error_msg(lib: &Library) -> String {

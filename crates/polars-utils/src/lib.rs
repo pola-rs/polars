@@ -75,7 +75,6 @@ pub mod io;
 #[cfg(feature = "mmap")]
 pub mod mmap;
 pub mod nulls;
-pub mod partitioned;
 
 pub use index::{IdxSize, NullableIdxSize};
 pub use io::*;

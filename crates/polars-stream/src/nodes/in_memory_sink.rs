@@ -12,7 +12,7 @@ use crate::utils::in_memory_linearize::linearize;
 pub struct InMemorySinkNode {
     morsels_per_pipe: Mutex<Vec<Vec<(MorselSeq, SpillFrame)>>>,
     schema: Arc<Schema>,
-    spill_ctx: Arc<LeastRecentSpillContext>,
+    spill_ctx: LeastRecentSpillContext,
 }
 
 impl InMemorySinkNode {
@@ -69,7 +69,7 @@ impl ComputeNode for InMemorySinkNode {
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
                     let seq = morsel.seq();
-                    let sf = SpillFrame::new(morsel.into_df(), &*slf.spill_ctx).await;
+                    let sf = SpillFrame::new(morsel.into_df(), &slf.spill_ctx).await;
                     morsels.push((seq, sf));
                 }
 

@@ -1523,7 +1523,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    fn merge_sorted(&self, other: Self, key: &str, maintain_order: bool) -> PyResult<Self> {
+    fn merge_sorted(&self, other: Self, key: Vec<String>, maintain_order: bool) -> PyResult<Self> {
         let out = self
             .ldf
             .read()

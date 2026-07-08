@@ -816,13 +816,10 @@ impl<'a, 'py> FromPyObject<'a, 'py> for ObjectValue {
     }
 }
 
-/// # Safety
-///
-/// The caller is responsible for checking that val is Object otherwise UB
 #[cfg(feature = "object")]
-impl From<&dyn PolarsObjectSafe> for &ObjectValue {
-    fn from(val: &dyn PolarsObjectSafe) -> Self {
-        unsafe { &*(val as *const dyn PolarsObjectSafe as *const ObjectValue) }
+impl<'a> From<&'a dyn PolarsObjectSafe> for &'a ObjectValue {
+    fn from(val: &'a dyn PolarsObjectSafe) -> Self {
+        val.as_any().downcast_ref().unwrap()
     }
 }
 
@@ -1520,6 +1517,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
         })?;
 
         let mut datetime_nanoseconds_downcast = false;
+        let mut datetime_microseconds_downcast = false;
+        let mut datetime_milliseconds_upcast = false;
+        let mut datetime_microseconds_upcast = false;
         let mut datetime_convert_timezone = false;
 
         let datetime_cast_object = ob.getattr(intern!(py, "datetime_cast"))?;
@@ -1528,6 +1528,17 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
             match v {
                 "forbid" => {},
                 "nanosecond-downcast" => datetime_nanoseconds_downcast = true,
+                "microsecond-downcast" => datetime_microseconds_downcast = true,
+                "millisecond-upcast" => datetime_milliseconds_upcast = true,
+                "microsecond-upcast" => datetime_microseconds_upcast = true,
+                "downcast" => {
+                    datetime_nanoseconds_downcast = true;
+                    datetime_microseconds_downcast = true;
+                },
+                "upcast" => {
+                    datetime_milliseconds_upcast = true;
+                    datetime_microseconds_upcast = true;
+                },
                 "convert-timezone" => datetime_convert_timezone = true,
                 v => {
                     return Err(PyValueError::new_err(format!(
@@ -1584,7 +1595,9 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<CastColumnsPolicy> {
             float_upcast,
             float_downcast,
             datetime_nanoseconds_downcast,
-            datetime_microseconds_downcast: false,
+            datetime_microseconds_downcast,
+            datetime_milliseconds_upcast,
+            datetime_microseconds_upcast,
             datetime_convert_timezone,
             null_upcast: true,
             categorical_to_string,

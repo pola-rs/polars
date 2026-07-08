@@ -34,6 +34,7 @@ pub fn start_single_file_sink_pipeline(
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let upload_chunk_size = config.cloud_upload_chunk_size();
     let upload_max_concurrency = config.upload_concurrency();
+    let bytes_bufferer_config = config.bytes_bufferer_config();
 
     let IOSinkNodeConfig {
         file_format,
@@ -78,7 +79,7 @@ pub fn start_single_file_sink_pipeline(
                 .open_into_writable_async(
                     cloud_options.as_deref(),
                     mkdir,
-                    upload_chunk_size,
+                    upload_chunk_size.get(),
                     upload_max_concurrency.get(),
                     io_metrics,
                 )
@@ -88,7 +89,7 @@ pub fn start_single_file_sink_pipeline(
     let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
-        create_file_writer_starter(&file_format, &file_schema)?;
+        create_file_writer_starter(&file_format, &file_schema, bytes_bufferer_config)?;
     let target_sink_morsel_size = file_writer_starter.target_sink_morsel_size();
 
     if verbose {

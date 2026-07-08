@@ -15,6 +15,8 @@ pub enum CategoricalFunction {
     EndsWith(String),
     #[cfg(feature = "strings")]
     Slice(i64, Option<usize>),
+    To(DataTypeExpr, bool),
+    Physical,
 }
 
 impl Display for CategoricalFunction {
@@ -32,6 +34,8 @@ impl Display for CategoricalFunction {
             EndsWith(_) => "ends_with",
             #[cfg(feature = "strings")]
             Slice(_, _) => "slice",
+            To(_, _) => "to",
+            Physical => "physical",
         };
         write!(f, "cat.{s}")
     }
