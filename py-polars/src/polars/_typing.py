@@ -531,7 +531,6 @@ __all__ = [
     "JoinValidation",
     "JoinWhereStrategy",
     "Label",
-    "ListToStructWidthStrategy",
     "MaintainOrderJoin",
     "MapElementsStrategy",
     "MultiColSelector",
