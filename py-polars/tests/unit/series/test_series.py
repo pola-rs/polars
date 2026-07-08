@@ -560,22 +560,19 @@ def test_series_to_list() -> None:
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
-            "n00",
-            "n01",
-        ]
+    assert s.list.to_struct(["field_0", "field_1"]).struct.fields == [
+        "field_0",
+        "field_1",
+    ]
     assert_frame_equal(
-        s.list.to_struct(fields=["one", "two"]).struct.unnest(),
+        s.list.to_struct(["one", "two"]).struct.unnest(),
         pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
     )
 
 
 def test_to_struct_empty() -> None:
     df = pl.DataFrame({"y": [[], [], []]}, schema={"y": pl.List(pl.Int64)})
-    empty_df = df.select(pl.col("y").list.to_struct(fields=[]).struct.unnest())
+    empty_df = df.select(pl.col("y").list.to_struct([]).struct.unnest())
     assert empty_df.shape == (0, 0)
 
 
