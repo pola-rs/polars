@@ -115,35 +115,38 @@ impl ComputeNode for SortedUnique {
                 let mut columns: Vec<Column> = Vec::new();
 
                 while let Ok((morsel, is_first_new_run)) = recv.recv().await {
-                    let mut morsel = morsel.try_map(|df| {
-                        let column = if row_encode {
-                            columns.clear();
-                            columns.extend(keys.iter().map(|i| df[*i].clone()));
-                            encode_rows_unordered(&columns)?.into_column()
-                        } else {
-                            df[keys[0]].clone()
-                        };
+                    let mut morsel = morsel
+                        .try_map(|df| {
+                            let column = if row_encode {
+                                columns.clear();
+                                columns.extend(keys.iter().map(|i| df[*i].clone()));
+                                encode_rows_unordered(&columns)?.into_column()
+                            } else {
+                                df[keys[0]].clone()
+                            };
 
-                        lengths.clear();
-                        polars_ops::series::rle_lengths(&column, &mut lengths)?;
+                            lengths.clear();
+                            polars_ops::series::rle_lengths(&column, &mut lengths)?;
 
-                        if !is_first_new_run && lengths.len() == 1 {
-                            return Ok(DataFrame::empty());
-                        }
+                            if !is_first_new_run && lengths.len() == 1 {
+                                return Ok(DataFrame::empty());
+                            }
 
-                        // Build a boolean buffer: true only at the start of each new run.
-                        let mut values = BitmapBuilder::with_capacity(column.len());
-                        values.push(is_first_new_run);
-                        values.extend_constant(lengths[0] as usize - 1, false);
-                        for &length in &lengths[1..] {
-                            values.push(true);
-                            values.extend_constant(length as usize - 1, false);
-                        }
-                        let mask = BooleanChunked::from_bitmap(PlSmallStr::EMPTY, values.freeze());
+                            // Build a boolean buffer: true only at the start of each new run.
+                            let mut values = BitmapBuilder::with_capacity(column.len());
+                            values.push(is_first_new_run);
+                            values.extend_constant(lengths[0] as usize - 1, false);
+                            for &length in &lengths[1..] {
+                                values.push(true);
+                                values.extend_constant(length as usize - 1, false);
+                            }
+                            let mask =
+                                BooleanChunked::from_bitmap(PlSmallStr::EMPTY, values.freeze());
 
-                        // We already parallelize, call the sequential filter.
-                        df.filter_seq(mask.as_ref())
-                    }).await?;
+                            // We already parallelize, call the sequential filter.
+                            df.filter_seq(mask.as_ref())
+                        })
+                        .await?;
 
                     if morsel.height() == 0 {
                         continue;

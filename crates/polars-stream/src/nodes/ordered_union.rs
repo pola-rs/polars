@@ -88,7 +88,10 @@ impl ComputeNode for OrderedUnionNode {
                 while let Ok(mut morsel) = recv.recv().await {
                     // Ensure the morsel matches the expected output schema,
                     // casting nulls to the appropriate output type.
-                    morsel.get_df_mut().await.ensure_matches_schema(&output_schema)?;
+                    morsel
+                        .get_df_mut()
+                        .await
+                        .ensure_matches_schema(&output_schema)?;
 
                     // Ensure the morsel sequence id stream is monotonic.
                     let seq = morsel.seq().offset_by(morsel_offset);

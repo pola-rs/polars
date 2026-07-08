@@ -501,7 +501,8 @@ impl BuildState {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
             let df = morsel.get_df().await;
-            let hash_keys = select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
+            let hash_keys =
+                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
             let mut payload = select_payload(df.clone(), payload_selector);
             payload.rechunk_mut();
 

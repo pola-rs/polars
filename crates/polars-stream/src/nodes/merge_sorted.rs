@@ -341,8 +341,11 @@ impl ComputeNode for MergeSortedNode {
                             starting_nulls,
                             maintain_order,
                         )? {
-                            let left_mergeable =
-                                Morsel::new_unregistered(left_mergeable, *seq, source_token.clone());
+                            let left_mergeable = Morsel::new_unregistered(
+                                left_mergeable,
+                                *seq,
+                                source_token.clone(),
+                            );
                             *seq = seq.successor();
 
                             if distributor
@@ -508,7 +511,8 @@ impl ComputeNode for MergeSortedNode {
 
                                 // MorselSeq have to be monotonely non-decreasing so we can
                                 // pass the same sequence token twice.
-                                let morsel = Morsel::new_unregistered(m1, seq, source_token.clone());
+                                let morsel =
+                                    Morsel::new_unregistered(m1, seq, source_token.clone());
                                 if send.send(morsel).await.is_err() {
                                     break;
                                 }

@@ -534,8 +534,7 @@ async fn compute_join_and_send(
         )?;
         if df_unmatched.height() > 0 {
             if params.args.maintain_order == MaintainOrderJoin::None {
-                let mut morsel =
-                    Morsel::new_unregistered(df_unmatched, seq, source_token.clone());
+                let mut morsel = Morsel::new_unregistered(df_unmatched, seq, source_token.clone());
                 morsel.set_consume_token(wait_group.token());
                 if send.send(morsel).await.is_err() {
                     return Ok(());

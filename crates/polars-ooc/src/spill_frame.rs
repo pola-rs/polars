@@ -10,7 +10,10 @@ use polars_utils::compression::ZstdLevel;
 
 use crate::spill_context::ParameterFreeSpillContext;
 use crate::spill_file::SpillFile;
-use crate::{BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillContextParam, SpillToken, Spillable, WeakSpillContext, memory_manager};
+use crate::{
+    BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillContextParam, SpillToken, Spillable,
+    WeakSpillContext, memory_manager,
+};
 
 impl Spillable for DataFrame {
     type Spilled = Arc<SpillFile>;

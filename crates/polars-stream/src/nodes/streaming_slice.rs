@@ -54,25 +54,27 @@ impl ComputeNode for StreamingSliceNode {
             let stop_offset = self.start_offset.saturating_add(self.length);
 
             while let Ok(morsel) = recv.recv().await {
-                let morsel = morsel.map(|df| {
-                    let height = df.height();
+                let morsel = morsel
+                    .map(|df| {
+                        let height = df.height();
 
-                    // Calculate start/stop offsets within df and update global offset.
-                    let relative_start_offset = self
-                        .start_offset
-                        .saturating_sub(self.stream_offset)
-                        .min(height);
-                    let relative_stop_offset =
-                        stop_offset.saturating_sub(self.stream_offset).min(height);
-                    self.stream_offset += height;
+                        // Calculate start/stop offsets within df and update global offset.
+                        let relative_start_offset = self
+                            .start_offset
+                            .saturating_sub(self.stream_offset)
+                            .min(height);
+                        let relative_stop_offset =
+                            stop_offset.saturating_sub(self.stream_offset).min(height);
+                        self.stream_offset += height;
 
-                    let new_height = relative_stop_offset.saturating_sub(relative_start_offset);
-                    if new_height != height {
-                        df.slice(relative_start_offset as i64, new_height)
-                    } else {
-                        df
-                    }
-                }).await;
+                        let new_height = relative_stop_offset.saturating_sub(relative_start_offset);
+                        if new_height != height {
+                            df.slice(relative_start_offset as i64, new_height)
+                        } else {
+                            df
+                        }
+                    })
+                    .await;
 
                 // Technically not necessary, but it's nice to already tell the
                 // source to stop producing more morsels as we won't be

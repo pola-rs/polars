@@ -75,8 +75,9 @@ impl ComputeNode for WithRowIndexNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let wait_group = WaitGroup::default();
                 while let Ok((morsel, offset)) = recv.recv().await {
-                    let mut morsel =
-                        morsel.try_map(|df| df.with_row_index(name.clone(), Some(offset))).await?;
+                    let mut morsel = morsel
+                        .try_map(|df| df.with_row_index(name.clone(), Some(offset)))
+                        .await?;
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

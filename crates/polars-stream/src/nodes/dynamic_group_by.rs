@@ -353,7 +353,7 @@ impl ComputeNode for DynamicGroupBy {
                         self.include_boundaries,
                     )
                     .await?;
-                    
+
                     _ = send
                         .send(Morsel::new_unregistered(
                             df,

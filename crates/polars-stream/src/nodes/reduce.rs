@@ -68,9 +68,8 @@ impl ReduceNode {
                         let df = morsel.into_df2().await;
                         for (reducer, selector_set) in local_reducers.iter_mut().zip(selectors) {
                             for selector in selector_set {
-                                let col = selector
-                                    .evaluate(&df, &state.in_memory_exec_state)
-                                    .await?;
+                                let col =
+                                    selector.evaluate(&df, &state.in_memory_exec_state).await?;
                                 in_columns.push(col);
                             }
                             for c in in_columns.iter() {

@@ -101,10 +101,12 @@ impl ComputeNode for GatherNode {
                     let input = &*input;
                     join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                         while let Ok(morsel) = recv.recv().await {
-                            let morsel = morsel.try_map(|idx_df| {
-                                assert!(idx_df.width() == 1);
-                                input.gather_with_column(&idx_df.columns()[0], null_on_oob)
-                            }).await?;
+                            let morsel = morsel
+                                .try_map(|idx_df| {
+                                    assert!(idx_df.width() == 1);
+                                    input.gather_with_column(&idx_df.columns()[0], null_on_oob)
+                                })
+                                .await?;
 
                             if send.send(morsel).await.is_err() {
                                 break;

@@ -80,18 +80,20 @@ impl ComputeNode for GatherEveryNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let wait_group = WaitGroup::default();
                 while let Ok((morsel, offset)) = recv.recv().await {
-                    let mut morsel = morsel.try_map(|mut df| {
-                        let column = &df.columns()[0];
-                        let out = column
-                            .gather_every(n, offset)?
-                            .with_name(column.name().clone());
-                        unsafe {
-                            let height = out.len();
-                            df.columns_mut_retain_schema()[0] = out;
-                            df.set_height(height);
-                        };
-                        PolarsResult::Ok(df)
-                    }).await?;
+                    let mut morsel = morsel
+                        .try_map(|mut df| {
+                            let column = &df.columns()[0];
+                            let out = column
+                                .gather_every(n, offset)?
+                                .with_name(column.name().clone());
+                            unsafe {
+                                let height = out.len();
+                                df.columns_mut_retain_schema()[0] = out;
+                                df.set_height(height);
+                            };
+                            PolarsResult::Ok(df)
+                        })
+                        .await?;
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;
