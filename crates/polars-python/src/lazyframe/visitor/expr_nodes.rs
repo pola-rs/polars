@@ -1110,14 +1110,11 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     },
                     // Callable name generators are deprecated in favor of explicit field names and
                     // cannot be represented in the typed view.
-                    IRArrayFunction::ToStruct(name_generator) => match name_generator {
-                        None => (PyArrayFunction::ToStruct, py.None()).into_py_any(py),
-                        Some(_) => {
-                            return Err(PyNotImplementedError::new_err(
-                                "array to_struct with a name generator",
-                            ));
-                        },
-                    },
+                    IRArrayFunction::ToStruct { fields } => (
+                        PyArrayFunction::ToStruct,
+                        fields.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                    )
+                        .into_py_any(py),
                 },
                 IRFunctionExpr::BinaryExpr(_) => {
                     return Err(PyNotImplementedError::new_err("binary expr"));
