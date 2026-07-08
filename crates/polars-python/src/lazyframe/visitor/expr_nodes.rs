@@ -333,6 +333,26 @@ impl PyEwmFunction {
     }
 }
 
+#[pyclass(name = "RollingFunctionBy", eq, frozen, skip_from_py_object)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyRollingFunctionBy {
+    MinBy,
+    MaxBy,
+    MeanBy,
+    SumBy,
+    QuantileBy,
+    VarBy,
+    StdBy,
+    RankBy,
+}
+
+#[pymethods]
+impl PyRollingFunctionBy {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
 #[pyclass(frozen)]
 pub struct BinaryExpr {
     #[pyo3(get)]
@@ -1311,31 +1331,45 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     )
                         .into_py_any(py)
                 },
-                IRFunctionExpr::RollingExprBy { function_by, .. } => match function_by {
-                    IRRollingFunctionBy::MinBy => {
-                        return Err(PyNotImplementedError::new_err("rolling min by"));
-                    },
-                    IRRollingFunctionBy::MaxBy => {
-                        return Err(PyNotImplementedError::new_err("rolling max by"));
-                    },
-                    IRRollingFunctionBy::MeanBy => {
-                        return Err(PyNotImplementedError::new_err("rolling mean by"));
-                    },
-                    IRRollingFunctionBy::SumBy => {
-                        return Err(PyNotImplementedError::new_err("rolling sum by"));
-                    },
-                    IRRollingFunctionBy::QuantileBy => {
-                        return Err(PyNotImplementedError::new_err("rolling quantile by"));
-                    },
-                    IRRollingFunctionBy::VarBy => {
-                        return Err(PyNotImplementedError::new_err("rolling var by"));
-                    },
-                    IRRollingFunctionBy::StdBy => {
-                        return Err(PyNotImplementedError::new_err("rolling std by"));
-                    },
-                    IRRollingFunctionBy::RankBy => {
-                        return Err(PyNotImplementedError::new_err("rolling rank by"));
-                    },
+                IRFunctionExpr::RollingExprBy {
+                    function_by,
+                    options,
+                } => {
+                    let py_function = match function_by {
+                        IRRollingFunctionBy::MinBy => PyRollingFunctionBy::MinBy,
+                        IRRollingFunctionBy::MaxBy => PyRollingFunctionBy::MaxBy,
+                        IRRollingFunctionBy::MeanBy => PyRollingFunctionBy::MeanBy,
+                        IRRollingFunctionBy::SumBy => PyRollingFunctionBy::SumBy,
+                        IRRollingFunctionBy::QuantileBy => PyRollingFunctionBy::QuantileBy,
+                        IRRollingFunctionBy::VarBy => PyRollingFunctionBy::VarBy,
+                        IRRollingFunctionBy::StdBy => PyRollingFunctionBy::StdBy,
+                        IRRollingFunctionBy::RankBy => PyRollingFunctionBy::RankBy,
+                    };
+                    let fn_params: Py<PyAny> = match &options.fn_params {
+                        None => ().into_py_any(py)?,
+                        Some(RollingFnParams::Quantile(q)) => {
+                            (q.prob, Into::<&str>::into(q.method)).into_py_any(py)?
+                        },
+                        Some(RollingFnParams::Var(v)) => (v.ddof,).into_py_any(py)?,
+                        Some(RollingFnParams::Rank { method, seed }) => {
+                            let method = Into::<&str>::into(method);
+                            (method, *seed).into_py_any(py)?
+                        },
+                        Some(RollingFnParams::Skew { bias }) => (*bias,).into_py_any(py)?,
+                        Some(RollingFnParams::Kurtosis { fisher, bias }) => {
+                            (*fisher, *bias).into_py_any(py)?
+                        },
+                    };
+                    // Tuple consumed by external engines (e.g., cudf-polars):
+                    // (RollingFunctionBy, window_size, min_periods, closed_window, fn_params)
+                    (
+                        py_function,
+                        Wrap(options.window_size),
+                        options.min_periods,
+                        Wrap(options.closed_window),
+                        fn_params,
+                    )
+                        .into_py_any(py)
                 },
                 IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),

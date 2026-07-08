@@ -305,22 +305,19 @@ def test_rolling_expr_visitor_rank() -> None:
     assert fn_params == ("dense", 42)
 
 
-def _collect_ewm_functions(query: pl.LazyFrame) -> list[tuple[Any, list[Any]]]:
-    """Traverse a query's IR; return (Function, resolved input nodes) for ewm exprs."""
-    results: list[tuple[Any, list[Any]]] = []
+def _collect_ewm_function_data(
+    query: pl.LazyFrame,
+) -> list[tuple[Any, ...]]:
+    """Traverse a query's IR and return function_data tuples for ewm expressions."""
+    results: list[tuple[Any, ...]] = []
 
     def callback(node_traverser: Any, query_start: int | None) -> None:
         for expr_ir in node_traverser.get_exprs():
             expr_node = node_traverser.view_expression(expr_ir.node)
             if isinstance(expr_node, _expr_nodes.Function):
-                function_data = expr_node.function_data
-                if function_data and isinstance(
-                    function_data[0], _expr_nodes.EwmFunction
-                ):
-                    inputs = [
-                        node_traverser.view_expression(i) for i in expr_node.input
-                    ]
-                    results.append((expr_node, inputs))
+                name, *options = expr_node.function_data
+                if isinstance(name, _expr_nodes.EwmFunction):
+                    results.append((name, *options))
 
     query.collect(  # pyrefly: ignore[no-matching-overload]
         post_opt_callback=callback  # type: ignore[call-overload]
@@ -333,10 +330,9 @@ def test_ewm_mean_expr_visitor() -> None:
     q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
         pl.col("x").ewm_mean(alpha=0.5).alias("ewm_mean"),
     )
-    ewm_exprs = _collect_ewm_functions(q)
+    ewm_exprs = _collect_ewm_function_data(q)
     assert len(ewm_exprs) == 1
-    fn, _inputs = ewm_exprs[0]
-    name, alpha, adjust, bias, min_periods, ignore_nulls = fn.function_data
+    name, alpha, adjust, bias, min_periods, ignore_nulls = ewm_exprs[0]
     assert name == _expr_nodes.EwmFunction.Mean
     assert alpha == 0.5
     # `ewm_mean` has no `bias` kwarg; it is always serialized as False.
@@ -353,12 +349,11 @@ def test_ewm_std_expr_visitor() -> None:
         .ewm_std(alpha=0.3, adjust=False, bias=True, min_samples=2, ignore_nulls=True)
         .alias("ewm_std"),
     )
-    ewm_exprs = _collect_ewm_functions(q)
+    ewm_exprs = _collect_ewm_function_data(q)
     assert len(ewm_exprs) == 1
-    fn, _inputs = ewm_exprs[0]
-    name, alpha, adjust, bias, min_periods, ignore_nulls = fn.function_data
+    name, alpha, adjust, bias, min_periods, ignore_nulls = ewm_exprs[0]
     assert name == _expr_nodes.EwmFunction.Std
-    assert alpha == pytest.approx(0.3)
+    assert alpha == 0.3
     assert adjust is False
     assert bias is True
     assert min_periods == 2
@@ -370,12 +365,11 @@ def test_ewm_var_expr_visitor() -> None:
     q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
         pl.col("x").ewm_var(alpha=0.3, bias=False).alias("ewm_var"),
     )
-    ewm_exprs = _collect_ewm_functions(q)
+    ewm_exprs = _collect_ewm_function_data(q)
     assert len(ewm_exprs) == 1
-    fn, _inputs = ewm_exprs[0]
-    name, alpha, _adjust, bias, _min_periods, _ignore_nulls = fn.function_data
+    name, alpha, _, bias, _, _ = ewm_exprs[0]
     assert name == _expr_nodes.EwmFunction.Var
-    assert alpha == pytest.approx(0.3)
+    assert alpha == 0.3
     assert bias is False
 
 
@@ -384,17 +378,16 @@ def test_ewm_mean_span_expr_visitor() -> None:
     q = pl.LazyFrame({"x": [1.0, 2.0, 3.0, 4.0, 5.0]}).with_columns(
         pl.col("x").ewm_mean(span=3).alias("ewm_mean"),
     )
-    ewm_exprs = _collect_ewm_functions(q)
+    ewm_exprs = _collect_ewm_function_data(q)
     assert len(ewm_exprs) == 1
-    fn, _inputs = ewm_exprs[0]
-    name, alpha, *_ = fn.function_data
+    name, alpha, _, _, _, _ = ewm_exprs[0]
     assert name == _expr_nodes.EwmFunction.Mean
     # span=3 -> alpha = 2 / (span + 1)
-    assert alpha == pytest.approx(2.0 / (3.0 + 1.0))
+    assert alpha == 2.0 / (3.0 + 1.0)
 
 
 def test_ewm_mean_by_expr_visitor() -> None:
-    """Test that ewm_mean_by exposes its half_life Duration and the `by` input."""
+    """Test that ewm_mean_by exposes its half_life Duration."""
     q = pl.LazyFrame(
         {
             "x": [1.0, 2.0, 3.0],
@@ -403,15 +396,9 @@ def test_ewm_mean_by_expr_visitor() -> None:
     ).with_columns(
         pl.col("x").ewm_mean_by(by="t", half_life="1w2d3h4m5s6ms").alias("ewm_mean_by"),
     )
-    ewm_exprs = _collect_ewm_functions(q)
+    ewm_exprs = _collect_ewm_function_data(q)
     assert len(ewm_exprs) == 1
-    fn, inputs = ewm_exprs[0]
-    # Two inputs: the values column, then the `by` column second.
-    assert len(inputs) == 2
-    by_node = inputs[1]
-    assert isinstance(by_node, _expr_nodes.Column)
-    assert by_node.name == "t"
-    name, half_life = fn.function_data
+    name, half_life = ewm_exprs[0]
     assert name == _expr_nodes.EwmFunction.MeanBy
     # Wrap<Duration> 6-tuple: (months, weeks, days, nanoseconds, parsed_int, negative)
     expected_ns = (3 * 3600 + 4 * 60 + 5) * 1_000_000_000 + 6 * 1_000_000
@@ -423,9 +410,102 @@ def test_ewm_mean_by_parsed_int_expr_visitor() -> None:
     q = pl.LazyFrame({"x": [1.0, 2.0, 3.0], "t": [1, 2, 3]}).with_columns(
         pl.col("x").ewm_mean_by(by="t", half_life="2i").alias("ewm_mean_by"),
     )
-    ewm_exprs = _collect_ewm_functions(q)
+    ewm_exprs = _collect_ewm_function_data(q)
     assert len(ewm_exprs) == 1
-    fn, _inputs = ewm_exprs[0]
-    name, half_life = fn.function_data
+    name, half_life = ewm_exprs[0]
     assert name == _expr_nodes.EwmFunction.MeanBy
     assert half_life == (0, 0, 0, 2, True, False)
+
+
+def _collect_rolling_by_function_data(
+    query: pl.LazyFrame,
+) -> list[tuple[Any, ...]]:
+    """Traverse a query's IR; return function_data tuples for rolling ``*_by`` exprs."""
+    results: list[tuple[Any, ...]] = []
+
+    def callback(node_traverser: Any, query_start: int | None) -> None:
+        for expr_ir in node_traverser.get_exprs():
+            expr_node = node_traverser.view_expression(expr_ir.node)
+            if isinstance(expr_node, _expr_nodes.Function):
+                name, *options = expr_node.function_data
+                if isinstance(name, _expr_nodes.RollingFunctionBy):
+                    results.append((name, *options))
+
+    query.collect(  # pyrefly: ignore[no-matching-overload]
+        post_opt_callback=callback  # type: ignore[call-overload]
+    )
+    return results
+
+
+def test_rolling_mean_by_expr_visitor() -> None:
+    """Test that rolling_mean_by exposes its Duration window and closed_window."""
+    q = pl.LazyFrame(
+        {
+            "x": [1.0, 2.0, 3.0],
+            "t": [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)],
+        }
+    ).with_columns(
+        pl.col("x").rolling_mean_by("t", window_size="2h").alias("rmean_by"),
+    )
+    rolling_exprs = _collect_rolling_by_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, window_size, min_periods, closed, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunctionBy.MeanBy
+    # Wrap<Duration> 6-tuple: (months, weeks, days, nanoseconds, parsed_int, negative)
+    assert window_size == (0, 0, 0, 2 * 3600 * 1_000_000_000, False, False)
+    assert min_periods == 1
+    assert closed == "right"
+    assert fn_params == ()
+
+
+def test_rolling_var_by_ddof_expr_visitor() -> None:
+    """rolling_var_by serializes ddof into fn_params."""
+    q = pl.LazyFrame(
+        {
+            "x": [1.0, 2.0, 3.0],
+            "t": [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)],
+        }
+    ).with_columns(
+        pl.col("x").rolling_var_by("t", "2h", ddof=2).alias("rvar_by"),
+    )
+    rolling_exprs = _collect_rolling_by_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, _, _, _, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunctionBy.VarBy
+    assert fn_params == (2,)
+
+
+def test_rolling_quantile_by_expr_visitor() -> None:
+    """rolling_quantile_by serializes probability and interpolation method."""
+    q = pl.LazyFrame(
+        {
+            "x": [1.0, 2.0, 3.0],
+            "t": [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)],
+        }
+    ).with_columns(
+        pl.col("x").rolling_quantile_by("t", "2h", quantile=0.25).alias("rq_by"),
+    )
+    rolling_exprs = _collect_rolling_by_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, _, _, _, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunctionBy.QuantileBy
+    assert fn_params == (0.25, "nearest")
+
+
+def test_rolling_rank_by_expr_visitor() -> None:
+    """rolling_rank_by serializes method and seed."""
+    q = pl.LazyFrame(
+        {
+            "x": [1.0, 2.0, 3.0],
+            "t": [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)],
+        }
+    ).with_columns(
+        pl.col("x").rolling_rank_by("t", "2h").alias("rrank_by"),
+    )
+    rolling_exprs = _collect_rolling_by_function_data(q)
+    assert len(rolling_exprs) == 1
+    name, _, _, _, fn_params = rolling_exprs[0]
+    assert name == _expr_nodes.RollingFunctionBy.RankBy
+    method, seed = fn_params
+    assert method == "average"
+    assert seed is None

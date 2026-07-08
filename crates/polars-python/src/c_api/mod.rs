@@ -98,6 +98,7 @@ fn _expr_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PyTemporalFunction>().unwrap();
     m.add_class::<PyStructFunction>().unwrap();
     m.add_class::<PyRollingFunction>().unwrap();
+    m.add_class::<PyRollingFunctionBy>().unwrap();
     m.add_class::<PyEwmFunction>().unwrap();
     // Options
     m.add_class::<PyWindowMapping>().unwrap();
