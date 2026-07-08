@@ -677,21 +677,9 @@ def test_array_to_struct_default_is_exposed() -> None:
     )
     data = _collect_named_function_data(q, _expr_nodes.ArrayFunction)
     assert len(data) == 1
-    name, name_generator = data[0]
+    name, fields = data[0]
     assert name == _expr_nodes.ArrayFunction.ToStruct
-    assert name_generator is None
-
-
-def test_array_to_struct_name_generator_is_not_exposed() -> None:
-    """A callback-backed field-name generator cannot be represented by the view."""
-    with pytest.warns(DeprecationWarning, match="with a callable is deprecated"):
-        expr = pl.col("x").arr.to_struct(fields=lambda i: f"field_{i}")
-    visitor = pl.LazyFrame(schema={"x": pl.Array(pl.Int64, 3)})._ldf.visit()
-    [node], _ = visitor.add_expressions([expr._pyexpr])
-    with pytest.raises(
-        NotImplementedError, match="array to_struct with a name generator"
-    ):
-        visitor.view_expression(node)
+    assert fields == [f"field_{i}" for i in range(3)]
 
 
 @pytest.mark.parametrize(

@@ -1613,7 +1613,7 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         ...         +           # 'one or more' quantifier
         ...         """
         ...     )
-        ...     .list.to_struct(fields=["name", "domain"])
+        ...     .list.to_struct(["name", "domain"])
         ...     .alias("email_parts")
         ... ).unnest("email_parts")
         shape: (3, 3)
