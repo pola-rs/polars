@@ -1,4 +1,3 @@
-use arrow::array::Array;
 use polars_core::chunked_array::StructChunked;
 use polars_core::chunked_array::builder::NewChunkedArray as _;
 use polars_core::datatypes::{ArrayChunked, Int64Chunked};
