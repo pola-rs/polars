@@ -410,9 +410,7 @@ pub(super) fn to_array(s: &Column, width: usize) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "list_to_struct")]
-pub(super) fn to_struct(s: &Column, names: &Arc<[PlSmallStr]>) -> PolarsResult<Column> {
+pub(super) fn to_struct(s: &Column, fields: &[PlSmallStr]) -> PolarsResult<Column> {
     use polars_ops::prelude::ToStruct;
-
-    let args = polars_ops::prelude::ListToStructArgs::FixedWidth(names.clone());
-    Ok(s.list()?.to_struct(&args)?.into_column())
+    Ok(s.list()?.to_struct(fields)?.into_column())
 }
