@@ -7,7 +7,7 @@ use polars_core::prelude::{Column, IntoColumn};
 use polars_core::schema::Schema;
 use polars_core::series::Series;
 use polars_error::polars_ensure;
-use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext};
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
@@ -325,8 +325,7 @@ impl ComputeNode for ZipNode {
                 let out_df = concat_df_horizontal(&out, false, true, false)?;
                 out.clear();
 
-                let sf = SpillFrame::new_unregistered(out_df);
-                let morsel = Morsel::new(sf, self.out_seq, source_token.clone());
+                let morsel = Morsel::new_unregistered(out_df, self.out_seq, source_token.clone());
                 self.out_seq = self.out_seq.successor();
                 if sender.send(morsel).await.is_err() {
                     // Our receiver is no longer interested in any data, no
@@ -373,8 +372,7 @@ impl ComputeNode for ZipNode {
                 let out_df = concat_df_horizontal(&out, false, true, false)?;
                 out.clear();
 
-                let sf = SpillFrame::new_unregistered(out_df);
-                let morsel = Morsel::new(sf, self.out_seq, source_token.clone());
+                let morsel = Morsel::new_unregistered(out_df, self.out_seq, source_token.clone());
                 self.out_seq = self.out_seq.successor();
                 let _ = sender.send(morsel).await;
             }

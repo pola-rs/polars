@@ -4,7 +4,6 @@ use polars_core::frame::column::ScalarColumn;
 use polars_core::prelude::Column;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_expr::reduce::GroupedReduction;
-use polars_ooc::SpillFrame;
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
@@ -113,8 +112,8 @@ impl ReduceNode {
     ) {
         let mut send = send.serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let sf = SpillFrame::new_unregistered(df.take().unwrap());
-            let morsel = Morsel::new(sf, MorselSeq::new(0), SourceToken::new());
+            let morsel =
+                Morsel::new_unregistered(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
             let _ = send.send(morsel).await;
             Ok(())
         }));

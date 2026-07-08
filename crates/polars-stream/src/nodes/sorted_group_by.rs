@@ -9,7 +9,6 @@ use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_error::{PolarsError, PolarsResult};
 use polars_expr::state::ExecutionState;
-use polars_ooc::SpillFrame;
 use polars_ops::series::{SearchSortedSide, rle_lengths, search_sorted};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -165,9 +164,12 @@ impl ComputeNode for SortedGroupBy {
                 )
                 .await?;
 
-                let sf = SpillFrame::new_unregistered(df);
                 _ = send
-                    .send(Morsel::new(sf, self.seq.successor(), SourceToken::new()))
+                    .send(Morsel::new_unregistered(
+                        df,
+                        self.seq.successor(),
+                        SourceToken::new(),
+                    ))
                     .await;
 
                 Ok(())

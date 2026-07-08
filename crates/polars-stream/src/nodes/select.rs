@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use polars_core::prelude::IntoColumn;
 use polars_core::schema::Schema;
-use polars_ooc::SpillFrame;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
@@ -75,7 +74,7 @@ impl ComputeNode for SelectNode {
                         unsafe { DataFrame::new_unchecked_infer_broadcast(selected)? }
                     };
 
-                    let mut morsel = Morsel::new(SpillFrame::new_unregistered(ret), seq, source_token);
+                    let mut morsel = Morsel::new_unregistered(ret, seq, source_token);
                     if let Some(token) = consume_token {
                         morsel.set_consume_token(token);
                     }

@@ -3,7 +3,6 @@ use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::prelude::{AnyValue, Column, DataType, IntoColumn};
 use polars_core::scalar::Scalar;
 use polars_error::PolarsResult;
-use polars_ooc::SpillFrame;
 use polars_ops::series::{InterpolationMethod, interpolate};
 use polars_utils::IdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -116,9 +115,8 @@ impl ComputeNode for InterpolateNode {
                     let chunk_size = morsel_size.min(*pending_nulls as usize);
                     let df =
                         Column::full_null(col_name.clone(), chunk_size, &output_dtype).into_frame();
-                    let sf = SpillFrame::new_unregistered(df);
                     if send
-                        .send(Morsel::new(sf, *seq, source_token.clone()))
+                        .send(Morsel::new_unregistered(df, *seq, source_token.clone()))
                         .await
                         .is_err()
                     {
@@ -221,8 +219,8 @@ impl ComputeNode for InterpolateNode {
                         column = column.slice(1, usize::MAX);
                     }
 
-                    let sf = SpillFrame::new_unregistered(column.into_frame());
-                    let mut morsel = Morsel::new(sf, seq, source_token.clone());
+                    let mut morsel =
+                        Morsel::new_unregistered(column.into_frame(), seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

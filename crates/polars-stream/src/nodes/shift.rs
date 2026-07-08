@@ -75,8 +75,7 @@ impl ShiftState {
             };
             self.rows_sent += df.height();
 
-            let sf = SpillFrame::new_unregistered(df);
-            let mut morsel = Morsel::new(sf, self.seq, source_token.clone());
+            let mut morsel = Morsel::new_unregistered(df, self.seq, source_token.clone());
             self.seq = self.seq.successor();
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {
@@ -135,8 +134,7 @@ impl ShiftState {
             let df = self.fill.new_from_index(0, len);
             self.rows_sent += len;
 
-            let sf = SpillFrame::new_unregistered(df);
-            let mut morsel = Morsel::new(sf, self.seq, source_token.clone());
+            let mut morsel = Morsel::new_unregistered(df, self.seq, source_token.clone());
             self.seq = self.seq.successor();
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {

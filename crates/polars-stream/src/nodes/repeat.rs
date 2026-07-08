@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_core::schema::Schema;
-use polars_ooc::SpillFrame;
 
 use super::compute_node_prelude::*;
 use crate::morsel::{SourceToken, get_ideal_morsel_size};
@@ -117,8 +116,11 @@ impl ComputeNode for RepeatNode {
                     let wait_group = WaitGroup::default();
                     while *repeats_left > 0 && !source_token.stop_requested() {
                         let height = morsel_size.min(*repeats_left);
-                        let sf = SpillFrame::new_unregistered(value.new_from_index(0, height));
-                        let mut morsel = Morsel::new(sf, *seq, source_token.clone());
+                        let mut morsel = Morsel::new_unregistered(
+                            value.new_from_index(0, height),
+                            *seq,
+                            source_token.clone(),
+                        );
                         morsel.set_consume_token(wait_group.token());
 
                         *seq = seq.successor();
