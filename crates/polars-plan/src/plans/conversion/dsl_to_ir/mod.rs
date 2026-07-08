@@ -1610,9 +1610,16 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .ensure_is_exact_match(&right_schema)
                 .map_err(|err| err.context("merge_sorted".into()))?;
 
-            left_schema
-                .try_get(key.as_str())
-                .map_err(|err| err.context("merge_sorted".into()))?;
+            polars_ensure!(
+                !key.is_empty(),
+                ComputeError: "merge_sorted requires at least one key column"
+            );
+
+            for key in key.iter() {
+                left_schema
+                    .try_get(key.as_str())
+                    .map_err(|err| err.context("merge_sorted".into()))?;
+            }
 
             IR::MergeSorted {
                 input_left,
