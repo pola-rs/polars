@@ -1266,7 +1266,9 @@ def test_join_key_type_coercion_19597() -> None:
 
 def test_array_explode_join_19763() -> None:
     q = pl.LazyFrame().select(
-        pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1))).explode().alias("k")
+        pl.lit(pl.Series([[1], [2]], dtype=pl.Array(pl.Int64, 1)))
+        .explode(empty_as_null=False)
+        .alias("k")
     )
 
     q = q.join(pl.LazyFrame({"k": [1, 2]}), on="k")
@@ -2179,6 +2181,251 @@ def _extract_plan_joins_and_filters(plan: str) -> list[str]:
         or x.startswith("RIGHT PLAN")
         or x.startswith("FILTER")
     ]
+
+
+def _assert_matches_without_predicate_pushdown(q: pl.LazyFrame) -> None:
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+        check_row_order=False,
+    )
+
+
+def test_redundant_join_key_filter_inner_join_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4], "value": [10, 20, 40]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) == (col("b"))]',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_partial_reduction_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [9, 9, 8, 8], "c": [1, 0, 4, 4]})
+    right = pl.LazyFrame({"x": [1, 4], "y": [9, 8], "value": [10, 40]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b"), pl.col("c")],
+        right_on=[pl.col("x"), pl.col("y"), pl.col("x")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER [(col("a")) == (col("c"))]',
+        'RIGHT PLAN ON: [col("x"), col("y")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_restores_schema_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3], "payload": ["aa", "bb", "cc"]})
+    right = pl.LazyFrame({"x": [1, 2, 3], "y": [1, 0, 3], "value": [10, 20, 30]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        'FILTER [(col("x")) == (col("y"))]',
+    ]
+    assert q.collect().columns == ["a", "payload", "value"]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_respects_nulls_equal_21710() -> None:
+    left = pl.LazyFrame({"a": [1, None, 2], "b": [1, None, 3]})
+    right = pl.LazyFrame({"x": [1, None, 3], "value": [10, 20, 30]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="inner",
+        nulls_equal=True,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) ==v (col("b"))]',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+def test_redundant_join_key_filter_does_not_filter_preserved_side_21710(
+    how: JoinStrategy,
+) -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 0, 3]})
+    right = pl.LazyFrame({"x": [1, 3], "value": [10, 30]})
+
+    if how == "right":
+        q = right.join(
+            left,
+            left_on=[pl.col("x"), pl.col("x")],
+            right_on=[pl.col("a"), pl.col("b")],
+            how=how,
+        )
+        expected_plan = [
+            'LEFT PLAN ON: [col("x"), col("x")]',
+            'RIGHT PLAN ON: [col("a"), col("b")]',
+        ]
+    else:
+        q = left.join(
+            right,
+            left_on=[pl.col("a"), pl.col("b")],
+            right_on=[pl.col("x"), pl.col("x")],
+            how=how,
+        )
+        expected_plan = [
+            'LEFT PLAN ON: [col("a"), col("b")]',
+            'RIGHT PLAN ON: [col("x"), col("x")]',
+        ]
+
+    assert _extract_plan_joins_and_filters(q.explain()) == expected_plan
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_semi_join_duplicate_right_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="semi",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER [(col("a")) == (col("b"))]',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_semi_join_duplicate_left_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3, 4], "payload": ["aa", "bb", "cc", "dd"]})
+    right = pl.LazyFrame({"x": [1, 2, 4], "y": [1, 0, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="semi",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        'FILTER [(col("x")) == (col("y"))]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize(
+    ("nulls_equal", "expected_filter"),
+    [
+        (False, 'FILTER [(col("a")) == (col("b"))]'),
+        (True, 'FILTER [(col("a")) ==v (col("b"))]'),
+    ],
+)
+def test_redundant_join_key_filter_semi_join_nulls_equal_21710(
+    nulls_equal: bool, expected_filter: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, None, 2], "b": [1, None, 3]})
+    right = pl.LazyFrame({"x": [1, None, 3]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="semi",
+        nulls_equal=nulls_equal,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        expected_filter,
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize(
+    ("nulls_equal", "expected_filter"),
+    [
+        (False, 'FILTER [(col("x")) == (col("y"))]'),
+        (True, 'FILTER [(col("x")) ==v (col("y"))]'),
+    ],
+)
+def test_redundant_join_key_filter_semi_join_duplicate_left_nulls_equal_21710(
+    nulls_equal: bool, expected_filter: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, None, 2]})
+    right = pl.LazyFrame({"x": [1, None, 2], "y": [1, None, 3]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="semi",
+        nulls_equal=nulls_equal,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        expected_filter,
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_does_not_filter_anti_join_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="anti",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("x"), col("x")]',
+    ]
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [3],
+        "b": [4],
+        "payload": ["cc"],
+    }
+    _assert_matches_without_predicate_pushdown(q)
 
 
 def test_join_filter_pushdown_inner_join() -> None:

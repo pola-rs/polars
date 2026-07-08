@@ -2,7 +2,7 @@
 use arrow::array::*;
 use arrow::bitmap::utils::set_bit_unchecked;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::prelude::*;
+use arrow::legacy::array::SlicedArray;
 
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;

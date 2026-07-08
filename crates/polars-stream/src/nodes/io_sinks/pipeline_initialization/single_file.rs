@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use polars_async::executor::{self, TaskPriority};
 use polars_async::primitives::connector;
-use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
 use polars_error::PolarsResult;
 use polars_io::metrics::IOMetrics;
@@ -35,6 +34,7 @@ pub fn start_single_file_sink_pipeline(
     let num_pipelines_per_sink = config.num_pipelines_per_sink(num_pipelines);
     let upload_chunk_size = config.cloud_upload_chunk_size();
     let upload_max_concurrency = config.upload_concurrency();
+    let bytes_bufferer_config = config.bytes_bufferer_config();
 
     let IOSinkNodeConfig {
         file_format,
@@ -76,10 +76,10 @@ pub fn start_single_file_sink_pipeline(
         let io_metrics = io_metrics.clone();
         tokio_handle_ext::AbortOnDropHandle(ASYNC.spawn(async move {
             target
-                .open_into_writeable_async(
+                .open_into_writable_async(
                     cloud_options.as_deref(),
                     mkdir,
-                    upload_chunk_size,
+                    upload_chunk_size.get(),
                     upload_max_concurrency.get(),
                     io_metrics,
                 )
@@ -89,21 +89,21 @@ pub fn start_single_file_sink_pipeline(
     let file_open_task = FileOpenTaskHandle::new(file_open_task, sync_on_close);
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
-        create_file_writer_starter(&file_format, &file_schema)?;
-    let takeable_rows_provider = file_writer_starter.takeable_rows_provider();
+        create_file_writer_starter(&file_format, &file_schema, bytes_bufferer_config)?;
+    let target_sink_morsel_size = file_writer_starter.target_sink_morsel_size();
 
     if verbose {
         eprintln!(
             "{node_name}: start_single_file_sink_pipeline: \
             file_writer_starter: {}, \
-            takeable_rows_provider: {:?}, \
+            target_sink_morsel_size: {:?}, \
             inflight_morsel_limit: {}, \
             upload_chunk_size: {}, \
             upload_concurrency: {}, \
             io_metrics: {}, \
             build_sinked_path_info_list: {}",
             file_writer_starter.writer_name(),
-            takeable_rows_provider,
+            target_sink_morsel_size,
             inflight_morsel_limit,
             upload_chunk_size,
             upload_max_concurrency,
@@ -116,13 +116,13 @@ pub fn start_single_file_sink_pipeline(
     let writer_handle =
         file_writer_starter.start_file_writer(writer_rx, file_open_task, num_pipelines_per_sink)?;
 
-    let empty_with_schema_df = DataFrame::empty_with_arc_schema(file_schema.clone());
+    let schema = Arc::clone(&file_schema);
     let inflight_morsel_semaphore =
         Arc::new(tokio::sync::Semaphore::new(inflight_morsel_limit.get()));
 
     let resize_pipeline = MorselResizePipeline {
-        empty_with_schema_df,
-        takeable_rows_provider,
+        schema,
+        target_sink_morsel_size,
         inflight_morsel_semaphore,
         morsel_rx,
         morsel_tx: writer_tx,

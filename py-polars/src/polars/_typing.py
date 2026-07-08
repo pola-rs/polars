@@ -225,6 +225,9 @@ Label: TypeAlias = Literal["left", "right", "datapoint"]
 MaintainOrderJoin: TypeAlias = Literal[
     "none", "left", "right", "left_right", "right_left"
 ]
+JoinBuildSide: TypeAlias = Literal[
+    "auto", "prefer_left", "prefer_right", "force_left", "force_right"
+]
 NdjsonCompression: TypeAlias = Literal["uncompressed", "gzip", "zstd"]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
@@ -291,6 +294,7 @@ ConcatMethod = Literal[
     "diagonal",
     "diagonal_relaxed",
     "horizontal",
+    "horizontal_extend",
     "align",
     "align_full",
     "align_inner",

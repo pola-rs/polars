@@ -49,6 +49,7 @@ parking_lot = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py310", "chrono", "chrono-tz", "multiple-pymethods"] }
 rayon = { workspace = true }
 recursive = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
 uuid = { workspace = true }
 

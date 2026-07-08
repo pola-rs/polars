@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
 use polars_ooc::{MostRecentSpillContext, SpillFrame};
@@ -9,10 +8,7 @@ use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;
 
 enum BufferedStream {
-    Open(
-        VecDeque<(SpillFrame, MorselSeq)>,
-        Arc<MostRecentSpillContext>,
-    ),
+    Open(VecDeque<(SpillFrame, MorselSeq)>, MostRecentSpillContext),
     Closed,
 }
 
@@ -116,11 +112,11 @@ impl ComputeNode for MultiplexerNode {
         enum Listener<'a> {
             Active(
                 UnboundedSender<(SpillFrame, MorselSeq, SourceToken)>,
-                Arc<MostRecentSpillContext>,
+                MostRecentSpillContext,
             ),
             Buffering(
                 &'a mut VecDeque<(SpillFrame, MorselSeq)>,
-                Arc<MostRecentSpillContext>,
+                MostRecentSpillContext,
             ),
             Inactive,
         }
@@ -162,7 +158,7 @@ impl ComputeNode for MultiplexerNode {
                             Listener::Active(s, ctx) => {
                                 let source_token = morsel.source_token().clone();
                                 // TODO: don't clone morsel, share same spillframe?
-                                let sf = SpillFrame::new(morsel.df().clone(), &**ctx).await;
+                                let sf = SpillFrame::new(morsel.df().clone(), &*ctx).await;
                                 match s.send((sf, seq, source_token)) {
                                     Ok(_) => {
                                         anyone_interested = true;
@@ -173,7 +169,7 @@ impl ComputeNode for MultiplexerNode {
                             },
                             Listener::Buffering(b, ctx) => {
                                 b.push_front((
-                                    SpillFrame::new(morsel.df().clone(), &**ctx).await,
+                                    SpillFrame::new(morsel.df().clone(), &*ctx).await,
                                     seq,
                                 ));
                                 anyone_interested = true;

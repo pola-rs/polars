@@ -12,6 +12,7 @@ use polars_ops::frame::{JoinCoalesce, JoinType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools as _;
+use polars_utils::itertools::iters_eq::iters_eq;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
 
@@ -1136,19 +1137,37 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
-                if let Some(projected_names) =
-                    out_edge.compute_projected_names_subset(output_schema_arc)
-                {
-                    let removed_names = self.names_set_scratch.get();
-                    aggs.retain(|e| {
-                        let remove = !projected_names.contains(e.output_name()) || is_len;
+                'prune_aggs: {
+                    if aggs.is_empty() {
+                        break 'prune_aggs;
+                    }
 
-                        if remove {
-                            removed_names.insert(e.output_name().clone());
-                        }
+                    let removed_names = if is_len {
+                        let removed_names = self.names_set_scratch.get();
 
-                        !remove
-                    });
+                        removed_names.extend(
+                            aggs.drain(..)
+                                .map(|eir| eir.into_inner().1.into_inner().unwrap()),
+                        );
+
+                        removed_names
+                    } else if let Some(projected_names) =
+                        out_edge.compute_projected_names_subset(output_schema_arc)
+                    {
+                        let removed_names = self.names_set_scratch.get();
+
+                        aggs.retain(|e| {
+                            let keep = projected_names.contains(e.output_name());
+                            if !keep {
+                                removed_names.insert(e.output_name().clone());
+                            }
+                            keep
+                        });
+
+                        removed_names
+                    } else {
+                        break 'prune_aggs;
+                    };
 
                     if !removed_names.is_empty() {
                         Arc::make_mut(output_schema_arc)
@@ -1239,7 +1258,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
             IR::MergeSorted { key, .. } => {
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
-                projected_names.insert(key.clone());
+                for key in key.iter() {
+                    projected_names.insert(key.clone());
+                }
                 pushdown_with_added_names!(len_before_added_names)
             },
 
@@ -1766,14 +1787,30 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
-                if !projected_names.shift_remove(name) {
+                let Some(row_index_idx) = projected_names.get_index_of(name) else {
                     unlink_current_node_and_return!(*input)
+                };
+
+                if let Some(names) = out_edge.compute_projected_names(&current_node_schema)
+                    && let Some(schema) = compute_simple_projection_schema(
+                        names.as_slice(),
+                        &current_node_schema,
+                        false,
+                    )
+                {
+                    out_edge
+                        .parent_key_and_port_mut()
+                        .attach_simple_projection(Arc::new(schema), storage);
+                } else {
+                    debug_assert_eq!(row_index_idx, 0);
                 }
 
-                let names = out_edge.take_names();
+                let mut projected_names = out_edge.take_names().unwrap();
+                projected_names.shift_remove_index(row_index_idx);
+
                 *edges.inputs()[0].projection_state_mut() = ProjectionState {
                     projection: Projection::Names,
-                    names,
+                    names: Some(projected_names),
                 };
             },
 
@@ -2004,21 +2041,6 @@ fn compute_simple_projection_schema(
         let dtype = input_schema.get(name).unwrap().clone();
         (name.clone(), dtype)
     })))
-}
-
-/// Returns true if both iterators have the same length, and the items at each
-/// index are equal.
-fn iters_eq<L, R, T, U>(left: L, right: R) -> bool
-where
-    L: IntoIterator<Item = T>,
-    R: IntoIterator<Item = U>,
-    T: PartialEq<U>,
-    L::IntoIter: ExactSizeIterator,
-    R::IntoIter: ExactSizeIterator,
-{
-    let left = left.into_iter();
-    let right = right.into_iter();
-    left.len() == right.len() && left.zip(right).all(|(l, r)| l == r)
 }
 
 fn set_scan_projection(scan_ir: &mut IR, projection_schema: Arc<Schema>) {

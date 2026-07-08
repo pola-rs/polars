@@ -1,6 +1,7 @@
 use std::num::NonZeroUsize;
 
 use polars_core::schema::SchemaRef;
+use polars_io::utils::bytes_bufferer::BytesBuffererConfig;
 use polars_plan::dsl::file_provider::FileProviderType;
 use polars_plan::dsl::{FileWriteFormat, SinkTarget, UnifiedSinkArgs};
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
@@ -52,11 +53,11 @@ impl IOSinkNodeConfig {
         }
     }
 
-    pub fn cloud_upload_chunk_size(&self) -> usize {
+    pub fn cloud_upload_chunk_size(&self) -> NonZeroUsize {
         polars_io::configs::upload_chunk_size()
     }
 
-    pub fn partitioned_upload_chunk_size(&self) -> usize {
+    pub fn partitioned_upload_chunk_size(&self) -> NonZeroUsize {
         polars_io::configs::partitioned_upload_chunk_size()
     }
 
@@ -66,6 +67,44 @@ impl IOSinkNodeConfig {
 
     pub fn partitioned_upload_concurrency(&self) -> NonZeroUsize {
         polars_io::configs::partitioned_upload_concurrency()
+    }
+
+    pub fn bytes_bufferer_config(&self) -> BytesBuffererConfig {
+        if let Ok(v) = std::env::var("POLARS_IO_SINK_BYTES_BUFFERER_CONFIG") {
+            (|| {
+                let mut iter = v.split(',').map(|x| x.parse::<NonZeroUsize>().ok());
+                let mut n = || iter.next().flatten();
+
+                let ret = BytesBuffererConfig {
+                    target_size: n()?..n()?,
+                    copy_buffer_reserve_size: n()?..n()?,
+                };
+
+                let valid = ret.target_size.end >= ret.target_size.start
+                    && ret.copy_buffer_reserve_size.end >= ret.copy_buffer_reserve_size.start;
+
+                (valid && iter.next().is_none()).then_some(ret)
+            })()
+            .unwrap_or_else(|| {
+                panic!("invalid value for POLARS_IO_SINK_BYTES_BUFFERER_CONFIG: {v}")
+            })
+        } else if self.target.is_cloud_location() {
+            let cloud_upload_chunk_size = self.cloud_upload_chunk_size();
+
+            BytesBuffererConfig {
+                target_size: cloud_upload_chunk_size..cloud_upload_chunk_size,
+                copy_buffer_reserve_size: cloud_upload_chunk_size
+                    .div_ceil(const { NonZeroUsize::new(8).unwrap() })
+                    ..cloud_upload_chunk_size,
+            }
+        } else {
+            const {
+                BytesBuffererConfig {
+                    target_size: NonZeroUsize::new(8192).unwrap()..NonZeroUsize::MAX,
+                    copy_buffer_reserve_size: NonZeroUsize::new(8192).unwrap()..NonZeroUsize::MAX,
+                }
+            }
+        }
     }
 }
 

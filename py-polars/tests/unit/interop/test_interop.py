@@ -1274,7 +1274,9 @@ def test_pycapsule_stream_interface_all_types() -> None:
     assert_frame_equal(
         df.map_columns(
             pl.selectors.all(),
-            lambda s: pl.Series(PyCapsuleStreamHolder(s.implode())).explode(),
+            lambda s: pl.Series(PyCapsuleStreamHolder(s.implode())).explode(
+                empty_as_null=True
+            ),
         ),
         df,
     )
@@ -1292,7 +1294,9 @@ def test_pycapsule_stream_interface_all_types() -> None:
         pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.struct("*")))).unnest("*"), df
     )
     assert_frame_equal(
-        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().implode()))).explode("*"),
+        pl.DataFrame(PyCapsuleStreamHolder(df.select(pl.all().implode()))).explode(
+            "*", empty_as_null=True
+        ),
         df,
     )
     assert_frame_equal(

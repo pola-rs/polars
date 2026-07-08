@@ -1,3 +1,4 @@
+use std::num::NonZeroU64;
 use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
@@ -14,9 +15,7 @@ use polars_utils::IdxSize;
 use polars_utils::index::NonZeroIdxSize;
 
 use crate::nodes::io_sinks::components::sink_morsel::{SinkMorsel, SinkMorselPermit};
-use crate::nodes::io_sinks::components::size::{
-    NonZeroRowCountAndSize, RowCountAndSize, TakeableRowsProvider,
-};
+use crate::nodes::io_sinks::components::size::{SplitMode, TargetSinkMorselSize};
 use crate::nodes::io_sinks::writers::interface::{
     FileOpenTaskHandle, FileWriterStarter, ideal_sink_morsel_size_env,
 };
@@ -49,29 +48,28 @@ impl FileWriterStarter for ParquetWriterStarter {
         "parquet"
     }
 
-    fn takeable_rows_provider(&self) -> TakeableRowsProvider {
-        let max_size = if let Some(row_group_size) = self.row_group_size
+    fn target_sink_morsel_size(&self) -> TargetSinkMorselSize {
+        let target_num_bytes_min_rows = const { NonZeroIdxSize::new(16384).unwrap() };
+
+        if let Some(row_group_size) = self.row_group_size
             && row_group_size > 0
         {
-            NonZeroRowCountAndSize::new(RowCountAndSize {
-                num_rows: row_group_size,
-                num_bytes: u64::MAX,
-            })
-            .unwrap()
+            TargetSinkMorselSize {
+                target_num_rows: row_group_size.try_into().unwrap(),
+                target_num_bytes: NonZeroU64::MAX,
+                target_num_bytes_min_rows,
+                target_num_rows_mode: SplitMode::Exact,
+            }
         } else {
-            let (num_rows, num_bytes) = ideal_sink_morsel_size_env();
+            let (env_num_rows, env_num_bytes) = ideal_sink_morsel_size_env();
 
-            NonZeroRowCountAndSize::new(RowCountAndSize {
-                num_rows: num_rows.unwrap_or(122_880),
-                num_bytes: num_bytes.unwrap_or(u64::MAX),
-            })
-            .unwrap()
-        };
-
-        TakeableRowsProvider {
-            max_size,
-            byte_size_min_rows: NonZeroIdxSize::new(16384).unwrap(),
-            allow_non_max_size: false,
+            TargetSinkMorselSize {
+                target_num_rows: env_num_rows
+                    .unwrap_or(const { NonZeroIdxSize::new(122_880).unwrap() }),
+                target_num_bytes: env_num_bytes.unwrap_or(NonZeroU64::MAX),
+                target_num_bytes_min_rows,
+                target_num_rows_mode: SplitMode::Approximate,
+            }
         }
     }
 

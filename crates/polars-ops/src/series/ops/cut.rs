@@ -184,24 +184,44 @@ pub fn qcut(
 ) -> PolarsResult<Series> {
     polars_ensure!(!probs.iter().any(|x| x.is_nan()), ComputeError: "quantiles cannot be NaN");
 
-    if s.null_count() == s.len() {
-        // If we only have nulls we don't have any breakpoints.
-        return Ok(Series::full_null(
-            s.name().clone(),
-            s.len(),
-            &DataType::from_categories(Categories::global()),
-        ));
-    }
-
     let s = s.cast(&DataType::Float64)?;
     let s2 = s.sort(SortOptions::default())?;
     let ca = s2.f64()?;
+    let ca = ca.set(&ca.is_nan(), None)?;
+
+    if ca.null_count() == ca.len() {
+        // No usable values (all null/NaN/empty): no breakpoints. With
+        // `include_breaks` the output must still be a Struct to match the schema.
+        let cat_dtype = DataType::from_categories(Categories::global());
+        if include_breaks {
+            let brk = Series::full_null(
+                PlSmallStr::from_static("breakpoint"),
+                s.len(),
+                &DataType::Float64,
+            );
+            let cat = Series::full_null(PlSmallStr::from_static("category"), s.len(), &cat_dtype);
+            return Ok(StructChunked::from_series(
+                s.name().clone(),
+                s.len(),
+                [&brk, &cat].into_iter(),
+            )?
+            .into_series());
+        }
+        return Ok(Series::full_null(s.name().clone(), s.len(), &cat_dtype));
+    }
 
     let mut qbreaks: Vec<_> = ca
         .quantiles(&probs, QuantileMethod::Linear)?
         .into_iter()
         .map(|opt| opt.unwrap())
         .collect();
+
+    // Interpolating across an infinity gives a NaN breakpoint that would panic
+    // the sort below; reject it, as `cut` already does.
+    polars_ensure!(
+        !qbreaks.iter().any(|x| x.is_nan()),
+        ComputeError: "quantile breakpoint is NaN (the input may contain infinite values)"
+    );
 
     qbreaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 
