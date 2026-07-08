@@ -10234,7 +10234,7 @@ Consider using {self}.implode() instead"""
         Returns
         -------
         Expr
-            Expression of data type :class:`Float64`.
+            Expression of data type :class:`Float64`, measuring an angle in radians.
 
         Notes
         -----
@@ -10276,7 +10276,7 @@ Consider using {self}.implode() instead"""
         Returns
         -------
         Expr
-            Expression of data type :class:`Float64`.
+            Expression of data type :class:`Float64`, measuring an angle in radians.
 
         Notes
         -----
