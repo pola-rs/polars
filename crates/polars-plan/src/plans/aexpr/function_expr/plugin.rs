@@ -10,7 +10,7 @@ use pyo3::{Python, types::PyAnyMethods};
 use super::*;
 
 type PluginAndVersion = (Library, u16, u16);
-static LOADED: LazyLock<RwLock<PlHashMap<String, Arc<PluginAndVersion>>>> =
+static LOADED: LazyLock<RwLock<PlIndexMap<String, Arc<PluginAndVersion>>>> =
     LazyLock::new(Default::default);
 
 fn get_lib(lib: &str) -> PolarsResult<Arc<PluginAndVersion>> {

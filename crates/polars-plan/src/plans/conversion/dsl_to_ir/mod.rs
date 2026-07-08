@@ -259,7 +259,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let mut out = Vec::with_capacity(1);
             expr_expansion::expand_expression(
                 &predicate,
-                &PlHashSet::default(),
+                &PlIndexSet::default(),
                 input_schema.as_ref().as_ref(),
                 &mut out,
                 ctxt.opt_flags,
@@ -1045,7 +1045,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 .map(|i| AExprBuilder::col(i.clone(), ctxt.expr_arena).expr_ir(i))
                 .collect();
 
-            let mut uniq_names = PlHashSet::new();
+            let mut uniq_names = PlIndexSet::new();
             for expr in keys.iter().chain(aggs.iter()) {
                 let name = expr.output_name();
                 let is_uniq = uniq_names.insert(name.clone());
@@ -1065,7 +1065,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let (input, subset, temp_cols) = if let Some(exprs) = options.subset {
                 let exprs = rewrite_projections(
                     exprs,
-                    &PlHashSet::default(),
+                    &PlIndexSet::default(),
                     &input_schema,
                     ctxt.opt_flags,
                 )?;
@@ -1660,8 +1660,8 @@ fn resolve_with_columns(
 ) -> PolarsResult<(Vec<ExprIR>, SchemaRef)> {
     let input_schema = lp_arena.get(input).schema(lp_arena);
     let mut output_schema = (**input_schema).clone();
-    let exprs = rewrite_projections(exprs, &PlHashSet::new(), &input_schema, opt_flags)?;
-    let mut output_names = PlHashSet::with_capacity(exprs.len());
+    let exprs = rewrite_projections(exprs, &PlIndexSet::new(), &input_schema, opt_flags)?;
+    let mut output_names = PlIndexSet::with_capacity(exprs.len());
 
     let eirs = to_expr_irs(
         exprs,
@@ -1697,13 +1697,13 @@ fn resolve_group_by(
 ) -> PolarsResult<(Vec<ExprIR>, Vec<ExprIR>, SchemaRef)> {
     let input_schema = lp_arena.get(input).schema(lp_arena);
     let input_schema = input_schema.as_ref();
-    let mut keys = rewrite_projections(keys, &PlHashSet::default(), input_schema, opt_flags)?;
+    let mut keys = rewrite_projections(keys, &PlIndexSet::default(), input_schema, opt_flags)?;
 
     // Initialize schema from keys
     let mut output_schema = expressions_to_schema(&keys, input_schema, |duplicate_name: &str| {
         format!("group_by keys contained duplicate output name '{duplicate_name}'")
     })?;
-    let mut key_names: PlHashSet<PlSmallStr> = output_schema.iter_names().cloned().collect();
+    let mut key_names: PlIndexSet<PlSmallStr> = output_schema.iter_names().cloned().collect();
 
     #[allow(unused_mut)]
     let mut pop_keys = false;
@@ -1753,7 +1753,7 @@ fn resolve_group_by(
 
     // Make sure aggregation columns do not contain duplicates
     if aggs_schema.len() < aggs.len() {
-        let mut names = PlHashSet::with_capacity(aggs.len());
+        let mut names = PlIndexSet::with_capacity(aggs.len());
         for agg in aggs.iter() {
             let name = agg.output_name();
             polars_ensure!(names.insert(name.clone()), duplicate = name)
@@ -1780,7 +1780,7 @@ fn resolve_group_by(
 
     // Make sure aggregation columns do not contain keys or index columns
     if output_schema.len() < (keys_index_len + aggs.len()) {
-        let mut names = PlHashSet::with_capacity(output_schema.len());
+        let mut names = PlIndexSet::with_capacity(output_schema.len());
         for agg in aggs.iter().chain(keys.iter()) {
             let name = agg.output_name();
             polars_ensure!(names.insert(name.clone()), duplicate = name)

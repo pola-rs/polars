@@ -187,7 +187,7 @@ pub(super) fn process_join(
     }
 
     // Key columns of the left table that are coalesced into an output column of the right table.
-    let coalesced_to_right: PlHashSet<PlSmallStr> =
+    let coalesced_to_right: PlIndexSet<PlSmallStr> =
         if matches!(&options.args.how, JoinType::Right) && options.args.should_coalesce() {
             get_lhs_column_keys_iter()
                 .map(|x| x.unwrap().clone())
@@ -196,10 +196,10 @@ pub(super) fn process_join(
             Default::default()
         };
 
-    let mut output_key_to_left_input_map: PlHashMap<PlSmallStr, PlSmallStr> =
-        PlHashMap::with_capacity(get_lhs_column_keys_iter().len());
-    let mut output_key_to_right_input_map: PlHashMap<PlSmallStr, PlSmallStr> =
-        PlHashMap::with_capacity(get_rhs_column_keys_iter().len());
+    let mut output_key_to_left_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
+        PlIndexMap::with_capacity(get_lhs_column_keys_iter().len());
+    let mut output_key_to_right_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
+        PlIndexMap::with_capacity(get_rhs_column_keys_iter().len());
 
     for (lhs_input_key, rhs_input_key) in get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
     {
@@ -873,11 +873,11 @@ fn try_rewrite_join_type(
         }};
     }
 
-    let mut coalesced_to_right: PlHashSet<PlSmallStr> = Default::default();
+    let mut coalesced_to_right: PlIndexSet<PlSmallStr> = Default::default();
     // Removing NULLs on these columns do not allow for join downgrading.
     // We only need to track these for full-join - e.g. for left-join, removing NULLs from any left
     // column does not cause any join rewrites.
-    let mut coalesced_full_join_key_outputs: PlHashSet<PlSmallStr> = Default::default();
+    let mut coalesced_full_join_key_outputs: PlIndexSet<PlSmallStr> = Default::default();
 
     if options.args.should_coalesce() {
         match &options.args.how {
@@ -970,7 +970,7 @@ fn try_rewrite_join_type(
 
     // Maps the original join output names to the new join output names (used for mapping column
     // references of the predicates).
-    let mut original_to_new_names_map: PlHashMap<PlSmallStr, PlSmallStr> = Default::default();
+    let mut original_to_new_names_map: PlIndexMap<PlSmallStr, PlSmallStr> = Default::default();
     // Projects the new join output table back into the original join output table.
     let mut project_to_original: Option<Vec<ExprIR>> = None;
 
@@ -994,7 +994,7 @@ fn try_rewrite_join_type(
             // original_to_new_names_map: {'a': 'a_right', 'b_right': 'a'}
             //
             (JoinType::Right, JoinType::Inner) => {
-                let mut join_output_key_selectors = PlHashMap::with_capacity(right_on.len());
+                let mut join_output_key_selectors = PlIndexMap::with_capacity(right_on.len());
 
                 for (l, r) in left_on.iter().zip(right_on) {
                     // Unwrap any Cast expressions that may have been inserted for type coercion.
@@ -1118,16 +1118,16 @@ fn try_rewrite_join_type(
             // original_to_new_names_map: {'a': 'b_right', 'a_right': 'a'}
             //
             (JoinType::Full, JoinType::Right) => {
-                let mut join_output_key_selectors = PlHashMap::with_capacity(left_on.len());
+                let mut join_output_key_selectors = PlIndexMap::with_capacity(left_on.len());
 
                 // The existing one is empty because the original join type was not a right-join.
                 assert!(coalesced_to_right.is_empty());
                 // LHS input key columns that are coalesced (i.e. not projected) for the right-join.
-                let coalesced_to_right: PlHashSet<PlSmallStr> =
+                let coalesced_to_right: PlIndexSet<PlSmallStr> =
                     lhs_input_column_keys_iter!().collect();
                 // RHS input key columns that are coalesced (i.e. not projected) for the full-join.
-                let mut coalesced_to_left: PlHashSet<PlSmallStr> =
-                    PlHashSet::with_capacity(right_on.len());
+                let mut coalesced_to_left: PlIndexSet<PlSmallStr> =
+                    PlIndexSet::with_capacity(right_on.len());
 
                 for (l, r) in left_on.iter().zip(right_on) {
                     // Unwrap any Cast expressions that may have been inserted for type coercion.
