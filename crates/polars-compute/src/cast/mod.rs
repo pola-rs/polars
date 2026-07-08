@@ -26,7 +26,7 @@ use arrow::offset::{Offset, Offsets};
 use binview_to::{binview_to_dictionary, utf8view_to_dictionary, view_to_binary};
 pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 pub use primitive_to::*;
