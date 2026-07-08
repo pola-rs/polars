@@ -5928,7 +5928,7 @@ class Series:
 
         Notes
         -----
-        The argument must be in radians.
+        Input values are interpreted as radians.
         To convert from degrees to radians,
         call :meth:`.radians() <polars.Series.radians>`.
 
@@ -5952,7 +5952,7 @@ class Series:
 
         Notes
         -----
-        The argument must be in radians.
+        Input values are interpreted as radians.
         To convert from degrees to radians,
         call :meth:`.radians() <polars.Series.radians>`.
 
@@ -5976,7 +5976,7 @@ class Series:
 
         Notes
         -----
-        The argument must be in radians.
+        Input values are interpreted as radians.
         To convert from degrees to radians,
         call :meth:`.radians() <polars.Series.radians>`.
 
@@ -6000,7 +6000,7 @@ class Series:
 
         Notes
         -----
-        The argument must be in radians.
+        Input values are interpreted as radians.
         To convert from degrees to radians,
         call :meth:`.radians() <polars.Series.radians>`.
 
