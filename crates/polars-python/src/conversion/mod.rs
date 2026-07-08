@@ -1049,23 +1049,6 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<Label> {
     }
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ListToStructWidthStrategy> {
-    type Error = PyErr;
-
-    fn extract(ob: Borrowed<'a, 'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            "first_non_null" => ListToStructWidthStrategy::FirstNonNull,
-            "max_width" => ListToStructWidthStrategy::MaxWidth,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`n_field_strategy` must be one of {{'first_non_null', 'max_width'}}, got {v}",
-                )));
-            },
-        };
-        Ok(Wrap(parsed))
-    }
-}
-
 impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<NonExistent> {
     type Error = PyErr;
 
