@@ -249,6 +249,7 @@ impl OptimizationRule for TypeCoercionRule {
 
                 use crate::plans::type_coercion::binary::{
                     BoolValueAlways, CmpLiteralRhsRewrite, coerce_comparison_literal,
+                    coerced_binop_dtype,
                 };
 
                 let [needle, low, high] = input.as_slice() else {
@@ -285,14 +286,16 @@ impl OptimizationRule for TypeCoercionRule {
                 {
                     use crate::plans::type_coercion::binary::BoolValueAlways;
 
-                    if let LiteralValue::Scalar(lit) = lv.clone().materialize() {
-                        match unpack!(coerce_comparison_literal(
+                    if let LiteralValue::Scalar(lit) = lv.clone().materialize()
+                        && let Some(rewrite) = coerce_comparison_literal(
                             needle.node(),
                             &needle_dtype,
                             cmp_op_low,
                             lit,
                             expr_arena,
-                        )) {
+                        )
+                    {
+                        match rewrite {
                             ReplaceLit(new_lit) => {
                                 new_low = Some(ExprIR::from_node(
                                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
@@ -319,14 +322,16 @@ impl OptimizationRule for TypeCoercionRule {
                 if high_dtype != needle_dtype
                     && let AExpr::Literal(lv) = high_ae
                 {
-                    if let LiteralValue::Scalar(lit) = lv.clone().materialize() {
-                        match unpack!(coerce_comparison_literal(
+                    if let LiteralValue::Scalar(lit) = lv.clone().materialize()
+                        && let Some(rewrite) = coerce_comparison_literal(
                             needle.node(),
                             &needle_dtype,
                             cmp_op_high,
                             lit,
                             expr_arena,
-                        )) {
+                        )
+                    {
+                        match rewrite {
                             ReplaceLit(new_lit) => {
                                 new_high = Some(ExprIR::from_node(
                                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
@@ -359,12 +364,74 @@ impl OptimizationRule for TypeCoercionRule {
                         right: new_high.unwrap_or(high).node(),
                     },
                     None => {
-                        if new_low.is_none() && new_high.is_none() {
-                            return Ok(None);
-                        }
+                        let mut low = new_low.unwrap_or(low);
+                        let mut high = new_high.unwrap_or(high);
 
+                        let low_dtype = unpack!(try_get_dtype(expr_arena, low.node(), schema).ok());
+                        let high_dtype =
+                            unpack!(try_get_dtype(expr_arena, high.node(), schema).ok());
+
+                        let low_st = unpack!(coerced_binop_dtype(
+                            expr_arena,
+                            needle.node(),
+                            &needle_dtype,
+                            cmp_op_low,
+                            low.node(),
+                            &low_dtype,
+                        )?);
+                        let high_st = unpack!(coerced_binop_dtype(
+                            expr_arena,
+                            needle.node(),
+                            &needle_dtype,
+                            cmp_op_high,
+                            high.node(),
+                            &high_dtype,
+                        )?);
+
+                        let CastingRules::Supertype(supertype_options) =
+                            unpack!(options.cast_options)
+                        else {
+                            return Ok(None);
+                        };
+                        let super_type = unpack!(get_supertype_with_options(
+                            &low_st,
+                            &high_st,
+                            supertype_options,
+                        ));
+
+                        let mut needle = needle;
+                        // TODO: NonStrict casts are what process_binary
+                        // inserts for binops. cast_expr_ir always ignores
+                        // the input CastOptions and sets strict casts.
+                        // Should probably be consistent.
+                        cast_expr_ir(
+                            &mut needle,
+                            &needle_dtype,
+                            &super_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        cast_expr_ir(
+                            &mut low,
+                            &low_dtype,
+                            &super_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        cast_expr_ir(
+                            &mut high,
+                            &high_dtype,
+                            &super_type,
+                            expr_arena,
+                            CastOptions::NonStrict,
+                        )?;
+                        // We've already applied all the casts, so switch
+                        // off casting for this newly rewritten isbetween
+                        // node.
+                        let mut options = options;
+                        options.cast_options = None;
                         AExpr::Function {
-                            input: vec![needle, new_low.unwrap_or(low), new_high.unwrap_or(high)],
+                            input: vec![needle, low, high],
                             function: IRFunctionExpr::Boolean(IRBooleanFunction::IsBetween {
                                 closed,
                             }),
