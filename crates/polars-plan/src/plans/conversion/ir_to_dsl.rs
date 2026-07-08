@@ -323,7 +323,9 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IA::Slice(offset, length) => A::Slice(offset, length),
                 IA::Explode(options) => A::Explode(options),
                 #[cfg(feature = "array_to_struct")]
-                IA::ToStruct(ng) => A::ToStruct(ng),
+                IA::ToStruct { fields } => A::ToStruct {
+                    fields: Some(fields),
+                },
             })
         },
         IF::BinaryExpr(f) => {

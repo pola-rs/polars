@@ -202,15 +202,7 @@ impl ListNameSpace {
 
     #[cfg(feature = "list_to_struct")]
     #[allow(clippy::wrong_self_convention)]
-    /// Convert this `List` to a `Series` of type `Struct`. The width will be determined according to
-    /// `ListToStructWidthStrategy` and the names of the fields determined by the given `name_generator`.
-    ///
-    /// # Schema
-    ///
-    /// A polars `LazyFrame` needs to know the schema at all time. The caller therefore must provide
-    /// an `upper_bound` of struct fields that will be set.
-    /// If this is incorrectly downstream operation may fail. For instance an `all().sum()` expression
-    /// will look in the current schema to determine which columns to select.
+    /// Convert this `List` to a `Series` of type `Struct`.
     pub fn to_struct(self, names: Arc<[PlSmallStr]>) -> Expr {
         self.0.map_unary(ListFunction::ToStruct(names))
     }

@@ -1,5 +1,6 @@
+#[cfg(feature = "array_to_struct")]
+use polars_buffer::Buffer;
 use polars_core::utils::slice_offsets;
-use polars_ops::chunked_array::array::*;
 
 use super::*;
 
@@ -31,7 +32,9 @@ pub enum IRArrayFunction {
     Concat,
     Slice(i64, i64),
     #[cfg(feature = "array_to_struct")]
-    ToStruct(Option<DslNameGenerator>),
+    ToStruct {
+        fields: Buffer<PlSmallStr>,
+    },
 }
 
 impl<'a> FieldsMapper<'a> {
@@ -89,21 +92,17 @@ impl IRArrayFunction {
                 .ensure_is_array()?
                 .try_map_dtype(map_to_array_fixed_length(offset, length)),
             #[cfg(feature = "array_to_struct")]
-            ToStruct(name_generator) => mapper.ensure_is_array()?.try_map_dtype(|dtype| {
-                let DataType::Array(inner, width) = dtype else {
+            ToStruct { fields } => mapper.ensure_is_array()?.try_map_dtype(|dtype| {
+                let DataType::Array(inner, _) = dtype else {
                     polars_bail!(InvalidOperation: "expected Array type, got: {dtype}")
                 };
 
-                (0..*width)
-                    .map(|i| {
-                        let name = match name_generator {
-                            None => arr_default_struct_name_gen(i),
-                            Some(ng) => PlSmallStr::from_string(ng.call(i)?),
-                        };
-                        Ok(Field::new(name, inner.as_ref().clone()))
-                    })
-                    .collect::<PolarsResult<Vec<Field>>>()
-                    .map(DataType::Struct)
+                Ok(DataType::Struct(
+                    fields
+                        .iter()
+                        .map(|name| Field::new(name.clone(), inner.as_ref().clone()))
+                        .collect(),
+                ))
             }),
         }
     }
@@ -135,7 +134,7 @@ impl IRArrayFunction {
             | A::Slice(_, _) => FunctionOptions::elementwise(),
             A::Explode { .. } => FunctionOptions::row_separable(),
             #[cfg(feature = "array_to_struct")]
-            A::ToStruct(_) => FunctionOptions::elementwise(),
+            A::ToStruct { fields: _ } => FunctionOptions::elementwise(),
         }
     }
 }
@@ -196,7 +195,7 @@ impl Display for IRArrayFunction {
             Slice(_, _) => "slice",
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
-            ToStruct(_) => "to_struct",
+            ToStruct { fields: _ } => "to_struct",
         };
         write!(f, "arr.{name}")
     }
