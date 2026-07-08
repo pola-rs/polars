@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import typing
 from typing import IO, TYPE_CHECKING, Any
@@ -661,6 +662,7 @@ print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
                     ],
                     env={
                         "POLARS_FORCE_ASYNC": "1" if force_async else "0",
+                        **os.environ,
                     },
                 ).decode()
             )
