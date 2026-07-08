@@ -3087,6 +3087,7 @@ dependencies = [
  "bytemuck",
  "either",
  "polars-utils",
+ "schemars",
  "serde",
  "version_check",
 ]

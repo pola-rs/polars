@@ -903,6 +903,3 @@ impl Display for FunctionExpr {
         write!(f, "{s}")
     }
 }
-
-#[cfg(any(feature = "array_to_struct", feature = "list_to_struct"))]
-pub type DslNameGenerator = PlanCallback<usize, String>;

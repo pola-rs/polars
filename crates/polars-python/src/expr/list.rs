@@ -188,14 +188,14 @@ impl PyExpr {
         self.inner.clone().list().to_array(width).into()
     }
 
-    #[pyo3(signature = (names))]
-    fn list_to_struct(&self, names: Bound<'_, PySequence>) -> PyResult<Self> {
+    #[pyo3(signature = (fields))]
+    fn list_to_struct(&self, fields: Bound<'_, PySequence>) -> PyResult<Self> {
         Ok(self
             .inner
             .clone()
             .list()
             .to_struct(
-                names
+                fields
                     .try_iter()?
                     .map(|x| Ok(x?.extract::<Wrap<PlSmallStr>>()?.0))
                     .collect::<PyResult<Arc<[_]>>>()?,

@@ -1,40 +1,28 @@
+use arrow::array::Array;
+use polars_core::chunked_array::StructChunked;
+use polars_core::chunked_array::builder::NewChunkedArray as _;
+use polars_core::datatypes::{ArrayChunked, Int64Chunked};
 use polars_core::runtime::RAYON;
-use polars_utils::format_pl_smallstr;
+use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
-use rayon::prelude::*;
+use rayon::iter::{IndexedParallelIterator as _, IntoParallelIterator as _, ParallelIterator as _};
 
-use super::*;
-
-pub type ArrToStructNameGenerator = Arc<dyn Fn(usize) -> PolarsResult<PlSmallStr> + Send + Sync>;
-
-pub fn arr_default_struct_name_gen(idx: usize) -> PlSmallStr {
-    format_pl_smallstr!("field_{idx}")
-}
+use crate::chunked_array::array::{ArrayNameSpace as _, AsArray};
 
 pub trait ToStruct: AsArray {
-    fn to_struct(
-        &self,
-        name_generator: Option<ArrToStructNameGenerator>,
-    ) -> PolarsResult<StructChunked> {
+    fn to_struct(&self, fields: &[PlSmallStr]) -> PolarsResult<StructChunked> {
         let ca = self.as_array();
-        let n_fields = ca.width();
-
-        let name_generator = name_generator
-            .as_deref()
-            .unwrap_or(&|i| Ok(arr_default_struct_name_gen(i)));
 
         let fields = RAYON.install(|| {
-            (0..n_fields)
+            fields
                 .into_par_iter()
-                .map(|i| {
+                .enumerate()
+                .map(|(i, name)| {
                     ca.array_get(
                         &Int64Chunked::from_slice(PlSmallStr::EMPTY, &[i as i64]),
                         true,
                     )
-                    .and_then(|mut s| {
-                        s.rename(name_generator(i)?);
-                        Ok(s)
-                    })
+                    .map(|s| s.with_name(name.clone()))
                 })
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
