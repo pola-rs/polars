@@ -5926,6 +5926,12 @@ class Series:
         """
         Compute the element-wise value for the sine.
 
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
+
         Examples
         --------
         >>> import math
@@ -5938,17 +5944,17 @@ class Series:
             1.0
             1.2246e-16
         ]
+        """
+
+    def cos(self) -> Series:
+        """
+        Compute the element-wise value for the cosine.
 
         Notes
         -----
         The argument must be in radians.
         To convert from degrees to radians,
         call :meth:`.radians() <polars.Series.radians>`.
-        """
-
-    def cos(self) -> Series:
-        """
-        Compute the element-wise value for the cosine.
 
         Examples
         --------
@@ -5962,17 +5968,17 @@ class Series:
             6.1232e-17
             -1.0
         ]
+        """
+
+    def tan(self) -> Series:
+        """
+        Compute the element-wise value for the tangent.
 
         Notes
         -----
         The argument must be in radians.
         To convert from degrees to radians,
         call :meth:`.radians() <polars.Series.radians>`.
-        """
-
-    def tan(self) -> Series:
-        """
-        Compute the element-wise value for the tangent.
 
         Examples
         --------
@@ -5986,17 +5992,17 @@ class Series:
             1.6331e16
             -1.2246e-16
         ]
+        """
+
+    def cot(self) -> Series:
+        """
+        Compute the element-wise value for the cotangent.
 
         Notes
         -----
         The argument must be in radians.
         To convert from degrees to radians,
         call :meth:`.radians() <polars.Series.radians>`.
-        """
-
-    def cot(self) -> Series:
-        """
-        Compute the element-wise value for the cotangent.
 
         Examples
         --------
@@ -6010,17 +6016,17 @@ class Series:
             6.1232e-17
             -8.1656e15
         ]
-
-        Notes
-        -----
-        The argument must be in radians.
-        To convert from degrees to radians,
-        call :meth:`.radians() <polars.Series.radians>`.
         """
 
     def arcsin(self) -> Series:
         """
         Compute the element-wise value for the inverse sine.
+
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
 
         Examples
         --------
@@ -6033,18 +6039,17 @@ class Series:
             0.0
             -1.570796
         ]
+        """
+
+    def arccos(self) -> Series:
+        """
+        Compute the element-wise value for the inverse cosine.
 
         Notes
         -----
         The returned value is in radians.
         To convert from radians to degrees,
         call :meth:`.degrees() <polars.Series.degrees>`.
-
-        """
-
-    def arccos(self) -> Series:
-        """
-        Compute the element-wise value for the inverse cosine.
 
         Examples
         --------
@@ -6057,17 +6062,17 @@ class Series:
             1.570796
             3.141593
         ]
+        """
+
+    def arctan(self) -> Series:
+        """
+        Compute the element-wise value for the inverse tangent.
 
         Notes
         -----
         The returned value is in radians.
         To convert from radians to degrees,
         call :meth:`.degrees() <polars.Series.degrees>`.
-        """
-
-    def arctan(self) -> Series:
-        """
-        Compute the element-wise value for the inverse tangent.
 
         Examples
         --------
@@ -6080,12 +6085,6 @@ class Series:
             0.0
             -0.785398
         ]
-
-        Notes
-        -----
-        The returned value is in radians.
-        To convert from radians to degrees,
-        call :meth:`.degrees() <polars.Series.degrees>`.
         """
 
     def arcsinh(self) -> Series:

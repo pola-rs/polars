@@ -10022,6 +10022,12 @@ Consider using {self}.implode() instead"""
         Expr
             Expression of data type :class:`Float64`.
 
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
+
         Examples
         --------
         >>> from math import pi
@@ -10047,12 +10053,6 @@ Consider using {self}.implode() instead"""
         │ 0.0 │
         │ 1.0 │
         └─────┘
-
-        Notes
-        -----
-        The argument must be in radians.
-        To convert from degrees to radians,
-        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return wrap_expr(self._pyexpr.sin())
 
@@ -10064,6 +10064,12 @@ Consider using {self}.implode() instead"""
         -------
         Expr
             Expression of data type :class:`Float64`.
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
 
         Examples
         --------
@@ -10090,13 +10096,6 @@ Consider using {self}.implode() instead"""
         │ 1.0        │
         │ 6.1232e-17 │
         └────────────┘
-
-
-        Notes
-        -----
-        The argument must be in radians.
-        To convert from degrees to radians,
-        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return wrap_expr(self._pyexpr.cos())
 
@@ -10108,6 +10107,12 @@ Consider using {self}.implode() instead"""
         -------
         Expr
             Expression of data type :class:`Float64`.
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
 
         Examples
         --------
@@ -10134,12 +10139,6 @@ Consider using {self}.implode() instead"""
         │ 0.0 │
         │ 1.0 │
         └─────┘
-
-        Notes
-        -----
-        The argument must be in radians.
-        To convert from degrees to radians,
-        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return wrap_expr(self._pyexpr.tan())
 
@@ -10151,6 +10150,12 @@ Consider using {self}.implode() instead"""
         -------
         Expr
             Expression of data type :class:`Float64`.
+
+        Notes
+        -----
+        The argument must be in radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Expr.radians>`.
 
         Examples
         --------
@@ -10177,12 +10182,6 @@ Consider using {self}.implode() instead"""
         │ inf │
         │ 1.0 │
         └─────┘
-
-        Notes
-        -----
-        The argument must be in radians.
-        To convert from degrees to radians,
-        call :meth:`.radians() <polars.Expr.radians>`.
         """
         return wrap_expr(self._pyexpr.cot())
 
@@ -10194,6 +10193,11 @@ Consider using {self}.implode() instead"""
         -------
         Expr
             Expression of data type :class:`Float64`, measuring an angle in radians.
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
 
         Examples
         --------
@@ -10220,11 +10224,6 @@ Consider using {self}.implode() instead"""
         │ 30.0 │
         │ 0.0  │
         └──────┘
-
-        Notes
-        -----
-        To convert the result from radians to degrees,
-        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return wrap_expr(self._pyexpr.arcsin())
 
@@ -10236,6 +10235,11 @@ Consider using {self}.implode() instead"""
         -------
         Expr
             Expression of data type :class:`Float64`.
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
 
         Examples
         --------
@@ -10262,12 +10266,6 @@ Consider using {self}.implode() instead"""
         │ 60.0 │
         │ 90.0 │
         └──────┘
-
-
-        Notes
-        -----
-        To convert the result from radians to degrees,
-        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return wrap_expr(self._pyexpr.arccos())
 
@@ -10279,6 +10277,11 @@ Consider using {self}.implode() instead"""
         -------
         Expr
             Expression of data type :class:`Float64`.
+
+        Notes
+        -----
+        To convert the result from radians to degrees,
+        call :meth:`.degrees() <polars.Expr.degrees>`.
 
         Examples
         --------
@@ -10305,11 +10308,6 @@ Consider using {self}.implode() instead"""
         │ 45.0 │
         │ 0.0  │
         └──────┘
-
-        Notes
-        -----
-        To convert the result from radians to degrees,
-        call :meth:`.degrees() <polars.Expr.degrees>`.
         """
         return wrap_expr(self._pyexpr.arctan())
 
