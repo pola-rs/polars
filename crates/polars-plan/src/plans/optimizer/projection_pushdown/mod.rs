@@ -88,13 +88,13 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     ir_arena.swap(root, input);
 
     // Ensure cache nodes for an ID all point to same input Node.
-    let cache_ndoes = Vec::from_iter(
+    let cache_nodes = Vec::from_iter(
         ir_arena
             .iter(root)
             .filter_map(|(node, ir)| matches!(ir, IR::Cache { .. }).then_some(node)),
     );
 
-    for node in cache_ndoes {
+    for node in cache_nodes {
         let IR::Cache { input, id } = ir_arena.get_mut(node) else {
             unreachable!()
         };
