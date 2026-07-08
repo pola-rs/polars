@@ -276,6 +276,17 @@ impl OptimizationRule for TypeCoercionRule {
                 };
 
                 let needle_dtype = unpack!(try_get_dtype(expr_arena, needle.node(), schema).ok());
+                let maybe_cast_dyn_float = |lv: &LiteralValue| {
+                    if matches!(
+                        needle_dtype,
+                        DataType::Float16 | DataType::Float32 | DataType::Float64
+                    ) && matches!(lv, LiteralValue::Dyn(DynLiteralValue::Float(_)))
+                    {
+                        try_inline_literal_cast(lv, &needle_dtype, CastOptions::NonStrict)
+                    } else {
+                        Ok(None)
+                    }
+                };
 
                 let (low_ae, low_dtype) =
                     unpack!(get_aexpr_and_type(expr_arena, low.node(), schema));
@@ -285,14 +296,25 @@ impl OptimizationRule for TypeCoercionRule {
                 {
                     use crate::plans::type_coercion::binary::BoolValueAlways;
 
-                    if let LiteralValue::Scalar(lit) = lv.clone().materialize() {
-                        match unpack!(coerce_comparison_literal(
+                    if let Some(new_lit) = maybe_cast_dyn_float(lv)? {
+                        new_low = Some(ExprIR::from_node(
+                            expr_arena.add(AExpr::Literal(new_lit)),
+                            expr_arena,
+                        ));
+                    } else if let LiteralValue::Scalar(lit) = lv.clone().materialize()
+                        && let Some(rewrite) = coerce_comparison_literal(
                             needle.node(),
                             &needle_dtype,
                             cmp_op_low,
                             lit,
                             expr_arena,
-                        )) {
+                        )
+                    {
+                        // `coerce_comparison_literal` returning `None` here just means it has no
+                        // int/datetime/duration-specific optimization for this bound (e.g. a
+                        // float<->float dtype mismatch) - leave this bound untouched rather than
+                        // discarding a rewrite already computed for the sibling bound.
+                        match rewrite {
                             ReplaceLit(new_lit) => {
                                 new_low = Some(ExprIR::from_node(
                                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
@@ -319,14 +341,25 @@ impl OptimizationRule for TypeCoercionRule {
                 if high_dtype != needle_dtype
                     && let AExpr::Literal(lv) = high_ae
                 {
-                    if let LiteralValue::Scalar(lit) = lv.clone().materialize() {
-                        match unpack!(coerce_comparison_literal(
+                    if let Some(new_lit) = maybe_cast_dyn_float(lv)? {
+                        new_high = Some(ExprIR::from_node(
+                            expr_arena.add(AExpr::Literal(new_lit)),
+                            expr_arena,
+                        ));
+                    } else if let LiteralValue::Scalar(lit) = lv.clone().materialize()
+                        && let Some(rewrite) = coerce_comparison_literal(
                             needle.node(),
                             &needle_dtype,
                             cmp_op_high,
                             lit,
                             expr_arena,
-                        )) {
+                        )
+                    {
+                        // See the comment on the analogous `low` branch above: a `None` here just
+                        // means no int/datetime/duration-specific optimization applies (e.g. a
+                        // float<->float dtype mismatch) - leave this bound untouched rather than
+                        // discarding a rewrite already computed for the sibling bound.
+                        match rewrite {
                             ReplaceLit(new_lit) => {
                                 new_high = Some(ExprIR::from_node(
                                     expr_arena.add(AExpr::Literal(LiteralValue::Scalar(new_lit))),

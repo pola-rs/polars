@@ -1585,6 +1585,164 @@ fn test_round_after_agg() -> PolarsResult<()> {
 }
 
 #[test]
+#[cfg(feature = "is_between")]
+fn test_is_between_coerces_dyn_float_like_binary_comparison_28278() -> PolarsResult<()> {
+    let x = 1.0000001192092896_f32;
+    let larger = 1.000000149011612_f64;
+    let df = df!["x" => &[x]]?;
+
+    let out = df
+        .lazy()
+        .select([
+            (col("x").gt_eq(lit(larger)).and(col("x").lt_eq(lit(2.0)))).alias("explicit_between"),
+            col("x")
+                .is_between(
+                    lit(larger),
+                    lit(2.0),
+                    polars_ops::series::ClosedInterval::Both,
+                )
+                .alias("is_between"),
+            col("x")
+                .is_between(
+                    lit(larger),
+                    lit(2.0),
+                    polars_ops::series::ClosedInterval::Left,
+                )
+                .alias("closed_left"),
+            col("x")
+                .is_between(
+                    typed_lit(larger),
+                    typed_lit(2.0_f64),
+                    polars_ops::series::ClosedInterval::Both,
+                )
+                .alias("explicit_float64"),
+        ])
+        .collect()?;
+
+    assert_eq!(
+        Vec::from(out.column("explicit_between")?.bool()?),
+        &[Some(true)]
+    );
+    assert_eq!(Vec::from(out.column("is_between")?.bool()?), &[Some(true)]);
+    assert_eq!(Vec::from(out.column("closed_left")?.bool()?), &[Some(true)]);
+    assert_eq!(
+        Vec::from(out.column("explicit_float64")?.bool()?),
+        &[Some(false)]
+    );
+
+    let empty = DataFrame::new_infer_height(vec![
+        Series::new_empty("x".into(), &DataType::Float32).into(),
+    ])?
+    .lazy()
+    .select([col("x")
+        .is_between(
+            lit(larger),
+            lit(2.0),
+            polars_ops::series::ClosedInterval::Both,
+        )
+        .alias("is_between")])
+    .collect()?;
+
+    assert_eq!(empty.height(), 0);
+    assert_eq!(empty.column("is_between")?.dtype(), &DataType::Boolean);
+
+    Ok(())
+}
+
+/// Regression test for a gap left by the #28278 fix: when only ONE bound is a dynamic
+/// (untyped) float literal and the OTHER bound is an explicitly-typed float literal whose
+/// dtype also mismatches the needle, the per-bound dyn-float cast for the first bound must
+/// not be discarded just because the second bound has no int/datetime/duration-specific
+/// coercion available. Both bounds must independently match what the equivalent binary
+/// comparison chain produces, in both bound-orderings.
+#[test]
+#[cfg(feature = "is_between")]
+fn test_is_between_coerces_mixed_dyn_typed_float_bounds_28278() -> PolarsResult<()> {
+    use polars_ops::series::ClosedInterval;
+
+    let x = 1.0000001192092896_f32;
+    let larger = 1.000000149011612_f64;
+    let df = df!["x" => &[x]]?;
+
+    // Build the oracle binary-comparison chain using the same per-`closed` operator selection
+    // that `is_between`'s own type-coercion rewrite uses (see `cmp_op_low`/`cmp_op_high` in
+    // `TypeCoercionRule`), so the oracle is genuinely independent of the bound-literal coercion
+    // path we are testing, not accidentally hardcoded to the `Both` variant.
+    fn explicit_chain(needle: Expr, low: Expr, high: Expr, closed: ClosedInterval) -> Expr {
+        let low_cmp = match closed {
+            ClosedInterval::Both | ClosedInterval::Left => needle.clone().gt_eq(low),
+            ClosedInterval::Right | ClosedInterval::None => needle.clone().gt(low),
+        };
+        let high_cmp = match closed {
+            ClosedInterval::Both | ClosedInterval::Right => needle.lt_eq(high),
+            ClosedInterval::Left | ClosedInterval::None => needle.lt(high),
+        };
+        low_cmp.and(high_cmp)
+    }
+
+    for closed in [
+        ClosedInterval::Both,
+        ClosedInterval::Left,
+        ClosedInterval::Right,
+        ClosedInterval::None,
+    ] {
+        let out = df
+            .clone()
+            .lazy()
+            .select([
+                // dyn low bound, explicitly-typed (mismatched) high bound
+                explicit_chain(col("x"), lit(larger), typed_lit(2.0_f64), closed)
+                    .alias("explicit_dyn_low_typed_high"),
+                col("x")
+                    .is_between(lit(larger), typed_lit(2.0_f64), closed)
+                    .alias("dyn_low_typed_high"),
+                // explicitly-typed (mismatched) low bound, dyn high bound
+                explicit_chain(col("x"), typed_lit(0.0_f64), lit(larger), closed)
+                    .alias("explicit_typed_low_dyn_high"),
+                col("x")
+                    .is_between(typed_lit(0.0_f64), lit(larger), closed)
+                    .alias("typed_low_dyn_high"),
+            ])
+            .collect()?;
+
+        assert_eq!(
+            Vec::from(out.column("dyn_low_typed_high")?.bool()?),
+            Vec::from(out.column("explicit_dyn_low_typed_high")?.bool()?),
+            "dyn-low/typed-high mismatch for closed={closed:?}"
+        );
+        assert_eq!(
+            Vec::from(out.column("typed_low_dyn_high")?.bool()?),
+            Vec::from(out.column("explicit_typed_low_dyn_high")?.bool()?),
+            "typed-low/dyn-high mismatch for closed={closed:?}"
+        );
+    }
+
+    // `closed=Both` (inclusive on both bounds) is the case from the bug report: the needle
+    // must land exactly on the narrowed dyn bound and be considered "in".
+    let out = df
+        .lazy()
+        .select([
+            col("x")
+                .is_between(lit(larger), typed_lit(2.0_f64), ClosedInterval::Both)
+                .alias("dyn_low_typed_high"),
+            col("x")
+                .is_between(typed_lit(0.0_f64), lit(larger), ClosedInterval::Both)
+                .alias("typed_low_dyn_high"),
+        ])
+        .collect()?;
+    assert_eq!(
+        Vec::from(out.column("dyn_low_typed_high")?.bool()?),
+        &[Some(true)]
+    );
+    assert_eq!(
+        Vec::from(out.column("typed_low_dyn_high")?.bool()?),
+        &[Some(true)]
+    );
+
+    Ok(())
+}
+
+#[test]
 #[cfg(feature = "dtype-date")]
 fn test_fill_nan() -> PolarsResult<()> {
     let s0 = Column::new("date".into(), &[1, 2, 3]).cast(&DataType::Date)?;

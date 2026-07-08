@@ -1114,3 +1114,34 @@ def test_comparison_literal_downcast_rewrites() -> None:
         pl.col("u16").is_between(1 << 16, 1 << 17),
         'when(col("u16").is_not_null()).then(false).otherwise(null)',
     )
+
+
+def test_is_between_coerces_dyn_float_like_binary_comparison_28278() -> None:
+    x = 1.0000001192092896
+    larger = 1.000000149011612
+    lf = pl.LazyFrame({"x": [x]}, schema={"x": pl.Float32})
+
+    result = lf.select(
+        explicit_between=(pl.col("x") >= larger) & (pl.col("x") <= 2.0),
+        is_between=pl.col("x").is_between(larger, 2.0),
+        closed_left=pl.col("x").is_between(larger, 2.0, closed="left"),
+        explicit_float64=pl.col("x").is_between(
+            pl.lit(larger, dtype=pl.Float64),
+            pl.lit(2.0, dtype=pl.Float64),
+        ),
+    ).collect()
+
+    expected = pl.DataFrame(
+        {
+            "explicit_between": [True],
+            "is_between": [True],
+            "closed_left": [True],
+            "explicit_float64": [False],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    empty = pl.LazyFrame({"x": []}, schema={"x": pl.Float32}).select(
+        is_between=pl.col("x").is_between(larger, 2.0)
+    )
+    assert empty.collect().schema == {"is_between": pl.Boolean}
