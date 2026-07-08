@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.parse import parse_into_expression
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
