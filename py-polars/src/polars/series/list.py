@@ -1,24 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
-from polars import functions as F
-from polars._utils.deprecation import issue_deprecation_warning
 from polars._utils.unstable import unstable
 from polars._utils.various import _NamespaceSuggestMixin
-from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Collection
+    from collections.abc import Collection, Sequence
 
     from polars import Expr, Series
     from polars._plr import PySeries
     from polars._typing import (
         IntoExpr,
         IntoExprColumn,
-        ListToStructWidthStrategy,
         NullBehavior,
     )
 
@@ -922,77 +917,87 @@ class ListNameSpace(_NamespaceSuggestMixin):
         ]
         """
 
-    def to_struct(
-        self,
-        n_field_strategy: ListToStructWidthStrategy = "first_non_null",
-        fields: Callable[[int], str] | Sequence[str] | None = None,
-    ) -> Series:
+    def to_struct(self, fields: Sequence[str]) -> Series:
         """
         Convert the series of type `List` to a series of type `Struct`.
 
         Parameters
         ----------
-        n_field_strategy : {'first_non_null', 'max_width'}
-            Strategy to determine the number of fields of the struct.
-
-            * "first_non_null": set number of fields equal to the length of the
-              first non zero-length sublist.
-            * "max_width": set number of fields as max length of all sublists.
         fields
-            If the name and number of the desired fields is known in advance
-            a list of field names can be given, which will be assigned by index.
-            Otherwise, to dynamically assign field names, a custom function can be
-            used; if neither are set, fields will be `field_0, field_1 .. field_n`.
+            Field names to use for the output. The number of names determines how
+            many fields will be in the output.
 
         Examples
         --------
-        Convert list to struct with default field name assignment:
-
-        >>> s1 = pl.Series("n", [[0, 1, 2], [0, 1]])
-        >>> s2 = s1.list.to_struct()
-        >>> s2
-        shape: (2,)
-        Series: 'n' [struct[3]]
+        >>> s = pl.Series(
+        ...     [
+        ...         [1],
+        ...         [0, 1],
+        ...         [1, 0, 1],
+        ...         [],
+        ...         [None, 1],
+        ...         None,
+        ...     ],
+        ... )
+        >>> print(result := s.list.to_struct(["x", "y"]))
+        shape: (6,)
+        Series: '' [struct[2]]
         [
-            {0,1,2}
-            {0,1,null}
+                {1,null}
+                {0,1}
+                {1,0}
+                {null,null}
+                {null,1}
+                {null,null}
         ]
-        >>> s2.struct.fields
-        ['field_0', 'field_1', 'field_2']
+        >>> print(result.struct.unnest())
+        shape: (6, 2)
+        ┌──────┬──────┐
+        │ x    ┆ y    │
+        │ ---  ┆ ---  │
+        │ i64  ┆ i64  │
+        ╞══════╪══════╡
+        │ 1    ┆ null │
+        │ 0    ┆ 1    │
+        │ 1    ┆ 0    │
+        │ null ┆ null │
+        │ null ┆ 1    │
+        │ null ┆ null │
+        └──────┴──────┘
 
-        Convert list to struct with field name assignment by function/index:
+        Unnest to a struct with a number of fields matching the length of the longest
+        list:
 
-        >>> s3 = s1.list.to_struct(fields=lambda idx: f"n{idx:02}")
-        >>> s3.struct.fields
-        ['n00', 'n01', 'n02']
-
-        Convert list to struct with field name assignment by index from a list of names:
-
-        >>> s1.list.to_struct(fields=["one", "two", "three"]).struct.unnest()
-        shape: (2, 3)
-        ┌─────┬─────┬───────┐
-        │ one ┆ two ┆ three │
-        │ --- ┆ --- ┆ ---   │
-        │ i64 ┆ i64 ┆ i64   │
-        ╞═════╪═════╪═══════╡
-        │ 0   ┆ 1   ┆ 2     │
-        │ 0   ┆ 1   ┆ null  │
-        └─────┴─────┴───────┘
+        >>> print(
+        ...     result := s.list.to_struct(
+        ...         [f"field_{i}" for i in range(s.list.len().max() or 0)]
+        ...     )
+        ... )
+        shape: (6,)
+        Series: '' [struct[3]]
+        [
+                {1,null,null}
+                {0,1,null}
+                {1,0,1}
+                {null,null,null}
+                {null,1,null}
+                {null,null,null}
+        ]
+        >>> print(result.struct.unnest())
+        shape: (6, 3)
+        ┌─────────┬─────────┬─────────┐
+        │ field_0 ┆ field_1 ┆ field_2 │
+        │ ---     ┆ ---     ┆ ---     │
+        │ i64     ┆ i64     ┆ i64     │
+        ╞═════════╪═════════╪═════════╡
+        │ 1       ┆ null    ┆ null    │
+        │ 0       ┆ 1       ┆ null    │
+        │ 1       ┆ 0       ┆ 1       │
+        │ null    ┆ null    ┆ null    │
+        │ null    ┆ 1       ┆ null    │
+        │ null    ┆ null    ┆ null    │
+        └─────────┴─────────┴─────────┘
         """
-        if isinstance(fields, Sequence):
-            s = wrap_s(self._s)
-            return (
-                s.to_frame()
-                .select_seq(F.col(s.name).list.to_struct(fields=fields))
-                .to_series()
-            )
-
-        issue_deprecation_warning(
-            "list.to_struct() without a list of field names is deprecated. Please "
-            "pass a list of field names."
-        )
-
-        return wrap_s(self._s.list_to_struct(n_field_strategy, fields))
 
     def eval(self, expr: Expr, *, parallel: bool = False) -> Series:
         """

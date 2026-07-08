@@ -681,58 +681,40 @@ def test_list_unique2() -> None:
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.select(pl.col("n").list.to_struct(upper_bound=3)).rows(
-            named=True
-        ) == [
-            {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
-            {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
-        ]
+    assert df.select(
+        pl.col("n").list.to_struct(["field_0", "field_1", "field_2"])
+    ).rows(named=True) == [
+        {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
+        {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
+    ]
 
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        assert df.select(
-            pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", upper_bound=3)
-        ).rows(named=True) == [
-            {"n": {"n0": 0, "n1": 1, "n2": 2}},
-            {"n": {"n0": 0, "n1": 1, "n2": None}},
-        ]
+    assert df.select(pl.col("n").list.to_struct(["n0", "n1", "n2"])).rows(
+        named=True
+    ) == [
+        {"n": {"n0": 0, "n1": 1, "n2": 2}},
+        {"n": {"n0": 0, "n1": 1, "n2": None}},
+    ]
 
-    assert df.select(pl.col("n").list.to_struct(fields=["one", "two", "three"])).rows(
+    assert df.select(pl.col("n").list.to_struct(["one", "two", "three"])).rows(
         named=True
     ) == [
         {"n": {"one": 0, "two": 1, "three": 2}},
         {"n": {"one": 0, "two": 1, "three": None}},
     ]
 
-    q = df.lazy().select(
-        pl.col("n").list.to_struct(fields=["a", "b"]).struct.field("a")
-    )
-
+    q = df.lazy().select(pl.col("n").list.to_struct(["a", "b"]).struct.field("a"))
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [0, 0]}))
-
-    # Check that:
-    # * Specifying an upper bound calls the field name getter function to
-    #   retrieve the lazy schema
-    # * The upper bound is respected during execution
-    with pytest.warns(DeprecationWarning, match="to_struct"):
-        q = df.lazy().select(
-            pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
-        )
-    assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
-    assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
 
 
 def test_list_to_struct_all_null_12119() -> None:
     s = pl.Series([None], dtype=pl.List(pl.Int64))
-    result = s.list.to_struct(fields=["a", "b", "c"]).to_list()
+    result = s.list.to_struct(["a", "b", "c"]).to_list()
     assert result == [{"a": None, "b": None, "c": None}]
 
 
 def test_select_from_list_to_struct_11143() -> None:
     ldf = pl.LazyFrame({"some_col": [[1.0, 2.0], [1.5, 3.0]]})
-    ldf = ldf.select(
-        pl.col("some_col").list.to_struct(fields=["a", "b"], upper_bound=2)
-    )
+    ldf = ldf.select(pl.col("some_col").list.to_struct(["a", "b"]))
     df = ldf.select(pl.col("some_col").struct.field("a")).collect()
     assert df.equals(pl.DataFrame({"a": [1.0, 1.5]}))
 
@@ -1424,3 +1406,17 @@ def test_list_slice_broadcast_27480(offset: Any, length: Any) -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+def test_list_to_struct_raises_on_str_input() -> None:
+    with pytest.raises(TypeError):
+        pl.col("x").list.to_struct("A")
+
+    with pytest.raises(TypeError):
+        pl.Series(dtype=pl.List(pl.Int8)).list.to_struct("A")
+
+    with pytest.raises(TypeError):
+        pl.col("x").arr.to_struct("A")
+
+    with pytest.raises(TypeError):
+        pl.Series(dtype=pl.Array(pl.Int8, 1)).arr.to_struct("A")
