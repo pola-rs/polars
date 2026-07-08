@@ -293,7 +293,7 @@ pub struct MergeSorted {
     #[pyo3(get)]
     input_right: usize,
     #[pyo3(get)]
-    key: String,
+    key: Vec<String>,
     #[pyo3(get)]
     maintain_order: bool,
 }
@@ -784,7 +784,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<Py<PyAny>> {
         } => MergeSorted {
             input_left: input_left.0,
             input_right: input_right.0,
-            key: key.to_string(),
+            key: key.iter().map(|k| k.to_string()).collect(),
             maintain_order: *maintain_order,
         }
         .into_py_any(py),

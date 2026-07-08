@@ -562,12 +562,13 @@ fn is_sorted_rec(
         IR::SinkMultiple { .. } => None,
         #[cfg(feature = "merge_sorted")]
         IR::MergeSorted { key, .. } => Some(IRSorted(
-            [Sorted {
-                column: key.clone(),
-                descending: None,
-                nulls_last: None,
-            }]
-            .into(),
+            key.iter()
+                .map(|column| Sorted {
+                    column: column.clone(),
+                    descending: None,
+                    nulls_last: None,
+                })
+                .collect(),
         )),
         IR::Distinct { input, options } => {
             if !options.maintain_order {

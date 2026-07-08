@@ -24,11 +24,11 @@ mod expand_datasets;
 pub use expand_datasets::{ExpandedPythonScan, PyScanResolveThreadPool};
 mod collapse_sort;
 pub mod deep_copy;
+mod filter_constraint;
 mod ir_traversal;
 mod parquet_metadata_prune;
 mod predicate_pushdown;
 mod projection_pushdown;
-mod range_merge;
 mod simplify_expr;
 pub mod simplify_ordering;
 mod slice_pushdown_expr;
@@ -72,6 +72,10 @@ const HASHMAP_SIZE: usize = 16;
 
 pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
     PlHashMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
+}
+
+pub(crate) fn init_indexmap<K, V>(max_len: Option<usize>) -> PlIndexMap<K, V> {
+    PlIndexMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
 }
 
 pub(crate) fn pushdown_maintain_errors() -> bool {
@@ -227,11 +231,11 @@ pub fn optimize(
     // This optimization removes branches, so we must do it when type coercion
     // is completed.
     if opt_flags.simplify_expr() {
-        // RangeMergeRule turns an impossible range like `a > 5 AND a < 3` into
-        // `false`. It runs before SimplifyBooleanRule so that, in the same pass,
-        // SimplifyBooleanRule can use that `false` to collapse the whole filter
-        // into an empty scan.
-        rules.push(Box::new(range_merge::RangeMergeRule {
+        // FilterConstraintRule turns an impossible filter like `a > 5 AND a < 3`
+        // into `false`. It runs before SimplifyBooleanRule so that, in the same
+        // pass, SimplifyBooleanRule can use that `false` to collapse the whole
+        // filter into an empty scan.
+        rules.push(Box::new(filter_constraint::FilterConstraintRule {
             maintain_errors: pushdown_maintain_errors,
         }));
         rules.push(Box::new(SimplifyBooleanRule {

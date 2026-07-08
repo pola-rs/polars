@@ -37,6 +37,12 @@ impl ComputeNode for OrderedUnionNode {
     ) -> PolarsResult<()> {
         assert!(self.cur_input_idx <= recv.len() && send.len() == 1);
 
+        // Mark inputs as done when the output is done and stop processing.
+        if send[0] == PortState::Done {
+            recv.fill(PortState::Done);
+            return Ok(());
+        }
+
         // Skip inputs that are done.
         while self.cur_input_idx < recv.len() && recv[self.cur_input_idx] == PortState::Done {
             self.cur_input_idx += 1;

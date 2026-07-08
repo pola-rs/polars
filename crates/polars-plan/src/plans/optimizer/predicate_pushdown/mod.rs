@@ -5,7 +5,7 @@ mod keys;
 mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
-use polars_core::datatypes::PlHashMap;
+use polars_core::datatypes::{PlHashMap, PlIndexMap};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
@@ -65,7 +65,7 @@ impl PredicatePushDown {
     fn pushdown_and_assign(
         &mut self,
         input: Node,
-        acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+        acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<()> {
@@ -79,7 +79,7 @@ impl PredicatePushDown {
     fn pushdown_and_continue(
         &mut self,
         lp: IR,
-        mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+        mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         has_projections: bool,
@@ -112,7 +112,7 @@ impl PredicatePushDown {
                 PushdownEligibility::Partial { to_local } => {
                     let mut out = Vec::with_capacity(to_local.len());
                     for key in to_local {
-                        out.push(acc_predicates.remove(&key).unwrap());
+                        out.push(acc_predicates.swap_remove(&key).unwrap());
                     }
                     out
                 },
@@ -145,7 +145,7 @@ impl PredicatePushDown {
                     // it could be that this node just added the column where we base the predicate on
                     let input_schema = lp_arena.get(node).schema(lp_arena);
                     let mut pushdown_predicates =
-                        optimizer::init_hashmap(Some(acc_predicates.len()));
+                        optimizer::init_indexmap(Some(acc_predicates.len()));
                     for (_, predicate) in acc_predicates.iter() {
                         // we can pushdown the predicate
                         if check_input_node(predicate.node(), &input_schema, expr_arena) {
@@ -173,23 +173,23 @@ impl PredicatePushDown {
     fn no_pushdown_restart_opt(
         &mut self,
         lp: IR,
-        mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+        mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
         let inputs = lp.inputs();
 
-        let local_predicates: Vec<ExprIR> = acc_predicates.drain().map(|x| x.1).collect();
+        let local_predicates: Vec<ExprIR> = acc_predicates.drain(..).map(|x| x.1).collect();
 
         assert!(acc_predicates.is_empty());
-        let mut reuse_hashmap: Option<PlHashMap<_, _>> = Some(acc_predicates);
+        let mut reuse_hashmap: Option<PlIndexMap<_, _>> = Some(acc_predicates);
 
         let new_inputs = inputs
             .map(|node| {
                 let alp = lp_arena.take(node);
                 let alp = self.push_down(
                     alp,
-                    reuse_hashmap.take().unwrap_or_else(|| init_hashmap(None)),
+                    reuse_hashmap.take().unwrap_or_else(|| init_indexmap(None)),
                     lp_arena,
                     expr_arena,
                 )?;
@@ -205,7 +205,7 @@ impl PredicatePushDown {
     fn no_pushdown(
         &mut self,
         lp: IR,
-        acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+        acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
@@ -229,7 +229,7 @@ impl PredicatePushDown {
     fn push_down(
         &mut self,
         lp: IR,
-        mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+        mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
@@ -274,18 +274,18 @@ impl PredicatePushDown {
                     PushdownEligibility::Partial { to_local } => {
                         let mut out = Vec::with_capacity(to_local.len());
                         for key in to_local {
-                            out.push(acc_predicates.remove(&key).unwrap());
+                            out.push(acc_predicates.swap_remove(&key).unwrap());
                         }
                         out
                     },
                     PushdownEligibility::NoPushdown => {
-                        let out = acc_predicates.drain().map(|t| t.1).collect();
+                        let out = acc_predicates.drain(..).map(|t| t.1).collect();
                         acc_predicates.clear();
                         out
                     },
                 };
 
-                if let Some(predicate) = acc_predicates.remove(&tmp_key) {
+                if let Some(predicate) = acc_predicates.swap_remove(&tmp_key) {
                     insert_predicate_dedup(&mut acc_predicates, &predicate, expr_arena);
                 }
 
@@ -588,7 +588,7 @@ impl PredicatePushDown {
                 let mut local_predicates = Vec::new();
 
                 if slice.is_some() && !acc_predicates.is_empty() {
-                    local_predicates.extend(acc_predicates.drain().map(|x| x.1));
+                    local_predicates.extend(acc_predicates.drain(..).map(|x| x.1));
                 }
 
                 if let Some((offset, len, None)) = slice
@@ -699,7 +699,7 @@ impl PredicatePushDown {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
     ) -> PolarsResult<IR> {
-        let acc_predicates = PlHashMap::new();
+        let acc_predicates = init_indexmap(None);
         self.push_down(logical_plan, acc_predicates, lp_arena, expr_arena)
     }
 }
