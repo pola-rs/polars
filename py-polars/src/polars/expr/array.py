@@ -811,7 +811,7 @@ class ExprArrayNameSpace:
         >>> df = pl.DataFrame(
         ...     {"a": [[1, 2, 3], [4, 5, 6]]}, schema={"a": pl.Array(pl.Int64, 3)}
         ... )
-        >>> df.select(pl.col("a").arr.explode())
+        >>> df.select(pl.col("a").arr.explode(empty_as_null=False))
         shape: (6, 1)
         ┌─────┐
         │ a   │
@@ -958,6 +958,11 @@ class ExprArrayNameSpace:
             pyexpr = self._pyexpr.arr_to_struct(None)
             return wrap_expr(pyexpr).struct.rename_fields(field_names)
         else:
+            if callable(fields):
+                issue_deprecation_warning(
+                    "arr.to_struct() with a callable is deprecated. Please pass a list "
+                    "of field names."
+                )
             pyexpr = self._pyexpr.arr_to_struct(fields)
             return wrap_expr(pyexpr)
 

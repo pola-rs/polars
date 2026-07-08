@@ -82,6 +82,7 @@ temporal = [
   "dtype-duration",
   "polars-plan/temporal",
   "polars-expr/temporal",
+  "polars-stream?/temporal",
 ]
 # debugging purposes
 fmt = ["polars-core/fmt", "polars-plan/fmt"]

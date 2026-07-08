@@ -110,7 +110,12 @@ impl MutableFixedSizeBinaryArray {
             Some(bytes) => {
                 let bytes = bytes.as_ref();
                 if self.size != bytes.len() {
-                    polars_bail!(ComputeError: "FixedSizeBinaryArray requires every item to be of its length")
+                    polars_bail!(
+                        ComputeError:
+                        "MutableFixedSizeBinaryArray(row_width: {}): attempted to push \
+                        row with {} bytes",
+                        self.size, bytes.len(),
+                    )
                 }
                 self.values.extend_from_slice(bytes);
 

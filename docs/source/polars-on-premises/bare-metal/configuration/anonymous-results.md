@@ -61,8 +61,34 @@ Make sure that this endpoint is reachable from all worker nodes and the Python c
 client does not have access to this endpoint, it won't be able to download the anonymous results,
 but it will still be able to receive query status updates.
 
-The allowed keys under `anonymous_result_location.s3` are the same as in
-[`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)(_e.g._
-`aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`). We currently only
-support the AWS keys of the `storage_options` dictionary, but note that you can use any other cloud
-provider that supports the S3 API, such as MinIO or DigitalOcean Spaces.
+## Google Cloud Storage
+
+Anonymous results can also be stored in Google Cloud Storage:
+
+```toml
+[scheduler]
+enabled = true
+anonymous_result_location.gcs.url = "gs://bucket/path/to/key"
+anonymous_result_location.gcs.google_service_account_path = "/etc/polars/gcs-service-account.json"
+```
+
+## Azure Blob Storage
+
+Anonymous results can also be stored in Azure Blob Storage:
+
+```toml
+[scheduler]
+enabled = true
+anonymous_result_location.abs.url = "az://container/path/to/key"
+anonymous_result_location.abs.azure_storage_account_name = "YOURACCOUNT"
+anonymous_result_location.abs.azure_storage_account_key = "YOURKEY"
+```
+
+!!! note "Object store options"
+
+    For the object store options (`s3`, `gcs`, and `abs`), the allowed keys are the same as in
+    [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
+    (_e.g._ `aws_access_key_id`, `google_service_account_path`, `azure_storage_account_name`). You
+    can use any other cloud provider that supports the S3 API, such as MinIO or DigitalOcean Spaces.
+    As with S3, the credentials are used by the worker to write results and by the scheduler to
+    create a presigned download URL for the Python client.

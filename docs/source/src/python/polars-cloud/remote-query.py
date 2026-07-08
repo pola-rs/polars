@@ -66,8 +66,16 @@ pdsh_q3(customer_sf10, lineitem_sf10, orders_sf10).remote(context=ctx).show()
 # --8<-- [start:cluster_context]
 import polars_cloud as pc
 
+with open("certificate.pem", "rb") as cert:
+    custom_ca = cert.read()
+
 ctx = pc.ClusterContext(
-    compute_address="https://...",
+    uri="https://192.0.2.1",
+    domain_name="example.local",
+    extra_headers={"X-User": "Foo"},
+    tls_options=pc.TLSOptions(
+        ca_cert=custom_ca,
+    ),
 )
 
 # Use a larger dataset available on S3

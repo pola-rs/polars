@@ -9,12 +9,12 @@ A license key looks like this:
 ```
 
 At the top level of the configuration file, you need to specify the path to the license file using
-the `license` key. For example:
+the `license.on_prem_enterprise.license_path` key. For example:
 
 ```toml
 cluster_id = "polars-cluster-dev"
 instance_id = "scheduler"
-license = "/etc/polars/license.json"
+license.on_prem_enterprise.license_path = "/etc/polars/license.json"
 # ...
 ```
 

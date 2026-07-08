@@ -140,11 +140,12 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    q = df.with_columns(
-        pl.col("genres")
-        .str.split("|")
-        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
-    ).unnest("genres")
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        q = df.with_columns(
+            pl.col("genres")
+            .str.split("|")
+            .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
+        ).unnest("genres")
 
     out = q.collect()
     assert out.to_dict(as_series=False) == {

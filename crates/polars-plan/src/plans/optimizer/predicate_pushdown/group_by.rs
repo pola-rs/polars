@@ -12,7 +12,7 @@ pub(super) fn process_group_by(
     maintain_order: bool,
     apply: Option<PlanCallback<DataFrame, DataFrame>>,
     options: Arc<GroupbyOptions>,
-    acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
 
@@ -58,7 +58,7 @@ pub(super) fn process_group_by(
         }
     }
 
-    let mut new_acc_predicates = PlHashMap::with_capacity(acc_predicates.len());
+    let mut new_acc_predicates = init_indexmap(Some(acc_predicates.len()));
 
     for (pred_name, predicate) in acc_predicates {
         // Counts change due to groupby's

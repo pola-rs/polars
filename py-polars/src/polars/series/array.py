@@ -656,7 +656,7 @@ class ArrayNameSpace:
         Examples
         --------
         >>> s = pl.Series("a", [[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3))
-        >>> s.arr.explode()
+        >>> s.arr.explode(empty_as_null=False)
         shape: (6,)
         Series: 'a' [i64]
         [
