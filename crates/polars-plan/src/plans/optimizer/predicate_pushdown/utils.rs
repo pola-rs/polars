@@ -21,7 +21,7 @@ fn combine_by_and(left: Node, right: Node, arena: &mut Arena<AExpr>) -> Node {
 /// The map is keyed in a way that may cause some predicates to fall into the same bucket. In that
 /// case the predicate is AND'ed with the existing node in that bucket.
 pub(super) fn insert_predicate_dedup(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     predicate: &ExprIR,
     expr_arena: &mut Arena<AExpr>,
 ) {
@@ -62,7 +62,7 @@ pub(super) fn insert_predicate_dedup(
         .or_insert_with(|| predicate.clone());
 }
 
-pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<PlSmallStr, ExprIR>) -> PlSmallStr {
+pub(super) fn temporary_unique_key(acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>) -> PlSmallStr {
     // TODO: Don't heap allocate during construction.
     let mut out_key = '\u{1D17A}'.to_string();
     let mut existing_keys = acc_predicates.keys();
@@ -74,11 +74,14 @@ pub(super) fn temporary_unique_key(acc_predicates: &PlHashMap<PlSmallStr, ExprIR
     PlSmallStr::from_string(out_key)
 }
 
-fn combine_predicates_ordered<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
+pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
 where
     I: IntoIterator<Item = ExprIR>,
 {
-    let mut iter = iter.into_iter();
+    // Order the predicates so that CSE can hit them.
+    let mut exprs = iter.into_iter().collect_vec();
+    exprs.sort_by(|a, b| a.output_name().cmp(b.output_name()));
+    let mut iter = exprs.iter();
     let mut out = iter.next()?.node();
 
     for e in iter {
@@ -92,38 +95,12 @@ where
     Some(ExprIR::from_node(out, expr_arena))
 }
 
-pub(super) fn combine_keyed_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
-where
-    I: IntoIterator<Item = (PlSmallStr, ExprIR)>,
-{
-    let mut predicates = iter.into_iter().collect_vec();
-    // If we collected a hashmap of predicates that refer to expressions
-    // with the same output name, we need a tie-breaker to decide the sort order.
-    // The hashmap's key str is that thing.
-    predicates.sort_unstable_by(|(lk, l), (rk, r)| {
-        l.output_name()
-            .cmp(r.output_name())
-            .then_with(|| lk.cmp(rk))
-    });
-    combine_predicates_ordered(predicates.into_iter().map(|(_, expr)| expr), expr_arena)
-}
-
-pub(super) fn combine_predicates<I>(iter: I, expr_arena: &mut Arena<AExpr>) -> Option<ExprIR>
-where
-    I: IntoIterator<Item = ExprIR>,
-{
-    // Order the predicates so that CSE can hit them.
-    let mut exprs = iter.into_iter().collect_vec();
-    exprs.sort_unstable_by(|a, b| a.output_name().cmp(b.output_name()));
-    combine_predicates_ordered(exprs, expr_arena)
-}
-
 /// Evaluates a condition on the column name inputs of every predicate, where if
 /// the condition evaluates to true on any column name the predicate is
 /// transferred to local.
 pub(super) fn transfer_to_local_by_name<F>(
     expr_arena: &Arena<AExpr>,
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     mut condition: F,
 ) -> Vec<ExprIR>
 where
@@ -142,7 +119,7 @@ where
     }
     let mut local_predicates = Vec::with_capacity(remove_keys.len());
     for key in remove_keys {
-        if let Some(pred) = acc_predicates.remove(&*key) {
+        if let Some(pred) = acc_predicates.swap_remove(&*key) {
             local_predicates.push(pred)
         }
     }
@@ -183,7 +160,7 @@ pub fn pushdown_eligibility(
     // Predicates that need to be checked (key, expr_ir)
     new_predicates: &[(&PlSmallStr, ExprIR)],
     // Note: These predicates have already passed checks.
-    acc_predicates: &PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut UnitVec<Node>,
     maintain_errors: bool,
