@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import operator
+import re
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -983,3 +984,31 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
         pl.Series("a", [81], dtype=dtype).log(b),
         pl.Series("a", [4, 4, 2, 4, 2], dtype=dtype),
     )
+
+
+@pytest.mark.parametrize(
+    ("op", "op_str"),
+    [(operator.and_, "&"), (operator.or_, "|"), (operator.xor, "^")],
+    ids=["and", "or", "xor"],
+)
+def test_bitwise_bool_ops_deprecated(
+    op: Callable[[Any, Any], Any], op_str: str
+) -> None:
+    lf = pl.LazyFrame(
+        {"int": [], "bool": []}, schema={"int": pl.Int32, "bool": pl.Boolean}
+    )
+    hint = "Hint: cast the Boolean to Int32 using pl.Expr.cast()."
+
+    msg = (
+        f"{op_str} on Boolean and Int32 is deprecated and will raise a ComputeError in Polars 2.0\n"
+        + hint
+    )
+    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+        lf.select(op(pl.col("bool"), pl.col("int"))).collect_schema()
+
+    msg = (
+        f"{op_str} on Int32 and Boolean is deprecated and will raise a ComputeError in Polars 2.0\n"
+        + hint
+    )
+    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+        lf.select(op(pl.col("int"), pl.col("bool"))).collect_schema()
