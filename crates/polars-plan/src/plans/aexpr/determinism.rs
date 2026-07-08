@@ -269,7 +269,7 @@ fn is_inherently_nondeterministic_array_fn(f: &IRArrayFunction) -> bool {
         #[cfg(feature = "array_count")]
         A::CountMatches => false,
         #[cfg(feature = "array_to_struct")]
-        A::ToStruct(_) => false,
+        A::ToStruct { fields: _ } => false,
     }
 }
 

@@ -113,8 +113,8 @@ impl ArrayNameSpace {
     }
 
     #[cfg(feature = "array_to_struct")]
-    pub fn to_struct(self, name_generator: Option<DslNameGenerator>) -> Expr {
-        self.0.map_unary(ArrayFunction::ToStruct(name_generator))
+    pub fn to_struct(self, fields: Option<polars_buffer::Buffer<PlSmallStr>>) -> Expr {
+        self.0.map_unary(ArrayFunction::ToStruct { fields })
     }
 
     /// Slice every subarray.
