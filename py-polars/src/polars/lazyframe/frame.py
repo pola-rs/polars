@@ -2039,6 +2039,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.bottom_k(k, by=by, reverse=reverse))
 
     @forward_old_opt_flags()
+    @deprecated(
+        "`LazyFrame.profile` is deprecated. "
+        "It was made for the older in-memory engine, but from version 2.0, "
+        "Polars uses a streaming engine by default. Due to the concurrent "
+        "nature of the streaming engine, the profiling information from this "
+        "function would be misleading.",
+    )
     def profile(
         self,
         *,
@@ -2061,6 +2068,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
+
+        .. deprecated:: 1.43.0
+            It was made for the older in-memory engine, but from version 2.0,
+            Polars uses a streaming engine by default. Due to the concurrent
+            nature of the streaming engine, the profiling information from this
+            function would be misleading.
 
         This will run the query and return a tuple
         containing the materialized DataFrame and a DataFrame that

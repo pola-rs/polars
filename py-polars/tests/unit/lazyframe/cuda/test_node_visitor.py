@@ -5,6 +5,8 @@ import time
 from functools import lru_cache, partial
 from typing import TYPE_CHECKING, Any
 
+import pytest
+
 import polars as pl
 from polars._plr import _expr_nodes, _ir_nodes  # type: ignore[attr-defined]
 from polars._utils.wrap import wrap_df
@@ -128,7 +130,8 @@ def test_run_on_pandas() -> None:
         "bar": [4],
     }
 
-    result, timings = q.profile(post_opt_callback=run_on_pandas)
+    with pytest.deprecated_call():
+        result, timings = q.profile(post_opt_callback=run_on_pandas)
     assert result.to_dict(as_series=False) == {
         "foo": [2],
         "bar": [4],
