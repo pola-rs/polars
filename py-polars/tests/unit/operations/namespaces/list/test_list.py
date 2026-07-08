@@ -709,7 +709,7 @@ def test_list_to_struct() -> None:
 def test_list_to_struct_all_null_12119() -> None:
     s = pl.Series([None], dtype=pl.List(pl.Int64))
     result = s.list.to_struct(["a", "b", "c"]).to_list()
-    assert result == [{"a": None, "b": None, "c": None}]
+    assert result == [None]
 
 
 def test_select_from_list_to_struct_11143() -> None:
@@ -1420,3 +1420,40 @@ def test_list_to_struct_raises_on_str_input() -> None:
 
     with pytest.raises(TypeError):
         pl.Series(dtype=pl.Array(pl.Int8, 1)).arr.to_struct("A")
+
+
+def test_list_to_struct_outer_nulls_28210() -> None:
+    df = pl.DataFrame(
+        {
+            "list": [[0], [], [None], None],
+            "arr": [[0], [0], [None], None],
+            "arr0": [[], [], None, None],
+        },
+        schema={
+            "list": pl.List(pl.Int8),
+            "arr": pl.Array(pl.Int8, 1),
+            "arr0": pl.Array(pl.Int8, 0),
+        },
+    )
+
+    out = df.select(
+        pl.col("list").list.to_struct([""]),
+        pl.col("arr").arr.to_struct([""]),
+        pl.col("arr0").arr.to_struct([]),
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "list": [{"": 0}, {"": None}, {"": None}, None],
+                "arr": [{"": 0}, {"": 0}, {"": None}, None],
+                "arr0": [{}, {}, None, None],
+            },
+            schema={
+                "list": pl.Struct({"": pl.Int8}),
+                "arr": pl.Struct({"": pl.Int8}),
+                "arr0": pl.Struct({}),
+            },
+        ),
+    )
