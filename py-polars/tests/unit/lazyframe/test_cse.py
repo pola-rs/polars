@@ -1525,3 +1525,35 @@ def test_cse_existing_predicate_at_scan_27748() -> None:
         q.collect(),
         pl.DataFrame({"x": False, "y0": False, "y1": True, "x_not": True}),
     )
+
+
+def test_projection_pushdown_cache_node_inputs_point_to_same_node_28279() -> None:
+    base = pl.DataFrame(
+        {
+            "symbol": ["s1", "s2"] * 3,
+            "price": [float(i) for i in range(6)],
+            "function_code": [66 if i % 2 else 83 for i in range(6)],
+        }
+    ).lazy()
+
+    df_order = base.filter(pl.col("function_code") == 66)  # frame filter
+
+    cse_expr = pl.col("price") * 2
+
+    A = df_order.group_by("symbol").agg(
+        cse_expr.sum().alias("a_total"),
+        cse_expr.filter(pl.col("price") > 3).sum().alias("a_0"),
+    )
+
+    B = df_order.group_by("symbol").agg(
+        pl.col("price").count().alias("b_count"),
+    )
+
+    j = A.join(B, on="symbol", how="full")  # how="left" also panics
+
+    q = j.select(
+        pl.col("symbol"),
+        (pl.col("a_0") / pl.col("a_total")).alias("r1"),
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"symbol": ["s2"], "r1": 0.555556}))

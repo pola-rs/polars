@@ -15,6 +15,7 @@ use polars_utils::itertools::Itertools as _;
 use polars_utils::itertools::iters_eq::iters_eq;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
+use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::{FileScanIR, JoinTypeOptionsIR, PredicateFileSkip};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
@@ -59,6 +60,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             names_set_scratch3: &mut ScratchIndexSet::default(),
             names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
+            cache_inputs: &mut PlHashMap::default(),
             default_edge: Edge::new(
                 Projection::All,
                 None,
@@ -94,6 +96,7 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     names_set_scratch3: &'a mut ScratchIndexSet<PlSmallStr>,
     names_vec_scratch: &'a mut ScratchVec<PlSmallStr>,
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
+    cache_inputs: &'a mut PlHashMap<UniqueId, Node>,
     default_edge: Edge,
     maintain_errors: bool,
 }
@@ -190,6 +193,15 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
                         },
                     },
                 );
+            },
+
+            IR::Cache { id, .. } => {
+                if let Some(optimized_input) = self.cache_inputs.get(id).copied() {
+                    let IR::Cache { input, .. } = storage.get_mut(key) else {
+                        unreachable!()
+                    };
+                    *input = optimized_input;
+                }
             },
 
             _ => {},
@@ -1942,12 +1954,15 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 }
             },
 
-            IR::Cache { input, .. } => {
+            IR::Cache { input, id } => {
                 let input = *input;
+                let id = *id;
 
                 if edges.outputs().len() == 1 {
                     unlink_current_node_and_return!(input)
                 }
+
+                self.cache_inputs.insert(id, input);
 
                 let schema = current_node_schema;
                 let mut schema = schema.as_ref();
