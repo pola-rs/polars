@@ -797,7 +797,7 @@ impl LazyFrame {
         let query_start = std::time::Instant::now();
         let (mut state, mut physical_plan, _) =
             self.prepare_collect_post_opt(false, Some(query_start), post_opt)?;
-        state.time_nodes(query_start);
+        state.time_nodes(query_start, query_start.elapsed());
         let out = physical_plan.execute(&mut state)?;
         let timer_df = state.finish_timer()?;
         Ok((out, timer_df))

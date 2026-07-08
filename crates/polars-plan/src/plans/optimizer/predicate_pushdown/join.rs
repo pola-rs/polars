@@ -1387,7 +1387,7 @@ fn take_iejoin_compatible_filters(
                         source_node: ae_node,
                     }),
                     (ExprOrigin::Right, ExprOrigin::Left) => {
-                        let op = op.swap_operands();
+                        let op = op.swap_operands().unwrap();
 
                         Some(IEJoinCompatiblePredicate {
                             input_lhs: *right,
