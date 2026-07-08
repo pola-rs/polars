@@ -1,6 +1,10 @@
 use std::fmt;
 
+#[cfg(feature = "array_to_struct")]
+use polars_buffer::Buffer;
 use polars_core::prelude::{ExplodeOptions, SortOptions};
+#[cfg(feature = "array_to_struct")]
+use polars_utils::pl_str::PlSmallStr;
 
 use super::FunctionExpr;
 
@@ -33,7 +37,9 @@ pub enum ArrayFunction {
     Explode(ExplodeOptions),
     Concat,
     #[cfg(feature = "array_to_struct")]
-    ToStruct(Option<super::DslNameGenerator>),
+    ToStruct {
+        fields: Option<Buffer<PlSmallStr>>,
+    },
 }
 
 impl fmt::Display for ArrayFunction {
@@ -63,7 +69,7 @@ impl fmt::Display for ArrayFunction {
             Shift => "shift",
             Explode { .. } => "explode",
             #[cfg(feature = "array_to_struct")]
-            ToStruct(_) => "to_struct",
+            ToStruct { fields: _ } => "to_struct",
         };
         write!(f, "arr.{name}")
     }
