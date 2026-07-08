@@ -245,6 +245,9 @@ pub(super) async fn parquet_file_info(
     sources: &ScanSources,
     row_index: Option<&RowIndex>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<
+        Arc<polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties>,
+    >,
 ) -> PolarsResult<(
     FileInfo,
     Option<FileMetadataRef>,
@@ -261,12 +264,18 @@ pub(super) async fn parquet_file_info(
     // with the other-source reads below. File 0's schema is not borrowed by the
     // other-source reads, so they are independent and share a single concurrency
     // wave.
+    let first_decryption_properties = decryption_properties.clone();
     let first_fut = async move {
         if first_scan_source.is_cloud_url() {
             let first_path = first_scan_source.as_path().unwrap();
             feature_gated!("cloud", {
-                let mut reader =
-                    ParquetObjectStore::from_uri(first_path.clone(), cloud_options, None).await?;
+                let mut reader = ParquetObjectStore::from_uri(
+                    first_path.clone(),
+                    cloud_options,
+                    None,
+                    first_decryption_properties.clone(),
+                )
+                .await?;
                 PolarsResult::Ok((
                     reader.schema().await?,
                     reader.num_rows().await?,
@@ -276,6 +285,7 @@ pub(super) async fn parquet_file_info(
         } else {
             let memslice = first_scan_source.to_memslice()?;
             let mut reader = ParquetReader::new(Cursor::new(memslice));
+            reader = reader.with_decryption_properties(first_decryption_properties.clone());
             PolarsResult::Ok((
                 reader.schema()?,
                 reader.num_rows()?,
@@ -336,8 +346,16 @@ pub(super) async fn parquet_file_info(
                 // concurrently with file 0.
                 let rest_fut = async move {
                     let mut futures = (1..n_sources)
-                        .map(|i| async move {
-                            read_parquet_num_rows(sources.at(i), cloud_options).await
+                        .map(|i| {
+                            let decryption_properties = decryption_properties.clone();
+                            async move {
+                                read_parquet_num_rows(
+                                    sources.at(i),
+                                    cloud_options,
+                                    decryption_properties,
+                                )
+                                .await
+                            }
                         })
                         .collect::<FuturesUnordered<_>>();
 
@@ -379,8 +397,16 @@ pub(super) async fn parquet_file_info(
                 let rest_fut = async move {
                     let mut futures = sample
                         .iter()
-                        .map(|&i| async move {
-                            read_parquet_num_rows(sources.at(i), cloud_options).await
+                        .map(|&i| {
+                            let decryption_properties = decryption_properties.clone();
+                            async move {
+                                read_parquet_num_rows(
+                                    sources.at(i),
+                                    cloud_options,
+                                    decryption_properties,
+                                )
+                                .await
+                            }
                         })
                         .collect::<FuturesUnordered<_>>();
                     let mut rows = 0usize;
@@ -418,7 +444,13 @@ pub(super) async fn parquet_file_info(
                 // with file 0; `None` marks a file that failed to decode.
                 let rest_fut = async move {
                     let mut futures = (1..n_sources)
-                        .map(|i| read_parquet_metadata(sources.at(i), cloud_options))
+                        .map(|i| {
+                            read_parquet_metadata(
+                                sources.at(i),
+                                cloud_options,
+                                decryption_properties.clone(),
+                            )
+                        })
                         .collect::<FuturesOrdered<_>>();
                     let mut rest: Vec<Option<FileMetadataRef>> = Vec::with_capacity(n_sources - 1);
                     while let Some(file_result) = futures.next().await {
@@ -503,20 +535,36 @@ fn sampled_source_indices(n_sources: usize, limit: usize) -> Vec<usize> {
 async fn read_parquet_metadata(
     source: ScanSourceRef<'_>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<
+        Arc<polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties>,
+    >,
 ) -> PolarsResult<FileMetadataRef> {
     use polars_core::error::feature_gated;
 
     if source.is_cloud_url() {
         let path = source.as_path().unwrap();
         feature_gated!("cloud", {
-            let mut reader =
-                ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
+            let mut reader = ParquetObjectStore::from_uri(
+                path.clone(),
+                cloud_options,
+                None,
+                decryption_properties,
+            )
+            .await?;
             reader.get_metadata().await.cloned()
         })
     } else {
         let memslice = source.to_memslice()?;
         let mut cursor = Cursor::new(memslice);
-        let md = polars_parquet::parquet::read::read_metadata(&mut cursor)?;
+        let md = match decryption_properties {
+            Some(decryption_properties) => {
+                polars_parquet::parquet::read::read_metadata_with_decryption(
+                    &mut cursor,
+                    decryption_properties,
+                )?
+            },
+            None => polars_parquet::parquet::read::read_metadata(&mut cursor)?,
+        };
         Ok(Arc::new(md))
     }
 }
@@ -528,20 +576,37 @@ async fn read_parquet_metadata(
 async fn read_parquet_num_rows(
     source: ScanSourceRef<'_>,
     #[allow(unused)] cloud_options: Option<&polars_io::cloud::CloudOptions>,
+    decryption_properties: Option<
+        Arc<polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties>,
+    >,
 ) -> PolarsResult<i64> {
     use polars_core::error::feature_gated;
 
     if source.is_cloud_url() {
         let path = source.as_path().unwrap();
         feature_gated!("cloud", {
-            let mut reader =
-                ParquetObjectStore::from_uri(path.clone(), cloud_options, None).await?;
+            let mut reader = ParquetObjectStore::from_uri(
+                path.clone(),
+                cloud_options,
+                None,
+                decryption_properties,
+            )
+            .await?;
             reader.num_rows_only().await
         })
     } else {
         let memslice = source.to_memslice()?;
         let mut cursor = Cursor::new(memslice);
-        polars_parquet::parquet::read::read_num_rows(&mut cursor).map_err(Into::into)
+        match decryption_properties {
+            Some(decryption_properties) => {
+                let metadata = polars_parquet::parquet::read::read_metadata_with_decryption(
+                    &mut cursor,
+                    decryption_properties,
+                )?;
+                Ok(metadata.num_rows as i64)
+            },
+            None => polars_parquet::parquet::read::read_num_rows(&mut cursor).map_err(Into::into),
+        }
     }
 }
 
@@ -1142,6 +1207,7 @@ this scan to succeed with an empty DataFrame.",
                                 sources,
                                 unified_scan_args.row_index.as_ref(),
                                 cloud_options,
+                                options.decryption_properties.clone(),
                             )
                             .await?;
 

@@ -6,6 +6,7 @@ use polars_buffer::Buffer;
 use polars_error::PolarsResult;
 use polars_io::parquet::write::BatchedWriter;
 use polars_io::prelude::KeyValueMetadata;
+use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::write::{Encoding, FileWriter, SchemaDescriptor, WriteOptions};
 
 use crate::nodes::io_sinks::writers::interface::FileOpenTaskHandle;
@@ -20,6 +21,7 @@ pub struct IOWriter {
     pub write_options: WriteOptions,
     pub encodings: Buffer<Vec<Encoding>>,
     pub key_value_metadata: Option<KeyValueMetadata>,
+    pub encryption_properties: Option<Arc<FileEncryptionProperties>>,
     pub num_leaf_columns: usize,
 }
 
@@ -33,6 +35,7 @@ impl IOWriter {
             write_options,
             encodings,
             key_value_metadata,
+            encryption_properties,
             num_leaf_columns,
         } = self;
 
@@ -40,12 +43,21 @@ impl IOWriter {
         let mut buffered_file = file.as_buffered();
 
         let mut parquet_writer = BatchedWriter::new(
-            std::sync::Mutex::new(FileWriter::new_with_parquet_schema(
-                &mut *buffered_file,
-                Arc::unwrap_or_clone(arrow_schema),
-                Arc::unwrap_or_clone(schema_descriptor),
-                write_options,
-            )),
+            std::sync::Mutex::new(match encryption_properties {
+                Some(encryption_properties) => FileWriter::new_with_parquet_schema_and_encryption(
+                    &mut *buffered_file,
+                    Arc::unwrap_or_clone(arrow_schema),
+                    Arc::unwrap_or_clone(schema_descriptor),
+                    write_options,
+                    encryption_properties,
+                )?,
+                None => FileWriter::new_with_parquet_schema(
+                    &mut *buffered_file,
+                    Arc::unwrap_or_clone(arrow_schema),
+                    Arc::unwrap_or_clone(schema_descriptor),
+                    write_options,
+                ),
+            }),
             encodings,
             write_options,
             false,

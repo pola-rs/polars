@@ -133,6 +133,7 @@ fn read_file_metadata(
         key_value_metadata,
         created_by,
         column_orders,
+        file_decryptor: None,
         footer_buf: footer.clone(),
     })
 }
@@ -248,6 +249,7 @@ fn read_column_chunk(
         offset_index_length,
         column_index_offset,
         column_index_length,
+        crypto_metadata: None,
     })
 }
 

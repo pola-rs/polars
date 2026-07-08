@@ -62,6 +62,90 @@ def test_scan_round_trip(df: pl.DataFrame) -> None:
     assert_frame_equal(pl.scan_parquet(f).head().collect(), df.head())
 
 
+@pytest.mark.write_disk
+def test_parquet_native_encryption_footer_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "encrypted.parquet"
+    key = b"0123456789abcdef"
+    wrong_key = b"abcdef0123456789"
+    aad_prefix = b"polars-test"
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": ["x", "y", "z"],
+        }
+    )
+
+    df.write_parquet(
+        path,
+        statistics=False,
+        compression="uncompressed",
+        encryption_properties={"footer_key": key, "aad_prefix": aad_prefix},
+    )
+
+    with pytest.raises(pl.exceptions.PolarsError, match="encrypted footer"):
+        pl.read_parquet(path)
+
+    with pytest.raises(pl.exceptions.PolarsError, match="failed to decrypt"):
+        pl.read_parquet(
+            path,
+            decryption_properties={"footer_key": wrong_key, "aad_prefix": aad_prefix},
+        )
+
+    decryption_properties = {"footer_key": key, "aad_prefix": aad_prefix}
+    assert_frame_equal(
+        pl.read_parquet(path, decryption_properties=decryption_properties),
+        df,
+    )
+    assert_frame_equal(
+        pl.scan_parquet(path, decryption_properties=decryption_properties).collect(),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_parquet_native_encryption_plaintext_footer_column_key(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "encrypted_column.parquet"
+    footer_key = b"0123456789abcdef"
+    column_key = b"abcdef0123456789"
+    df = pl.DataFrame(
+        {
+            "public": [1, 2, 3],
+            "private": ["a", "b", "c"],
+        }
+    )
+
+    df.write_parquet(
+        path,
+        statistics=False,
+        compression="uncompressed",
+        encryption_properties={
+            "footer_key": footer_key,
+            "footer_key_metadata": b"footer-key",
+            "plaintext_footer": True,
+            "column_keys": {"private": column_key},
+            "column_key_metadata": {"private": b"private-key"},
+        },
+    )
+
+    with pytest.raises(pl.exceptions.PolarsError, match="decryption properties"):
+        pl.read_parquet(path)
+
+    decryption_properties = {
+        "footer_key": footer_key,
+        "column_keys": {"private": column_key},
+    }
+    assert_frame_equal(
+        pl.read_parquet(path, decryption_properties=decryption_properties),
+        df,
+    )
+    assert_frame_equal(
+        pl.scan_parquet(path, decryption_properties=decryption_properties).collect(),
+        df,
+    )
+
+
 COMPRESSIONS = [
     "lz4",
     "uncompressed",

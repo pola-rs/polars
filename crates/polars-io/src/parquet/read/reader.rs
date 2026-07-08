@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::*;
+use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::read;
 use polars_utils::pl_str::PlRefStr;
 
@@ -28,6 +29,7 @@ pub struct ParquetReader<R: Read + Seek> {
     metadata: Option<FileMetadataRef>,
     hive_partition_columns: Option<Vec<Series>>,
     include_file_path: Option<(PlSmallStr, PlRefStr)>,
+    decryption_properties: Option<Arc<FileDecryptionProperties>>,
 }
 
 impl<R: MmapBytesReader> ParquetReader<R> {
@@ -164,13 +166,31 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
+    /// Set file decryption properties for encrypted Parquet files.
+    pub fn with_decryption_properties(
+        mut self,
+        decryption_properties: Option<Arc<FileDecryptionProperties>>,
+    ) -> Self {
+        self.decryption_properties = decryption_properties;
+        self
+    }
+
     pub fn set_metadata(&mut self, metadata: FileMetadataRef) {
         self.metadata = Some(metadata);
     }
 
     pub fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
-            self.metadata = Some(Arc::new(read::read_metadata(&mut self.reader)?));
+            let metadata = match self.decryption_properties.clone() {
+                Some(decryption_properties) => {
+                    polars_parquet::parquet::read::read_metadata_with_decryption(
+                        &mut self.reader,
+                        decryption_properties,
+                    )?
+                },
+                None => read::read_metadata(&mut self.reader)?,
+            };
+            self.metadata = Some(Arc::new(metadata));
         }
         Ok(self.metadata.as_ref().unwrap())
     }
@@ -192,6 +212,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             schema: None,
             hive_partition_columns: None,
             include_file_path: None,
+            decryption_properties: None,
         }
     }
 

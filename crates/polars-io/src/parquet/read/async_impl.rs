@@ -4,9 +4,12 @@ use arrow::datatypes::ArrowSchemaRef;
 use object_store::path::Path as ObjectPath;
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
+use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::parquet::error::ParquetError;
-use polars_parquet::parquet::read::{deserialize_metadata, deserialize_num_rows};
-use polars_parquet::parquet::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_MAGIC};
+use polars_parquet::parquet::read::{deserialize_metadata_with_decryption, deserialize_num_rows};
+use polars_parquet::parquet::{
+    DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, PARQUET_ENCRYPTED_MAGIC, PARQUET_MAGIC,
+};
 use polars_parquet::write::FileMetadata;
 use polars_utils::pl_path::PlRefPath;
 
@@ -22,6 +25,7 @@ pub struct ParquetObjectStore {
     length: Option<usize>,
     metadata: Option<FileMetadataRef>,
     schema: Option<ArrowSchemaRef>,
+    decryption_properties: Option<Arc<FileDecryptionProperties>>,
 }
 
 impl ParquetObjectStore {
@@ -29,6 +33,7 @@ impl ParquetObjectStore {
         uri: PlRefPath,
         options: Option<&CloudOptions>,
         metadata: Option<FileMetadataRef>,
+        decryption_properties: Option<Arc<FileDecryptionProperties>>,
     ) -> PolarsResult<Self> {
         let (CloudLocation { prefix, .. }, store) = build_object_store(uri, options, false).await?;
         let path = object_path_from_str(&prefix)?;
@@ -39,6 +44,7 @@ impl ParquetObjectStore {
             length: None,
             metadata,
             schema: None,
+            decryption_properties,
         })
     }
 
@@ -64,7 +70,13 @@ impl ParquetObjectStore {
     /// Fetch the metadata of the parquet file, do not memoize it.
     async fn fetch_metadata(&mut self) -> PolarsResult<FileMetadata> {
         let length = self.length().await?;
-        fetch_metadata(&self.store, &self.path, length).await
+        fetch_metadata(
+            &self.store,
+            &self.path,
+            length,
+            self.decryption_properties.clone(),
+        )
+        .await
     }
 
     /// Fetch and memoize the metadata of the parquet file.
@@ -78,6 +90,10 @@ impl ParquetObjectStore {
     /// Decode only `FileMetaData.num_rows` from the remote footer.
     /// Not memoized. Used by `RowCounts` resolve mode.
     pub async fn num_rows_only(&mut self) -> PolarsResult<i64> {
+        if self.decryption_properties.is_some() {
+            return self.num_rows().await.map(|x| x as i64);
+        }
+
         let length = self.length().await?;
         fetch_num_rows(&self.store, &self.path, length).await
     }
@@ -144,7 +160,7 @@ async fn fetch_footer_bytes(
         let footer_byte_size = read_i32le(reader).unwrap();
         let magic = read_n(reader).unwrap();
         debug_assert!(reader.is_empty());
-        if magic != PARQUET_MAGIC {
+        if magic != PARQUET_MAGIC && magic != PARQUET_ENCRYPTED_MAGIC {
             return Err(out_of_spec("incorrect magic in parquet footer").into());
         }
         footer_byte_size
@@ -177,9 +193,13 @@ pub async fn fetch_metadata(
     store: &PolarsObjectStore,
     path: &ObjectPath,
     file_byte_length: usize,
+    decryption_properties: Option<Arc<FileDecryptionProperties>>,
 ) -> PolarsResult<FileMetadata> {
     let footer = fetch_footer_bytes(store, path, file_byte_length).await?;
-    Ok(deserialize_metadata(footer)?)
+    Ok(deserialize_metadata_with_decryption(
+        footer,
+        decryption_properties,
+    )?)
 }
 
 /// Fetch only `FileMetaData.num_rows` from a remote parquet footer.

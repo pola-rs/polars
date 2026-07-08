@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::prelude::CompatLevel;
+use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
 use polars_parquet::write::{
     BrotliLevel, CompressionOptions, GzipLevel, StatisticsOptions, ZstdLevel,
 };
@@ -25,6 +28,9 @@ pub struct ParquetWriteOptions {
     pub arrow_schema: Option<ArrowSchemaRef>,
     #[cfg_attr(feature = "serde", serde(default))]
     pub compat_level: Option<CompatLevel>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
+    pub encryption_properties: Option<Arc<FileEncryptionProperties>>,
 }
 
 impl ParquetWriteOptions {

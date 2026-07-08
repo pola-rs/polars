@@ -77,6 +77,7 @@ def read_parquet(
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] = "raise",
     allow_missing_columns: bool | None = None,
+    decryption_properties: dict[str, Any] | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a parquet file.
@@ -176,6 +177,11 @@ def read_parquet(
     pyarrow_options
         Keyword arguments for `pyarrow.parquet.read_table
         <https://arrow.apache.org/docs/python/generated/pyarrow.parquet.read_table.html>`_.
+    decryption_properties
+        Native Parquet decryption properties. This is a dictionary containing raw
+        AES key bytes such as ``{"footer_key": key}``, with optional
+        ``column_keys``, ``aad_prefix``, and ``check_plaintext_footer_integrity``.
+        Only valid when ``use_pyarrow=False``.
     memory_map
         Memory map underlying file. This will likely increase performance.
         Only used when `use_pyarrow=True`.
@@ -227,6 +233,9 @@ def read_parquet(
 
     # Dispatch to pyarrow if requested
     if use_pyarrow:
+        if decryption_properties is not None:
+            msg = "`decryption_properties` cannot be used with `use_pyarrow=True`; pass PyArrow options via `pyarrow_options` instead"
+            raise ValueError(msg)
         if n_rows is not None:
             msg = "`n_rows` cannot be used with `use_pyarrow=True`"
             raise ValueError(msg)
@@ -282,6 +291,7 @@ def read_parquet(
         glob=glob,
         include_file_paths=include_file_paths,
         missing_columns=missing_columns,
+        decryption_properties=decryption_properties,
     )
 
     if columns is not None:
@@ -489,6 +499,7 @@ def scan_parquet(
     allow_missing_columns: bool | None = None,
     extra_columns: Literal["ignore", "raise"] = "raise",
     cast_options: ScanCastOptions | None = None,
+    decryption_properties: dict[str, Any] | None = None,
     _column_mapping: ColumnMapping | None = None,
     _default_values: DefaultFieldValues | None = None,
     _deletion_files: DeletionFiles | None = None,
@@ -638,6 +649,10 @@ def scan_parquet(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
+    decryption_properties
+        Native Parquet decryption properties. This is a dictionary containing raw
+        AES key bytes such as ``{"footer_key": key}``, with optional
+        ``column_keys``, ``aad_prefix``, and ``check_plaintext_footer_integrity``.
 
     See Also
     --------
@@ -707,6 +722,7 @@ def scan_parquet(
         parallel=parallel,
         low_memory=low_memory,
         use_statistics=use_statistics,
+        decryption_properties=decryption_properties,
         scan_options=ScanOptions(
             row_index=(
                 (row_index_name, row_index_offset)

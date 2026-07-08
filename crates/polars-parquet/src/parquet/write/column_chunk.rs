@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::sync::Arc;
 
 #[cfg(feature = "async")]
 use futures::AsyncWrite;
@@ -11,11 +12,12 @@ use polars_utils::aliases::PlHashSet;
 use super::DynStreamingIterator;
 #[cfg(feature = "async")]
 use super::page::write_page_async;
-use super::page::{PageWriteSpec, is_dict_page, write_page};
+use super::page::{PageEncryptor, PageWriteSpec, is_dict_page, write_page};
 use super::statistics::reduce;
 use crate::parquet::FallibleStreamingIterator;
 use crate::parquet::compression::Compression;
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encryption::encrypt::FileEncryptor;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::ColumnDescriptor;
 use crate::parquet::page::{CompressedPage, PageType};
@@ -25,6 +27,9 @@ pub fn write_column_chunk<W, E>(
     mut offset: u64,
     descriptor: &ColumnDescriptor,
     mut compressed_pages: DynStreamingIterator<'_, CompressedPage, E>,
+    file_encryptor: Option<&Arc<FileEncryptor>>,
+    row_group_index: usize,
+    column_index: usize,
 ) -> ParquetResult<(ColumnChunk, Vec<PageWriteSpec>, u64)>
 where
     W: Write,
@@ -34,24 +39,47 @@ where
     // write every page
 
     let initial = offset;
+    let column_path = descriptor
+        .path_in_schema
+        .iter()
+        .map(|part| part.as_str())
+        .collect::<Vec<_>>()
+        .join(".");
+    let path_in_schema = descriptor
+        .path_in_schema
+        .iter()
+        .map(|part| part.to_string())
+        .collect::<Vec<_>>();
+    let mut page_encryptor = PageEncryptor::create_if_column_encrypted(
+        file_encryptor,
+        row_group_index,
+        column_index,
+        &column_path,
+    )?;
 
     let mut specs = vec![];
     while let Some(compressed_page) = compressed_pages.next()? {
-        let spec = write_page(writer, offset, compressed_page)?;
+        let spec = write_page(writer, offset, compressed_page, page_encryptor.as_mut())?;
         offset += spec.bytes_written;
         specs.push(spec);
     }
     let mut bytes_written = offset - initial;
 
-    let column_chunk = build_column_chunk(&specs, descriptor)?;
+    let mut column_chunk = build_column_chunk(&specs, descriptor)?;
+    if let Some(file_encryptor) = file_encryptor {
+        column_chunk.crypto_metadata =
+            file_encryptor.column_crypto_metadata(&column_path, &path_in_schema);
+    }
 
-    // write metadata
-    let mut protocol = TCompactOutputProtocol::new(writer);
-    bytes_written += column_chunk
-        .meta_data
-        .as_ref()
-        .unwrap()
-        .write_to_out_protocol(&mut protocol)? as u64;
+    if file_encryptor.is_none() {
+        // write metadata
+        let mut protocol = TCompactOutputProtocol::new(writer);
+        bytes_written += column_chunk
+            .meta_data
+            .as_ref()
+            .unwrap()
+            .write_to_out_protocol(&mut protocol)? as u64;
+    }
 
     Ok((column_chunk, specs, bytes_written))
 }

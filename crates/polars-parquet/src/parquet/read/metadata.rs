@@ -1,10 +1,17 @@
 use std::cmp::min;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::sync::Arc;
 
 use polars_buffer::Buffer;
+use polars_parquet_format::FileCryptoMetaData;
+use polars_parquet_format::thrift::protocol::TCompactInputProtocol;
 
-use super::super::metadata::FileMetadata;
-use super::super::{DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_MAGIC};
+use super::super::metadata::{FileMetadata, decode_thrift_file_metadata};
+use super::super::{
+    DEFAULT_FOOTER_READ_SIZE, FOOTER_SIZE, HEADER_SIZE, PARQUET_ENCRYPTED_MAGIC, PARQUET_MAGIC,
+};
+use crate::parquet::encryption::decrypt::FileDecryptionProperties;
+use crate::parquet::encryption::modules::create_footer_aad;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::handwritten_thrift::{decode_file_metadata, decode_num_rows};
 
@@ -34,13 +41,30 @@ pub fn read_metadata<R: Read + Seek>(reader: &mut R) -> ParquetResult<FileMetada
     read_metadata_with_size(reader, file_size)
 }
 
+/// Reads a [`FileMetadata`] from the reader with parquet decryption properties.
+pub fn read_metadata_with_decryption<R: Read + Seek>(
+    reader: &mut R,
+    decryption_properties: Arc<FileDecryptionProperties>,
+) -> ParquetResult<FileMetadata> {
+    let file_size = stream_len(reader)?;
+    read_metadata_with_size_and_decryption(reader, file_size, Some(decryption_properties))
+}
+
 /// Reads a [`FileMetadata`] from the reader, located at the end of the file, with known file size.
 pub fn read_metadata_with_size<R: Read + Seek>(
     reader: &mut R,
     file_size: u64,
 ) -> ParquetResult<FileMetadata> {
+    read_metadata_with_size_and_decryption(reader, file_size, None)
+}
+
+pub fn read_metadata_with_size_and_decryption<R: Read + Seek>(
+    reader: &mut R,
+    file_size: u64,
+    decryption_properties: Option<Arc<FileDecryptionProperties>>,
+) -> ParquetResult<FileMetadata> {
     let footer = fetch_footer_buf(reader, file_size)?;
-    deserialize_metadata(footer)
+    deserialize_metadata_with_decryption(footer, decryption_properties)
 }
 
 /// Parse loaded metadata bytes via the hand-written Thrift compact decoder.
@@ -50,6 +74,70 @@ pub fn read_metadata_with_size<R: Read + Seek>(
 /// `ByteRange`s into it instead of allocating per-stat byte vecs.
 pub fn deserialize_metadata(footer: Buffer<u8>) -> ParquetResult<FileMetadata> {
     let compact = decode_file_metadata(footer)?;
+    FileMetadata::from_compact(compact)
+}
+
+pub fn deserialize_metadata_with_decryption(
+    footer: Buffer<u8>,
+    decryption_properties: Option<Arc<FileDecryptionProperties>>,
+) -> ParquetResult<FileMetadata> {
+    let encrypted_footer = footer[footer.len() - 4..] == PARQUET_ENCRYPTED_MAGIC;
+    if !encrypted_footer && decryption_properties.is_none() {
+        return deserialize_metadata(footer);
+    }
+
+    let footer_without_tail = &footer[..footer.len() - FOOTER_SIZE as usize];
+    let compact = if encrypted_footer {
+        let decryption_properties = decryption_properties.ok_or_else(|| {
+            ParquetError::InvalidParameter(
+                "parquet file has an encrypted footer but no decryption properties were provided"
+                    .to_string(),
+            )
+        })?;
+        let mut cursor = Cursor::new(footer_without_tail);
+        let mut protocol = TCompactInputProtocol::new(&mut cursor, usize::MAX);
+        let file_crypto_metadata = FileCryptoMetaData::read_from_in_protocol(&mut protocol)?;
+        let crypto_metadata_len = cursor.position() as usize;
+        let file_decryptor = crate::parquet::encryption::decrypt::FileDecryptor::from_algorithm(
+            file_crypto_metadata.encryption_algorithm,
+            file_crypto_metadata.key_metadata.as_deref(),
+            &decryption_properties,
+        )?;
+        let aad = create_footer_aad(file_decryptor.file_aad())?;
+        let footer_decryptor = file_decryptor.get_footer_decryptor()?;
+        let decrypted_footer = footer_decryptor
+            .decrypt(&footer_without_tail[crypto_metadata_len..], &aad)
+            .map_err(|_| ParquetError::oos("failed to decrypt parquet footer"))?;
+
+        decode_thrift_file_metadata(&decrypted_footer, Some(file_decryptor))?
+    } else {
+        let mut cursor = Cursor::new(footer_without_tail);
+        let mut protocol = TCompactInputProtocol::new(&mut cursor, usize::MAX);
+        let thrift = polars_parquet_format::FileMetaData::read_from_in_protocol(&mut protocol)?;
+        let file_decryptor = match thrift.encryption_algorithm.clone() {
+            Some(encryption_algorithm) => {
+                let decryption_properties = decryption_properties.ok_or_else(|| {
+                    ParquetError::InvalidParameter(
+                        "parquet file has encrypted modules but no decryption properties were provided"
+                            .to_string(),
+                    )
+                })?;
+                let file_decryptor =
+                    crate::parquet::encryption::decrypt::FileDecryptor::from_algorithm(
+                        encryption_algorithm,
+                        thrift.footer_signing_key_metadata.as_deref(),
+                        &decryption_properties,
+                    )?;
+                if decryption_properties.check_plaintext_footer_integrity() {
+                    file_decryptor.verify_plaintext_footer_signature(footer_without_tail)?;
+                }
+                Some(file_decryptor)
+            },
+            None => None,
+        };
+        decode_thrift_file_metadata(footer_without_tail, file_decryptor)?
+    };
+
     FileMetadata::from_compact(compact)
 }
 
@@ -97,8 +185,9 @@ fn fetch_footer_buf<R: Read + Seek>(reader: &mut R, file_size: u64) -> ParquetRe
         .read_to_end(&mut buffer)?;
 
     // Check this is indeed a parquet file.
-    if buffer[default_end_len - 4..] != PARQUET_MAGIC {
-        return Err(ParquetError::oos("The file must end with PAR1"));
+    let magic = &buffer[default_end_len - 4..];
+    if magic != PARQUET_MAGIC && magic != PARQUET_ENCRYPTED_MAGIC {
+        return Err(ParquetError::oos("The file must end with PAR1 or PARE"));
     }
 
     let metadata_len = metadata_len(&buffer) as u64;

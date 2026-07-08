@@ -122,9 +122,12 @@ impl FileReader for ParquetFileReader {
                 byte_source = Arc::new(DynByteSource::Buffer(BufferByteSource(full_bytes)));
             }
 
-            Arc::new(polars_parquet::parquet::read::deserialize_metadata(
-                metadata_bytes,
-            )?)
+            Arc::new(
+                polars_parquet::parquet::read::deserialize_metadata_with_decryption(
+                    metadata_bytes,
+                    self.config.decryption_properties.clone(),
+                )?,
+            )
         };
 
         let file_schema = Arc::new(infer_schema_with_options(&file_metadata, &None)?);

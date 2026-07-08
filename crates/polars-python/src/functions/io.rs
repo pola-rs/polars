@@ -61,7 +61,7 @@ pub fn read_parquet_metadata(
                     py.detach(|| {
                         polars_core::runtime::ASYNC.block_on(async {
                             let mut reader =
-                                ParquetObjectStore::from_uri(p, cloud_options.as_ref(), None)
+                                ParquetObjectStore::from_uri(p, cloud_options.as_ref(), None, None)
                                     .await?;
                             let result = reader.get_metadata().await?;
                             PolarsResult::Ok((**result).clone())

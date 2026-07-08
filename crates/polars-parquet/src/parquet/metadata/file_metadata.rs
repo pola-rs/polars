@@ -189,6 +189,7 @@ impl FileMetadata {
             key_value_metadata,
             created_by,
             column_orders,
+            file_decryptor,
             footer_buf,
         } = compact;
 
@@ -197,8 +198,14 @@ impl FileMetadata {
         let mut max_row_group_height = 0;
         let row_groups = row_groups
             .into_iter()
-            .map(|rg| {
-                let md = RowGroupMetadata::from_compact(&schema_descr, rg)?;
+            .enumerate()
+            .map(|(row_group_index, rg)| {
+                let md = RowGroupMetadata::from_compact_with_decryptor(
+                    &schema_descr,
+                    rg,
+                    row_group_index,
+                    file_decryptor.as_ref(),
+                )?;
                 max_row_group_height = max_row_group_height.max(md.num_rows());
                 Ok(md)
             })

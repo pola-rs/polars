@@ -8,8 +8,8 @@ pub async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
     verbose: bool,
 ) -> PolarsResult<(Buffer<u8>, Option<Buffer<u8>>)> {
-    use polars_parquet::parquet::PARQUET_MAGIC;
     use polars_parquet::parquet::error::ParquetError;
+    use polars_parquet::parquet::{PARQUET_ENCRYPTED_MAGIC, PARQUET_MAGIC};
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 
@@ -38,10 +38,11 @@ pub async fn read_parquet_metadata_bytes(
     let (v, remaining) = footer_header_bytes.as_slice().split_at(4);
     let footer_size = u32::from_le_bytes(v.try_into().unwrap());
 
-    if remaining != PARQUET_MAGIC {
+    if remaining != PARQUET_MAGIC && remaining != PARQUET_ENCRYPTED_MAGIC {
         return Err(ParquetError::OutOfSpec(format!(
-            r#"expected parquet magic bytes "{}" in footer, got "{}" instead"#,
+            r#"expected parquet magic bytes "{}" or "{}" in footer, got "{}" instead"#,
             std::str::from_utf8(&PARQUET_MAGIC).unwrap(),
+            std::str::from_utf8(&PARQUET_ENCRYPTED_MAGIC).unwrap(),
             String::from_utf8_lossy(remaining)
         ))
         .into());

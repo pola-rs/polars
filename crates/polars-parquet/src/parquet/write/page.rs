@@ -1,4 +1,5 @@
 use std::io::Write;
+use std::sync::Arc;
 
 #[cfg(feature = "async")]
 use futures::{AsyncWrite, AsyncWriteExt};
@@ -8,6 +9,11 @@ use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
 use polars_parquet_format::{DictionaryPageHeader, Encoding, PageType};
 
 use crate::parquet::compression::Compression;
+use crate::parquet::encryption::ciphers::BlockEncryptor;
+use crate::parquet::encryption::encrypt::{
+    FileEncryptor, encrypt_bytes, write_encrypted_thrift_object,
+};
+use crate::parquet::encryption::modules::{ModuleType, create_module_aad};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPageHeader, ParquetPageHeader,
@@ -20,6 +26,91 @@ pub(crate) fn is_data_page(page: &PageWriteSpec) -> bool {
 
 pub(crate) fn is_dict_page(page: &PageWriteSpec) -> bool {
     page.header.type_ == PageType::DICTIONARY_PAGE
+}
+
+#[derive(Debug)]
+pub(crate) struct PageEncryptor {
+    file_encryptor: Arc<FileEncryptor>,
+    block_encryptor: Box<dyn BlockEncryptor>,
+    row_group_index: usize,
+    column_index: usize,
+    page_index: usize,
+}
+
+impl PageEncryptor {
+    pub(crate) fn create_if_column_encrypted(
+        file_encryptor: Option<&Arc<FileEncryptor>>,
+        row_group_index: usize,
+        column_index: usize,
+        column_path: &str,
+    ) -> ParquetResult<Option<Self>> {
+        let Some(file_encryptor) = file_encryptor else {
+            return Ok(None);
+        };
+        if !file_encryptor.is_column_encrypted(column_path) {
+            return Ok(None);
+        }
+        let block_encryptor = file_encryptor.get_column_encryptor(column_path)?;
+        Ok(Some(Self {
+            file_encryptor: Arc::clone(file_encryptor),
+            block_encryptor,
+            row_group_index,
+            column_index,
+            page_index: 0,
+        }))
+    }
+
+    fn encrypt_page(&mut self, page: &CompressedPage) -> ParquetResult<Vec<u8>> {
+        let module_type = match page {
+            CompressedPage::Data(_) => ModuleType::DataPage,
+            CompressedPage::Dict(_) => ModuleType::DictionaryPage,
+        };
+        let aad = create_module_aad(
+            self.file_encryptor.file_aad(),
+            module_type,
+            self.row_group_index,
+            self.column_index,
+            Some(self.page_index),
+        )?;
+        let data = match page {
+            CompressedPage::Data(page) => &page.buffer[..],
+            CompressedPage::Dict(page) => &page.buffer[..],
+        };
+        encrypt_bytes(data, &mut *self.block_encryptor, &aad)
+    }
+
+    fn write_page_header<W: Write>(
+        &mut self,
+        writer: &mut W,
+        header: &ParquetPageHeader,
+    ) -> ParquetResult<u64> {
+        let module_type = match header.type_ {
+            PageType::DATA_PAGE | PageType::DATA_PAGE_V2 => ModuleType::DataPageHeader,
+            PageType::DICTIONARY_PAGE => ModuleType::DictionaryPageHeader,
+            _ => {
+                return Err(ParquetError::not_supported(format!(
+                    "page type {:?} cannot be encrypted",
+                    header.type_
+                )));
+            },
+        };
+        let aad = create_module_aad(
+            self.file_encryptor.file_aad(),
+            module_type,
+            self.row_group_index,
+            self.column_index,
+            Some(self.page_index),
+        )?;
+        write_encrypted_thrift_object(writer, &mut *self.block_encryptor, &aad, |protocol| {
+            header.write_to_out_protocol(protocol)
+        })
+    }
+
+    fn advance_page(&mut self, header: &ParquetPageHeader) {
+        if matches!(header.type_, PageType::DATA_PAGE | PageType::DATA_PAGE_V2) {
+            self.page_index += 1;
+        }
+    }
 }
 
 fn maybe_bytes(uncompressed: usize, compressed: usize) -> ParquetResult<(i32, i32)> {
@@ -56,30 +147,54 @@ pub fn write_page<W: Write>(
     writer: &mut W,
     offset: u64,
     compressed_page: &CompressedPage,
+    mut page_encryptor: Option<&mut PageEncryptor>,
 ) -> ParquetResult<PageWriteSpec> {
     let num_values = compressed_page.num_values();
     let num_rows = compressed_page
         .num_rows()
         .expect("We should have num_rows when we are writing");
 
+    let encrypted_buffer = match page_encryptor.as_deref_mut() {
+        Some(page_encryptor) => Some(page_encryptor.encrypt_page(compressed_page)?),
+        None => None,
+    };
+
     let header = match &compressed_page {
-        CompressedPage::Data(compressed_page) => assemble_data_page_header(compressed_page),
-        CompressedPage::Dict(compressed_page) => assemble_dict_page_header(compressed_page),
+        CompressedPage::Data(compressed_page) => assemble_data_page_header(
+            compressed_page,
+            encrypted_buffer.as_ref().map(|buffer| buffer.len()),
+        ),
+        CompressedPage::Dict(compressed_page) => assemble_dict_page_header(
+            compressed_page,
+            encrypted_buffer.as_ref().map(|buffer| buffer.len()),
+        ),
     }?;
 
-    let header_size = write_page_header(writer, &header)?;
+    let header_size = match page_encryptor.as_deref_mut() {
+        Some(page_encryptor) => page_encryptor.write_page_header(writer, &header)?,
+        None => write_page_header(writer, &header)?,
+    };
     let mut bytes_written = header_size;
 
-    bytes_written += match &compressed_page {
-        CompressedPage::Data(compressed_page) => {
-            writer.write_all(&compressed_page.buffer)?;
-            compressed_page.buffer.len() as u64
-        },
-        CompressedPage::Dict(compressed_page) => {
-            writer.write_all(&compressed_page.buffer)?;
-            compressed_page.buffer.len() as u64
-        },
+    bytes_written += if let Some(buffer) = encrypted_buffer {
+        writer.write_all(&buffer)?;
+        buffer.len() as u64
+    } else {
+        match &compressed_page {
+            CompressedPage::Data(compressed_page) => {
+                writer.write_all(&compressed_page.buffer)?;
+                compressed_page.buffer.len() as u64
+            },
+            CompressedPage::Dict(compressed_page) => {
+                writer.write_all(&compressed_page.buffer)?;
+                compressed_page.buffer.len() as u64
+            },
+        }
     };
+
+    if let Some(page_encryptor) = page_encryptor.as_deref_mut() {
+        page_encryptor.advance_page(&header);
+    }
 
     let statistics = match &compressed_page {
         CompressedPage::Data(compressed_page) => compressed_page.statistics().transpose()?,
@@ -111,8 +226,8 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
         .expect("We should have the num_rows when we are writing");
 
     let header = match &compressed_page {
-        CompressedPage::Data(compressed_page) => assemble_data_page_header(compressed_page),
-        CompressedPage::Dict(compressed_page) => assemble_dict_page_header(compressed_page),
+        CompressedPage::Data(compressed_page) => assemble_data_page_header(compressed_page, None),
+        CompressedPage::Dict(compressed_page) => assemble_dict_page_header(compressed_page, None),
     }?;
 
     let header_size = write_page_header_async(writer, &header).await?;
@@ -146,9 +261,14 @@ pub async fn write_page_async<W: AsyncWrite + Unpin + Send>(
     })
 }
 
-fn assemble_data_page_header(page: &CompressedDataPage) -> ParquetResult<ParquetPageHeader> {
-    let (uncompressed_page_size, compressed_page_size) =
-        maybe_bytes(page.uncompressed_size(), page.compressed_size())?;
+fn assemble_data_page_header(
+    page: &CompressedDataPage,
+    encrypted_size: Option<usize>,
+) -> ParquetResult<ParquetPageHeader> {
+    let (uncompressed_page_size, compressed_page_size) = maybe_bytes(
+        page.uncompressed_size(),
+        encrypted_size.unwrap_or(page.compressed_size()),
+    )?;
 
     let mut page_header = ParquetPageHeader {
         type_: match page.header() {
@@ -175,9 +295,14 @@ fn assemble_data_page_header(page: &CompressedDataPage) -> ParquetResult<Parquet
     Ok(page_header)
 }
 
-fn assemble_dict_page_header(page: &CompressedDictPage) -> ParquetResult<ParquetPageHeader> {
-    let (uncompressed_page_size, compressed_page_size) =
-        maybe_bytes(page.uncompressed_page_size, page.buffer.len())?;
+fn assemble_dict_page_header(
+    page: &CompressedDictPage,
+    encrypted_size: Option<usize>,
+) -> ParquetResult<ParquetPageHeader> {
+    let (uncompressed_page_size, compressed_page_size) = maybe_bytes(
+        page.uncompressed_page_size,
+        encrypted_size.unwrap_or(page.buffer.len()),
+    )?;
 
     let num_values: i32 = page.num_values.try_into().map_err(|_| {
         ParquetError::oos(format!(
@@ -236,7 +361,7 @@ mod tests {
             100,
             false,
         );
-        assert!(assemble_dict_page_header(&page).is_err());
+        assert!(assemble_dict_page_header(&page, None).is_err());
     }
 
     #[test]
@@ -248,6 +373,6 @@ mod tests {
             i32::MAX as usize + 1,
             false,
         );
-        assert!(assemble_dict_page_header(&page).is_err());
+        assert!(assemble_dict_page_header(&page, None).is_err());
     }
 }

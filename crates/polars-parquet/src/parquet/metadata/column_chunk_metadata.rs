@@ -3,6 +3,7 @@ use polars_parquet_format::Statistics as ParquetStatistics;
 use super::column_descriptor::{ColumnDescriptor, ColumnDescriptorRef};
 use super::compact::{CompactColumnChunk, CompactColumnMetaData, CompactStatistics};
 use crate::parquet::compression::Compression;
+use crate::parquet::encryption::decrypt::CryptoContext;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::schema::types::PhysicalType;
 use crate::parquet::statistics::Statistics;
@@ -23,6 +24,7 @@ use crate::parquet::statistics::Statistics;
 pub struct ColumnChunkMetadata {
     column_chunk: CompactColumnChunk,
     column_descr: ColumnDescriptorRef,
+    crypto_context: Option<CryptoContext>,
 }
 
 // Represents common operations for a column chunk.
@@ -44,6 +46,10 @@ impl ColumnChunkMetadata {
     #[inline]
     pub(crate) fn compact_column_chunk(&self) -> &CompactColumnChunk {
         &self.column_chunk
+    }
+
+    pub(crate) fn crypto_context(&self) -> Option<&CryptoContext> {
+        self.crypto_context.as_ref()
     }
 
     /// The [`ColumnDescriptor`] for this column. This descriptor contains
@@ -152,16 +158,15 @@ impl ColumnChunkMetadata {
         column_metadata_byte_range_compact(self.compact_metadata())
     }
 
-    /// Build from a [`CompactColumnChunk`] + descriptor handle.
-    /// Infallible: the decoder rejects malformed chunks (missing
-    /// `meta_data`) up front, so by here the invariant is type-enforced.
-    pub(crate) fn from_compact(
+    pub(crate) fn from_compact_with_crypto(
         column_descr: ColumnDescriptorRef,
         column_chunk: CompactColumnChunk,
+        crypto_context: Option<CryptoContext>,
     ) -> Self {
         Self {
             column_chunk,
             column_descr,
+            crypto_context,
         }
     }
 }

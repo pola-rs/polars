@@ -11,6 +11,7 @@ use super::column_chunk_metadata::{ColumnChunkMetadata, column_metadata_byte_ran
 use super::column_descriptor::ColumnDescriptorRef;
 use super::compact::CompactRowGroup;
 use super::schema_descriptor::SchemaDescriptor;
+use crate::parquet::encryption::decrypt::{CryptoContext, FileDecryptor};
 use crate::parquet::error::{ParquetError, ParquetResult};
 
 type ColumnLookup = PlHashMap<PlSmallStr, UnitVec<usize>>;
@@ -108,6 +109,15 @@ impl RowGroupMetadata {
         schema_descr: &SchemaDescriptor,
         rg: CompactRowGroup,
     ) -> ParquetResult<RowGroupMetadata> {
+        Self::from_compact_with_decryptor(schema_descr, rg, 0, None)
+    }
+
+    pub(crate) fn from_compact_with_decryptor(
+        schema_descr: &SchemaDescriptor,
+        rg: CompactRowGroup,
+        row_group_index: usize,
+        file_decryptor: Option<&FileDecryptor>,
+    ) -> ParquetResult<RowGroupMetadata> {
         if schema_descr.columns().len() != rg.columns.len() {
             return Err(ParquetError::oos(format!(
                 "The number of columns in the row group ({}) must be equal to the number of columns in the schema ({})",
@@ -136,17 +146,29 @@ impl RowGroupMetadata {
             .into_iter()
             .enumerate()
             .map(|(i, column_chunk)| {
-                let column = ColumnChunkMetadata::from_compact(
+                let crypto_context = match (file_decryptor, column_chunk.crypto_metadata.as_ref()) {
+                    (Some(file_decryptor), Some(crypto_metadata)) => {
+                        Some(CryptoContext::for_column(
+                            file_decryptor,
+                            crypto_metadata,
+                            row_group_index,
+                            i,
+                        )?)
+                    },
+                    _ => None,
+                };
+                let column = ColumnChunkMetadata::from_compact_with_crypto(
                     ColumnDescriptorRef::new(Arc::clone(&column_descrs), i),
                     column_chunk,
+                    crypto_context,
                 );
                 add_column(&mut column_lookup, i, &column);
                 let byte_range = column.byte_range();
                 full_byte_range = full_byte_range.start.min(byte_range.start)
                     ..full_byte_range.end.max(byte_range.end);
-                column
+                Ok(column)
             })
-            .collect::<Vec<_>>();
+            .collect::<ParquetResult<Vec<_>>>()?;
         let columns = Arc::new(columns);
 
         Ok(RowGroupMetadata {

@@ -4153,6 +4153,7 @@ class DataFrame:
         retries: int | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption_properties: dict[str, Any] | None = None,
         mkdir: bool = False,
     ) -> None:
         """
@@ -4261,6 +4262,12 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+        encryption_properties
+            Native Parquet encryption properties. This is a dictionary containing raw
+            AES key bytes such as ``{"footer_key": key}``, with optional
+            ``column_keys``, ``column_key_metadata``, ``plaintext_footer``,
+            ``aad_prefix``, and ``store_aad_prefix``. Only valid when
+            ``use_pyarrow=False``.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -4312,6 +4319,9 @@ class DataFrame:
                 raise ValueError(msg)
             if mkdir:
                 msg = "write_parquet with `use_pyarrow=True` cannot be combined with `mkdir`"
+                raise ValueError(msg)
+            if encryption_properties is not None:
+                msg = "write_parquet with `use_pyarrow=True` cannot be combined with native `encryption_properties`; pass PyArrow options via `pyarrow_options` instead"
                 raise ValueError(msg)
 
             tbl = self.to_arrow()
@@ -4383,6 +4393,7 @@ class DataFrame:
             retries=retries,
             metadata=metadata,
             arrow_schema=arrow_schema,
+            encryption_properties=encryption_properties,
             engine=engine,
             mkdir=mkdir,
             optimizations=QueryOptFlags._eager(),

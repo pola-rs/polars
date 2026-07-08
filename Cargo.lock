@@ -3481,6 +3481,7 @@ dependencies = [
  "proptest",
  "rand 0.10.1",
  "regex",
+ "ring",
  "schemars",
  "serde",
  "simdutf8",

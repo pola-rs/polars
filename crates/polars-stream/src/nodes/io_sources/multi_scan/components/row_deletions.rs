@@ -67,6 +67,7 @@ impl DeletionFilesProvider {
                         parallel: polars_io::prelude::ParallelStrategy::Auto,
                         low_memory: false,
                         use_statistics: false,
+                        decryption_properties: None,
                     }),
                     pipeline_budget: std::sync::OnceLock::new(),
                     shared_prefetch_wait_group_slot: Default::default(),

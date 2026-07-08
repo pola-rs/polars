@@ -103,6 +103,7 @@ impl FileWriterStarter for ParquetWriterStarter {
         >(num_pipelines.get());
 
         let key_value_metadata = self.options.key_value_metadata.clone();
+        let encryption_properties = self.options.encryption_properties.clone();
         let write_options = WriteOptions {
             statistics: self.options.statistics,
             compression: self.options.compression.into(),
@@ -123,6 +124,7 @@ impl FileWriterStarter for ParquetWriterStarter {
                     write_options,
                     encodings: Buffer::clone(&encodings),
                     key_value_metadata,
+                    encryption_properties,
                     num_leaf_columns,
                 }
                 .run(),

@@ -1,4 +1,7 @@
+use std::sync::Arc;
+
 use polars_core::schema::SchemaRef;
+use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +13,9 @@ pub struct ParquetOptions {
     pub parallel: ParallelStrategy,
     pub low_memory: bool,
     pub use_statistics: bool,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "dsl-schema", schemars(skip))]
+    pub decryption_properties: Option<Arc<FileDecryptionProperties>>,
 }
 
 impl Default for ParquetOptions {
@@ -19,6 +25,7 @@ impl Default for ParquetOptions {
             parallel: ParallelStrategy::default(),
             low_memory: false,
             use_statistics: true,
+            decryption_properties: None,
         }
     }
 }

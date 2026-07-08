@@ -891,6 +891,7 @@ class PyLazyFrame:
         parallel: Any,
         low_memory: bool,
         use_statistics: bool,
+        decryption_properties: dict[str, Any] | None,
     ) -> PyLazyFrame: ...
     @staticmethod
     def new_from_ipc(
@@ -982,6 +983,7 @@ class PyLazyFrame:
         data_page_size: int | None,
         metadata: KeyValueMetadata | None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption_properties: dict[str, Any] | None = None,
     ) -> PyLazyFrame: ...
     def sink_ipc(
         self,

@@ -2835,6 +2835,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption_properties: dict[str, Any] | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> None: ...
@@ -2861,6 +2862,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "auto",
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption_properties: dict[str, Any] | None = None,
         optimizations: QueryOptFlags = DEFAULT_QUERY_OPT_FLAGS,
         _sinked_paths_callback: SinkedPathsCallback | None = None,
     ) -> LazyFrame: ...
@@ -2883,6 +2885,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
+        encryption_properties: dict[str, Any] | None = None,
         mkdir: bool = False,
         lazy: bool = False,
         engine: EngineType = "auto",
@@ -2992,6 +2995,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed at any
                 point without it being considered a breaking change.
+        encryption_properties
+            Native Parquet encryption properties. This is a dictionary containing raw
+            AES key bytes such as ``{"footer_key": key}``, with optional
+            ``column_keys``, ``column_key_metadata``, ``plaintext_footer``,
+            ``aad_prefix``, and ``store_aad_prefix``.
         mkdir: bool
             Recursively create all the directories in the path.
 
@@ -3131,6 +3139,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             data_page_size=data_page_size,
             metadata=metadata,
             arrow_schema=arrow_schema,
+            encryption_properties=encryption_properties,
         )
 
         if not lazy:

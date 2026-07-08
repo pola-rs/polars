@@ -8,6 +8,7 @@ mod file_metadata_serde;
 mod row_metadata;
 mod schema_descriptor;
 mod sort;
+mod thrift_to_compact;
 
 pub use column_chunk_metadata::ColumnChunkMetadata;
 pub use column_descriptor::{ColumnDescriptor, Descriptor};
@@ -20,5 +21,6 @@ pub use file_metadata::{FileMetadata, KeyValue};
 pub use row_metadata::RowGroupMetadata;
 pub use schema_descriptor::SchemaDescriptor;
 pub use sort::*;
+pub(crate) use thrift_to_compact::decode_thrift_file_metadata;
 
 pub use crate::parquet::thrift_format::FileMetaData as ThriftFileMetadata;

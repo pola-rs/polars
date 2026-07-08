@@ -263,6 +263,7 @@ fn chunk_from_wire(c: ChunkWire, footer: &mut Vec<u8>) -> CompactColumnChunk {
         offset_index_length: None,
         column_index_offset: None,
         column_index_length: None,
+        crypto_metadata: None,
     }
 }
 

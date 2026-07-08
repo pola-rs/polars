@@ -17,9 +17,12 @@
 //!    on [`super::FileMetadata::footer_buf`].
 
 use polars_buffer::Buffer;
-use polars_parquet_format::{ColumnOrder, KeyValue, SchemaElement, SortingColumn};
+use polars_parquet_format::{
+    ColumnCryptoMetaData, ColumnOrder, KeyValue, SchemaElement, SortingColumn,
+};
 
 use crate::parquet::compression::Compression;
+use crate::parquet::encryption::decrypt::FileDecryptor;
 
 /// `(offset, len)` into a shared [`Buffer<u8>`] holding the footer bytes.
 /// Used by [`CompactStatistics`] to reference `min_value` / `max_value`
@@ -99,6 +102,7 @@ pub(crate) struct CompactColumnChunk {
     pub offset_index_length: Option<i32>,
     pub column_index_offset: Option<i64>,
     pub column_index_length: Option<i32>,
+    pub crypto_metadata: Option<ColumnCryptoMetaData>,
 }
 
 /// Compact replacement for `polars_parquet_format::RowGroup`.
@@ -130,6 +134,7 @@ pub(crate) struct CompactFileMetaData {
     pub key_value_metadata: Option<Vec<KeyValue>>,
     pub created_by: Option<String>,
     pub column_orders: Option<Vec<ColumnOrder>>,
+    pub file_decryptor: Option<FileDecryptor>,
     /// The footer buffer the [`CompactStatistics`] `ByteRange`s point into.
     /// `from_compact` stores it on [`super::FileMetadata::footer_buf`] so
     /// stats payloads remain resolvable for the lifetime of the metadata.

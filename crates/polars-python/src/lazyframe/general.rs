@@ -292,7 +292,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[staticmethod]
     #[pyo3(signature = (
-        sources, schema, scan_options, parallel, low_memory, use_statistics
+        sources, schema, scan_options, parallel, low_memory, use_statistics, decryption_properties
     ))]
     fn new_from_parquet(
         sources: Wrap<ScanSources>,
@@ -301,16 +301,20 @@ impl PyLazyFrame {
         parallel: Wrap<ParallelStrategy>,
         low_memory: bool,
         use_statistics: bool,
+        decryption_properties: Option<Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         use crate::utils::to_py_err;
 
         let parallel = parallel.0;
+        let decryption_properties =
+            crate::io::parquet_encryption::parse_file_decryption_properties(decryption_properties)?;
 
         let options = ParquetOptions {
             schema: schema.map(|x| Arc::new(x.0)),
             parallel,
             low_memory,
             use_statistics,
+            decryption_properties,
         };
 
         let sources = sources.0;
@@ -678,7 +682,7 @@ impl PyLazyFrame {
     #[cfg(feature = "parquet")]
     #[pyo3(signature = (
         target, sink_options, compression, compression_level, statistics, row_group_size, data_page_size,
-        metadata, arrow_schema
+        metadata, arrow_schema, encryption_properties
     ))]
     fn sink_parquet(
         &self,
@@ -692,8 +696,11 @@ impl PyLazyFrame {
         data_page_size: Option<usize>,
         metadata: Wrap<Option<KeyValueMetadata>>,
         arrow_schema: Option<Wrap<ArrowSchema>>,
+        encryption_properties: Option<Bound<'_, PyAny>>,
     ) -> PyResult<PyLazyFrame> {
         let compression = parse_parquet_compression(compression, compression_level)?;
+        let encryption_properties =
+            crate::io::parquet_encryption::parse_file_encryption_properties(encryption_properties)?;
 
         let options = ParquetWriteOptions {
             compression,
@@ -703,6 +710,7 @@ impl PyLazyFrame {
             key_value_metadata: metadata.0,
             arrow_schema: arrow_schema.map(|x| Arc::new(x.0)),
             compat_level: None,
+            encryption_properties,
         };
 
         let target = target.extract_file_sink_destination()?;

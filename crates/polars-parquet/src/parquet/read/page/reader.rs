@@ -7,6 +7,7 @@ use polars_parquet_format::thrift::protocol::TCompactInputProtocol;
 use super::PageIterator;
 use crate::parquet::CowBuffer;
 use crate::parquet::compression::Compression;
+use crate::parquet::encryption::decrypt::{CryptoContext, read_and_decrypt};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetadata, Descriptor};
 use crate::parquet::page::{
@@ -20,6 +21,8 @@ use crate::write::Encoding;
 pub struct PageMetaData {
     /// The start offset of this column chunk in file.
     pub column_start: u64,
+    /// The dictionary page offset, if the column chunk has a dictionary page.
+    pub dictionary_page_offset: Option<u64>,
     /// The number of values in this column chunk.
     pub num_values: i64,
     /// Compression type
@@ -32,12 +35,14 @@ impl PageMetaData {
     /// Returns a new [`PageMetaData`].
     pub fn new(
         column_start: u64,
+        dictionary_page_offset: Option<u64>,
         num_values: i64,
         compression: Compression,
         descriptor: Descriptor,
     ) -> Self {
         Self {
             column_start,
+            dictionary_page_offset,
             num_values,
             compression,
             descriptor,
@@ -49,6 +54,7 @@ impl From<&ColumnChunkMetadata> for PageMetaData {
     fn from(column: &ColumnChunkMetadata) -> Self {
         Self {
             column_start: column.byte_range().start,
+            dictionary_page_offset: column.dictionary_page_offset().map(|x| x as u64),
             num_values: column.num_values(),
             compression: column.compression(),
             descriptor: column.descriptor().descriptor.clone(),
@@ -67,6 +73,7 @@ pub struct PageReader {
     reader: Cursor<Buffer<u8>>,
 
     compression: Compression,
+    dictionary_page_offset: Option<u64>,
 
     // The number of values we have seen so far.
     seen_num_values: i64,
@@ -81,6 +88,9 @@ pub struct PageReader {
 
     // Maximum page size (compressed or uncompressed) to limit allocations
     max_page_size: usize,
+
+    crypto_context: Option<CryptoContext>,
+    page_ordinal: usize,
 }
 
 impl PageReader {
@@ -95,6 +105,7 @@ impl PageReader {
         max_page_size: usize,
     ) -> Self {
         Self::new_with_page_meta(reader, column.into(), scratch, max_page_size)
+            .with_crypto_context(column.crypto_context().cloned())
     }
 
     /// Create a new [`PageReader`] with [`PageMetaData`].
@@ -110,11 +121,19 @@ impl PageReader {
             reader,
             total_num_values: reader_meta.num_values,
             compression: reader_meta.compression,
+            dictionary_page_offset: reader_meta.dictionary_page_offset,
             seen_num_values: 0,
             descriptor: reader_meta.descriptor,
             scratch,
             max_page_size,
+            crypto_context: None,
+            page_ordinal: 0,
         }
+    }
+
+    pub(crate) fn with_crypto_context(mut self, crypto_context: Option<CryptoContext>) -> Self {
+        self.crypto_context = crypto_context;
+        self
     }
 
     /// Returns the reader and this Readers' interval buffer
@@ -134,10 +153,26 @@ impl PageReader {
             return Ok(None);
         }
 
+        if self.crypto_context.is_some() {
+            let Some(dictionary_page_offset) = self.dictionary_page_offset else {
+                return Ok(None);
+            };
+
+            if self.reader.position() != dictionary_page_offset {
+                return Ok(None);
+            }
+        }
+
         // a dictionary page exists iff the first data page is not at the start of
         // the column
         let seek_offset = self.reader.position();
-        let page_header = read_page_header(&mut self.reader, self.max_page_size)?;
+        let page_header = read_page_header_with_crypto(
+            &mut self.reader,
+            self.max_page_size,
+            self.crypto_context.as_ref(),
+            self.page_ordinal,
+            true,
+        )?;
         let page_type = page_header.type_.try_into()?;
 
         if !matches!(page_type, PageType::DictionaryPage) {
@@ -163,6 +198,13 @@ impl PageReader {
                 "The page header reported the wrong page size",
             ));
         }
+
+        let buffer = decrypt_page_data(
+            buffer,
+            self.crypto_context.as_ref(),
+            self.page_ordinal,
+            true,
+        )?;
 
         finish_page(page_header, buffer, self.compression, &self.descriptor).map(|p| {
             if let CompressedPage::Dict(d) = p {
@@ -204,6 +246,53 @@ pub(super) fn read_page_header(
     Ok(page_header)
 }
 
+fn read_page_header_with_crypto(
+    reader: &mut Cursor<Buffer<u8>>,
+    max_size: usize,
+    crypto_context: Option<&CryptoContext>,
+    page_ordinal: usize,
+    dictionary_page: bool,
+) -> ParquetResult<ParquetPageHeader> {
+    let Some(crypto_context) = crypto_context else {
+        return read_page_header(reader, max_size);
+    };
+
+    let page_crypto_context = if dictionary_page {
+        crypto_context.for_dictionary_page()
+    } else {
+        crypto_context.with_page_ordinal(page_ordinal)
+    };
+    let aad = page_crypto_context.create_page_header_aad()?;
+    let decrypted_header = read_and_decrypt(page_crypto_context.data_decryptor(), reader, &aad)
+        .map_err(|_| ParquetError::oos("failed to decrypt parquet page header"))?;
+
+    let mut header_reader = Cursor::new(Buffer::from_vec(decrypted_header));
+    read_page_header(&mut header_reader, max_size)
+}
+
+fn decrypt_page_data(
+    buffer: Buffer<u8>,
+    crypto_context: Option<&CryptoContext>,
+    page_ordinal: usize,
+    dictionary_page: bool,
+) -> ParquetResult<Buffer<u8>> {
+    let Some(crypto_context) = crypto_context else {
+        return Ok(buffer);
+    };
+
+    let page_crypto_context = if dictionary_page {
+        crypto_context.for_dictionary_page()
+    } else {
+        crypto_context.with_page_ordinal(page_ordinal)
+    };
+    let aad = page_crypto_context.create_page_aad()?;
+    let decrypted = page_crypto_context
+        .data_decryptor()
+        .decrypt(&buffer, &aad)
+        .map_err(|_| ParquetError::oos("failed to decrypt parquet page data"))?;
+    Ok(Buffer::from_vec(decrypted))
+}
+
 /// This function is lightweight and executes a minimal amount of work so that it is IO bounded.
 // Any un-necessary CPU-intensive tasks SHOULD be executed on individual pages.
 fn next_page(reader: &mut PageReader) -> ParquetResult<Option<CompressedPage>> {
@@ -214,9 +303,17 @@ fn next_page(reader: &mut PageReader) -> ParquetResult<Option<CompressedPage>> {
 }
 
 pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<CompressedPage>> {
-    let page_header = read_page_header(&mut reader.reader, reader.max_page_size)?;
+    let page_ordinal = reader.page_ordinal;
+    let page_header = read_page_header_with_crypto(
+        &mut reader.reader,
+        reader.max_page_size,
+        reader.crypto_context.as_ref(),
+        page_ordinal,
+        false,
+    )?;
 
     reader.seen_num_values += get_page_num_values(&page_header)? as i64;
+    reader.page_ordinal += 1;
 
     let read_size: usize = page_header.compressed_page_size.try_into()?;
 
@@ -236,6 +333,8 @@ pub(super) fn build_page(reader: &mut PageReader) -> ParquetResult<Option<Compre
             "The page header reported the wrong page size",
         ));
     }
+
+    let buffer = decrypt_page_data(buffer, reader.crypto_context.as_ref(), page_ordinal, false)?;
 
     finish_page(page_header, buffer, reader.compression, &reader.descriptor).map(Some)
 }
