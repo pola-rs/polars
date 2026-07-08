@@ -624,7 +624,7 @@ impl CastColumnsPolicy {
                 return mismatch_err("");
             };
 
-            let incoming_fields_schema = PlHashMap::from_iter(
+            let incoming_fields_schema = PlIndexMap::from_iter(
                 incoming_fields
                     .iter()
                     .enumerate()

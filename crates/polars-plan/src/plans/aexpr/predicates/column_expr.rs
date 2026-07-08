@@ -6,7 +6,7 @@ use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_io::predicates::SpecializedColumnPredicate;
 use polars_ops::series::ClosedInterval;
-use polars_utils::aliases::PlHashMap;
+use polars_utils::aliases::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -18,7 +18,7 @@ use crate::plans::{
 };
 
 pub struct ColumnPredicates {
-    pub predicates: PlHashMap<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>,
+    pub predicates: PlIndexMap<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>,
 
     /// Are all column predicates AND-ed together the original predicate.
     pub is_sumwise_complete: bool,
@@ -30,7 +30,7 @@ pub fn aexpr_to_column_predicates(
     schema: &Schema,
 ) -> ColumnPredicates {
     let mut predicates =
-        PlHashMap::<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>::default();
+        PlIndexMap::<PlSmallStr, (Node, Option<SpecializedColumnPredicate>)>::default();
     let mut is_sumwise_complete = true;
 
     let minterms = MintermIter::new(root, expr_arena).collect::<Vec<_>>();

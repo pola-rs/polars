@@ -1068,7 +1068,7 @@ enum CachedSourceKey {
 
 #[derive(Default, Clone)]
 pub(super) struct SourcesToFileInfo {
-    inner: Arc<RwLock<PlHashMap<CachedSourceKey, (FileInfo, FileScanIR)>>>,
+    inner: Arc<RwLock<PlIndexMap<CachedSourceKey, (FileInfo, FileScanIR)>>>,
 }
 
 impl SourcesToFileInfo {
