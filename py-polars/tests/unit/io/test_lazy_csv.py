@@ -176,6 +176,14 @@ def test_scan_csv_schema_new_columns_dtypes(
     assert df4.dtypes == [pl.String, pl.String, pl.Float64, pl.Int64]
     assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
 
+    df5 = pl.scan_csv(
+        file_path,
+        schema_overrides=[pl.String, pl.String],
+        new_columns=["category"],
+    ).collect()
+    assert df5.dtypes == [pl.String, pl.String, pl.Float64, pl.Int64]
+    assert df5.columns == ["category", "calories", "fats_g", "sugars_g"]
+
     # cannot have len(new_columns) > len(actual columns)
     with pytest.raises(ShapeError):
         pl.scan_csv(

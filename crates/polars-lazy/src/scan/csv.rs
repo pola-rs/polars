@@ -134,7 +134,7 @@ impl LazyCsvReader {
 
     /// Overwrite dtypes by position.
     #[must_use]
-    pub fn with_dtype_overwrite_slice(mut self, dtypes: Option<Arc<Vec<DataType>>>) -> Self {
+    pub fn with_dtype_overwrite_by_position(mut self, dtypes: Option<Arc<Vec<DataType>>>) -> Self {
         self.read_options.dtype_overwrite = dtypes;
         self
     }

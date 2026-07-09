@@ -1403,8 +1403,6 @@ def scan_csv(
         if with_column_names:
             msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             raise ValueError(msg)
-        if schema_overrides and isinstance(schema_overrides, Sequence):
-            schema_overrides = dict(zip(new_columns, schema_overrides, strict=False))
 
         # wrap new column names as a callable
         def with_column_names(cols: list[str]) -> list[str]:

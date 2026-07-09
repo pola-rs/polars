@@ -251,7 +251,7 @@ impl PyLazyFrame {
             .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.map(Arc::new))
-            .with_dtype_overwrite_slice(overwrite_dtype_slice.map(Arc::new))
+            .with_dtype_overwrite_by_position(overwrite_dtype_slice.map(Arc::new))
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .with_low_memory(low_memory)
             .with_comment_prefix(comment_prefix.map(|x| x.into()))
