@@ -127,7 +127,7 @@ impl OptPyCloudOptions<'_> {
         if file_cache_ttl > 0 {
             cloud_options.file_cache_ttl = file_cache_ttl;
         }
-        verbose_print_sensitive(|| format!("extracted cloud_options: {:?}", &cloud_options));
+        verbose_print_sensitive(|| format!("extracted cloud_options: {:?}", cloud_options));
 
         Ok(Some(cloud_options))
     }
