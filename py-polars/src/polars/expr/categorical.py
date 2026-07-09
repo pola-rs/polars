@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.deprecation import deprecated
 from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
@@ -23,6 +24,11 @@ class ExprCatNameSpace:
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    @deprecated(
+        "`cat.get_categories()` is deprecated. To get the distinct values present in "
+        "a Categorical column, use `Expr.unique()`. For the fixed category list of an "
+        "Enum, use its `dtype.categories`. This method will be removed in Polars 2.0."
+    )
     def get_categories(self) -> Expr:
         """
         Get the categories stored in this data type.
