@@ -645,6 +645,27 @@ impl PyGroupbyOptions {
     }
 }
 
+// Serialize the optional per-op rolling parameters into the flat tuple consumed by
+// external engines (e.g., cudf-polars).
+fn rolling_fn_params_into_py(
+    py: Python<'_>,
+    fn_params: &Option<RollingFnParams>,
+) -> PyResult<Py<PyAny>> {
+    match fn_params {
+        None => ().into_py_any(py),
+        Some(RollingFnParams::Quantile(q)) => {
+            (q.prob, Into::<&str>::into(q.method)).into_py_any(py)
+        },
+        Some(RollingFnParams::Var(v)) => (v.ddof,).into_py_any(py),
+        Some(RollingFnParams::Rank { method, seed }) => {
+            let method = Into::<&str>::into(method);
+            (method, *seed).into_py_any(py)
+        },
+        Some(RollingFnParams::Skew { bias }) => (*bias,).into_py_any(py),
+        Some(RollingFnParams::Kurtosis { fisher, bias }) => (*fisher, *bias).into_py_any(py),
+    }
+}
+
 pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
     match expr {
         AExpr::Element => Err(PyNotImplementedError::new_err("element")),
@@ -1304,21 +1325,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                             return Err(PyNotImplementedError::new_err("rolling map"));
                         },
                     };
-                    let fn_params: Py<PyAny> = match &options.fn_params {
-                        None => ().into_py_any(py)?,
-                        Some(RollingFnParams::Quantile(q)) => {
-                            (q.prob, Into::<&str>::into(q.method)).into_py_any(py)?
-                        },
-                        Some(RollingFnParams::Var(v)) => (v.ddof,).into_py_any(py)?,
-                        Some(RollingFnParams::Rank { method, seed }) => {
-                            let method = Into::<&str>::into(method);
-                            (method, *seed).into_py_any(py)?
-                        },
-                        Some(RollingFnParams::Skew { bias }) => (*bias,).into_py_any(py)?,
-                        Some(RollingFnParams::Kurtosis { fisher, bias }) => {
-                            (*fisher, *bias).into_py_any(py)?
-                        },
-                    };
+                    let fn_params = rolling_fn_params_into_py(py, &options.fn_params)?;
                     // Tuple consumed by external engines (e.g., cudf-polars):
                     // (RollingFunction, window_size, min_periods, weights, center, fn_params)
                     (
@@ -1345,21 +1352,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         IRRollingFunctionBy::StdBy => PyRollingFunctionBy::StdBy,
                         IRRollingFunctionBy::RankBy => PyRollingFunctionBy::RankBy,
                     };
-                    let fn_params: Py<PyAny> = match &options.fn_params {
-                        None => ().into_py_any(py)?,
-                        Some(RollingFnParams::Quantile(q)) => {
-                            (q.prob, Into::<&str>::into(q.method)).into_py_any(py)?
-                        },
-                        Some(RollingFnParams::Var(v)) => (v.ddof,).into_py_any(py)?,
-                        Some(RollingFnParams::Rank { method, seed }) => {
-                            let method = Into::<&str>::into(method);
-                            (method, *seed).into_py_any(py)?
-                        },
-                        Some(RollingFnParams::Skew { bias }) => (*bias,).into_py_any(py)?,
-                        Some(RollingFnParams::Kurtosis { fisher, bias }) => {
-                            (*fisher, *bias).into_py_any(py)?
-                        },
-                    };
+                    let fn_params = rolling_fn_params_into_py(py, &options.fn_params)?;
                     // Tuple consumed by external engines (e.g., cudf-polars):
                     // (RollingFunctionBy, window_size, min_periods, closed_window, fn_params)
                     (

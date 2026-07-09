@@ -334,6 +334,7 @@ def test_ewm_mean_expr_visitor() -> None:
     assert len(ewm_exprs) == 1
     name, alpha, adjust, bias, min_periods, ignore_nulls = ewm_exprs[0]
     assert name == _expr_nodes.EwmFunction.Mean
+    assert hash(name) == hash(_expr_nodes.EwmFunction.Mean)
     assert alpha == 0.5
     # `ewm_mean` has no `bias` kwarg; it is always serialized as False.
     assert adjust is True
@@ -451,6 +452,7 @@ def test_rolling_mean_by_expr_visitor() -> None:
     assert len(rolling_exprs) == 1
     name, window_size, min_periods, closed, fn_params = rolling_exprs[0]
     assert name == _expr_nodes.RollingFunctionBy.MeanBy
+    assert hash(name) == hash(_expr_nodes.RollingFunctionBy.MeanBy)
     # Wrap<Duration> 6-tuple: (months, weeks, days, nanoseconds, parsed_int, negative)
     assert window_size == (0, 0, 0, 2 * 3600 * 1_000_000_000, False, False)
     assert min_periods == 1
@@ -458,54 +460,34 @@ def test_rolling_mean_by_expr_visitor() -> None:
     assert fn_params == ()
 
 
-def test_rolling_var_by_ddof_expr_visitor() -> None:
-    """rolling_var_by serializes ddof into fn_params."""
+@pytest.mark.parametrize(
+    ("expr", "expected_name", "expected_fn_params"),
+    [
+        (pl.col("x").rolling_min_by("t", "2h"), "MinBy", ()),
+        (pl.col("x").rolling_max_by("t", "2h"), "MaxBy", ()),
+        (pl.col("x").rolling_sum_by("t", "2h"), "SumBy", ()),
+        (pl.col("x").rolling_std_by("t", "2h"), "StdBy", (1,)),
+        (pl.col("x").rolling_var_by("t", "2h", ddof=2), "VarBy", (2,)),
+        (
+            pl.col("x").rolling_quantile_by("t", "2h", quantile=0.25),
+            "QuantileBy",
+            (0.25, "nearest"),
+        ),
+        (pl.col("x").rolling_rank_by("t", "2h"), "RankBy", ("average", None)),
+    ],
+)
+def test_rolling_by_variant_fn_params(
+    expr: pl.Expr, expected_name: str, expected_fn_params: tuple[Any, ...]
+) -> None:
+    """Each rolling ``*_by`` variant exposes its enum discriminant and fn_params."""
     q = pl.LazyFrame(
         {
             "x": [1.0, 2.0, 3.0],
             "t": [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)],
         }
-    ).with_columns(
-        pl.col("x").rolling_var_by("t", "2h", ddof=2).alias("rvar_by"),
-    )
+    ).with_columns(expr.alias("out"))
     rolling_exprs = _collect_rolling_by_function_data(q)
     assert len(rolling_exprs) == 1
     name, _, _, _, fn_params = rolling_exprs[0]
-    assert name == _expr_nodes.RollingFunctionBy.VarBy
-    assert fn_params == (2,)
-
-
-def test_rolling_quantile_by_expr_visitor() -> None:
-    """rolling_quantile_by serializes probability and interpolation method."""
-    q = pl.LazyFrame(
-        {
-            "x": [1.0, 2.0, 3.0],
-            "t": [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)],
-        }
-    ).with_columns(
-        pl.col("x").rolling_quantile_by("t", "2h", quantile=0.25).alias("rq_by"),
-    )
-    rolling_exprs = _collect_rolling_by_function_data(q)
-    assert len(rolling_exprs) == 1
-    name, _, _, _, fn_params = rolling_exprs[0]
-    assert name == _expr_nodes.RollingFunctionBy.QuantileBy
-    assert fn_params == (0.25, "nearest")
-
-
-def test_rolling_rank_by_expr_visitor() -> None:
-    """rolling_rank_by serializes method and seed."""
-    q = pl.LazyFrame(
-        {
-            "x": [1.0, 2.0, 3.0],
-            "t": [datetime(2020, 1, 1), datetime(2020, 1, 2), datetime(2020, 1, 3)],
-        }
-    ).with_columns(
-        pl.col("x").rolling_rank_by("t", "2h").alias("rrank_by"),
-    )
-    rolling_exprs = _collect_rolling_by_function_data(q)
-    assert len(rolling_exprs) == 1
-    name, _, _, _, fn_params = rolling_exprs[0]
-    assert name == _expr_nodes.RollingFunctionBy.RankBy
-    method, seed = fn_params
-    assert method == "average"
-    assert seed is None
+    assert name == getattr(_expr_nodes.RollingFunctionBy, expected_name)
+    assert fn_params == expected_fn_params
