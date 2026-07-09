@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import io
 import os
-from itertools import permutations
-from pathlib import Path
 import subprocess
 import sys
+from itertools import permutations
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any
 
