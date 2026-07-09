@@ -12103,7 +12103,12 @@ class DataFrame:
             data_cols = [k for k in self.schema if k not in key]
             values = self.select(data_cols)
 
-        zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
+        zipped: Iterable[tuple[Any, Any]]
+        if values.width == 0:
+            empty_row: Any = {} if named else ()
+            zipped = ((k, empty_row) for k in keys)
+        else:
+            zipped = zip(keys, values.iter_rows(named=named), strict=True)  # type: ignore[call-overload]
 
         # if unique, we expect to write just one entry per key; otherwise, we're
         # returning a list of rows for each key, so append into a defaultdict.
