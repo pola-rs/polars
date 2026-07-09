@@ -152,6 +152,7 @@ pub(crate) fn set_cache_states(
         names_union: PlIndexSet<PlSmallStr>,
         // Union over predicates.
         predicate_union: PlIndexMap<Expr, u32>,
+        streaming: bool,
     }
     let mut cache_schema_and_children = PlIndexMap::new();
 
@@ -173,10 +174,24 @@ pub(crate) fn set_cache_states(
     ir_graph_traversal(
         root,
         &mut FnVisitors::new(
-            || (),
-            |key, storage: &mut IRTraversalStorage<'_>, _| {
-                if let IR::Cache { input: _, id } = storage.get(key) {
-                    cache_schema_and_children.insert(*id, Value::default());
+            || streaming,
+            |key, storage: &mut IRTraversalStorage<'_>, edges| {
+                let streaming = streaming || edges.outputs().iter().any(|x| *x);
+
+                match storage.get(key) {
+                    IR::Sink { .. } => {
+                        edges.inputs().for_each_mut(|x| *x = true);
+                    },
+                    IR::Cache { input: _, id } => {
+                        let mut v = Value::default();
+                        v.streaming = streaming;
+                        cache_schema_and_children.insert(*id, v);
+                    },
+                    _ => {},
+                }
+
+                if streaming {
+                    edges.inputs().for_each_mut(|x| *x = true);
                 }
 
                 ControlFlow::Continue(SubtreeVisit::Visit)
@@ -283,6 +298,7 @@ pub(crate) fn set_cache_states(
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
+            pred_pd.streaming = v.streaming;
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
             // want to loose predicate pushdown in favor of scan sharing.
@@ -334,7 +350,7 @@ pub(crate) fn set_cache_states(
                 let start_lp = lp_arena.take(node);
 
                 let mut pred_pd =
-                    PredicatePushDown::new(pushdown_maintain_errors, streaming).block_at_cache(1);
+                    PredicatePushDown::new(pushdown_maintain_errors, v.streaming).block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
 

@@ -1399,7 +1399,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let orig_opt_flags = *ctxt.opt_flags;
             *ctxt.opt_flags |= OptFlags::STREAMING;
 
-            let mut ctxt = WithDrop::new(ctxt, |ctxt| {
+            let ctxt = &mut **WithDrop::new(ctxt, |ctxt| {
                 *ctxt.opt_flags = orig_opt_flags;
             });
 
@@ -1442,12 +1442,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     unified_sink_args.sinked_paths_callback =
                         Some(SinkedPathsCallback::IcebergCommit(state));
 
-                    return to_alp_impl(*plan, &mut ctxt);
+                    return to_alp_impl(*plan, ctxt);
                 })
             }
 
             let input =
-                to_alp_impl(owned(input), &mut ctxt).map_err(|e| e.context(failed_here!(sink)))?;
+                to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
             let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena).into_owned();
             let payload = match payload {
                 SinkType::Iceberg(_) => unreachable!(),
@@ -1510,8 +1510,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     max_rows_per_file,
                     approximate_bytes_per_file,
                 }) => {
-                    let ctxt = &mut **ctxt;
-
                     let expr_to_ir_cx = &mut ExprToIRContext::new_with_opt_eager(
                         ctxt.expr_arena,
                         &input_schema,
@@ -1581,7 +1579,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             };
 
             let lp = IR::Sink { input, payload };
-            return run_conversion(lp, &mut ctxt, "sink");
+            return run_conversion(lp, ctxt, "sink");
         },
         DslPlan::SinkMultiple { inputs } => {
             let inputs = inputs

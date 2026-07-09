@@ -23,7 +23,7 @@ pub struct PredicatePushDown {
     // Normally this is 0. Only needed for CSPE.
     caches_pass_allowance: u32,
     nodes_scratch: ScratchUnitVec<Node>,
-    streaming: bool,
+    pub(crate) streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
 }
