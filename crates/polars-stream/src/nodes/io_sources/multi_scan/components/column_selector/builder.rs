@@ -451,7 +451,7 @@ impl ColumnSelectorBuilder {
                             "encountered extra struct field: {}, \
                             hint: specify this field in the schema, or pass \
                             cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
-                            &extra_col.name,
+                            extra_col.name,
                         ));
                     }
 
@@ -489,7 +489,7 @@ impl ColumnSelectorBuilder {
                                     return mismatch_err(&format!(
                                         "encountered missing struct field: {}, \
                                         hint: pass cast_options=pl.ScanCastOptions(missing_struct_fields='insert')",
-                                        &output_column.name,
+                                        output_column.name,
                                     ));
                                 },
                             }

@@ -156,7 +156,7 @@ fn path_and_creds_to_key(path: &PlPath, options: Option<&CloudOptions>) -> Polar
     verbose_print_sensitive(|| {
         format!(
             "object store cache key for path at '{}': {:?}",
-            path, &cache_key
+            path, cache_key
         )
     });
 

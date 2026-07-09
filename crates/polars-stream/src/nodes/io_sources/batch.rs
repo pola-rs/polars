@@ -190,7 +190,7 @@ impl FileReader for BatchFnReader {
                 },
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         let execution_state = self.execution_state().clone();

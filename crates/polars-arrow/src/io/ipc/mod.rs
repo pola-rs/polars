@@ -34,9 +34,9 @@ pub mod write;
 pub mod write2;
 pub use arrow_format as format;
 
-const ARROW_MAGIC_V1: [u8; 4] = [b'F', b'E', b'A', b'1'];
-pub const ARROW_MAGIC_V2: [u8; 6] = [b'A', b'R', b'R', b'O', b'W', b'1'];
-pub const ARROW_MAGIC_V2_PADDED: [u8; 8] = [b'A', b'R', b'R', b'O', b'W', b'1', b'\0', b'\0'];
+const ARROW_MAGIC_V1: [u8; 4] = *b"FEA1";
+pub const ARROW_MAGIC_V2: [u8; 6] = *b"ARROW1";
+pub const ARROW_MAGIC_V2_PADDED: [u8; 8] = *b"ARROW1\0\0";
 pub(crate) const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
 
 /// Struct containing `dictionary_id` and nested `IpcField`, allowing users

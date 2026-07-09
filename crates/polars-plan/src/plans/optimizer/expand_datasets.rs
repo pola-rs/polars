@@ -318,7 +318,7 @@ fn expand_python_dataset(
             else {
                 panic!(
                     "invalid scan args from python dataset resolve: {:?}",
-                    &resolved_unified_scan_args
+                    resolved_unified_scan_args
                 )
             };
 
