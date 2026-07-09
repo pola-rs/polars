@@ -1,7 +1,7 @@
 use std::fmt::{self, Write};
 
 use polars_core::error::*;
-use polars_utils::aliases::PlHashSet;
+use polars_utils::aliases::PlIndexSet;
 use polars_utils::format_list_truncated;
 use polars_utils::unique_id::UniqueId;
 
@@ -470,7 +470,7 @@ pub(crate) struct TreeFmtVisitor {
     prev_depth: usize,
     depth: usize,
     width: usize,
-    seen_caches: PlHashSet<UniqueId>,
+    seen_caches: PlIndexSet<UniqueId>,
     pub(crate) display: TreeFmtVisitorDisplay,
 }
 

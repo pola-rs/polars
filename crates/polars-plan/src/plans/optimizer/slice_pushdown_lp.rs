@@ -14,8 +14,8 @@ pub(super) struct SlicePushDown {
     pub(super) slice_node_in_optimized_plan: bool,
     pub(super) ae_nodes_scratch: ScratchVec<Node>,
     pub(super) ae_slice_pd_state_scratch: ScratchVec<slice_pushdown_expr::State>,
-    pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchHashSet<Node>,
-    optimized_cache_inputs: PlHashMap<UniqueId, Node>,
+    pub(super) ae_slice_pd_direct_col_slice_nodes: ScratchIndexSet<Node>,
+    optimized_cache_inputs: PlIndexMap<UniqueId, Node>,
 }
 
 impl SlicePushDown {
@@ -30,8 +30,8 @@ impl SlicePushDown {
             slice_node_in_optimized_plan: false,
             ae_nodes_scratch: ScratchVec::default(),
             ae_slice_pd_state_scratch: ScratchVec::default(),
-            ae_slice_pd_direct_col_slice_nodes: ScratchHashSet::default(),
-            optimized_cache_inputs: PlHashMap::default(),
+            ae_slice_pd_direct_col_slice_nodes: ScratchIndexSet::default(),
+            optimized_cache_inputs: PlIndexMap::default(),
         }
     }
 }
@@ -298,7 +298,7 @@ impl SlicePushDown {
 
             *input = new_input_node;
 
-            for node in ae_slice_pd_direct_col_slice_nodes.drain() {
+            for node in ae_slice_pd_direct_col_slice_nodes.drain(..) {
                 use slice_pushdown_expr::Slice;
                 let AExpr::Slice {
                     input: input_node,

@@ -5,10 +5,12 @@ use std::sync::Arc;
 
 use edge::Edge;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, PlHashMap, ScratchIndexMap, ScratchIndexSet};
+use polars_core::prelude::{Column, DataType, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_ops::frame::{JoinCoalesce, JoinType};
+#[allow(clippy::disallowed_types)]
+use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools as _;
@@ -33,7 +35,7 @@ use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
 pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
-    let schema_cache = &mut PlHashMap::default();
+    let schema_cache = &mut Default::default();
 
     // Put a simple projection on top so that the root node has a valid ParentKeyAndPort to point to.
     let root_ir = ir_arena.take(root);
@@ -86,6 +88,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
 
 pub struct ProjectionPushdownVisitor<'a, 'arena> {
     expr_arena: &'arena mut Arena<AExpr>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     schema_cache: &'a mut PlHashMap<Node, Arc<Schema>>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
     ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
@@ -277,6 +280,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
             }};
         }
 
+        #[allow(clippy::disallowed_types)] // We don't iterate over cache.
         fn pushdown_with_added_names(
             key: Node,
             edges: &mut dyn NodeEdgesProvider<<ProjectionPushdownVisitor as NodeVisitor>::Edge>,
