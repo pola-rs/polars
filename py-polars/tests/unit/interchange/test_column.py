@@ -42,7 +42,9 @@ def test_describe_categorical() -> None:
     s = pl.Series(["b", "a", "a", "c", None, "b"], dtype=pl.Categorical)
     col = PolarsColumn(s)
 
-    out = col.describe_categorical
+    with pytest.deprecated_call():
+        out = col.describe_categorical
+        print(out["categories"]._col)
 
     assert out["is_ordered"] is False
     assert out["is_dictionary"] is True

@@ -424,7 +424,7 @@ def data(
         )
     elif dtype == Duration:
         strategy = durations(time_unit=getattr(dtype, "time_unit", None) or "us")
-    elif dtype == Categorical:
+    elif dtype == Categorical or dtype.base_type() == Categorical:
         strategy = categories(
             n_categories=kwargs.pop("n_categories", _DEFAULT_N_CATEGORIES)
         )

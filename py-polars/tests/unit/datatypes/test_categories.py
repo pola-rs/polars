@@ -53,14 +53,16 @@ def test_cat_parquet_roundtrip(cats: pl.Categories) -> None:
 def test_local_categories_gc() -> None:
     dt = pl.Categorical(pl.Categories.random())
     df = pl.DataFrame({"x": ["foo", "bar", "moo"]}, schema={"x": dt})
-    assert set(df["x"].cat.get_categories()) == {"foo", "bar", "moo"}
+    assert isinstance(df.schema["x"], pl.Categorical)
+    assert set(df.schema["x"].categories) == {"foo", "bar", "moo"}
     df2 = pl.DataFrame({"x": ["zoinks"]}, schema={"x": dt})
-    assert set(df["x"].cat.get_categories()) == {"foo", "bar", "moo", "zoinks"}
-    assert set(df2["x"].cat.get_categories()) == {"foo", "bar", "moo", "zoinks"}
+    assert isinstance(df2.schema["x"], pl.Categorical)
+    assert set(df.schema["x"].categories) == {"foo", "bar", "moo", "zoinks"}
+    assert set(df2.schema["x"].categories) == {"foo", "bar", "moo", "zoinks"}
     del df
     del df2
     df = pl.DataFrame({"x": ["a"]}, schema={"x": dt})
-    assert df["x"].cat.get_categories().to_list() == ["a"]
+    assert list(df.schema["x"].categories) == ["a"]
 
 
 @pytest.mark.parametrize("cats", CATS)
