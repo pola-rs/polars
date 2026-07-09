@@ -807,7 +807,7 @@ class ArrayNameSpace:
                 {0,1,0}
                 {0,0,1}
                 {null,null,null}
-                {null,null,null}
+                null
         ]
         >>> print(result.struct.unnest())
         shape: (5, 3)
@@ -833,7 +833,7 @@ class ArrayNameSpace:
                 {0,1,0}
                 {0,0,1}
                 {null,null,null}
-                {null,null,null}
+                null
         ]
         >>> print(result.struct.unnest())
         shape: (5, 3)

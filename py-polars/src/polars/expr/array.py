@@ -1073,7 +1073,7 @@ class ExprArrayNameSpace:
         │ [0, 1, 0]          ┆ {0,1,0}          │
         │ [0, 0, 1]          ┆ {0,0,1}          │
         │ [null, null, null] ┆ {null,null,null} │
-        │ null               ┆ {null,null,null} │
+        │ null               ┆ null             │
         └────────────────────┴──────────────────┘
         >>> print(result["c_struct"].struct.unnest())
         shape: (5, 3)
@@ -1106,7 +1106,7 @@ class ExprArrayNameSpace:
         │ [0, 1, 0]          ┆ {0,1,0}          │
         │ [0, 0, 1]          ┆ {0,0,1}          │
         │ [null, null, null] ┆ {null,null,null} │
-        │ null               ┆ {null,null,null} │
+        │ null               ┆ null             │
         └────────────────────┴──────────────────┘
         >>> print(result["c_struct"].struct.unnest())
         shape: (5, 3)
