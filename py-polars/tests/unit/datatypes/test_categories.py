@@ -62,6 +62,7 @@ def test_local_categories_gc() -> None:
     del df
     del df2
     df = pl.DataFrame({"x": ["a"]}, schema={"x": dt})
+    assert isinstance(df.schema["x"], pl.Categorical)
     assert list(df.schema["x"].categories) == ["a"]
 
 

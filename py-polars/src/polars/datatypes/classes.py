@@ -730,10 +730,10 @@ class Categories:
         ['apple', 'banana', 'orange']
 
     .. note::
-        Because the categories are backed by a concurrent data structure. If concurrent
-        queries are running, physical category values may be reserved before they are
-        assigned a string lexical value.
-        As a result, the list of categories may contain `None` values.
+        Because the categories are backed by a concurrent data structure, physical
+        category values may be reserved before they are assigned a string lexical
+        value if concurrent queries are running. As a result, the resulting `Series`
+        may contain `None` values.
 
     The `Categories` instance is only a weak reference to the actual
     mapping stored in Polars. If no actual data exists using this mapping (like
@@ -854,8 +854,6 @@ class Categories:
         if isinstance(item, str):
             return self._categories.get_cat(item) is not None
         elif isinstance(item, int):
-            if not (0 <= item < len(self)):
-                return False
             return self._categories.cat_to_str(item) is not None
         else:
             return False
