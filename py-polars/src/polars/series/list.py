@@ -948,7 +948,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
                 {1,0}
                 {null,null}
                 {null,1}
-                {null,null}
+                null
         ]
         >>> print(result.struct.unnest())
         shape: (6, 2)
@@ -981,7 +981,7 @@ class ListNameSpace(_NamespaceSuggestMixin):
                 {1,0,1}
                 {null,null,null}
                 {null,1,null}
-                {null,null,null}
+                null
         ]
         >>> print(result.struct.unnest())
         shape: (6, 3)
