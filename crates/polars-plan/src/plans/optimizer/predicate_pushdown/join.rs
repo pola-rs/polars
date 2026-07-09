@@ -1,9 +1,28 @@
 use polars_utils::format_pl_smallstr;
 
 use super::*;
+use crate::plans::hive::HivePartitionsDf;
+use crate::plans::inputs::Inputs;
 use crate::plans::optimizer::join_utils::remove_suffix;
 
 const IEJOIN_MAX_PREDICATES: usize = 2;
+
+fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartitionsDf> {
+    let ir = ir_arena.get(node);
+
+    for (_, ir) in ir_arena.iter(node) {
+        match ir {
+            IR::Scan { hive_parts, .. } => return hive_parts.clone(),
+            // We only want to return hive partitions for the first joins
+            // Any node in between with more than one input (join, union, etc) will not return a
+            // match.
+            ir if matches!(ir.inputs(), Inputs::Single { .. }) => continue,
+            _ => return None,
+        }
+    }
+
+    None
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
@@ -371,6 +390,9 @@ pub(super) fn process_join(
 
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
     opt.pushdown_and_assign(input_right, pushdown_right, lp_arena, expr_arena)?;
+
+    dbg!(is_hive_partitioned(input_left, lp_arena));
+    dbg!(is_hive_partitioned(input_right, lp_arena));
 
     let lp = IR::Join {
         input_left,

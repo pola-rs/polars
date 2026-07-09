@@ -129,6 +129,8 @@ pub(super) async fn dsl_to_ir(
             None
         };
 
+        dbg!(&hive_parts);
+
         if let Some(ref hive_parts) = hive_parts {
             let hive_schema = hive_parts.schema();
             file_info.update_schema_with_hive_schema(hive_schema.clone());
