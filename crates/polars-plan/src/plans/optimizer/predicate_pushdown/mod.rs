@@ -5,7 +5,6 @@ mod keys;
 mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
-use polars_core::datatypes::{PlHashMap, PlIndexMap};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
@@ -413,7 +412,7 @@ impl PredicatePushDown {
                 } else {
                     &[]
                 };
-                let mut names_set = PlHashSet::<PlSmallStr>::with_capacity(subset.len());
+                let mut names_set = PlIndexSet::<PlSmallStr>::with_capacity(subset.len());
                 for name in subset.iter() {
                     names_set.insert(name.clone());
                 }
@@ -516,7 +515,7 @@ impl PredicatePushDown {
                             columns,
                             separator: _,
                         } => {
-                            let exclude = columns.iter().cloned().collect::<PlHashSet<_>>();
+                            let exclude = columns.iter().cloned().collect::<PlIndexSet<_>>();
 
                             let local_predicates =
                                 transfer_to_local_by_name(expr_arena, &mut acc_predicates, |x| {

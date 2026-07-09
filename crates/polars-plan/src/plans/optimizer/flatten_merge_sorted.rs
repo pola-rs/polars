@@ -1,5 +1,5 @@
 use polars_core::error::PolarsResult;
-use polars_core::prelude::PlHashSet;
+use polars_core::prelude::PlIndexSet;
 use polars_utils::aliases::InitHashMaps;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -9,7 +9,7 @@ use crate::prelude::{AExpr, IR};
 
 pub struct FlattenMergeSortedRule {
     collected_inputs: Vec<Node>,
-    optimized_nodes: PlHashSet<Node>,
+    optimized_nodes: PlIndexSet<Node>,
     traversal_stack: Vec<Node>,
 }
 
@@ -17,7 +17,7 @@ impl FlattenMergeSortedRule {
     pub fn new() -> Self {
         Self {
             collected_inputs: Vec::new(),
-            optimized_nodes: PlHashSet::new(),
+            optimized_nodes: PlIndexSet::new(),
             traversal_stack: Vec::new(),
         }
     }
@@ -98,7 +98,7 @@ fn build_merge_sorted_subtree(
     key: &[PlSmallStr],
     maintain_order: bool,
     lp_arena: &mut Arena<IR>,
-    optimized_nodes: &mut PlHashSet<Node>,
+    optimized_nodes: &mut PlIndexSet<Node>,
 ) -> IR {
     debug_assert!(inputs.len() >= 2);
 
@@ -130,7 +130,7 @@ fn build_merge_sorted_subtree_node(
     key: &[PlSmallStr],
     maintain_order: bool,
     lp_arena: &mut Arena<IR>,
-    optimized_nodes: &mut PlHashSet<Node>,
+    optimized_nodes: &mut PlIndexSet<Node>,
 ) -> Node {
     match inputs {
         [node] => *node,

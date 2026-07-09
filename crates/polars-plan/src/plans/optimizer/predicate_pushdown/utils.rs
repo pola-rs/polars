@@ -165,7 +165,7 @@ pub fn pushdown_eligibility(
     scratch: &mut UnitVec<Node>,
     maintain_errors: bool,
     input_ir: &IR,
-) -> PolarsResult<(PushdownEligibility, PlHashMap<PlSmallStr, PlSmallStr>)> {
+) -> PolarsResult<(PushdownEligibility, PlIndexMap<PlSmallStr, PlSmallStr>)> {
     scratch.clear();
     let ae_nodes_stack = scratch;
 
@@ -174,20 +174,20 @@ pub fn pushdown_eligibility(
     let mut col_to_alias_map = alias_to_col_map.clone();
 
     let mut modified_projection_columns =
-        PlHashSet::<PlSmallStr>::with_capacity(projection_nodes.len());
+        PlIndexSet::<PlSmallStr>::with_capacity(projection_nodes.len());
     let mut has_window = false;
-    let mut common_window_inputs = PlHashSet::<PlSmallStr>::new();
+    let mut common_window_inputs = PlIndexSet::<PlSmallStr>::new();
 
     // Important: Names inserted into any data structure by this function are
     // all non-aliased.
     // This function returns false if pushdown cannot be performed.
     let process_projection_or_predicate = |ae_nodes_stack: &mut UnitVec<Node>,
                                            has_window: &mut bool,
-                                           common_window_inputs: &mut PlHashSet<PlSmallStr>|
+                                           common_window_inputs: &mut PlIndexSet<PlSmallStr>|
      -> ExprPushdownGroup {
         debug_assert_eq!(ae_nodes_stack.len(), 1);
 
-        let mut partition_by_names = PlHashSet::<PlSmallStr>::new();
+        let mut partition_by_names = PlIndexSet::<PlSmallStr>::new();
         let mut expr_pushdown_eligibility = ExprPushdownGroup::Pushable;
 
         while let Some(node) = ae_nodes_stack.pop() {
@@ -221,7 +221,7 @@ pub fn pushdown_eligibility(
                     }
 
                     if !*has_window {
-                        for name in partition_by_names.drain() {
+                        for name in partition_by_names.drain(..) {
                             common_window_inputs.insert(name);
                         }
 
@@ -282,7 +282,7 @@ pub fn pushdown_eligibility(
 
     if has_window && !col_to_alias_map.is_empty() {
         // Rename to aliased names.
-        let mut new = PlHashSet::<PlSmallStr>::with_capacity(2 * common_window_inputs.len());
+        let mut new = PlIndexSet::<PlSmallStr>::with_capacity(2 * common_window_inputs.len());
 
         for key in common_window_inputs.into_iter() {
             if let Some(aliased) = col_to_alias_map.get(&key) {
@@ -455,7 +455,7 @@ pub(crate) fn ir_removes_rows(ir: &IR) -> bool {
 pub(super) fn map_column_references(
     expr: &mut ExprIR,
     expr_arena: &mut Arena<AExpr>,
-    rename_map: &PlHashMap<PlSmallStr, PlSmallStr>,
+    rename_map: &PlIndexMap<PlSmallStr, PlSmallStr>,
 ) {
     if rename_map.is_empty() {
         return;
@@ -465,7 +465,7 @@ pub(super) fn map_column_references(
         .rewrite(
             &mut MapColumnReferences {
                 rename_map,
-                column_nodes: PlHashMap::with_capacity(rename_map.len()),
+                column_nodes: PlIndexMap::with_capacity(rename_map.len()),
             },
             expr_arena,
         )
@@ -475,8 +475,8 @@ pub(super) fn map_column_references(
     *expr = ExprIR::from_node(node, expr_arena);
 
     struct MapColumnReferences<'a> {
-        rename_map: &'a PlHashMap<PlSmallStr, PlSmallStr>,
-        column_nodes: PlHashMap<&'a str, Node>,
+        rename_map: &'a PlIndexMap<PlSmallStr, PlSmallStr>,
+        column_nodes: PlIndexMap<&'a str, Node>,
     }
 
     impl RewritingVisitor for MapColumnReferences<'_> {

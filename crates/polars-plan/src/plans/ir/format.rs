@@ -3,7 +3,7 @@ use std::fmt::{self, Display, Formatter, Write};
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
-use polars_utils::aliases::{InitHashMaps as _, PlHashSet};
+use polars_utils::aliases::{InitHashMaps as _, PlIndexSet};
 use polars_utils::format_list_truncated;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
@@ -152,7 +152,7 @@ impl<'a> IRDisplay<'a> {
         &self,
         f: &mut Formatter,
         indent: usize,
-        seen_caches: &mut PlHashSet<UniqueId>,
+        seen_caches: &mut PlIndexSet<UniqueId>,
     ) -> fmt::Result {
         if indent != 0 {
             writeln!(f)?;
@@ -313,7 +313,7 @@ impl<'a> ExprIRDisplay<'a> {
 
 impl Display for IRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut seen_caches = PlHashSet::new();
+        let mut seen_caches = PlIndexSet::new();
         self._format(f, 0, &mut seen_caches)
     }
 }

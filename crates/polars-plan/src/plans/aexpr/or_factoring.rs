@@ -73,7 +73,7 @@ fn collect_or_branches(root: Node, expr_arena: &Arena<AExpr>, out: &mut Vec<Node
 fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> {
     use std::hash::{BuildHasher, Hasher};
 
-    use polars_utils::aliases::{InitHashMaps, PlFixedStateQuality, PlHashMap};
+    use polars_utils::aliases::{InitHashMaps, PlFixedStateQuality, PlIndexMap};
     use polars_utils::scratch_vec::ScratchVec;
 
     use crate::plans::aexpr::{
@@ -107,10 +107,10 @@ fn try_factor_or(or_node: Node, expr_arena: &mut Arena<AExpr>) -> Option<AExpr> 
         traverse_and_hash_aexpr(n, arena, &mut h);
         h.finish()
     };
-    let buckets: Vec<PlHashMap<u64, Vec<usize>>> = branch_terms
+    let buckets: Vec<PlIndexMap<u64, Vec<usize>>> = branch_terms
         .iter()
         .map(|terms| {
-            let mut m: PlHashMap<u64, Vec<usize>> = PlHashMap::with_capacity(terms.len());
+            let mut m: PlIndexMap<u64, Vec<usize>> = PlIndexMap::with_capacity(terms.len());
             for (i, &n) in terms.iter().enumerate() {
                 m.entry(hash_of(n, expr_arena)).or_default().push(i);
             }

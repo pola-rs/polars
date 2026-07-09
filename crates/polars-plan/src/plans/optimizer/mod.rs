@@ -70,8 +70,8 @@ pub trait Optimize {
 // arbitrary constant to reduce reallocation.
 const HASHMAP_SIZE: usize = 16;
 
-pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlHashMap<K, V> {
-    PlHashMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
+pub(crate) fn init_hashmap<K, V>(max_len: Option<usize>) -> PlIndexMap<K, V> {
+    PlIndexMap::with_capacity(std::cmp::min(max_len.unwrap_or(HASHMAP_SIZE), HASHMAP_SIZE))
 }
 
 pub(crate) fn init_indexmap<K, V>(max_len: Option<usize>) -> PlIndexMap<K, V> {

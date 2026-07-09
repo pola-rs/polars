@@ -133,6 +133,7 @@ impl IR {
 
     /// Get the schema of the logical plan node, using caching.
     #[recursive]
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     pub fn schema_with_cache<'a>(
         node: Node,
         arena: &'a Arena<IR>,
