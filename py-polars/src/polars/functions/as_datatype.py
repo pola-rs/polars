@@ -500,7 +500,7 @@ def concat_list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> 
     return wrap_expr(plr.concat_list(exprs))
 
 
-def list(exprs: IntoExpr | Iterable[IntoExpr], *more_exprs: IntoExpr) -> Expr:
+def list(exprs: IntoExpr | Iterable[IntoExpr], /, *more_exprs: IntoExpr) -> Expr:
     """
     Collect columns into a list column, treating each expression's value as one element.
 
