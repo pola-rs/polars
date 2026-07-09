@@ -4,7 +4,7 @@ import contextlib
 import math
 import os
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from contextlib import nullcontext
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
@@ -117,12 +117,10 @@ if TYPE_CHECKING:
     from builtins import list as list_
     from builtins import set as set_
     from builtins import str as str_
-    from collections.abc import Callable
+    from collections.abc import Callable, Generator, Mapping
 
     with contextlib.suppress(ImportError):  # Module not available when building docs
         import polars._plr as plr
-
-    from collections.abc import Collection, Generator, Mapping
 
     import jax
 
@@ -171,7 +169,7 @@ elif BUILDING_SPHINX_DOCS:
 
 
 @expr_dispatch
-class Series:
+class Series(Collection[Any]):
     """
     A Series represents a single column in a Polars DataFrame.
 
