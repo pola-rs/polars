@@ -59,7 +59,7 @@ unsafe fn export_chunk(
         s.dtype().to_arrow(CompatLevel::newest()),
         true,
     );
-    let c_schema = arrow::ffi::export_field_to_c(&field);
+    let c_schema = arrow::ffi::try_export_field_to_c(&field)?;
 
     let out_schema_ptr = out_schema_ptr as *mut arrow::ffi::ArrowSchema;
     *out_schema_ptr = c_schema;

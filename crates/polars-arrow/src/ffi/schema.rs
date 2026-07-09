@@ -65,6 +65,35 @@ fn schema_children(dtype: &ArrowDataType, flags: &mut i64) -> Box<[*mut ArrowSch
     }
 }
 
+/// Names in the Arrow C data interface are null-terminated C strings, so a name
+/// containing an interior null byte cannot be represented. Validate a field (and
+/// its children) up front so export can return an error instead of panicking
+/// when building the underlying `CString`.
+pub(crate) fn ensure_c_compatible_names(field: &Field) -> PolarsResult<()> {
+    if field.name.as_bytes().contains(&0) {
+        polars_bail!(
+            ComputeError:
+            "cannot export field with name {:?} to Arrow: names may not contain null bytes",
+            field.name.as_str(),
+        );
+    }
+    ensure_dtype_c_compatible_names(field.dtype())
+}
+
+fn ensure_dtype_c_compatible_names(dtype: &ArrowDataType) -> PolarsResult<()> {
+    match dtype {
+        ArrowDataType::List(field)
+        | ArrowDataType::FixedSizeList(field, _)
+        | ArrowDataType::LargeList(field)
+        | ArrowDataType::Map(field, _) => ensure_c_compatible_names(field),
+        ArrowDataType::Struct(fields) => fields.iter().try_for_each(ensure_c_compatible_names),
+        ArrowDataType::Union(u) => u.fields.iter().try_for_each(ensure_c_compatible_names),
+        ArrowDataType::Dictionary(_, values, _) => ensure_dtype_c_compatible_names(values),
+        ArrowDataType::Extension(ext) => ensure_dtype_c_compatible_names(&ext.inner),
+        _ => Ok(()),
+    }
+}
+
 impl ArrowSchema {
     /// creates a new [ArrowSchema]
     pub(crate) fn new(field: &Field) -> Self {

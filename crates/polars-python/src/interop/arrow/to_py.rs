@@ -11,13 +11,15 @@ use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;
 use pyo3::types::PyCapsule;
 
+use crate::error::PyPolarsErr;
+
 /// Arrow array to Python.
 pub(crate) fn to_py_array(
     array: ArrayRef,
     field: &ArrowField,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<Py<PyAny>> {
-    let schema = Box::new(ffi::export_field_to_c(field));
+    let schema = Box::new(ffi::try_export_field_to_c(field).map_err(PyPolarsErr::from)?);
     let array = Box::new(ffi::export_array_to_c(array));
 
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
@@ -44,12 +46,15 @@ pub(crate) fn to_py_rb(
         arrays.push(array_object);
     }
 
-    let schema = Box::new(ffi::export_field_to_c(&ArrowField {
-        name: PlSmallStr::EMPTY,
-        dtype: ArrowDataType::Struct(rb.schema().iter_values().cloned().collect()),
-        is_nullable: false,
-        metadata: None,
-    }));
+    let schema = Box::new(
+        ffi::try_export_field_to_c(&ArrowField {
+            name: PlSmallStr::EMPTY,
+            dtype: ArrowDataType::Struct(rb.schema().iter_values().cloned().collect()),
+            is_nullable: false,
+            metadata: None,
+        })
+        .map_err(PyPolarsErr::from)?,
+    );
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
 
     let schema = pyarrow
@@ -95,7 +100,7 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
     schema: crate::prelude::Wrap<polars::prelude::Schema>,
     compat_level: crate::prelude::PyCompatLevel,
 ) -> PyResult<Bound<'py, PyCapsule>> {
-    let schema: arrow::ffi::ArrowSchema = arrow::ffi::export_field_to_c(&ArrowField::new(
+    let schema: arrow::ffi::ArrowSchema = arrow::ffi::try_export_field_to_c(&ArrowField::new(
         PlSmallStr::EMPTY,
         ArrowDataType::Struct(
             schema
@@ -105,7 +110,8 @@ pub(crate) fn polars_schema_to_pycapsule<'py>(
                 .collect(),
         ),
         false,
-    ));
+    ))
+    .map_err(PyPolarsErr::from)?;
 
     PyCapsule::new_with_value(py, schema, c"arrow_schema")
 }

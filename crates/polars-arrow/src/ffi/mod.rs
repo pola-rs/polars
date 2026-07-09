@@ -28,6 +28,14 @@ pub fn export_field_to_c(field: &Field) -> ArrowSchema {
     ArrowSchema::new(field)
 }
 
+/// Exports a [`Field`] to the C data interface, returning an error instead of
+/// panicking when a (possibly nested) field name cannot be represented as a
+/// null-terminated C string.
+pub fn try_export_field_to_c(field: &Field) -> PolarsResult<ArrowSchema> {
+    self::schema::ensure_c_compatible_names(field)?;
+    Ok(ArrowSchema::new(field))
+}
+
 /// Imports a [`Field`] from the C data interface.
 /// # Safety
 /// This function is intrinsically `unsafe` and relies on a [`ArrowSchema`]

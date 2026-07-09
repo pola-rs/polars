@@ -1550,3 +1550,14 @@ def test_from_pandas_timestamp_17382() -> None:
     assert isinstance(result, datetime)
     assert result.tzinfo == ZoneInfo("UTC")
     assert result == datetime(2021, 1, 1, 0, 0, 0, tzinfo=ZoneInfo("UTC"))
+
+
+def test_to_arrow_null_byte_in_name_24353() -> None:
+    # Arrow C data interface names are null-terminated, so a name with an
+    # interior null byte must error rather than panic.
+    with pytest.raises(ComputeError, match="names may not contain null bytes"):
+        pl.DataFrame({"a\x00b": [1]}).to_arrow()
+
+    # Nested field names are validated too.
+    with pytest.raises(ComputeError, match="names may not contain null bytes"):
+        pl.DataFrame({"s": [{"x\x00y": 1}]}).to_arrow()
