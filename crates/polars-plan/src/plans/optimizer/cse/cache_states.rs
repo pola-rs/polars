@@ -183,9 +183,13 @@ pub(crate) fn set_cache_states(
                         edges.inputs().for_each_mut(|x| *x = true);
                     },
                     IR::Cache { input: _, id } => {
-                        let mut v = Value::default();
-                        v.streaming = streaming;
-                        cache_schema_and_children.insert(*id, v);
+                        cache_schema_and_children.insert(
+                            *id,
+                            Value {
+                                streaming,
+                                ..Default::default()
+                            },
+                        );
                     },
                     _ => {},
                 }
