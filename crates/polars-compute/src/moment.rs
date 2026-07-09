@@ -99,18 +99,6 @@ impl VarState {
         self.clear_zero_weight_nan();
     }
 
-    pub fn remove_one(&mut self, x: f64) {
-        // Just a specialized version of
-        // self.combine(&Self { weight: -1.0, mean: x, dp: 0.0 })
-        let new_weight = self.weight - 1.0;
-        let delta_mean = x - self.mean;
-        let new_mean = self.mean - delta_mean / new_weight;
-        self.dp -= (x - new_mean) * delta_mean;
-        self.weight = new_weight;
-        self.mean = new_mean;
-        self.clear_zero_weight_nan();
-    }
-
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
             return;
@@ -375,25 +363,6 @@ impl SkewState {
         self.clear_zero_weight_nan();
     }
 
-    pub fn remove_one(&mut self, x: f64) {
-        // Specialization of self.combine(&SkewState { weight: -1.0, mean: x, m2: 0.0, m3: 0.0 });
-        let new_weight = self.weight - 1.0;
-        let delta_mean = x - self.mean;
-        let delta_mean_weight = delta_mean / new_weight;
-        let new_mean = self.mean - delta_mean_weight;
-
-        let weight_diff = self.weight + 1.0;
-        let m2_update = (new_mean - x) * delta_mean;
-        let new_m2 = self.m2 + m2_update;
-        let new_m3 = self.m3 + delta_mean_weight * (m2_update * weight_diff + 3.0 * self.m2);
-
-        self.weight = new_weight;
-        self.mean = new_mean;
-        self.m2 = new_m2;
-        self.m3 = new_m3;
-        self.clear_zero_weight_nan();
-    }
-
     pub fn combine(&mut self, other: &Self) {
         if other.weight == 0.0 {
             return;
@@ -533,31 +502,6 @@ impl KurtosisState {
                 * (delta_mean_weight
                     * (m2_update * (self.weight * weight_diff + 1.0) + 6.0 * self.m2)
                     - 4.0 * self.m3);
-
-        self.weight = new_weight;
-        self.mean = new_mean;
-        self.m2 = new_m2;
-        self.m3 = new_m3;
-        self.m4 = new_m4;
-        self.clear_zero_weight_nan();
-    }
-
-    pub fn remove_one(&mut self, x: f64) {
-        // Specialization of self.combine(&KurtosisState { weight: -1.0, mean: x, m2: 0.0, m3: 0.0, m4: 0.0 });
-        let new_weight = self.weight - 1.0;
-        let delta_mean = x - self.mean;
-        let delta_mean_weight = delta_mean / new_weight;
-        let new_mean = self.mean - delta_mean_weight;
-
-        let weight_diff = self.weight + 1.0;
-        let m2_update = (new_mean - x) * delta_mean;
-        let new_m2 = self.m2 + m2_update;
-        let new_m3 = self.m3 + delta_mean_weight * (m2_update * weight_diff + 3.0 * self.m2);
-        let new_m4 = self.m4
-            + delta_mean_weight
-                * (delta_mean_weight
-                    * (m2_update * (self.weight * weight_diff + 1.0) + 6.0 * self.m2)
-                    + 4.0 * self.m3);
 
         self.weight = new_weight;
         self.mean = new_mean;
