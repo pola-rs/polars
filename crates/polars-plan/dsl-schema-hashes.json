@@ -78,7 +78,7 @@
   "IcebergColumn": "171ff56c222358389754a7ff774eec6fc958478df2317720c63b4addc8f9a4c5",
   "IcebergColumnType": "e612983b0dfce78d172af2e4bb4726e3303ede09ea3c1de8ec40e12ee7922dac",
   "IcebergCommitMode": "330f974fb44353b3b95c1004864b84d88a03e756120e1a14385f84be8d4b5245",
-  "IcebergIdentityTransformedPartitionFields": "da0455eb9f7a7c648dfc18dffaafe75ca3e355b8dd802f5b6c4b456ea467905a",
+  "PlIndexMapHashable": "da0455eb9f7a7c648dfc18dffaafe75ca3e355b8dd802f5b6c4b456ea467905a",
   "IcebergPathProvider": "20732e7c4d3e6386d7e2a9675973ea4527a4e474a194c9a837a73839acbef715",
   "IcebergSchema": "d254f883b2a9ebc2c0c4f2d32f40fcc951ef0e0d79d905bcec298dfcb8561e78",
   "IcebergSinkState": "999c6e25060303d50a96d367e9f9084a78a9fc37f40a9abf92ea7a42aade89d9",

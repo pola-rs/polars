@@ -1,5 +1,9 @@
+use arrow::array::Array;
+use arrow::legacy::prelude::LargeListArray;
+use arrow::offset::OffsetsBuffer;
 use polars_core::chunked_array::cast::CastOptions;
-use polars_core::prelude::{Column, DataType, InitHashMaps, IntoColumn, PlHashMap};
+use polars_core::datatypes::ListChunked;
+use polars_core::prelude::{AnyValue, Column, DataType, InitHashMaps, IntoColumn as _, PlHashMap};
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_core::schema::iceberg::{IcebergColumn, IcebergColumnType, LIST_ELEMENT_DEFAULT_ID};
