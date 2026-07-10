@@ -391,7 +391,10 @@ mod tests {
         };
 
         // A generated `_duplicated_N` name must not collide with an existing header (#28310).
-        assert_eq!(names(b"a,a_duplicated_0,a"), ["a", "a_duplicated_0", "a_duplicated_1"]);
+        assert_eq!(
+            names(b"a,a_duplicated_0,a"),
+            ["a", "a_duplicated_0", "a_duplicated_1"]
+        );
 
         // The reverse ordering must also stay collision-free (3 distinct names).
         let reversed = names(b"a,a,a_duplicated_0");
