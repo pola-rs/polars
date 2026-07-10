@@ -1,3 +1,5 @@
+use polars_core::utils::split_df_as_ref;
+
 use super::*;
 use crate::plans::hive::HivePartitionsDf;
 use crate::plans::inputs::Inputs;
@@ -64,17 +66,21 @@ pub fn rewrite_hive(
                 .clone()
                 .into_frame();
 
-            let partitions = hive_l.join(
-                &hive_r,
-                [l],
-                [r],
-                JoinArgs {
-                    how: options.args.how.clone(),
-                    ..Default::default()
-                },
-                None,
-            );
+            let partitions = hive_l
+                .join(
+                    &hive_r,
+                    [l],
+                    [r],
+                    JoinArgs {
+                        how: options.args.how.clone(),
+                        ..Default::default()
+                    },
+                    None,
+                )
+                .unwrap();
 
+            let partitions =
+                split_df_as_ref(&partitions, std::cmp::min(64, partitions.height()), false);
             dbg!(hive_cols);
             dbg!(partitions);
 
