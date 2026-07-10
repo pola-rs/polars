@@ -240,6 +240,13 @@ pub fn concat_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
     Ok(expr.into())
 }
 
+#[pyfunction(name = "list")]
+pub fn as_list(s: Vec<PyExpr>) -> PyResult<PyExpr> {
+    let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();
+    let expr = dsl::as_list(s).map_err(PyPolarsErr::from)?;
+    Ok(expr.into())
+}
+
 #[pyfunction]
 pub fn concat_arr(s: Vec<PyExpr>) -> PyResult<PyExpr> {
     let s = s.into_iter().map(|e| e.inner).collect::<Vec<_>>();

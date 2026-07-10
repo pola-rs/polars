@@ -10,8 +10,8 @@ use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
 use polars_plan::plans::{
-    DynLiteralValue, IRBooleanFunction, IRFunctionExpr, IRPowFunction, IRRollingFunction,
-    IRRollingFunctionBy, IRStringFunction, IRStructFunction, IRTemporalFunction,
+    DynLiteralValue, FusedOperator, IRBooleanFunction, IRFunctionExpr, IRPowFunction,
+    IRRollingFunction, IRRollingFunctionBy, IRStringFunction, IRStructFunction, IRTemporalFunction,
 };
 use polars_plan::prelude::{
     AExpr, GroupbyOptions, IRAggExpr, LiteralValue, Operator, WindowMapping,
@@ -206,6 +206,7 @@ pub enum PyBooleanFunction {
     IsBetween,
     IsIn,
     IsClose,
+    IsSorted,
     AllHorizontal,
     AnyHorizontal,
     Not,
@@ -311,6 +312,42 @@ pub enum PyRollingFunction {
 
 #[pymethods]
 impl PyRollingFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pyclass(name = "EwmFunction", eq, frozen, skip_from_py_object)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyEwmFunction {
+    Mean,
+    Std,
+    Var,
+    MeanBy,
+}
+
+#[pymethods]
+impl PyEwmFunction {
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+}
+
+#[pyclass(name = "RollingFunctionBy", eq, frozen, skip_from_py_object)]
+#[derive(Copy, Clone, PartialEq)]
+pub enum PyRollingFunctionBy {
+    MinBy,
+    MaxBy,
+    MeanBy,
+    SumBy,
+    QuantileBy,
+    VarBy,
+    StdBy,
+    RankBy,
+}
+
+#[pymethods]
+impl PyRollingFunctionBy {
     fn __hash__(&self) -> isize {
         *self as isize
     }
@@ -605,6 +642,27 @@ impl PyGroupbyOptions {
             .rolling
             .as_ref()
             .map(|f| PyRollingGroupOptions { inner: f.clone() })
+    }
+}
+
+// Serialize the optional per-op rolling parameters into the flat tuple consumed by
+// external engines (e.g., cudf-polars).
+fn rolling_fn_params_into_py(
+    py: Python<'_>,
+    fn_params: &Option<RollingFnParams>,
+) -> PyResult<Py<PyAny>> {
+    match fn_params {
+        None => ().into_py_any(py),
+        Some(RollingFnParams::Quantile(q)) => {
+            (q.prob, Into::<&str>::into(q.method)).into_py_any(py)
+        },
+        Some(RollingFnParams::Var(v)) => (v.ddof,).into_py_any(py),
+        Some(RollingFnParams::Rank { method, seed }) => {
+            let method = Into::<&str>::into(method);
+            (method, *seed).into_py_any(py)
+        },
+        Some(RollingFnParams::Skew { bias }) => (*bias,).into_py_any(py),
+        Some(RollingFnParams::Kurtosis { fisher, bias }) => (*fisher, *bias).into_py_any(py),
     }
 }
 
@@ -1177,6 +1235,10 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                         nans_equal,
                     } => (PyBooleanFunction::IsClose, abs_tol.0, rel_tol.0, nans_equal)
                         .into_py_any(py),
+                    IRBooleanFunction::IsSorted {
+                        descending,
+                        nulls_last,
+                    } => (PyBooleanFunction::IsSorted, *descending, *nulls_last).into_py_any(py),
                     IRBooleanFunction::AllHorizontal => {
                         (PyBooleanFunction::AllHorizontal,).into_py_any(py)
                     },
@@ -1263,21 +1325,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                             return Err(PyNotImplementedError::new_err("rolling map"));
                         },
                     };
-                    let fn_params: Py<PyAny> = match &options.fn_params {
-                        None => ().into_py_any(py)?,
-                        Some(RollingFnParams::Quantile(q)) => {
-                            (q.prob, Into::<&str>::into(q.method)).into_py_any(py)?
-                        },
-                        Some(RollingFnParams::Var(v)) => (v.ddof,).into_py_any(py)?,
-                        Some(RollingFnParams::Rank { method, seed }) => {
-                            let method = Into::<&str>::into(method);
-                            (method, *seed).into_py_any(py)?
-                        },
-                        Some(RollingFnParams::Skew { bias }) => (*bias,).into_py_any(py)?,
-                        Some(RollingFnParams::Kurtosis { fisher, bias }) => {
-                            (*fisher, *bias).into_py_any(py)?
-                        },
-                    };
+                    let fn_params = rolling_fn_params_into_py(py, &options.fn_params)?;
                     // Tuple consumed by external engines (e.g., cudf-polars):
                     // (RollingFunction, window_size, min_periods, weights, center, fn_params)
                     (
@@ -1290,31 +1338,31 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     )
                         .into_py_any(py)
                 },
-                IRFunctionExpr::RollingExprBy { function_by, .. } => match function_by {
-                    IRRollingFunctionBy::MinBy => {
-                        return Err(PyNotImplementedError::new_err("rolling min by"));
-                    },
-                    IRRollingFunctionBy::MaxBy => {
-                        return Err(PyNotImplementedError::new_err("rolling max by"));
-                    },
-                    IRRollingFunctionBy::MeanBy => {
-                        return Err(PyNotImplementedError::new_err("rolling mean by"));
-                    },
-                    IRRollingFunctionBy::SumBy => {
-                        return Err(PyNotImplementedError::new_err("rolling sum by"));
-                    },
-                    IRRollingFunctionBy::QuantileBy => {
-                        return Err(PyNotImplementedError::new_err("rolling quantile by"));
-                    },
-                    IRRollingFunctionBy::VarBy => {
-                        return Err(PyNotImplementedError::new_err("rolling var by"));
-                    },
-                    IRRollingFunctionBy::StdBy => {
-                        return Err(PyNotImplementedError::new_err("rolling std by"));
-                    },
-                    IRRollingFunctionBy::RankBy => {
-                        return Err(PyNotImplementedError::new_err("rolling rank by"));
-                    },
+                IRFunctionExpr::RollingExprBy {
+                    function_by,
+                    options,
+                } => {
+                    let py_function = match function_by {
+                        IRRollingFunctionBy::MinBy => PyRollingFunctionBy::MinBy,
+                        IRRollingFunctionBy::MaxBy => PyRollingFunctionBy::MaxBy,
+                        IRRollingFunctionBy::MeanBy => PyRollingFunctionBy::MeanBy,
+                        IRRollingFunctionBy::SumBy => PyRollingFunctionBy::SumBy,
+                        IRRollingFunctionBy::QuantileBy => PyRollingFunctionBy::QuantileBy,
+                        IRRollingFunctionBy::VarBy => PyRollingFunctionBy::VarBy,
+                        IRRollingFunctionBy::StdBy => PyRollingFunctionBy::StdBy,
+                        IRRollingFunctionBy::RankBy => PyRollingFunctionBy::RankBy,
+                    };
+                    let fn_params = rolling_fn_params_into_py(py, &options.fn_params)?;
+                    // Tuple consumed by external engines (e.g., cudf-polars):
+                    // (RollingFunctionBy, window_size, min_periods, closed_window, fn_params)
+                    (
+                        py_function,
+                        Wrap(options.window_size),
+                        options.min_periods,
+                        Wrap(options.closed_window),
+                        fn_params,
+                    )
+                        .into_py_any(py)
                 },
                 IRFunctionExpr::Rechunk => ("rechunk",).into_py_any(py),
                 IRFunctionExpr::ShiftAndFill => ("shift_and_fill",).into_py_any(py),
@@ -1369,6 +1417,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Clip { has_min, has_max } => {
                     ("clip", has_min, has_max).into_py_any(py)
                 },
+                IRFunctionExpr::AsList => ("as_list",).into_py_any(py),
                 IRFunctionExpr::AsStruct => ("as_struct",).into_py_any(py),
                 #[cfg(feature = "top_k")]
                 IRFunctionExpr::TopK { descending } => ("top_k", descending).into_py_any(py),
@@ -1422,7 +1471,14 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::Truncate { decimals } => ("truncate", decimals).into_py_any(py),
                 IRFunctionExpr::Floor => ("floor",).into_py_any(py),
                 IRFunctionExpr::Ceil => ("ceil",).into_py_any(py),
-                IRFunctionExpr::Fused(_) => return Err(PyNotImplementedError::new_err("fused")),
+                IRFunctionExpr::Fused(op) => {
+                    let op_name = match op {
+                        FusedOperator::MultiplyAdd => "fma",
+                        FusedOperator::SubMultiply => "fsm",
+                        FusedOperator::MultiplySub => "fms",
+                    };
+                    ("fused", op_name).into_py_any(py)
+                },
                 IRFunctionExpr::ConcatExpr { .. } => {
                     return Err(PyNotImplementedError::new_err("concat expr"));
                 },
@@ -1472,15 +1528,35 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                     ("mean_horizontal", ignore_nulls).into_py_any(py)
                 },
                 IRFunctionExpr::MinHorizontal => ("min_horizontal",).into_py_any(py),
-                IRFunctionExpr::EwmMean { options: _ } => {
-                    return Err(PyNotImplementedError::new_err("ewm mean"));
-                },
-                IRFunctionExpr::EwmStd { options: _ } => {
-                    return Err(PyNotImplementedError::new_err("ewm std"));
-                },
-                IRFunctionExpr::EwmVar { options: _ } => {
-                    return Err(PyNotImplementedError::new_err("ewm var"));
-                },
+                // Tuples consumed by external engines (e.g., cudf-polars):
+                // (EwmFunction, alpha, adjust, bias, min_periods, ignore_nulls)
+                IRFunctionExpr::EwmMean { options } => (
+                    PyEwmFunction::Mean,
+                    options.alpha,
+                    options.adjust,
+                    options.bias,
+                    options.min_periods,
+                    options.ignore_nulls,
+                )
+                    .into_py_any(py),
+                IRFunctionExpr::EwmStd { options } => (
+                    PyEwmFunction::Std,
+                    options.alpha,
+                    options.adjust,
+                    options.bias,
+                    options.min_periods,
+                    options.ignore_nulls,
+                )
+                    .into_py_any(py),
+                IRFunctionExpr::EwmVar { options } => (
+                    PyEwmFunction::Var,
+                    options.alpha,
+                    options.adjust,
+                    options.bias,
+                    options.min_periods,
+                    options.ignore_nulls,
+                )
+                    .into_py_any(py),
                 IRFunctionExpr::Replace => ("replace",).into_py_any(py),
                 IRFunctionExpr::ReplaceStrict { return_dtype: _ } => {
                     // Can ignore the return dtype because it is encoded in the schema.
@@ -1522,8 +1598,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 #[cfg(feature = "top_k")]
                 IRFunctionExpr::TopKBy { descending } => ("top_k_by", descending).into_py_any(py),
-                IRFunctionExpr::EwmMeanBy { half_life: _ } => {
-                    return Err(PyNotImplementedError::new_err("ewm_mean_by"));
+                IRFunctionExpr::EwmMeanBy { half_life } => {
+                    (PyEwmFunction::MeanBy, Wrap(*half_life)).into_py_any(py)
                 },
                 IRFunctionExpr::RowEncode(..) => {
                     return Err(PyNotImplementedError::new_err("row_encode"));

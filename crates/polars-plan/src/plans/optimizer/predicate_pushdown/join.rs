@@ -10,13 +10,13 @@ pub(super) fn process_join(
     opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    input_left: Node,
-    input_right: Node,
+    mut input_left: Node,
+    mut input_right: Node,
     mut left_on: Vec<ExprIR>,
     mut right_on: Vec<ExprIR>,
     mut schema: SchemaRef,
     mut options: Arc<JoinOptionsIR>,
-    mut acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
+    mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
     streaming: bool,
 ) -> PolarsResult<IR> {
     if options.args.slice.is_some() {
@@ -34,6 +34,20 @@ pub(super) fn process_join(
 
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
     let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
+
+    let mut opt_join_key_reduction_select = try_reduce_redundant_join_keys(
+        opt,
+        lp_arena,
+        expr_arena,
+        &mut input_left,
+        &mut input_right,
+        &schema_left,
+        &schema_right,
+        &mut schema,
+        &options,
+        &mut left_on,
+        &mut right_on,
+    )?;
 
     let opt_post_select = try_rewrite_join_type(
         &schema_left,
@@ -63,6 +77,8 @@ pub(super) fn process_join(
             schema,
             options,
         };
+        let lp =
+            apply_join_key_reduction_select(lp, opt_join_key_reduction_select.take(), lp_arena);
 
         return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
     }
@@ -171,7 +187,7 @@ pub(super) fn process_join(
     }
 
     // Key columns of the left table that are coalesced into an output column of the right table.
-    let coalesced_to_right: PlHashSet<PlSmallStr> =
+    let coalesced_to_right: PlIndexSet<PlSmallStr> =
         if matches!(&options.args.how, JoinType::Right) && options.args.should_coalesce() {
             get_lhs_column_keys_iter()
                 .map(|x| x.unwrap().clone())
@@ -180,10 +196,10 @@ pub(super) fn process_join(
             Default::default()
         };
 
-    let mut output_key_to_left_input_map: PlHashMap<PlSmallStr, PlSmallStr> =
-        PlHashMap::with_capacity(get_lhs_column_keys_iter().len());
-    let mut output_key_to_right_input_map: PlHashMap<PlSmallStr, PlSmallStr> =
-        PlHashMap::with_capacity(get_rhs_column_keys_iter().len());
+    let mut output_key_to_left_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
+        PlIndexMap::with_capacity(get_lhs_column_keys_iter().len());
+    let mut output_key_to_right_input_map: PlIndexMap<PlSmallStr, PlSmallStr> =
+        PlIndexMap::with_capacity(get_rhs_column_keys_iter().len());
 
     for (lhs_input_key, rhs_input_key) in get_lhs_column_keys_iter().zip(get_rhs_column_keys_iter())
     {
@@ -238,9 +254,10 @@ pub(super) fn process_join(
         }
     }
 
-    let mut pushdown_left: PlHashMap<PlSmallStr, ExprIR> = init_hashmap(Some(acc_predicates.len()));
-    let mut pushdown_right: PlHashMap<PlSmallStr, ExprIR> =
-        init_hashmap(Some(acc_predicates.len()));
+    let mut pushdown_left: PlIndexMap<PlSmallStr, ExprIR> =
+        init_indexmap(Some(acc_predicates.len()));
+    let mut pushdown_right: PlIndexMap<PlSmallStr, ExprIR> =
+        init_indexmap(Some(acc_predicates.len()));
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
     for (_, predicate) in acc_predicates {
@@ -381,7 +398,204 @@ pub(super) fn process_join(
         lp
     };
 
+    let lp = apply_join_key_reduction_select(lp, opt_join_key_reduction_select, lp_arena);
+
     Ok(lp)
+}
+
+fn apply_join_key_reduction_select(
+    lp: IR,
+    opt_select: Option<(Vec<ExprIR>, SchemaRef)>,
+    lp_arena: &mut Arena<IR>,
+) -> IR {
+    if let Some((projections, schema)) = opt_select {
+        IR::Select {
+            input: lp_arena.add(lp),
+            expr: projections,
+            schema,
+            options: ProjectionOptions {
+                run_parallel: false,
+                duplicate_check: false,
+                should_broadcast: false,
+            },
+        }
+    } else {
+        lp
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+fn try_reduce_redundant_join_keys(
+    opt: &mut PredicatePushDown,
+    lp_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    input_left: &mut Node,
+    input_right: &mut Node,
+    schema_left: &SchemaRef,
+    schema_right: &SchemaRef,
+    output_schema: &mut SchemaRef,
+    options: &Arc<JoinOptionsIR>,
+    left_on: &mut Vec<ExprIR>,
+    right_on: &mut Vec<ExprIR>,
+) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
+    if left_on.len() <= 1 {
+        return Ok(None);
+    }
+
+    // Only filter a side when removed rows from that side cannot contribute to the join output.
+    let reduce_left = match options.args.how {
+        JoinType::Inner | JoinType::Right => true,
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => true,
+        _ => false,
+    };
+    let reduce_right = match options.args.how {
+        JoinType::Inner | JoinType::Left => true,
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => true,
+        _ => false,
+    };
+
+    if !(reduce_left || reduce_right) {
+        return Ok(None);
+    }
+
+    let mut remove_key = vec![false; left_on.len()];
+    let mut pushdown_left = init_indexmap(None);
+    let mut pushdown_right = init_indexmap(None);
+
+    if reduce_left {
+        collect_redundant_join_key_filters(
+            left_on,
+            right_on,
+            options.args.nulls_equal,
+            &mut remove_key,
+            &mut pushdown_left,
+            expr_arena,
+        );
+    }
+
+    if reduce_right {
+        collect_redundant_join_key_filters(
+            right_on,
+            left_on,
+            options.args.nulls_equal,
+            &mut remove_key,
+            &mut pushdown_right,
+            expr_arena,
+        );
+    }
+
+    if !remove_key.iter().any(|remove| *remove) {
+        return Ok(None);
+    }
+
+    debug_assert!(remove_key.iter().any(|remove| !*remove));
+
+    if !pushdown_left.is_empty() {
+        opt.pushdown_and_assign(*input_left, pushdown_left, lp_arena, expr_arena)?;
+    }
+    if !pushdown_right.is_empty() {
+        opt.pushdown_and_assign(*input_right, pushdown_right, lp_arena, expr_arena)?;
+    }
+
+    let original_schema = output_schema.clone();
+
+    let mut new_left_on = Vec::with_capacity(left_on.len());
+    let mut new_right_on = Vec::with_capacity(right_on.len());
+    for (i, (l, r)) in left_on.iter().zip(right_on.iter()).enumerate() {
+        if !remove_key[i] {
+            new_left_on.push(l.clone());
+            new_right_on.push(r.clone());
+        }
+    }
+    *left_on = new_left_on;
+    *right_on = new_right_on;
+
+    *output_schema = det_join_schema(
+        schema_left,
+        schema_right,
+        left_on,
+        right_on,
+        options,
+        expr_arena,
+    )?;
+
+    let original_names = original_schema.iter_names().collect::<Vec<_>>();
+    let new_names = output_schema.iter_names().collect::<Vec<_>>();
+    if original_names == new_names {
+        return Ok(None);
+    }
+
+    let projections = original_schema
+        .iter_names()
+        .map(|name| {
+            let node = expr_arena.add(AExpr::Column(name.clone()));
+            ExprIR::from_node(node, expr_arena)
+        })
+        .collect();
+
+    Ok(Some((projections, original_schema)))
+}
+
+fn collect_redundant_join_key_filters(
+    reduced_side_on: &[ExprIR],
+    other_side_on: &[ExprIR],
+    nulls_equal: bool,
+    remove_key: &mut [bool],
+    pushdown: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+) {
+    let op = if nulls_equal {
+        Operator::EqValidity
+    } else {
+        Operator::Eq
+    };
+
+    let mut l_stack = Vec::new();
+    let mut r_stack = Vec::new();
+
+    for group_start in 0..other_side_on.len() {
+        let group_node = other_side_on[group_start].node();
+
+        for i in group_start + 1..other_side_on.len() {
+            if remove_key[i] {
+                continue;
+            }
+
+            let other_node = other_side_on[i].node();
+            if !expr_arena.get(group_node).is_expr_equal_to_amortized(
+                expr_arena.get(other_node),
+                expr_arena,
+                &mut l_stack,
+                &mut r_stack,
+            ) {
+                continue;
+            }
+
+            remove_key[i] = true;
+
+            let lhs = reduced_side_on[group_start].node();
+            let rhs = reduced_side_on[i].node();
+
+            if expr_arena.get(lhs).is_expr_equal_to_amortized(
+                expr_arena.get(rhs),
+                expr_arena,
+                &mut l_stack,
+                &mut r_stack,
+            ) {
+                continue;
+            }
+
+            let predicate = expr_arena.add(AExpr::BinaryExpr {
+                left: lhs,
+                op,
+                right: rhs,
+            });
+            let predicate = ExprIR::from_node(predicate, expr_arena);
+            insert_predicate_dedup(pushdown, &predicate, expr_arena);
+        }
+    }
 }
 
 /// Attempts to rewrite the join-type based on NULL-removing filters.
@@ -396,7 +610,7 @@ fn try_rewrite_join_type(
     options: &mut Arc<JoinOptionsIR>,
     left_on: &mut Vec<ExprIR>,
     right_on: &mut Vec<ExprIR>,
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     streaming: bool,
 ) -> PolarsResult<Option<(Vec<ExprIR>, SchemaRef)>> {
@@ -659,11 +873,11 @@ fn try_rewrite_join_type(
         }};
     }
 
-    let mut coalesced_to_right: PlHashSet<PlSmallStr> = Default::default();
+    let mut coalesced_to_right: PlIndexSet<PlSmallStr> = Default::default();
     // Removing NULLs on these columns do not allow for join downgrading.
     // We only need to track these for full-join - e.g. for left-join, removing NULLs from any left
     // column does not cause any join rewrites.
-    let mut coalesced_full_join_key_outputs: PlHashSet<PlSmallStr> = Default::default();
+    let mut coalesced_full_join_key_outputs: PlIndexSet<PlSmallStr> = Default::default();
 
     if options.args.should_coalesce() {
         match &options.args.how {
@@ -756,7 +970,7 @@ fn try_rewrite_join_type(
 
     // Maps the original join output names to the new join output names (used for mapping column
     // references of the predicates).
-    let mut original_to_new_names_map: PlHashMap<PlSmallStr, PlSmallStr> = Default::default();
+    let mut original_to_new_names_map: PlIndexMap<PlSmallStr, PlSmallStr> = Default::default();
     // Projects the new join output table back into the original join output table.
     let mut project_to_original: Option<Vec<ExprIR>> = None;
 
@@ -780,7 +994,7 @@ fn try_rewrite_join_type(
             // original_to_new_names_map: {'a': 'a_right', 'b_right': 'a'}
             //
             (JoinType::Right, JoinType::Inner) => {
-                let mut join_output_key_selectors = PlHashMap::with_capacity(right_on.len());
+                let mut join_output_key_selectors = PlIndexMap::with_capacity(right_on.len());
 
                 for (l, r) in left_on.iter().zip(right_on) {
                     // Unwrap any Cast expressions that may have been inserted for type coercion.
@@ -904,16 +1118,16 @@ fn try_rewrite_join_type(
             // original_to_new_names_map: {'a': 'b_right', 'a_right': 'a'}
             //
             (JoinType::Full, JoinType::Right) => {
-                let mut join_output_key_selectors = PlHashMap::with_capacity(left_on.len());
+                let mut join_output_key_selectors = PlIndexMap::with_capacity(left_on.len());
 
                 // The existing one is empty because the original join type was not a right-join.
                 assert!(coalesced_to_right.is_empty());
                 // LHS input key columns that are coalesced (i.e. not projected) for the right-join.
-                let coalesced_to_right: PlHashSet<PlSmallStr> =
+                let coalesced_to_right: PlIndexSet<PlSmallStr> =
                     lhs_input_column_keys_iter!().collect();
                 // RHS input key columns that are coalesced (i.e. not projected) for the full-join.
-                let mut coalesced_to_left: PlHashSet<PlSmallStr> =
-                    PlHashSet::with_capacity(right_on.len());
+                let mut coalesced_to_left: PlIndexSet<PlSmallStr> =
+                    PlIndexSet::with_capacity(right_on.len());
 
                 for (l, r) in left_on.iter().zip(right_on) {
                     // Unwrap any Cast expressions that may have been inserted for type coercion.
@@ -1060,12 +1274,12 @@ struct InnerJoinKeys {
 
 /// Removes all equality predicates that can be used as inner-join conditions from `acc_predicates`.
 fn take_inner_join_compatible_filters(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     schema_left: &Schema,
     schema_right: &Schema,
     suffix: &str,
-) -> PolarsResult<hashbrown::hash_map::IntoValues<Node, InnerJoinKeys>> {
+) -> PolarsResult<indexmap::map::IntoValues<Node, InnerJoinKeys>> {
     take_predicates_mut(acc_predicates, expr_arena, |ae, _ae_node, expr_arena| {
         Ok(match ae {
             AExpr::BinaryExpr {
@@ -1120,13 +1334,13 @@ struct IEJoinCompatiblePredicate {
 #[cfg(feature = "iejoin")]
 /// Removes all inequality filters that can be used as iejoin conditions from `acc_predicates`.
 fn take_iejoin_compatible_filters(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     schema_left: &Schema,
     schema_right: &Schema,
     output_schema: &Schema,
     suffix: &str,
-) -> PolarsResult<hashbrown::hash_map::IntoValues<Node, IEJoinCompatiblePredicate>> {
+) -> PolarsResult<indexmap::map::IntoValues<Node, IEJoinCompatiblePredicate>> {
     return take_predicates_mut(acc_predicates, expr_arena, |ae, ae_node, expr_arena| {
         Ok(match ae {
             AExpr::BinaryExpr { left, op, right } => {
@@ -1174,7 +1388,7 @@ fn take_iejoin_compatible_filters(
                         source_node: ae_node,
                     }),
                     (ExprOrigin::Right, ExprOrigin::Left) => {
-                        let op = op.swap_operands();
+                        let op = op.swap_operands().unwrap();
 
                         Some(IEJoinCompatiblePredicate {
                             input_lhs: *right,
@@ -1203,7 +1417,7 @@ fn take_iejoin_compatible_filters(
 
 #[cfg(feature = "iejoin")]
 fn take_double_bounded_range_join_filter(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     schema_left: &Schema,
     schema_right: &Schema,
@@ -1292,12 +1506,12 @@ fn take_double_bounded_range_join_filter(
 /// Note that filters that refer only to a single side are not removed so that they can be pushed
 /// into the LHS/RHS tables.
 fn take_nested_loop_join_compatible_filters(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     schema_left: &Schema,
     schema_right: &Schema,
     suffix: &str,
-) -> PolarsResult<hashbrown::hash_map::IntoValues<Node, Node>> {
+) -> PolarsResult<indexmap::map::IntoValues<Node, Node>> {
     take_predicates_mut(acc_predicates, expr_arena, |_ae, ae_node, expr_arena| {
         Ok(
             match ExprOrigin::get_expr_origin(
@@ -1318,14 +1532,14 @@ fn take_nested_loop_join_compatible_filters(
 
 /// Removes predicates from the map according to a function.
 fn take_predicates_mut<F, T>(
-    acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
     expr_arena: &mut Arena<AExpr>,
     take_predicate: F,
-) -> PolarsResult<hashbrown::hash_map::IntoValues<Node, T>>
+) -> PolarsResult<indexmap::map::IntoValues<Node, T>>
 where
     F: Fn(&AExpr, Node, &Arena<AExpr>) -> PolarsResult<Option<T>>,
 {
-    let mut selected_predicates: PlHashMap<Node, T> = PlHashMap::new();
+    let mut selected_predicates: PlIndexMap<Node, T> = init_indexmap(None);
 
     for predicate in acc_predicates.values() {
         for node in MintermIter::new(predicate.node(), expr_arena) {
@@ -1347,11 +1561,11 @@ where
 
     #[inline(never)]
     fn remove_min_terms(
-        acc_predicates: &mut PlHashMap<PlSmallStr, ExprIR>,
+        acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
         expr_arena: &mut Arena<AExpr>,
         should_remove: &dyn Fn(&Node) -> bool,
     ) {
-        let mut remove_keys = PlHashSet::new();
+        let mut remove_keys = PlIndexSet::new();
         let mut nodes_scratch = vec![];
 
         for (k, predicate) in acc_predicates.iter_mut() {
@@ -1388,7 +1602,7 @@ where
         }
 
         for k in remove_keys {
-            let v = acc_predicates.remove(&k);
+            let v = acc_predicates.swap_remove(&k);
             assert!(v.is_some());
         }
     }

@@ -210,7 +210,7 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         # Sort the lists to make sure that the result is correctly ordered
         list_cols = [c for c in result.columns if c != "A"]
         result = (
-            result.explode(list_cols)
+            result.explode(list_cols, empty_as_null=False)
             .sort("Idx")
             .group_by("A", maintain_order=True)
             .all()
@@ -1269,7 +1269,7 @@ def test_cse_map_batches_distinct_functions() -> None:
         lambda df: df.select(pl.col("b").alias("y")),
         schema=pl.Schema({"y": pl.Int64}),
     )
-    result = pl.concat([lf1, lf2], how="horizontal").collect(
+    result = pl.concat([lf1, lf2], how="horizontal", strict=True).collect(
         optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
     assert result.columns == ["x", "y"]

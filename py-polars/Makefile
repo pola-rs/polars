@@ -51,8 +51,9 @@ fix:
 .PHONY: lint
 lint: .venv  ## Run lint checks (only)
 	$(VENV_BIN)/ruff check
-	$(VENV_BIN)/typos ..
+	$(VENV_BIN)/pyrefly check
 	$(VENV_BIN)/mypy
+	$(VENV_BIN)/typos ..
 
 .PHONY: fmt
 fmt: .venv  ## Run autoformatting (python and rust)

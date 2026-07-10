@@ -338,7 +338,7 @@ def test_single_element_broadcast(
         .drop("key")
     )
     if expected.height > 1:
-        result = result.explode(cs.all())
+        result = result.explode(cs.all(), empty_as_null=True)
     assert_frame_equal(result, expected, check_row_order=maintain_order)
 
 
@@ -382,7 +382,7 @@ def test_when_then_output_name_12380(maintain_order: bool) -> None:
             df.group_by(pl.lit(True).alias("key"), maintain_order=maintain_order)
             .agg(ternary_expr)
             .drop("key")
-            .explode(cs.all())
+            .explode(cs.all(), empty_as_null=True)
         )
         assert_frame_equal(expect, actual, check_row_order=maintain_order)
 
@@ -406,7 +406,7 @@ def test_when_then_output_name_12380(maintain_order: bool) -> None:
             df.group_by(pl.lit(True).alias("key"))
             .agg(ternary_expr)
             .drop("key")
-            .explode(cs.all())
+            .explode(cs.all(), empty_as_null=True)
         )
         assert_frame_equal(
             expect,

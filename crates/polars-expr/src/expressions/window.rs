@@ -1017,7 +1017,7 @@ impl PhysicalExpr for WindowExpr {
             state: AggState::NotAggregated(data),
             groups: Cow::Owned(final_groups),
             update_groups: UpdateGroups::No,
-            original_len: false,
+            original_groups: false,
         })
     }
 
@@ -1051,7 +1051,7 @@ fn set_by_groups(
     let groups = match ac.agg_state() {
         AggState::AggregatedScalar(_) | AggState::LiteralScalar(_) => gb_groups,
         AggState::NotAggregated(_) | AggState::AggregatedList(_) => {
-            if update_groups || !ac.original_len {
+            if update_groups || !ac.original_groups {
                 return None;
             } else {
                 &ac.groups

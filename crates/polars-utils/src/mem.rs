@@ -18,6 +18,8 @@ pub mod prefetch {
     ///
     /// This should only be called with pointers to valid memory.
     unsafe fn prefetch_l2_impl(ptr: *const u8) {
+        _ = ptr; // Silence unused - not always used on all platforms.
+
         #[cfg(target_arch = "x86_64")]
         {
             use std::arch::x86_64::*;

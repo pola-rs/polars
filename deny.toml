@@ -6,27 +6,13 @@ ignore = [
   # THESE ISSUES ARE ALLOW-LISTED HERE TO SILENCE THE CI TEMPORARILY
   # THESE ISSUES NEED TO BE FIXED
 
-  # error[vulnerability]: AWS-LC X.509 Name Constraints Bypass via Wildcard/Unicode CN
-  "RUSTSEC-2026-0044",
-  # error[vulnerability]: Timing Side-Channel in AES-CCM Tag Verification in AWS-LC
-  "RUSTSEC-2026-0045",
-  # error[vulnerability]: PKCS7_verify Certificate Chain Validation Bypass in AWS-LC
-  "RUSTSEC-2026-0046",
-  # error[vulnerability]: PKCS7_verify Signature Validation Bypass in AWS-LC
-  "RUSTSEC-2026-0047",
-  # error[vulnerability]: CRL Distribution Point Scope Check Logic Error in AWS-LC
-  "RUSTSEC-2026-0048",
-
   # error[unmaintained]: Bincode is unmaintained
   "RUSTSEC-2025-0141",
 
-  # error[vulnerability]: Out-of-bounds read in `nth` / `nth_back` for `PyList` and `PyTuple` iterators
-  # Fixed in pyo3 0.29.0, but upgrade is blocked until numpy and pyo3-polars
-  # publish releases compatible with pyo3 0.29 (numpy is at 0.28.0 / pyo3 0.28).
-  "RUSTSEC-2026-0176",
-  # error[vulnerability]: Missing `Sync` bound on `PyCFunction::new_closure` closures
-  # Same blocker as above; remove both once pyo3 is bumped to >=0.29.
-  "RUSTSEC-2026-0177",
+  # error[vulnerability]: Quadratic run time when checking a start tag for duplicate attribute names in quick-xml
+  "RUSTSEC-2026-0194",
+  # error[vulnerability]: Unbounded namespace-declaration allocation in `NsReader` enables memory-exhaustion denial of service in quick-xml
+  "RUSTSEC-2026-0195",
 ]
 
 [licenses]
@@ -44,7 +30,6 @@ allow = [
   "CC0-1.0",
   # Other permissive / widely-used
   "BSL-1.0",
-  "OpenSSL",
   "Zlib",
 ]
 
@@ -66,4 +51,5 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 unknown-git = "deny"
 allow-git = [
   "https://github.com/kdn36/arrow-rs-object-store",
+  "https://github.com/pola-rs/jemallocator",
 ]

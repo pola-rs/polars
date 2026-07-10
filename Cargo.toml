@@ -12,9 +12,7 @@ members = [
   "pyo3-polars/pyo3-polars",
   "pyo3-polars/pyo3-polars-derive",
 ]
-default-members = [
-  "crates/*",
-]
+default-members = ["crates/*"]
 
 [workspace.package]
 version = "0.54.4"
@@ -73,13 +71,13 @@ ndarray = { version = "0.17", default-features = false }
 num-bigint = "0.4.6"
 num-derive = "0.4.2"
 num-traits = "0.2"
-numpy = "0.28"
+numpy = "0.29"
 object_store = { version = "0.13.1", default-features = false, features = ["fs"] }
 parking_lot = "0.12"
 percent-encoding = "2.3"
 pin-project-lite = "0.2"
 proptest = { version = "1.6", default-features = false, features = ["std"] }
-pyo3 = "0.28"
+pyo3 = "0.29"
 rand = "0.10"
 rand_distr = "0.6"
 raw-cpuid = "11"
@@ -98,7 +96,7 @@ sha2 = "0.11"
 simd-json = { version = "0.17", features = ["known-key", "128bit"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
-sqlparser = { version = "0.60", features = ["visitor"] }
+sqlparser = { version = "0.62", features = ["visitor"] }
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"
@@ -162,12 +160,17 @@ features = [
 
 [workspace.lints.clippy]
 collapsible_if = "allow"
+question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
-object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_with_dns_resolver" }
+# custom DNS resolver - ref https://github.com/apache/arrow-rs-object-store/pull/728
+object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", rev = "f50a6e5c564b2b5933eca15cd20ff9b5614374a1" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd" }
+
+# https://github.com/tikv/jemallocator/pull/168
+tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "0d683dfb157097e2075d5e0eaf25f71f514a7552" }
 
 [profile.mindebug-dev]
 inherits = "dev"

@@ -1,6 +1,6 @@
 //! IR pruning. Pruning copies the reachable IR and expressions into a set of destination arenas.
 
-use polars_core::prelude::{InitHashMaps as _, PlHashMap};
+use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::unique_id::UniqueId;
 use recursive::recursive;
@@ -50,8 +50,8 @@ pub fn prune(
         src_expr,
         dst_ir,
         dst_expr,
-        dst_caches: PlHashMap::new(),
-        roots: PlHashMap::from_iter(roots.iter().map(|node| (*node, None))),
+        dst_caches: PlIndexMap::new(),
+        roots: PlIndexMap::from_iter(roots.iter().map(|node| (*node, None))),
     };
 
     let dst_roots: Vec<Node> = roots.iter().map(|&root| ctx.copy_ir(root)).collect();
@@ -67,10 +67,10 @@ struct CopyContext<'a> {
     dst_ir: &'a mut Arena<IR>,
     dst_expr: &'a mut Arena<AExpr>,
     // Caches and the matching dst nodes.
-    dst_caches: PlHashMap<UniqueId, Node>,
+    dst_caches: PlIndexMap<UniqueId, Node>,
     // Root nodes and the matching dst nodes. Needed to ensure they are visited only once,
     // in case they are reachable from other root nodes.
-    roots: PlHashMap<Node, Option<Node>>,
+    roots: PlIndexMap<Node, Option<Node>>,
 }
 
 impl<'a> CopyContext<'a> {

@@ -61,7 +61,7 @@ def pdsh_q3(
 # --8<-- [end:query]
 
 # --8<-- [start:context-run_on_prem]
-ctx = pc.ClusterContext(compute_address="")
+ctx = pc.ClusterContext(uri="...")
 
 pdsh_q3(customer_sf100, lineitem_sf100, orders_sf100).remote(ctx).distributed().show()
 # --8<-- [end:context-run_on_prem]

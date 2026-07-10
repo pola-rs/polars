@@ -1679,7 +1679,7 @@ class StringNameSpace(_NamespaceSuggestMixin):
         Notes
         -----
         This is a form of case transform where the first letter of each word is
-        capitalized, with the rest of the word in lowercase. Non-alphanumeric
+        capitalized, with the rest of the word in lowercase. Non-alphabetical
         characters define the word boundaries.
 
         Examples

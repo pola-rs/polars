@@ -73,6 +73,7 @@ pub fn convert_columns_amortized<'a>(
         .iter()
         .zip(fields.clone())
         .map(|(column, (opt, dicts))| {
+            assert_eq!(column.len(), num_rows);
             get_encoder(
                 column.as_ref(),
                 opt,

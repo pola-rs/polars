@@ -2,14 +2,14 @@ use polars_core::error::PolarsResult;
 use polars_utils::arena::{Arena, Node};
 
 use super::OptimizationRule;
-use crate::plans::aexpr::range_merge::merge_ranges_in_predicate;
+use crate::plans::aexpr::filter_constraint::merge_filter_constraints;
 use crate::prelude::{AExpr, IR};
 
-pub struct RangeMergeRule {
+pub struct FilterConstraintRule {
     pub maintain_errors: bool,
 }
 
-impl OptimizationRule for RangeMergeRule {
+impl OptimizationRule for FilterConstraintRule {
     fn optimize_plan(
         &mut self,
         lp_arena: &mut Arena<IR>,
@@ -23,13 +23,13 @@ impl OptimizationRule for RangeMergeRule {
         let predicate_node = predicate.node();
 
         let Some(new_predicate_node) =
-            merge_ranges_in_predicate(predicate_node, self.maintain_errors, expr_arena)
+            merge_filter_constraints(predicate_node, self.maintain_errors, expr_arena)
         else {
             return Ok(None);
         };
-        // Today this is always a fresh `Literal(false)`, never the same node.
-        // The check just stops the optimizer looping forever if that ever
-        // changes.
+        // The rewrite is always a fresh node (a `Literal(false)` or a rebuilt
+        // chain). The check just stops the optimizer looping forever if that
+        // ever changes.
         if new_predicate_node == predicate_node {
             return Ok(None);
         }

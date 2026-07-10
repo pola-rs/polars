@@ -10,12 +10,13 @@ use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_error::PolarsWarning;
-use polars_error::signals::register_polars_keyboard_interrupt_hook;
+use polars_error::abort::register_polars_abort_mechanism;
 use polars_ffi::version_0::SeriesExport;
 use polars_plan::plans::python_df_to_rust;
 use polars_utils::python_convert_registry::{FromPythonConvertRegistry, PythonConvertRegistry};
 use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
+use pyo3::types::PyCFunction;
 
 use crate::Wrap;
 use crate::dataframe::PyDataFrame;
@@ -289,7 +290,7 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
         polars_error::set_warning_function(warning_function);
 
         if catch_keyboard_interrupt {
-            register_polars_keyboard_interrupt_hook();
+            register_polars_abort_mechanism();
         }
 
         use polars_core::datatypes::extension::UnknownExtensionTypeBehavior;
@@ -303,5 +304,18 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool, warn_functio
             },
         };
         polars_core::datatypes::extension::set_unknown_extension_type_behavior(behavior);
+
+        // Out-of-core cleaning.
+        polars_ooc::init_ooc_cleaner();
+        Python::attach(|py| {
+            let atexit = py.import("atexit").unwrap();
+            let flush_fn = PyCFunction::new_closure(py, None, None, |_args, _kwargs| {
+                polars_ooc::flush_ooc_cleanup();
+                PyResult::Ok(())
+            })
+            .unwrap();
+            atexit.call_method1("register", (flush_fn,)).unwrap();
+        });
+
     });
 }

@@ -46,7 +46,7 @@ def _patched_cloud(
 
             return f()
 
-        ctx = ClusterContext("localhost", insecure=True)
+        ctx = ClusterContext(uri="http://localhost")
         set_compute_context(ctx)
 
         prev_collect = pl.LazyFrame.collect

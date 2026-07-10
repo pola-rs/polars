@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -35,7 +36,7 @@ from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
@@ -560,11 +561,13 @@ def test_series_to_list() -> None:
 def test_to_struct() -> None:
     s = pl.Series("nums", ["12 34", "56 78", "90 00"]).str.extract_all(r"\d+")
 
-    assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
-    assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
-        "n00",
-        "n01",
-    ]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert s.list.to_struct().struct.fields == ["field_0", "field_1"]
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        assert s.list.to_struct(fields=lambda idx: f"n{idx:02}").struct.fields == [
+            "n00",
+            "n01",
+        ]
     assert_frame_equal(
         s.list.to_struct(fields=["one", "two"]).struct.unnest(),
         pl.DataFrame({"one": ["12", "56", "90"], "two": ["34", "78", "00"]}),
@@ -2492,6 +2495,23 @@ def test_full_null_cast_to_empty_struct_23276() -> None:
     assert s.cast(pl.Struct({})).to_list() == [None, None, None]
 
 
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ([pl.lit(1)], [2]),
+        ([1], [pl.lit(2)]),
+        ([pl.lit(1)], [pl.lit(2)]),
+    ],
+)
+def test_replace_with_expr_raises_22591(old: list[Any], new: list[Any]) -> None:
+    s = pl.Series([1])
+    with pytest.raises(
+        InvalidOperationError,
+        match="`replace` does not support `old`/`new` values of object dtype",
+    ):
+        s.replace(old, new)
+
+
 def test_is_sorted_struct_27613() -> None:
     s = pl.Series([{"x": 1, "y": 1}, {"x": 1, "y": 2}, {"x": 2, "y": 0}])
     assert s.is_sorted()
@@ -2515,3 +2535,17 @@ def test_is_sorted_struct_27613() -> None:
     s = pl.Series([{"x": 2}, {"x": 1}, None])
     assert s.is_sorted(descending=True, nulls_last=True)
     assert not s.is_sorted(descending=True, nulls_last=False)
+
+
+@pytest.mark.parametrize("op", [operator.add, operator.sub])
+@pytest.mark.parametrize(
+    "temporal_dtype",
+    [pl.Date, pl.Datetime, pl.Time, pl.Duration],
+)
+def test_series_temporal_arithmetic_raises_19135(
+    temporal_dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    a = pl.Series("a", [], dtype=temporal_dtype)
+    b = pl.Series("b", [], dtype=pl.Int32)
+    with pytest.raises(InvalidOperationError):
+        op(a, b)

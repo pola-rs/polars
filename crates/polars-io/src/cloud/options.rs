@@ -45,6 +45,14 @@ use crate::file_cache::get_env_file_cache_ttl;
 use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
+fn to_io_err(err: reqwest::Error) -> PolarsError {
+    PolarsError::IO {
+        error: Arc::new(std::io::Error::other(err)),
+        msg: None,
+    }
+}
+
+#[cfg(feature = "aws")]
 static BUCKET_REGION: LazyLock<
     std::sync::Mutex<LruCache<polars_utils::pl_str::PlSmallStr, polars_utils::pl_str::PlSmallStr>>,
 > = LazyLock::new(|| std::sync::Mutex::new(LruCache::with_capacity(32)));
@@ -160,7 +168,7 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
         };
 
         if verbose() {
-            eprintln!("object-store retry config: {:?}", &out)
+            eprintln!("object-store retry config: {:?}", out)
         }
 
         return out;
@@ -464,7 +472,7 @@ impl CloudOptions {
                                 .head(format!("https://{bucket}.s3.amazonaws.com"))
                                 .send()
                                 .await
-                                .map_err(to_compute_err)
+                                .map_err(to_io_err)
                         })
                         .await?;
                         if let Some(region) = result.headers().get("x-amz-bucket-region") {
@@ -565,7 +573,7 @@ impl CloudOptions {
                 if verbose {
                     eprintln!(
                         "[CloudOptions::build_azure]: Using credential provider {:?}",
-                        &v
+                        v
                     );
                 }
                 builder.with_credentials(v.into_azure_provider())

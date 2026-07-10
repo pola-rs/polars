@@ -357,8 +357,6 @@ class IcebergScanResolver:
         fallback_reason = (
             "forced reader_override='pyiceberg'"
             if reader_override == "pyiceberg"
-            else f"unsupported table format version: {tbl.format_version}"
-            if not tbl.format_version <= 2
             else None
         )
 
@@ -369,6 +367,12 @@ class IcebergScanResolver:
             if selected_fields == ("*",)
             else iceberg_schema.select(*selected_fields)
         )
+
+        if fallback_reason is None and any(
+            projected_iceberg_schema.find_field(x).initial_default is not None
+            for x in projected_iceberg_schema.field_ids
+        ):
+            fallback_reason = "unsupported field 'initial-default'"
 
         sources = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
@@ -615,14 +619,14 @@ def _convert_iceberg_to_object_store_storage_options(
 
     # Allow-list for HDFS
     # See https://py.iceberg.apache.org/configuration/#hdfs
-    HDFS_KEY_PREFIXES = "hdfs."
+    HDFS_KEY_PREFIX = "hdfs."
 
     for k, v in iceberg_storage_properties.items():
         if (
             translated_key := ICEBERG_TO_OBJECT_STORE_CONFIG_KEY_MAP.get(k)
         ) is not None:
             storage_options[translated_key] = v
-        elif "." not in k or any(k.startswith(p) for p in HDFS_KEY_PREFIXES):
+        elif "." not in k or k.startswith(HDFS_KEY_PREFIX):
             # Pass-through non-Iceberg config keys, as they may be native config
             # keys. We identify Iceberg keys by checking for a dot - from
             # observation nearly all Iceberg config keys contain dots, whereas
