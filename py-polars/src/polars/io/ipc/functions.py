@@ -181,7 +181,6 @@ def read_ipc(
                     schema = ipc_f.schema
 
                 idx_lookup = {name: i for i, name in enumerate(schema.names)}
-
                 columns = [idx_lookup[name] for name in columns]
 
                 if (
