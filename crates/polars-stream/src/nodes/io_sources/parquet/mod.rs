@@ -284,7 +284,7 @@ impl FileReader for ParquetFileReader {
                 file_schema.len(),
                 pre_slice_arg,
                 normalized_pre_slice,
-                &row_index,
+                row_index,
                 predicate.as_ref().map(|_| "<predicate>"),
             )
         }
@@ -461,7 +461,7 @@ struct Config {
 impl ParquetReadImpl {
     fn run(mut self) -> AsyncTaskData {
         if self.verbose {
-            eprintln!("[ParquetFileReader]: {:?}", &self.config);
+            eprintln!("[ParquetFileReader]: {:?}", self.config);
         }
 
         self.init_morsel_distributor()

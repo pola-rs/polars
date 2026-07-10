@@ -40,7 +40,7 @@ impl Display for PolarsObjectStoreError {
         write!(
             f,
             "object-store error: {} (path: {})",
-            self.source, &self.base_url
+            self.source, self.base_url
         )
     }
 }
@@ -184,7 +184,7 @@ mod inner {
             if config::verbose() {
                 eprintln!(
                     "[PolarsObjectStore]: got error: {}, will rebuild store and retry",
-                    &orig_err
+                    orig_err
                 );
             }
 

@@ -357,8 +357,6 @@ class IcebergScanResolver:
         fallback_reason = (
             "forced reader_override='pyiceberg'"
             if reader_override == "pyiceberg"
-            else f"unsupported table format version: {tbl.format_version}"
-            if not tbl.format_version <= 2
             else None
         )
 
@@ -369,6 +367,12 @@ class IcebergScanResolver:
             if selected_fields == ("*",)
             else iceberg_schema.select(*selected_fields)
         )
+
+        if fallback_reason is None and any(
+            projected_iceberg_schema.find_field(x).initial_default is not None
+            for x in projected_iceberg_schema.field_ids
+        ):
+            fallback_reason = "unsupported field 'initial-default'"
 
         sources = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(

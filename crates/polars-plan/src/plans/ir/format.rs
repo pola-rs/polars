@@ -269,7 +269,6 @@ impl<'a> IRDisplay<'a> {
             MergeSorted {
                 input_left,
                 input_right,
-                key: _,
                 ..
             } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;

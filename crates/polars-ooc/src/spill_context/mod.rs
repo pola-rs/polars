@@ -261,10 +261,11 @@ impl WeakSpillContext {
 }
 
 /// An opaque parameter passed into a spill context during registering.
+#[derive(Clone)]
 pub struct SpillContextParam(pub(crate) ());
 
 impl WeakSpillContext {
-    pub fn register<T, S>(&self, token: &T, _param: SpillContextParam)
+    pub fn register<T, S>(&self, token: &T, param: SpillContextParam)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
@@ -272,7 +273,7 @@ impl WeakSpillContext {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.local.get_or_default().write().unwrap();
         if self.0.context_id() == self.1 {
-            local.push_back(&dyn_arc, dyn_arc.register(self.clone()));
+            local.push_back(&dyn_arc, dyn_arc.register(self.clone(), param));
         }
     }
 }
@@ -307,7 +308,10 @@ impl ParameterFreeSpillContext for MostRecentSpillContext {
     {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.register(self.0.downgrade()));
+        local.push_back(
+            &dyn_arc,
+            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
+        );
     }
 }
 
@@ -341,7 +345,10 @@ impl ParameterFreeSpillContext for LeastRecentSpillContext {
     {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.register(self.0.downgrade()));
+        local.push_back(
+            &dyn_arc,
+            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
+        );
     }
 }
 
@@ -371,7 +378,10 @@ impl ParameterFreeSpillContext for RandomSpillContext {
     {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.register(self.0.downgrade()));
+        local.push_back(
+            &dyn_arc,
+            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
+        );
     }
 }
 
