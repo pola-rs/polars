@@ -22,16 +22,17 @@ fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartition
 }
 
 pub fn rewrite_hive(
-    mut input_left: Node,
-    mut input_right: Node,
-    mut left_on: Vec<ExprIR>,
-    mut right_on: Vec<ExprIR>,
-    mut schema: SchemaRef,
-    mut options: Arc<JoinOptionsIR>,
-    ir_arena: &Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    input_left: Node,
+    input_right: Node,
+    left_on: Vec<ExprIR>,
+    right_on: Vec<ExprIR>,
+    schema: SchemaRef,
+    options: Arc<JoinOptionsIR>,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> IR {
-    if let (JoinType::Inner, Some(hive_left), Some(hive_right)) = (
+    if let (MaintainOrderJoin::None, JoinType::Inner, Some(hive_left), Some(hive_right)) = (
+        &options.args.maintain_order,
         &options.args.how,
         is_hive_partitioned(input_left, ir_arena),
         is_hive_partitioned(input_right, ir_arena),
@@ -46,7 +47,7 @@ pub fn rewrite_hive(
                 if hive_left_schema.index_of(l) == Some(0)
                     && hive_right_schema.index_of(r) == Some(0)
                 {
-                    hive_cols = Some((l, r));
+                    hive_cols = Some((l.clone(), r.clone()));
                     break;
                 }
             }
@@ -69,8 +70,8 @@ pub fn rewrite_hive(
             let partitions = hive_l
                 .join(
                     &hive_r,
-                    [l],
-                    [r],
+                    [l.as_str()],
+                    [r.as_str()],
                     JoinArgs {
                         how: options.args.how.clone(),
                         ..Default::default()
@@ -79,14 +80,76 @@ pub fn rewrite_hive(
                 )
                 .unwrap();
 
-            let partitions =
-                split_df_as_ref(&partitions, std::cmp::min(64, partitions.height()), false);
-            dbg!(hive_cols);
-            dbg!(partitions);
+            let r_key_name = if partitions.schema().contains(r.as_str()) {
+                r.clone()
+            } else {
+                l.clone()
+            };
 
-            // `left_on` to names
-            dbg!(hive_left, hive_right);
-            // hive_left.df().join(hive_right.df(), left_on, right_on, args, options)
+            let chunks =
+                split_df_as_ref(&partitions, std::cmp::min(64, partitions.height()), false);
+
+            let mut branches = Vec::with_capacity(chunks.len());
+
+            for chunk in chunks {
+                if chunk.height() == 0 {
+                    continue;
+                }
+
+                let l_values = chunk.column(&l).unwrap().as_materialized_series().clone();
+                let r_values = chunk
+                    .column(&r_key_name)
+                    .unwrap()
+                    .as_materialized_series()
+                    .clone();
+
+                let l_pred = AExprBuilder::col(l.clone(), expr_arena)
+                    .is_in(
+                        AExprBuilder::lit(
+                            LiteralValue::Series(SpecialEq::new(l_values)),
+                            expr_arena,
+                        ),
+                        false, // nulls_equal
+                        expr_arena,
+                    )
+                    .expr_ir_unnamed();
+
+                let r_pred = AExprBuilder::col(r.clone(), expr_arena)
+                    .is_in(
+                        AExprBuilder::lit(
+                            LiteralValue::Series(SpecialEq::new(r_values)),
+                            expr_arena,
+                        ),
+                        false,
+                        expr_arena,
+                    )
+                    .expr_ir_unnamed();
+
+                let filtered_left = ir_arena.add(IR::Filter {
+                    input: input_left,
+                    predicate: l_pred,
+                });
+                let filtered_right = ir_arena.add(IR::Filter {
+                    input: input_right,
+                    predicate: r_pred,
+                });
+
+                branches.push(ir_arena.add(IR::Join {
+                    input_left: filtered_left,
+                    input_right: filtered_right,
+                    left_on: left_on.clone(),
+                    right_on: right_on.clone(),
+                    schema: schema.clone(),
+                    options: options.clone(),
+                }));
+            }
+
+            return IR::Union {
+                inputs: branches,
+                options: UnionOptions {
+                    ..Default::default()
+                },
+            };
         }
     }
     IR::Join {
