@@ -1,5 +1,282 @@
 use super::*;
 
+#[cfg(feature = "iejoin")]
+/// Removes all inequality filters that can be used as iejoin conditions from `acc_predicates`.
+pub fn take_iejoin_compatible_filters(
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    output_schema: &Schema,
+    suffix: &str,
+) -> PolarsResult<indexmap::map::IntoValues<Node, IEJoinCompatiblePredicate>> {
+    return take_predicates_mut(acc_predicates, expr_arena, |ae, ae_node, expr_arena| {
+        Ok(match ae {
+            AExpr::BinaryExpr { left, op, right } => {
+                if to_inequality_operator(op).is_none() {
+                    return Ok(None);
+                }
+
+                let left_origin = ExprOrigin::get_expr_origin(
+                    *left,
+                    expr_arena,
+                    schema_left,
+                    schema_right,
+                    suffix,
+                    None, // is_coalesced_to_right
+                )?;
+
+                let right_origin = ExprOrigin::get_expr_origin(
+                    *right,
+                    expr_arena,
+                    schema_left,
+                    schema_right,
+                    suffix,
+                    None,
+                )?;
+
+                let is_supported_type = |node: Node| -> PolarsResult<bool> {
+                    let field = expr_arena
+                        .get(node)
+                        .to_field(&ToFieldContext::new(expr_arena, output_schema))?;
+                    let dtype = field.dtype();
+                    let phys = dtype.to_physical();
+                    Ok(!dtype.is_nested() && phys.is_primitive_numeric())
+                };
+
+                // IEJoin only supports numeric.
+                if !is_supported_type(*left)? || !is_supported_type(*right)? {
+                    return Ok(None);
+                }
+
+                match (left_origin, right_origin) {
+                    (ExprOrigin::Left, ExprOrigin::Right) => Some(IEJoinCompatiblePredicate {
+                        input_lhs: *left,
+                        input_rhs: *right,
+                        ie_op: to_inequality_operator(op).unwrap(),
+                        source_node: ae_node,
+                    }),
+                    (ExprOrigin::Right, ExprOrigin::Left) => {
+                        let op = op.swap_operands().unwrap();
+
+                        Some(IEJoinCompatiblePredicate {
+                            input_lhs: *right,
+                            input_rhs: *left,
+                            ie_op: to_inequality_operator(&op).unwrap(),
+                            source_node: ae_node,
+                        })
+                    },
+                    _ => None,
+                }
+            },
+            _ => None,
+        })
+    });
+
+    fn to_inequality_operator(op: &Operator) -> Option<InequalityOperator> {
+        match op {
+            Operator::Lt => Some(InequalityOperator::Lt),
+            Operator::LtEq => Some(InequalityOperator::LtEq),
+            Operator::Gt => Some(InequalityOperator::Gt),
+            Operator::GtEq => Some(InequalityOperator::GtEq),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(feature = "iejoin")]
+pub fn take_double_bounded_range_join_filter(
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    output_schema: &Schema,
+    suffix: &str,
+) -> PolarsResult<Option<(IEJoinCompatiblePredicate, IEJoinCompatiblePredicate, bool)>> {
+    use InequalityOperator::*;
+    use polars_utils::itertools::Itertools;
+
+    let ie_join_filters = take_iejoin_compatible_filters(
+        acc_predicates,
+        expr_arena,
+        schema_left,
+        schema_right,
+        output_schema,
+        suffix,
+    )?
+    .collect_vec();
+
+    let (lower_idx, upper_idx, left_is_bounded_side) = 'bound_preds: {
+        let mut l_stack = Vec::new();
+        let mut r_stack = Vec::new();
+        let mut exprs_eq = |e1, e2| {
+            AExpr::is_expr_equal_to_amortized(e1, e2, expr_arena, &mut l_stack, &mut r_stack)
+        };
+        for (idx1, pred1) in ie_join_filters.iter().enumerate() {
+            for (idx2, pred2) in ie_join_filters
+                .iter()
+                .enumerate()
+                .take_while(|(idx2, _)| *idx2 < idx1)
+            {
+                let lhs_expr1 = expr_arena.get(pred1.input_lhs);
+                let lhs_expr2 = expr_arena.get(pred2.input_lhs);
+                let rhs_expr1 = expr_arena.get(pred1.input_rhs);
+                let rhs_expr2 = expr_arena.get(pred2.input_rhs);
+                let op1_is_less = matches!(pred1.ie_op, LtEq | Lt);
+                let op2_is_less = matches!(pred2.ie_op, LtEq | Lt);
+                let lhs_exprs_eq = exprs_eq(lhs_expr1, lhs_expr2);
+                let rhs_exprs_eq = exprs_eq(rhs_expr1, rhs_expr2);
+                if lhs_exprs_eq && !op1_is_less && op2_is_less {
+                    break 'bound_preds (idx1, idx2, true);
+                } else if lhs_exprs_eq && op1_is_less && !op2_is_less {
+                    break 'bound_preds (idx2, idx1, true);
+                } else if rhs_exprs_eq && op1_is_less && !op2_is_less {
+                    break 'bound_preds (idx1, idx2, false);
+                } else if rhs_exprs_eq && !op1_is_less && op2_is_less {
+                    break 'bound_preds (idx2, idx1, false);
+                }
+            }
+        }
+        // No compatible filters found
+        for pred in ie_join_filters.into_iter() {
+            insert_predicate_dedup(
+                acc_predicates,
+                &ExprIR::from_node(pred.source_node, expr_arena),
+                expr_arena,
+            );
+        }
+        return Ok(None);
+    };
+
+    let mut bound_lower = None;
+    let mut bound_upper = None;
+    for (idx, pred) in ie_join_filters.into_iter().enumerate() {
+        if idx == lower_idx {
+            bound_lower = Some(pred);
+        } else if idx == upper_idx {
+            bound_upper = Some(pred);
+        } else {
+            insert_predicate_dedup(
+                acc_predicates,
+                &ExprIR::from_node(pred.source_node, expr_arena),
+                expr_arena,
+            );
+        }
+    }
+    Ok(Some((
+        bound_lower.unwrap(),
+        bound_upper.unwrap(),
+        left_is_bounded_side,
+    )))
+}
+
+/// Removes all filters that can be used as nested loop join conditions from `acc_predicates`.
+///
+/// Note that filters that refer only to a single side are not removed so that they can be pushed
+/// into the LHS/RHS tables.
+pub fn take_nested_loop_join_compatible_filters(
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+    schema_left: &Schema,
+    schema_right: &Schema,
+    suffix: &str,
+) -> PolarsResult<indexmap::map::IntoValues<Node, Node>> {
+    take_predicates_mut(acc_predicates, expr_arena, |_ae, ae_node, expr_arena| {
+        Ok(
+            match ExprOrigin::get_expr_origin(
+                ae_node,
+                expr_arena,
+                schema_left,
+                schema_right,
+                suffix,
+                None,
+            )? {
+                // Leave single-origin exprs as they get pushed to the left/right tables individually.
+                ExprOrigin::Left | ExprOrigin::Right | ExprOrigin::None => None,
+                _ => Some(ae_node),
+            },
+        )
+    })
+}
+
+/// Removes predicates from the map according to a function.
+pub fn take_predicates_mut<F, T>(
+    acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+    expr_arena: &mut Arena<AExpr>,
+    take_predicate: F,
+) -> PolarsResult<indexmap::map::IntoValues<Node, T>>
+where
+    F: Fn(&AExpr, Node, &Arena<AExpr>) -> PolarsResult<Option<T>>,
+{
+    let mut selected_predicates: PlIndexMap<Node, T> = init_indexmap(None);
+
+    for predicate in acc_predicates.values() {
+        for node in MintermIter::new(predicate.node(), expr_arena) {
+            let ae = expr_arena.get(node);
+
+            if let Some(t) = take_predicate(ae, node, expr_arena)? {
+                selected_predicates.insert(node, t);
+            }
+        }
+    }
+
+    if !selected_predicates.is_empty() {
+        remove_min_terms(acc_predicates, expr_arena, &|node| {
+            selected_predicates.contains_key(node)
+        });
+    }
+
+    return Ok(selected_predicates.into_values());
+
+    #[inline(never)]
+    fn remove_min_terms(
+        acc_predicates: &mut PlIndexMap<PlSmallStr, ExprIR>,
+        expr_arena: &mut Arena<AExpr>,
+        should_remove: &dyn Fn(&Node) -> bool,
+    ) {
+        let mut remove_keys = PlIndexSet::new();
+        let mut nodes_scratch = vec![];
+
+        for (k, predicate) in acc_predicates.iter_mut() {
+            let mut has_removed = false;
+
+            nodes_scratch.clear();
+            nodes_scratch.extend(
+                MintermIter::new(predicate.node(), expr_arena).filter(|node| {
+                    let remove = should_remove(node);
+                    has_removed |= remove;
+                    !remove
+                }),
+            );
+
+            if nodes_scratch.is_empty() {
+                remove_keys.insert(k.clone());
+                continue;
+            };
+
+            if has_removed {
+                let new_predicate_node = nodes_scratch
+                    .drain(..)
+                    .reduce(|left, right| {
+                        expr_arena.add(AExpr::BinaryExpr {
+                            left,
+                            op: Operator::And,
+                            right,
+                        })
+                    })
+                    .unwrap();
+
+                *predicate = ExprIR::from_node(new_predicate_node, expr_arena);
+            }
+        }
+
+        for k in remove_keys {
+            let v = acc_predicates.swap_remove(&k);
+            assert!(v.is_some());
+        }
+    }
+}
+
 /// Attempts to rewrite the join-type based on NULL-removing filters.
 ///
 /// Changing between some join types may cause the output column order to change. If this is the
