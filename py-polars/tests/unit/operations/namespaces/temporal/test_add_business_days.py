@@ -391,3 +391,17 @@ def test_against_np_busday_offset(
 def test_unequal_lengths_22018() -> None:
     with pytest.raises(pl.exceptions.ShapeError):
         pl.Series([date(2088, 8, 5)] * 2).dt.add_business_days(pl.Series([1] * 3))
+
+
+def test_add_business_days_leading_null_broadcast_holidays_28018() -> None:
+    # A leading null must not stop the broadcast holidays from applying to the
+    # remaining rows (see GH #28018 for business_day_count).
+    holiday = date(2020, 1, 2)  # Thursday
+    df = pl.DataFrame(
+        {"start": [None, date(2020, 1, 1)], "n": [1, 1]},
+        schema={"start": pl.Date, "n": pl.Int32},
+    )
+    expr = pl.col("start").dt.add_business_days(pl.col("n"), holidays=[holiday])
+    # from 2020-01-01 (Wed), one business day forward skipping the 2nd -> 2020-01-03
+    assert df.select(expr).to_series().to_list() == [None, date(2020, 1, 3)]
+    assert df.reverse().select(expr).to_series().to_list() == [date(2020, 1, 3), None]

@@ -221,3 +221,13 @@ def test_is_business_day_invalid_holidays() -> None:
 
 def test_is_business_day_repr() -> None:
     assert "is_business_day" in repr(pl.col("date").dt.is_business_day())
+
+
+def test_is_business_day_leading_null_broadcast_holidays_28018() -> None:
+    # A leading null must not stop the broadcast holidays from applying to the
+    # remaining rows (see GH #28018 for business_day_count).
+    holiday = date(2020, 1, 2)  # Thursday
+    df = pl.DataFrame({"date": [None, holiday]}, schema={"date": pl.Date})
+    expr = pl.col("date").dt.is_business_day(holidays=[holiday])
+    assert df.select(expr).to_series().to_list() == [None, False]
+    assert df.reverse().select(expr).to_series().to_list() == [False, None]

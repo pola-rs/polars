@@ -120,6 +120,25 @@ def test_business_day_count_schema() -> None:
     assert 'col("start").business_day_count([col("end"), Series])' in result.explain()
 
 
+def test_business_day_count_leading_null_broadcast_holidays_28018() -> None:
+    # A leading null must not stop the broadcast holidays from applying to the
+    # remaining rows.
+    holiday = date(2023, 11, 23)  # Thanksgiving (Thursday)
+    end = date(2023, 11, 24)
+    df = pl.DataFrame(
+        {"start": [holiday, holiday], "end": [None, end]},
+        schema={"start": pl.Date, "end": pl.Date},
+    )
+    expr = pl.business_day_count("start", "end", holidays=[holiday])
+
+    result = df.select(expr).to_series()
+    # row 1: only business day in [23rd, 24th) is the 23rd, which is a holiday -> 0
+    assert result.to_list() == [None, 0]
+    # order must not matter
+    assert df.reverse().select(expr).to_series().to_list() == [0, None]
+    assert df.tail(1).select(expr).to_series().to_list() == [0]
+
+
 def test_business_day_count_w_holidays() -> None:
     df = pl.DataFrame(
         {
