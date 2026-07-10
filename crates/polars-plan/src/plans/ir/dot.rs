@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use polars_core::prelude::{InitHashMaps, PlHashSet};
+use polars_core::prelude::{InitHashMaps, PlIndexSet};
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
@@ -77,7 +77,7 @@ impl<'a> IRDotDisplay<'a> {
         f: &mut fmt::Formatter<'_>,
         parent: Option<DotNode>,
         last: &mut usize,
-        visited_caches: &mut PlHashSet<UniqueId>,
+        visited_caches: &mut PlIndexSet<UniqueId>,
     ) -> std::fmt::Result {
         use fmt::Write;
 
@@ -340,10 +340,15 @@ impl<'a> IRDotDisplay<'a> {
                 recurse!(*input_left);
                 recurse!(*input_right);
 
+                let key = key
+                    .iter()
+                    .map(|k| format!("'{k}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 write_label(f, id, |f| {
                     write!(
                         f,
-                        "MERGE_SORTED[maintain_order: {maintain_order}] ON '{key}'",
+                        "MERGE_SORTED[maintain_order: {maintain_order}] ON [{key}]",
                     )
                 })?;
             },
@@ -468,7 +473,7 @@ impl fmt::Display for IRDotDisplay<'_> {
         writeln!(f, "{INDENT}node [fontname=\"Monospace\", shape=\"box\"]")?;
 
         let mut last = 0;
-        let mut visited_caches = PlHashSet::new();
+        let mut visited_caches = PlIndexSet::new();
         self._format(f, None, &mut last, &mut visited_caches)?;
 
         writeln!(f, "}}")?;

@@ -172,7 +172,7 @@ pub(super) fn process_binary(
                     coerce_comparison_literal(
                         node_right,
                         &type_right,
-                        op.swap_operands(),
+                        op.swap_operands().unwrap(),
                         s,
                         expr_arena,
                     )
@@ -181,7 +181,7 @@ pub(super) fn process_binary(
                             CmpLiteralRhsRewrite::NewAExpr {
                                 aexpr: AExpr::BinaryExpr {
                                     left: node_right,
-                                    op: op.swap_operands(),
+                                    op: op.swap_operands().unwrap(),
                                     right: expr_arena
                                         .add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
                                 },

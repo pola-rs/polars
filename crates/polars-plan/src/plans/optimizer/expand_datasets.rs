@@ -88,12 +88,12 @@ pub(super) fn expand_datasets(
                 let mut row_index_in_live_filter = false;
 
                 let live_filter_columns: Option<Arc<[PlSmallStr]>> = predicate.as_ref().map(|x| {
-                    use polars_core::prelude::PlHashSet;
+                    use polars_core::prelude::PlIndexSet;
 
                     use crate::utils::aexpr_to_leaf_names_iter;
 
                     let mut out: Arc<[PlSmallStr]> =
-                        PlHashSet::from_iter(aexpr_to_leaf_names_iter(x.node(), expr_arena))
+                        PlIndexSet::from_iter(aexpr_to_leaf_names_iter(x.node(), expr_arena))
                             .into_iter()
                             .filter(|&live_col| {
                                 if unified_scan_args
@@ -318,7 +318,7 @@ fn expand_python_dataset(
             else {
                 panic!(
                     "invalid scan args from python dataset resolve: {:?}",
-                    &resolved_unified_scan_args
+                    resolved_unified_scan_args
                 )
             };
 

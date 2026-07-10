@@ -28,7 +28,7 @@ pub(super) fn infer_file_schema_impl(
 
     let extend_header_with_unknown_column = header_line.is_none();
 
-    let mut column_types = vec![PlHashSet::<DataType>::with_capacity(4); headers.len()];
+    let mut column_types = vec![PlIndexSet::<DataType>::with_capacity(4); headers.len()];
     let mut nulls = vec![false; headers.len()];
 
     for content_line in content_lines {
@@ -93,7 +93,7 @@ fn infer_types_from_line(
     headers: &mut Vec<PlSmallStr>,
     extend_header_with_unknown_column: bool,
     parse_options: &CsvParseOptions,
-    column_types: &mut Vec<PlHashSet<DataType>>,
+    column_types: &mut Vec<PlIndexSet<DataType>>,
     nulls: &mut Vec<bool>,
 ) {
     let line_len = line.len();
@@ -193,7 +193,7 @@ fn infer_types_from_line(
 
 fn build_schema(
     headers: &[PlSmallStr],
-    column_types: &[PlHashSet<DataType>],
+    column_types: &[PlIndexSet<DataType>],
     schema_overwrite: Option<&Schema>,
 ) -> Schema {
     assert!(headers.len() == column_types.len());
@@ -227,7 +227,7 @@ fn build_schema(
     )
 }
 
-pub fn finish_infer_field_schema(possibilities: &PlHashSet<DataType>) -> DataType {
+pub fn finish_infer_field_schema(possibilities: &PlIndexSet<DataType>) -> DataType {
     // determine data type based on possible types
     // if there are incompatible types, use DataType::String
     match possibilities.len() {
@@ -362,7 +362,7 @@ mod tests {
     #[test]
     #[cfg(feature = "dtype-i128")]
     fn test_finish_infer_field_schema_i64_and_i128() {
-        let mut possibilities = PlHashSet::new();
+        let mut possibilities = PlIndexSet::new();
         possibilities.insert(DataType::Int64);
         possibilities.insert(DataType::Int128);
         assert_eq!(finish_infer_field_schema(&possibilities), DataType::Int128);

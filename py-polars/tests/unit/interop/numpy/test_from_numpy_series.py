@@ -108,3 +108,14 @@ def test_from_numpy_non_native_byteorder_28174(dtype: str) -> None:
 
     df = pl.DataFrame(arr)
     assert df.to_series().to_list() == list(range(5))
+
+
+def test_from_numpy_unaligned_ndarray_view_27794() -> None:
+    # A sliced-then-viewed ndarray can be C-contiguous but unaligned; building a
+    # Series from it must not panic.
+    a = np.array([1, 2, 3, 4, 5, 6], dtype="u1")
+    view = a[1:5].view("u2")
+    assert view.flags["C_CONTIGUOUS"]
+    assert not view.flags["ALIGNED"]
+    s = pl.Series(view)
+    assert s.to_list() == view.tolist()

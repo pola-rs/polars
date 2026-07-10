@@ -1,9 +1,10 @@
 use std::hash::BuildHasher;
 
-use hashbrown::hash_map::RawEntryMut;
+use indexmap::map::RawEntryApiV1;
+use indexmap::map::raw_entry_v1::RawEntryMut;
 use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_core::config::verbose;
-use polars_core::prelude::PlHashMap;
+use polars_core::prelude::PlIndexMap;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlFixedStateQuality;
@@ -143,13 +144,13 @@ impl Identifier {
 
 #[derive(Default)]
 struct IdentifierMap<V> {
-    inner: PlHashMap<Identifier, V>,
+    inner: PlIndexMap<Identifier, V>,
 }
 
 impl<V> IdentifierMap<V> {
     fn get(&self, id: &Identifier, arena: &Arena<AExpr>) -> Option<&V> {
         self.inner
-            .raw_entry()
+            .raw_entry_v1()
             .from_hash(id.hash(), |k| k.is_equal(id, arena))
             .map(|(_k, v)| v)
     }
@@ -163,12 +164,12 @@ impl<V> IdentifierMap<V> {
         let h = id.hash();
         match self
             .inner
-            .raw_entry_mut()
+            .raw_entry_mut_v1()
             .from_hash(h, |k| k.is_equal(&id, arena))
         {
             RawEntryMut::Occupied(entry) => entry.into_mut(),
             RawEntryMut::Vacant(entry) => {
-                let (_, v) = entry.insert_with_hasher(h, id, v(), |id| id.hash());
+                let (_, v) = entry.insert_hashed_nocheck(h, id, v());
                 v
             },
         }
@@ -187,7 +188,7 @@ impl<V> IdentifierMap<V> {
 /// Does no analysis whether this leads to legal substitutions.
 #[derive(Default)]
 pub struct NaiveExprMerger {
-    node_to_uniq_id: PlHashMap<Node, u32>,
+    node_to_uniq_id: PlIndexMap<Node, u32>,
     uniq_id_to_node: Vec<Node>,
     identifier_to_uniq_id: IdentifierMap<u32>,
     arg_stack: Vec<Option<Identifier>>,
@@ -349,7 +350,7 @@ struct ExprIdentifierVisitor<'a> {
     se_count: &'a mut SubExprCount,
     /// Materialized `CSE` materialized (name) hashes can collide. So we validate that all CSE counts
     /// match name hash counts.
-    name_validation: &'a mut PlHashMap<u64, u32>,
+    name_validation: &'a mut PlIndexMap<u64, u32>,
     identifier_array: &'a mut IdentifierArray,
     // Index in pre-visit traversal order.
     pre_visit_idx: usize,
@@ -372,7 +373,7 @@ impl ExprIdentifierVisitor<'_> {
         identifier_array: &'a mut IdentifierArray,
         visit_stack: &'a mut Vec<VisitRecord>,
         is_group_by: bool,
-        name_validation: &'a mut PlHashMap<u64, u32>,
+        name_validation: &'a mut PlIndexMap<u64, u32>,
         element_wise_select_only: bool,
     ) -> ExprIdentifierVisitor<'a> {
         let id_array_offset = identifier_array.len();
@@ -729,7 +730,7 @@ pub(crate) struct CommonSubExprOptimizer {
     replaced_identifiers: IdentifierMap<()>,
     // these are cleared per expr node
     visit_stack: Vec<VisitRecord>,
-    name_validation: PlHashMap<u64, u32>,
+    name_validation: PlIndexMap<u64, u32>,
     // Set by the streaming engine
     // Only supports element-wise CSEE
     // on SELECT/HSTACK
