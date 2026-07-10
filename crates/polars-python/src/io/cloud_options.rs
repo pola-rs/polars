@@ -29,10 +29,6 @@ impl OptPyCloudOptions<'_> {
         cloud_scheme: Option<CloudScheme>,
         credential_provider: Option<Py<PyAny>>,
     ) -> PyResult<Option<CloudOptions>> {
-        if self.0.is_none() && credential_provider.is_none() {
-            return Ok(None);
-        }
-
         let py = self.0.py();
 
         let mut storage_options: Vec<(PyBackedStr, String)> = vec![];
