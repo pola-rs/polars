@@ -1,31 +1,14 @@
 use polars_utils::format_pl_smallstr;
 
 use super::*;
+mod hive;
 mod predicate_pruning;
+use hive::rewrite_hive;
 use predicate_pruning::*;
 
-use crate::plans::hive::HivePartitionsDf;
-use crate::plans::inputs::Inputs;
 use crate::plans::optimizer::join_utils::remove_suffix;
 
 const IEJOIN_MAX_PREDICATES: usize = 2;
-
-fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartitionsDf> {
-    let ir = ir_arena.get(node);
-
-    for (_, ir) in ir_arena.iter(node) {
-        match ir {
-            IR::Scan { hive_parts, .. } => return hive_parts.clone(),
-            // We only want to return hive partitions for the first joins
-            // Any node in between with more than one input (join, union, etc) will not return a
-            // match.
-            ir if matches!(ir.inputs(), Inputs::Single { .. }) => continue,
-            _ => return None,
-        }
-    }
-
-    None
-}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
@@ -41,17 +24,20 @@ pub(super) fn process_join(
     mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
     streaming: bool,
 ) -> PolarsResult<IR> {
+    dbg!("process");
     if options.args.slice.is_some() {
-        let lp = IR::Join {
+        let ir = rewrite_hive(
             input_left,
             input_right,
             left_on,
             right_on,
             schema,
             options,
-        };
+            lp_arena,
+            expr_arena,
+        );
 
-        return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+        return opt.no_pushdown_restart_opt(ir, acc_predicates, lp_arena, expr_arena);
     }
 
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
@@ -91,14 +77,17 @@ pub(super) fn process_join(
         _ => false,
     } || acc_predicates.is_empty()
     {
-        let lp = IR::Join {
+        let lp = rewrite_hive(
             input_left,
             input_right,
             left_on,
             right_on,
             schema,
             options,
-        };
+            lp_arena,
+            expr_arena,
+        );
+
         let lp =
             apply_join_key_reduction_select(lp, opt_join_key_reduction_select.take(), lp_arena);
 
@@ -394,42 +383,16 @@ pub(super) fn process_join(
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
     opt.pushdown_and_assign(input_right, pushdown_right, lp_arena, expr_arena)?;
 
-    if let (JoinType::Inner, Some(hive_left), Some(hive_right)) = (
-        &options.args.how,
-        is_hive_partitioned(input_left, lp_arena),
-        is_hive_partitioned(input_right, lp_arena),
-    ) {
-        let mut hive_cols = None;
-        let hive_left_schema = hive_left.schema();
-        let hive_right_schema = hive_right.schema();
-        for (l, r) in left_on.iter().zip(right_on.iter()) {
-            let l = expr_arena.get(l.node());
-            let r = expr_arena.get(r.node());
-            if let (AExpr::Column(l), AExpr::Column(r)) = (l, r) {
-                if hive_left_schema.index_of(l) == Some(0)
-                    && hive_right_schema.index_of(r) == Some(0)
-                {
-                    hive_cols = Some((l, r));
-                    break;
-                }
-            }
-        }
-
-        dbg!(hive_cols);
-        // `left_on` to names
-        dbg!(hive_left, hive_right);
-        // hive_left.df().join(hive_right.df(), left_on, right_on, args, options)
-    } else {
-    };
-
-    let lp = IR::Join {
+    let lp = rewrite_hive(
         input_left,
         input_right,
         left_on,
         right_on,
         schema,
         options,
-    };
+        lp_arena,
+        expr_arena,
+    );
 
     let lp = opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena);
 
