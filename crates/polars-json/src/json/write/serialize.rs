@@ -323,14 +323,18 @@ fn fixed_size_list_serializer<'a>(
     let mut serializer = new_serializer(
         array.values().as_ref(),
         offset * array.size(),
-        take * array.size(),
+        if take < usize::MAX {
+            take * array.size()
+        } else {
+            usize::MAX
+        },
     );
 
     Box::new(BufStreamingIterator::new(
         ZipValidity::new(0..array.len(), array.validity().map(|x| x.iter())),
         move |ix, buf| {
+            let length = array.size();
             if ix.is_some() {
-                let length = array.size();
                 buf.push(b'[');
                 let mut is_first_row = true;
                 for _ in 0..length {
@@ -343,6 +347,9 @@ fn fixed_size_list_serializer<'a>(
                 buf.push(b']');
             } else {
                 buf.extend(b"null");
+                for _ in 0..length {
+                    serializer.next();
+                }
             }
         },
         vec![],
