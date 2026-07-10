@@ -32,6 +32,22 @@ pub fn rewrite_hive(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
+    #[cfg(not(feature = "is_in"))]
+    return Ok(IR::Join {
+        input_left,
+        input_right,
+        left_on,
+        right_on,
+        schema,
+        options,
+    });
+
+    // This replaces a join on a hive partitioned key
+    // by a union on hive partitioned joins.
+    // We do that by pushing down an is_in predicate
+    // Later in the optimizer we prune the hive paths
+    // based on all the predicates.
+    #[cfg(feature = "is_in")]
     if !opt.hive_rewrite_active
         && let (MaintainOrderJoin::None, JoinType::Inner, Some(hive_left), Some(hive_right)) = (
             &options.args.maintain_order,
