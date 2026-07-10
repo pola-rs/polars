@@ -151,6 +151,40 @@ def test_write_json_list_of_arrays() -> None:
     assert value == expected
 
 
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([None, [0, 1]], '[{"a":null},{"a":[0,1]}]'),
+        ([[0, 1], None, [3, 3]], '[{"a":[0,1]},{"a":null},{"a":[3,3]}]'),
+        (
+            [[0, 1], None, None, [7, 7]],
+            '[{"a":[0,1]},{"a":null},{"a":null},{"a":[7,7]}]',
+        ),
+        ([None, None], '[{"a":null},{"a":null}]'),
+    ],
+)
+def test_write_json_array_with_nulls(
+    values: list[list[int] | None], expected: str
+) -> None:
+    df = pl.DataFrame({"a": values}, schema={"a": pl.Array(pl.Int8, 2)})
+    assert df.write_json() == expected
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ([None, [0, 1]], '{"a":null}\n{"a":[0,1]}\n'),
+        ([[0, 1], None, [3, 3]], '{"a":[0,1]}\n{"a":null}\n{"a":[3,3]}\n'),
+        ([None, None], '{"a":null}\n{"a":null}\n'),
+    ],
+)
+def test_write_ndjson_array_with_nulls(
+    values: list[list[int] | None], expected: str
+) -> None:
+    df = pl.DataFrame({"a": values}, schema={"a": pl.Array(pl.Int8, 2)})
+    assert df.write_ndjson() == expected
+
+
 def test_write_json_decimal() -> None:
     df = pl.DataFrame({"a": pl.Series([D("1.00"), D("2.00"), None])})
 
