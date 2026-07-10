@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import typing
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, no_type_check
 
