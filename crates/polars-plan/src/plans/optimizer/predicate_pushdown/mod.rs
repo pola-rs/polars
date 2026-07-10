@@ -26,6 +26,9 @@ pub struct PredicatePushDown {
     streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
+    // Set while re-processing the branches `join::hive::rewrite_hive` so we don't re-enter
+    // the hive rewriting part
+    pub(super) hive_rewrite_active: bool,
 }
 
 impl PredicatePushDown {
@@ -35,6 +38,7 @@ impl PredicatePushDown {
             nodes_scratch: ScratchUnitVec::default(),
             streaming,
             maintain_errors,
+            hive_rewrite_active: false,
         }
     }
 }

@@ -3,10 +3,9 @@ use polars_core::utils::split_df_as_ref;
 use super::*;
 use crate::plans::hive::HivePartitionsDf;
 use crate::plans::inputs::Inputs;
+use crate::utils::deep_clone_ir;
 
 fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartitionsDf> {
-    let ir = ir_arena.get(node);
-
     for (_, ir) in ir_arena.iter(node) {
         match ir {
             IR::Scan { hive_parts, .. } => return hive_parts.clone(),
@@ -21,6 +20,7 @@ fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartition
     None
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn rewrite_hive(
     input_left: Node,
     input_right: Node,
@@ -28,15 +28,18 @@ pub fn rewrite_hive(
     right_on: Vec<ExprIR>,
     schema: SchemaRef,
     options: Arc<JoinOptionsIR>,
+    opt: &mut PredicatePushDown,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-) -> IR {
-    if let (MaintainOrderJoin::None, JoinType::Inner, Some(hive_left), Some(hive_right)) = (
-        &options.args.maintain_order,
-        &options.args.how,
-        is_hive_partitioned(input_left, ir_arena),
-        is_hive_partitioned(input_right, ir_arena),
-    ) {
+) -> PolarsResult<IR> {
+    if !opt.hive_rewrite_active
+        && let (MaintainOrderJoin::None, JoinType::Inner, Some(hive_left), Some(hive_right)) = (
+            &options.args.maintain_order,
+            &options.args.how,
+            is_hive_partitioned(input_left, ir_arena),
+            is_hive_partitioned(input_right, ir_arena),
+        )
+    {
         let mut hive_cols = None;
         let hive_left_schema = hive_left.schema();
         let hive_right_schema = hive_right.schema();
@@ -86,8 +89,16 @@ pub fn rewrite_hive(
                 l.clone()
             };
 
-            let chunks =
-                split_df_as_ref(&partitions, std::cmp::min(64, partitions.height()), false);
+            let n_parts = std::env::var("POLARS_HIVE_PARTITIONS")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(64);
+
+            let chunks = split_df_as_ref(
+                &partitions,
+                std::cmp::min(n_parts, partitions.height()),
+                false,
+            );
 
             let mut branches = Vec::with_capacity(chunks.len());
 
@@ -96,12 +107,20 @@ pub fn rewrite_hive(
                     continue;
                 }
 
-                let l_values = chunk.column(&l).unwrap().as_materialized_series().clone();
+                let l_values = chunk
+                    .column(&l)
+                    .unwrap()
+                    .as_materialized_series()
+                    .implode()
+                    .unwrap()
+                    .into_series();
                 let r_values = chunk
                     .column(&r_key_name)
                     .unwrap()
                     .as_materialized_series()
-                    .clone();
+                    .implode()
+                    .unwrap()
+                    .into_series();
 
                 let l_pred = AExprBuilder::col(l.clone(), expr_arena)
                     .is_in(
@@ -125,18 +144,21 @@ pub fn rewrite_hive(
                     )
                     .expr_ir_unnamed();
 
-                let filtered_left = ir_arena.add(IR::Filter {
-                    input: input_left,
-                    predicate: l_pred,
-                });
-                let filtered_right = ir_arena.add(IR::Filter {
-                    input: input_right,
-                    predicate: r_pred,
-                });
+                // We need to deep clone as each branch hits different predicate pd passes.
+                let branch_left = deep_clone_ir(input_left, ir_arena);
+                let branch_right = deep_clone_ir(input_right, ir_arena);
+
+                let mut acc_left = init_indexmap(Some(1));
+                insert_predicate_dedup(&mut acc_left, &l_pred, expr_arena);
+                opt.pushdown_and_assign(branch_left, acc_left, ir_arena, expr_arena)?;
+
+                let mut acc_right = init_indexmap(Some(1));
+                insert_predicate_dedup(&mut acc_right, &r_pred, expr_arena);
+                opt.pushdown_and_assign(branch_right, acc_right, ir_arena, expr_arena)?;
 
                 branches.push(ir_arena.add(IR::Join {
-                    input_left: filtered_left,
-                    input_right: filtered_right,
+                    input_left: branch_left,
+                    input_right: branch_right,
                     left_on: left_on.clone(),
                     right_on: right_on.clone(),
                     schema: schema.clone(),
@@ -144,20 +166,21 @@ pub fn rewrite_hive(
                 }));
             }
 
-            return IR::Union {
+            return Ok(IR::Union {
                 inputs: branches,
                 options: UnionOptions {
+                    maintain_order: false,
                     ..Default::default()
                 },
-            };
+            });
         }
     }
-    IR::Join {
+    Ok(IR::Join {
         input_left,
         input_right,
         left_on,
         right_on,
         schema,
         options,
-    }
+    })
 }

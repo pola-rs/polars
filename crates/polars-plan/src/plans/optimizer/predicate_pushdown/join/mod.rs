@@ -24,7 +24,6 @@ pub(super) fn process_join(
     mut acc_predicates: PlIndexMap<PlSmallStr, ExprIR>,
     streaming: bool,
 ) -> PolarsResult<IR> {
-    dbg!("process");
     if options.args.slice.is_some() {
         let ir = rewrite_hive(
             input_left,
@@ -33,11 +32,16 @@ pub(super) fn process_join(
             right_on,
             schema,
             options,
+            opt,
             lp_arena,
             expr_arena,
-        );
-
-        return opt.no_pushdown_restart_opt(ir, acc_predicates, lp_arena, expr_arena);
+        )?;
+        // Ensures we don't trigger the hive rewrite again.
+        if matches!(ir, IR::Union { .. }) {
+            opt.hive_rewrite_active = true;
+        }
+        let result = opt.no_pushdown_restart_opt(ir, acc_predicates, lp_arena, expr_arena);
+        return result;
     }
 
     let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
@@ -84,14 +88,25 @@ pub(super) fn process_join(
             right_on,
             schema,
             options,
+            opt,
             lp_arena,
             expr_arena,
-        );
+        )?;
 
+        // See the comment on the analogous guard above (including why this must be a
+        // save/restore, not an unconditional reset): `rewrite_hive`'s branch joins may end
+        // up nested a level deeper here (under the optional post-select), but they're still
+        // reachable from `no_pushdown_restart_opt`'s re-descent, so the guard still needs to
+        // span that call.
+        let rewrote_to_union = matches!(lp, IR::Union { .. });
         let lp =
             apply_join_key_reduction_select(lp, opt_join_key_reduction_select.take(), lp_arena);
 
-        return opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+        if rewrote_to_union {
+            opt.hive_rewrite_active = true;
+        }
+        let result = opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
+        return result;
     }
 
     let should_coalesce = options.args.should_coalesce();
@@ -390,9 +405,10 @@ pub(super) fn process_join(
         right_on,
         schema,
         options,
+        opt,
         lp_arena,
         expr_arena,
-    );
+    )?;
 
     let lp = opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena);
 
