@@ -610,11 +610,11 @@ def test_read_ipc_pyarrow() -> None:
     f.seek(0)
     assert_frame_equal(
         pl.read_ipc(f, columns=[1], use_pyarrow=True),
-        pl.DataFrame({"b": 1}),
+        pl.DataFrame({"b": 2}),
     )
 
     f.seek(0)
     assert_frame_equal(
         pl.read_ipc(f, columns=["b"], use_pyarrow=True),
-        pl.DataFrame({"b": 1}),
+        pl.DataFrame({"b": 2}),
     )
