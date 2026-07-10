@@ -171,7 +171,6 @@ def read_ipc(
             )
             with pyarrow_ipc.open_file(
                 data,
-                memory_map=memory_map,
                 columns=columns,
             ) as ipc_f:
                 tbl = ipc_f.read_all()
