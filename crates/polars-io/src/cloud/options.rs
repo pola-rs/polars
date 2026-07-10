@@ -168,7 +168,7 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
         };
 
         if verbose() {
-            eprintln!("object-store retry config: {:?}", &out)
+            eprintln!("object-store retry config: {:?}", out)
         }
 
         return out;
@@ -573,7 +573,7 @@ impl CloudOptions {
                 if verbose {
                     eprintln!(
                         "[CloudOptions::build_azure]: Using credential provider {:?}",
-                        &v
+                        v
                     );
                 }
                 builder.with_credentials(v.into_azure_provider())

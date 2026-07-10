@@ -642,7 +642,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<ArrowSchema> {
             return Err(PyValueError::new_err(format!(
                 "__arrow_c_schema__ of object did not return struct dtype: \
                 object: {:?}, dtype: {:?}",
-                schema_object, &field.dtype
+                schema_object, field.dtype
             )));
         };
 

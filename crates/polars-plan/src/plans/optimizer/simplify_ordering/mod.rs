@@ -426,7 +426,6 @@ impl SimplifyIRNodeOrder<'_> {
             IR::MergeSorted {
                 input_left,
                 input_right,
-                key: _,
                 ..
             } => {
                 let ([in_edge_lhs, in_edge_rhs], [out_edge]) = unpack_edges!(3);

@@ -115,7 +115,7 @@ impl From<PyPolarsErr> for PyErr {
                 PolarsError::Python { error } => error.0,
             },
             Python(err) => err,
-            err => PyRuntimeError::new_err(format!("{:?}", &err)),
+            err => PyRuntimeError::new_err(format!("{:?}", err)),
         }
     }
 }

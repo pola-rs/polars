@@ -5,20 +5,21 @@ use super::nulls::RollingAggWindowNulls;
 use super::*;
 use crate::moment::{KurtosisState, SkewState, VarState};
 
-pub trait StateUpdate {
+pub trait RollingMomentAlgo {
+    type State: Default + Clone;
     fn new(params: Option<RollingFnParams>) -> Self;
-    fn reset(&mut self);
-    fn insert_one(&mut self, x: f64);
-    fn remove_one(&mut self, x: f64);
-    fn finalize(&self) -> Option<f64>;
+    fn insert_one(state: &mut Self::State, x: f64);
+    fn combine(state: &mut Self::State, other: &Self::State);
+    fn finalize(&self, state: &Self::State) -> Option<f64>;
 }
 
 pub struct VarianceMoment {
-    state: VarState,
     ddof: u8,
 }
 
-impl StateUpdate for VarianceMoment {
+impl RollingMomentAlgo for VarianceMoment {
+    type State = VarState;
+
     fn new(params: Option<RollingFnParams>) -> Self {
         let ddof = if let Some(RollingFnParams::Var(params)) = params {
             params.ddof
@@ -26,40 +27,33 @@ impl StateUpdate for VarianceMoment {
             1
         };
 
-        Self {
-            state: VarState::default(),
-            ddof,
-        }
+        Self { ddof }
     }
 
     #[inline(always)]
-    fn reset(&mut self) {
-        self.state = VarState::default();
+    fn insert_one(state: &mut Self::State, x: f64) {
+        state.insert_one(x);
     }
 
     #[inline(always)]
-    fn insert_one(&mut self, x: f64) {
-        self.state.insert_one(x);
+    fn combine(state: &mut Self::State, other: &Self::State) {
+        state.combine(other);
     }
 
     #[inline(always)]
-    fn remove_one(&mut self, x: f64) {
-        self.state.remove_one(x);
-    }
-
-    #[inline(always)]
-    fn finalize(&self) -> Option<f64> {
-        self.state.finalize(self.ddof)
+    fn finalize(&self, state: &Self::State) -> Option<f64> {
+        state.finalize(self.ddof)
     }
 }
 
 pub struct KurtosisMoment {
-    state: KurtosisState,
     fisher: bool,
     bias: bool,
 }
 
-impl StateUpdate for KurtosisMoment {
+impl RollingMomentAlgo for KurtosisMoment {
+    type State = KurtosisState;
+
     fn new(params: Option<RollingFnParams>) -> Self {
         let (fisher, bias) = if let Some(RollingFnParams::Kurtosis { fisher, bias }) = params {
             (fisher, bias)
@@ -67,40 +61,32 @@ impl StateUpdate for KurtosisMoment {
             (false, false)
         };
 
-        Self {
-            state: KurtosisState::default(),
-            fisher,
-            bias,
-        }
+        Self { fisher, bias }
     }
 
     #[inline(always)]
-    fn reset(&mut self) {
-        self.state = KurtosisState::default();
+    fn insert_one(state: &mut Self::State, x: f64) {
+        state.insert_one(x);
     }
 
     #[inline(always)]
-    fn insert_one(&mut self, x: f64) {
-        self.state.insert_one(x);
+    fn combine(state: &mut Self::State, other: &Self::State) {
+        state.combine(other);
     }
 
     #[inline(always)]
-    fn remove_one(&mut self, x: f64) {
-        self.state.remove_one(x);
-    }
-
-    #[inline(always)]
-    fn finalize(&self) -> Option<f64> {
-        self.state.finalize(self.fisher, self.bias)
+    fn finalize(&self, state: &Self::State) -> Option<f64> {
+        state.finalize(self.fisher, self.bias)
     }
 }
 
 pub struct SkewMoment {
-    state: SkewState,
     bias: bool,
 }
 
-impl StateUpdate for SkewMoment {
+impl RollingMomentAlgo for SkewMoment {
+    type State = SkewState;
+
     fn new(params: Option<RollingFnParams>) -> Self {
         let bias = if let Some(RollingFnParams::Skew { bias }) = params {
             bias
@@ -108,34 +94,26 @@ impl StateUpdate for SkewMoment {
             false
         };
 
-        Self {
-            state: SkewState::default(),
-            bias,
-        }
+        Self { bias }
     }
 
     #[inline(always)]
-    fn reset(&mut self) {
-        self.state = SkewState::default();
+    fn insert_one(state: &mut Self::State, x: f64) {
+        state.insert_one(x);
     }
 
     #[inline(always)]
-    fn insert_one(&mut self, x: f64) {
-        self.state.insert_one(x);
+    fn combine(state: &mut Self::State, other: &Self::State) {
+        state.combine(other);
     }
 
     #[inline(always)]
-    fn remove_one(&mut self, x: f64) {
-        self.state.remove_one(x);
-    }
-
-    #[inline(always)]
-    fn finalize(&self) -> Option<f64> {
-        self.state.finalize(self.bias)
+    fn finalize(&self, state: &Self::State) -> Option<f64> {
+        state.finalize(self.bias)
     }
 }
 
-pub struct MomentWindow<'a, T, M: StateUpdate> {
+pub struct MomentWindow<'a, T, M: RollingMomentAlgo> {
     slice: &'a [T],
     validity: Option<&'a Bitmap>,
     moment: M,
@@ -143,12 +121,15 @@ pub struct MomentWindow<'a, T, M: StateUpdate> {
     null_count: usize,
     start: usize,
     end: usize,
+    front: Vec<M::State>,
+    back: Vec<f64>,
+    agg_back: M::State,
 }
 
 impl<'a, T, M> MomentWindow<'a, T, M>
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
-    M: StateUpdate,
+    M: RollingMomentAlgo,
 {
     fn new_impl(
         slice: &'a [T],
@@ -163,44 +144,65 @@ where
             null_count: 0,
             start: 0,
             end: 0,
+            front: Vec::new(),
+            back: Vec::new(),
+            agg_back: M::State::default(),
         }
     }
 
     #[inline(always)]
     fn reset(&mut self) {
-        self.moment.reset();
         self.non_finite_count = 0;
         self.null_count = 0;
+        self.front.clear();
+        self.back.clear();
+        self.agg_back = M::State::default();
     }
 
     #[inline(always)]
-    fn insert(&mut self, val: T) {
+    fn push(&mut self, val: T) {
         if val.is_finite() {
-            self.moment.insert_one(NumCast::from(val).unwrap());
+            let x = NumCast::from(val).unwrap();
+            self.back.push(x);
+            M::insert_one(&mut self.agg_back, x);
         } else {
-            self.moment.insert_one(0.0); // A hack to replicate ddof null behavior.
+            // A hack to replicate ddof null behavior.
+            self.back.push(0.0);
+            M::insert_one(&mut self.agg_back, 0.0);
             self.non_finite_count += 1;
         }
     }
 
     #[inline(always)]
-    fn remove(&mut self, val: T) {
-        if val.is_finite() {
-            self.moment.remove_one(NumCast::from(val).unwrap());
-        } else {
-            self.moment.remove_one(0.0); // A hack to replicate ddof null behavior.
-            self.non_finite_count -= 1;
+    fn pop(&mut self, val: T) {
+        if self.front.is_empty() {
+            self.flip();
         }
+        self.front.pop();
+        self.non_finite_count -= !val.is_finite() as usize;
+    }
+
+    fn flip(&mut self) {
+        let mut agg = M::State::default();
+        while let Some(x) = self.back.pop() {
+            M::insert_one(&mut agg, x);
+            self.front.push(agg.clone());
+        }
+
+        self.agg_back = M::State::default();
     }
 
     #[inline(always)]
     fn get_moment(&self) -> Option<T> {
+        let mut state = self.agg_back.clone();
+        if let Some(front_agg) = self.front.last() {
+            M::combine(&mut state, front_agg);
+        }
+        let agg = self.moment.finalize(&state);
         if self.non_finite_count > 0 {
-            self.moment
-                .finalize()
-                .map(|_v| T::from_f64(f64::NAN).unwrap())
+            agg.map(|_v| T::from_f64(f64::NAN).unwrap())
         } else {
-            self.moment.finalize().map(|v| T::from_f64(v).unwrap())
+            agg.map(|v| T::from_f64(v).unwrap())
         }
     }
 }
@@ -208,7 +210,7 @@ where
 impl<T, M> RollingAggWindowNoNulls<T> for MomentWindow<'_, T, M>
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
-    M: StateUpdate,
+    M: RollingMomentAlgo,
 {
     type This<'a> = MomentWindow<'a, T, M>;
 
@@ -235,11 +237,11 @@ where
         }
 
         for val in &self.slice[self.start..new_start] {
-            self.remove(*val);
+            self.pop(*val);
         }
 
         for val in &self.slice[self.end..new_end] {
-            self.insert(*val);
+            self.push(*val);
         }
 
         self.start = new_start;
@@ -258,7 +260,7 @@ where
 impl<T, M> RollingAggWindowNulls<T> for MomentWindow<'_, T, M>
 where
     T: NativeType + ToPrimitive + IsFloat + FromPrimitive,
-    M: StateUpdate,
+    M: RollingMomentAlgo,
 {
     type This<'a> = MomentWindow<'a, T, M>;
 
@@ -292,7 +294,7 @@ where
         for idx in self.start..new_start {
             let valid = unsafe { validity.get_bit_unchecked(idx) };
             if valid {
-                self.remove(unsafe { *self.slice.get_unchecked(idx) });
+                self.pop(unsafe { *self.slice.get_unchecked(idx) });
             } else {
                 self.null_count -= 1;
             }
@@ -301,7 +303,7 @@ where
         for idx in self.end..new_end {
             let valid = unsafe { validity.get_bit_unchecked(idx) };
             if valid {
-                self.insert(unsafe { *self.slice.get_unchecked(idx) });
+                self.push(unsafe { *self.slice.get_unchecked(idx) });
             } else {
                 self.null_count += 1;
             }
