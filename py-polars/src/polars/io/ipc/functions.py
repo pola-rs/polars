@@ -164,16 +164,18 @@ def read_ipc(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
-            pyarrow_feather = import_optional(
-                "pyarrow.feather",
+            pyarrow_ipc = import_optional(
+                "pyarrow.ipc",
                 err_prefix="",
                 err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
             )
-            tbl = pyarrow_feather.read_table(
+            with pyarrow_ipc.open_file(
                 data,
                 memory_map=memory_map,
                 columns=columns,
-            )
+            ) as ipc_f:
+                tbl = ipc_f.read_all()
+
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_index_name is not None:
                 df = df.with_row_index(row_index_name, row_index_offset)

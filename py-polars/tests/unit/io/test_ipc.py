@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
 import pyarrow as pa
-import pyarrow.feather as paf
 import pyarrow.ipc
 import pytest
 from hypothesis import given
@@ -138,11 +137,20 @@ def test_ipc_roundtrip_pyarrow_parametric(
     df.write_ipc(f, compression=compression)
     f.seek(0)
 
-    table = paf.read_table(f)
-    assert_frame_equal(df, typing.cast("pl.DataFrame", pl.from_arrow(table)))
+    with pyarrow.ipc.open_file(f) as ipc_f:
+        table = ipc_f.read_all()
+    assert_frame_equal(df, pl.DataFrame(table))
 
     f = io.BytesIO()
-    paf.write_feather(df.to_arrow(), f, compression=compression)
+
+    with pyarrow.ipc.new_file(
+        f,
+        df.schema.to_arrow(compat_level=pl.CompatLevel.newest()),
+        options=pyarrow.ipc.IpcWriteOptions(
+            compression=None if compression == "uncompressed" else compression
+        ),
+    ) as ipc_f:
+        ipc_f.write_table(df.to_arrow(compat_level=pl.CompatLevel.newest()))
     f.seek(0)
     assert_frame_equal(df, pl.read_ipc(f, use_pyarrow=False))
 
