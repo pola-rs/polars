@@ -73,15 +73,27 @@ fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec
 
     let mut deduplicated_headers = Vec::with_capacity(headers.len());
     let mut header_names = PlHashMap::with_capacity(headers.len());
+    // Track every emitted name so a generated `_duplicated_N` name can't silently
+    // collide with a header that already appears earlier in the line (#28310).
+    let mut used: PlIndexSet<PlSmallStr> = PlIndexSet::with_capacity(headers.len());
 
     for name in &headers {
         let count = header_names.entry(name.as_ref()).or_insert(0usize);
-        if *count != 0 {
-            deduplicated_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
+        let mut new_name = if *count == 0 {
+            PlSmallStr::from_str(name)
         } else {
-            deduplicated_headers.push(PlSmallStr::from_str(name))
-        }
+            format_pl_smallstr!("{}_duplicated_{}", name, *count - 1)
+        };
         *count += 1;
+        // Keep bumping the suffix until the candidate is not already in use, so
+        // inputs like `a,a_duplicated_0,a` yield `a,a_duplicated_0,a_duplicated_1`
+        // instead of two columns sharing a name.
+        while used.contains(&new_name) {
+            new_name = format_pl_smallstr!("{}_duplicated_{}", name, *count - 1);
+            *count += 1;
+        }
+        used.insert(new_name.clone());
+        deduplicated_headers.push(new_name);
     }
 
     deduplicated_headers
@@ -366,5 +378,27 @@ mod tests {
         possibilities.insert(DataType::Int64);
         possibilities.insert(DataType::Int128);
         assert_eq!(finish_infer_field_schema(&possibilities), DataType::Int128);
+    }
+
+    #[test]
+    fn test_infer_headers_dedup_collision() {
+        let opts = CsvParseOptions::default();
+        let names = |line: &[u8]| {
+            infer_headers(line, &opts)
+                .iter()
+                .map(|s| s.as_str().to_string())
+                .collect::<Vec<_>>()
+        };
+
+        // A generated `_duplicated_N` name must not collide with an existing header (#28310).
+        assert_eq!(names(b"a,a_duplicated_0,a"), ["a", "a_duplicated_0", "a_duplicated_1"]);
+
+        // The reverse ordering must also stay collision-free (3 distinct names).
+        let reversed = names(b"a,a,a_duplicated_0");
+        assert_eq!(reversed.len(), 3);
+        assert_eq!(reversed.iter().collect::<PlHashSet<_>>().len(), 3);
+
+        // Regression guard: plain duplicates keep their existing numbering.
+        assert_eq!(names(b"x,x,y"), ["x", "x_duplicated_0", "y"]);
     }
 }

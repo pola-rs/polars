@@ -1532,6 +1532,20 @@ def test_duplicated_columns(chunk_override: None) -> None:
     assert pl.read_csv(csv.encode(), new_columns=new).columns == new
 
 
+def test_duplicated_columns_name_collision_28310() -> None:
+    # A generated `_duplicated_N` name must not collide with a header that already
+    # exists in the file, which previously raised "found more fields than defined".
+    assert pl.read_csv(io.StringIO("a,a_duplicated_0,a\n1,2,3")).columns == [
+        "a",
+        "a_duplicated_0",
+        "a_duplicated_1",
+    ]
+    # The reverse ordering must also stay collision-free (three distinct names).
+    cols = pl.read_csv(io.StringIO("a,a,a_duplicated_0\n1,2,3")).columns
+    assert len(cols) == 3
+    assert len(set(cols)) == 3
+
+
 def test_error_message(chunk_override: None) -> None:
     data = io.StringIO("target,wind,energy,miso\n1,2,3,4\n1,2,1e5,1\n")
     with pytest.raises(
