@@ -172,10 +172,15 @@ def read_ipc(
             )
 
             if columns is not None and is_non_empty_sequence_of(columns, str):
-                initial_pos = None
+                initial_pos = []
 
-                if hasattr(data, "tell") and callable(data.tell):
-                    initial_pos = data.tell()
+                if (
+                    hasattr(data, "tell")
+                    and callable(data.tell)
+                    and hasattr(data, "seek")
+                    and callable(data.seek)
+                ):
+                    initial_pos = [data.tell()]
 
                 with pyarrow_ipc.open_file(data) as ipc_f:
                     schema = ipc_f.schema
@@ -184,8 +189,8 @@ def read_ipc(
 
                 columns = [idx_lookup[name] for name in columns]
 
-                if hasattr(data, "seek") and callable(data.seek):
-                    data.seek(initial_pos)
+                if initial_pos:
+                    data.seek(initial_pos[0])
 
             with pyarrow_ipc.open_file(
                 data,
