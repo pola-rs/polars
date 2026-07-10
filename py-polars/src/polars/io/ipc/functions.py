@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Literal
+from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F
@@ -172,10 +172,10 @@ def read_ipc(
             )
 
             if columns is not None and is_non_empty_sequence_of(columns, str):
-                initial_pos = []
+                initial_pos: Any = None
 
                 if hasattr(data, "tell") and callable(data.tell):
-                    initial_pos = [data.tell()]
+                    initial_pos = data.tell()
 
                 with pyarrow_ipc.open_file(data) as ipc_f:
                     schema = ipc_f.schema
@@ -184,8 +184,12 @@ def read_ipc(
 
                 columns = [idx_lookup[name] for name in columns]
 
-                if initial_pos and hasattr(data, "seek") and callable(data.seek):
-                    data.seek(initial_pos[0])
+                if (
+                    initial_pos is not None
+                    and hasattr(data, "seek")
+                    and callable(data.seek)
+                ):
+                    data.seek(initial_pos)
 
             with pyarrow_ipc.open_file(
                 data,
