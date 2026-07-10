@@ -600,3 +600,21 @@ def test_read_ipc_compressed_empty_bitmap_27532() -> None:
     f.seek(0)
 
     assert_frame_equal(pl.read_ipc(f), pl.DataFrame(schema={"bool": pl.Boolean}))
+
+
+def test_read_ipc_pyarrow() -> None:
+    f = io.BytesIO()
+
+    pl.DataFrame({"a": 1, "b": 2}).write_ipc(f)
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.read_ipc(f, columns=[1], use_pyarrow=True),
+        pl.DataFrame({"b": 1}),
+    )
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.read_ipc(f, columns=["b"], use_pyarrow=True),
+        pl.DataFrame({"b": 1}),
+    )

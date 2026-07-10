@@ -13,6 +13,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.various import (
+    is_non_empty_sequence_of,
     is_str_sequence,
     normalize_filepath,
 )
@@ -169,9 +170,26 @@ def read_ipc(
                 err_prefix="",
                 err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
             )
+
+            if columns is not None and is_non_empty_sequence_of(columns, str):
+                initial_pos = None
+
+                if hasattr(data, "tell") and callable(data.tell):
+                    initial_pos = data.tell()
+
+                with pyarrow_ipc.open_file(data) as ipc_f:
+                    schema = ipc_f.schema
+
+                idx_lookup = {name: i for i, name in enumerate(schema.names)}
+
+                columns = [idx_lookup[name] for name in columns]
+
+                if hasattr(data, "seek") and callable(data.seek):
+                    data.seek(initial_pos)
+
             with pyarrow_ipc.open_file(
                 data,
-                columns=columns,
+                options=pyarrow_ipc.IpcReadOptions(included_fields=columns),
             ) as ipc_f:
                 tbl = ipc_f.read_all()
 
