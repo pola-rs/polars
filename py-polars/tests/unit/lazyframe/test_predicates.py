@@ -355,10 +355,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
 
     plan = actual.explain()
 
+    print(plan)
     assert (
-        re.search(
-            r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan, re.DOTALL
-        )
+        re.search(r'FILTER col\("key"\) == 5\s*FROM\n\s*DF', plan, re.DOTALL)
         is not None
     )
     assert plan.count("FILTER") == 1
@@ -387,9 +386,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     plan = actual.explain()
     assert plan.count("FILTER") == 2
     assert (
-        re.search(
-            r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan, re.DOTALL
-        )
+        re.search(r'FILTER col\("key"\) == 5\s*FROM\n\s*DF', plan, re.DOTALL)
         is not None
     )
 
@@ -404,9 +401,7 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     plan = actual.explain()
     assert plan.count("FILTER") == 2
     assert (
-        re.search(
-            r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan, re.DOTALL
-        )
+        re.search(r'FILTER col\("key"\) == 5\s*FROM\n\s*DF', plan, re.DOTALL)
         is not None
     )
 
@@ -440,15 +435,13 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     assert plan.count("FILTER") == 2
     assert (
         re.search(
-            r'FILTER \[\(len\(\).over\(\[col\("key"\)\]\)\) == \(1\)\]\s*FROM\n\s*FILTER',
+            r'FILTER len\(\).over\(\[col\("key"\)\]\) == 1\s*FROM\n\s*FILTER',
             plan,
         )
         is not None
     )
     assert (
-        re.search(
-            r'FILTER \[\(col\("key"\)\) == \(1\)\]\s*FROM\n\s*DF', plan, re.DOTALL
-        )
+        re.search(r'FILTER col\("key"\) == 1\s*FROM\n\s*DF', plan, re.DOTALL)
         is not None
     )
 
@@ -477,10 +470,10 @@ def test_or_factoring_hoists_shared_conjunct() -> None:
     )
     plan = query.explain()
     # Shared conjunct hoisted out (appears once, not twice).
-    assert plan.count('(col("a")) > (1)') == 1, plan
+    assert plan.count('col("a") > 1') == 1, plan
     # Both residual branches survive the rewrite.
-    assert '(col("b")) > (4)' in plan, plan
-    assert '(col("c")) > (7)' in plan, plan
+    assert 'col("b") > 4' in plan, plan
+    assert 'col("c") > 7' in plan, plan
 
     expected = pl.DataFrame({"a": [2, 3], "b": [5, 6], "c": [8, 9]})
     assert_frame_equal(query.collect(), expected)
@@ -894,7 +887,7 @@ def test_predicate_pushdown_fallible_exprs_22284(
     plan = q.explain()
 
     assert (
-        plan.index('FILTER [(col("a").strict_cast(Int64)) >= (123)]')
+        plan.index('FILTER col("a").strict_cast(Int64) >= 123')
         < plan.index("MARKER")
         < plan.index(r'FILTER col("a").str.contains(["^\d{3}$"])')
     )
@@ -978,9 +971,9 @@ def test_predicate_pushdown_split_pushable(
     plan = q.explain()
 
     assert (
-        plan.index('FILTER [(col("a").strict_cast(Int8)) == (1)]')
+        plan.index('FILTER col("a").strict_cast(Int8) == 1')
         < plan.index("MARKER")
-        < plan.index('FILTER [(col("a")) == (1)]')
+        < plan.index('FILTER col("a") == 1')
     )
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "MARKER": 1}))
@@ -1000,8 +993,9 @@ def test_predicate_pushdown_split_pushable(
 
     plan = q.explain()
 
+    print(plan)
     assert plan.index(
-        'FILTER [([(col("a").strict_cast(UInt16)) == (1)]) & ([(col("a").sort(asc)) == (1)])]'
+        'FILTER (col("a").strict_cast(UInt16) == 1) & (col("a").sort(asc) == 1)'
     ) < plan.index("MARKER")
 
     assert_frame_equal(q.collect(), pl.DataFrame({"a": 1, "MARKER": 1}))
@@ -1155,9 +1149,7 @@ def test_predicate_does_not_split_barrier_expr() -> None:
 
     plan = q.explain()
 
-    assert plan.startswith(
-        'FILTER [([(col("a")) > (1)]) & ([(col("a").sort(asc)) == (3)])]'
-    )
+    assert plan.startswith('FILTER (col("a") > 1) & (col("a").sort(asc) == 3)')
 
     assert_frame_equal(
         q.collect(),
@@ -1253,7 +1245,7 @@ def test_duplicate_filter_removal_23243() -> None:
 
     plan = q.explain()
 
-    assert plan.split("\n", 1)[0] == 'FILTER [(col("x")) == (2)]'
+    assert plan.split("\n", 1)[0] == 'FILTER col("x") == 2'
 
     assert_frame_equal(q.collect(), expect)
 
@@ -1687,8 +1679,8 @@ def test_filter_cross_column_equality_propagation() -> None:
     # `a == b AND a == 5` derives `b == 5` (and drops the now-redundant `a == b`):
     # the optimized plan pins b to 5, which it does not without the rewrite.
     q = lf.filter((pl.col("a") == pl.col("b")) & (pl.col("a") == 5))
-    assert 'col("b")) == (5)' in q.explain()
-    assert 'col("b")) == (5)' not in q.explain(optimizations=no_simplify)
+    assert 'col("b") == 5' in q.explain()
+    assert 'col("b") == 5' not in q.explain(optimizations=no_simplify)
     assert_frame_equal(q.collect(), pl.DataFrame({"a": [5], "b": [5]}))
 
     # Transitive: `a == b AND b == c AND a == 7` derives `b == 7` and `c == 7`,
@@ -1697,17 +1689,17 @@ def test_filter_cross_column_equality_propagation() -> None:
     q3 = lf3.filter(
         (pl.col("a") == pl.col("b")) & (pl.col("b") == pl.col("c")) & (pl.col("a") == 7)
     )
-    assert 'col("b")) == (7)' in q3.explain()
-    assert 'col("c")) == (7)' in q3.explain()
-    assert 'col("b")) == (7)' not in q3.explain(optimizations=no_simplify)
+    assert 'col("b") == 7' in q3.explain()
+    assert 'col("c") == 7' in q3.explain()
+    assert 'col("b") == 7' not in q3.explain(optimizations=no_simplify)
     assert_frame_equal(q3.collect(), pl.DataFrame({"a": [7], "b": [7], "c": [7]}))
 
     # Open bound: `a == b AND a > 1` derives `b > 1` while keeping the equality,
     # so (3, 5) is dropped (both > 1 but unequal) while (2, 2) survives.
     lf_bound = pl.LazyFrame({"a": [2, 3, 0], "b": [2, 5, 0]})
     q_bound = lf_bound.filter((pl.col("a") == pl.col("b")) & (pl.col("a") > 1))
-    assert 'col("b")) > (1)' in q_bound.explain()
-    assert 'col("b")) > (1)' not in q_bound.explain(optimizations=no_simplify)
+    assert 'col("b") > 1' in q_bound.explain()
+    assert 'col("b") > 1' not in q_bound.explain(optimizations=no_simplify)
     assert_frame_equal(q_bound.collect(), pl.DataFrame({"a": [2], "b": [2]}))
 
     # `a == b` with no fixed value or bound: nothing to propagate, plan unchanged.
