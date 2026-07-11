@@ -218,7 +218,7 @@ impl FileReader for IpcFileReader {
                 },
         } = args
         else {
-            panic!("unsupported args: {:?}", &args)
+            panic!("unsupported args: {:?}", args)
         };
 
         debug_assert!(!matches!(pre_slice_arg, Some(Slice::Negative { .. })));
