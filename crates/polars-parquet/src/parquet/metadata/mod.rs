@@ -11,6 +11,8 @@ mod sort;
 mod thrift_to_compact;
 
 pub use column_chunk_metadata::ColumnChunkMetadata;
+#[cfg(all(test, feature = "bloom_filter"))]
+pub(crate) use column_descriptor::ColumnDescriptorRef;
 pub use column_descriptor::{ColumnDescriptor, Descriptor};
 pub use column_order::ColumnOrder;
 pub(crate) use compact::{

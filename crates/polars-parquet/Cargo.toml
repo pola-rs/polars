@@ -13,12 +13,16 @@ repository = { workspace = true }
 description = "Apache Parquet I/O operations for Polars"
 
 [dependencies]
+aes = { version = "0.8", features = ["zeroize"] }
+aes-gcm = "0.10"
 arrow = { workspace = true, features = ["io_ipc"] }
 base64 = { workspace = true }
 bytemuck = { workspace = true }
+ctr = "0.9"
 ethnum = { workspace = true }
 fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
+getrandom = "0.3"
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
 polars-buffer = { workspace = true }
@@ -28,7 +32,6 @@ polars-error = { workspace = true }
 polars-parquet-format = "0.1"
 polars-utils = { workspace = true, features = ["mmap"] }
 regex = { workspace = true }
-ring = { version = "0.17", default-features = false, features = ["std"] }
 simdutf8 = { workspace = true }
 
 streaming-decompression = "0.1"
@@ -42,6 +45,7 @@ lz4_flex = { version = "0.13", optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 snap = { version = "^1.1", optional = true }
+zeroize = "1.8"
 zstd = { workspace = true, optional = true }
 
 xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }

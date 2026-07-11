@@ -93,14 +93,19 @@ fn column_chunk_to_compact(
     file_decryptor: Option<&FileDecryptor>,
     footer: &mut Vec<u8>,
 ) -> ParquetResult<CompactColumnChunk> {
-    let meta_data = match column_chunk.meta_data.take() {
-        Some(meta_data) => meta_data,
-        None => decrypt_column_metadata(
+    let meta_data = if file_decryptor.is_some() && column_chunk.encrypted_column_metadata.is_some()
+    {
+        decrypt_column_metadata(
             &mut column_chunk,
             row_group_index,
             column_index,
             file_decryptor,
-        )?,
+        )?
+    } else {
+        column_chunk
+            .meta_data
+            .take()
+            .ok_or_else(|| ParquetError::oos("ColumnChunk.meta_data missing"))?
     };
 
     Ok(CompactColumnChunk {

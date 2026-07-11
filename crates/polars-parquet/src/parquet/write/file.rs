@@ -4,7 +4,10 @@ use std::sync::Arc;
 use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 use polars_parquet_format::{ColumnChunk, ColumnCryptoMetaData, ColumnMetaData, RowGroup};
 
-use super::indexes::{write_column_index, write_offset_index};
+use super::indexes::{
+    write_column_index, write_encrypted_column_index, write_encrypted_offset_index,
+    write_offset_index,
+};
 use super::page::PageWriteSpec;
 use super::row_group::write_row_group;
 use super::{RowGroupIterColumns, WriteOptions};
@@ -12,7 +15,7 @@ use crate::parquet::encryption::encrypt::{
     FileEncryptionProperties, FileEncryptor, column_metadata_aad, encrypted_thrift_object_to_vec,
     write_signed_plaintext_thrift_object,
 };
-use crate::parquet::encryption::modules::create_footer_aad;
+use crate::parquet::encryption::modules::{ModuleType, create_footer_aad, create_module_aad};
 use crate::parquet::error::{ParquetError, ParquetResult};
 pub use crate::parquet::metadata::KeyValue;
 use crate::parquet::metadata::{SchemaDescriptor, ThriftFileMetadata};
@@ -188,10 +191,58 @@ fn encrypt_column_metadata(
         _ => metadata.path_in_schema.join("."),
     };
     let aad = column_metadata_aad(file_encryptor, row_group_index, column_index)?;
-    let mut encryptor = file_encryptor.get_column_encryptor(&column_path)?;
+    let mut encryptor = file_encryptor.get_column_metadata_encryptor(&column_path)?;
     encrypted_thrift_object_to_vec(&mut *encryptor, &aad, |protocol| {
         metadata.write_to_out_protocol(protocol)
     })
+}
+
+fn write_column_index_with_encryption<W: Write>(
+    writer: &mut W,
+    pages: &[PageWriteSpec],
+    file_encryptor: Option<&Arc<FileEncryptor>>,
+    row_group_index: usize,
+    column_index: usize,
+    column_path: &str,
+) -> ParquetResult<u64> {
+    let Some(file_encryptor) =
+        file_encryptor.filter(|encryptor| encryptor.is_column_encrypted(column_path))
+    else {
+        return write_column_index(writer, pages);
+    };
+    let mut encryptor = file_encryptor.get_column_metadata_encryptor(column_path)?;
+    let aad = create_module_aad(
+        file_encryptor.file_aad(),
+        ModuleType::ColumnIndex,
+        row_group_index,
+        column_index,
+        None,
+    )?;
+    write_encrypted_column_index(writer, pages, &mut *encryptor, &aad)
+}
+
+fn write_offset_index_with_encryption<W: Write>(
+    writer: &mut W,
+    pages: &[PageWriteSpec],
+    file_encryptor: Option<&Arc<FileEncryptor>>,
+    row_group_index: usize,
+    column_index: usize,
+    column_path: &str,
+) -> ParquetResult<u64> {
+    let Some(file_encryptor) =
+        file_encryptor.filter(|encryptor| encryptor.is_column_encrypted(column_path))
+    else {
+        return write_offset_index(writer, pages);
+    };
+    let mut encryptor = file_encryptor.get_column_metadata_encryptor(column_path)?;
+    let aad = create_module_aad(
+        file_encryptor.file_aad(),
+        ModuleType::OffsetIndex,
+        row_group_index,
+        column_index,
+        None,
+    )?;
+    write_encrypted_offset_index(writer, pages, &mut *encryptor, &aad)
 }
 
 /// An interface to write a parquet file.
@@ -279,11 +330,6 @@ impl<W: Write> FileWriter<W> {
         created_by: Option<String>,
         file_encryption_properties: Arc<FileEncryptionProperties>,
     ) -> ParquetResult<Self> {
-        if options.write_statistics {
-            return Err(ParquetError::not_supported(
-                "page index encryption is not implemented; disable parquet statistics when using encryption",
-            ));
-        }
         file_encryption_properties.validate_encrypted_column_names(&schema)?;
         Ok(Self {
             writer,
@@ -366,45 +412,62 @@ impl<W: Write> FileWriter<W> {
         }
         // compute file stats
         let num_rows = self.row_groups.iter().map(|group| group.num_rows).sum();
+        let column_paths = self
+            .schema
+            .columns()
+            .iter()
+            .map(|column| column.path_in_schema.join("."))
+            .collect::<Vec<_>>();
 
         if self.options.write_statistics {
             // write column indexes (require page statistics)
-            self.row_groups
+            for (row_group_index, (group, pages)) in self
+                .row_groups
                 .iter_mut()
                 .zip(self.page_specs.iter())
-                .try_for_each(|(group, pages)| {
-                    group.columns.iter_mut().zip(pages.iter()).try_for_each(
-                        |(column, pages)| {
-                            let offset = self.offset;
-                            column.column_index_offset = Some(offset as i64);
-                            self.offset += write_column_index(&mut self.writer, pages)?;
-                            let length = self.offset - offset;
-                            column.column_index_length = Some(length as i32);
-                            ParquetResult::Ok(())
-                        },
+                .enumerate()
+            {
+                for (column_index, (column, pages)) in
+                    group.columns.iter_mut().zip(pages.iter()).enumerate()
+                {
+                    let offset = self.offset;
+                    column.column_index_offset = Some(offset as i64);
+                    self.offset += write_column_index_with_encryption(
+                        &mut self.writer,
+                        pages,
+                        self.file_encryptor.as_ref(),
+                        row_group_index,
+                        column_index,
+                        &column_paths[column_index],
                     )?;
-                    ParquetResult::Ok(())
-                })?;
+                    column.column_index_length = Some((self.offset - offset) as i32);
+                }
+            }
         };
 
         // write offset index
-        self.row_groups
+        for (row_group_index, (group, pages)) in self
+            .row_groups
             .iter_mut()
             .zip(self.page_specs.iter())
-            .try_for_each(|(group, pages)| {
-                group
-                    .columns
-                    .iter_mut()
-                    .zip(pages.iter())
-                    .try_for_each(|(column, pages)| {
-                        let offset = self.offset;
-                        column.offset_index_offset = Some(offset as i64);
-                        self.offset += write_offset_index(&mut self.writer, pages)?;
-                        column.offset_index_length = Some((self.offset - offset) as i32);
-                        ParquetResult::Ok(())
-                    })?;
-                ParquetResult::Ok(())
-            })?;
+            .enumerate()
+        {
+            for (column_index, (column, pages)) in
+                group.columns.iter_mut().zip(pages.iter()).enumerate()
+            {
+                let offset = self.offset;
+                column.offset_index_offset = Some(offset as i64);
+                self.offset += write_offset_index_with_encryption(
+                    &mut self.writer,
+                    pages,
+                    self.file_encryptor.as_ref(),
+                    row_group_index,
+                    column_index,
+                    &column_paths[column_index],
+                )?;
+                column.offset_index_length = Some((self.offset - offset) as i32);
+            }
+        }
 
         let row_groups = match self.file_encryptor.as_ref() {
             Some(file_encryptor) => encrypt_row_groups(self.row_groups.clone(), file_encryptor)?,

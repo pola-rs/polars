@@ -269,14 +269,29 @@ fn read_page_header_with_crypto(
         crypto_context.with_page_ordinal(page_ordinal)
     };
     let aad = page_crypto_context.create_page_header_aad()?;
-    let decrypted_header = read_and_decrypt(page_crypto_context.data_decryptor(), reader, &aad)
-        .map_err(|_| ParquetError::oos("failed to decrypt parquet page header"))?;
+    let max_ciphertext_len = max_size
+        .saturating_add(crate::parquet::encryption::ciphers::NONCE_LEN)
+        .saturating_add(crate::parquet::encryption::ciphers::TAG_LEN)
+        .min(
+            reader
+                .get_ref()
+                .len()
+                .saturating_sub(reader.position() as usize)
+                .saturating_sub(crate::parquet::encryption::ciphers::SIZE_LEN),
+        );
+    let decrypted_header = read_and_decrypt(
+        page_crypto_context.metadata_decryptor(),
+        reader,
+        &aad,
+        max_ciphertext_len,
+    )
+    .map_err(|_| ParquetError::oos("failed to decrypt parquet page header"))?;
 
     let mut header_reader = Cursor::new(Buffer::from_vec(decrypted_header));
     read_page_header(&mut header_reader, max_size)
 }
 
-fn decrypt_page_data(
+pub(super) fn decrypt_page_data(
     buffer: Buffer<u8>,
     crypto_context: Option<&CryptoContext>,
     page_ordinal: usize,

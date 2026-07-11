@@ -31,7 +31,8 @@ pub(crate) fn is_dict_page(page: &PageWriteSpec) -> bool {
 #[derive(Debug)]
 pub(crate) struct PageEncryptor {
     file_encryptor: Arc<FileEncryptor>,
-    block_encryptor: Box<dyn BlockEncryptor>,
+    data_encryptor: Box<dyn BlockEncryptor>,
+    metadata_encryptor: Box<dyn BlockEncryptor>,
     row_group_index: usize,
     column_index: usize,
     page_index: usize,
@@ -50,10 +51,12 @@ impl PageEncryptor {
         if !file_encryptor.is_column_encrypted(column_path) {
             return Ok(None);
         }
-        let block_encryptor = file_encryptor.get_column_encryptor(column_path)?;
+        let data_encryptor = file_encryptor.get_column_data_encryptor(column_path)?;
+        let metadata_encryptor = file_encryptor.get_column_metadata_encryptor(column_path)?;
         Ok(Some(Self {
             file_encryptor: Arc::clone(file_encryptor),
-            block_encryptor,
+            data_encryptor,
+            metadata_encryptor,
             row_group_index,
             column_index,
             page_index: 0,
@@ -76,7 +79,7 @@ impl PageEncryptor {
             CompressedPage::Data(page) => &page.buffer[..],
             CompressedPage::Dict(page) => &page.buffer[..],
         };
-        encrypt_bytes(data, &mut *self.block_encryptor, &aad)
+        encrypt_bytes(data, &mut *self.data_encryptor, &aad)
     }
 
     fn write_page_header<W: Write>(
@@ -101,7 +104,7 @@ impl PageEncryptor {
             self.column_index,
             Some(self.page_index),
         )?;
-        write_encrypted_thrift_object(writer, &mut *self.block_encryptor, &aad, |protocol| {
+        write_encrypted_thrift_object(writer, &mut *self.metadata_encryptor, &aad, |protocol| {
             header.write_to_out_protocol(protocol)
         })
     }

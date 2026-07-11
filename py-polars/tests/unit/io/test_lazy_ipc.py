@@ -4,6 +4,7 @@ import io
 import json
 import sys
 import typing
+import warnings
 from typing import IO, TYPE_CHECKING, Any
 
 import pyarrow.ipc
@@ -382,7 +383,13 @@ def test_sink_scan_ipc_round_trip_statistics() -> None:
     assert out._to_metadata().select(pl.col("sorted_dsc").sum()).item() == 0
 
     # remain pyarrow compatible
-    out = pl.read_ipc(buf, use_pyarrow=True)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="pyarrow.feather.read_table is deprecated.*",
+            category=FutureWarning,
+        )
+        out = pl.read_ipc(buf, use_pyarrow=True)
     assert_frame_equal(df, out)
 
 

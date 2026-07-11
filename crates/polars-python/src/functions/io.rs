@@ -4,12 +4,48 @@ use std::io::BufReader;
 use polars::prelude::ArrowSchema;
 use polars::prelude::CloudScheme;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyBytes, PyDict};
 
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{EitherRustPythonFile, get_either_file};
 use crate::io::cloud_options::OptPyCloudOptions;
+
+#[cfg(feature = "parquet")]
+#[pyfunction]
+pub fn _parquet_encrypt_key_locally<'py>(
+    py: Python<'py>,
+    plaintext_key: Vec<u8>,
+    wrapping_key: Vec<u8>,
+    aad: Vec<u8>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let encrypted = polars_parquet::parquet::encryption::encrypt_key_locally(
+        &plaintext_key,
+        &wrapping_key,
+        &aad,
+    )
+    .map_err(polars_error::PolarsError::from)
+    .map_err(PyPolarsErr::from)?;
+    Ok(PyBytes::new(py, &encrypted))
+}
+
+#[cfg(feature = "parquet")]
+#[pyfunction]
+pub fn _parquet_decrypt_key_locally<'py>(
+    py: Python<'py>,
+    encrypted_key: Vec<u8>,
+    wrapping_key: Vec<u8>,
+    aad: Vec<u8>,
+) -> PyResult<Bound<'py, PyBytes>> {
+    let decrypted = polars_parquet::parquet::encryption::decrypt_key_locally(
+        &encrypted_key,
+        &wrapping_key,
+        &aad,
+    )
+    .map_err(polars_error::PolarsError::from)
+    .map_err(PyPolarsErr::from)?;
+    Ok(PyBytes::new(py, &decrypted))
+}
 
 #[cfg(feature = "ipc")]
 #[pyfunction]

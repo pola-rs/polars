@@ -1,5 +1,6 @@
 mod column;
 mod compression;
+mod indexes;
 pub mod levels;
 mod metadata;
 mod page;
@@ -10,6 +11,7 @@ use std::io::{Cursor, Seek, SeekFrom};
 
 pub use column::*;
 pub use compression::{BasicDecompressor, decompress};
+pub use indexes::{read_column_index, read_offset_index};
 pub use metadata::{
     deserialize_metadata, deserialize_metadata_with_decryption, deserialize_num_rows,
     read_metadata, read_metadata_with_decryption, read_metadata_with_size,

@@ -7,6 +7,8 @@ use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 use polars_parquet_format::thrift::protocol::TCompactOutputStreamProtocol;
 
 use super::serialize::{serialize_column_index, serialize_offset_index};
+use crate::parquet::encryption::ciphers::BlockEncryptor;
+use crate::parquet::encryption::encrypt::write_encrypted_thrift_object;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::write::page::PageWriteSpec;
 
@@ -14,6 +16,18 @@ pub fn write_column_index<W: Write>(writer: &mut W, pages: &[PageWriteSpec]) -> 
     let index = serialize_column_index(pages)?;
     let mut protocol = TCompactOutputProtocol::new(writer);
     Ok(index.write_to_out_protocol(&mut protocol)? as u64)
+}
+
+pub(crate) fn write_encrypted_column_index<W: Write>(
+    writer: &mut W,
+    pages: &[PageWriteSpec],
+    encryptor: &mut dyn BlockEncryptor,
+    aad: &[u8],
+) -> ParquetResult<u64> {
+    let index = serialize_column_index(pages)?;
+    write_encrypted_thrift_object(writer, encryptor, aad, |protocol| {
+        index.write_to_out_protocol(protocol)
+    })
 }
 
 #[cfg(feature = "async")]
@@ -31,6 +45,18 @@ pub fn write_offset_index<W: Write>(writer: &mut W, pages: &[PageWriteSpec]) -> 
     let index = serialize_offset_index(pages)?;
     let mut protocol = TCompactOutputProtocol::new(&mut *writer);
     Ok(index.write_to_out_protocol(&mut protocol)? as u64)
+}
+
+pub(crate) fn write_encrypted_offset_index<W: Write>(
+    writer: &mut W,
+    pages: &[PageWriteSpec],
+    encryptor: &mut dyn BlockEncryptor,
+    aad: &[u8],
+) -> ParquetResult<u64> {
+    let index = serialize_offset_index(pages)?;
+    write_encrypted_thrift_object(writer, encryptor, aad, |protocol| {
+        index.write_to_out_protocol(protocol)
+    })
 }
 
 #[cfg(feature = "async")]

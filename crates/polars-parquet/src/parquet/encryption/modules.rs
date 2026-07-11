@@ -18,6 +18,10 @@ pub(crate) enum ModuleType {
     ColumnIndex = 6,
     #[allow(dead_code)]
     OffsetIndex = 7,
+    #[cfg(feature = "bloom_filter")]
+    BloomFilterHeader = 8,
+    #[cfg(feature = "bloom_filter")]
+    BloomFilterBitset = 9,
 }
 
 pub(crate) fn create_footer_aad(file_aad: &[u8]) -> ParquetResult<Vec<u8>> {
@@ -81,4 +85,28 @@ pub(crate) fn create_module_aad(
     aad.extend_from_slice(&(column_ordinal as i16).to_le_bytes());
     aad.extend_from_slice(&(page_ordinal as i16).to_le_bytes());
     Ok(aad)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn data_page_aad_contains_page_ordinal() {
+        let aad = create_module_aad(b"file", ModuleType::DataPageHeader, 1, 2, Some(3)).unwrap();
+        assert_eq!(aad, b"file\x04\x01\x00\x02\x00\x03\x00");
+    }
+
+    #[test]
+    fn non_page_aad_does_not_contain_page_ordinal() {
+        let dictionary_aad =
+            create_module_aad(b"file", ModuleType::DictionaryPageHeader, 1, 2, None).unwrap();
+        assert_eq!(dictionary_aad, b"file\x05\x01\x00\x02\x00");
+        #[cfg(feature = "bloom_filter")]
+        {
+            let bloom_aad =
+                create_module_aad(b"file", ModuleType::BloomFilterBitset, 1, 2, None).unwrap();
+            assert_eq!(bloom_aad, b"file\x09\x01\x00\x02\x00");
+        }
+    }
 }

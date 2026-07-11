@@ -1,12 +1,31 @@
 use std::sync::Arc;
 
-use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
+use polars_parquet::parquet::encryption::ParquetEncryptionAlgorithm;
+use polars_parquet::parquet::encryption::decrypt::{FileDecryptionProperties, KeyRetriever};
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
+use polars_parquet::parquet::error::{ParquetError, ParquetResult};
 use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyDictMethods};
+use pyo3::types::{PyBytes, PyDict, PyDictMethods};
+
+struct PythonKeyRetriever {
+    retriever: Py<PyAny>,
+}
+
+impl KeyRetriever for PythonKeyRetriever {
+    fn retrieve_key(&self, key_metadata: &[u8]) -> ParquetResult<Vec<u8>> {
+        Python::attach(|py| {
+            self.retriever
+                .call1(py, (PyBytes::new(py, key_metadata),))
+                .and_then(|value| value.extract::<Vec<u8>>(py))
+        })
+        .map_err(|err| {
+            ParquetError::InvalidParameter(format!("Python key retriever failed: {err}"))
+        })
+    }
+}
 
 fn validate_keys(dict: &Bound<'_, PyDict>, allowed: &[&str], parameter_name: &str) -> PyResult<()> {
     let allowed = allowed.iter().copied().collect::<PlHashSet<_>>();
@@ -88,6 +107,7 @@ pub(crate) fn parse_file_encryption_properties(
             "plaintext_footer",
             "aad_prefix",
             "store_aad_prefix",
+            "encryption_algorithm",
         ],
         "encryption_properties",
     )?;
@@ -97,6 +117,19 @@ pub(crate) fn parse_file_encryption_properties(
         "footer_key",
     )?;
     let mut builder = FileEncryptionProperties::builder(footer_key);
+
+    if let Some(algorithm) = dict.get_item("encryption_algorithm")? {
+        let algorithm = match &*algorithm.extract::<PyBackedStr>()? {
+            "AES_GCM_V1" => ParquetEncryptionAlgorithm::AesGcmV1,
+            "AES_GCM_CTR_V1" => ParquetEncryptionAlgorithm::AesGcmCtrV1,
+            algorithm => {
+                return Err(PyValueError::new_err(format!(
+                    "unsupported Parquet encryption algorithm: {algorithm}"
+                )));
+            },
+        };
+        builder = builder.with_algorithm(algorithm);
+    }
 
     if let Some(plaintext_footer) = dict.get_item("plaintext_footer")? {
         builder = builder.with_plaintext_footer(plaintext_footer.extract::<bool>()?);
@@ -153,6 +186,7 @@ pub(crate) fn parse_file_decryption_properties(
         dict,
         &[
             "footer_key",
+            "key_retriever",
             "column_keys",
             "aad_prefix",
             "check_plaintext_footer_integrity",
@@ -160,24 +194,49 @@ pub(crate) fn parse_file_decryption_properties(
         "decryption_properties",
     )?;
 
+    let aad_prefix = extract_optional_bytes(dict, "aad_prefix")?;
+    let check_integrity = dict
+        .get_item("check_plaintext_footer_integrity")?
+        .map(|value| value.extract::<bool>())
+        .transpose()?
+        .unwrap_or(true);
+
+    if let Some(retriever) = dict.get_item("key_retriever")? {
+        if dict.contains("footer_key")? || dict.contains("column_keys")? {
+            return Err(PyValueError::new_err(
+                "`key_retriever` cannot be combined with explicit decryption keys",
+            ));
+        }
+        let mut builder =
+            FileDecryptionProperties::with_key_retriever(Arc::new(PythonKeyRetriever {
+                retriever: retriever.unbind(),
+            }));
+        if let Some(aad_prefix) = aad_prefix {
+            builder = builder.with_aad_prefix(aad_prefix);
+        }
+        if !check_integrity {
+            builder = builder.disable_footer_signature_verification();
+        }
+        return builder
+            .build()
+            .map(Some)
+            .map_err(|err| PyValueError::new_err(err.to_string()));
+    }
+
     let footer_key = extract_key_bytes(
         &required_item(dict, "footer_key", "decryption_properties")?,
         "footer_key",
     )?;
     let mut builder = FileDecryptionProperties::builder(footer_key);
-
     for (column_name, column_key) in extract_column_bytes_map(dict, "column_keys")? {
         builder = builder.with_column_key(&column_name, column_key);
     }
-    if let Some(aad_prefix) = extract_optional_bytes(dict, "aad_prefix")? {
+    if let Some(aad_prefix) = aad_prefix {
         builder = builder.with_aad_prefix(aad_prefix);
     }
-    if let Some(check_integrity) = dict.get_item("check_plaintext_footer_integrity")?
-        && !check_integrity.extract::<bool>()?
-    {
+    if !check_integrity {
         builder = builder.disable_footer_signature_verification();
     }
-
     builder
         .build()
         .map(Some)

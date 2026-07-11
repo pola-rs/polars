@@ -77,7 +77,6 @@ def test_parquet_native_encryption_footer_round_trip(tmp_path: Path) -> None:
 
     df.write_parquet(
         path,
-        statistics=False,
         compression="uncompressed",
         encryption_properties={"footer_key": key, "aad_prefix": aad_prefix},
     )
@@ -118,7 +117,6 @@ def test_parquet_native_encryption_plaintext_footer_column_key(
 
     df.write_parquet(
         path,
-        statistics=False,
         compression="uncompressed",
         encryption_properties={
             "footer_key": footer_key,
@@ -147,6 +145,27 @@ def test_parquet_native_encryption_plaintext_footer_column_key(
     )
     assert_frame_equal(
         pl.scan_parquet(path, decryption_properties=decryption_properties).collect(),
+        df,
+    )
+
+
+@pytest.mark.write_disk
+def test_parquet_native_aes_gcm_ctr_encryption(tmp_path: Path) -> None:
+    path = tmp_path / "encrypted_ctr.parquet"
+    key = b"0123456789abcdefghijklmn"
+    df = pl.DataFrame({"value": [1, 2, 3], "label": ["a", "b", "c"]})
+
+    df.write_parquet(
+        path,
+        compression="uncompressed",
+        encryption_properties={
+            "footer_key": key,
+            "encryption_algorithm": "AES_GCM_CTR_V1",
+        },
+    )
+
+    assert_frame_equal(
+        pl.read_parquet(path, decryption_properties={"footer_key": key}),
         df,
     )
 

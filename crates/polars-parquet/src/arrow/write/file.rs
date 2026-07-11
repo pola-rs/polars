@@ -164,11 +164,12 @@ mod tests {
     use super::*;
     use crate::arrow::read::column_iter_to_arrays;
     use crate::parquet::compression::CompressionOptions;
+    use crate::parquet::encryption::ParquetEncryptionAlgorithm;
     use crate::parquet::encryption::decrypt::FileDecryptionProperties;
     use crate::parquet::encryption::encrypt::FileEncryptionProperties;
     use crate::parquet::read::{
-        BasicDecompressor, PageReader, get_page_iterator, read_metadata_with_size,
-        read_metadata_with_size_and_decryption,
+        BasicDecompressor, PageReader, get_page_iterator, read_column_index,
+        read_metadata_with_size, read_metadata_with_size_and_decryption, read_offset_index,
     };
     use crate::parquet::write::Version;
 
@@ -205,8 +206,15 @@ mod tests {
         file_encryption_properties: Arc<FileEncryptionProperties>,
         encodings: Buffer<Vec<Encoding>>,
     ) -> Vec<u8> {
+        write_encrypted_file_with_options(file_encryption_properties, encodings, write_options())
+    }
+
+    fn write_encrypted_file_with_options(
+        file_encryption_properties: Arc<FileEncryptionProperties>,
+        encodings: Buffer<Vec<Encoding>>,
+        options: WriteOptions,
+    ) -> Vec<u8> {
         let schema = test_schema();
-        let options = write_options();
         let parquet_schema = to_parquet_schema(&schema).unwrap();
         let fields = parquet_schema.fields().to_vec();
         let batch = test_batch(&schema);
@@ -348,6 +356,97 @@ mod tests {
     }
 
     #[test]
+    fn aes_gcm_ctr_encrypted_footer_round_trip() {
+        let key = test_key();
+        let encryption_properties = FileEncryptionProperties::builder(key.clone())
+            .with_algorithm(ParquetEncryptionAlgorithm::AesGcmCtrV1)
+            .build()
+            .unwrap();
+        let bytes = write_encrypted_file(
+            encryption_properties,
+            Buffer::from_vec(vec![vec![Encoding::RleDictionary]]),
+        );
+
+        assert_eq!(
+            read_first_i32_column_from_chunk(&bytes, key),
+            vec![1, 2, 3, 4]
+        );
+    }
+
+    #[test]
+    fn encrypted_file_with_statistics_round_trip() {
+        let key = test_key();
+        let encryption_properties = FileEncryptionProperties::builder(key.clone())
+            .build()
+            .unwrap();
+        let mut options = write_options();
+        options.statistics = StatisticsOptions::default();
+        let bytes = write_encrypted_file_with_options(
+            encryption_properties,
+            Buffer::from_vec(vec![vec![Encoding::Plain]]),
+            options,
+        );
+
+        assert_eq!(read_first_i32_column(&bytes, key.clone()), vec![1, 2, 3, 4]);
+
+        let decryption_properties = FileDecryptionProperties::builder(key).build().unwrap();
+        let metadata = read_metadata_with_size_and_decryption(
+            &mut Cursor::new(&bytes),
+            bytes.len() as u64,
+            Some(decryption_properties),
+        )
+        .unwrap();
+        let column = &metadata.row_groups[0].parquet_columns()[0];
+        let column_index = read_column_index(&mut Cursor::new(&bytes), column)
+            .unwrap()
+            .unwrap();
+        let offset_index = read_offset_index(&mut Cursor::new(&bytes), column)
+            .unwrap()
+            .unwrap();
+        assert_eq!(column_index.null_pages.len(), 1);
+        assert_eq!(offset_index.page_locations.len(), 1);
+    }
+
+    #[test]
+    fn plaintext_footer_hides_statistics_without_key_and_restores_them_with_key() {
+        let key = test_key();
+        let encryption_properties = FileEncryptionProperties::builder(key.clone())
+            .with_plaintext_footer(true)
+            .build()
+            .unwrap();
+        let mut options = write_options();
+        options.statistics = StatisticsOptions::default();
+        let bytes = write_encrypted_file_with_options(
+            encryption_properties,
+            Buffer::from_vec(vec![vec![Encoding::Plain]]),
+            options,
+        );
+
+        let metadata_without_key =
+            read_metadata_with_size(&mut Cursor::new(&bytes), bytes.len() as u64).unwrap();
+        let column_without_key = &metadata_without_key.row_groups[0].parquet_columns()[0];
+        assert!(
+            column_without_key
+                .statistics(&metadata_without_key.footer_buf)
+                .is_none()
+        );
+
+        let decryption_properties = FileDecryptionProperties::builder(key).build().unwrap();
+        let metadata_with_key = read_metadata_with_size_and_decryption(
+            &mut Cursor::new(&bytes),
+            bytes.len() as u64,
+            Some(decryption_properties),
+        )
+        .unwrap();
+        let column_with_key = &metadata_with_key.row_groups[0].parquet_columns()[0];
+        assert!(
+            column_with_key
+                .statistics(&metadata_with_key.footer_buf)
+                .is_some()
+        );
+    }
+
+    #[test]
     fn plaintext_footer_encrypted_columns_round_trip() {
         let key = test_key();
         let encryption_properties = FileEncryptionProperties::builder(key.clone())
@@ -409,5 +508,49 @@ mod tests {
             .downcast_ref::<PrimitiveArray<i32>>()
             .unwrap();
         assert_eq!(array.values().as_slice(), &[1, 2, 3, 4]);
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn encrypted_async_page_stream_round_trip() {
+        use futures::TryStreamExt;
+
+        futures::executor::block_on(async {
+            let key = test_key();
+            let encryption_properties = FileEncryptionProperties::builder(key.clone())
+                .with_algorithm(ParquetEncryptionAlgorithm::AesGcmCtrV1)
+                .build()
+                .unwrap();
+            let bytes = write_encrypted_file(
+                encryption_properties,
+                Buffer::from_vec(vec![vec![Encoding::RleDictionary]]),
+            );
+            let decryption_properties = FileDecryptionProperties::builder(key).build().unwrap();
+            let metadata = read_metadata_with_size_and_decryption(
+                &mut Cursor::new(&bytes),
+                bytes.len() as u64,
+                Some(decryption_properties),
+            )
+            .unwrap();
+            let column = &metadata.row_groups[0].parquet_columns()[0];
+            let mut reader = futures::io::Cursor::new(bytes);
+            let pages =
+                crate::parquet::read::get_page_stream(column, &mut reader, Vec::new(), usize::MAX)
+                    .await
+                    .unwrap();
+            futures::pin_mut!(pages);
+            let pages = pages.try_collect::<Vec<_>>().await.unwrap();
+
+            assert!(
+                pages
+                    .iter()
+                    .any(|page| matches!(page, crate::parquet::page::CompressedPage::Dict(_)))
+            );
+            assert!(
+                pages
+                    .iter()
+                    .any(|page| matches!(page, crate::parquet::page::CompressedPage::Data(_)))
+            );
+        });
     }
 }

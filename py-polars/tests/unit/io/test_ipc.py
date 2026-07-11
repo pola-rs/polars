@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import typing
+import warnings
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, no_type_check
 
@@ -106,14 +107,26 @@ def test_ipc_roundtrip_pandas_parametric(
 ) -> None:
     pd_df = df.to_pandas()
     f = io.BytesIO()
-    pd_df.to_feather(f, compression=compression)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="pyarrow.feather.write_feather is deprecated.*",
+            category=FutureWarning,
+        )
+        pd_df.to_feather(f, compression=compression)
     f.seek(0)
     df_read = pl.read_ipc(f, use_pyarrow=False)
     assert_frame_equal(df, df_read, categorical_as_str=True)
     f = io.BytesIO()
     df.write_ipc(f, compression=compression)
     f.seek(0)
-    pd_df_read = pd.read_feather(f)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="pyarrow.feather.read_(?:feather|table) is deprecated.*",
+            category=FutureWarning,
+        )
+        pd_df_read = pd.read_feather(f)
     assert pd_df.equals(pd_df_read)
 
 
@@ -138,11 +151,23 @@ def test_ipc_roundtrip_pyarrow_parametric(
     df.write_ipc(f, compression=compression)
     f.seek(0)
 
-    table = paf.read_table(f)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="pyarrow.feather.read_table is deprecated.*",
+            category=FutureWarning,
+        )
+        table = paf.read_table(f)
     assert_frame_equal(df, typing.cast("pl.DataFrame", pl.from_arrow(table)))
 
     f = io.BytesIO()
-    paf.write_feather(df.to_arrow(), f, compression=compression)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="pyarrow.feather.write_feather is deprecated.*",
+            category=FutureWarning,
+        )
+        paf.write_feather(df.to_arrow(), f, compression=compression)
     f.seek(0)
     assert_frame_equal(df, pl.read_ipc(f, use_pyarrow=False))
 

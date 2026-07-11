@@ -1,3 +1,4 @@
+from polars.io.parquet import encryption
 from polars.io.parquet.functions import (
     read_parquet,
     read_parquet_metadata,
@@ -10,4 +11,5 @@ __all__ = [
     "read_parquet_metadata",
     "read_parquet_schema",
     "scan_parquet",
+    "encryption",
 ]
