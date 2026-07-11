@@ -34,6 +34,7 @@ rand = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+rmp = { workspace = true, optional = true }
 rmp-serde = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
@@ -62,6 +63,7 @@ serde = [
   "dep:serde",
   "polars-config/serde",
   "serde/derive",
+  "dep:rmp",
   "dep:rmp-serde",
   "dep:bincode",
   "dep:flate2",

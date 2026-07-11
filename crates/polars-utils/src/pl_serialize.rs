@@ -3,7 +3,14 @@
 //! Currently provides two serialization scheme's.
 //! - Self-describing (and thus more forward compatible) activated with `FC: true`
 //! - Compact activated with `FC: false`
+mod vendored_rmp_decode;
+
 use polars_error::{PolarsResult, to_compute_err};
+// The decode (self-describing / `FC: true`) side uses our own vendored, narrowed
+// decoder instead of `rmp_serde`'s -- see `vendored_rmp_decode` module docs for why.
+// The encode side keeps using real `rmp_serde::Serializer` unchanged, so the wire
+// format is untouched.
+use vendored_rmp_decode as rmp_de;
 
 fn config() -> bincode::config::Configuration {
     bincode::config::standard()
@@ -32,7 +39,7 @@ where
     R: std::io::Read,
 {
     if FC {
-        rmp_serde::from_read(reader).map_err(to_compute_err)
+        rmp_de::from_read(reader).map_err(to_compute_err)
     } else {
         bincode::serde::decode_from_std_read(&mut reader, config()).map_err(to_compute_err)
     }
@@ -143,7 +150,7 @@ where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
 {
-    let mut de = rmp_serde::Deserializer::new(reader);
+    let mut de = rmp_de::Deserializer::new(reader);
     de.set_max_depth(usize::MAX);
     let de = serde_stacker::Deserializer::new(&mut de);
     T::deserialize(de).map_err(to_compute_err)

@@ -781,4 +781,57 @@ mod tests {
         let deserialized = DslPlan::deserialize_versioned(&mut reader).unwrap();
         assert_eq!(format!("{lf:?}"), format!("{deserialized:?}"));
     }
+
+    /// Cross-checks polars' vendored, narrowed MessagePack decoder
+    /// (`polars_utils::pl_serialize::vendored_rmp_decode`, used internally by
+    /// `pl_serialize::deserialize_dsl`) against the real upstream `rmp_serde::Deserializer`
+    /// on the same encoded bytes. This is a tripwire: if `rmp-serde` is ever upgraded and
+    /// its wire-level decoding behavior changes in a way our vendored copy doesn't track,
+    /// this test should catch the divergence.
+    #[test]
+    fn test_vendored_rmp_decode_matches_upstream() {
+        let name = || "a".into();
+        let df = Arc::new(
+            DataFrame::new_infer_height(vec![Column::new(name(), Series::new(name(), &[1, 2, 3]))])
+                .unwrap(),
+        );
+        let dfscan = Arc::new(DslPlan::DataFrameScan {
+            df: df.clone(),
+            schema: df.schema().clone(),
+        });
+        let join_options = JoinOptions {
+            allow_parallel: true,
+            force_parallel: false,
+            ..Default::default()
+        };
+        let lf = DslPlan::Join {
+            input_left: dfscan.clone(),
+            input_right: dfscan,
+            left_on: vec![Expr::Column(name())],
+            right_on: vec![Expr::Column(name())],
+            predicates: Default::default(),
+            options: Arc::new(join_options),
+        };
+
+        let serializable = SerializableDslPlan::from(&lf);
+
+        let mut buffer: Vec<u8> = Vec::new();
+        polars_utils::pl_serialize::serialize_dsl(&mut buffer, &serializable).unwrap();
+
+        // New path: polars' vendored decoder, via the public `deserialize_dsl` entry point.
+        let new_result: SerializableDslPlan =
+            polars_utils::pl_serialize::deserialize_dsl(&buffer[..]).unwrap();
+
+        // Old path: real upstream `rmp_serde::Deserializer`, wrapped the same way
+        // `pl_serialize::deserialize_dsl` used to do before the vendored-decoder swap.
+        let mut de = rmp_serde::Deserializer::new(&buffer[..]);
+        de.set_max_depth(usize::MAX);
+        let de = serde_stacker::Deserializer::new(&mut de);
+        let old_result: SerializableDslPlan = serde::Deserialize::deserialize(de).unwrap();
+
+        assert_eq!(format!("{new_result:?}"), format!("{old_result:?}"));
+
+        let reconstructed = DslPlan::try_from(&new_result).unwrap();
+        assert_eq!(format!("{lf:?}"), format!("{reconstructed:?}"));
+    }
 }

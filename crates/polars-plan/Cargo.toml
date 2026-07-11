@@ -59,6 +59,10 @@ hex = { workspace = true }
 sha2 = { workspace = true }
 version_check = { workspace = true }
 
+[dev-dependencies]
+rmp-serde = { workspace = true }
+serde_stacker = { workspace = true }
+
 [features]
 # debugging utility
 debugging = []
