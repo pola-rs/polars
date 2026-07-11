@@ -5,7 +5,6 @@ import typing
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, no_type_check
 
-import pandas as pd
 import pyarrow as pa
 import pyarrow.ipc
 import pytest
