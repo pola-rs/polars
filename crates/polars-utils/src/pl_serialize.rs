@@ -6,10 +6,6 @@
 mod vendored_rmp_decode;
 
 use polars_error::{PolarsResult, to_compute_err};
-// The decode (self-describing / `FC: true`) side uses our own vendored, narrowed
-// decoder instead of `rmp_serde`'s -- see `vendored_rmp_decode` module docs for why.
-// The encode side keeps using real `rmp_serde::Serializer` unchanged, so the wire
-// format is untouched.
 use vendored_rmp_decode as rmp_de;
 
 fn config() -> bincode::config::Configuration {

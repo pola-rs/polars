@@ -21,53 +21,15 @@
 //! OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //! SOFTWARE.
 //!
-//! # Why this exists
+//! `deserialize_identifier` is hand-modified to only accept a MessagePack string
+//! marker, narrower than upstream's `forward_to_deserialize_any!`-based version.
+//! This module also drops the generic `SerializerConfig` parameter and the
+//! zero-copy `ReadRefReader`/`from_slice` path, neither of which Polars uses.
 //!
-//! Upstream `rmp_serde::Deserializer::deserialize_identifier` forwards (via
-//! `forward_to_deserialize_any!`) into the fully generic, `#[inline(always)]`
-//! `deserialize_any` -> `any_inner`/`any_num`, which is a large match over every
-//! MessagePack marker (null/bool/every int width/f32/f64/str/array/map/bin/ext).
-//! Because that's force-inlined, the whole body gets monomorphized separately for
-//! every distinct `serde::de::Visitor` type it's called with, and
-//! `#[derive(Deserialize)]` generates one anonymous `__FieldVisitor` type per
-//! struct/enum. Polars' DSL/`Expr` plan tree has ~2000-3000 such types, so
-//! identifier decoding -- which only ever needs to read a field/variant name --
-//! was getting its entire numeric-coercion machinery duplicated ~3000 times
-//! (confirmed via `cargo bloat`: ~10.6 MiB of pure duplication, 6.5% of the
-//! compiled `.text` section).
-//!
-//! `deserialize_identifier` below is narrowed to only accept a MessagePack string
-//! marker. This is safe because `rmp_serde::Serializer::with_struct_map()` (what
-//! Polars always uses, see `pl_serialize.rs`) *always* writes struct field names
-//! and enum variant names via `serialize_str` -- never as integers -- so a
-//! non-string identifier marker is never actually produced by our own serializer,
-//! and returns the same `Error::TypeMismatch` that upstream's `any_inner` would
-//! already return for that case.
-//!
-//! # Other deliberate deviations from upstream
-//!
-//! Polars never configures the decoder with `.with_human_readable()` /
-//! `.with_binary()`, nor deserializes from a bare zero-copy `&[u8]` source
-//! (`rmp_serde::from_slice`/`from_read_ref`) -- only `Deserializer::new`/
-//! `from_read` over a `std::io::Read` source is used (confirmed via grep over
-//! `crates/`). So, to shrink vendored surface area, this module:
-//! - Drops the generic `C: SerializerConfig` parameter entirely (upstream only
-//!   uses it to fix the constant `is_human_readable = false`, which we hardcode
-//!   directly -- this also sidesteps the fact that the methods backing
-//!   `SerializerConfig` live on a `pub(crate)` `sealed` trait upstream, which
-//!   external crates like this one cannot name).
-//! - Drops `ReadRefReader` / `from_slice` / `from_read_ref` (the zero-copy
-//!   slice-native reader). Note this isn't a behavior change: `ReadReader`'s
-//!   `read_slice` always copies into an internal buffer regardless of the
-//!   underlying reader type, so even today's `&[u8]`-backed deserialization
-//!   never actually borrows zero-copy through this path.
-//!
-//! IMPORTANT: if `rmp-serde`'s pinned version in `Cargo.toml` is ever bumped,
-//! re-diff this file against the new `rmp-serde-<version>/src/decode.rs` to pick
-//! up any upstream correctness fixes. `crates/polars-plan/src/dsl/serializable_plan.rs`
-//! has a permanent cross-check test comparing this decoder's output against real
-//! `rmp_serde::Deserializer` on representative `DslPlan`/`Expr` values, which acts
-//! as a tripwire for behavioral drift.
+//! If `rmp-serde`'s pinned version is ever bumped, re-diff this file against the
+//! new `rmp-serde-<version>/src/decode.rs`.
+//! `crates/polars-plan/src/dsl/serializable_plan.rs` has a cross-check test
+//! comparing this decoder against real `rmp_serde::Deserializer` as a tripwire.
 
 use std::convert::TryInto;
 use std::error;
