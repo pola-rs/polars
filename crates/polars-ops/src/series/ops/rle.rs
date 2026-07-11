@@ -1,8 +1,8 @@
 use std::hash::Hash;
 
 use polars_core::prelude::*;
-use polars_core::series::IsSorted;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::series::{BitRepr, IsSorted};
+use polars_core::with_match_physical_float_polars_type;
 use polars_utils::select::select_unpredictable;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
@@ -32,12 +32,29 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
             rle_lengths_helper_ca(ca, lengths);
             return Ok(());
         },
-        dt if dt.is_numeric() => {
-            with_match_physical_numeric_polars_type!(dt, |$T| {
+        // Floats need their own NaN-canonicalizing `to_total_ord()` path, so they
+        // stay on the per-dtype dispatch. Integers only need Eq+Hash, so
+        // same-width signed/unsigned pairs are canonicalized via the zero-copy
+        // bit-transmute already used by the join dispatch (`BitRepr`), instead
+        // of monomorphizing `rle_lengths_helper_ca` separately per pair.
+        dt if dt.is_float() => {
+            with_match_physical_float_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 rle_lengths_helper_ca(ca, lengths);
                 return Ok(());
             })
+        },
+        dt if dt.is_numeric() => {
+            use BitRepr as B;
+            match s.bit_repr().unwrap() {
+                B::U8(ca) => rle_lengths_helper_ca(&ca, lengths),
+                B::U16(ca) => rle_lengths_helper_ca(&ca, lengths),
+                B::U32(ca) => rle_lengths_helper_ca(&ca, lengths),
+                B::U64(ca) => rle_lengths_helper_ca(&ca, lengths),
+                #[cfg(feature = "dtype-u128")]
+                B::U128(ca) => rle_lengths_helper_ca(&ca, lengths),
+            }
+            return Ok(());
         },
         DataType::String => {
             let ca: &StringChunked = s.as_ref().as_ref().as_ref();
