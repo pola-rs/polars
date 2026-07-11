@@ -4,8 +4,9 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
+use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
-use polars_core::with_match_physical_numeric_polars_type;
+use polars_core::with_match_physical_float_polars_type;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
@@ -32,11 +33,27 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_last_distinct(&s);
         },
-        dt if dt.is_primitive_numeric() => {
-            with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
+        // Floats need their own NaN-canonicalizing `to_total_ord()` path, so they
+        // stay on the per-dtype dispatch. Integers only need Eq+Hash, so
+        // same-width signed/unsigned pairs are canonicalized via the zero-copy
+        // bit-transmute already used by the join dispatch (`BitRepr`), instead
+        // of monomorphizing `is_last_distinct_numeric` separately per pair.
+        dt if dt.is_float() => {
+            with_match_physical_float_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_last_distinct_numeric(ca)
             })
+        },
+        dt if dt.is_primitive_numeric() => {
+            use BitRepr as B;
+            match s.bit_repr().unwrap() {
+                B::U8(ca) => is_last_distinct_numeric(&ca),
+                B::U16(ca) => is_last_distinct_numeric(&ca),
+                B::U32(ca) => is_last_distinct_numeric(&ca),
+                B::U64(ca) => is_last_distinct_numeric(&ca),
+                #[cfg(feature = "dtype-u128")]
+                B::U128(ca) => is_last_distinct_numeric(&ca),
+            }
         },
         #[cfg(feature = "dtype-struct")]
         Struct(_) => return is_last_distinct_struct(&s),
