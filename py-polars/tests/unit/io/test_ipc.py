@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
 import pyarrow as pa
-import pyarrow.feather as paf
 import pyarrow.ipc
 import pytest
 from hypothesis import given
@@ -106,14 +105,19 @@ def test_ipc_roundtrip_pandas_parametric(
 ) -> None:
     pd_df = df.to_pandas()
     f = io.BytesIO()
-    pd_df.to_feather(f, compression=compression)
+    arrow_table = pa.Table.from_pandas(pd_df)
+    compression_opt = None if compression == "uncompressed" else compression
+    with pa.ipc.new_file(
+        f, arrow_table.schema, options=pa.ipc.IpcWriteOptions(compression=compression_opt)
+    ) as writer:
+        writer.write_table(arrow_table)
     f.seek(0)
     df_read = pl.read_ipc(f, use_pyarrow=False)
     assert_frame_equal(df, df_read, categorical_as_str=True)
     f = io.BytesIO()
     df.write_ipc(f, compression=compression)
     f.seek(0)
-    pd_df_read = pd.read_feather(f)
+    pd_df_read = pa.ipc.open_file(f).read_all().to_pandas()
     assert pd_df.equals(pd_df_read)
 
 
@@ -138,11 +142,16 @@ def test_ipc_roundtrip_pyarrow_parametric(
     df.write_ipc(f, compression=compression)
     f.seek(0)
 
-    table = paf.read_table(f)
+    table = pa.ipc.open_file(f).read_all()
     assert_frame_equal(df, typing.cast("pl.DataFrame", pl.from_arrow(table)))
 
     f = io.BytesIO()
-    paf.write_feather(df.to_arrow(), f, compression=compression)
+    arrow_table = df.to_arrow()
+    compression_opt = None if compression == "uncompressed" else compression
+    with pa.ipc.new_file(
+        f, arrow_table.schema, options=pa.ipc.IpcWriteOptions(compression=compression_opt)
+    ) as writer:
+        writer.write_table(arrow_table)
     f.seek(0)
     assert_frame_equal(df, pl.read_ipc(f, use_pyarrow=False))
 
