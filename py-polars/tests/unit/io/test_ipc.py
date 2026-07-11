@@ -107,7 +107,9 @@ def test_ipc_roundtrip_pandas_parametric(
     arrow_table = pa.Table.from_pandas(pd_df)
     compression_opt = None if compression == "uncompressed" else compression
     with pa.ipc.new_file(
-        f, arrow_table.schema, options=pa.ipc.IpcWriteOptions(compression=compression_opt)
+        f,
+        arrow_table.schema,
+        options=pa.ipc.IpcWriteOptions(compression=compression_opt),
     ) as writer:
         writer.write_table(arrow_table)
     f.seek(0)
@@ -148,7 +150,9 @@ def test_ipc_roundtrip_pyarrow_parametric(
     arrow_table = df.to_arrow()
     compression_opt = None if compression == "uncompressed" else compression
     with pa.ipc.new_file(
-        f, arrow_table.schema, options=pa.ipc.IpcWriteOptions(compression=compression_opt)
+        f,
+        arrow_table.schema,
+        options=pa.ipc.IpcWriteOptions(compression=compression_opt),
     ) as writer:
         writer.write_table(arrow_table)
     f.seek(0)
