@@ -33,11 +33,6 @@ pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_last_distinct(&s);
         },
-        // Floats need their own NaN-canonicalizing `to_total_ord()` path, so they
-        // stay on the per-dtype dispatch. Integers only need Eq+Hash, so
-        // same-width signed/unsigned pairs are canonicalized via the zero-copy
-        // bit-transmute already used by the join dispatch (`BitRepr`), instead
-        // of monomorphizing `is_last_distinct_numeric` separately per pair.
         dt if dt.is_float() => {
             with_match_physical_float_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

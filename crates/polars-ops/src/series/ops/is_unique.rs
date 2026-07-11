@@ -94,11 +94,6 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             1 => BooleanChunked::new(s.name().clone(), [!invert]),
             len => BooleanChunked::full(s.name().clone(), invert, len),
         },
-        // Only integers reach here (floats are matched above). Signed/unsigned
-        // integers of the same width are equivalent for Eq+Hash purposes, so
-        // canonicalize via the zero-copy bit-transmute already used by the
-        // join dispatch (`BitRepr`/`Series::bit_repr`) instead of monomorphizing
-        // `is_unique_ca` separately per signed/unsigned pair.
         dt if dt.is_primitive_numeric() => {
             use BitRepr as B;
             match s.bit_repr().unwrap() {

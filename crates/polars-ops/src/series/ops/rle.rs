@@ -32,11 +32,6 @@ pub fn rle_lengths(s: &Column, lengths: &mut Vec<IdxSize>) -> PolarsResult<()> {
             rle_lengths_helper_ca(ca, lengths);
             return Ok(());
         },
-        // Floats need their own NaN-canonicalizing `to_total_ord()` path, so they
-        // stay on the per-dtype dispatch. Integers only need Eq+Hash, so
-        // same-width signed/unsigned pairs are canonicalized via the zero-copy
-        // bit-transmute already used by the join dispatch (`BitRepr`), instead
-        // of monomorphizing `rle_lengths_helper_ca` separately per pair.
         dt if dt.is_float() => {
             with_match_physical_float_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

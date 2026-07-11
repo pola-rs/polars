@@ -43,11 +43,6 @@ pub fn unique_counts(s: &Series) -> PolarsResult<Series> {
     }
 
     match s.dtype().to_physical() {
-        // Floats need their own NaN-canonicalizing `to_total_ord()` path, so they
-        // stay on the per-dtype dispatch. Integers only need Eq+Hash, so
-        // same-width signed/unsigned pairs are canonicalized via the zero-copy
-        // bit-transmute already used by the join dispatch (`BitRepr`), instead
-        // of monomorphizing `unique_counts_helper` separately per pair.
         dt if dt.is_float() => {
             let s_physical = s.to_physical_repr();
             with_match_physical_float_polars_type!(s_physical.dtype(), |$T| {
