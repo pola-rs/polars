@@ -1014,6 +1014,8 @@ def test_series_reflected_arithmetic_with_numpy_operand() -> None:
     assert_series_equal(
         lhs.__rfloordiv__(arr), pl.Series("lhs", [2, 2, 2]), check_dtypes=False
     )
+
+
 @pytest.mark.parametrize(
     ("op", "op_str"),
     [(operator.and_, "&"), (operator.or_, "|"), (operator.xor, "^")],
