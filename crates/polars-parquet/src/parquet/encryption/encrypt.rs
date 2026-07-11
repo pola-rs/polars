@@ -4,7 +4,6 @@
 // regarding copyright ownership. The ASF licenses this file
 // to you under the Apache License, Version 2.0.
 
-use std::collections::{HashMap, HashSet};
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
@@ -15,6 +14,7 @@ use polars_parquet_format::{
     AesGcmV1, ColumnCryptoMetaData, EncryptionAlgorithm, EncryptionWithColumnKey,
     EncryptionWithFooterKey, FileCryptoMetaData, thrift,
 };
+use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet};
 use ring::rand::{SecureRandom, SystemRandom};
 
 use super::ciphers::{BlockEncryptor, NONCE_LEN, RingGcmBlockEncryptor, SIZE_LEN, TAG_LEN};
@@ -46,7 +46,7 @@ impl EncryptionKey {
 pub struct FileEncryptionProperties {
     encrypt_footer: bool,
     footer_key: EncryptionKey,
-    column_keys: HashMap<String, EncryptionKey>,
+    column_keys: PlHashMap<String, EncryptionKey>,
     aad_prefix: Option<Vec<u8>>,
     store_aad_prefix: bool,
 }
@@ -74,7 +74,7 @@ impl Hash for FileEncryptionProperties {
         self.footer_key.hash(state);
 
         let mut column_keys = self.column_keys.iter().collect::<Vec<_>>();
-        column_keys.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+        column_keys.sort_unstable_by_key(|(column_name, _)| *column_name);
         for (column_name, encryption_key) in column_keys {
             column_name.hash(state);
             encryption_key.hash(state);
@@ -118,8 +118,8 @@ impl FileEncryptionProperties {
             .columns()
             .iter()
             .map(|c| c.path_in_schema.join("."))
-            .collect::<HashSet<_>>();
-        let encryption_columns = self.column_keys.keys().cloned().collect::<HashSet<_>>();
+            .collect::<PlHashSet<_>>();
+        let encryption_columns = self.column_keys.keys().cloned().collect::<PlHashSet<_>>();
         if !encryption_columns.is_subset(&column_paths) {
             let mut missing = encryption_columns
                 .difference(&column_paths)
@@ -138,7 +138,7 @@ impl FileEncryptionProperties {
 pub struct EncryptionPropertiesBuilder {
     encrypt_footer: bool,
     footer_key: EncryptionKey,
-    column_keys: HashMap<String, EncryptionKey>,
+    column_keys: PlHashMap<String, EncryptionKey>,
     aad_prefix: Option<Vec<u8>>,
     store_aad_prefix: bool,
 }
@@ -147,7 +147,7 @@ impl EncryptionPropertiesBuilder {
     pub fn new(footer_key: Vec<u8>) -> Self {
         Self {
             footer_key: EncryptionKey::new(footer_key),
-            column_keys: HashMap::new(),
+            column_keys: PlHashMap::new(),
             aad_prefix: None,
             encrypt_footer: true,
             store_aad_prefix: false,

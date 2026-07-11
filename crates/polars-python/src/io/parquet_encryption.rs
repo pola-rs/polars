@@ -1,15 +1,15 @@
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use polars_parquet::parquet::encryption::decrypt::FileDecryptionProperties;
 use polars_parquet::parquet::encryption::encrypt::FileEncryptionProperties;
+use polars_utils::aliases::{InitHashMaps, PlHashMap, PlHashSet};
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyDictMethods};
 
 fn validate_keys(dict: &Bound<'_, PyDict>, allowed: &[&str], parameter_name: &str) -> PyResult<()> {
-    let allowed = allowed.iter().copied().collect::<HashSet<_>>();
+    let allowed = allowed.iter().copied().collect::<PlHashSet<_>>();
     for key in dict.keys() {
         let key = key.extract::<PyBackedStr>()?;
         if !allowed.contains(&*key) {
@@ -46,9 +46,9 @@ fn extract_optional_bytes(dict: &Bound<'_, PyDict>, key: &str) -> PyResult<Optio
 fn extract_column_bytes_map(
     dict: &Bound<'_, PyDict>,
     key: &str,
-) -> PyResult<HashMap<String, Vec<u8>>> {
+) -> PyResult<PlHashMap<String, Vec<u8>>> {
     let Some(value) = dict.get_item(key)? else {
-        return Ok(HashMap::new());
+        return Ok(PlHashMap::new());
     };
 
     let value = value.cast::<PyDict>().map_err(|_| {
@@ -56,7 +56,7 @@ fn extract_column_bytes_map(
             "`{key}` must be a dict mapping column names to bytes"
         ))
     })?;
-    let mut out = HashMap::with_capacity(value.len());
+    let mut out = PlHashMap::with_capacity(value.len());
     for (column_name, key_bytes) in value.iter() {
         let column_name = column_name.extract::<PyBackedStr>()?.to_string();
         let key_bytes = extract_key_bytes(&key_bytes, key)?;

@@ -117,11 +117,17 @@ impl PageReader {
         scratch: Vec<u8>,
         max_page_size: usize,
     ) -> Self {
+        let dictionary_page_offset = reader_meta.dictionary_page_offset.and_then(|offset| {
+            offset
+                .checked_sub(reader_meta.column_start)
+                .and_then(|relative_offset| reader.position().checked_add(relative_offset))
+        });
+
         Self {
             reader,
             total_num_values: reader_meta.num_values,
             compression: reader_meta.compression,
-            dictionary_page_offset: reader_meta.dictionary_page_offset,
+            dictionary_page_offset,
             seen_num_values: 0,
             descriptor: reader_meta.descriptor,
             scratch,

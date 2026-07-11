@@ -129,7 +129,12 @@ def test_parquet_native_encryption_plaintext_footer_column_key(
         },
     )
 
-    with pytest.raises(pl.exceptions.PolarsError, match="decryption properties"):
+    assert_frame_equal(
+        pl.read_parquet(path, columns=["public"]),
+        df.select("public"),
+    )
+
+    with pytest.raises(pl.exceptions.PolarsError):
         pl.read_parquet(path)
 
     decryption_properties = {

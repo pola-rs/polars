@@ -5,7 +5,6 @@
 // to you under the Apache License, Version 2.0.
 
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::fmt::Formatter;
 use std::hash::{Hash, Hasher};
 use std::io::Read;
@@ -14,6 +13,7 @@ use std::sync::Arc;
 use polars_parquet_format::{
     AesGcmV1, ColumnCryptoMetaData, EncryptionAlgorithm, EncryptionWithColumnKey,
 };
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use super::ciphers::{BlockDecryptor, RingGcmBlockDecryptor, SIZE_LEN, TAG_LEN};
 use super::modules::{ModuleType, create_footer_aad, create_module_aad};
@@ -162,7 +162,7 @@ impl CryptoContext {
 #[derive(Clone, PartialEq, Eq)]
 struct ExplicitDecryptionKeys {
     footer_key: Vec<u8>,
-    column_keys: HashMap<String, Vec<u8>>,
+    column_keys: PlHashMap<String, Vec<u8>>,
 }
 
 impl Hash for ExplicitDecryptionKeys {
@@ -170,7 +170,7 @@ impl Hash for ExplicitDecryptionKeys {
         self.footer_key.hash(state);
 
         let mut column_keys = self.column_keys.iter().collect::<Vec<_>>();
-        column_keys.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+        column_keys.sort_unstable_by_key(|(column_name, _)| *column_name);
         for (column_name, key) in column_keys {
             column_name.hash(state);
             key.hash(state);
@@ -285,7 +285,7 @@ impl std::fmt::Debug for FileDecryptionProperties {
 
 pub struct DecryptionPropertiesBuilder {
     footer_key: Vec<u8>,
-    column_keys: HashMap<String, Vec<u8>>,
+    column_keys: PlHashMap<String, Vec<u8>>,
     aad_prefix: Option<Vec<u8>>,
     footer_signature_verification: bool,
 }
@@ -294,7 +294,7 @@ impl DecryptionPropertiesBuilder {
     pub fn new(footer_key: Vec<u8>) -> Self {
         Self {
             footer_key,
-            column_keys: HashMap::new(),
+            column_keys: PlHashMap::new(),
             aad_prefix: None,
             footer_signature_verification: true,
         }

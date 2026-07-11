@@ -167,7 +167,7 @@ mod tests {
     use crate::parquet::encryption::decrypt::FileDecryptionProperties;
     use crate::parquet::encryption::encrypt::FileEncryptionProperties;
     use crate::parquet::read::{
-        BasicDecompressor, get_page_iterator, read_metadata_with_size,
+        BasicDecompressor, PageReader, get_page_iterator, read_metadata_with_size,
         read_metadata_with_size_and_decryption,
     };
     use crate::parquet::write::Version;
@@ -258,6 +258,37 @@ mod tests {
         array.values().as_slice().to_vec()
     }
 
+    fn read_first_i32_column_from_chunk(bytes: &[u8], decryption_key: Vec<u8>) -> Vec<i32> {
+        let decryption_properties = FileDecryptionProperties::builder(decryption_key)
+            .build()
+            .unwrap();
+        let mut metadata_reader = Cursor::new(bytes);
+        let metadata = read_metadata_with_size_and_decryption(
+            &mut metadata_reader,
+            bytes.len() as u64,
+            Some(decryption_properties),
+        )
+        .unwrap();
+
+        let column = &metadata.row_groups[0].parquet_columns()[0];
+        let byte_range = column.byte_range();
+        let chunk =
+            Buffer::from_vec(bytes[byte_range.start as usize..byte_range.end as usize].to_vec());
+        let pages = PageReader::new(Cursor::new(chunk), column, vec![], usize::MAX);
+        let (arrays, _) = column_iter_to_arrays(
+            vec![BasicDecompressor::new(pages, vec![])],
+            vec![&column.descriptor().descriptor.primitive_type],
+            test_schema().get("a").unwrap().clone(),
+            None,
+        )
+        .unwrap();
+        let array = arrays[0]
+            .as_any()
+            .downcast_ref::<PrimitiveArray<i32>>()
+            .unwrap();
+        array.values().as_slice().to_vec()
+    }
+
     #[test]
     fn encrypted_footer_round_trip() {
         let key = test_key();
@@ -273,6 +304,23 @@ mod tests {
         assert_eq!(&bytes[bytes.len() - 4..], b"PARE");
         assert!(read_metadata_with_size(&mut Cursor::new(&bytes), bytes.len() as u64).is_err());
         assert_eq!(read_first_i32_column(&bytes, key), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn encrypted_dictionary_page_round_trip_from_sliced_column_chunk() {
+        let key = test_key();
+        let encryption_properties = FileEncryptionProperties::builder(key.clone())
+            .build()
+            .unwrap();
+        let bytes = write_encrypted_file(
+            encryption_properties,
+            Buffer::from_vec(vec![vec![Encoding::RleDictionary]]),
+        );
+
+        assert_eq!(
+            read_first_i32_column_from_chunk(&bytes, key),
+            vec![1, 2, 3, 4]
+        );
     }
 
     #[test]
@@ -313,7 +361,7 @@ mod tests {
 
         assert_eq!(&bytes[..4], b"PAR1");
         assert_eq!(&bytes[bytes.len() - 4..], b"PAR1");
-        assert!(read_metadata_with_size(&mut Cursor::new(&bytes), bytes.len() as u64).is_err());
+        read_metadata_with_size(&mut Cursor::new(&bytes), bytes.len() as u64).unwrap();
         assert_eq!(read_first_i32_column(&bytes, key), vec![1, 2, 3, 4]);
     }
 

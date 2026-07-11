@@ -157,18 +157,25 @@ fn encrypt_column_chunk_metadata(
         .take()
         .ok_or_else(|| ParquetError::oos("ColumnChunk.meta_data missing"))?;
     let encrypted_metadata = encrypt_column_metadata(
-        metadata,
+        &metadata,
         file_encryptor,
         &column_chunk,
         row_group_index,
         column_index,
     )?;
     column_chunk.encrypted_column_metadata = Some(encrypted_metadata);
+    if !file_encryptor.properties().encrypt_footer() {
+        let mut plaintext_metadata = metadata;
+        plaintext_metadata.statistics = None;
+        plaintext_metadata.encoding_stats = None;
+        plaintext_metadata.size_statistics = None;
+        column_chunk.meta_data = Some(plaintext_metadata);
+    }
     Ok(column_chunk)
 }
 
 fn encrypt_column_metadata(
-    metadata: ColumnMetaData,
+    metadata: &ColumnMetaData,
     file_encryptor: &Arc<FileEncryptor>,
     column_chunk: &ColumnChunk,
     row_group_index: usize,

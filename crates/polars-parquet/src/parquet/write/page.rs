@@ -192,7 +192,7 @@ pub fn write_page<W: Write>(
         }
     };
 
-    if let Some(page_encryptor) = page_encryptor.as_deref_mut() {
+    if let Some(page_encryptor) = page_encryptor {
         page_encryptor.advance_page(&header);
     }
 
