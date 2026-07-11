@@ -150,7 +150,7 @@ def test_select_rename_exclude_sort(order_by: str, df: pl.DataFrame) -> None:
 def test_select_replace(
     replacements: str,
     check_cols: list[str],
-    expected: list[tuple[Any]],
+    expected: list[tuple[Any, ...]],
     df: pl.DataFrame,
 ) -> None:
     for order_by in ("", "ORDER BY ID DESC", "ORDER BY -ID ASC"):
