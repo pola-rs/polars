@@ -180,6 +180,14 @@ debug = "line-tables-only"
 lto = "thin"
 debug = "line-tables-only"
 
+# SQL parser is in the cold path
+# reduce binary size
+[profile.release.package.sqlparser]
+opt-level = "s"
+
+[profile.release.package.polars-sql]
+opt-level = "s"
+
 [profile.nodebug-release]
 inherits = "release"
 debug = false
