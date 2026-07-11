@@ -83,8 +83,8 @@ pub(crate) fn pushdown_maintain_errors() -> bool {
 }
 
 pub fn optimize(
-    logical_plan: DslPlan,
-    mut opt_flags: OptFlags,
+    mut root: Node,
+    opt_flags: OptFlags,
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
@@ -100,15 +100,6 @@ pub fn optimize(
     // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
-
-    // Unset CSE
-    // This can be turned on again during ir-conversion.
-    #[allow(clippy::eq_op)]
-    #[cfg(feature = "cse")]
-    if opt_flags.contains(OptFlags::EAGER) {
-        opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
-    }
-    let mut root = to_alp(logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
 
     #[allow(unused_assignments)]
     let mut comm_subplan_elim = false;
