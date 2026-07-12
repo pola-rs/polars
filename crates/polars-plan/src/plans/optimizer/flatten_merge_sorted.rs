@@ -1,5 +1,5 @@
 use polars_core::error::PolarsResult;
-use polars_core::prelude::PlHashSet;
+use polars_core::prelude::PlIndexSet;
 use polars_utils::aliases::InitHashMaps;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
@@ -9,7 +9,7 @@ use crate::prelude::{AExpr, IR};
 
 pub struct FlattenMergeSortedRule {
     collected_inputs: Vec<Node>,
-    optimized_nodes: PlHashSet<Node>,
+    optimized_nodes: PlIndexSet<Node>,
     traversal_stack: Vec<Node>,
 }
 
@@ -17,7 +17,7 @@ impl FlattenMergeSortedRule {
     pub fn new() -> Self {
         Self {
             collected_inputs: Vec::new(),
-            optimized_nodes: PlHashSet::new(),
+            optimized_nodes: PlIndexSet::new(),
             traversal_stack: Vec::new(),
         }
     }
@@ -49,6 +49,8 @@ impl OptimizationRule for FlattenMergeSortedRule {
             node,
             &key,
             maintain_order,
+            descending,
+            nulls_last,
             lp_arena,
             &mut self.collected_inputs,
             &mut self.traversal_stack,
@@ -72,8 +74,10 @@ impl OptimizationRule for FlattenMergeSortedRule {
 
 fn collect_merge_sorted_inputs(
     root: Node,
-    key: &PlSmallStr,
+    key: &[PlSmallStr],
     maintain_order: bool,
+    descending: bool,
+    nulls_last: bool,
     lp_arena: &Arena<IR>,
     out: &mut Vec<Node>,
     traversal_stack: &mut Vec<Node>,
@@ -88,9 +92,13 @@ fn collect_merge_sorted_inputs(
                 input_right,
                 key: merge_key,
                 maintain_order: merge_maintain_order,
-                descending,
-                nulls_last,
-            } if merge_key == key && *merge_maintain_order == maintain_order => {
+                descending: merge_descending,
+                nulls_last: merge_nulls_last,
+            } if merge_key.as_ref() == key
+                && *merge_maintain_order == maintain_order
+                && *merge_descending == descending
+                && *merge_nulls_last == nulls_last =>
+            {
                 traversal_stack.push(*input_right);
                 traversal_stack.push(*input_left);
             },
@@ -101,12 +109,12 @@ fn collect_merge_sorted_inputs(
 
 fn build_merge_sorted_subtree(
     inputs: &[Node],
-    key: &PlSmallStr,
+    key: &[PlSmallStr],
     maintain_order: bool,
     descending: bool,
     nulls_last: bool,
     lp_arena: &mut Arena<IR>,
-    optimized_nodes: &mut PlHashSet<Node>,
+    optimized_nodes: &mut PlIndexSet<Node>,
 ) -> IR {
     debug_assert!(inputs.len() >= 2);
 
@@ -132,7 +140,7 @@ fn build_merge_sorted_subtree(
     IR::MergeSorted {
         input_left,
         input_right,
-        key: key.clone(),
+        key: key.into(),
         maintain_order,
         descending,
         nulls_last,
@@ -141,12 +149,12 @@ fn build_merge_sorted_subtree(
 
 fn build_merge_sorted_subtree_node(
     inputs: &[Node],
-    key: &PlSmallStr,
+    key: &[PlSmallStr],
     maintain_order: bool,
     descending: bool,
     nulls_last: bool,
     lp_arena: &mut Arena<IR>,
-    optimized_nodes: &mut PlHashSet<Node>,
+    optimized_nodes: &mut PlIndexSet<Node>,
 ) -> Node {
     match inputs {
         [node] => *node,

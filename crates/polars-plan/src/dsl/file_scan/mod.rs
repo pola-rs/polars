@@ -112,9 +112,16 @@ pub enum FileScanIR {
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
-        // `dsl-schema` only: `FileMetadata` has no `JsonSchema` impl.
+        /// Pre-decoded first-file metadata. Consumed by the streaming
+        /// `ParquetReaderBuilder` as its initial hint.
         #[cfg_attr(feature = "dsl-schema", serde(skip))]
-        metadata: Option<FileMetadataRef>,
+        first_metadata: Option<FileMetadataRef>,
+        /// Per-source metadata for the distributed scheduler. `Some(s)`
+        /// only in `Full` resolve mode, with `s[i]` for `sources[i]`.
+        /// `s[0] == first_metadata` so callers iterate uniformly
+        /// without special-casing the first source.
+        #[cfg_attr(feature = "dsl-schema", serde(skip))]
+        metadata_per_source: Option<Arc<[FileMetadataRef]>>,
     },
 
     #[cfg(feature = "ipc")]
@@ -176,6 +183,65 @@ impl FileScanIR {
             _ => false,
         }
     }
+
+    /// Re-index pre-decoded per-source state after a source-list filter.
+    ///
+    /// `surviving_indices` yields ascending indices into the pre-filter list.
+    pub fn gather_after_filter<I>(&mut self, first_file_dropped: bool, surviving_indices: I)
+    where
+        I: Iterator<Item = usize>,
+    {
+        // Parquet: clear `first_metadata` if file 0 dropped; gather
+        // `metadata_per_source` by surviving indices so slice[i] still
+        // matches sources[i]. We re-index instead of clearing because
+        // the surviving footers are already decoded; tossing them would
+        // force the scheduler to refetch and re-decode the same bytes.
+        // Ipc / PythonDataset: file-0-keyed state cleared when file 0 dropped.
+        match self {
+            #[cfg(feature = "parquet")]
+            Self::Parquet {
+                options: _,
+                first_metadata,
+                metadata_per_source,
+            } => {
+                if first_file_dropped {
+                    *first_metadata = None;
+                }
+                if let Some(slice) = metadata_per_source {
+                    *slice = surviving_indices.map(|i| slice[i].clone()).collect();
+                }
+            },
+            #[cfg(feature = "ipc")]
+            Self::Ipc {
+                options: _,
+                metadata,
+            } => {
+                if first_file_dropped {
+                    *metadata = None;
+                }
+            },
+            #[cfg(feature = "csv")]
+            Self::Csv { options: _ } => {},
+            #[cfg(feature = "json")]
+            Self::NDJson { options: _ } => {},
+            #[cfg(feature = "python")]
+            Self::PythonDataset {
+                dataset_object: _,
+                cached_ir,
+            } => {
+                if first_file_dropped {
+                    *cached_ir.lock().unwrap() = None;
+                }
+            },
+            #[cfg(feature = "scan_lines")]
+            Self::Lines { name: _ } => {},
+            Self::ExpandedPaths { name: _ } => {},
+            Self::Anonymous {
+                options: _,
+                function: _,
+            } => {},
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
@@ -205,11 +271,20 @@ pub struct CastColumnsPolicy {
     /// Allow downcasting from big floats to smaller floats
     pub float_downcast: bool,
 
-    /// Allow datetime[ns] to be casted to any lower precision. Important for
-    /// being able to read datasets written by spark.
+    /// Allow datetime[ns] to be cast to any lower precision.
+    /// (Important for being able to read datasets written by Spark).
     pub datetime_nanoseconds_downcast: bool,
-    /// Allow datetime[us] to datetime[ms]
+
+    /// Allow datetime[us] to be cast to datetime[ms]
     pub datetime_microseconds_downcast: bool,
+
+    /// Allow datetime[ms] to be cast to datetime[us] or datetime[ns].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub datetime_milliseconds_upcast: bool,
+
+    /// Allow datetime[us] to be cast to datetime[ns].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub datetime_microseconds_upcast: bool,
 
     /// Allow casting to change time units.
     pub datetime_convert_timezone: bool,
@@ -233,6 +308,8 @@ impl CastColumnsPolicy {
         float_downcast: false,
         datetime_nanoseconds_downcast: false,
         datetime_microseconds_downcast: false,
+        datetime_milliseconds_upcast: false,
+        datetime_microseconds_upcast: false,
         datetime_convert_timezone: false,
         null_upcast: true,
         categorical_to_string: false,
@@ -415,7 +492,8 @@ mod _file_scan_eq_hash {
         #[cfg(feature = "parquet")]
         Parquet {
             options: &'a polars_io::prelude::ParquetOptions,
-            metadata: Option<usize>,
+            first_metadata: Option<usize>,
+            metadata_per_source: Option<usize>,
         },
 
         #[cfg(feature = "ipc")]
@@ -459,9 +537,14 @@ mod _file_scan_eq_hash {
                 FileScanIR::NDJson { options } => FileScanEqHashWrap::NDJson { options },
 
                 #[cfg(feature = "parquet")]
-                FileScanIR::Parquet { options, metadata } => FileScanEqHashWrap::Parquet {
+                FileScanIR::Parquet {
                     options,
-                    metadata: metadata.as_ref().map(arc_as_ptr),
+                    first_metadata,
+                    metadata_per_source,
+                } => FileScanEqHashWrap::Parquet {
+                    options,
+                    first_metadata: first_metadata.as_ref().map(arc_as_ptr),
+                    metadata_per_source: metadata_per_source.as_ref().map(arc_as_ptr),
                 },
 
                 #[cfg(feature = "ipc")]
@@ -541,7 +624,7 @@ impl CastColumnsPolicy {
                 return mismatch_err("");
             };
 
-            let incoming_fields_schema = PlHashMap::from_iter(
+            let incoming_fields_schema = PlIndexMap::from_iter(
                 incoming_fields
                     .iter()
                     .enumerate()
@@ -607,7 +690,7 @@ impl CastColumnsPolicy {
                                 "encountered extra struct field: {}, \
                                 hint: specify this field in the schema, or pass \
                                 cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
-                                &fld.name,
+                                fld.name,
                             ));
                         },
                     }
@@ -698,7 +781,6 @@ impl CastColumnsPolicy {
                         )
                     }
                 },
-
                 (DataType::Float16, DataType::Float32)
                 | (DataType::Float16, DataType::Float64)
                 | (DataType::Float32, DataType::Float64) => {
@@ -751,19 +833,35 @@ impl CastColumnsPolicy {
                             )
                         }
                     },
-
                     (TimeUnit::Microseconds, TimeUnit::Milliseconds) => {
                         if self.datetime_microseconds_downcast {
                             Ok(true)
                         } else {
-                            // TODO
                             mismatch_err(
-                                "unimplemented: 'microsecond-downcast' in scan cast options",
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-downcast')",
                             )
                         }
                     },
-
-                    _ => mismatch_err(""),
+                    (TimeUnit::Microseconds, TimeUnit::Nanoseconds) => {
+                        if self.datetime_microseconds_upcast {
+                            Ok(true)
+                        } else {
+                            mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='microsecond-upcast')",
+                            )
+                        }
+                    },
+                    (TimeUnit::Milliseconds, TimeUnit::Microseconds | TimeUnit::Nanoseconds) => {
+                        if self.datetime_milliseconds_upcast {
+                            Ok(true)
+                        } else {
+                            mismatch_err(
+                                "hint: pass cast_options=pl.ScanCastOptions(datetime_cast='millisecond-upcast')",
+                            )
+                        }
+                    },
+                    // All distinct-unit pairs are covered above.
+                    _ => unreachable!(),
                 };
             }
 

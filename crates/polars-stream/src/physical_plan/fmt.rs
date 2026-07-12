@@ -291,7 +291,7 @@ fn visualize_plan_rec(
             let mut label = "select".to_string();
             let mut f = EscapeLabel(&mut label);
             if columns.iter().all(|(out, col)| out == col) {
-                write!(f, "\n{}", &columns.values().join(", ")).unwrap();
+                write!(f, "\n{}", columns.values().join(", ")).unwrap();
             } else {
                 for (out, col) in columns {
                     if out == col {
@@ -491,6 +491,7 @@ fn visualize_plan_rec(
             if *is_peak_max { "peak_max" } else { "peak_min" }.to_owned(),
             &[*input][..],
         ),
+        PhysNodeKind::IsSorted { input, .. } => ("is_sorted".to_owned(), &[*input][..]),
         PhysNodeKind::OrderedUnion { inputs } => ("ordered-union".to_string(), inputs.as_slice()),
         PhysNodeKind::UnorderedUnion { inputs } => {
             ("unordered-union".to_string(), inputs.as_slice())

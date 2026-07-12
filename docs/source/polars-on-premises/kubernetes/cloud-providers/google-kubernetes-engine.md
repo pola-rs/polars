@@ -6,10 +6,10 @@
 
 ## Data access using Workload Identity
 
-Through GKE Workload Identity, you can securely access private Google Cloud Storage buckets without
-needing to manage service account keys or credentials. In most scencarios, it comes down to enabling
-Workload Identity Federation, creating a Kubernetes service account, and creating an IAM policy
-binding.
+Through GKE Workload Identity, you can securely access private Google Cloud Storage (GCS) buckets
+without needing to manage service account keys or credentials. In most scenarios, it comes down to
+enabling Workload Identity Federation, creating a Kubernetes service account, and creating an IAM
+policy binding.
 [See the guide in the official GKE documentation](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/workload-identity).
 
 ```bash
@@ -30,7 +30,7 @@ storage_options = {
 }
 q = (
     pl.scan_parquet(path, storage_options=storage_options)
-# ..
+# ...
 )
 ```
 
@@ -48,20 +48,17 @@ anonymousResults:
       value: "YOUR_PROJECT_NAME"
 ```
 
-## Reducing egress costs
+## Accessing GCS from private nodes
 
-!!! warning "Egress charges"
-
-    When Polars workers access Google Cloud Storage (GCS) over the public internet, Google charges
-    data transfer (egress) fees that can grow significantly with large or frequent queries.
-
-Enabling **Private Google Access** on your GKE node subnet allows nodes to reach Google APIs and
-services using GCP-internal IP addresses only, without routing through the public internet. No
-changes are required to your Polars deployment. Once Private Google Access is enabled on the subnet,
-traffic is routed privately and automatically.
+In clusters where nodes have no external IP addresses, GCS is unreachable without Cloud NAT; if the
+latter is deployed, GCS traffic is billed according to the volume of data processed. Enabling
+**Private Google Access** (PGA) on your GKE node subnet gives internally-addressed nodes a direct
+path to Google APIs (including GCS) and requires no changes to your Polars deployment. In case both
+Cloud NAT and PGA are deployed the latter takes precedence for Google APIs and no costs are
+incurred.
 
 Note that the GCS bucket must be in the same region as the GKE cluster (cross-region traffic incurs
 charges regardless of whether Private Google Access is enabled).
 
-See the related [guide](https://cloud.google.com/vpc/docs/configure-private-google-access) in the
-official GCP documentation.
+See the related [guide](https://docs.cloud.google.com/vpc/docs/configure-private-google-access) in
+the official GCP documentation.

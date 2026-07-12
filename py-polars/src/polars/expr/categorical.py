@@ -2,11 +2,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.unstable import unstable
 from polars._utils.various import qualified_type_name
 from polars._utils.wrap import wrap_expr
+from polars.datatypes import parse_into_datatype_expr
 
 if TYPE_CHECKING:
+    import polars._reexport as pl
     from polars import Expr
+    from polars._typing import (
+        PolarsDataType,
+    )
 
 
 class ExprCatNameSpace:
@@ -304,3 +310,37 @@ class ExprCatNameSpace:
         └─────────────┴───────┘
         """
         return wrap_expr(self._pyexpr.cat_slice(offset, length))
+
+    @unstable()
+    def to(
+        self, dtype: PolarsDataType | pl.DataTypeExpr, *, strict: bool = True
+    ) -> Expr:
+        """
+        Convert to a categorical or enum `dtype`.
+
+        The input must be of the physical type of the categorical or enum dtype.
+
+        Parameters
+        ----------
+        dtype
+            The target categorical or enum dtype.
+        strict
+            Whether to panic when encountering an illegal category.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+        """
+        py_dtype = parse_into_datatype_expr(dtype)._pydatatype_expr
+        return wrap_expr(self._pyexpr.cat_to(py_dtype, strict))
+
+    @unstable()
+    def physical(self) -> Expr:
+        """
+        Get the physical values of a categorical or enum data type.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+        """
+        return wrap_expr(self._pyexpr.cat_physical())

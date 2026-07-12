@@ -150,7 +150,7 @@ pub(crate) enum SerializableDslPlanNode {
     MergeSorted {
         input_left: DslPlanKey,
         input_right: DslPlanKey,
-        key: PlSmallStr,
+        key: Arc<[PlSmallStr]>,
         maintain_order: bool,
         descending: bool,
         nulls_last: bool,
@@ -392,6 +392,7 @@ fn convert_dsl_plan_to_serializable_plan(
             dsl,
             version: _,
             node: _,
+            opt_flags: _,
         } => convert_dsl_plan_to_serializable_plan(dsl.as_ref(), arenas),
     }
 }

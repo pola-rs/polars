@@ -172,7 +172,7 @@ pub(super) fn process_binary(
                     coerce_comparison_literal(
                         node_right,
                         &type_right,
-                        op.swap_operands(),
+                        op.swap_operands().unwrap(),
                         s,
                         expr_arena,
                     )
@@ -181,7 +181,7 @@ pub(super) fn process_binary(
                             CmpLiteralRhsRewrite::NewAExpr {
                                 aexpr: AExpr::BinaryExpr {
                                     left: node_right,
-                                    op: op.swap_operands(),
+                                    op: op.swap_operands().unwrap(),
                                     right: expr_arena
                                         .add(AExpr::Literal(LiteralValue::Scalar(new_lit))),
                                 },
@@ -267,7 +267,20 @@ pub(super) fn process_binary(
             (Duration(_), Duration(_)) => return Ok(None),
             (Duration(_), r) if r.is_primitive_numeric() => return Ok(None),
             (String, a) | (a, String) if a.is_primitive_numeric() => {
-                polars_bail!(InvalidOperation: "arithmetic on string and numeric not allowed, try an explicit cast first")
+                let fmt_side = |node: Node, ae: &AExpr| -> std::string::String {
+                    if let AExpr::Column(name) = ae {
+                        format!(" column '{name}'")
+                    } else {
+                        format!(" expression `{}`", node_to_expr(node, expr_arena))
+                    }
+                };
+                let lhs = fmt_side(node_left, left);
+                let rhs = fmt_side(node_right, right);
+                polars_bail!(
+                    InvalidOperation:
+                    "arithmetic on dtypes {type_left} and {type_right} is not allowed \
+                    (lhs:{lhs}, rhs:{rhs}); try an explicit cast first",
+                )
             },
             (Datetime(_, _), _)
             | (_, Datetime(_, _))
@@ -303,7 +316,7 @@ pub(super) fn process_binary(
 
     // TODO! raise here?
     // We should at least never cast to Unknown.
-    if matches!(st, DataType::Unknown(UnknownKind::Any)) {
+    if matches!(st, DataType::Unknown(_)) {
         return Ok(None);
     }
 

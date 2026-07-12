@@ -251,7 +251,7 @@ impl SlicePushDown {
         expr_arena: &mut Arena<AExpr>,
         common_col_limit: &mut Option<CommonSlice>,
         col_hit_count: &mut Option<usize>,
-        all_slice_ae_nodes_with_direct_col_input: &mut PlHashSet<Node>,
+        all_slice_ae_nodes_with_direct_col_input: &mut PlIndexSet<Node>,
         maintain_errors: bool,
     ) {
         let mut visitor = FnVisitors::new(
@@ -290,7 +290,7 @@ fn aexpr_slice_pushdown_top(
     expr_arena: &mut Arena<AExpr>,
     common_col_limit: &mut Option<CommonSlice>,
     col_hit_count: &mut Option<usize>,
-    all_slice_ae_nodes_with_direct_col_input: &mut PlHashSet<Node>,
+    all_slice_ae_nodes_with_direct_col_input: &mut PlIndexSet<Node>,
     maintain_errors: bool,
 ) -> State {
     use ExprProjectionHeight as H;
@@ -354,7 +354,7 @@ fn aexpr_slice_pushdown_top(
     )
     .unwrap();
 
-    if let AExpr::Column(_) = ae {
+    if let AExpr::Column(_) | AExpr::Len = ae {
         *col_hit_count = col_hit_count.map(|x| x + 1);
     }
 

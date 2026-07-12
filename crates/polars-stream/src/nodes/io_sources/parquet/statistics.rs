@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use arrow::array::{MutablePrimitiveArray, PrimitiveArray};
+use arrow::array::{Array, MutablePrimitiveArray, PrimitiveArray, StructArray};
 use arrow::bitmap::Bitmap;
 use arrow::pushable::Pushable;
 use polars_async::executor::{self, TaskPriority};
@@ -10,6 +10,7 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::FileMetadata;
 use polars_parquet::read::RowGroupMetadata;
 use polars_parquet::read::statistics::{ArrowColumnStatisticsArrays, deserialize_all};
+use polars_plan::plans::predicates::null_count_dtype;
 use polars_utils::format_pl_smallstr;
 
 use crate::nodes::io_sources::parquet::projection::ArrowFieldProjection;
@@ -25,7 +26,7 @@ impl StatisticsColumns {
         Self {
             min: Column::full_null(PlSmallStr::EMPTY, height, dtype),
             max: Column::full_null(PlSmallStr::EMPTY, height, dtype),
-            null_count: Column::full_null(PlSmallStr::EMPTY, height, &IDX_DTYPE),
+            null_count: Column::full_null(PlSmallStr::EMPTY, height, &null_count_dtype(dtype)),
         }
     }
 
@@ -170,6 +171,147 @@ pub(super) async fn calculate_row_group_pred_pushdown_skip_mask(
     Ok(Some(skip_row_group_mask))
 }
 
+/// Assembled `min` / `max` / `null_count` statistics arrays for a (possibly nested) struct field.
+struct StructStatisticsArrays {
+    min: Box<dyn Array>,
+    max: Box<dyn Array>,
+    null_count: Box<dyn Array>,
+}
+
+/// Recursively assemble per-field `min` / `max` / `null_count` statistics arrays for a
+/// (possibly nested) struct field, consuming one parquet leaf column per scalar leaf. Returns
+/// `None` (signalling the caller to fall back to null statistics) for an empty struct, an
+/// unsupported leaf type (e.g. a nested list), or if the leaves run out before the fields do.
+fn build_struct_statistics_arrays(
+    field: &ArrowField,
+    row_groups: &[RowGroupMetadata],
+    leaf_idxs: &[usize],
+    cursor: &mut usize,
+    footer_buf: &[u8],
+) -> PolarsResult<Option<StructStatisticsArrays>> {
+    let height = row_groups.len();
+    match field.dtype() {
+        ArrowDataType::Struct(children) => {
+            // An empty struct has no leaf statistics to reason about, and `StructArray::new`
+            // panics on a struct dtype with no children, so bail to null statistics.
+            if children.is_empty() {
+                return Ok(None);
+            }
+
+            let mut mins = Vec::with_capacity(children.len());
+            let mut maxs = Vec::with_capacity(children.len());
+            let mut ncs = Vec::with_capacity(children.len());
+
+            // Pairs each arrow struct field with the next parquet leaf by position. Both derive
+            // from the same parquet schema, so their leaf orders match; the caller's `cursor`
+            // length check catches a leaf-count mismatch.
+            for child in children {
+                let Some(child) = build_struct_statistics_arrays(
+                    child, row_groups, leaf_idxs, cursor, footer_buf,
+                )?
+                else {
+                    return Ok(None);
+                };
+                mins.push(child.min);
+                maxs.push(child.max);
+                ncs.push(child.null_count);
+            }
+
+            let min = StructArray::new(field.dtype().clone(), height, mins, None).to_boxed();
+            let max = StructArray::new(field.dtype().clone(), height, maxs, None).to_boxed();
+
+            // The null-count struct mirrors the field's shape with each leaf replaced by the
+            // index type; read that shape straight off the assembled per-field arrays.
+            let nc_fields: Vec<ArrowField> = children
+                .iter()
+                .zip(ncs.iter())
+                .map(|(child, nc)| ArrowField::new(child.name.clone(), nc.dtype().clone(), true))
+                .collect();
+            let null_count =
+                StructArray::new(ArrowDataType::Struct(nc_fields), height, ncs, None).to_boxed();
+
+            Ok(Some(StructStatisticsArrays {
+                min,
+                max,
+                null_count,
+            }))
+        },
+        _ => {
+            // Scalar leaf: consume the next parquet leaf column.
+            if *cursor >= leaf_idxs.len() {
+                return Ok(None);
+            }
+            let idx = leaf_idxs[*cursor];
+            *cursor += 1;
+
+            match deserialize_all(field, row_groups, idx, footer_buf)? {
+                Some(statistics) => Ok(Some(StructStatisticsArrays {
+                    min: statistics.min_value,
+                    max: statistics.max_value,
+                    null_count: statistics.null_count.to_boxed(),
+                })),
+                // Unsupported leaf type (e.g. a list nested inside the struct).
+                None => Ok(None),
+            }
+        },
+    }
+}
+
+fn load_struct_column_statistics(
+    arrow_field: &ArrowField,
+    row_groups: &[RowGroupMetadata],
+    leaf_idxs: &[usize],
+    footer_buf: &[u8],
+) -> PolarsResult<Option<StatisticsColumns>> {
+    let mut cursor = 0;
+    let Some(StructStatisticsArrays {
+        min,
+        max,
+        null_count,
+    }) = build_struct_statistics_arrays(
+        arrow_field,
+        row_groups,
+        leaf_idxs,
+        &mut cursor,
+        footer_buf,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    // Only trust the assembled stats if every parquet leaf mapped to a struct field; a
+    // mismatch means the schema and parquet layout disagree and the stats could be misaligned.
+    if cursor != leaf_idxs.len() {
+        return Ok(None);
+    }
+
+    let min = unsafe {
+        Series::_try_from_arrow_unchecked_with_md(
+            PlSmallStr::EMPTY,
+            vec![min],
+            arrow_field.dtype(),
+            arrow_field.metadata.as_deref(),
+        )
+    }?
+    .into_column();
+    let max = unsafe {
+        Series::_try_from_arrow_unchecked_with_md(
+            PlSmallStr::EMPTY,
+            vec![max],
+            arrow_field.dtype(),
+            arrow_field.metadata.as_deref(),
+        )
+    }?
+    .into_column();
+    let null_count = Series::from_arrow(PlSmallStr::EMPTY, null_count)?.into_column();
+
+    Ok(Some(StatisticsColumns {
+        min,
+        max,
+        null_count,
+    }))
+}
+
 fn load_parquet_column_statistics(
     row_groups: &[RowGroupMetadata],
     projection: &ArrowFieldProjection,
@@ -189,10 +331,21 @@ fn load_parquet_column_statistics(
         return null_statistics();
     };
 
-    // 0 is possible for possible for empty structs.
-    //
-    // 2+ is for structs. We don't support reading nested statistics for now. It does not
-    // really make any sense at the moment with how we structure statistics.
+    // Structs span multiple parquet leaf columns; assemble per-field statistics so the
+    // skip-batch predicate can prune on an individual struct field. Falls back to (struct-
+    // shaped) null statistics if any leaf is unsupported.
+    if matches!(arrow_field.dtype(), ArrowDataType::Struct(_)) {
+        let Some(statistics) =
+            load_struct_column_statistics(arrow_field, row_groups, idxs, footer_buf)?
+        else {
+            return null_statistics();
+        };
+        return Ok(statistics);
+    }
+
+    // Structs are handled above, so only non-struct columns reach here. A scalar occupies
+    // exactly one leaf and is read below; multi-leaf nested types (lists, maps) don't have
+    // statistics we read. The empty case is defensive: a present root always has >= 1 leaf.
     if idxs.is_empty() || idxs.len() > 1 {
         return null_statistics();
     }

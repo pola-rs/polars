@@ -100,7 +100,7 @@ def test_unnest_projection_pushdown() -> None:
 def test_hconcat_projection_pushdown() -> None:
     lf1 = pl.LazyFrame({"a": [0, 1, 2], "b": [3, 4, 5]})
     lf2 = pl.LazyFrame({"c": [6, 7, 8], "d": [9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal").select(["a", "d"])
+    query = pl.concat([lf1, lf2], how="horizontal", strict=True).select(["a", "d"])
 
     explanation = query.explain()
     assert explanation.count("1/2 COLUMNS") == 2
@@ -115,7 +115,7 @@ def test_hconcat_projection_pushdown_length_maintained() -> None:
     # the length of the result, even though no columns are used.
     lf1 = pl.LazyFrame({"a": [0, 1], "b": [2, 3]})
     lf2 = pl.LazyFrame({"c": [4, 5, 6, 7], "d": [8, 9, 10, 11]})
-    query = pl.concat([lf1, lf2], how="horizontal").select(["a"])
+    query = pl.concat([lf1, lf2], how="horizontal_extend").select(["a"])
 
     explanation = query.explain()
     assert "1/2 COLUMNS" in explanation
@@ -140,11 +140,12 @@ def test_unnest_columns_available() -> None:
         }
     ).lazy()
 
-    q = df.with_columns(
-        pl.col("genres")
-        .str.split("|")
-        .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
-    ).unnest("genres")
+    with pytest.warns(DeprecationWarning, match="to_struct"):
+        q = df.with_columns(
+            pl.col("genres")
+            .str.split("|")
+            .list.to_struct(upper_bound=4, fields=lambda i: f"genre{i + 1}")
+        ).unnest("genres")
 
     out = q.collect()
     assert out.to_dict(as_series=False) == {
@@ -836,13 +837,13 @@ def test_projection_pushdown_select_len() -> None:
     assert q.collect().item() == 1
 
 
-def test_projection_pushdown_nonstrict_hconcat_select_len() -> None:
+def test_projection_pushdown_horizontal_extend_select_len() -> None:
     q = pl.concat(
         [
             pl.LazyFrame({"a": [0, 1, 2]}),
             pl.LazyFrame({"b": [0, 1, 2, 3, 4]}),
         ],
-        how="horizontal",
+        how="horizontal_extend",
     ).select(pl.len())
     plan = q.explain()
 
@@ -927,3 +928,16 @@ def test_projection_pushdown_fastcount_27534(
 
     assert_frame_equal(lf.select(pl.len()).collect(), df.select(pl.len()))
     assert_frame_equal(lf.collect(), df)
+
+
+def test_projection_pushdown_select_non_column_height_27807() -> None:
+    q = (
+        pl.LazyFrame()
+        .select(
+            x=pl.Series([1, 2, 3]),
+            y=pl.lit(10, dtype=pl.Int64),
+        )
+        .select("y")
+    )
+
+    assert_frame_equal(q.collect(), pl.Series("y", [10, 10, 10]).to_frame())

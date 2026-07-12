@@ -48,8 +48,9 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     # Initialize polars on the rust side. This function is highly
     # unsafe and should only be called once.
     from polars._plr import __register_startup_deps
+    from polars._warnings import _polars_warn
 
-    __register_startup_deps()
+    __register_startup_deps(_polars_warn)
 
 from typing import TYPE_CHECKING, Any
 
@@ -172,6 +173,7 @@ from polars.functions import (
     len,
     linear_space,
     linear_spaces,
+    list,
     lit,
     map_batches,
     map_groups,
@@ -450,6 +452,7 @@ __all__ = [
     "linear_space",
     "linear_spaces",
     "lit",
+    "list",
     "map_batches",
     "map_groups",
     "mean",

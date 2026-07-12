@@ -8,6 +8,8 @@ mod rank;
 mod sum;
 
 mod arg_min_max;
+mod min_by_max_by;
+pub use min_by_max_by::*;
 pub(super) mod window;
 use std::hash::Hash;
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
@@ -68,9 +70,15 @@ pub enum RollingFnParams {
 }
 
 fn det_offsets(i: Idx, window_size: WindowSize, _len: Len) -> (usize, usize) {
+    if window_size == 0 {
+        return (i, i);
+    }
     (i.saturating_sub(window_size - 1), i + 1)
 }
 fn det_offsets_center(i: Idx, window_size: WindowSize, len: Len) -> (usize, usize) {
+    if window_size == 0 {
+        return (i, i);
+    }
     let right_window = window_size.div_ceil(2);
     (
         i.saturating_sub(window_size - right_window),

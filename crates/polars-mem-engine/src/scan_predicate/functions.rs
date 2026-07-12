@@ -14,11 +14,13 @@ use polars_plan::dsl::default_values::{
 };
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
-    FileScanIR, Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
+    Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
 };
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
+use polars_plan::plans::predicates::{
+    aexpr_to_column_predicates, aexpr_to_skip_batch_predicate, null_count_dtype,
+};
 use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
 use polars_utils::arena::{Arena, Node};
@@ -136,7 +138,7 @@ pub fn create_scan_predicate(
 
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_min"), dtype.clone());
                 skip_batch_schema.insert(format_pl_smallstr!("{col}_max"), dtype.clone());
-                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), IDX_DTYPE);
+                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), null_count_dtype(dtype));
             }
 
             skip_batch_predicate = Some(create_physical_expr(
@@ -483,49 +485,16 @@ where
         panic!("{unified_scan_args:?}")
     };
 
+    // Reconcile pre-decoded state with the filter: clear what's stale,
+    // gather what survives.
     *row_count = None;
 
-    if selected_path_indices.clone().next() != Some(0) {
+    let first_surviving_idx = selected_path_indices.clone().next();
+    let first_file_dropped = first_surviving_idx != Some(0);
+    if first_file_dropped {
         *reader_schema = None;
-
-        // Ensure the metadata is unset, otherwise it may incorrectly be used at
-        // scan. This is especially important for Parquet as it requires the
-        // correct `is_nullable` in the arrow field.
-        match scan_type.as_mut() {
-            #[cfg(feature = "parquet")]
-            FileScanIR::Parquet {
-                options: _,
-                metadata,
-            } => *metadata = None,
-
-            #[cfg(feature = "ipc")]
-            FileScanIR::Ipc {
-                options: _,
-                metadata,
-            } => *metadata = None,
-
-            #[cfg(feature = "csv")]
-            FileScanIR::Csv { options: _ } => {},
-
-            #[cfg(feature = "json")]
-            FileScanIR::NDJson { options: _ } => {},
-
-            #[cfg(feature = "python")]
-            FileScanIR::PythonDataset {
-                dataset_object: _,
-                cached_ir,
-            } => *cached_ir.lock().unwrap() = None,
-
-            #[cfg(feature = "scan_lines")]
-            FileScanIR::Lines { name: _ } => {},
-            FileScanIR::ExpandedPaths { name: _ } => {},
-
-            FileScanIR::Anonymous {
-                options: _,
-                function: _,
-            } => {},
-        }
     }
+    scan_type.gather_after_filter(first_file_dropped, selected_path_indices.clone());
 
     let selected_path_indices_idxsize = LazyCell::new(|| {
         selected_path_indices

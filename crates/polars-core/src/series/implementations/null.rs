@@ -268,6 +268,7 @@ impl SeriesTrait for NullChunked {
         Ok(IdxCa::new(self.name().clone(), idxs))
     }
 
+    #[cfg(feature = "algorithm_group_by")]
     fn unique_id(&self) -> PolarsResult<(IdxSize, Vec<IdxSize>)> {
         if self.is_empty() {
             Ok((0, Vec::new()))

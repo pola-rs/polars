@@ -26,7 +26,7 @@ path = f"s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
 
 q = (
     pl.scan_parquet(path)
-# ..
+# ...
 )
 ```
 
@@ -52,16 +52,12 @@ shuffleData:
     endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
 ```
 
-## Reducing egress costs
+## Reducing NAT costs for private nodes
 
-!!! warning "Egress charges"
-
-    When Polars workers access S3 over the public internet, AWS charges data transfer (egress) fees
-    that can grow significantly with large or frequent queries.
-
-Creating a **VPC Gateway Endpoint for S3** routes all S3 traffic through the AWS private network at
-no additional cost and requires no changes to your Polars deployment. Once the endpoint is attached
-to your VPC and route tables are updated, traffic is routed privately and automatically.
+In clusters where nodes have no public IP addresses, S3 traffic is typically routed through a NAT
+Gateway, billed according to the volume of data processed. Creating a **VPC Gateway Endpoint for
+S3** bypasses the NAT Gateway entirely: S3 traffic is then routed directly over the AWS private
+network at no additional cost, with no changes required to your Polars deployment.
 
 Note that the S3 bucket must be in the same region as the EKS cluster (cross-region traffic incurs
 charges regardless of the endpoint configuration).

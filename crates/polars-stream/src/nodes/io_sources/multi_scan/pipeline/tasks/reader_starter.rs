@@ -493,7 +493,7 @@ async fn start_reader_impl(
             file_iceberg_schema: {:?}",
             pre_slice,
             ExternalFilterMask::log_display(external_filter_mask.as_ref()),
-            &file_iceberg_schema,
+            file_iceberg_schema,
         )
     }
 

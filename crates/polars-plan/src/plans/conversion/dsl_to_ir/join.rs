@@ -131,7 +131,7 @@ pub fn resolve_join(
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
-    let mut joined_on = PlHashSet::new();
+    let mut joined_on = PlIndexSet::new();
 
     #[cfg(feature = "iejoin")]
     let check = !matches!(options.args.how, JoinType::IEJoin);
@@ -581,7 +581,7 @@ fn build_upcast_node_list(
             } else if schema_merged.contains(name) {
                 ExprOrigin::Right
             } else {
-                polars_bail!(ColumnNotFound: "{name}");
+                return Err(schema_merged.column_not_found_err(name));
             }
         },
         AExpr::Literal(..) => ExprOrigin::None,

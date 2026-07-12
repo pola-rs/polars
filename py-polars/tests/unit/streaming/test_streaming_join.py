@@ -635,7 +635,7 @@ def test_merge_join_applicable(
 )
 @pytest.mark.parametrize("n_groups", [0, 1, 2])
 @given(data=st.data())
-@settings(max_examples=10)
+@settings(max_examples=20)
 def test_streaming_asof_join(
     data: st.DataObject,
     strategy: AsofJoinStrategy,

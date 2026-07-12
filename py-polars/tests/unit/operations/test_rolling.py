@@ -940,3 +940,27 @@ def test_rolling_by_temporal_null_min_samples_27661() -> None:
         ),
     )
     assert_series_equal(df["avg_power_2s"].alias("avg_power_2i"), df["avg_power_2i"])
+
+
+@pytest.mark.parametrize(
+    ("method", "expected"),
+    [
+        ("rolling_sum", [0.0, 0.0, 0.0]),
+        ("rolling_mean", [None, None, None]),
+        ("rolling_min", [None, None, None]),
+        ("rolling_max", [None, None, None]),
+        ("rolling_std", [None, None, None]),
+        ("rolling_var", [None, None, None]),
+        ("rolling_median", [None, None, None]),
+        ("rolling_skew", [None, None, None]),
+    ],
+)
+def test_rolling_window_size_zero_23434(
+    method: str, expected: list[float | None]
+) -> None:
+    """window_size=0 should match the aggregation of an empty series."""
+    s = pl.Series([1.0, 2.0, 3.0], dtype=pl.Float64)
+    assert_series_equal(
+        getattr(s, method)(window_size=0),
+        pl.Series(expected, dtype=pl.Float64),
+    )

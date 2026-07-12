@@ -164,7 +164,7 @@ pub enum IR {
     MergeSorted {
         input_left: Node,
         input_right: Node,
-        key: PlSmallStr,
+        key: Arc<[PlSmallStr]>,
         maintain_order: bool,
         descending: bool,
         nulls_last: bool,

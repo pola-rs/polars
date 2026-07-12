@@ -327,7 +327,7 @@ def _read_parquet_with_pyarrow(
 
     results: list[DataFrame] = []
     for source in sources:
-        with prepare_file_arg(
+        with prepare_file_arg(  # pyrefly: ignore[no-matching-overload]
             source,  # type: ignore[arg-type]
             use_pyarrow=True,
             storage_options=storage_options,

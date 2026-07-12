@@ -29,4 +29,5 @@ The following limits apply to Self-Serve deployments:
 Enterprise is priced based on your deployment. It removes resource limitations and supports fully
 air-gapped environments with no outbound connectivity required.
 
-[Contact us](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv) to discuss an Enterprise plan.
+[Contact us](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide)
+to discuss an Enterprise plan.

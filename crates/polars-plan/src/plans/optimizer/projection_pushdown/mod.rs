@@ -5,13 +5,16 @@ use std::sync::Arc;
 
 use edge::Edge;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, PlHashMap, ScratchIndexMap, ScratchIndexSet};
+use polars_core::prelude::{Column, DataType, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_ops::frame::{JoinCoalesce, JoinType};
+#[allow(clippy::disallowed_types)]
+use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools as _;
+use polars_utils::itertools::iters_eq::iters_eq;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
 
@@ -32,7 +35,7 @@ use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
 pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
-    let schema_cache = &mut PlHashMap::default();
+    let schema_cache = &mut Default::default();
 
     // Put a simple projection on top so that the root node has a valid ParentKeyAndPort to point to.
     let root_ir = ir_arena.take(root);
@@ -85,6 +88,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
 
 pub struct ProjectionPushdownVisitor<'a, 'arena> {
     expr_arena: &'arena mut Arena<AExpr>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     schema_cache: &'a mut PlHashMap<Node, Arc<Schema>>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
     ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
@@ -276,6 +280,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
             }};
         }
 
+        #[allow(clippy::disallowed_types)] // We don't iterate over cache.
         fn pushdown_with_added_names(
             key: Node,
             edges: &mut dyn NodeEdgesProvider<<ProjectionPushdownVisitor as NodeVisitor>::Edge>,
@@ -412,7 +417,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             self.ae_nodes_scratch,
                             self.ae_height_scratch,
                         ) {
-                            EH::Unknown => break 'len_propagate,
+                            EH::Unknown | EH::Range => break 'len_propagate,
                             EH::Column => has_column = true,
                             EH::Scalar => {},
                         }
@@ -436,7 +441,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     let mut truncate_len = projected_names.len();
 
                     // If exprs has any column-height output, at least 1 of them must be projected.
-                    if let Some(column_height_idx) = exprs.iter().position(|e| {
+                    let first_column_height_idx = exprs.iter().position(|e| {
                         matches!(
                             aexpr_projection_height_rec(
                                 e.node(),
@@ -446,14 +451,16 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             ),
                             EH::Column
                         )
-                    }) && column_height_idx >= truncate_len
+                    });
+
+                    if let Some(column_height_idx) = first_column_height_idx
+                        && column_height_idx >= truncate_len
                     {
                         exprs.swap(column_height_idx, projected_names.len());
                         truncate_len += 1;
                     }
 
-                    // Project all unknown heights to catch length mismatch errors.
-                    if self.maintain_errors {
+                    if first_column_height_idx.is_none() || self.maintain_errors {
                         let range = truncate_len..exprs.len();
                         for i in range {
                             match aexpr_projection_height_rec(
@@ -463,7 +470,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                                 self.ae_height_scratch,
                             ) {
                                 EH::Scalar | EH::Column => {},
-                                EH::Unknown => {
+                                EH::Unknown | EH::Range => {
                                     exprs.swap(i, truncate_len);
                                     truncate_len += 1;
                                 },
@@ -685,6 +692,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
                 if input_names_projection.is_empty() {
                     input_names_projection.extend(min_dtype_size_col(input_schema.iter()).cloned());
                 }
+
+                input_names_projection
+                    .sort_unstable_by_key(|name| input_schema.index_of(name).unwrap_or(usize::MAX));
 
                 let output_schema_arc = output_schema;
 
@@ -1131,19 +1141,37 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
-                if let Some(projected_names) =
-                    out_edge.compute_projected_names_subset(output_schema_arc)
-                {
-                    let removed_names = self.names_set_scratch.get();
-                    aggs.retain(|e| {
-                        let remove = !projected_names.contains(e.output_name()) || is_len;
+                'prune_aggs: {
+                    if aggs.is_empty() {
+                        break 'prune_aggs;
+                    }
 
-                        if remove {
-                            removed_names.insert(e.output_name().clone());
-                        }
+                    let removed_names = if is_len {
+                        let removed_names = self.names_set_scratch.get();
 
-                        !remove
-                    });
+                        removed_names.extend(
+                            aggs.drain(..)
+                                .map(|eir| eir.into_inner().1.into_inner().unwrap()),
+                        );
+
+                        removed_names
+                    } else if let Some(projected_names) =
+                        out_edge.compute_projected_names_subset(output_schema_arc)
+                    {
+                        let removed_names = self.names_set_scratch.get();
+
+                        aggs.retain(|e| {
+                            let keep = projected_names.contains(e.output_name());
+                            if !keep {
+                                removed_names.insert(e.output_name().clone());
+                            }
+                            keep
+                        });
+
+                        removed_names
+                    } else {
+                        break 'prune_aggs;
+                    };
 
                     if !removed_names.is_empty() {
                         Arc::make_mut(output_schema_arc)
@@ -1234,7 +1262,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
             IR::MergeSorted { key, .. } => {
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
-                projected_names.insert(key.clone());
+                for key in key.iter() {
+                    projected_names.insert(key.clone());
+                }
                 pushdown_with_added_names!(len_before_added_names)
             },
 
@@ -1332,10 +1362,16 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     return;
                 }
 
-                let (..) = projected_names_subset_or_return!();
+                if out_edge
+                    .compute_projected_names(&current_node_schema)
+                    .is_none()
+                {
+                    return;
+                }
+
+                let projected_names = out_edge.take_names().unwrap();
 
                 let mut inputs = mem::take(inputs);
-                let projected_names = out_edge.take_names().unwrap();
                 let strict = options.strict;
                 let hconcat_projected_names = self.names_vec_scratch.get();
 
@@ -1389,7 +1425,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
                             projected_names.get_index_of(name).unwrap_or(usize::MAX)
                         });
 
-                        if names_this_input.len() != input_schema_arc.len() {
+                        if !iters_eq(names_this_input.iter(), input_schema_arc.iter_names()) {
                             let mut names = mem::take(self.names_set_scratch2.get());
                             names.extend(names_this_input.iter().cloned());
 
@@ -1755,14 +1791,30 @@ impl ProjectionPushdownVisitor<'_, '_> {
                     unreachable!()
                 };
 
-                if !projected_names.shift_remove(name) {
+                let Some(row_index_idx) = projected_names.get_index_of(name) else {
                     unlink_current_node_and_return!(*input)
+                };
+
+                if let Some(names) = out_edge.compute_projected_names(&current_node_schema)
+                    && let Some(schema) = compute_simple_projection_schema(
+                        names.as_slice(),
+                        &current_node_schema,
+                        false,
+                    )
+                {
+                    out_edge
+                        .parent_key_and_port_mut()
+                        .attach_simple_projection(Arc::new(schema), storage);
+                } else {
+                    debug_assert_eq!(row_index_idx, 0);
                 }
 
-                let names = out_edge.take_names();
+                let mut projected_names = out_edge.take_names().unwrap();
+                projected_names.shift_remove_index(row_index_idx);
+
                 *edges.inputs()[0].projection_state_mut() = ProjectionState {
                     projection: Projection::Names,
-                    names,
+                    names: Some(projected_names),
                 };
             },
 
@@ -1993,21 +2045,6 @@ fn compute_simple_projection_schema(
         let dtype = input_schema.get(name).unwrap().clone();
         (name.clone(), dtype)
     })))
-}
-
-/// Returns true if both iterators have the same length, and the items at each
-/// index are equal.
-fn iters_eq<L, R, T, U>(left: L, right: R) -> bool
-where
-    L: IntoIterator<Item = T>,
-    R: IntoIterator<Item = U>,
-    T: PartialEq<U>,
-    L::IntoIter: ExactSizeIterator,
-    R::IntoIter: ExactSizeIterator,
-{
-    let left = left.into_iter();
-    let right = right.into_iter();
-    left.len() == right.len() && left.zip(right).all(|(l, r)| l == r)
 }
 
 fn set_scan_projection(scan_ir: &mut IR, projection_schema: Arc<Schema>) {

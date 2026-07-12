@@ -216,18 +216,6 @@ impl Expr {
         AggExpr::AggGroups(Arc::new(self)).into()
     }
 
-    /// Alias for `explode`.
-    #[deprecated(
-        since = "0.53.0",
-        note = "Use `explode()` with `ExplodeOptions { empty_as_null: false, keep_nulls: false }` instead. Will be removed in version 2.0."
-    )]
-    pub fn flatten(self) -> Self {
-        self.explode(ExplodeOptions {
-            empty_as_null: true,
-            keep_nulls: true,
-        })
-    }
-
     /// Explode the String/List column.
     pub fn explode(self, options: ExplodeOptions) -> Self {
         Expr::Explode {
@@ -978,6 +966,13 @@ impl Expr {
             },
             expr.into(),
         )
+    }
+
+    pub fn is_sorted(self, descending: Option<bool>, nulls_last: Option<bool>) -> Self {
+        self.map_unary(BooleanFunction::IsSorted {
+            descending,
+            nulls_last,
+        })
     }
 
     /// Get the approximate count of unique values.

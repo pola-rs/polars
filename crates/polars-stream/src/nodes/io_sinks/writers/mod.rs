@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use polars_config::config;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
+use polars_io::utils::bytes_bufferer::BytesBuffererConfig;
 use polars_plan::dsl::FileWriteFormat;
 use polars_utils::IdxSize;
 
@@ -20,6 +22,7 @@ mod parquet;
 pub fn create_file_writer_starter(
     file_format: &FileWriteFormat,
     file_schema: &SchemaRef,
+    bytes_bufferer_config: BytesBuffererConfig,
 ) -> PolarsResult<Arc<dyn FileWriterStarter>> {
     Ok(match file_format {
         #[cfg(feature = "parquet")]
@@ -49,12 +52,21 @@ pub fn create_file_writer_starter(
         },
         #[cfg(feature = "ipc")]
         FileWriteFormat::Ipc(options) => {
+            if config().verbose() {
+                let write_statistics_flags = options.record_batch_statistics;
+                eprintln!(
+                    "[IpcWriterStarter]: write_record_batch_statistics_flags: {write_statistics_flags}"
+                );
+                eprintln!("[IpcWriterStarter]: {bytes_bufferer_config:?}")
+            }
+
             Arc::new(crate::nodes::io_sinks::writers::ipc::IpcWriterStarter {
                 options: Arc::new(*options),
                 schema: file_schema.clone(),
                 record_batch_size: options
                     .record_batch_size
                     .map(|x| IdxSize::try_from(x).unwrap()),
+                bytes_bufferer_config,
             }) as _
         },
         #[cfg(feature = "csv")]

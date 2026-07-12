@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use ir_graph::{IRNodeEdgeKeys, build_ir_traversal_graph, unpack_edges_mut};
 use polars_core::frame::UniqueKeepStrategy;
-use polars_core::prelude::PlHashMap;
+use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
 use slotmap::{SlotMap, new_key_type};
@@ -41,13 +41,13 @@ pub fn simplify_and_fetch_orderings(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> (
-    PlHashMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>,
+    PlIndexMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>,
     SlotMap<EdgeKey, Edge>,
 ) {
     let (mut ir_nodes_stack, mut ir_node_to_edges_map, mut all_edges_map, cache_updater) =
         build_ir_traversal_graph(roots, ir_arena);
 
-    let eos_revisit_cache = &mut PlHashMap::default();
+    let eos_revisit_cache = &mut PlIndexMap::default();
     let ae_nodes_scratch = &mut ScratchVec::default();
     let mut deleted_idxs = vec![];
 
@@ -81,11 +81,11 @@ pub fn simplify_and_fetch_orderings(
 }
 
 struct SimplifyIRNodeOrder<'a> {
-    ir_node_to_edges_map: &'a mut PlHashMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>,
+    ir_node_to_edges_map: &'a mut PlIndexMap<IRNodeKey, IRNodeEdgeKeys<EdgeKey>>,
     all_edges_map: &'a mut EdgesMap,
     ir_arena: &'a mut Arena<IR>,
     expr_arena: &'a mut Arena<AExpr>,
-    eos_revisit_cache: &'a mut PlHashMap<Node, ObservableOrders>,
+    eos_revisit_cache: &'a mut PlIndexMap<Node, ObservableOrders>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
 }
 
@@ -290,7 +290,7 @@ impl SimplifyIRNodeOrder<'_> {
 
                 let ([in_edge], [out_edge]) = unpack_edges!(2);
 
-                if !options.maintain_order || out_edge.is_unordered() {
+                if !options.maintain_order || (out_edge.is_unordered() && options.slice.is_none()) {
                     options.maintain_order = false;
                     *out_edge = Edge::Unordered;
                 }
@@ -426,7 +426,6 @@ impl SimplifyIRNodeOrder<'_> {
             IR::MergeSorted {
                 input_left,
                 input_right,
-                key: _,
                 ..
             } => {
                 let ([in_edge_lhs, in_edge_rhs], [out_edge]) = unpack_edges!(3);

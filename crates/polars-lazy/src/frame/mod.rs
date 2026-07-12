@@ -526,14 +526,24 @@ impl LazyFrame {
 
     pub(crate) fn optimize_with_scratch(
         self,
-        lp_arena: &mut Arena<IR>,
+        ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
+        let mut opt_flags = self.opt_state;
+        // Unset CSE
+        // This can be turned on again during ir-conversion.
+        #[allow(clippy::eq_op)]
+        #[cfg(feature = "cse")]
+        if opt_flags.contains(OptFlags::EAGER) {
+            opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
+        }
+        let root = to_alp(self.logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
+
         let lp_top = optimize(
-            self.logical_plan,
-            self.opt_state,
-            lp_arena,
+            root,
+            opt_flags,
+            ir_arena,
             expr_arena,
             scratch,
             apply_scan_predicate_to_scan_ir,
@@ -797,7 +807,7 @@ impl LazyFrame {
         let query_start = std::time::Instant::now();
         let (mut state, mut physical_plan, _) =
             self.prepare_collect_post_opt(false, Some(query_start), post_opt)?;
-        state.time_nodes(query_start);
+        state.time_nodes(query_start, query_start.elapsed());
         let out = physical_plan.execute(&mut state)?;
         let timer_df = state.finish_timer()?;
         Ok((out, timer_df))
@@ -1951,18 +1961,24 @@ impl LazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    pub fn merge_sorted<S>(
+    pub fn merge_sorted<I, S>(
         self,
         other: LazyFrame,
-        key: S,
+        key: I,
         maintain_order: bool,
         descending: bool,
         nulls_last: bool,
     ) -> PolarsResult<LazyFrame>
     where
+        I: IntoIterator<Item = S>,
         S: Into<PlSmallStr>,
     {
-        let key = key.into();
+        let key: Arc<[PlSmallStr]> = key.into_iter().map(Into::into).collect();
+
+        polars_ensure!(
+            !key.is_empty(),
+            ComputeError: "merge_sorted requires at least one key column"
+        );
 
         let lp = DslPlan::MergeSorted {
             input_left: Arc::new(self.logical_plan),

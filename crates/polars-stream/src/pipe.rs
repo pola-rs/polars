@@ -27,7 +27,7 @@ pub struct PortReceiver(ReceiverExt<Morsel, Option<Arc<PipeMetrics>>>);
 impl PortSender {
     #[inline]
     pub async fn send(&mut self, morsel: Morsel) -> Result<(), Morsel> {
-        let rows = morsel.df().height() as u64;
+        let rows = morsel.height() as u64;
         self.0.send(morsel).await?;
         if let Some(metrics) = self.0.shared() {
             metrics.morsels_sent.fetch_add(1);
@@ -42,7 +42,7 @@ impl PortReceiver {
     #[inline]
     pub async fn recv(&mut self) -> Result<Morsel, ()> {
         let morsel = self.0.recv().await?;
-        let rows = morsel.df().height() as u64;
+        let rows = morsel.height() as u64;
         if let Some(metrics) = self.0.shared() {
             metrics.morsels_received.fetch_add(1);
             metrics.rows_received.fetch_add(rows);

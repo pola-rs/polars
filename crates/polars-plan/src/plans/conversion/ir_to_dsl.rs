@@ -370,6 +370,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                 IC::EndsWith(v) => C::EndsWith(v),
                 #[cfg(feature = "strings")]
                 IC::Slice(s, l) => C::Slice(s, l),
+                IC::To(dt, strict) => C::To(DataTypeExpr::Literal(dt), strict),
+                IC::Physical => C::Physical,
             })
         },
         #[cfg(feature = "dtype-extension")]
@@ -698,6 +700,13 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
                     rel_tol,
                     nans_equal,
                 },
+                IB::IsSorted {
+                    descending,
+                    nulls_last,
+                } => B::IsSorted {
+                    descending,
+                    nulls_last,
+                },
                 IB::AllHorizontal => B::AllHorizontal,
                 IB::AnyHorizontal => B::AnyHorizontal,
                 IB::Not => B::Not,
@@ -932,6 +941,7 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::Repeat => F::Repeat,
         #[cfg(feature = "round_series")]
         IF::Clip { has_min, has_max } => F::Clip { has_min, has_max },
+        IF::AsList => F::AsList,
         #[cfg(feature = "dtype-struct")]
         IF::AsStruct => F::AsStruct,
         #[cfg(feature = "top_k")]

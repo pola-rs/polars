@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import sys
-from contextlib import suppress
+from contextlib import closing, nullcontext, suppress
 from datetime import date
 from pathlib import Path
 from types import GeneratorType
@@ -15,7 +15,7 @@ with suppress(ModuleNotFoundError):  # not available on windows
 import pyarrow as pa
 import pytest
 import sqlalchemy
-from sqlalchemy import Integer, MetaData, Table, create_engine, func, select, text
+from sqlalchemy import Integer, MetaData, Table, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
@@ -23,11 +23,15 @@ import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import DuplicateError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
+from polars.io.database._cursor_proxies import OracleCursorProxy
+from polars.io.database._executor import ConnectionExecutor
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.io.database.conftest import create_sqlite_engine
 
 if TYPE_CHECKING:
+    from sqlalchemy.engine import Engine
+
     from polars._typing import (
-        ConnectionOrCursor,
         DbReadEngine,
         SchemaDefinition,
         SchemaDict,
@@ -230,8 +234,8 @@ class ExceptionTestParams(NamedTuple):
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
-                connect_using=lambda path: create_engine(
-                    f"sqlite:///{path}",
+                connect_using=lambda path: create_sqlite_engine(
+                    path,
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
                 ).connect(),
                 expected_dtypes={
@@ -324,18 +328,19 @@ def test_read_database(
             )
     else:
         # other user-supplied connections
-        df = pl.read_database(
-            connection=connect_using(tmp_sqlite_db),
-            query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
-            schema_overrides=schema_overrides,
-            batch_size=batch_size,
-        )
-        df_empty = pl.read_database(
-            connection=connect_using(tmp_sqlite_db),
-            query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
-            schema_overrides=schema_overrides,
-            batch_size=batch_size,
-        )
+        with closing(connect_using(tmp_sqlite_db)) as conn:
+            df = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
+                schema_overrides=schema_overrides,
+                batch_size=batch_size,
+            )
+            df_empty = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+                schema_overrides=schema_overrides,
+                batch_size=batch_size,
+            )
 
     # validate the expected query return (data and schema)
     assert df.schema == expected_dtypes
@@ -379,8 +384,8 @@ def test_read_database(
         pytest.param(
             *DatabaseReadTestParams(
                 read_method="read_database",
-                connect_using=lambda path: create_engine(
-                    f"sqlite:///{path}",
+                connect_using=lambda path: create_sqlite_engine(
+                    path,
                     connect_args={"detect_types": sqlite3.PARSE_DECLTYPES},
                 ).connect(),
                 expected_dtypes={
@@ -445,14 +450,14 @@ def test_read_database_iter_batches(
     if "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
         # externally instantiated adbc connections
         with connect_using(tmp_sqlite_db) as conn:
-            dfs = pl.read_database(
+            batch_iter = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data",
                 schema_overrides=schema_overrides,
                 iter_batches=True,
                 batch_size=batch_size,
             )
-            empty_dfs = pl.read_database(
+            empty_batch_iter = pl.read_database(
                 connection=conn,
                 query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
                 schema_overrides=schema_overrides,
@@ -460,26 +465,30 @@ def test_read_database_iter_batches(
                 batch_size=batch_size,
             )
             # must consume the iterators while the connection is open
-            dfs = iter(list(dfs))
-            empty_dfs = iter(list(empty_dfs))
+            batches = list(batch_iter)
+            empty_batches = list(empty_batch_iter)
     else:
         # other user-supplied connections
-        dfs = pl.read_database(
-            connection=connect_using(tmp_sqlite_db),
-            query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
-            schema_overrides=schema_overrides,
-            iter_batches=True,
-            batch_size=batch_size,
-        )
-        empty_dfs = pl.read_database(
-            connection=connect_using(tmp_sqlite_db),
-            query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
-            schema_overrides=schema_overrides,
-            iter_batches=True,
-            batch_size=batch_size,
-        )
+        with closing(connect_using(tmp_sqlite_db)) as conn:
+            batch_iter = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data WHERE name NOT LIKE '%polars%'",
+                schema_overrides=schema_overrides,
+                iter_batches=True,
+                batch_size=batch_size,
+            )
+            empty_batch_iter = pl.read_database(
+                connection=conn,
+                query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
+                schema_overrides=schema_overrides,
+                iter_batches=True,
+                batch_size=batch_size,
+            )
+            # must consume the iterators while the connection is open
+            batches = list(batch_iter)
+            empty_batches = list(empty_batch_iter)
 
-    df: pl.DataFrame = pl.concat(dfs)
+    df: pl.DataFrame = pl.concat(batches)
     # validate the expected query return (data and schema)
     assert df.schema == expected_dtypes
     assert df.shape == (2, 4)
@@ -487,7 +496,7 @@ def test_read_database_iter_batches(
 
     # some drivers return an empty iterator when there is no result
     try:
-        df_empty: pl.DataFrame = pl.concat(empty_dfs)
+        df_empty: pl.DataFrame = pl.concat(empty_batches)
     except ValueError:
         return
     # # note: 'cursor.description' is not reliable when no query
@@ -497,74 +506,74 @@ def test_read_database_iter_batches(
     assert df_empty["date"].to_list() == []
 
 
-def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
+def test_read_database_alchemy_selectable(sqlite_engine: Engine) -> None:
     # various flavours of alchemy connection
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
-    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
-    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+    with (
+        sessionmaker(bind=sqlite_engine)() as alchemy_session,
+        sqlite_engine.connect() as alchemy_conn,
+    ):
+        t = Table("test_data", MetaData(), autoload_with=sqlite_engine)
 
-    t = Table("test_data", MetaData(), autoload_with=alchemy_engine)
+        # establish sqlalchemy "selectable" and validate usage
+        selectable_query = select(
+            alchemy_cast(func.strftime("%Y", t.c.date), Integer).label("year"),
+            t.c.name,
+            t.c.value,
+        ).where(t.c.value < 0)
 
-    # establish sqlalchemy "selectable" and validate usage
-    selectable_query = select(
-        alchemy_cast(func.strftime("%Y", t.c.date), Integer).label("year"),
-        t.c.name,
-        t.c.value,
-    ).where(t.c.value < 0)
+        expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
 
-    expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
-
-    for conn in (alchemy_session, alchemy_engine, alchemy_conn):
-        assert_frame_equal(
-            pl.read_database(selectable_query, connection=conn),
-            expected,
-        )
-
-        batches = list(
-            pl.read_database(
-                selectable_query,
-                connection=conn,
-                iter_batches=True,
-                batch_size=1,
+        for conn in (alchemy_session, sqlite_engine, alchemy_conn):
+            assert_frame_equal(
+                pl.read_database(selectable_query, connection=conn),
+                expected,
             )
-        )
-        assert len(batches) == 1
-        assert_frame_equal(batches[0], expected)
+
+            batches = list(
+                pl.read_database(
+                    selectable_query,
+                    connection=conn,
+                    iter_batches=True,
+                    batch_size=1,
+                )
+            )
+            assert len(batches) == 1
+            assert_frame_equal(batches[0], expected)
 
 
-def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
+def test_read_database_alchemy_textclause(sqlite_engine: Engine) -> None:
     # various flavours of alchemy connection
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
-    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
-    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
-
-    # establish sqlalchemy "textclause" and validate usage
-    textclause_query = text(
-        """
-                SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
-                FROM test_data
-                WHERE value < 0
+    with (
+        sessionmaker(bind=sqlite_engine)() as alchemy_session,
+        sqlite_engine.connect() as alchemy_conn,
+    ):
+        # establish sqlalchemy "textclause" and validate usage
+        textclause_query = text(
             """
-    )
-
-    expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
-
-    for conn in (alchemy_session, alchemy_engine, alchemy_conn):
-        assert_frame_equal(
-            pl.read_database(textclause_query, connection=conn),
-            expected,
+                    SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+                    FROM test_data
+                    WHERE value < 0
+                """
         )
 
-        batches = list(
-            pl.read_database(
-                textclause_query,
-                connection=conn,
-                iter_batches=True,
-                batch_size=1,
+        expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
+        for conn in (alchemy_session, sqlite_engine, alchemy_conn):
+            assert_frame_equal(
+                pl.read_database(textclause_query, connection=conn),
+                expected,
             )
-        )
-        assert len(batches) == 1
-        assert_frame_equal(batches[0], expected)
+
+            batches = list(
+                pl.read_database(
+                    textclause_query,
+                    connection=conn,
+                    iter_batches=True,
+                    batch_size=1,
+                )
+            )
+            assert len(batches) == 1
+            assert_frame_equal(batches[0], expected)
 
 
 @pytest.mark.parametrize(
@@ -576,36 +585,38 @@ def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
     ],
 )
 def test_read_database_parameterised(
-    param: str, param_value: Any, tmp_sqlite_db: Path
+    param: str, param_value: Any, tmp_sqlite_db: Path, sqlite_engine: Engine
 ) -> None:
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
-    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
-    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
-    raw_conn: ConnectionOrCursor = sqlite3.connect(tmp_sqlite_db)
-
-    # establish parameterised queries and validate usage
-    query = """
-        SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
-        FROM test_data
-        WHERE value < {n}
-    """
-    expected_frame = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
-
-    for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
-        if conn is alchemy_session and param == "?":
-            continue  # alchemy session.execute() doesn't support positional params
-        if parse_version(sqlalchemy.__version__) < (2, 0) and param == ":n":
-            continue  # skip for older sqlalchemy versions
-
-        assert_frame_equal(
-            expected_frame,
-            pl.read_database(
-                query.format(n=param),
-                connection=conn,
-                execute_options={"parameters": param_value},
-            ),
+    with (
+        sqlite_engine.connect() as alchemy_conn,
+        sessionmaker(bind=sqlite_engine)() as alchemy_session,
+        closing(sqlite3.connect(tmp_sqlite_db)) as raw_conn,
+    ):
+        # establish parameterised queries and validate usage
+        query = """
+            SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+            FROM test_data
+            WHERE value < {n}
+        """
+        expected_frame = pl.DataFrame(
+            {"year": [2021], "name": ["other"], "value": [-99.5]}
         )
+
+        for conn in (alchemy_session, sqlite_engine, alchemy_conn, raw_conn):
+            if conn is alchemy_session and param == "?":
+                continue  # alchemy session.execute() doesn't support positional params
+            if parse_version(sqlalchemy.__version__) < (2, 0) and param == ":n":
+                continue  # skip for older sqlalchemy versions
+
+            assert_frame_equal(
+                expected_frame,
+                pl.read_database(
+                    query.format(n=param),
+                    connection=conn,
+                    execute_options={"parameters": param_value},
+                ),
+            )
 
 
 @pytest.mark.parametrize(
@@ -667,7 +678,7 @@ def test_read_database_parameterised_adbc(
     ],
 )
 def test_read_database_parameterised_multiple(
-    params: list[str], param_value: Any, tmp_sqlite_db: Path
+    params: list[str], param_value: Any, tmp_sqlite_db: Path, sqlite_engine: Engine
 ) -> None:
     param_1, param_2 = params
     # establish parameterised queries and validate usage
@@ -679,26 +690,27 @@ def test_read_database_parameterised_multiple(
     expected_frame = pl.DataFrame({"year": [2020], "name": ["misc"], "value": [100.0]})
 
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
-    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
-    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
-    raw_conn: ConnectionOrCursor = sqlite3.connect(tmp_sqlite_db)
-    for conn in (alchemy_session, alchemy_engine, alchemy_conn, raw_conn):
-        if alchemy_session is conn and param_1 == "?":
-            continue  # alchemy session.execute() doesn't support positional params
-        if parse_version(sqlalchemy.__version__) < (2, 0) and isinstance(
-            param_value, dict
-        ):
-            continue  # skip for older sqlalchemy versions
+    with (
+        sqlite_engine.connect() as alchemy_conn,
+        sessionmaker(bind=sqlite_engine)() as alchemy_session,
+        closing(sqlite3.connect(tmp_sqlite_db)) as raw_conn,
+    ):
+        for conn in (alchemy_session, sqlite_engine, alchemy_conn, raw_conn):
+            if alchemy_session is conn and param_1 == "?":
+                continue  # alchemy session.execute() doesn't support positional params
+            if parse_version(sqlalchemy.__version__) < (2, 0) and isinstance(
+                param_value, dict
+            ):
+                continue  # skip for older sqlalchemy versions
 
-        assert_frame_equal(
-            expected_frame,
-            pl.read_database(
-                query.format(param_1=param_1, param_2=param_2),
-                connection=conn,
-                execute_options={"parameters": param_value},
-            ),
-        )
+            assert_frame_equal(
+                expected_frame,
+                pl.read_database(
+                    query.format(param_1=param_1, param_2=param_2),
+                    connection=conn,
+                    execute_options={"parameters": param_value},
+                ),
+            )
 
 
 @pytest.mark.parametrize(
@@ -775,7 +787,7 @@ def test_read_database_parameterised_multiple_adbc(
 def test_read_database_uri_parameterised(
     param: str, param_value: Any, tmp_sqlite_db: Path
 ) -> None:
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_sqlite_engine(tmp_sqlite_db)
     uri = alchemy_engine.url.render_as_string(hide_password=False)
     query = """
         SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
@@ -833,7 +845,7 @@ def test_read_database_uri_parameterised_multiple(
     params: list[str], param_value: Any, tmp_sqlite_db: Path
 ) -> None:
     param_1, param_2 = params
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_engine = create_sqlite_engine(tmp_sqlite_db)
     uri = alchemy_engine.url.render_as_string(hide_password=False)
     query = """
         SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
@@ -941,6 +953,102 @@ def test_read_database_mocked(
     res = cast("pl.DataFrame", res)
     assert expected_call in mc.cursor().called
     assert res.rows() == [(1, "aa"), (2, "bb"), (3, "cc")]
+
+
+class MockOracleConnection:
+    """Mock `python-oracledb` Connection (Arrow `fetch_df_*` on the connection)."""
+
+    def __init__(self, test_data: pa.Table, *, batched: bool) -> None:
+        self.__class__.__module__ = "oracledb"
+        self._test_data = test_data
+        self._batched = batched
+        self.called: list[str] = []
+
+    def close(self) -> None:
+        pass
+
+    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+        # a real oracledb Connection is DB-API compliant and exposes `cursor()`
+        msg = "Arrow path should not fall through to Cursor"
+        raise AssertionError(msg)
+
+    def fetch_df_all(self, statement: str, *args: Any, **kwargs: Any) -> pa.Table:
+        self.called.append("fetch_df_all")
+        return self._test_data
+
+    def fetch_df_batches(
+        self, statement: str, size: int, *args: Any, **kwargs: Any
+    ) -> Any:
+        self.called.append("fetch_df_batches")
+        return iter((self._test_data,))
+
+
+@pytest.mark.parametrize(
+    ("batch_size", "iter_batches", "expected_method"),
+    [
+        (None, False, "fetch_df_all"),
+        (2, True, "fetch_df_batches"),
+    ],
+)
+def test_read_database_oracledb_arrow(
+    batch_size: int | None,
+    iter_batches: bool,
+    expected_method: str,
+) -> None:
+    pytest.importorskip("oracledb")
+
+    arrow_table = pa.table({"id": [1, 2, 3], "name": ["a", "b", "c"]})
+    mc = MockOracleConnection(arrow_table, batched=iter_batches)
+
+    res = pl.read_database(
+        query="SELECT id, name FROM test_data",
+        connection=mc,
+        iter_batches=iter_batches,
+        batch_size=batch_size,
+    )
+    if iter_batches:
+        assert isinstance(res, GeneratorType)
+        res = pl.concat(list(res))
+
+    res = cast("pl.DataFrame", res)
+    assert expected_method in mc.called
+    assert res.columns == ["id", "name"]
+    assert res.height == 3
+
+
+def test_read_database_oracledb_engine_no_arrow_fallthrough() -> None:
+    class MockRawConnection:
+        """oracledb < 3.0 raw connection: no Arrow `fetch_df_*` methods."""
+
+    class MockEngine:
+        driver = "oracledb"
+
+        def raw_connection(self) -> Any:
+            class PooledConnection:
+                driver_connection = MockRawConnection()
+
+            return PooledConnection()
+
+    class MockSAConnection:
+        engine = MockEngine()
+
+    # bypass __init__ (which would itself call `_normalise_cursor`) so we can
+    # drive the seam in isolation with `driver_name` pinned to "sqlalchemy"
+    executor = ConnectionExecutor.__new__(ConnectionExecutor)
+    executor.driver_name = "sqlalchemy"
+    executor.can_close_cursor = False
+
+    fake_conn = MockSAConnection()
+    result = executor._normalise_cursor(fake_conn)
+
+    # the arrow fast-path should NOT have been taken...
+    assert not isinstance(result, OracleCursorProxy)
+    assert executor.driver_name == "sqlalchemy"
+    assert executor.can_close_cursor is False
+
+    # ...and we should fall through to the generic path,
+    # returning the connection unchanged
+    assert cast("Any", result) is fake_conn
 
 
 @pytest.mark.parametrize(
@@ -1115,7 +1223,12 @@ def test_read_database_exceptions(
             params.update(kwargs)
 
     read_database = getattr(pl, read_method)
-    with pytest.raises(errclass, match=errmsg):
+    protocol_context = (
+        closing(protocol)
+        if hasattr(protocol, "close") and not isinstance(protocol, str)
+        else nullcontext()
+    )
+    with protocol_context, pytest.raises(errclass, match=errmsg):
         read_database(**params)
 
 
@@ -1127,11 +1240,15 @@ def test_read_database_exceptions(
         'SELECT name, value AS "name" FROM test_data',
     ],
 )
-def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -> None:
-    alchemy_conn = create_engine(f"sqlite:///{tmp_sqlite_db}").connect()
-    with pytest.raises(
-        DuplicateError,
-        match=r"column .+ appears more than once in the query/result cursor",
+def test_read_database_duplicate_column_error(
+    sqlite_engine: Engine, query: str
+) -> None:
+    with (
+        sqlite_engine.connect() as alchemy_conn,
+        pytest.raises(
+            DuplicateError,
+            match=r"column .+ appears more than once in the query/result cursor",
+        ),
     ):
         pl.read_database(query, connection=alchemy_conn)
 
@@ -1148,7 +1265,7 @@ def test_read_database_cx_credentials(uri: str) -> None:
         pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
-def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
+def test_sqlalchemy_row_init(sqlite_engine: Engine) -> None:
     expected_frame = pl.DataFrame(
         {
             "id": [1, 2],
@@ -1157,10 +1274,9 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
             "date": ["2020-01-01", "2021-12-31"],
         }
     )
-    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
     query = text("SELECT * FROM test_data ORDER BY name")
 
-    with alchemy_engine.connect() as conn:
+    with sqlite_engine.connect() as conn:
         # note: sqlalchemy `Row` is a NamedTuple-like object; it additionally has
         # a `_mapping` attribute that returns a `RowMapping` dict-like object. we
         # validate frame/series init from each flavour of query result.

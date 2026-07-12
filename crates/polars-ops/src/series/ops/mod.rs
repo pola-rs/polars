@@ -64,7 +64,7 @@ mod strings;
 mod to_dummies;
 #[cfg(feature = "unique_counts")]
 mod unique;
-mod various;
+pub(crate) mod various;
 
 #[cfg(feature = "abs")]
 pub use abs::*;

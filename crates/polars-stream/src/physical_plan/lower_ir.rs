@@ -208,10 +208,12 @@ pub fn lower_ir(
         IR::Select { input, expr, .. } => {
             let selectors = expr.clone();
 
-            if selectors
-                .iter()
-                .all(|e| matches!(expr_arena.get(e.node()), AExpr::Len | AExpr::Column(_)))
-            {
+            if selectors.iter().all(|e| {
+                matches!(
+                    expr_arena.get(e.node()),
+                    AExpr::Len | AExpr::Column(_) | AExpr::Eval { .. } | AExpr::StructField(_)
+                )
+            }) {
                 disable_morsel_split.get_or_insert(true);
             }
 
@@ -288,6 +290,7 @@ pub fn lower_ir(
                 maintain_order,
                 chunk_size,
             }) => {
+                disable_morsel_split.get_or_insert(true);
                 let function = function.clone();
                 let maintain_order = *maintain_order;
                 let chunk_size = *chunk_size;
@@ -301,6 +304,10 @@ pub fn lower_ir(
             },
 
             SinkTypeIR::File(options) => {
+                // Defer to the chunk-aware morsel splitting strategy in morsel_resize_pipeline.
+                // This cannot currently be done by the InMemorySource as the morsel splitting
+                // is done against a configured TargetSinkMorselSize.
+                disable_morsel_split.get_or_insert(true);
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
                 PhysNodeKind::FileSink { input, options }
@@ -353,45 +360,62 @@ pub fn lower_ir(
 
             left_schema.ensure_is_exact_match(right_schema).unwrap();
 
-            let key_dtype = left_schema.try_get(key.as_str())?.clone();
+            let key_dtypes = key
+                .iter()
+                .map(|k| left_schema.try_get(k.as_str()).cloned())
+                .try_collect_vec()?;
 
             let key_name = unique_column_name();
             use polars_plan::plans::{AExprBuilder, RowEncodingVariant};
 
+            // The merge order is decided on a single trailing key column. With a
+            // single non-nested key we can use it directly, otherwise we row
+            // encode all key columns into one ordered binary column so the
+            // lexicographic order over all keys is respected.
+            let needs_row_encode = key.len() > 1 || key_dtypes.iter().any(|dt| dt.is_nested());
+
+            // When we row encode, the descending / nulls_last options are baked
+            // into the encoding, so the node itself must compare the encoded
+            // column ascending with nulls first to avoid applying them twice.
+            let (node_descending, node_nulls_last) = if needs_row_encode {
+                (false, false)
+            } else {
+                (descending, nulls_last)
+            };
+
             // Add the key column as the last column for both inputs.
             for s in [&mut phys_left, &mut phys_right] {
-                let key_dtype = key_dtype.clone();
-                let mut expr = AExprBuilder::col(key.clone(), expr_arena);
-                if key_dtype.is_nested() {
-                    expr = AExprBuilder::row_encode(
-                        vec![expr.expr_ir(key_name.clone())],
-                        vec![key_dtype],
-                        //need to think about this more
+                let key_expr = if needs_row_encode {
+                    let exprs = key
+                        .iter()
+                        .map(|k| AExprBuilder::col(k.clone(), expr_arena).expr_ir(k.clone()))
+                        .collect();
+                    AExprBuilder::row_encode(
+                        exprs,
+                        key_dtypes.clone(),
                         RowEncodingVariant::Ordered {
-                            descending: None,
-                            nulls_last: None,
+                            // The options are uniform across all key columns, so
+                            // broadcast the single flag to one entry per column.
+                            descending: Some(vec![descending; key.len()]),
+                            nulls_last: Some(vec![nulls_last; key.len()]),
                             broadcast_nulls: None,
                         },
                         expr_arena,
-                    );
-                }
+                    )
+                    .expr_ir(key_name.clone())
+                } else {
+                    AExprBuilder::col(key[0].clone(), expr_arena).expr_ir(key_name.clone())
+                };
 
-                *s = build_hstack_stream(
-                    *s,
-                    &[expr.expr_ir(key_name.clone())],
-                    expr_arena,
-                    phys_sm,
-                    expr_cache,
-                    ctx,
-                )?;
+                *s = build_hstack_stream(*s, &[key_expr], expr_arena, phys_sm, expr_cache, ctx)?;
             }
 
             PhysNodeKind::MergeSorted {
                 input_left: phys_left,
                 input_right: phys_right,
                 maintain_order,
-                descending,
-                nulls_last,
+                descending: node_descending,
+                nulls_last: node_nulls_last,
             }
         },
 
@@ -676,7 +700,7 @@ pub fn lower_ir(
                 if config::verbose() {
                     eprintln!(
                         "lower_ir: scan IR lowered as 0-width InMemorySource with height {} ({:?})",
-                        num_rows, &row_counter
+                        num_rows, row_counter
                     )
                 }
 
@@ -745,13 +769,16 @@ pub fn lower_ir(
                     #[cfg(feature = "parquet")]
                     FileScanIR::Parquet {
                         options,
-                        metadata: first_metadata,
+                        first_metadata,
+                        // Used at plan time (optimizer passes, cloud
+                        // scheduler). The streaming reader reads per-file
+                        // footers at scan time and only needs `first_metadata`.
+                        metadata_per_source: _,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),
                             first_metadata: first_metadata.clone(),
-                            prefetch_limit: RelaxedCell::new_usize(0),
-                            prefetch_semaphore: std::sync::OnceLock::new(),
+                            pipeline_budget: std::sync::OnceLock::new(),
                             shared_prefetch_wait_group_slot: Default::default(),
                             io_metrics: std::sync::OnceLock::new(),
                         },
@@ -764,8 +791,7 @@ pub fn lower_ir(
                     } => Arc::new(crate::nodes::io_sources::ipc::builder::IpcReaderBuilder {
                         options: Arc::new(options.clone()),
                         first_metadata: first_metadata.clone(),
-                        prefetch_limit: RelaxedCell::new_usize(0),
-                        prefetch_semaphore: std::sync::OnceLock::new(),
+                        pipeline_budget: std::sync::OnceLock::new(),
                         shared_prefetch_wait_group_slot: Default::default(),
                         io_metrics: std::sync::OnceLock::new(),
                     }) as _,

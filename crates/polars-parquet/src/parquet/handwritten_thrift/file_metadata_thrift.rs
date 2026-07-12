@@ -85,6 +85,22 @@ pub(crate) fn decode_file_metadata(footer: Buffer<u8>) -> ParquetResult<CompactF
     read_file_metadata(&mut prot, origin_ptr, &footer)
 }
 
+/// Decode just `FileMetaData.num_rows` (field 3) for the `RowCounts`
+/// resolve mode. Thrift field ids are ascending, so we can `break` once
+/// field 3 is read and leave the rest of the footer untouched.
+pub(crate) fn decode_num_rows(footer: Buffer<u8>) -> ParquetResult<i64> {
+    let buf: &[u8] = footer.as_ref();
+    let mut prot = ThriftSliceInputProtocol::new(buf);
+    let mut num_rows: Option<i64> = None;
+    read_struct_fields!(prot, |f| {
+        3 => {
+            num_rows = Some(prot.read_i64()?);
+            break;
+        },
+    });
+    num_rows.require("FileMetaData.num_rows")
+}
+
 fn read_file_metadata(
     prot: &mut ThriftSliceInputProtocol<'_>,
     origin_ptr: *const u8,

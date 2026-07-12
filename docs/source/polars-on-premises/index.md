@@ -64,4 +64,4 @@ historical view of query performance that survives cluster restarts and teardown
 Enterprise is for teams operating in air-gapped or regulated environments. The entire control plane
 runs inside your infrastructure, no outbound traffic required.
 
-[Request an Enterprise license](https://w0lzyfh2w8o.typeform.com/to/zuoDgoMv)
+[Request an Enterprise license](https://w0lzyfh2w8o.typeform.com/to/f37L1SRx#form_name=enterprise&form_origin=userguide)

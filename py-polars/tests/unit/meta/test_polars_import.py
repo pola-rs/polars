@@ -106,3 +106,21 @@ def test_polars_import() -> None:
             import_time_ms = polars_import_time // 1_000
             msg = f"Possible import speed regression; took {import_time_ms}ms\n{df_import}"
             raise AssertionError(msg)
+
+
+def test_unknown_extension_type_behavior_invalid_does_not_panic_27004() -> None:
+    python_path = (
+        f"{Path(pl.__file__).parent.parent}:{Path(pl._plr.__file__).parent.parent}"
+    )
+    result = subprocess.run(
+        [sys.executable, "-W", "always", "-c", "import polars"],
+        capture_output=True,
+        text=True,
+        env={
+            "PYTHONPATH": python_path,
+            "POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR": "invalid",
+        },
+    )
+    assert result.returncode == 0, result.stderr
+    assert "POLARS_UNKNOWN_EXTENSION_TYPE_BEHAVIOR" in result.stderr
+    assert "PanicException" not in result.stderr

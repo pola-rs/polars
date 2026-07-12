@@ -38,9 +38,9 @@ from polars._utils.construction.utils import (
 from polars._utils.various import (
     _is_generator,
     arrlen,
-    issue_warning,
     parse_version,
 )
+from polars._warnings import issue_warning
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
@@ -698,7 +698,7 @@ def _sequence_of_tuple_to_pydf(
 @_sequence_to_pydf_dispatcher.register(Mapping)
 @_sequence_to_pydf_dispatcher.register(dict)
 def _sequence_of_dict_to_pydf(
-    first_element: dict[str, Any],  # noqa: ARG001
+    first_element: Mapping[str, Any],  # noqa: ARG001
     data: Sequence[Any],
     schema: SchemaDefinition | None,
     *,

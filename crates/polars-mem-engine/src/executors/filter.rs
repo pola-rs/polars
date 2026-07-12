@@ -126,7 +126,7 @@ impl Executor for FilterExec {
         let df = self.input.execute(state)?;
 
         let profile_name = if state.has_node_timer() {
-            Cow::Owned(format!(".filter({})", &self.predicate.as_ref()))
+            Cow::Owned(format!(".filter({})", self.predicate.as_ref()))
         } else {
             Cow::Borrowed("")
         };

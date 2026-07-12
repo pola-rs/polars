@@ -1,14 +1,22 @@
-//! Prune `FileScanIR::Parquet::metadata` to projected + predicate columns.
+//! Prune `FileScanIR::Parquet`'s pre-decoded metadata (`first_metadata`
+//! and `metadata_per_source`) to projected + predicate columns.
 //!
 //! Runs at the end of the optimizer pipeline, after projection and predicate
 //! pushdown have resolved each scan's projection / predicate. Walks the IR
-//! arena and replaces each parquet scan's metadata via
-//! `FileMetadata::pruned`.
+//! arena and replaces each entry via `FileMetadata::pruned`.
 //!
 //! Gated on `POLARS_PRUNE_PARQUET_METADATA=1` (default off; single-node
 //! execution gets no benefit since metadata never crosses a wire).
 
+#[cfg(feature = "parquet")]
+use std::sync::Arc;
+
+#[cfg(feature = "parquet")]
+use polars_io::parquet::metadata::FileMetadataRef;
 use polars_utils::arena::{Arena, Node};
+#[cfg(feature = "parquet")]
+use polars_utils::pl_str::PlSmallStr;
+#[cfg(feature = "parquet")]
 use polars_utils::unitvec;
 
 #[cfg(feature = "parquet")]
@@ -45,43 +53,49 @@ pub(super) fn prune_parquet_metadata(
             continue;
         };
 
-        let Some(projection) = unified_scan_args.projection.clone() else {
-            continue;
-        };
-
-        // Extract predicate column names. Filter to those also in the
-        // projection (post-pushdown predicate cols are typically ⊆
-        // projection, but be defensive).
-        let predicate_cols: Vec<polars_utils::pl_str::PlSmallStr> = predicate
-            .as_ref()
-            .map(|pred_ir| {
-                aexpr_to_leaf_names_iter(pred_ir.node(), expr_arena)
-                    .filter(|name| projection.iter().any(|p| p == name.as_str()))
-                    .cloned()
-                    .collect()
-            })
-            .unwrap_or_default();
-
+        // Variant check first: skip the projection/predicate work entirely
+        // for non-Parquet scans (CSV, IPC, NDJson, Python, Anonymous).
         let FileScanIR::Parquet {
-            metadata: Some(meta_arc),
+            first_metadata,
+            metadata_per_source,
             ..
         } = scan_type.as_mut()
         else {
             continue;
         };
 
-        // Pruning failure (chunks-vs-leaves desync inside `from_compact`)
-        // is recoverable; fall back to unpruned metadata so the query still
-        // runs. The wire form just stays larger for this scan.
-        let Ok(pruned) = meta_arc.pruned(&projection, &predicate_cols) else {
+        let Some(projection) = unified_scan_args.projection.clone() else {
             continue;
         };
 
-        // Only swap if the pruned form is actually smaller (number of leaves).
-        // Avoids allocating a new Arc when nothing changed.
-        if pruned.schema_descr.columns().len() < meta_arc.schema_descr.columns().len() {
-            *meta_arc = std::sync::Arc::new(pruned);
-        }
+        // Predicate cols are a subset of the projection by this point:
+        // projection pushdown adds predicate-referenced cols to the scan
+        // (else the pushed-down predicate would `ColumnNotFound` at execute).
+        let predicate_cols: Vec<PlSmallStr> = predicate
+            .as_ref()
+            .map(|pred_ir| {
+                aexpr_to_leaf_names_iter(pred_ir.node(), expr_arena)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Pruning failure (chunks-vs-leaves desync inside `from_compact`) is
+        // recoverable; fall back to unpruned metadata so the query still runs.
+        // The wire form just stays larger for this entry. Swap-only-if-smaller
+        // (leaf count) avoids allocating a new inner Arc when nothing changed.
+        let prune_one = |m: &FileMetadataRef| -> FileMetadataRef {
+            m.pruned(&projection, &predicate_cols)
+                .ok()
+                .filter(|p| p.schema_descr.columns().len() < m.schema_descr.columns().len())
+                .map(Arc::new)
+                .unwrap_or_else(|| m.clone())
+        };
+
+        *first_metadata = first_metadata.as_ref().map(prune_one);
+        *metadata_per_source = metadata_per_source
+            .as_ref()
+            .map(|s| s.iter().map(prune_one).collect());
     }
 }
 
