@@ -2823,6 +2823,13 @@ def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
     ).sink_iceberg(table, mode="append")
 
     md_path = Path(table.metadata_location.removeprefix("file:").strip("\\"))
+    print(
+        (
+            table.metadata_location,
+            table.metadata_location.removeprefix("file:"),
+            table.metadata_location.removeprefix("file:").strip("\\"),
+        )
+    )
     md_object = json.loads(md_path.read_text())
 
     md_object["format-version"] = 3
