@@ -2822,13 +2822,10 @@ def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
         schema={"height_provider": pl.Int32},
     ).sink_iceberg(table, mode="append")
 
-    md_path = Path(table.metadata_location.removeprefix("file:").strip("\\"))
-    print(
-        (
-            table.metadata_location,
-            table.metadata_location.removeprefix("file:"),
-            table.metadata_location.removeprefix("file:").strip("\\"),
-        )
+    md_path = Path(
+        table.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
     )
     md_object = json.loads(md_path.read_text())
 
