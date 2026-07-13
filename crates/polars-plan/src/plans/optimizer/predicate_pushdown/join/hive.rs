@@ -117,8 +117,7 @@ pub fn rewrite_hive(
                 let mut acc_right = init_indexmap(Some(1));
                 insert_predicate_dedup(&mut acc_right, &r_pred, expr_arena);
                 opt.pushdown_and_assign(input_right, acc_right, ir_arena, expr_arena)?;
-            }
-            {
+            } else {
                 let n_parts = std::env::var("POLARS_HIVE_PARTITIONS")
                     .ok()
                     .and_then(|v| v.parse::<usize>().ok())
