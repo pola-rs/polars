@@ -663,48 +663,41 @@ def test_head_tail(fruits_cars: pl.DataFrame) -> None:
     "dtype", [pl.Int32, pl.Boolean, pl.String, pl.Categorical, pl.List]
 )
 def test_first_last(dtype: PolarsDataType) -> None:
+    def to_target_dtype(s: pl.Series) -> pl.Series:
+        # For categorical, we must go through String.
+        if dtype == pl.Categorical:
+            return s.cast(pl.String).cast(dtype)
+        # For lists, we have to explicitly construct the list with pl.list,
+        # preserving validity so a null scalar maps to a null list.
+        if dtype == pl.List:
+            inner = s.cast(pl.Int64)
+            return pl.select(
+                pl.when(inner.is_not_null()).then(pl.list(inner)).alias(s.name)
+            ).to_series()
+        return s.cast(dtype)
+
     # Ensure multiple chunks.
     s1 = pl.Series("a", [None, None], dtype=pl.Int32)
     s2 = pl.Series("a", [None, 3, 4, None], dtype=pl.Int32)
     s3 = pl.Series("a", [None, None], dtype=pl.Int32)
     s = s1.append(s2).append(s3)
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        s = s.cast(pl.String)
-    s = s.cast(dtype)
+    s = to_target_dtype(s)
     lf = s.to_frame().lazy()
 
     result = lf.select(pl.col("a").first()).collect()
-    expected_value = pl.Series("a", [None])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [None])).to_frame()
     assert_frame_equal(result, expected)
 
     result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
-    expected_value = pl.Series("a", [3])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [3])).to_frame()
     assert_frame_equal(result, expected)
 
     result = lf.select(pl.col("a").last()).collect()
-    expected_value = pl.Series("a", [None])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [None])).to_frame()
     assert_frame_equal(result, expected)
 
     result = lf.select(pl.col("a").last(ignore_nulls=True)).collect()
-    expected_value = pl.Series("a", [4])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [4])).to_frame()
     assert_frame_equal(result, expected)
 
     # Test with empty
@@ -724,15 +717,12 @@ def test_first_last(dtype: PolarsDataType) -> None:
     assert_frame_equal(result, expected)
 
     # Test with no nulls
-    lf = pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int32).to_frame().lazy()
-    expected_value = pl.Series("a", [1])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-        lf = lf.with_columns(pl.col("a").cast(pl.String))
-
-    lf = lf.with_columns(pl.col("a").cast(dtype))
-    expected = expected_value.cast(dtype).to_frame()
+    lf = (
+        to_target_dtype(pl.Series("a", [1, 2, 3, 4, 5], dtype=pl.Int32))
+        .to_frame()
+        .lazy()
+    )
+    expected = to_target_dtype(pl.Series("a", [1])).to_frame()
 
     result = lf.select(pl.col("a").first()).collect()
     assert_frame_equal(result, expected)
@@ -740,11 +730,7 @@ def test_first_last(dtype: PolarsDataType) -> None:
     result = lf.select(pl.col("a").first(ignore_nulls=True)).collect()
     assert_frame_equal(result, expected)
 
-    expected_value = pl.Series("a", [5])
-    if dtype == pl.Categorical:
-        # For categorical, we must go through String
-        expected_value = expected_value.cast(pl.String)
-    expected = expected_value.cast(dtype).to_frame()
+    expected = to_target_dtype(pl.Series("a", [5])).to_frame()
 
     result = lf.select(pl.col("a").last()).collect()
     assert_frame_equal(result, expected)

@@ -26,7 +26,7 @@ use arrow::offset::{Offset, Offsets};
 use binview_to::{binview_to_dictionary, utf8view_to_dictionary, view_to_binary};
 pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 pub use primitive_to::*;
@@ -492,39 +492,20 @@ pub fn cast(
             Ok(cast_large_to_list(array.as_any().downcast_ref().unwrap(), to_type).boxed())
         },
 
-        (_, List(to)) => {
-            warn_cast_to_list_deprecated(from_type);
-
-            // cast primitive to list's primitive
-            let values = cast(array, &to.dtype, options)?;
-            // create offsets, where if array.len() = 2, we have [0,1,2]
-            let offsets = (0..=array.len() as i32).collect::<Vec<_>>();
-            // SAFETY: offsets _are_ monotonically increasing
-            let offsets = unsafe { Offsets::new_unchecked(offsets) };
-
-            let list_array = ListArray::<i32>::new(to_type.clone(), offsets.into(), values, None);
-
-            Ok(Box::new(list_array))
+        (_, List(_)) => {
+            polars_bail!(
+                InvalidOperation:
+                "casting from {from_type:?} to list type is not supported\n\
+                Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
+            );
         },
 
-        (_, LargeList(to)) if from_type != &LargeBinary => {
-            warn_cast_to_list_deprecated(from_type);
-
-            // cast primitive to list's primitive
-            let values = cast(array, &to.dtype, options)?;
-            // create offsets, where if array.len() = 2, we have [0,1,2]
-            let offsets = (0..=array.len() as i64).collect::<Vec<_>>();
-            // SAFETY: offsets _are_ monotonically increasing
-            let offsets = unsafe { Offsets::new_unchecked(offsets) };
-
-            let list_array = ListArray::<i64>::new(
-                to_type.clone(),
-                offsets.into(),
-                values,
-                array.validity().cloned(),
+        (_, LargeList(_)) if from_type != &LargeBinary => {
+            polars_bail!(
+                InvalidOperation:
+                "casting from {from_type:?} to list type is not supported\n\
+                Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
             );
-
-            Ok(Box::new(list_array))
         },
 
         (Utf8View, _) => {
@@ -1143,14 +1124,6 @@ fn from_to_binview(
         ),
     };
     Ok(binview)
-}
-
-fn warn_cast_to_list_deprecated(from_type: &ArrowDataType) {
-    polars_warn!(
-        Deprecation,
-        "casting from {from_type:?} to list type is deprecated\n\
-        Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
-    )
 }
 
 #[cfg(test)]
