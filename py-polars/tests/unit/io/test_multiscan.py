@@ -997,3 +997,46 @@ def test_hive_join_rewrite_to_partitioned_union(tmp_path: Path) -> None:
         out.collect(),
         q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort("foo"),
     )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_pre_partition_hive_flag(tmp_path: Path) -> None:
+    # The `pre_partition_hive` optimization flag controls whether the join
+    # is rewritten into a union of per-partition joins at all. It defaults
+    # to `True`; disabling it should leave a single, unsplit join in place.
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 2], "y": [100, 200]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = left.join(right, left_on="foo", right_on="bar", how="inner")
+
+    default_flags = pl.QueryOptFlags()
+    assert default_flags.pre_partition_hive is True
+
+    plan_enabled = q.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=True))
+    assert plan_enabled.startswith("UNION[maintain_order: false]")
+    assert plan_enabled.count("INNER JOIN:") == 2
+
+    plan_disabled = q.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=False))
+    assert "UNION" not in plan_disabled
+    assert plan_disabled.count("INNER JOIN:") == 1
+    assert plan_disabled.count("is_in") == 2
+
+    out = q.sort("foo")
+    assert_frame_equal(
+        out.collect(optimizations=pl.QueryOptFlags(pre_partition_hive=True)).sort(
+            "foo"
+        ),
+        out.collect(optimizations=pl.QueryOptFlags(pre_partition_hive=False)).sort(
+            "foo"
+        ),
+    )
