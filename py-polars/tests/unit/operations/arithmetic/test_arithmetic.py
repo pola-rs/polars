@@ -1069,7 +1069,7 @@ def test_log_broadcast(dtype: pl.DataType) -> None:
     [(operator.and_, "&"), (operator.or_, "|"), (operator.xor, "^")],
     ids=["and", "or", "xor"],
 )
-def test_bitwise_bool_ops_deprecated(
+def test_bitwise_bool_ops_unsupported(
     op: Callable[[Any, Any], Any], op_str: str
 ) -> None:
     lf = pl.LazyFrame(
@@ -1077,18 +1077,12 @@ def test_bitwise_bool_ops_deprecated(
     )
     hint = "Hint: cast the Boolean to Int32 using pl.Expr.cast()."
 
-    msg = (
-        f"{op_str} on Boolean and Int32 is deprecated and will raise a ComputeError in Polars 2.0\n"
-        + hint
-    )
-    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+    msg = f"{op_str} on Boolean and Int32 is not supported\n" + hint
+    with pytest.raises(pl.exceptions.ComputeError, match=rf"^{re.escape(msg)}"):
         lf.select(op(pl.col("bool"), pl.col("int"))).collect_schema()
 
-    msg = (
-        f"{op_str} on Int32 and Boolean is deprecated and will raise a ComputeError in Polars 2.0\n"
-        + hint
-    )
-    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
+    msg = f"{op_str} on Int32 and Boolean is not supported\n" + hint
+    with pytest.raises(pl.exceptions.ComputeError, match=rf"^{re.escape(msg)}"):
         lf.select(op(pl.col("int"), pl.col("bool"))).collect_schema()
 
 
