@@ -580,7 +580,7 @@ impl PyLazyFrame {
         py.enter_polars_df(|| {
             let ldf = self.ldf.read().clone();
             if let Some(lambda) = lambda_post_opt {
-                ldf._collect_post_opt(|root, lp_arena, expr_arena, _| {
+                ldf._collect_post_opt(|root, lp_arena, expr_arena| {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
                 })
             } else {

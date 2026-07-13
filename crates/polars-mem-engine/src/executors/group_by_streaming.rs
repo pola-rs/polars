@@ -247,12 +247,11 @@ fn can_run_partitioned(
 
 impl Executor for GroupByStreamingExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        let name = "streaming_group_by";
         state.should_stop()?;
         #[cfg(debug_assertions)]
         {
             if state.verbose() {
-                eprintln!("run {name}")
+                eprintln!("run streaming_group_by")
             }
         }
         let input_df = self.input_exec.execute(state)?;
