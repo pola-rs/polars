@@ -285,11 +285,12 @@ pub trait ParameterFreeSpillContext {
         S: Spillable,
         Self: Sized;
 
-    fn register<T, S>(&self, token: &T) -> impl Future<Output=()>
+    fn register<T, S>(&self, token: &T) -> impl Future<Output = ()>
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
-        Self: Sized {
+        Self: Sized,
+    {
         self.register_no_spill_check(token);
         memory_manager().spill()
     }
