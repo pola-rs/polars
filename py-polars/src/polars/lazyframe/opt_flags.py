@@ -45,6 +45,7 @@ class QueryOptFlags:
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
+        partition_hive: None | bool = None,
     ) -> None:
         self._pyoptflags = PyOptFlags.default()
         self.update(
@@ -59,6 +60,7 @@ class QueryOptFlags:
             check_order_observe=check_order_observe,
             fast_projection=fast_projection,
             sort_collapse=sort_collapse,
+            partition_hive=partition_hive,
         )
 
     @classmethod
@@ -81,6 +83,7 @@ class QueryOptFlags:
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
+        partition_hive: None | bool = None,
     ) -> QueryOptFlags:
         """Create new empty set off optimizations."""
         optflags = QueryOptFlags()
@@ -97,6 +100,7 @@ class QueryOptFlags:
             check_order_observe=check_order_observe,
             fast_projection=fast_projection,
             sort_collapse=sort_collapse,
+            partition_hive=partition_hive,
         )
 
     def update(
@@ -113,6 +117,7 @@ class QueryOptFlags:
         check_order_observe: None | bool = None,
         fast_projection: None | bool = None,
         sort_collapse: None | bool = None,
+        partition_hive: None | bool = None,
     ) -> QueryOptFlags:
         """Update the current optimization flags."""
         if predicate_pushdown is not None:
@@ -143,6 +148,8 @@ class QueryOptFlags:
             self.fast_projection = fast_projection
         if sort_collapse is not None:
             self.sort_collapse = sort_collapse
+        if partition_hive is not None:
+            self.partition_hive = partition_hive
 
         return self
 
@@ -255,6 +262,15 @@ class QueryOptFlags:
     def sort_collapse(self, value: bool) -> None:
         self._pyoptflags.sort_collapse = value
 
+    @property
+    def partition_hive(self) -> bool:
+        """Prepartition hive-partitioned joins on their partition key (requires `predicate_pushdown`)."""  # noqa: W505
+        return self._pyoptflags.partition_hive
+
+    @partition_hive.setter
+    def partition_hive(self, value: bool) -> None:
+        self._pyoptflags.partition_hive = value
+
     def __str__(self) -> str:
         return f"""
 QueryOptFlags {{
@@ -271,6 +287,7 @@ QueryOptFlags {{
     check_order_observe: {self.check_order_observe}
     fast_projection: {self.fast_projection}
     sort_collapse: {self.sort_collapse}
+    partition_hive: {self.partition_hive}
 
     eager: {self._pyoptflags.eager}
     streaming: {self._pyoptflags.streaming}

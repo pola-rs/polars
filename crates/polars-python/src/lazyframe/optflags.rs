@@ -59,6 +59,7 @@ flag_getter_setters! {
     (CHECK_ORDER_OBSERVE, get_check_order_observe, set_check_order_observe, clear=true)
     (FAST_PROJECTION, get_fast_projection, set_fast_projection, clear=true)
     (SORT_COLLAPSE, get_sort_collapse, set_sort_collapse, clear=true)
+    (PARTITION_HIVE, get_partition_hive, set_partition_hive, clear=true)
 
     (EAGER, get_eager, set_eager, clear=true)
     (STREAMING, get_streaming, set_streaming, clear=true)
