@@ -78,7 +78,7 @@ impl ComputeNode for ForwardFillNode {
                 let morsel_last = last.clone();
                 let morsel_consecutive_nulls = *consecutive_nulls;
 
-                let df = morsel.get_df().await;
+                let df = morsel.df().await;
                 let column = &df[0];
                 let height = column.len();
                 let null_count = column.null_count();

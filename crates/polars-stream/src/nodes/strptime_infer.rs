@@ -178,7 +178,7 @@ impl ComputeNode for StrptimeInferNode {
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
                         if infer_slot.is_none() {
-                            let df = morsel.get_df().await;
+                            let df = morsel.df().await;
                             let ca = df.columns()[0].str()?;
                             if let Some(idx) = ca.first_non_null() {
                                 *infer_slot =

@@ -407,7 +407,7 @@ async fn find_mergeable_task(
                         .await;
                     return Ok(());
                 };
-                build_unmerged.push_df(m.into_df2().await);
+                build_unmerged.push_df(m.into_df().await);
             },
             Err(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
                 let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
@@ -416,7 +416,7 @@ async fn find_mergeable_task(
                         .await;
                     return Ok(());
                 };
-                probe_unmerged.push_df(m.into_df2().await);
+                probe_unmerged.push_df(m.into_df().await);
             },
             Err(other) => {
                 unreachable!("unexpected NeedMore value: {other:?}");

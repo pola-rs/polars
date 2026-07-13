@@ -319,7 +319,7 @@ async fn distribute_work_task(
             if let Some(ref mut recv) = recv_right
                 && let Ok(morsel_right) = recv.recv().await
             {
-                right_buffer.push_df(morsel_right.into_df2().await);
+                right_buffer.push_df(morsel_right.into_df().await);
             } else {
                 // The right pipe is empty at this stage, we will need to wait for
                 // a new stage and try again.

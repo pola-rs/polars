@@ -89,7 +89,7 @@ impl ComputeNode for OrderedUnionNode {
                     // Ensure the morsel matches the expected output schema,
                     // casting nulls to the appropriate output type.
                     morsel
-                        .get_df_mut()
+                        .df_mut()
                         .await
                         .ensure_matches_schema(&output_schema)?;
 

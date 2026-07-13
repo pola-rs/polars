@@ -88,7 +88,7 @@ impl ComputeNode for SortedUnique {
                     continue;
                 }
 
-                let df = morsel.get_df().await;
+                let df = morsel.df().await;
                 let mut is_first_new_run = false;
                 for (key, last) in keys.iter().zip(last.iter_mut()) {
                     let column = &df[*key];

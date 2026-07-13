@@ -63,7 +63,7 @@ impl ComputeNode for RleIdNode {
                 if m.height() == 0 {
                     continue;
                 }
-                let mut df = m.get_df_mut().await;
+                let mut df = m.df_mut().await;
 
                 assert_eq!(df.width(), 1);
                 let column = &df[0];

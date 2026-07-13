@@ -135,7 +135,7 @@ impl ComputeNode for BackwardFillNode {
             let ideal_morsel_size = get_ideal_morsel_size() as IdxSize;
 
             while let Ok(morsel) = receiver.recv().await {
-                let df = morsel.get_df().await;
+                let df = morsel.df().await;
                 let column = &df[0];
                 let height = column.len();
                 if height == 0 {
@@ -207,7 +207,7 @@ impl ComputeNode for BackwardFillNode {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let wait_group = WaitGroup::default();
                 while let Ok(mut morsel) = recv.recv().await {
-                    let mut df = morsel.get_df_mut().await;
+                    let mut df = morsel.df_mut().await;
                     if df[0].has_nulls() {
                         *df = df[0]
                             .fill_null(FillNullStrategy::Backward(Some(limit)))?

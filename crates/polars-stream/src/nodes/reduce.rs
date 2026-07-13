@@ -65,7 +65,7 @@ impl ReduceNode {
                     let mut in_column_refs = Vec::new();
                     while let Ok(morsel) = recv.recv().await {
                         let seq = morsel.seq();
-                        let df = morsel.into_df2().await;
+                        let df = morsel.into_df().await;
                         for (reducer, selector_set) in local_reducers.iter_mut().zip(selectors) {
                             for selector in selector_set {
                                 let col =

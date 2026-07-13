@@ -235,7 +235,7 @@ fn estimate_cardinality(
                 CardinalitySketch::new,
                 |mut sketch, (morsel_idx, morsel)| {
                     let sliced;
-                    let pin_df = morsel.get_df_blocking();
+                    let pin_df = morsel.df_blocking();
                     let df = if morsel_idx == last_morsel_idx {
                         sliced = pin_df.slice(0, last_morsel_slice);
                         &sliced
@@ -259,7 +259,7 @@ fn estimate_size_per_row(morsels: &[Morsel]) -> f64 {
     let mut total_size = 0;
     let mut total_height = 0;
     for m in morsels {
-        total_size += m.get_df_blocking().estimated_size();
+        total_size += m.df_blocking().estimated_size();
         total_height += m.height();
     }
     total_size as f64 / total_height as f64
@@ -500,7 +500,7 @@ impl BuildState {
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later gathers.
-            let df = morsel.get_df().await;
+            let df = morsel.df().await;
             let hash_keys =
                 select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
             let mut payload = select_payload(df.clone(), payload_selector);

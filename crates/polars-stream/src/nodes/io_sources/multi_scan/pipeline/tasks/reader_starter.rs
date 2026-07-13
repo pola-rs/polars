@@ -663,7 +663,7 @@ async fn start_reader_impl(
             hive_parts,
             external_filter_mask,
         }
-        .initialize(first_morsel.get_df().await.schema())?
+        .initialize(first_morsel.df().await.schema())?
     } else {
         ApplyExtraOps::Noop
     };

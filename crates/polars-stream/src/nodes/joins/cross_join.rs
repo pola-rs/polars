@@ -204,7 +204,7 @@ impl ComputeNode for CrossJoinNode {
                                         )
                                     };
 
-                                let probe_df = morsel.get_df().await;
+                                let probe_df = morsel.df().await;
                                 if build_df.height() >= ideal_morsel_size {
                                     for probe_offset in 0..probe_df.height() {
                                         let mut build_offset = 0;

@@ -136,7 +136,7 @@ impl ComputeNode for RleNode {
                             continue;
                         }
 
-                        let df_pin = m.get_df().await;
+                        let df_pin = m.df().await;
                         assert_eq!(df_pin.width(), 1);
                         let column = &df_pin[0];
 

@@ -5,7 +5,7 @@ use polars_core::runtime::RAYON;
 use polars_utils::priority::Priority;
 use polars_utils::sync::SyncPtr;
 
-use crate::morsel::{Morsel, MorselSeq};
+use crate::morsel::Morsel;
 
 /// Amount of morsels we need to consider spawning a thread during linearization.
 const MORSELS_PER_THREAD: usize = 256;

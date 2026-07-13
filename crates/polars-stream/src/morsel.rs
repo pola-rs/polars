@@ -114,7 +114,6 @@ impl Morsel {
         }
     }
 
-    #[expect(unused)]
     pub fn into_inner(self) -> (SpillFrame, MorselSeq, SourceToken, Option<WaitToken>) {
         (self.sf, self.seq, self.source_token, self.consume_token)
     }
@@ -135,7 +134,7 @@ impl Morsel {
     }
 
     #[inline(always)]
-    pub async fn into_df2(self) -> DataFrame {
+    pub async fn into_df(self) -> DataFrame {
         self.sf.into_df().await
     }
 
@@ -145,38 +144,24 @@ impl Morsel {
     }
 
     #[inline(always)]
-    pub async fn get_df(&self) -> PinnedRef<'_, DataFrame> {
+    pub async fn df(&self) -> PinnedRef<'_, DataFrame> {
         self.sf.get().await
     }
 
     #[inline(always)]
-    pub fn get_df_blocking(&self) -> PinnedRef<'_, DataFrame> {
+    pub fn df_blocking(&self) -> PinnedRef<'_, DataFrame> {
         self.sf.get_blocking()
     }
 
     #[inline(always)]
-    pub async fn get_df_mut(&mut self) -> PinnedFrameMut<'_> {
+    pub async fn df_mut(&mut self) -> PinnedFrameMut<'_> {
         self.sf.get_mut().await
     }
 
     #[inline(always)]
-    pub fn get_df_mut_blocking(&mut self) -> PinnedFrameMut<'_> {
+    pub fn df_mut_blocking(&mut self) -> PinnedFrameMut<'_> {
         self.sf.get_mut_blocking()
     }
-
-    /*
-    pub fn into_df(self) -> DataFrame {
-        self.df
-    }
-
-    pub fn df(&self) -> &DataFrame {
-        &self.df
-    }
-
-    pub fn df_mut(&mut self) -> &mut DataFrame {
-        &mut self.df
-    }
-    */
 
     pub fn seq(&self) -> MorselSeq {
         self.seq
@@ -195,7 +180,6 @@ impl Morsel {
         }
     }
 
-    #[expect(unused)]
     pub async fn map<F: FnOnce(DataFrame) -> DataFrame>(self, f: F) -> Self {
         let Self {
             mut sf,

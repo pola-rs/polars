@@ -277,7 +277,7 @@ impl ComputeNode for MergeSortedNode {
                                 let seq = morsel.seq().offset_by(morsel_offset);
                                 max_seq = max_seq.max(seq);
 
-                                remove_key_column(&mut *morsel.get_df_mut().await);
+                                remove_key_column(&mut *morsel.df_mut().await);
 
                                 morsel.set_seq(seq);
                                 if send.send(morsel).await.is_err() {
@@ -314,7 +314,7 @@ impl ComputeNode for MergeSortedNode {
                         // Request the port stop producing morsels.
                         morsel.source_token().stop();
                         // Buffer all the morsels that were already produced.
-                        unmerged.push_back(morsel.into_df2().await);
+                        unmerged.push_back(morsel.into_df().await);
                     }
                 }
 
@@ -393,7 +393,7 @@ impl ComputeNode for MergeSortedNode {
                             }
                             break;
                         };
-                        empty_unmerged.push_back(m.into_df2().await);
+                        empty_unmerged.push_back(m.into_df().await);
                     }
 
                     // Clear out buffers until we cannot anymore. This helps allows us to go to the
@@ -475,7 +475,7 @@ impl ComputeNode for MergeSortedNode {
                             // the input. We don't want to mess with the source token or wait group
                             // and just pass it on.
                             if right.shape_has_zero() {
-                                remove_key_column(&mut *left.get_df_mut().await);
+                                remove_key_column(&mut *left.df_mut().await);
 
                                 if send.send(left).await.is_err() {
                                     return Ok(());

@@ -79,7 +79,7 @@ impl InputHead {
     async fn take(&mut self, len: usize) -> DataFrame {
         let columns: Vec<Column> = if self.is_broadcast.unwrap() && self.shape() != (0, 0) {
             self.morsels[0]
-                .get_df()
+                .df()
                 .await
                 .columns()
                 .iter()
@@ -89,9 +89,9 @@ impl InputHead {
             self.total_len -= len;
 
             return if self.morsels[0].height() == len {
-                self.morsels.pop_front().unwrap().into_df2().await
+                self.morsels.pop_front().unwrap().into_df().await
             } else {
-                let mut df = self.morsels[0].get_df_mut().await;
+                let mut df = self.morsels[0].df_mut().await;
                 let (head, tail) = df.split_at(len as i64);
                 *df = tail;
                 head
@@ -108,7 +108,7 @@ impl InputHead {
 
     async fn consume_broadcast(&mut self) -> DataFrame {
         assert!(self.is_broadcast == Some(true) && self.total_len == 1);
-        let out = self.morsels.pop_front().unwrap().into_df2().await;
+        let out = self.morsels.pop_front().unwrap().into_df().await;
         self.clear();
         out
     }

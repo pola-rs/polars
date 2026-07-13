@@ -125,7 +125,7 @@ impl PostApplyExtraOps {
                 AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                     while let Ok((mut morsel, row_offset)) = morsel_rx.recv().await {
                         rows_before.fetch_add(morsel.height() as u64);
-                        let mut df = morsel.get_df_mut().await;
+                        let mut df = morsel.df_mut().await;
                         ops_applier.apply_to_df(&mut df, row_offset)?;
                         drop(df);
                         rows_after.fetch_add(morsel.height() as u64);

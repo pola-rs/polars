@@ -136,7 +136,7 @@ impl BuildState {
         };
 
         while let Ok(morsel) = recv.recv().await {
-            let df = morsel.get_df().await;
+            let df = morsel.df().await;
             let hash_keys =
                 select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
 
