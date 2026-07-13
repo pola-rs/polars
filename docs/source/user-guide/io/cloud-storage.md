@@ -1,7 +1,8 @@
 # Cloud storage
 
-Polars can read and write to AWS S3, Azure Blob Storage and Google Cloud Storage. The API is the
-same for all three storage providers.
+Polars can read and write to AWS S3, Azure Blob Storage and Google Cloud Storage, as well as
+[S3-compatible object stores](#s3-compatible-storage). The API is the same for all storage
+providers.
 
 To read from cloud storage, additional dependencies may be needed depending on the use case and
 cloud storage provider:
@@ -74,6 +75,34 @@ use for authentication. This can be done in a few ways:
 
 {{code_block('user-guide/io/cloud-storage','credential_provider_class_global_default',['scan_parquet',
 'CredentialProviderAWS'])}}
+
+## S3-compatible storage
+
+Polars is not limited to the three providers above. Any object store that implements the S3 API,
+such as [MinIO](https://min.io), [Cloudflare R2](https://developers.cloudflare.com/r2/) or
+[Tigris](https://www.tigrisdata.com) (globally distributed, no egress fees), works with the same
+`s3://` paths and authentication options as AWS S3. Only the endpoint needs to be configured, in
+one of two ways:
+
+- Passing `aws_endpoint_url` in `storage_options`:
+
+{{code_block('user-guide/io/cloud-storage','scan_parquet_storage_options_s3_compatible',['scan_parquet'])}}
+
+- Setting the `AWS_ENDPOINT_URL` environment variable:
+
+```shell
+$ export AWS_ENDPOINT_URL="https://t3.storage.dev"
+```
+
+Note the following when using a custom endpoint:
+
+- When an endpoint is configured without a region, Polars does not attempt to resolve the bucket
+  region and signs requests as `us-east-1`. Services that validate the signing region reject such
+  requests with a `SignatureDoesNotMatch` error, so set `aws_region` to the value your service
+  expects.
+- Requests use path-style addressing (`https://host/bucket/...`) by default. If your service
+  requires virtual-hosted-style addressing (`https://bucket.host/...`), set
+  `"aws_virtual_hosted_style_request": "true"` in `storage_options`.
 
 ## Cloud retry configuration
 
