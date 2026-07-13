@@ -43,7 +43,7 @@ def scan_arrow_c_stream(source: Any) -> LazyFrame:
     Notes
     -----
     - The source must produce Arrow RecordBatches with a struct-typed schema.
-    See: https://arrow.apache.org/docs/format/CStreamInterface.html.
+      See: https://arrow.apache.org/docs/format/CStreamInterface.html.
     - Once the stream is consumed, the same source cannot be scanned again.
 
     Examples
