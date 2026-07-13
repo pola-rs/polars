@@ -1744,11 +1744,11 @@ def test_to_physical() -> None:
     assert s.to_physical().dtype == pl.UInt8
 
     # casting a List(Categorical) results in a List(UInt32)
-    s = pl.Series([["cat1"]]).cast(pl.List(pl.Categorical))
+    s = pl.Series([["cat1"]], dtype=pl.List(pl.Categorical))
     assert s.to_physical().dtype == pl.List(pl.UInt32)
 
     # casting a List(Enum) with a small enum results in a List(UInt8)
-    s = pl.Series(["cat1"]).cast(pl.List(pl.Enum(["cat1"])))
+    s = pl.Series([["cat1"]], dtype=pl.List(pl.Enum(["cat1"])))
     assert s.to_physical().dtype == pl.List(pl.UInt8)
 
 
