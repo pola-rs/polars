@@ -95,15 +95,7 @@ impl Executor for PythonScanExec {
 
                 match self.options.python_source {
                     PythonScanSource::Cuda => {
-                        let args = (
-                            with_columns,
-                            predicate,
-                            n_rows,
-                            // This used to indicate whether we requested the timings from this
-                            // scan function. However, because we do not profile the in-memory
-                            // engine anymore from version 2.0, this is always set to false.
-                            false,
-                        );
+                        let args = (with_columns, predicate, n_rows);
                         let df = python_scan_function.call1(args)?;
                         self.finish_df(py, df, state)
                     },

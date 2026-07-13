@@ -57,7 +57,6 @@ fn post_opt_callback(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    duration_since_start: Option<std::time::Duration>,
 ) -> PolarsResult<()> {
     Python::attach(|py| {
         let nt = NodeTraverser::new(root, std::mem::take(lp_arena), std::mem::take(expr_arena));
@@ -68,7 +67,7 @@ fn post_opt_callback(
         // Pass the node visitor which allows the python callback to replace parts of the query plan.
         // Remove "cuda" or specify better once we have multiple post-opt callbacks.
         lambda
-            .call1(py, (nt, duration_since_start.map(|t| t.as_nanos() as u64)))
+            .call1(py, (nt,))
             .map_err(|e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e))?;
 
         // Unpack the arenas.
@@ -581,7 +580,7 @@ impl PyLazyFrame {
             let ldf = self.ldf.read().clone();
             if let Some(lambda) = lambda_post_opt {
                 ldf._collect_post_opt(|root, lp_arena, expr_arena| {
-                    post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
+                    post_opt_callback(&lambda, root, lp_arena, expr_arena)
                 })
             } else {
                 ldf.collect_with_engine(engine.0).map(|r| match r {
