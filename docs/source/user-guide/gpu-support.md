@@ -67,7 +67,7 @@ As of cudf-polars version 26.06, 3 `GPUEngine` subclasses are provided by cudf-p
   Facilitates multi-GPU execution using [Ray](https://www.ray.io/)
 - [`DaskEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/dask_engine/): Facilitates
   multi-GPU execution using [Dask](https://www.dask.org/)
-- [`SMPDEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/spmd_engine/): Single program,
+- [`SPMDEngine`](https://docs.rapids.ai/api/cudf/stable/cudf_polars/spmd_engine/): Single program,
   multiple data model for multi-GPU execution
 
 These 3 engines spin up resources that can be torn down by using the engines as context managers.
