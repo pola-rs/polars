@@ -14,6 +14,25 @@ pub(crate) fn deep_copy_ir_delete_caches(
     ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> Node {
+    deep_copy_ir_impl(ir_node, ir_arena, expr_arena, true)
+}
+
+/// Copies the `ir_node` and all nodes in the subtree rooted at `ir_node`, including expression nodes,
+/// to new nodes in the arena. Cache nodes are preserved.
+pub(crate) fn deep_copy_ir(
+    ir_node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+) -> Node {
+    deep_copy_ir_impl(ir_node, ir_arena, expr_arena, false)
+}
+
+fn deep_copy_ir_impl(
+    ir_node: Node,
+    ir_arena: &mut Arena<IR>,
+    expr_arena: &mut Arena<AExpr>,
+    delete_caches: bool,
+) -> Node {
     tree_traversal(
         ir_node,
         ir_arena,
@@ -23,7 +42,7 @@ pub(crate) fn deep_copy_ir_delete_caches(
             || ir_node,
             |_, _: &mut Arena<IR>, _| ControlFlow::Continue(SubtreeVisit::Visit),
             |node, ir_arena, edges| {
-                let new_node = if let IR::Cache { .. } = ir_arena.get(node) {
+                let new_node = if delete_caches && matches!(ir_arena.get(node), IR::Cache { .. }) {
                     assert_eq!(edges.inputs().len(), 1);
                     assert_eq!(edges.outputs().len(), 1);
                     edges.inputs()[0]
