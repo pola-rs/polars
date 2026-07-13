@@ -39,6 +39,24 @@ def test_str_strptime() -> None:
     assert_series_equal(s.str.strptime(pl.Time, "%H:%M:%S"), expected)
 
 
+def test_strptime_duration() -> None:
+    result = pl.Series(["104:00:00", "-04:00:00", None]).str.strptime(
+        pl.Duration("ms"), "%H:%M:%S"
+    )
+    expected = pl.Series(
+        [timedelta(hours=104), -timedelta(hours=4), None], dtype=pl.Duration("ms")
+    )
+    assert_series_equal(result, expected)
+
+    result = pl.Series(["80:00.125", "23:483.000"]).str.strptime(
+        pl.Duration("us"), "%M:%S%.3f", strict=False
+    )
+    expected = pl.Series(
+        [timedelta(minutes=80, milliseconds=125), None], dtype=pl.Duration("us")
+    )
+    assert_series_equal(result, expected)
+
+
 def test_date_parse_omit_day() -> None:
     df = pl.DataFrame({"month": ["2022-01"]})
     assert df.select(pl.col("month").str.to_date(format="%Y-%m")).item() == date(

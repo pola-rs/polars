@@ -16,7 +16,14 @@ from polars._utils.various import (
 )
 from polars._utils.wrap import wrap_expr
 from polars._warnings import find_stacklevel, issue_warning
-from polars.datatypes import Date, Datetime, Int64, Time, parse_into_datatype_expr
+from polars.datatypes import (
+    Date,
+    Datetime,
+    Duration,
+    Int64,
+    Time,
+    parse_into_datatype_expr,
+)
 from polars.exceptions import ChronoFormatWarning
 
 if TYPE_CHECKING:
@@ -226,17 +233,21 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         ambiguous: Ambiguous | Expr = "raise",
     ) -> Expr:
         """
-        Convert a String column into a Date/Datetime/Time column.
+        Convert a String column into a Date/Datetime/Time/Duration column.
 
         Parameters
         ----------
         dtype
-            The data type to convert into. Can be either Date, Datetime, or Time.
+            The data type to convert into. Can be Date, Datetime, Time, or Duration.
         format
             Format to use for conversion. Refer to the `chrono crate documentation
             <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
             for the full specification. Example: `"%Y-%m-%d %H:%M:%S"`.
             If set to None (default), the format is inferred from the data.
+            Duration parsing requires an explicit format composed of ``%H``, ``%M``,
+            ``%S``, and an optional fractional component such as ``%.3f``. The
+            highest-order component is unbounded, so ``"104:00:00"`` is valid for
+            ``"%H:%M:%S"``.
         strict
             Raise an error if any conversion fails.
         exact
@@ -319,8 +330,13 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
             )
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
+        elif dtype == Duration:
+            time_unit = getattr(dtype, "time_unit", "us")
+            return wrap_expr(
+                self._pyexpr.str_to_duration(format, time_unit, strict, exact, cache)
+            )
         else:
-            msg = "`dtype` must be of type {Date, Datetime, Time}"
+            msg = "`dtype` must be of type {Date, Datetime, Time, Duration}"
             raise ValueError(msg)
 
     @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")

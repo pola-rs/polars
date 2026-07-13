@@ -1,5 +1,7 @@
 pub mod infer;
 use chrono::DateTime;
+#[cfg(feature = "dtype-duration")]
+mod duration;
 mod patterns;
 mod strptime;
 pub use patterns::Pattern;
@@ -68,6 +70,15 @@ fn sniff_fmt_time(val: &str) -> PolarsResult<&'static str> {
 }
 
 pub trait StringMethods: AsString {
+    #[cfg(feature = "dtype-duration")]
+    /// Parse stopwatch-style string values and return a [`DurationChunked`].
+    fn as_duration(&self, fmt: &str, tu: TimeUnit) -> PolarsResult<DurationChunked> {
+        let string_ca = self.as_string();
+        let fmt = duration::DurationFormat::compile(fmt)?;
+        let ca = unary_elementwise(string_ca, |opt_s| fmt.parse(opt_s?, tu));
+        Ok(ca.with_name(string_ca.name().clone()).into_duration(tu))
+    }
+
     #[cfg(feature = "dtype-time")]
     /// Parsing string values and return a [`TimeChunked`]
     fn as_time(&self, fmt: Option<&str>, use_cache: bool) -> PolarsResult<TimeChunked> {
