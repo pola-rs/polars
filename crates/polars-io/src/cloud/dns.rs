@@ -8,7 +8,21 @@ use tokio::sync::RwLock;
 
 type DynErr = Box<dyn std::error::Error + Send + Sync>;
 
+use std::sync::LazyLock;
+
 const DEFAULT_DNS_CACHE_TTL_SECS: u64 = 5;
+
+/// Process-wide DNS cache shared by all `CachingResolver` instances, so resolved
+/// addrs survive client teardown/rebuild (e.g. object-store cache eviction).
+///
+/// Assumes resolution is process-uniform: the key is the hostname alone, so this
+/// must not be shared if per-client resolver config is ever introduced.
+///
+/// Entries are never evicted. This is ok for object-store endpoints (low cardinality).
+/// Revisit with a size cap if keys become externally driven (e.g. per-bucket
+/// virtual-hosted hosts at scale).
+static DNS_CACHE: LazyLock<Arc<RwLock<HashMap<String, CachedAddrs>>>> =
+    LazyLock::new(Default::default);
 
 pub(crate) fn get_dns_cache_ttl() -> Duration {
     let ttl = Duration::from_secs(
@@ -43,7 +57,7 @@ pub struct CachingResolver {
 impl CachingResolver {
     pub fn new(ttl: Duration) -> Self {
         Self {
-            cache: Arc::new(RwLock::default()),
+            cache: DNS_CACHE.clone(),
             ttl,
         }
     }
