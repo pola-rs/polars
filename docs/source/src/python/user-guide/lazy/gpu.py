@@ -43,4 +43,4 @@ print("- NotImplementedError: anonymousfunction")
 print("  return wrap_df(ldf.collect(engine, callback))")
 print()
 print(q.collect())
-# --8<- [end:fallback-result]
+# --8<-- [end:fallback-result]
