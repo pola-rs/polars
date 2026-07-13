@@ -171,7 +171,9 @@ pub fn get_supertype_with_options(
             (Int8, UInt16) => Some(Int32),
             #[cfg(feature = "dtype-i8")]
             (Int8, UInt32) => Some(Int64),
-            #[cfg(feature = "dtype-i8")]
+            #[cfg(all(feature = "dtype-i8", feature = "dtype-i128"))]
+            (Int8, UInt64) => Some(Int128),
+            #[cfg(all(feature = "dtype-i8", not(feature = "dtype-i128")))]
             (Int8, UInt64) => Some(Float64), // Follow numpy
             #[cfg(all(feature = "dtype-i8", feature = "dtype-f16"))]
             (Int8, Float16) => Some(Float16),
@@ -195,7 +197,9 @@ pub fn get_supertype_with_options(
             (Int16, UInt16) => Some(Int32),
             #[cfg(feature = "dtype-i16")]
             (Int16, UInt32) => Some(Int64),
-            #[cfg(feature = "dtype-i16")]
+            #[cfg(all(feature = "dtype-i16", feature = "dtype-i128"))]
+            (Int16, UInt64) => Some(Int128),
+            #[cfg(all(feature = "dtype-i16", not(feature = "dtype-i128")))]
             (Int16, UInt64) => Some(Float64), // Follow numpy
             #[cfg(all(feature = "dtype-i16", feature = "dtype-f16"))]
             (Int16, Float16) => Some(Float32),
@@ -216,10 +220,10 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-u16")]
             (Int32, UInt16) => Some(Int32),
             (Int32, UInt32) => Some(Int64),
-            #[cfg(not(feature = "bigidx"))]
+            #[cfg(feature = "dtype-i128")]
+            (Int32, UInt64) => Some(Int128),
+            #[cfg(not(feature = "dtype-i128"))]
             (Int32, UInt64) => Some(Float64), // Follow numpy
-            #[cfg(feature = "bigidx")]
-            (Int32, UInt64) => Some(Int64), // Needed for bigidx
             #[cfg(feature = "dtype-f16")]
             (Int32, Float16) => Some(Float64),
             (Int32, Float32) => Some(Float64), // Follow numpy
@@ -237,10 +241,10 @@ pub fn get_supertype_with_options(
             #[cfg(feature = "dtype-u16")]
             (Int64, UInt16) => Some(Int64),
             (Int64, UInt32) => Some(Int64),
-            #[cfg(not(feature = "bigidx"))]
+            #[cfg(feature = "dtype-i128")]
+            (Int64, UInt64) => Some(Int128),
+            #[cfg(not(feature = "dtype-i128"))]
             (Int64, UInt64) => Some(Float64), // Follow numpy
-            #[cfg(feature = "bigidx")]
-            (Int64, UInt64) => Some(Int64), // Needed for bigidx
             #[cfg(feature = "dtype-f16")]
             (Int64, Float16) => Some(Float64), // Follow (Int64, Float32) case
             (Int64, Float32) => Some(Float64), // Follow numpy
