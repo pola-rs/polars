@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import polars._reexport as pl
 from polars import functions as F
@@ -331,7 +331,7 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         elif dtype == Time:
             return self.to_time(format, strict=strict, cache=cache)
         elif dtype == Duration:
-            time_unit = getattr(dtype, "time_unit", "us")
+            time_unit = cast("TimeUnit", getattr(dtype, "time_unit", None) or "us")
             return wrap_expr(
                 self._pyexpr.str_to_duration(format, time_unit, strict, exact, cache)
             )

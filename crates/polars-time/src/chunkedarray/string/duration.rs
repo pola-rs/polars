@@ -198,6 +198,10 @@ impl DurationFormat {
 mod tests {
     use super::*;
 
+    fn compile_error(format: &str) -> String {
+        DurationFormat::compile(format).err().unwrap().to_string()
+    }
+
     #[test]
     fn parses_unbounded_highest_component_and_sign() {
         let hours = DurationFormat::compile("%H:%M:%S").unwrap();
@@ -225,5 +229,71 @@ mod tests {
             fmt.parse("80:00.125", TimeUnit::Microseconds),
             Some(4_800_125_000)
         );
+
+        let variable = DurationFormat::compile("%S.%f").unwrap();
+        assert_eq!(
+            variable.parse("1.123456789", TimeUnit::Nanoseconds),
+            Some(1_123_456_789)
+        );
+        assert_eq!(variable.parse("+1.5", TimeUnit::Milliseconds), Some(1_500));
+        assert_eq!(variable.parse("1.", TimeUnit::Nanoseconds), None);
+
+        let exact = DurationFormat::compile("%S-%3f").unwrap();
+        assert_eq!(
+            exact.parse("1-123", TimeUnit::Nanoseconds),
+            Some(1_123_000_000)
+        );
+        assert_eq!(exact.parse("1-12", TimeUnit::Nanoseconds), None);
+    }
+
+    #[test]
+    fn parses_literals_and_rejects_invalid_values() {
+        let fmt = DurationFormat::compile("elapsed %% %Hh %Mm %Ss").unwrap();
+        assert_eq!(
+            fmt.parse("elapsed % 2h 03m 04s", TimeUnit::Milliseconds),
+            Some(7_384_000)
+        );
+        assert_eq!(
+            fmt.parse("remaining % 2h 03m 04s", TimeUnit::Milliseconds),
+            None
+        );
+        assert_eq!(
+            fmt.parse("elapsed % 2h 60m 04s", TimeUnit::Milliseconds),
+            None
+        );
+        assert_eq!(
+            fmt.parse("elapsed % 2h xm 04s", TimeUnit::Milliseconds),
+            None
+        );
+        assert_eq!(
+            fmt.parse("elapsed % 2h 03m 04s trailing", TimeUnit::Milliseconds),
+            None
+        );
+        assert_eq!(fmt.parse("+", TimeUnit::Milliseconds), None);
+    }
+
+    #[test]
+    fn rejects_invalid_formats() {
+        assert!(compile_error("duration").contains("must contain"));
+        assert!(compile_error("%H:%H").contains("duplicate field"));
+        assert!(compile_error("%Q").contains("unsupported"));
+        assert!(compile_error("%.").contains("invalid duration format directive"));
+        assert!(compile_error("%0f").contains("unsupported"));
+        assert!(compile_error("%10f").contains("unsupported"));
+        assert!(compile_error("%").contains("trailing"));
+        assert!(
+            compile_error("%999999999999999999999999999999999999999f")
+                .contains("invalid duration precision")
+        );
+    }
+
+    #[test]
+    fn rejects_overflow() {
+        let fmt = DurationFormat::compile("%H:%M:%S").unwrap();
+        assert_eq!(
+            fmt.parse("999999999999999999999:00:00", TimeUnit::Nanoseconds),
+            None
+        );
+        assert_eq!(fmt.parse("2562048:00:00", TimeUnit::Nanoseconds), None);
     }
 }
