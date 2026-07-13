@@ -181,7 +181,7 @@ print(
     "PerformanceWarning: Query execution with GPU not possible: unsupported operations"
 )
 print("The errors were:")
-print("- NotImplementedError: dtype=Binary conversion not supported")
+print("- NotImplementedError: dtype=Binary conversion not supported"
 print("  return wrap_df(ldf.collect(engine, callback))")
 print()
 print(q.collect())
