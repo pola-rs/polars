@@ -30,7 +30,7 @@ df = pl.LazyFrame(
     }
 )
 
-q = df.select(pl.col("value").map_elements(lambda x: 0 if x > 4 else x + 2))
+q = df.select(pl.col("value").cast(pl.Binary()).head(1))
 
 # --8<-- [end:fallback-setup]
 
@@ -39,7 +39,7 @@ print(
     "PerformanceWarning: Query execution with GPU not possible: unsupported operations"
 )
 print("The errors were:")
-print("- NotImplementedError: anonymousfunction")
+print("- NotImplementedError: dtype=Binary conversion not supported")
 print("  return wrap_df(ldf.collect(engine, callback))")
 print()
 print(q.collect())
