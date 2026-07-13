@@ -158,7 +158,7 @@ impl ComputeNode for MultiplexerNode {
                             Listener::Active(s, ctx) => {
                                 let source_token = morsel.source_token().clone();
                                 let sf = morsel.sf().clone();
-                                ctx.register(&sf);
+                                ctx.register(&sf).await;
                                 match s.send((sf, seq, source_token)) {
                                     Ok(_) => {
                                         anyone_interested = true;
@@ -169,7 +169,7 @@ impl ComputeNode for MultiplexerNode {
                             },
                             Listener::Buffering(b, ctx) => {
                                 let sf = morsel.sf().clone();
-                                ctx.register(&sf);
+                                ctx.register(&sf).await;
                                 b.push_front((sf, seq));
                                 anyone_interested = true;
                             },

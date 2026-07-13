@@ -135,7 +135,7 @@ impl ComputeNode for NegativeSliceNode {
                     while let Ok(morsel) = recv.recv().await {
                         buffer.total_len += morsel.height();
                         let sf = morsel.into_sf();
-                        spill_ctx.register(&sf);
+                        spill_ctx.register(&sf).await;
                         buffer.frames.push_back(sf);
 
                         if buffer.total_len - buffer.frames.front().unwrap().height()

@@ -51,7 +51,7 @@ impl ShiftState {
                         continue;
                     }
                     self.rows_received += morsel.height();
-                    self.spill_ctx.register(morsel.sf());
+                    self.spill_ctx.register(morsel.sf()).await;
                     self.frames.push_back(morsel.into_sf());
                 }
             }

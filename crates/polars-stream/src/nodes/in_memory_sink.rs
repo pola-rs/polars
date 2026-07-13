@@ -68,7 +68,7 @@ impl ComputeNode for InMemorySinkNode {
                 let mut morsels = Vec::new();
                 while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
-                    slf.spill_ctx.register(morsel.sf());
+                    slf.spill_ctx.register(morsel.sf()).await;
                     morsels.push(morsel);
                 }
 

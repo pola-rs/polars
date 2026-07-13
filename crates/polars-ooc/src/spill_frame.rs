@@ -104,14 +104,13 @@ impl SpillFrame {
 
     pub async fn new<C: ParameterFreeSpillContext>(df: DataFrame, ctx: &C) -> Self {
         let slf = Self::new_unregistered(df);
-        ctx.register(&slf);
-        memory_manager().spill().await;
+        ctx.register(&slf).await;
         slf
     }
 
     pub fn new_blocking<C: ParameterFreeSpillContext>(df: DataFrame, ctx: &C) -> Self {
         let slf = Self::new_unregistered(df);
-        ctx.register(&slf);
+        ctx.register_no_spill_check(&slf);
         memory_manager().spill_blocking();
         slf
     }

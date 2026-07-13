@@ -60,7 +60,7 @@ impl InputHead {
         }
 
         if morsel.height() > 0 {
-            ctx.register(morsel.sf());
+            ctx.register(morsel.sf()).await;
             self.morsels.push_back(morsel);
         }
     }
