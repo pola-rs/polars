@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlHashSet;
+use polars_core::prelude::PlIndexSet;
 use polars_core::schema::Schema;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
@@ -408,7 +408,7 @@ impl PartitionedSinkOptionsIR {
                 if keys.is_empty() {
                     Cow::Borrowed(input_schema)
                 } else if !include_keys {
-                    let key_output_names: PlHashSet<&PlSmallStr> =
+                    let key_output_names: PlIndexSet<&PlSmallStr> =
                         keys.iter().map(|e| e.output_name()).collect();
 
                     Cow::Owned(

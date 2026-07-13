@@ -35,6 +35,7 @@ Computation
     Series.cum_prod
     Series.cum_sum
     Series.cumulative_eval
+    Series.degrees
     Series.diff
     Series.dot
     Series.entropy
@@ -57,6 +58,7 @@ Computation
     Series.pct_change
     Series.peak_max
     Series.peak_min
+    Series.radians
     Series.rank
     Series.replace
     Series.replace_strict

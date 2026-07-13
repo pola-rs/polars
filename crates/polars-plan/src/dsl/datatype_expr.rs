@@ -196,8 +196,8 @@ fn into_datatype_impl(
             )
         }),
         D::StructWithFields(field_exprs) => feature_gated!("dtype-struct", {
-            use polars_core::prelude::{Field, InitHashMaps, PlHashSet};
-            let mut seen = PlHashSet::with_capacity(field_exprs.len());
+            use polars_core::prelude::{Field, InitHashMaps, PlIndexSet};
+            let mut seen = PlIndexSet::with_capacity(field_exprs.len());
             let mut fields = Vec::with_capacity(field_exprs.len());
             for (name, dt_expr) in field_exprs {
                 let dt = into_datatype_impl(dt_expr, schema, self_dtype)?;

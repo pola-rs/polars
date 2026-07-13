@@ -35,7 +35,7 @@ impl ApplyRowIndexOrLimit {
                 "[NDJson ApplyRowIndexOrLimit]: init: \
                 limit: {:?}, \
                 row_index: {:?}",
-                &limit, &row_index
+                limit, row_index
             );
         }
 

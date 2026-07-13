@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import subprocess
 import sys
 from functools import partial
@@ -172,3 +173,30 @@ max_retries: 0, \
 retry_timeout: 23ms"""
         in capture
     )
+
+
+def test_huggingface_token_env_var() -> None:
+    try:
+        subprocess.check_output(
+            [
+                sys.executable,
+                "-c",
+                """\
+import polars as pl
+
+pl.scan_csv("hf://...").collect()
+""",
+            ],
+            env={
+                **os.environ,
+                "POLARS_VERBOSE_SENSITIVE": "1",
+                "HF_TOKEN": "of news",
+            },
+            stderr=subprocess.STDOUT,
+        )
+    except subprocess.CalledProcessError as err:
+        capture = err.stdout
+    else:
+        raise AssertionError
+
+    assert b"Bearer of news" in capture

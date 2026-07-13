@@ -164,7 +164,7 @@ impl IRFunctionExpr {
             AsList => mapper.map_to_list_of_dtypes(),
             #[cfg(feature = "dtype-struct")]
             AsStruct => {
-                let mut field_names = PlHashSet::with_capacity(fields.len() - 1);
+                let mut field_names = PlIndexSet::with_capacity(fields.len() - 1);
                 let struct_fields = fields
                     .iter()
                     .map(|f| {
