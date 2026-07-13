@@ -10,35 +10,6 @@ type DynErr = Box<dyn std::error::Error + Send + Sync>;
 
 const DEFAULT_DNS_CACHE_TTL_SECS: u64 = 5;
 
-static POLARS_DNS_LOG_THRESHOLD: LazyLock<Option<Duration>> = LazyLock::new(|| {
-    let v: Option<Duration> =
-        std::env::var("POLARS_DNS_LOG_THRESHOLD_MS")
-            .ok()
-            .and_then(|x| match x.trim().parse::<u64>() {
-                Ok(ms) => Some(Duration::from_millis(ms)),
-                Err(_) => {
-                    if polars_config::config().verbose() {
-                        eprintln!(
-                            "[dns_cache] ignoring invalid POLARS_DNS_LOG_THRESHOLD_MS={x:?} \
-                         (expected integer milliseconds)"
-                        );
-                    }
-                    None
-                },
-            });
-
-    if let Some(v) = v
-        && polars_config::config().verbose()
-    {
-        eprintln!(
-            "[dns_cache] dns log threshold: {} ms",
-            v.as_secs_f64() * 1000.0
-        )
-    }
-
-    v
-});
-
 pub(crate) fn get_dns_cache_ttl() -> Duration {
     let ttl = Duration::from_secs(
         std::env::var("POLARS_DNS_CACHE_TTL_SECS")
@@ -128,8 +99,8 @@ impl Resolve for CachingResolver {
             );
             drop(write_guard);
 
-            if let Some(threshold) = POLARS_DNS_LOG_THRESHOLD.as_ref()
-                && elapsed.gt(threshold)
+            if let Some(threshold) = polars_config::config().dns_log_threshold()
+                && elapsed.gt(&threshold)
             {
                 let display_key = if polars_config::config().verbose_sensitive() {
                     key.as_str()
