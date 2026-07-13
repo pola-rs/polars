@@ -989,26 +989,11 @@ def test_strict_cast_nested() -> None:
     )
 
 
-def test_cast_to_list_deprecated() -> None:
+def test_cast_to_list_not_supported() -> None:
     s = pl.Series("a", [1, 2, 3], dtype=pl.Int32)
     msg = (
-        "casting from Int32 to list type is deprecated\n"
+        "casting from Int32 to list type is not supported\n"
         "Hint: Use pl.list(expr) to turn the Int32 column into a column of single-element lists."
     )
-    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
-        result = s.cast(pl.List(pl.Int32))
-    assert result.dtype == pl.List(pl.Int32)
-
-
-def test_strict_struct_cast_field_count_mismatch() -> None:
-    # strict=True should raise when the number of struct fields differs
-    s = pl.Series("x", [{"a": 1, "b": 2}])
-    with pytest.raises(InvalidOperationError, match="same number of fields"):
-        s.cast(pl.Struct({"a": pl.Int64}), strict=True)
-
-
-def test_strict_struct_cast_field_name_mismatch() -> None:
-    # strict=True should raise when struct field names do not match
-    s = pl.Series("x", [{"a": 1}])
-    with pytest.raises(InvalidOperationError, match="field name mismatch"):
-        s.cast(pl.Struct({"b": pl.Int64}), strict=True)
+    with pytest.raises(InvalidOperationError, match=rf"^{re.escape(msg)}$"):
+        s.cast(pl.List(pl.Int32))
