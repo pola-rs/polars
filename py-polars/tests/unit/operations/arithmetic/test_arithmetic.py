@@ -17,10 +17,12 @@ from polars import (
     Int16,
     Int32,
     Int64,
+    Int128,
     UInt8,
     UInt16,
     UInt32,
     UInt64,
+    UInt128,
 )
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -30,6 +32,82 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from polars._typing import PolarsIntegerType
+
+
+@pytest.mark.parametrize(
+    ("dtype1", "dtype2", "supertype"),
+    [
+        (Int8, Int8, Int8),
+        (Int8, Int16, Int16),
+        (Int8, Int32, Int32),
+        (Int8, Int64, Int64),
+        (Int8, Int128, Int128),
+        (Int8, UInt8, Int16),
+        (Int8, UInt16, Int32),
+        (Int8, UInt32, Int64),
+        (Int8, UInt64, Int128),
+        (Int8, UInt128, Int128),
+        (Int16, Int16, Int16),
+        (Int16, Int32, Int32),
+        (Int16, Int64, Int64),
+        (Int16, Int128, Int128),
+        (Int16, UInt8, Int16),
+        (Int16, UInt16, Int32),
+        (Int16, UInt32, Int64),
+        (Int16, UInt64, Int128),
+        (Int16, UInt128, Int128),
+        (Int32, Int32, Int32),
+        (Int32, Int64, Int64),
+        (Int32, Int128, Int128),
+        (Int32, UInt8, Int32),
+        (Int32, UInt16, Int32),
+        (Int32, UInt32, Int64),
+        (Int32, UInt64, Int128),
+        (Int32, UInt128, Int128),
+        (Int64, Int64, Int64),
+        (Int64, Int128, Int128),
+        (Int64, UInt8, Int64),
+        (Int64, UInt16, Int64),
+        (Int64, UInt32, Int64),
+        (Int64, UInt64, Int128),
+        (Int64, UInt128, Int128),
+        (Int128, Int128, Int128),
+        (Int128, UInt128, Int128),
+        (UInt8, Int128, Int128),
+        (UInt8, UInt8, UInt8),
+        (UInt8, UInt16, UInt16),
+        (UInt8, UInt32, UInt32),
+        (UInt8, UInt64, UInt64),
+        (UInt8, UInt128, UInt128),
+        (UInt16, Int128, Int128),
+        (UInt16, UInt16, UInt16),
+        (UInt16, UInt32, UInt32),
+        (UInt16, UInt64, UInt64),
+        (UInt16, UInt128, UInt128),
+        (UInt32, Int128, Int128),
+        (UInt32, UInt32, UInt32),
+        (UInt32, UInt64, UInt64),
+        (UInt32, UInt128, UInt128),
+        (UInt64, Int128, Int128),
+        (UInt64, UInt64, UInt64),
+        (UInt64, UInt128, UInt128),
+        (UInt128, UInt128, UInt128),
+    ],
+)
+def test_arithmetic_supertype(
+    dtype1: PolarsIntegerType, dtype2: PolarsIntegerType, supertype: PolarsIntegerType
+) -> None:
+    lf1 = pl.LazyFrame(
+        {"a": [1, 2, 3], "b": [1, 2, 3]},
+        schema={"a": dtype1, "b": dtype2},
+    )
+    expected = pl.LazyFrame({"result": [2, 4, 6]}, schema={"result": supertype})
+    q1 = lf1.select((pl.col("a") + pl.col("b")).alias("result"))
+    q2 = lf1.select((pl.col("b") + pl.col("a")).alias("result"))
+    assert q1.collect_schema() == expected.collect_schema()
+    assert q2.collect_schema() == expected.collect_schema()
+    assert_frame_equal(q1, expected)
+    assert_frame_equal(q2, expected)
 
 
 def test_sqrt_neg_inf() -> None:
