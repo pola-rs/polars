@@ -99,7 +99,6 @@ def test_scan_arrow_c_stream_with_operations() -> None:
     assert df["doubled"].to_list() == [20, 40, 60]
 
 
-@pytest.mark.slow
 def test_scan_arrow_c_stream_streaming_engine() -> None:
     schema = pa.schema([("a", pa.int64()), ("b", pa.string())])
     batches = [
