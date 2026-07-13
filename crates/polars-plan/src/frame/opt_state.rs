@@ -39,7 +39,7 @@ bitflags! {
         const CHECK_ORDER_OBSERVE = 1 << 15;
         /// Collapse consecutive sort nodes and pull them up through selecting nodes.
         const SORT_COLLAPSE = 1 << 16;
-        /// Pre-partion hive partitioned joins or group-by's
+        /// Pre-partition hive partitioned joins or group-by's
         /// Only works if PREDICATE_PUSHDOWN is set
         const PARTITION_HIVE = 1 << 17;
     }
