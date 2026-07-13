@@ -233,7 +233,7 @@ def test_arr_dot_query_vector_expansion() -> None:
         pytest.param(pl.Float32, pl.Float64, pl.Float64, id="f32-f64"),
         pytest.param(pl.Int32, pl.Float32, pl.Float64, id="i32-f32"),
         pytest.param(pl.Int8, pl.Int16, pl.Int64, id="i8-i16"),
-        pytest.param(pl.UInt64, pl.Int64, pl.Float64, id="u64-i64"),
+        pytest.param(pl.UInt64, pl.Int64, pl.Int128, id="u64-i64"),
     ],
 )
 def test_arr_dot_dtype_coercion(
