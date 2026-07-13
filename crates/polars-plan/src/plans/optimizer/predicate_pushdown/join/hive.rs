@@ -191,6 +191,7 @@ pub fn rewrite_hive(
     })
 }
 
+#[cfg(feature = "is_in")]
 fn make_predicates(
     partitions: &DataFrame,
     name_left: PlSmallStr,
