@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use hashbrown::HashMap;
