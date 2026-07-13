@@ -72,6 +72,7 @@ impl OptimizationRule for FlattenMergeSortedRule {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn collect_merge_sorted_inputs(
     root: Node,
     key: &[PlSmallStr],
