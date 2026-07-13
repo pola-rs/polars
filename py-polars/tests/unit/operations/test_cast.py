@@ -989,15 +989,14 @@ def test_strict_cast_nested() -> None:
     )
 
 
-def test_cast_to_list_deprecated() -> None:
+def test_cast_to_list_not_supported() -> None:
     s = pl.Series("a", [1, 2, 3], dtype=pl.Int32)
     msg = (
-        "casting from Int32 to list type is deprecated\n"
+        "casting from Int32 to list type is not supported\n"
         "Hint: Use pl.list(expr) to turn the Int32 column into a column of single-element lists."
     )
-    with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
-        result = s.cast(pl.List(pl.Int32))
-    assert result.dtype == pl.List(pl.Int32)
+    with pytest.raises(InvalidOperationError, match=rf"^{re.escape(msg)}$"):
+        s.cast(pl.List(pl.Int32))
 
 
 @pytest.mark.parametrize(

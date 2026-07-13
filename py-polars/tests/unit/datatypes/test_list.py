@@ -572,24 +572,6 @@ def test_list_recursive_categorical_cast() -> None:
     assert s.to_list() == values
 
 
-@pytest.mark.parametrize(
-    ("data", "expected_data", "dtype"),
-    [
-        ([None, 1, 2], [None, [1], [2]], pl.Int64),
-        ([None, 1.0, 2.0], [None, [1.0], [2.0]], pl.Float64),
-        ([None, "x", "y"], [None, ["x"], ["y"]], pl.String),
-        ([None, True, False], [None, [True], [False]], pl.Boolean),
-    ],
-)
-def test_non_nested_cast_to_list(
-    data: list[Any], expected_data: list[Any], dtype: PolarsDataType
-) -> None:
-    s = pl.Series(data, dtype=dtype)
-    casted_s = s.cast(pl.List(dtype))
-    expected = pl.Series(expected_data, dtype=pl.List(dtype))
-    assert_series_equal(casted_s, expected)
-
-
 def test_list_new_from_index_logical() -> None:
     s = (
         pl.select(pl.struct(pl.Series("a", [date(2001, 1, 1)])).implode())
