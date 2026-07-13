@@ -1,8 +1,7 @@
 use std::ops::ControlFlow;
 
-use polars_core::prelude::{PlHashMap, PlHashSet};
 use polars_error::PolarsResult;
-use polars_utils::aliases::{InitHashMaps, PlIndexMap};
+use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
@@ -150,9 +149,9 @@ pub(crate) fn set_cache_states(
         parents: Vec<TwoParents>,
         cache_nodes: Vec<Node>,
         // Union over projected names.
-        names_union: PlHashSet<PlSmallStr>,
+        names_union: PlIndexSet<PlSmallStr>,
         // Union over predicates.
-        predicate_union: PlHashMap<Expr, u32>,
+        predicate_union: PlIndexMap<Expr, u32>,
     }
     let mut cache_schema_and_children = PlIndexMap::new();
 

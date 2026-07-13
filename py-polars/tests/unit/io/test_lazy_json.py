@@ -132,7 +132,7 @@ def test_predicate_pushdown_ndjson(io_files_path: Path) -> None:
     explain = df.explain()
 
     assert "FILTER" not in explain
-    assert """SELECTION: [(col("calories")) > (80)]""" in explain
+    assert """SELECTION: col("calories") > 80""" in explain
 
     assert_frame_equal(df.collect(optimizations=pl.QueryOptFlags.none()), df.collect())
 

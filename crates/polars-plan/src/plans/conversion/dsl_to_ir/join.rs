@@ -131,7 +131,7 @@ pub fn resolve_join(
             )
         })
         .collect::<PolarsResult<Vec<_>>>()?;
-    let mut joined_on = PlHashSet::new();
+    let mut joined_on = PlIndexSet::new();
 
     #[cfg(feature = "iejoin")]
     let check = !matches!(options.args.how, JoinType::IEJoin);

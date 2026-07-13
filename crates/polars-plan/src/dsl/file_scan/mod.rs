@@ -624,7 +624,7 @@ impl CastColumnsPolicy {
                 return mismatch_err("");
             };
 
-            let incoming_fields_schema = PlHashMap::from_iter(
+            let incoming_fields_schema = PlIndexMap::from_iter(
                 incoming_fields
                     .iter()
                     .enumerate()
@@ -690,7 +690,7 @@ impl CastColumnsPolicy {
                                 "encountered extra struct field: {}, \
                                 hint: specify this field in the schema, or pass \
                                 cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
-                                &fld.name,
+                                fld.name,
                             ));
                         },
                     }

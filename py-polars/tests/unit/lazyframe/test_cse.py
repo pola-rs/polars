@@ -986,7 +986,7 @@ def test_multiplex_predicate_pushdown() -> None:
         )
         ldf = pl.scan_parquet(tmppath, hive_partitioning=True)
         ldf = ldf.filter(pl.col("a").eq(1)).select("b")
-        assert 'SELECTION: [(col("a")) == (1)]' in pl.explain_all([ldf, ldf])
+        assert 'SELECTION: col("a") == 1' in pl.explain_all([ldf, ldf])
 
 
 def test_cse_custom_io_source_same_object() -> None:
