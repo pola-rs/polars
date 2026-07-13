@@ -39,6 +39,9 @@ bitflags! {
         const CHECK_ORDER_OBSERVE = 1 << 15;
         /// Collapse consecutive sort nodes and pull them up through selecting nodes.
         const SORT_COLLAPSE = 1 << 16;
+        /// Prepartion hive partitioned joins or group-by's
+        /// Only works if PREDICATE_PUSHDOWN is set
+        const PARTITION_HIVE = 1 << 17;
     }
 }
 
@@ -87,6 +90,10 @@ impl OptFlags {
 
     pub fn streaming(&self) -> bool {
         self.contains(OptFlags::STREAMING)
+    }
+
+    pub fn partition_hive(&self) -> bool {
+        self.contains(OptFlags::PARTITION_HIVE)
     }
 }
 
