@@ -137,7 +137,7 @@ dtype-categorical = ["polars-dtype/dtype-categorical"]
 dtype-struct = []
 
 # scale to terabytes?
-bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
+bigidx = ["arrow/bigidx", "polars-utils/bigidx", "dtype-i128"]
 python = ["polars-error/python"]
 
 serde = [
