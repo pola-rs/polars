@@ -127,8 +127,6 @@ def _switcher_version(git_ref: str) -> str:
 git_ref = os.environ.get("POLARS_VERSION", "main")
 switcher_version = _switcher_version(git_ref)
 
-# Dev builds are near-duplicates of stable and must not be indexed by search
-# engines, otherwise they compete with stable for the canonical URL.
 html_context = {"is_dev_build": switcher_version == "dev"}
 
 if switcher_version != "dev" and int(switcher_version) >= 1:
