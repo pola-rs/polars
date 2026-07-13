@@ -10,9 +10,17 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::series::{call_arrow_c_stream, open_stream_capsule};
 
+struct ReaderState {
+    reader: ArrowArrayStreamReader<Box<ArrowArrayStream>>,
+    // Resolved from the first `next_batch` call's `with_columns` and reused
+    // after: the engine calls `next_batch` with the same projection on every
+    // batch of a given scan, so re-parsing it per batch would be wasted work.
+    projection: Option<Option<PlHashSet<PlSmallStr>>>,
+}
+
 #[pyclass]
 pub struct PyArrowCStreamReader {
-    reader: Mutex<ArrowArrayStreamReader<Box<ArrowArrayStream>>>,
+    state: Mutex<ReaderState>,
     schema: Schema,
 }
 
@@ -31,7 +39,10 @@ impl PyArrowCStreamReader {
         let schema = Schema::from_iter(fields.iter().map(Field::from));
 
         Ok(Self {
-            reader: Mutex::new(reader),
+            state: Mutex::new(ReaderState {
+                reader,
+                projection: None,
+            }),
             schema,
         })
     }
@@ -42,35 +53,38 @@ impl PyArrowCStreamReader {
     }
 
     fn next_batch(&self, with_columns: Option<Vec<PlSmallStr>>) -> PyResult<Option<PyDataFrame>> {
-        match unsafe { self.reader.lock().next() } {
-            Some(Ok(array)) => {
-                let df = struct_array_to_df(array, &self.schema, with_columns.as_deref())
-                    .map_err(PyPolarsErr::from)?;
-                Ok(Some(PyDataFrame::new(df)))
-            },
-            Some(Err(e)) => Err(PyPolarsErr::from(e).into()),
-            None => Ok(None),
+        let mut state = self.state.lock();
+        if state.projection.is_none() {
+            state.projection = Some(with_columns.map(|cols| cols.into_iter().collect()));
         }
+
+        let array = match unsafe { state.reader.next() } {
+            Some(Ok(array)) => array,
+            Some(Err(e)) => return Err(PyPolarsErr::from(e).into()),
+            None => return Ok(None),
+        };
+
+        let projection = state.projection.as_ref().unwrap().as_ref();
+        let df = struct_array_to_df(array, projection).map_err(PyPolarsErr::from)?;
+        Ok(Some(PyDataFrame::new(df)))
     }
 }
 
 fn struct_array_to_df(
     array: Box<dyn Array>,
-    schema: &Schema,
-    with_columns: Option<&[PlSmallStr]>,
+    projection: Option<&PlHashSet<PlSmallStr>>,
 ) -> PolarsResult<DataFrame> {
     let struct_array = array.as_any().downcast_ref::<StructArray>().ok_or_else(
         || polars_err!(ComputeError: "expected a StructArray from the Arrow C Stream"),
     )?;
-    let projection: Option<PlHashSet<&PlSmallStr>> = with_columns.map(|cols| cols.iter().collect());
 
     let columns = struct_array
         .values()
         .iter()
-        .zip(schema.iter_names())
-        .filter(|(_, name)| projection.as_ref().is_none_or(|proj| proj.contains(name)))
-        .map(|(arr, name)| unsafe {
-            Series::_try_from_arrow_unchecked(name.clone(), vec![arr.clone()], arr.dtype())
+        .zip(struct_array.fields())
+        .filter(|(_, field)| projection.is_none_or(|proj| proj.contains(&field.name)))
+        .map(|(arr, field)| unsafe {
+            Series::_try_from_arrow_unchecked(field.name.clone(), vec![arr.clone()], arr.dtype())
                 .map(Series::into_column)
         })
         .collect::<PolarsResult<Vec<_>>>()?;
