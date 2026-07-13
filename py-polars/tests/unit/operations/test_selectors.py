@@ -1156,12 +1156,12 @@ def test_bitwise_ops_eval_on_expr(df: pl.DataFrame) -> None:
     with pytest.raises(
         pl.exceptions.InvalidOperationError, match="& not allowed on time and u16"
     ):
-        df.select(cs.all() & pl.col("abc"))
+        df.select(cs.time() & pl.col("abc"))
     with pytest.raises(
         pl.exceptions.InvalidOperationError, match=r"\| not allowed on time and u16"
     ):
-        df.select(cs.all() | pl.col("abc"))
+        df.select(cs.time() | pl.col("abc"))
     with pytest.raises(
         pl.exceptions.InvalidOperationError, match=r"\^ not allowed on time and u16"
     ):
-        df.select(cs.all() ^ pl.col("abc"))
+        df.select(cs.time() ^ pl.col("abc"))
