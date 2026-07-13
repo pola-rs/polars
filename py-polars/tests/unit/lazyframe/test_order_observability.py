@@ -422,7 +422,7 @@ def test_with_columns_implicit_columns() -> None:
             False,
         ),
         (
-            pl.col.a.cast(pl.List(pl.Int64))
+            pl.list(pl.col.a)
             .map_batches(lambda x: x, is_elementwise=True)
             .explode(empty_as_null=False),
             [1, 2, 3],
@@ -460,7 +460,7 @@ def test_group_by_key_sensitivity(
             False,
         ),
         (
-            pl.col.a.cast(pl.List(pl.Int64))
+            pl.list(pl.col.a)
             .map_batches(lambda x: x, is_elementwise=True)
             .explode(empty_as_null=False),
             True,
@@ -566,7 +566,7 @@ def test_group_by_input_ordering() -> None:
         (pl.col.a.map_batches(lambda x: x), True),
         (pl.col.a.map_batches(lambda x: x, is_elementwise=True), False),
         (
-            pl.col.a.cast(pl.List(pl.Int64))
+            pl.list(pl.col.a)
             .map_batches(lambda x: x, is_elementwise=True)
             .explode(empty_as_null=False),
             True,
@@ -594,7 +594,7 @@ def test_sort_key_sensitivity(expr: pl.Expr, is_ordered: bool) -> None:
         (pl.col.a.map_batches(lambda x: x), True),
         (pl.col.a.map_batches(lambda x: x, is_elementwise=True), False),
         (
-            pl.col.a.cast(pl.List(pl.Int64))
+            pl.list(pl.col.a)
             .map_batches(lambda x: x, is_elementwise=True)
             .explode(empty_as_null=False),
             True,
