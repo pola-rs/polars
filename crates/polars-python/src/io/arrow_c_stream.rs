@@ -10,9 +10,6 @@ use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
 use crate::series::{call_arrow_c_stream, open_stream_capsule};
 
-// `ArrowArrayStream` holds a raw pointer, so it isn't `Sync` on its own;
-// `Mutex` is needed to satisfy pyclass's `Send + Sync` bound, not for
-// concurrent access (a Python generator can't be resumed concurrently).
 #[pyclass]
 pub struct PyArrowCStreamReader {
     reader: Mutex<ArrowArrayStreamReader<Box<ArrowArrayStream>>>,
@@ -39,13 +36,11 @@ impl PyArrowCStreamReader {
         })
     }
 
-    /// The schema of the stream, as a `dict[str, DataType]`.
     #[getter]
     fn schema(&self) -> Wrap<Schema> {
         Wrap(self.schema.clone())
     }
 
-    /// Pulls the next batch, returns `None` when exhausted.
     fn next_batch(&self, with_columns: Option<Vec<PlSmallStr>>) -> PyResult<Option<PyDataFrame>> {
         match unsafe { self.reader.lock().next() } {
             Some(Ok(array)) => {
@@ -59,8 +54,6 @@ impl PyArrowCStreamReader {
     }
 }
 
-/// Converts an Arrow struct array into a `DataFrame`, converting only the
-/// columns named in `with_columns` (all of them when `None`).
 fn struct_array_to_df(
     array: Box<dyn Array>,
     schema: &Schema,
