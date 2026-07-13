@@ -106,8 +106,13 @@ pub fn rewrite_hive(
             };
 
             if !opt.partition_hive {
-                let (l_pred, r_pred) =
-                    make_predicates(&partitions, l.clone(), r_key_name.clone(), expr_arena);
+                let (l_pred, r_pred) = make_predicates(
+                    &partitions,
+                    l.clone(),
+                    r_key_name.clone(),
+                    r.clone(),
+                    expr_arena,
+                );
 
                 // TODO: this goes into the branch twice. We could optimize for a single pass.
                 let mut acc_left = init_indexmap(Some(1));
@@ -136,8 +141,13 @@ pub fn rewrite_hive(
                         continue;
                     }
 
-                    let (l_pred, r_pred) =
-                        make_predicates(&chunk, l.clone(), r_key_name.clone(), expr_arena);
+                    let (l_pred, r_pred) = make_predicates(
+                        &chunk,
+                        l.clone(),
+                        r_key_name.clone(),
+                        r.clone(),
+                        expr_arena,
+                    );
 
                     // We need to deep clone as each branch hits different predicate pd passes.
                     let branch_left = deep_clone_ir(input_left, ir_arena);
@@ -184,7 +194,8 @@ pub fn rewrite_hive(
 fn make_predicates(
     partitions: &DataFrame,
     name_left: PlSmallStr,
-    name_right: PlSmallStr,
+    extract_name_right: PlSmallStr,
+    predicate_name_right: PlSmallStr,
     expr_arena: &mut Arena<AExpr>,
 ) -> (ExprIR, ExprIR) {
     let l_values = partitions
@@ -195,7 +206,7 @@ fn make_predicates(
         .unwrap()
         .into_series();
     let r_values = partitions
-        .column(&name_right)
+        .column(&extract_name_right)
         .unwrap()
         .as_materialized_series()
         .implode()
@@ -210,7 +221,7 @@ fn make_predicates(
         )
         .expr_ir_unnamed();
 
-    let r_pred = AExprBuilder::col(name_right, expr_arena)
+    let r_pred = AExprBuilder::col(predicate_name_right, expr_arena)
         .is_in(
             AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(r_values)), expr_arena),
             false,

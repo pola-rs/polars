@@ -1001,9 +1001,6 @@ def test_hive_join_rewrite_to_partitioned_union(tmp_path: Path) -> None:
 
 @pytest.mark.write_disk
 def test_hive_join_rewrite_pre_partition_hive_flag(tmp_path: Path) -> None:
-    # The `pre_partition_hive` optimization flag controls whether the join
-    # is rewritten into a union of per-partition joins at all. It defaults
-    # to `True`; disabling it should leave a single, unsplit join in place.
     left_root = tmp_path / "left"
     right_root = tmp_path / "right"
 
