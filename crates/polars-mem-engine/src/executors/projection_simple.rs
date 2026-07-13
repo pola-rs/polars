@@ -16,19 +16,7 @@ impl Executor for ProjectionSimple {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
         let columns = self.columns.iter_names_cloned().collect::<Vec<_>>();
-
-        let profile_name = if state.has_node_timer() {
-            let name = comma_delimited("simple-projection".to_string(), columns.as_slice());
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
-        };
         let df = self.input.execute(state)?;
-
-        if state.has_node_timer() {
-            state.record(|| self.execute_impl(df, columns.as_slice()), profile_name)
-        } else {
-            self.execute_impl(df, columns.as_slice())
-        }
+        self.execute_impl(df, columns.as_slice())
     }
 }

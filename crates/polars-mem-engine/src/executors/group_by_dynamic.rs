@@ -9,7 +9,6 @@ pub(crate) struct GroupByDynamicExec {
     pub(crate) aggs: Vec<Arc<dyn PhysicalExpr>>,
     #[cfg(feature = "dynamic_group_by")]
     pub(crate) options: DynamicGroupOptions,
-    pub(crate) input_schema: SchemaRef,
     pub(crate) output_schema: SchemaRef,
     pub(crate) slice: Option<(i64, usize)>,
     pub(crate) apply: Option<PlanCallback<DataFrame, DataFrame>>,
@@ -96,24 +95,6 @@ impl Executor for GroupByDynamicExec {
             }
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            let by = self
-                .keys
-                .iter()
-                .map(|s| Ok(s.to_field(&self.input_schema)?.name))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("group_by_dynamic".to_string(), &by);
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
-        };
-
-        if state.has_node_timer() {
-            let new_state = state.clone();
-            new_state.record(|| self.execute_impl(state, df), profile_name)
-        } else {
-            self.execute_impl(state, df)
-        }
+        self.execute_impl(state, df)
     }
 }

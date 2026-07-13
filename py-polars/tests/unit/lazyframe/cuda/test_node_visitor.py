@@ -131,18 +131,11 @@ def test_run_on_pandas() -> None:
         "bar": [4],
     }
 
-    with pytest.deprecated_call():
-        result, timings = q.profile(post_opt_callback=run_on_pandas)
+    result = q.collect(post_opt_callback=run_on_pandas)  # type: ignore[call-overload]
     assert result.to_dict(as_series=False) == {
         "foo": [2],
         "bar": [4],
     }
-    assert timings["node"].to_list() == [
-        "optimization",
-        "pandas-scan",
-        "pandas-scan",
-        "pandas-join",
-    ]
 
 
 def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -258,12 +257,6 @@ impl Executor for GroupByStreamingExec {
         }
         let input_df = self.input_exec.execute(state)?;
 
-        let profile_name = if state.has_node_timer() {
-            Cow::Owned(format!(".{name}()"))
-        } else {
-            Cow::Borrowed("")
-        };
-
         let keys = self.keys(&input_df, state)?;
 
         if !can_run_partitioned(&keys, &input_df, state, self.from_partitioned_ds)? {
@@ -295,8 +288,6 @@ impl Executor for GroupByStreamingExec {
             &mut self.plan.expr_arena,
         )?;
 
-        state
-            .clone()
-            .record(|| streaming_exec.execute(state), profile_name)
+        streaming_exec.execute(state)
     }
 }

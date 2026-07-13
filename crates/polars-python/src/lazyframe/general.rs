@@ -570,25 +570,6 @@ impl PyLazyFrame {
         ldf.with_optimizations(optflags.inner.into_inner()).into()
     }
 
-    #[pyo3(signature = (lambda_post_opt))]
-    fn profile(
-        &self,
-        py: Python<'_>,
-        lambda_post_opt: Option<Py<PyAny>>,
-    ) -> PyResult<(PyDataFrame, PyDataFrame)> {
-        let (df, time_df) = py.enter_polars(|| {
-            let ldf = self.ldf.read().clone();
-            if let Some(lambda) = lambda_post_opt {
-                ldf._profile_post_opt(|root, lp_arena, expr_arena, duration_since_start| {
-                    post_opt_callback(&lambda, root, lp_arena, expr_arena, duration_since_start)
-                })
-            } else {
-                ldf.profile()
-            }
-        })?;
-        Ok((df.into(), time_df.into()))
-    }
-
     #[pyo3(signature = (engine, lambda_post_opt))]
     fn collect(
         &self,

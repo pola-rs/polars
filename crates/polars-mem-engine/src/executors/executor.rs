@@ -33,17 +33,7 @@ impl Executor for SinkExecutor {
             }
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            Cow::Owned(format!(".sink_{}()", self.name))
-        } else {
-            Cow::Borrowed("")
-        };
-
-        state.clone().record(
-            || (self.f)(df, state).map(|df| df.unwrap_or_else(DataFrame::empty)),
-            profile_name,
-        )
+        (self.f)(df, state).map(|df| df.unwrap_or_else(DataFrame::empty))
     }
 }
 

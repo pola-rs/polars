@@ -15,12 +15,6 @@ impl Executor for UdfExec {
             }
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            Cow::Owned(format!("{}", self.function))
-        } else {
-            Cow::Borrowed("")
-        };
-        state.record(|| self.function.evaluate(df), profile_name)
+        self.function.evaluate(df)
     }
 }

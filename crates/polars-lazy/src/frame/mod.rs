@@ -799,37 +799,6 @@ impl LazyFrame {
         Ok(collect_batches)
     }
 
-    // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
-    // This version does profiling of the node execution.
-    pub fn _profile_post_opt<P>(self, post_opt: P) -> PolarsResult<(DataFrame, DataFrame)>
-    where
-        P: FnOnce(
-            Node,
-            &mut Arena<IR>,
-            &mut Arena<AExpr>,
-            Option<std::time::Duration>,
-        ) -> PolarsResult<()>,
-    {
-        let query_start = std::time::Instant::now();
-        let (mut state, mut physical_plan, _) =
-            self.prepare_collect_post_opt(false, Some(query_start), post_opt)?;
-        state.time_nodes(query_start, query_start.elapsed());
-        let out = physical_plan.execute(&mut state)?;
-        let timer_df = state.finish_timer()?;
-        Ok((out, timer_df))
-    }
-
-    /// Profile a LazyFrame.
-    ///
-    /// This will run the query and return a tuple
-    /// containing the materialized DataFrame and a DataFrame that contains profiling information
-    /// of each node that is executed.
-    ///
-    /// The units of the timings are microseconds.
-    pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
-        self._profile_post_opt(|_, _, _, _| Ok(()))
-    }
-
     pub fn sink_batches(
         mut self,
         function: PlanCallback<DataFrame, bool>,
