@@ -48,7 +48,7 @@ impl InputHead {
     }
 
     async fn add_morsel(&mut self, mut morsel: Morsel, ctx: &MostRecentSpillContext) {
-        self.total_len += morsel.df().height();
+        self.total_len += morsel.height();
 
         if self.is_broadcast.is_none() {
             if self.total_len > 1 {
@@ -60,7 +60,7 @@ impl InputHead {
             }
         }
 
-        if morsel.df().height() > 0 {
+        if morsel.height() > 0 {
             // Zip is the exception: we keep the consume token alive until
             // the drain loop rather than dropping it before buffering.
             let consume_token = morsel.take_consume_token();
@@ -134,7 +134,7 @@ pub struct ZipNode {
     zip_behavior: ZipBehavior,
     out_seq: MorselSeq,
     input_heads: Vec<InputHead>,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl ZipNode {
@@ -147,7 +147,7 @@ impl ZipNode {
             zip_behavior,
             out_seq: MorselSeq::new(0),
             input_heads,
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("zip".into()),
         }
     }
 }

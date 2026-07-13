@@ -1,8 +1,8 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Poll, Waker};
 use std::time::Instant;
 
@@ -10,8 +10,7 @@ use polars_async::ASYNC;
 use polars_utils::UnitVec;
 use polars_utils::with_drop::WithDrop;
 
-use crate::spill_context::SpillContextStatistics;
-use crate::{SpillContext, Spillable};
+use crate::{SpillContextParam, Spillable, WeakSpillContext};
 
 // SpillTokenInner's state
 const SPILLED_BIT: u64 = 1; // Set when value = None and spilled is Some.
@@ -25,13 +24,21 @@ enum ValueSlot<T> {
     InMemory(T),
     Spilled {
         n_bytes: usize,
-        spill_ctx_stats: Arc<SpillContextStatistics>,
-        reinsert_ctx: Weak<dyn SpillContext>,
-        reinsert_id: u64,
+        spill_ctx: WeakSpillContext,
+        reinsert_reg_id: u32,
         spill_time_ns: u64,
         spilled_start: Instant,
     },
     Dropped,
+}
+
+#[derive(Default)]
+struct LockState {
+    // Waiter for register/wake.
+    waiters: UnitVec<Waker>,
+
+    // The current context this spill token is registered at.
+    cur_ctx: Option<(WeakSpillContext, SpillContextParam)>,
 }
 
 struct SpillTokenInner<T: Spillable> {
@@ -42,12 +49,13 @@ struct SpillTokenInner<T: Spillable> {
     // May be read+written while holding LOCK_BIT (irrespective of pins).
     spilled_value: UnsafeCell<Option<T::Spilled>>,
 
-    // Lock should not be held for long, only used to register/wake waiters.
-    waiters: Mutex<UnitVec<Waker>>,
+    // Lock should not be held for long, only used to register/wake waiters or
+    // store current registered context.
+    lock: Mutex<LockState>,
 
     // Used to register into contexts, and detect when a token has moved to a
     // different context.
-    registration_id: AtomicU64,
+    registration_id: AtomicU32,
 
     // See above.
     state: AtomicU64,
@@ -61,7 +69,7 @@ impl<T: Spillable> SpillTokenInner<T> {
     async fn wait(&self, mask: u64) -> u64 {
         std::future::poll_fn(|ctx| {
             // Check mask while holding waiter lock to avoid missed notifications.
-            let mut waiters = self.waiters.lock().unwrap();
+            let mut lock = self.lock.lock().unwrap();
             let mut state = self.state.load(Ordering::Acquire);
             if state & mask != 0 {
                 if state & HAS_WAITERS_BIT == 0 {
@@ -71,7 +79,7 @@ impl<T: Spillable> SpillTokenInner<T> {
                         return Poll::Ready(state);
                     }
                 }
-                waiters.push(ctx.waker().clone());
+                lock.waiters.push(ctx.waker().clone());
                 Poll::Pending
             } else {
                 Poll::Ready(state)
@@ -96,10 +104,10 @@ impl<T: Spillable> SpillTokenInner<T> {
     fn wake_waiters_slow(&self) {
         // Modify HAS_WAITERS_BIT only while holding the lock. Don't notify
         // while holding the lock to reduce critical section.
-        let mut waiters_lock = self.waiters.lock().unwrap();
-        let waiters = core::mem::take(&mut *waiters_lock);
+        let mut lock = self.lock.lock().unwrap();
+        let waiters = core::mem::take(&mut lock.waiters);
         self.state.fetch_sub(HAS_WAITERS_BIT, Ordering::Relaxed);
-        drop(waiters_lock);
+        drop(lock);
 
         for w in waiters {
             w.wake();
@@ -199,9 +207,8 @@ impl<T: Spillable> SpillTokenInner<T> {
             let value = T::unspill(spilled).await;
             let ValueSlot::Spilled {
                 n_bytes,
-                spill_ctx_stats,
-                reinsert_ctx,
-                reinsert_id,
+                spill_ctx,
+                reinsert_reg_id,
                 spill_time_ns,
                 spilled_start,
             } = slf.value_slot.get().replace(ValueSlot::InMemory(value))
@@ -209,12 +216,14 @@ impl<T: Spillable> SpillTokenInner<T> {
                 unreachable!()
             };
 
-            spill_ctx_stats.add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start);
-            if reinsert_id == slf.registration_id.load(Ordering::Relaxed) {
-                if let Some(ctx) = reinsert_ctx.upgrade() {
-                    let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                    ctx.reinsert(&dyn_slf, reinsert_id);
-                }
+            if let Some(strong) = spill_ctx.upgrade() {
+                strong
+                    .stats()
+                    .add_unspill(n_bytes, spill_time_ns, spilled_start, unspill_start);
+            }
+            if reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
+                let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
+                spill_ctx.0.reinsert(&dyn_slf, reinsert_reg_id, spill_ctx.1);
             }
 
             WithDrop::dismiss(lock_guard);
@@ -246,9 +255,8 @@ impl<T: Spillable> SpillTokenInner<T> {
             let value_slot = &mut *slf.value_slot.get();
             if let ValueSlot::Spilled {
                 n_bytes,
-                spill_ctx_stats,
-                reinsert_ctx,
-                reinsert_id,
+                spill_ctx,
+                reinsert_reg_id,
                 spill_time_ns,
                 spilled_start,
             } = value_slot
@@ -258,17 +266,19 @@ impl<T: Spillable> SpillTokenInner<T> {
                 let spilled = (*slf.spilled_value.get()).take().unwrap();
                 let value = T::unspill(&spilled).await;
 
-                spill_ctx_stats.add_unspill(
-                    *n_bytes,
-                    *spill_time_ns,
-                    *spilled_start,
-                    unspill_start,
-                );
-                if *reinsert_id == slf.registration_id.load(Ordering::Relaxed) {
-                    if let Some(ctx) = reinsert_ctx.upgrade() {
-                        let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
-                        ctx.reinsert(&dyn_slf, *reinsert_id);
-                    }
+                if let Some(strong) = spill_ctx.upgrade() {
+                    strong.stats().add_unspill(
+                        *n_bytes,
+                        *spill_time_ns,
+                        *spilled_start,
+                        unspill_start,
+                    );
+                }
+                if *reinsert_reg_id == slf.registration_id.load(Ordering::Relaxed) {
+                    let dyn_slf: Arc<dyn DynSpillToken> = slf.clone();
+                    spill_ctx
+                        .0
+                        .reinsert(&dyn_slf, *reinsert_reg_id, spill_ctx.1);
                 }
 
                 *value_slot = ValueSlot::InMemory(value);
@@ -302,6 +312,8 @@ impl<T: Spillable> SpillTokenInner<T> {
         self.wake_waiters(self.state.fetch_sub(LOCK_BIT, Ordering::AcqRel));
     }
 
+    /// # Safety
+    /// May only be called once, by the owning SpillToken.
     unsafe fn mark_as_dropped(&self) {
         unsafe {
             // The drop bit prevents new locks/pins from being acquired,
@@ -311,7 +323,70 @@ impl<T: Spillable> SpillTokenInner<T> {
                 self.value_slot.get().replace(ValueSlot::Dropped);
                 self.spilled_value.get().replace(None);
             }
+            let mut lock = self.lock.lock().unwrap();
             self.registration_id.fetch_add(1, Ordering::Relaxed);
+            lock.cur_ctx = None;
+        }
+    }
+}
+
+impl<T, S> Clone for SpillTokenInner<T>
+where
+    T: Clone + Spillable<Spilled = S>,
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        if let Some(r) = ASYNC.block_in_place_on(self.pin_or_lock()) {
+            return SpillTokenInner {
+                value_slot: UnsafeCell::new(ValueSlot::InMemory(r.clone())),
+                spilled_value: UnsafeCell::new(None),
+                registration_id: AtomicU32::new(0),
+                state: AtomicU64::new(0),
+                lock: Mutex::default(),
+            };
+        }
+
+        // We now hold the lock, meaning the value was spilled.
+        unsafe {
+            let lock_guard = WithDrop::new(self, |slf| {
+                slf.wake_waiters(slf.state.fetch_and(!LOCK_BIT, Ordering::AcqRel));
+            });
+
+            let ValueSlot::Spilled {
+                n_bytes,
+                spill_ctx,
+                reinsert_reg_id: _,
+                spill_time_ns: _,
+                spilled_start: _,
+            } = &*lock_guard.value_slot.get()
+            else {
+                unreachable!()
+            };
+
+            // Simulate a spill.
+            let clone_spill_start = Instant::now();
+            let spilled_value = (&*lock_guard.spilled_value.get()).as_ref().unwrap().clone();
+            let (spill_time_ns, spilled_start) = if let Some(strong) = spill_ctx.upgrade() {
+                strong
+                    .stats()
+                    .add_successful_spill(*n_bytes, clone_spill_start)
+            } else {
+                // Dummy, context is already dead.
+                (0, Instant::now())
+            };
+            SpillTokenInner {
+                value_slot: UnsafeCell::new(ValueSlot::Spilled {
+                    n_bytes: *n_bytes,
+                    spill_ctx: spill_ctx.clone(),
+                    reinsert_reg_id: 0,
+                    spill_time_ns,
+                    spilled_start,
+                }),
+                spilled_value: UnsafeCell::new(Some(spilled_value)),
+                registration_id: AtomicU32::new(0),
+                state: AtomicU64::new(SPILLED_BIT),
+                lock: Mutex::default(),
+            }
         }
     }
 }
@@ -321,12 +396,16 @@ pub enum TrySpillError {
     Pinned,
 }
 
-pub trait DynSpillToken: Send + Sync + 'static {
-    /// Assign a new context ID to this spill token, invalidating previous ids.
-    fn new_registration_id(&self) -> u64;
+pub(crate) trait DynSpillToken: Send + Sync + 'static {
+    /// Register this spill token at a new context, returning the registration ID.
+    fn register(&self, ctx: WeakSpillContext, param: SpillContextParam) -> u32;
 
-    /// Returns the current context ID of this spill token without modifying it.
-    fn current_registration_id(&self) -> u64;
+    /// Unregisters this spill token from its current context, returning where
+    /// it was registered, if anywhere.
+    fn unregister(&self) -> Option<(WeakSpillContext, SpillContextParam)>;
+
+    /// Returns the current context registration ID of this spill token without modifying it.
+    fn current_registration_id(&self) -> u32;
 
     /// Whether this token can be spilled. Returns false if pinned, dropped or
     /// already spilled.
@@ -346,18 +425,25 @@ pub trait DynSpillToken: Send + Sync + 'static {
     /// occurred during spilling.
     fn try_spill(
         &self,
-        stats: &Arc<SpillContextStatistics>,
-        context: Weak<dyn SpillContext>,
-        registration_id: u64,
+        context: WeakSpillContext,
+        registration_id: u32,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError>;
 }
 
 impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
-    fn new_registration_id(&self) -> u64 {
-        self.registration_id.fetch_add(1, Ordering::Relaxed) + 1
+    fn register(&self, ctx: WeakSpillContext, param: SpillContextParam) -> u32 {
+        let mut lock = self.lock.lock().unwrap();
+        lock.cur_ctx = Some((ctx, param));
+        self.registration_id.fetch_add(1, Ordering::Release) + 1
     }
 
-    fn current_registration_id(&self) -> u64 {
+    fn unregister(&self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        let mut lock = self.lock.lock().unwrap();
+        self.registration_id.fetch_add(1, Ordering::Release);
+        lock.cur_ctx.take()
+    }
+
+    fn current_registration_id(&self) -> u32 {
         self.registration_id.load(Ordering::Relaxed)
     }
 
@@ -376,9 +462,8 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
 
     fn try_spill(
         &self,
-        stats: &Arc<SpillContextStatistics>,
-        context: Weak<dyn SpillContext>,
-        registration_id: u64,
+        ctx: WeakSpillContext,
+        registration_id: u32,
     ) -> Result<Pin<Box<dyn Future<Output = bool> + Send + '_>>, TrySpillError> {
         // First, we try setting the lock bit. If anyone else has a pin we don't bother.
         let pin_update = self
@@ -396,21 +481,20 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
         if state & SPILLED_BIT != 0 {
             // Update re-insertion context, we hold the lock bit and there were no pins so this is safe.
             let ValueSlot::Spilled {
-                reinsert_ctx,
-                reinsert_id,
+                spill_ctx: reinsert_ctx,
+                reinsert_reg_id: reinsert_id,
                 ..
             } = (unsafe { &mut *self.value_slot.get() })
             else {
                 unreachable!()
             };
-            *reinsert_ctx = context;
+            *reinsert_ctx = ctx;
             *reinsert_id = registration_id;
 
             self.wake_waiters(self.state.fetch_sub(LOCK_BIT, Ordering::AcqRel));
             return Err(TrySpillError::AlreadySpilled);
         }
 
-        let stats = Arc::clone(stats);
         Ok(Box::pin(async move {
             let spill_start = Instant::now();
             let needs_spill = unsafe { (*self.spilled_value.get()).is_none() };
@@ -422,7 +506,7 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                         .fetch_add(RO_PIN_COUNT_UNIT - LOCK_BIT, Ordering::AcqRel),
                 );
                 let pin_guard = PinnedRef { inner: self };
-                let spilled = pin_guard.spill().await;
+                let spilled = pin_guard.spill(&ctx.0.stats().name()).await;
                 core::mem::forget(pin_guard);
                 // We can simply re-acquire the lock here blindly, as we still hold
                 // our pin meaning no one else could've gotten the lock.
@@ -444,14 +528,17 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                     ValueSlot::InMemory(val) => val.estimate_byte_size(),
                     _ => unreachable!(),
                 };
-                let (spill_time_ns, spilled_start) =
-                    stats.add_successful_spill(n_bytes, spill_start);
+                let (spill_time_ns, spilled_start) = if let Some(strong) = ctx.upgrade() {
+                    strong.stats().add_successful_spill(n_bytes, spill_start)
+                } else {
+                    // Dummy, context is already dead.
+                    (0, Instant::now())
+                };
                 unsafe {
                     self.value_slot.get().replace(ValueSlot::Spilled {
                         n_bytes,
-                        spill_ctx_stats: stats.clone(),
-                        reinsert_ctx: context,
-                        reinsert_id: registration_id,
+                        spill_ctx: ctx,
+                        reinsert_reg_id: registration_id,
                         spill_time_ns,
                         spilled_start,
                     })
@@ -459,7 +546,9 @@ impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
                 self.state
                     .fetch_add(SPILLED_BIT.wrapping_sub(LOCK_BIT), Ordering::AcqRel)
             } else {
-                stats.add_failed_spill(spill_start);
+                if let Some(strong) = ctx.upgrade() {
+                    strong.stats().add_failed_spill(spill_start);
+                }
                 self.state.fetch_sub(LOCK_BIT, Ordering::AcqRel)
             };
             self.wake_waiters(state);
@@ -480,17 +569,22 @@ impl<T: Spillable> SpillToken<T> {
         let inner = Arc::new(SpillTokenInner {
             value_slot: UnsafeCell::new(ValueSlot::InMemory(value)),
             spilled_value: UnsafeCell::new(None),
-            registration_id: AtomicU64::new(0),
+            registration_id: AtomicU32::new(0),
             state: AtomicU64::new(0),
-            waiters: Mutex::default(),
+            lock: Mutex::default(),
         });
         Self { inner }
     }
 
     /// Upcast to DynSpillToken.
-    pub fn upcast(&self) -> Arc<dyn DynSpillToken> {
+    pub(crate) fn upcast(&self) -> Arc<dyn DynSpillToken> {
         let inner: Arc<SpillTokenInner<T>> = self.inner.clone();
         inner
+    }
+
+    /// Unregisters this spill token from its current context, if any, returning it.
+    pub fn unregister(&mut self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        self.inner.unregister()
     }
 
     /// Try to get a reference to the underlying value, returning None if it was spilled.
@@ -536,6 +630,19 @@ impl<T: Spillable> SpillToken<T> {
             unreachable!()
         };
         value
+    }
+}
+
+impl<T, S> Clone for SpillToken<T>
+where
+    T: Clone + Spillable<Spilled = S>,
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        // Note: we don't register the clone, perhaps we should?
+        Self {
+            inner: Arc::new((*self.inner).clone()),
+        }
     }
 }
 

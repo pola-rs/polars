@@ -378,7 +378,11 @@ fn aexpr_to_skip_batch_predicate_rec(
                         let dtype = target_leaf_dtype(&target, schema)?;
                         let col_is_left = col_node == left;
 
-                        let effective_op = if col_is_left { *op } else { op.swap_operands() };
+                        let effective_op = if col_is_left {
+                            *op
+                        } else {
+                            op.swap_operands().unwrap()
+                        };
                         if !can_use_min_max_stats(dtype, Some(&effective_op), lv.as_deref()) {
                             return None;
                         }

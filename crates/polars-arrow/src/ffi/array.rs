@@ -576,7 +576,7 @@ pub trait ArrowArrayRef: std::fmt::Debug {
 /// Furthermore, this struct assumes that the incoming data agrees with the C data interface.
 #[derive(Debug, Clone)]
 pub struct InternalArrowArray {
-    // Arc is used for sharability since this is immutable
+    // Arc is used for shareability since this is immutable
     array: Arc<ArrowArray>,
     // Arced to reduce cost of cloning
     dtype: Arc<ArrowDataType>,

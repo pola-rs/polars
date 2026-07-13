@@ -26,7 +26,7 @@ pub struct NegativeSliceNode {
     state: NegativeSliceState,
     slice_offset: i64,
     length: usize,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl NegativeSliceNode {
@@ -36,7 +36,7 @@ impl NegativeSliceNode {
             state: NegativeSliceState::Buffering(Buffer::default()),
             slice_offset,
             length,
-            spill_ctx: MostRecentSpillContext::new(),
+            spill_ctx: MostRecentSpillContext::new("negative-slice".into()),
         }
     }
 }
@@ -133,10 +133,10 @@ impl ComputeNode for NegativeSliceNode {
                 let spill_ctx = self.spill_ctx.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     while let Ok(morsel) = recv.recv().await {
-                        buffer.total_len += morsel.df().height();
+                        buffer.total_len += morsel.height();
                         buffer
                             .frames
-                            .push_back(SpillFrame::new(morsel.into_df(), &*spill_ctx).await);
+                            .push_back(SpillFrame::new(morsel.into_df(), &spill_ctx).await);
 
                         if buffer.total_len - buffer.frames.front().unwrap().height()
                             >= max_buffer_needed

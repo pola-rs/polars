@@ -11,70 +11,45 @@ use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 
-fn det_max<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
+fn det_max<T>(state: &mut T, v: Option<T>) -> Option<T>
 where
     T: Copy + MinMax,
 {
-    match v {
-        Some(v) => {
-            *state = MinMax::max_ignore_nan(*state, v);
-            Some(Some(*state))
-        },
-        None => Some(None),
-    }
+    *state = MinMax::max_ignore_nan(*state, v?);
+    Some(*state)
 }
 
-fn det_min<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
+fn det_min<T>(state: &mut T, v: Option<T>) -> Option<T>
 where
     T: Copy + MinMax,
 {
-    match v {
-        Some(v) => {
-            *state = MinMax::min_ignore_nan(*state, v);
-            Some(Some(*state))
-        },
-        None => Some(None),
-    }
+    *state = MinMax::min_ignore_nan(*state, v?);
+    Some(*state)
 }
 
-fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
+fn det_sum<T>(state: &mut T, v: Option<T>) -> Option<T>
 where
     T: Copy + AddAssign,
 {
-    match v {
-        Some(v) => {
-            *state += v;
-            Some(Some(*state))
-        },
-        None => Some(None),
-    }
+    *state += v?;
+    Some(*state)
 }
 
-fn det_sum_to_f64<T>(state: &mut f64, v: Option<T>) -> Option<Option<T>>
+fn det_sum_to_f64<T>(state: &mut f64, v: Option<T>) -> Option<T>
 where
     T: Copy + AddAssign + Copy + 'static,
     f64: AsPrimitive<T> + From<T>,
 {
-    match v {
-        Some(v) => {
-            *state += <T as Into<f64>>::into(v);
-            Some(Some(<f64 as AsPrimitive<T>>::as_(*state)))
-        },
-        None => Some(None),
-    }
+    *state += <T as Into<f64>>::into(v?);
+    Some(<f64 as AsPrimitive<T>>::as_(*state))
 }
 
-fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<Option<T>>
+fn det_prod<T>(state: &mut T, v: Option<T>) -> Option<T>
 where
     T: Copy + Mul<Output = T>,
 {
-    match v {
-        Some(v) => {
-            *state = *state * v;
-            Some(Some(*state))
-        },
-        None => Some(None),
-    }
+    *state = *state * v?;
+    Some(*state)
 }
 
 fn cum_scan_numeric<T, S, F>(
@@ -86,11 +61,16 @@ fn cum_scan_numeric<T, S, F>(
 where
     T: PolarsNumericType,
     ChunkedArray<T>: FromIterator<Option<T::Native>>,
-    F: Fn(&mut S, Option<T::Native>) -> Option<Option<T::Native>>,
+    F: Fn(&mut S, Option<T::Native>) -> Option<T::Native>,
 {
+    let mut state = init;
     let out: ChunkedArray<T> = match reverse {
-        false => ca.iter().scan(init, update).collect_trusted(),
-        true => ca.iter().rev().scan(init, update).collect_reversed(),
+        false => ca.iter().map(|v| update(&mut state, v)).collect_trusted(),
+        true => ca
+            .iter()
+            .rev()
+            .map(|v| update(&mut state, v))
+            .collect_reversed(),
     };
     out.with_name(ca.name().clone())
 }

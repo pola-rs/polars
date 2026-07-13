@@ -291,7 +291,7 @@ fn visualize_plan_rec(
             let mut label = "select".to_string();
             let mut f = EscapeLabel(&mut label);
             if columns.iter().all(|(out, col)| out == col) {
-                write!(f, "\n{}", &columns.values().join(", ")).unwrap();
+                write!(f, "\n{}", columns.values().join(", ")).unwrap();
             } else {
                 for (out, col) in columns {
                     if out == col {

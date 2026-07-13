@@ -18,7 +18,7 @@ def test_is_null_followed_by_all() -> None:
         pl.col("val").is_null().all()
     )
 
-    assert r'[[(col("val").len()) == (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() == col("val").null_count())]' in result_lf.explain()
     assert "is_null" not in result_lf.collect_schema()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -143,7 +143,7 @@ def test_is_not_null_followed_by_sum() -> None:
         pl.col("val").is_not_null().sum()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -173,7 +173,7 @@ def test_drop_nulls_followed_by_len() -> None:
         pl.col("val").drop_nulls().len()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -198,7 +198,7 @@ def test_drop_nulls_followed_by_count() -> None:
         pl.col("val").drop_nulls().count()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -699,6 +699,13 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
     )
 
 
+def test_slice_pushdown_shared_join_input_28127() -> None:
+    lf = pl.LazyFrame({"a": ["x"]}).filter(pl.lit(True)).select("a").slice(0, 1)
+    q = lf.join(lf, on="a", how="inner")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
+
+
 def test_drop_nulls_first_last_optimization_25478() -> None:
     lf = pl.LazyFrame({"a": [None, 1, None, 3, None]})
     lf = lf.select(a=pl.col.a.drop_nulls().first(), b=pl.col.a.drop_nulls().last())
@@ -1109,6 +1116,7 @@ def test_hconcat_reorder_projection_push_to_inputs() -> None:
             pl.LazyFrame(schema={"c": pl.Null, "d": pl.Null}),
         ],
         how="horizontal",
+        strict=True,
     )
 
     q = hconcat.select("b", "a", "d", "c")
@@ -1144,6 +1152,7 @@ def test_hconcat_projection_pushdown_lazy_schema_27818() -> None:
             ),
         ],
         how="horizontal",
+        strict=True,
     ).select("B", "C")
 
     f = io.BytesIO()
@@ -1188,3 +1197,39 @@ def test_projection_pushdown_with_columns_27914() -> None:
             schema_overrides={"index": pl.get_index_type()},
         ),
     )
+
+
+def test_projection_pushdown_row_index_reorder_28015() -> None:
+    lf = pl.LazyFrame({"key": [10, 11], "value": [1, 2]}).with_row_index()
+    q1 = lf.join(lf.select("index"), on="index")
+    q2 = q1.drop("index").with_row_index()
+    q3 = q2.join(q2.join(q2.select("key"), on="key").select("index"), on="index")
+    out = q3.join(q3, on="key").collect(engine="streaming")
+
+    assert_frame_equal(
+        out.sort("index"),
+        pl.DataFrame(
+            {
+                "index": [0, 1],
+                "key": [10, 11],
+                "value": [1, 2],
+                "index_right": [0, 1],
+                "value_right": [1, 2],
+            },
+            schema=out.schema,
+        ),
+    )
+
+
+def test_projection_pushdown_groupby_len_28094() -> None:
+    q = (
+        pl.LazyFrame(
+            {"i128": [1], "u128": [1], "bool": [True]},
+            schema={"i128": pl.Int128, "u128": pl.UInt128, "bool": pl.Boolean},
+        )
+        .group_by("i128", "u128")
+        .agg(pl.first("bool"))
+        .select(pl.len())
+    )
+
+    assert q.collect().item() == 1

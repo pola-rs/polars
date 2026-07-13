@@ -71,10 +71,15 @@ override CFLAGS+=$(FEAT_CFLAGS)
 # Define command to filter pip warnings when running maturin
 FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS[0]} -eq 0
 
-.venv:  ## Set up Python virtual environment and install requirements
+# Note: the sentinel is the presence of the interpreter, not the presence of the $(VENV)
+# directory; checking bin/python allows Make to better-detect/rebuild a broken venv
+$(VENV_BIN)/python:
 	@unset CONDA_PREFIX \
 	&& python3 -m venv $(VENV) \
 	&& $(MAKE) requirements
+
+.PHONY: .venv
+.venv: $(VENV_BIN)/python  ## Set up Python virtual environment and install requirements
 
 # Note: Installed separately as pyiceberg does not have wheels for 3.13, causing
 # --no-build to fail.
@@ -101,7 +106,7 @@ requirements-all:  ## Install/refresh all Python requirements (including those n
 # (not run through maturin/Makefile) are ran. By updating .cargo/config.toml those environment
 # variables are sticky.
 .PHONY: update-cargo-env
-update-cargo-env: .venv
+update-cargo-env: $(VENV_BIN)/python
 	@RUSTFLAGS="$(RUSTFLAGS)" CFLAGS="$(CFLAGS)" $(VENV_BIN)/python tools/update-cargo-env.py
 
 .PHONY: build
@@ -171,7 +176,7 @@ fix: update-cargo-env
 	cargo fmt --all
 
 .PHONY: py-lint
-py-lint: .venv  ## Run python lint checks (only)
+py-lint: $(VENV_BIN)/python  ## Run python lint checks (only)
 	@$(MAKE) -s -C py-polars lint $(ARGS)
 
 .PHONY: check-fixme

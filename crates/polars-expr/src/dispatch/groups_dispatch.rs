@@ -360,7 +360,7 @@ pub fn drop_items<'a>(
     // No elements are filtered out.
     if predicate.unset_bits() == 0 {
         if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
-            *c = c.as_list().into_column();
+            *c = c.to_unit_list();
             if c.len() == 1 && ac.groups.len() != 1 {
                 *c = c.new_from_index(0, ac.groups.len());
             }
@@ -686,7 +686,7 @@ pub fn unique<'a>(
     ac.groups();
 
     if let AggState::AggregatedScalar(c) | AggState::LiteralScalar(c) = &mut ac.state {
-        *c = c.as_list().into_column();
+        *c = c.to_unit_list();
         if c.len() == 1 && ac.groups.len() != 1 {
             *c = c.new_from_index(0, ac.groups.len());
         }

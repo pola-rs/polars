@@ -35,7 +35,6 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::offset::Offsets;
 pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
@@ -602,12 +601,12 @@ impl Series {
         }
     }
 
-    /// Compute the sum of all values in this Series.
-    /// Returns `Some(0)` if the array is empty, and `None` if the array only
-    /// contains null values.
+    /// Get the sum of the Series as a `Scalar`.
+    /// Returns a `Scalar` with a zeroed value if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum<T>(&self) -> PolarsResult<T>
     where
         T: NumCast + IsFloat,
@@ -807,17 +806,14 @@ impl Series {
         std::ops::Mul::mul(self, other)?.sum::<f64>()
     }
 
-    /// Get the sum of the Series as a new Series of length 1.
-    /// Returns a Series with a single zeroed entry if self is an empty numeric series.
+    /// Get the sum of the [`ChunkedArray`] as a `Scalar`.
+    /// Returns a `Scalar` with a single zeroed value if self is an empty numeric series.
     ///
-    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
-    /// first cast to `Int64` to prevent overflow issues.
+    /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the sum is
+    /// computed in an `Int64` accumulator and the result is returned as `Int64`
+    /// to prevent overflow issues.
     pub fn sum_reduce(&self) -> PolarsResult<Scalar> {
-        use DataType::*;
-        match self.dtype() {
-            Int8 | UInt8 | Int16 | UInt16 => self.cast(&Int64).unwrap().sum_reduce(),
-            _ => self.0.sum_reduce(),
-        }
+        self.0.sum_reduce()
     }
 
     /// Get the mean of the Series as a new Series of length 1.
@@ -1054,23 +1050,6 @@ impl Series {
         size
     }
 
-    /// Packs every element into a list.
-    pub fn as_list(&self) -> ListChunked {
-        let s = self.rechunk();
-        // don't  use `to_arrow` as we need the physical types
-        let values = s.chunks()[0].clone();
-        let offsets = (0i64..(s.len() as i64 + 1)).collect::<Vec<_>>();
-        let offsets = unsafe { Offsets::new_unchecked(offsets) };
-
-        let dtype = LargeListArray::default_datatype(
-            s.dtype().to_physical().to_arrow(CompatLevel::newest()),
-        );
-        let new_arr = LargeListArray::new(dtype, offsets.into(), values, None);
-        let mut out = ListChunked::with_chunk(s.name().clone(), new_arr);
-        out.set_inner_dtype(s.dtype().clone());
-        out
-    }
-
     pub fn row_encode_unordered(&self) -> PolarsResult<BinaryOffsetChunked> {
         row_encode::_get_rows_encoded_ca_unordered(
             self.name().clone(),
@@ -1180,7 +1159,7 @@ mod test {
                     ArrowDataType::Int32,
                     true,
                 ))),
-                unsafe { Offsets::new_unchecked(vec![0, 1]) }.into(),
+                unsafe { arrow::offset::Offsets::new_unchecked(vec![0, 1]) }.into(),
                 PrimitiveArray::new(ArrowDataType::Int32, vec![1i32].into(), None).to_boxed(),
                 None,
             )],

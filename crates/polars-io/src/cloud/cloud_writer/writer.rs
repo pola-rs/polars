@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use bytes::Bytes;
+use object_store::PutPayload;
 use polars_error::PolarsResult;
 
 use crate::cloud::PolarsObjectStore;
@@ -47,6 +48,25 @@ impl CloudWriter {
             if let Some(payload) = self.bufferer.flush_full_chunk() {
                 self.writer.put(payload).await?;
             }
+        }
+
+        Ok(())
+    }
+
+    /// Write multiple Bytes without buffering.
+    pub async fn write_multiple_owned_unbuffered<I, T>(&mut self, bytes: I) -> PolarsResult<()>
+    where
+        I: IntoIterator<Item = T>,
+        Bytes: From<T>,
+    {
+        let payload = PutPayload::from_iter(bytes.into_iter().map(Bytes::from));
+
+        if payload.iter().next().is_some() {
+            if let Some(payload) = self.bufferer.flush() {
+                self.writer.put(payload).await?;
+            }
+
+            self.writer.put(payload).await?;
         }
 
         Ok(())

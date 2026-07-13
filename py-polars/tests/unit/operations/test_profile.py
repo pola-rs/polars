@@ -1,3 +1,5 @@
+import pytest
+
 import polars as pl
 
 
@@ -6,7 +8,8 @@ def test_profile_columns() -> None:
 
     # profile lazyframe operation/plan
     lazy = ldf.group_by("a").agg(pl.implode("b"))
-    profiling_info = lazy.profile()
+    with pytest.deprecated_call():
+        profiling_info = lazy.profile()
     # ┌──────────────┬───────┬─────┐
     # │ node         ┆ start ┆ end │
     # │ ---          ┆ ---   ┆ --- │
@@ -25,8 +28,12 @@ def test_profile_with_cse() -> None:
     x = pl.col("x")
     y = pl.col("y")
 
-    assert df.lazy().with_columns(
-        pl.when(x.is_null())
-        .then(None)
-        .otherwise(pl.when(y == 0).then(None).otherwise(x + y))
-    ).profile(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))[1].shape == (2, 3)
+    with pytest.deprecated_call():
+        assert df.lazy().with_columns(
+            pl.when(x.is_null())
+            .then(None)
+            .otherwise(pl.when(y == 0).then(None).otherwise(x + y))
+        ).profile(optimizations=pl.QueryOptFlags(comm_subexpr_elim=True))[1].shape == (
+            2,
+            3,
+        )

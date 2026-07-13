@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import ast
 import contextlib
+import uuid
 from _ast import GtE, Lt, LtE
 from ast import (
     Attribute,
@@ -30,14 +31,14 @@ from polars._utils.wrap import wrap_s
 from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Sequence
+    from collections.abc import Callable, Iterable, Sequence
     from datetime import date, datetime
 
     import pyiceberg
     import pyiceberg.schema
     from pyiceberg.manifest import DataFile
     from pyiceberg.table import Table
-    from pyiceberg.types import IcebergType
+    from pyiceberg.types import IcebergType, NestedField
 
     from polars import DataFrame
 else:
@@ -66,7 +67,7 @@ def _scan_pyarrow_dataset_impl(
     n_rows: int | None = None,
     snapshot_id: int | None = None,
     **kwargs: Any,  # noqa: ARG001
-) -> tuple[Iterator[DataFrame], bool]:
+) -> tuple[Iterable[DataFrame], bool]:
     """
     Take the projected columns and materialize an arrow table.
 
@@ -96,11 +97,22 @@ def _scan_pyarrow_dataset_impl(
     that could not be converted
     to pyarrow and need to be applied as post-predicate.
     """
-    from polars import from_arrow
-
     scan = tbl.scan(limit=n_rows, snapshot_id=snapshot_id)
 
     if with_columns is not None:
+        if not with_columns:
+            assert iceberg_table_filter is None
+
+            def gen() -> Iterable[pl.DataFrame]:
+                remaining = scan.count()
+
+                if n_rows is not None:
+                    remaining = min(remaining, n_rows)
+
+                yield pl.DataFrame(height=remaining)
+
+            return (gen(), False)
+
         scan = scan.select(*with_columns)
 
     if iceberg_table_filter is not None:
@@ -108,7 +120,7 @@ def _scan_pyarrow_dataset_impl(
 
     batches = scan.to_arrow_batch_reader()
 
-    return ((from_arrow(batch) for batch in batches), False)  # type: ignore[misc]
+    return ((pl.DataFrame(batch) for batch in batches), False)
 
 
 def _ensure_boolean_expression(result: Any) -> Any:
@@ -250,6 +262,33 @@ def _(a: Compare) -> Any:
 @_convert_predicate.register(List)
 def _(a: List) -> Any:
     return [_convert_predicate(e) for e in a.elts]
+
+
+def extract_field_initial_default(field: NestedField) -> pl.Series | None:
+    from pyiceberg.types import (
+        UUIDType,
+    )
+
+    if field.initial_default is None:
+        return None
+
+    value = field.initial_default
+
+    if isinstance(field.field_type, UUIDType):
+        assert isinstance(value, uuid.UUID)
+        value = value.bytes
+
+    return pl.Series([value], dtype=pl_dtype_from_iceberg_field(field))
+
+
+def pl_dtype_from_iceberg_field(field: NestedField) -> pl.DataType:
+    from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+    _, field_polars_dtype = pl.Schema(
+        schema_to_pyarrow(pyiceberg.schema.Schema(field))
+    ).popitem()
+
+    return field_polars_dtype
 
 
 class IdentityTransformedPartitionValuesBuilder:
@@ -404,10 +443,6 @@ class IcebergStatisticsLoader:
         table: Table,
         projected_filter_schema: pyiceberg.schema.Schema,
     ) -> None:
-        import pyiceberg.schema
-        from pyiceberg.io.pyarrow import schema_to_pyarrow
-
-        import polars as pl
         import polars._utils.logging
 
         verbose = polars._utils.logging.verbose()
@@ -424,9 +459,7 @@ class IcebergStatisticsLoader:
                 with contextlib.suppress(ValueError):
                     field_all_types.add(schema.find_field(field.field_id).field_type)
 
-            _, field_polars_dtype = pl.Schema(
-                schema_to_pyarrow(pyiceberg.schema.Schema(field))
-            ).popitem()
+            field_polars_dtype = pl_dtype_from_iceberg_field(field)
 
             load_from_bytes_impl = LoadFromBytesImpl.init_for_field_type(
                 field.field_type,
@@ -487,7 +520,7 @@ class IcebergStatisticsLoader:
             column_stats_df = stat_builder.finish(expected_height, p)
             out.append(column_stats_df)
 
-        return pl.concat(out, how="horizontal")
+        return pl.concat(out, how="horizontal", strict=True)
 
 
 @dataclass
