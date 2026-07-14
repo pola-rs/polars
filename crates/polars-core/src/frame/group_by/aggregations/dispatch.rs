@@ -361,6 +361,7 @@ impl Series {
         use DataType::*;
         match s.dtype() {
             Boolean => s.cast(&Float64).unwrap().agg_mean(groups),
+            Float16 => SeriesWrap(s.f16().unwrap().clone()).agg_mean(groups),
             Float32 => SeriesWrap(s.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_mean(groups),
             dt if dt.is_primitive_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
@@ -415,6 +416,7 @@ impl Series {
         use DataType::*;
         match s.dtype() {
             Boolean => s.cast(&Float64).unwrap().agg_median(groups),
+            Float16 => SeriesWrap(s.f16().unwrap().clone()).agg_median(groups),
             Float32 => SeriesWrap(s.f32().unwrap().clone()).agg_median(groups),
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_median(groups),
             dt if dt.is_primitive_numeric() => {
@@ -475,6 +477,7 @@ impl Series {
 
         use DataType::*;
         match s.dtype() {
+            Float16 => s.f16().unwrap().agg_quantile(groups, quantile, method),
             Float32 => s.f32().unwrap().agg_quantile(groups, quantile, method),
             Float64 => s.f64().unwrap().agg_quantile(groups, quantile, method),
             #[cfg(feature = "dtype-decimal")]
