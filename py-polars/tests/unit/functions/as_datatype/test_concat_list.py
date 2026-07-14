@@ -233,6 +233,13 @@ def test_concat_list_broadcast_empty() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_concat_list_zero_height_list_input() -> None:
+    df = pl.DataFrame(schema={"a": pl.List(pl.Int64)})
+    out = df.select(pl.concat_list("a", pl.lit(1)).alias("out"))
+    expected = pl.DataFrame(schema={"out": pl.List(pl.Int64)})
+    assert_frame_equal(out, expected)
+
+
 def test_concat_list_preserves_inner_nulls() -> None:
     # Preserve null elements inside valid lists, distinct from whole-list nulls.
     df = pl.DataFrame({"a": [[1, None], [3]], "b": [[None], [4]]})

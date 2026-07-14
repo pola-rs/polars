@@ -32,15 +32,11 @@ pub unsafe fn horizontal_concat_list_unchecked(
             .all(|a| a.values().dtype() == arrays[0].values().dtype())
     );
 
-    // The output height is the common (broadcast) length: the length of the non-unit columns, or 1 when every column
-    // has unit length. Using the non-unit max (rather than the plain max) keeps empty inputs empty even when unit
-    // length columns are broadcast alongside them.
-    let output_height = arrays
-        .iter()
-        .map(|a| a.len())
-        .filter(|&l| l != 1)
-        .max()
-        .unwrap_or(1);
+    if arrays.iter().any(|a| a.is_empty()) {
+        return Ok(ListArray::new_empty(arrays[0].dtype().clone()));
+    }
+
+    let output_height = arrays.iter().map(|a| a.len()).max().unwrap();
     debug_assert!(
         arrays
             .iter()
