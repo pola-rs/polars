@@ -174,8 +174,11 @@ pub fn optimize(
     // Should be run before projection pushdown.
     // This allows columns only needed for filters to be dropped early.
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(pushdown_maintain_errors, opt_flags.streaming());
+        let mut predicate_pushdown_opt = PredicatePushDown::new(
+            pushdown_maintain_errors,
+            opt_flags.streaming(),
+            opt_flags.partition_hive(),
+        );
         let ir = ir_arena.take(root);
         let ir = predicate_pushdown_opt.optimize(ir, ir_arena, expr_arena)?;
         ir_arena.replace(root, ir);
@@ -191,6 +194,7 @@ pub fn optimize(
             verbose,
             pushdown_maintain_errors,
             opt_flags.streaming(),
+            opt_flags.partition_hive(),
         )?;
     }
 

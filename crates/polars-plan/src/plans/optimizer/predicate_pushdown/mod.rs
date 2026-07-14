@@ -29,16 +29,19 @@ pub struct PredicatePushDown {
     // Set while re-processing the branches `join::hive::rewrite_hive` so we don't re-enter
     // the hive rewriting part
     pub(super) hive_rewrite_active: bool,
+    // Rewrite hive partitioned join.
+    pub(super) partition_hive: bool,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, streaming: bool) -> Self {
+    pub fn new(maintain_errors: bool, streaming: bool, partition_hive: bool) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
             streaming,
             maintain_errors,
             hive_rewrite_active: false,
+            partition_hive,
         }
     }
 }
