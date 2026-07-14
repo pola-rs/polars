@@ -24,6 +24,11 @@ class CatNameSpace:
     def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
+    @deprecated(
+        "`cat.get_categories()` is deprecated. To get the distinct values present in "
+        "a Categorical column, use `Series.unique()`. For the fixed category list of an "
+        "Enum, use its `dtype.categories`. This method will be removed in Polars 2.0.",
+    )
     def get_categories(self) -> Series:
         """
         Get the categories stored in this data type.
@@ -53,6 +58,10 @@ class CatNameSpace:
         """
         return self._s.cat_is_local()
 
+    @deprecated(
+        "`cat.to_local()` is deprecated; Categoricals no longer have a local scope. "
+        "This method will be removed in Polars 2.0."
+    )
     def to_local(self) -> Series:
         """Simply returns the column as-is, local representations are deprecated."""
         return wrap_s(self._s.cat_to_local())
