@@ -63,8 +63,6 @@ pub(super) fn expand_datasets(
             FileScanIR::PythonDataset { .. } => {
                 use polars_core::runtime::ASYNC;
 
-                use crate::plans::pyarrow::predicate_to_pa;
-
                 let mut projection = unified_scan_args.projection.clone();
 
                 if let Some(row_index) = &unified_scan_args.row_index
@@ -90,12 +88,12 @@ pub(super) fn expand_datasets(
                 let mut row_index_in_live_filter = false;
 
                 let live_filter_columns: Option<Arc<[PlSmallStr]>> = predicate.as_ref().map(|x| {
-                    use polars_core::prelude::PlHashSet;
+                    use polars_core::prelude::PlIndexSet;
 
                     use crate::utils::aexpr_to_leaf_names_iter;
 
                     let mut out: Arc<[PlSmallStr]> =
-                        PlHashSet::from_iter(aexpr_to_leaf_names_iter(x.node(), expr_arena))
+                        PlIndexSet::from_iter(aexpr_to_leaf_names_iter(x.node(), expr_arena))
                             .into_iter()
                             .filter(|&live_col| {
                                 if unified_scan_args
@@ -122,10 +120,11 @@ pub(super) fn expand_datasets(
                     && let Some(predicate) = &predicate
                 {
                     use crate::plans::aexpr::MintermIter;
+                    use crate::plans::python::pyarrow::predicate_to_pa;
 
                     // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
                     let parts: Vec<String> = MintermIter::new(predicate.node(), expr_arena)
-                        .filter_map(|node| predicate_to_pa(node, expr_arena, Default::default()))
+                        .filter_map(|node| predicate_to_pa(node, expr_arena))
                         .collect();
                     match parts.len() {
                         0 => None,
@@ -319,7 +318,7 @@ fn expand_python_dataset(
             else {
                 panic!(
                     "invalid scan args from python dataset resolve: {:?}",
-                    &resolved_unified_scan_args
+                    resolved_unified_scan_args
                 )
             };
 

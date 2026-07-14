@@ -127,7 +127,9 @@ pub fn to_dataset_scan(
             kwargs.set_item(intern!(py, "filter_columns"), filter_columns_list)?;
         }
 
-        kwargs.set_item(intern!(py, "pyarrow_predicate"), pyarrow_predicate)?;
+        if let Some(pyarrow_predicate) = pyarrow_predicate {
+            kwargs.set_item(intern!(py, "pyarrow_predicate"), pyarrow_predicate)?;
+        }
 
         let Some((scan, version)): Option<(Py<PyAny>, Wrap<PlSmallStr>)> = py_spawn_call(
             py,
@@ -143,7 +145,7 @@ pub fn to_dataset_scan(
 
         let Ok(lf) = get_lf(scan.bind(py)) else {
             return Err(
-                PyValueError::new_err(format!("cannot extract LazyFrame from {}", &scan)).into(),
+                PyValueError::new_err(format!("cannot extract LazyFrame from {}", scan)).into(),
             );
         };
 

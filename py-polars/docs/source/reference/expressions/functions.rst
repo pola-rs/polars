@@ -58,6 +58,7 @@ These functions are available from the Polars module root and can be used as exp
    len
    linear_space
    linear_spaces
+   list
    lit
    map_batches
    map_groups

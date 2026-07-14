@@ -73,7 +73,7 @@ pub(crate) fn import_schema_pycapsule(
 }
 
 /// Import `__arrow_c_stream__` across Python boundary.
-fn call_arrow_c_stream<'py>(ob: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyCapsule>> {
+pub(crate) fn call_arrow_c_stream<'py>(ob: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyCapsule>> {
     if !ob.hasattr("__arrow_c_stream__")? {
         return Err(PyValueError::new_err(
             "Expected an object with dunder __arrow_c_stream__",
@@ -84,11 +84,16 @@ fn call_arrow_c_stream<'py>(ob: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyCap
     Ok(capsule)
 }
 
-pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<PySeries> {
-    // # Safety
-    // capsule holds a valid C ArrowArrayStream pointer, as defined by the Arrow PyCapsule
-    // Interface
-    let mut stream = unsafe {
+/// Takes ownership of the `ArrowArrayStream` behind a stream capsule and wraps it
+/// for iteration.
+///
+/// # Safety
+/// `capsule` must hold a valid C `ArrowArrayStream` pointer, as defined by the Arrow
+/// PyCapsule Interface.
+pub(crate) fn open_stream_capsule(
+    capsule: &Bound<PyCapsule>,
+) -> PyResult<ArrowArrayStreamReader<Box<ArrowArrayStream>>> {
+    unsafe {
         let stream_ptr = Box::new(std::ptr::replace(
             capsule
                 .pointer_checked(Some(c"arrow_array_stream"))?
@@ -96,8 +101,12 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
             ArrowArrayStream::empty(),
         ));
         ArrowArrayStreamReader::try_new(stream_ptr)
-            .map_err(|err| PyValueError::new_err(err.to_string()))?
-    };
+            .map_err(|err| PyValueError::new_err(err.to_string()))
+    }
+}
+
+pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<PySeries> {
+    let mut stream = open_stream_capsule(capsule)?;
 
     let mut produced_arrays: Vec<Box<dyn Array>> = vec![];
     while let Some(array) = unsafe { stream.next() } {

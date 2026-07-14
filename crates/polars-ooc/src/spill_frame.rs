@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use polars_async::ASYNC;
 use polars_core::frame::DataFrame;
@@ -12,8 +13,7 @@ use crate::spill_file::SpillFile;
 use crate::{BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
 
 impl Spillable for DataFrame {
-    // TODO: just a dummy spill for now. Boxed to reduce size.
-    type Spilled = SpillFile;
+    type Spilled = Arc<SpillFile>;
 
     fn estimate_byte_size(&self) -> usize {
         self.estimated_size()
@@ -37,7 +37,7 @@ impl Spillable for DataFrame {
             .unwrap_or_else(|e| panic!("failed to encode spill file for '{context_id}': {e}",));
 
         // Do file creation / writing on tokio.
-        ASYNC
+        let file = ASYNC
             .spawn(async move {
                 let size = buf.len() as u64;
                 let spill_file = SpillFile::new(&context_id, "ipc", size);
@@ -60,7 +60,8 @@ impl Spillable for DataFrame {
                 }
             })
             .await
-            .unwrap()
+            .unwrap();
+        Arc::new(file)
     }
 
     async fn unspill(location: &Self::Spilled) -> Self {
@@ -79,6 +80,7 @@ impl Spillable for DataFrame {
     }
 }
 
+#[derive(Clone)]
 pub struct SpillFrame {
     token: SpillToken<DataFrame>,
     height: usize,

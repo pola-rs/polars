@@ -297,7 +297,7 @@ impl PhysicalExpr for AggregationExpr {
                 GroupByMethod::Implode { maintain_order: _ } => {
                     let col = match ac.agg_state() {
                         AggState::LiteralScalar(_) => unreachable!(), // handled above
-                        AggState::AggregatedScalar(c) => c.as_list().into_column(),
+                        AggState::AggregatedScalar(c) => c.to_unit_list(),
                         AggState::AggregatedList(c) => c.clone(),
                         AggState::NotAggregated(_) => ac.aggregated(),
                     };
