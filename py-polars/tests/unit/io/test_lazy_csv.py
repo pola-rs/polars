@@ -223,6 +223,25 @@ def test_scan_csv_schema_overrides_dtype_list_17813() -> None:
     assert df.dtypes == [pl.Int64, pl.Int64, pl.Int64, pl.Int64, pl.Int64]
 
 
+@pytest.mark.write_disk
+def test_scan_csv_schema_overrides_dtype_list_file_info_cache(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "data.csv"
+    path.write_text("a,b\n1,2\n3,4\n")
+
+    strings = pl.scan_csv(path, schema_overrides=[pl.String]).select(
+        pl.col("a").alias("a_string")
+    )
+    floats = pl.scan_csv(path, schema_overrides=[pl.Float64]).select(
+        pl.col("a").alias("a_float")
+    )
+
+    result = pl.concat([strings, floats], how="horizontal_extend").collect()
+    expected = pl.DataFrame({"a_string": ["1", "3"], "a_float": [1.0, 3.0]})
+    assert_frame_equal(result, expected)
+
+
 def test_scan_csv_invalid_schema_overrides_length() -> None:
     csv = io.StringIO(
         textwrap.dedent(

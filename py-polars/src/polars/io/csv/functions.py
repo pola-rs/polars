@@ -678,15 +678,9 @@ def _read_csv_impl(
     if isinstance(columns, str):
         columns = [columns]
     if isinstance(source, str) and is_glob_pattern(source):
-        dtypes_dict = None
-        if dtype_list is not None:
-            dtypes_dict = dict(dtype_list)
-        if dtype_slice is not None:
-            msg = (
-                "cannot use glob patterns and unnamed dtypes as `schema_overrides` argument"
-                "\n\nUse `schema_overrides`: Mapping[str, Type[DataType]]"
-            )
-            raise ValueError(msg)
+        scan_schema_overrides = (
+            dict(dtype_list) if dtype_list is not None else dtype_slice
+        )
         from polars import scan_csv
 
         scan = scan_csv(
@@ -698,7 +692,7 @@ def _read_csv_impl(
             skip_rows=skip_rows,
             skip_lines=skip_lines,
             schema=schema,
-            schema_overrides=dtypes_dict,
+            schema_overrides=scan_schema_overrides,
             null_values=null_values,
             empty_string_is_null=empty_string_is_null,
             ignore_errors=ignore_errors,
