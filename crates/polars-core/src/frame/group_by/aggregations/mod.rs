@@ -1177,6 +1177,7 @@ where
     }
 }
 
+#[cfg(feature = "dtype-f16")]
 impl Float16Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
