@@ -131,6 +131,20 @@ pub fn into_reduction(
             (out, input)
         },
 
+        #[cfg(feature = "approx_quantile")]
+        AExpr::Function {
+            input: inner_exprs,
+            function: IRFunctionExpr::ApproxQuantile { error },
+            options: _,
+        } => {
+            use crate::reduce::approx_quantile::new_approx_quantile_reduction;
+
+            assert!(inner_exprs.len() == 2);
+            let input = inner_exprs[0].node();
+            let out = new_approx_quantile_reduction(get_dt(input)?)?;
+            (out, input)
+        },
+
         #[cfg(feature = "bitwise")]
         AExpr::Function {
             input: inner_exprs,

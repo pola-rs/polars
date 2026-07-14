@@ -148,6 +148,7 @@ dsl-schema = [
 # operations
 bitwise = ["polars-core/bitwise", "polars-ops/bitwise"]
 approx_unique = ["polars-ops/approx_unique", "polars-core/approx_unique"]
+approx_quantile = []
 is_in = ["polars-ops/is_in"]
 repeat_by = ["polars-ops/repeat_by"]
 round_series = ["polars-ops/round_series"]
@@ -282,6 +283,7 @@ features = [
   "hist",
   "object",
   "approx_unique",
+  "approx_quantile",
   "dtype-categorical",
   "merge_sorted",
   "bigidx",

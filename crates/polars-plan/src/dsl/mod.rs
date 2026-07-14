@@ -981,6 +981,12 @@ impl Expr {
         self.map_unary(FunctionExpr::ApproxNUnique)
     }
 
+    /// Get the approximate quantile value.
+    #[cfg(feature = "approx_quantile")]
+    pub fn approx_quantile<E: Into<Expr>>(self, quantile: E, error: f64) -> Self {
+        self.map_binary(FunctionExpr::ApproxQuantile { error }, quantile.into())
+    }
+
     /// Bitwise "and" operation.
     pub fn and<E: Into<Expr>>(self, expr: E) -> Self {
         binary_expr(self, Operator::And, expr.into())

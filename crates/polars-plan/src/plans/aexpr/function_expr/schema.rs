@@ -229,6 +229,8 @@ impl IRFunctionExpr {
             CumMax { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "approx_unique")]
             ApproxNUnique => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "approx_quantile")]
+            ApproxQuantile { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "hist")]
             Hist {
                 include_category,

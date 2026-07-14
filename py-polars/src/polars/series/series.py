@@ -9665,6 +9665,16 @@ class Series(metaclass=_Meta):
         """
         return self._s.approx_n_unique()
 
+    def approx_quantile(
+        self, quantile: float | list[float], error: 1 / 1_000_000
+    ) -> PythonLiteral:
+        (
+            self.to_frame()
+            .select_seq(F.col(self.name).approx_quantile(quantile, error=error))
+            .to_series()
+            .item()
+        )
+
     def _row_encode(
         self,
         *,

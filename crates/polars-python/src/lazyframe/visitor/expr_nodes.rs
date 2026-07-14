@@ -1895,6 +1895,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 } => ("value_counts", sort, parallel, name.as_str(), normalize).into_py_any(py),
                 IRFunctionExpr::UniqueCounts => ("unique_counts",).into_py_any(py),
                 IRFunctionExpr::ApproxNUnique => ("approx_n_unique",).into_py_any(py),
+                IRFunctionExpr::ApproxQuantile { error } => {
+                    ("approx_quantile", error).into_py_any(py)
+                },
                 IRFunctionExpr::Coalesce => ("coalesce",).into_py_any(py),
                 IRFunctionExpr::Diff(null_behaviour) => (
                     "diff",

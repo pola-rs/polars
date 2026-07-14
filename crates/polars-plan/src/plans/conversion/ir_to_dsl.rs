@@ -981,6 +981,8 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
         IF::UniqueCounts => F::UniqueCounts,
         #[cfg(feature = "approx_unique")]
         IF::ApproxNUnique => F::ApproxNUnique,
+        #[cfg(feature = "approx_quantile")]
+        IF::ApproxQuantile { error } => F::ApproxQuantile { error },
         IF::Coalesce => F::Coalesce,
         #[cfg(feature = "diff")]
         IF::Diff(nb) => F::Diff(nb),

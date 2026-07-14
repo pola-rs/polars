@@ -192,6 +192,9 @@ approx_unique = [
   "polars-ops/approx_unique",
   "polars-core/approx_unique",
 ]
+approx_quantile = [
+  "polars-lazy?/approx_quantile",
+]
 arg_where = ["polars-lazy?/arg_where"]
 asof_join = ["polars-lazy?/asof_join", "polars-ops/asof_join"]
 iejoin = ["polars-lazy?/iejoin", "polars-ops/iejoin"]
