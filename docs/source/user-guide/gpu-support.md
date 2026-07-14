@@ -201,7 +201,7 @@ Traceback (most recent call last):
   File "<stdin>", line 1, in <module>
   File "/home/coder/third-party/polars/py-polars/polars/lazyframe/frame.py", line 2035, in collect
     return wrap_df(ldf.collect(callback))
-polars.exceptions.ComputeError: 'cuda' conversion failed: NotImplementedError: ('Query execution with GPU not possible: unsupported operations.\nThe errors were:\n- NotImplementedError: anonymousfunction', [NotImplementedError('anonymousfunction')])
+polars.exceptions.ComputeError: 'cuda' conversion failed: NotImplementedError: ('Query execution with GPU not possible: unsupported operations.\nThe errors were:\n- NotImplementedError: dtype=Binary conversion not supported', [NotImplementedError('dtype=Binary conversion not supported')])
 ```
 
 Currently, only the proximal cause of failure to execute on the GPU is reported, we plan to extend
