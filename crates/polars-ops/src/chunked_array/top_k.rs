@@ -196,6 +196,12 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
 
     let origin_dtype = src.dtype();
 
+    // Categoricals sort lexically, but their physical codes are in first-appearance order
+    // so the numeric fast path below would return incorrect results
+    if origin_dtype.is_categorical() {
+        return top_k_by_impl(k, src, std::slice::from_ref(src), vec![descending]);
+    }
+
     let s = src.to_physical_repr();
 
     match s.dtype() {
