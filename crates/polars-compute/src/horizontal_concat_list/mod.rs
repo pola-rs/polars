@@ -33,8 +33,8 @@ pub unsafe fn horizontal_concat_list_unchecked(
     );
 
     // The output height is the common (broadcast) length: the length of the non-unit columns, or 1 when every column
-    // has unit length. Using the non-unit max (rather than the plain max) keeps empty inputs empty even
-    // when unit-length columns are broadcast alongside them.
+    // has unit length. Using the non-unit max (rather than the plain max) keeps empty inputs empty even when unit
+    // length columns are broadcast alongside them.
     let output_height = arrays
         .iter()
         .map(|a| a.len())

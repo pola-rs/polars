@@ -702,9 +702,8 @@ pub trait ListNameSpaceImpl: AsList {
 
         let dtype = &DataType::List(Box::new(inner_super_type.clone()));
 
-        // Cast lhs and rhs to a common `list[supertype]`. Unit-length rhs columns
-        // are left un-expanded (`allow_broadcast=false`); the kernel broadcasts
-        // them in-place, which avoids materializing the broadcast.
+        // Cast lhs and rhs to a common `list[supertype]`. Unit-length rhs columns are left un-expanded
+        // (`allow_broadcast=false`); the kernel broadcasts them in-place, which avoids materializing the broadcast.
         let ca_series = ca.cast(dtype)?;
         let ca = ca_series.list().unwrap();
         cast_rhs(&mut other, &inner_super_type, dtype, length, false)?;
@@ -720,11 +719,11 @@ pub trait ListNameSpaceImpl: AsList {
             .map(|lc| lc.downcast_iter().next().unwrap().clone())
             .collect();
 
-        // SAFETY: after casting all arrays share the same inner (super)type, and
-        // each has length `length` (== output height) or 1 (broadcast).
+        // SAFETY: after casting all arrays share the same inner (super)type, and each has length `length`
+        // (== output height) or 1 (broadcast).
         let out_arr = unsafe { horizontal_concat_list_unchecked(&arrays) }?;
-
         let mut out = ListChunked::with_chunk(ca.name().clone(), out_arr);
+
         // The kernel operates on physical arrays; restore the logical inner dtype.
         unsafe { out.to_logical(inner_super_type) };
         Ok(out)
