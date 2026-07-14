@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import subprocess
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from polars.exceptions import ComputeError
 
@@ -415,7 +415,7 @@ def test_scan_select_len_overflow_28351(plmonkeypatch: PlMonkeyPatch) -> None:
     plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str((1 << 32) - 1))
     s = pl.Series([{}], dtype=pl.Struct({})).new_from_index(0, (1 << 31) - 1)
 
-    files = [io.BytesIO(), io.BytesIO(), io.BytesIO()]
+    files: list[Any] = [io.BytesIO(), io.BytesIO(), io.BytesIO()]
 
     for f in files:
         s.to_frame().write_ipc(f)
