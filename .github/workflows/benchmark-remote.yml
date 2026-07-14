@@ -22,7 +22,7 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' || github.event.label.name == 'needs-bench' }}
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Clone Polars-benchmark
         run: |
