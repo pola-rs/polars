@@ -42,7 +42,6 @@ def test_run_on_pandas() -> None:
         inputs: list[Callable[[], pd.DataFrame]],
         obj: Any,
         _node_traverser: Any,
-        timer: Timer,
     ) -> Callable[[], pd.DataFrame]:
         assert len(obj.left_on) == 1
         assert len(obj.right_on) == 1
@@ -54,68 +53,54 @@ def test_run_on_pandas() -> None:
         def run(inputs: list[Callable[[], pd.DataFrame]]) -> pd.DataFrame:
             # materialize inputs
             dataframes = [call() for call in inputs]
-            return timer.record(
-                lambda: dataframes[0].merge(
-                    dataframes[1], left_on=left_on, right_on=right_on
-                ),
-                "pandas-join",
+            return dataframes[0].merge(
+                dataframes[1], left_on=left_on, right_on=right_on
             )
 
         return partial(run, inputs)
 
     # Simple scan example, missing predicates, columns pruning, slices, etc.
-    def df_scan(
-        _inputs: None, obj: Any, _: Any, timer: Timer
-    ) -> Callable[[], pd.DataFrame]:
+    def df_scan(_inputs: None, obj: Any, _: Any) -> Callable[[], pd.DataFrame]:
         assert obj.selection is None
-        return lambda: timer.record(lambda: wrap_df(obj.df).to_pandas(), "pandas-scan")
+        return lambda: wrap_df(obj.df).to_pandas()
 
     @lru_cache(1)
     def get_node_converters() -> dict[
-        type, Callable[[Any, Any, Any, Timer], Callable[[], pd.DataFrame]]
+        type, Callable[[Any, Any, Any], Callable[[], pd.DataFrame]]
     ]:
         return {
             _ir_nodes.Join: join,
             _ir_nodes.DataFrameScan: df_scan,
         }
 
-    def get_input(node_traverser: Any, *, timer: Timer) -> Callable[[], pd.DataFrame]:
+    def get_input(node_traverser: Any) -> Callable[[], pd.DataFrame]:
         current_node = node_traverser.get_node()
 
         inputs_callable = []
         for inp in node_traverser.get_inputs():
             node_traverser.set_node(inp)
-            inputs_callable.append(get_input(node_traverser, timer=timer))
+            inputs_callable.append(get_input(node_traverser))
 
         node_traverser.set_node(current_node)
         ir_node = node_traverser.view_current_node()
         return get_node_converters()[ir_node.__class__](
-            inputs_callable, ir_node, node_traverser, timer
+            inputs_callable, ir_node, node_traverser
         )
 
-    def run_on_pandas(node_traverser: Any, query_start: int | None) -> None:
-        timer = Timer(
-            time.monotonic_ns() - query_start if query_start is not None else None
-        )
+    def run_on_pandas(node_traverser: Any) -> None:
         current_node = node_traverser.get_node()
-
-        callback = get_input(node_traverser, timer=timer)
+        callback = get_input(node_traverser)
 
         def run_callback(
             columns: list[str] | None,
             _: Any,
             n_rows: int | None,
-            should_time: bool,
         ) -> pl.DataFrame | tuple[pl.DataFrame, list[tuple[int, int, str]]]:
             assert n_rows is None
             assert columns is None
 
             # produce a wrong result to ensure the callback has run.
-            result = pl.from_pandas(callback() * 2)
-            if should_time:
-                return result, timer.timings
-            else:
-                return result
+            return pl.from_pandas(callback() * 2)
 
         node_traverser.set_node(current_node)
         node_traverser.set_udf(run_callback)
@@ -131,18 +116,11 @@ def test_run_on_pandas() -> None:
         "bar": [4],
     }
 
-    with pytest.deprecated_call():
-        result, timings = q.profile(post_opt_callback=run_on_pandas)
+    result = q.collect(post_opt_callback=run_on_pandas)  # type: ignore[call-overload]
     assert result.to_dict(as_series=False) == {
         "foo": [2],
         "bar": [4],
     }
-    assert timings["node"].to_list() == [
-        "optimization",
-        "pandas-scan",
-        "pandas-scan",
-        "pandas-join",
-    ]
 
 
 def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
@@ -161,7 +139,7 @@ def test_path_uri_to_python_conversion_22766(tmp_path: Path) -> None:
 
 
 def test_node_traverse_sink(tmp_path: Path) -> None:
-    def callback(node_traverser: Any, query_start: int | None) -> None:
+    def callback(node_traverser: Any) -> None:
         assert list(json.loads(node_traverser.view_current_node().payload)["File"]) == [
             "target",
             "file_format",
@@ -180,7 +158,7 @@ def _collect_rolling_function_data(
     """Traverse a query's IR and return function_data tuples for rolling expressions."""
     results: list[tuple[Any, ...]] = []
 
-    def callback(node_traverser: Any, query_start: int | None) -> None:
+    def callback(node_traverser: Any) -> None:
         for expr_ir in node_traverser.get_exprs():
             expr_node = node_traverser.view_expression(expr_ir.node)
             if isinstance(expr_node, _expr_nodes.Function):
@@ -311,7 +289,7 @@ def _collect_ewm_function_data(
     """Traverse a query's IR and return function_data tuples for ewm expressions."""
     results: list[tuple[Any, ...]] = []
 
-    def callback(node_traverser: Any, query_start: int | None) -> None:
+    def callback(node_traverser: Any) -> None:
         for expr_ir in node_traverser.get_exprs():
             expr_node = node_traverser.view_expression(expr_ir.node)
             if isinstance(expr_node, _expr_nodes.Function):
@@ -424,7 +402,7 @@ def _collect_rolling_by_function_data(
     """Traverse a query's IR; return function_data tuples for rolling ``*_by`` exprs."""
     results: list[tuple[Any, ...]] = []
 
-    def callback(node_traverser: Any, query_start: int | None) -> None:
+    def callback(node_traverser: Any) -> None:
         for expr_ir in node_traverser.get_exprs():
             expr_node = node_traverser.view_expression(expr_ir.node)
             if isinstance(expr_node, _expr_nodes.Function):

@@ -1,7 +1,5 @@
-use std::borrow::Cow;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Mutex, RwLock};
-use std::time::Duration;
 
 use arrow::bitmap::Bitmap;
 use bitflags::bitflags;
@@ -11,7 +9,6 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use polars_utils::relaxed_cell::RelaxedCell;
 use polars_utils::unique_id::UniqueId;
 
-use super::NodeTimer;
 use crate::prelude::AggregationContext;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
@@ -129,7 +126,6 @@ pub struct ExecutionState {
     pub with_fields_ac: Option<Arc<AggregationContext<'static>>>,
     pub ext_contexts: Arc<Vec<DataFrame>>,
     pub element: Arc<Option<(Column, Option<Bitmap>)>>,
-    node_timer: Option<NodeTimer>,
     stop: Arc<RelaxedCell<bool>>,
 }
 
@@ -151,32 +147,7 @@ impl ExecutionState {
             with_fields_ac: Default::default(),
             ext_contexts: Default::default(),
             element: Default::default(),
-            node_timer: None,
             stop: Arc::new(RelaxedCell::from(false)),
-        }
-    }
-
-    /// Toggle this to measure execution times.
-    pub fn time_nodes(&mut self, query_start: std::time::Instant, optimization_duration: Duration) {
-        self.node_timer = Some(NodeTimer::new(query_start, optimization_duration))
-    }
-    pub fn has_node_timer(&self) -> bool {
-        self.node_timer.is_some()
-    }
-
-    pub fn finish_timer(self) -> PolarsResult<DataFrame> {
-        self.node_timer.unwrap().finish()
-    }
-
-    // Timings should be a list of (start, end, name) where the start
-    // and end are raw durations since the query start as nanoseconds.
-    pub fn record_raw_timings(&self, timings: &[(u64, u64, String)]) {
-        for &(start, end, ref name) in timings {
-            self.node_timer.as_ref().unwrap().store_duration(
-                Duration::from_nanos(start),
-                Duration::from_nanos(end),
-                name.to_string(),
-            );
         }
     }
 
@@ -189,20 +160,6 @@ impl ExecutionState {
 
     pub fn cancel_token(&self) -> Arc<RelaxedCell<bool>> {
         self.stop.clone()
-    }
-
-    pub fn record<T, F: FnOnce() -> T>(&self, func: F, name: Cow<'static, str>) -> T {
-        match &self.node_timer {
-            None => func(),
-            Some(timer) => {
-                let start = std::time::Instant::now();
-                let out = func();
-                let end = std::time::Instant::now();
-
-                timer.store(start, end, name.as_ref().to_string());
-                out
-            },
-        }
     }
 
     /// Partially clones and partially clears state
@@ -221,7 +178,6 @@ impl ExecutionState {
             with_fields: self.with_fields.clone(),
             #[cfg(feature = "dtype-struct")]
             with_fields_ac: self.with_fields_ac.clone(),
-            node_timer: self.node_timer.clone(),
             stop: self.stop.clone(),
         }
     }

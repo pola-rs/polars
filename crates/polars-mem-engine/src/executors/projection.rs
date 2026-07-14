@@ -8,7 +8,6 @@ pub struct ProjectionExec {
     pub(crate) input: Box<dyn Executor>,
     pub(crate) expr: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) has_windows: bool,
-    pub(crate) input_schema: SchemaRef,
     #[cfg(test)]
     pub(crate) schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
@@ -92,24 +91,6 @@ impl Executor for ProjectionExec {
             }
         }
         let df = self.input.execute(state)?;
-
-        let profile_name = if state.has_node_timer() {
-            let by = self
-                .expr
-                .iter()
-                .map(|s| profile_name(s.as_ref(), self.input_schema.as_ref()))
-                .collect::<PolarsResult<Vec<_>>>()?;
-            let name = comma_delimited("select".to_string(), &by);
-            Cow::Owned(name)
-        } else {
-            Cow::Borrowed("")
-        };
-
-        if state.has_node_timer() {
-            let new_state = state.clone();
-            new_state.record(|| self.execute_impl(state, df), profile_name)
-        } else {
-            self.execute_impl(state, df)
-        }
+        self.execute_impl(state, df)
     }
 }
