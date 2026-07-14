@@ -29,7 +29,7 @@ build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-debug
-build: .venv  ## Compile and install Python Polars for development with full debug symbols
+build-debug: .venv  ## Compile and install Python Polars for development with full debug symbols
 	@$(MAKE) -s -C .. $@
 
 .PHONY: build-release

@@ -160,7 +160,7 @@
                   pybuild-debug = {
                     pwd = "py-polars";
                     cmd = buildPy "debug" "maturin develop --profile debug-dev \"$@\" --uv";
-                    doc = "Build the python library with minimal debug information";
+                    doc = "Build the python library with full debug information";
                   };
                   pybuild-nodebug-release = {
                     pwd = "py-polars";
@@ -271,7 +271,7 @@
                     cmd = ''
                       ${aliasToScript precommit}
                       ${step "Rust Tests" rstest}
-                      ${step "Python Build" pybuild-mindebug}
+                      ${step "Python Build" pybuild}
                       ${step "Python Tests" pytest-all}
                     '';
                     doc = "Run the checks to do before pushing";
