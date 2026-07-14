@@ -3,16 +3,6 @@ use polars_utils::itertools::Itertools;
 
 use super::*;
 
-pub(super) fn profile_name(
-    s: &dyn PhysicalExpr,
-    input_schema: &Schema,
-) -> PolarsResult<PlSmallStr> {
-    match s.to_field(input_schema) {
-        Err(e) => Err(e),
-        Ok(fld) => Ok(fld.name),
-    }
-}
-
 type IdAndExpression = (u32, Arc<dyn PhysicalExpr>);
 
 #[cfg(feature = "dynamic_group_by")]
