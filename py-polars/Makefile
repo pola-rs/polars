@@ -28,6 +28,10 @@ requirements-all: .venv  ## Install/refresh all Python requirements (including t
 build: .venv  ## Compile and install Python Polars for development
 	@$(MAKE) -s -C .. $@
 
+.PHONY: build-debug
+build: .venv  ## Compile and install Python Polars for development with full debug symbols
+	@$(MAKE) -s -C .. $@
+
 .PHONY: build-release
 build-release: .venv  ## Compile and install Python Polars binary with optimizations, with minimal debug symbols
 	@$(MAKE) -s -C .. $@

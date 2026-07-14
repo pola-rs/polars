@@ -157,9 +157,9 @@
                     cmd = buildPy "debug" "maturin develop -m $WORKSPACE_ROOT/py-polars/runtime/polars-runtime-32/Cargo.toml \"$@\" --uv";
                     doc = "Build the python library";
                   };
-                  pybuild-mindebug = {
+                  pybuild-debug = {
                     pwd = "py-polars";
-                    cmd = buildPy "mindebug" "maturin develop --profile mindebug-dev \"$@\" --uv";
+                    cmd = buildPy "debug" "maturin develop --profile debug-dev \"$@\" --uv";
                     doc = "Build the python library with minimal debug information";
                   };
                   pybuild-nodebug-release = {
