@@ -234,8 +234,7 @@ def test_concat_list_broadcast_empty() -> None:
 
 
 def test_concat_list_preserves_inner_nulls() -> None:
-    # Null *elements* inside otherwise-valid lists must be preserved (distinct
-    # from whole-list null propagation).
+    # Preserve null elements inside valid lists, distinct from whole-list nulls.
     df = pl.DataFrame({"a": [[1, None], [3]], "b": [[None], [4]]})
     out = df.select(pl.concat_list("a", "b").alias("c"))
     assert out["c"].to_list() == [[1, None, None], [3, 4]]
@@ -261,11 +260,12 @@ def test_concat_list_string_view() -> None:
 
 
 def test_concat_list_struct_with_nulls() -> None:
-    a = pl.Series("a", [[{"x": 1}], [{"x": 2}]])
-    b = pl.Series(
-        "b", [[{"x": None}], [None]], dtype=pl.List(pl.Struct({"x": pl.Int64}))
+    dtype = pl.List(pl.Struct({"x": pl.Int64}))
+    df = pl.DataFrame(
+        {"a": [[{"x": 1}], [{"x": 2}]], "b": [[{"x": None}], [None]]},
+        schema={"a": dtype, "b": dtype},
     )
-    out = pl.DataFrame([a, b]).select(pl.concat_list("a", "b").alias("c"))
+    out = df.select(pl.concat_list("a", "b").alias("c"))
     assert out["c"].to_list() == [
         [{"x": 1}, {"x": None}],
         [{"x": 2}, None],
