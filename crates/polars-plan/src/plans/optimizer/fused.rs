@@ -1,3 +1,8 @@
+use std::borrow::Cow;
+
+use polars_core::chunked_array::cast::CastOptions;
+use polars_core::utils::try_get_supertype;
+
 use super::stack_opt::OptimizeExprContext;
 use super::*;
 
@@ -87,12 +92,41 @@ impl OptimizationRule for FusedArithmetic {
                     return Ok(None);
                 }
 
-                let (input, fused_op) = match (outer_op, mul_is_left) {
+                let (mut input, fused_op) = match (outer_op, mul_is_left) {
                     (Operator::Plus, _) => ([a, b, other], FusedOperator::MultiplyAdd),
                     (Operator::Minus, true) => ([a, b, other], FusedOperator::MultiplySub),
                     (Operator::Minus, false) => ([other, a, b], FusedOperator::SubMultiply),
                     _ => unreachable!(),
                 };
+
+                let to_field_cx = ToFieldContext::new(expr_arena, schema);
+                let dtypes: [DataType; 3] = {
+                    let [a, b, c] = input;
+                    [
+                        expr_arena.get(a).to_dtype(&to_field_cx)?,
+                        expr_arena.get(b).to_dtype(&to_field_cx)?,
+                        expr_arena.get(c).to_dtype(&to_field_cx)?,
+                    ]
+                };
+                let Some(supertype) = dtypes
+                    .iter()
+                    .filter(|dtype| !dtype.is_unknown())
+                    .map(|dtype| PolarsResult::Ok(Cow::Borrowed(dtype)))
+                    .reduce(|l, r| try_get_supertype(l?.as_ref(), r?.as_ref()).map(Cow::Owned))
+                    .transpose()?
+                else {
+                    return Ok(None);
+                };
+
+                for (input_node, input_dtype) in input.iter_mut().zip(dtypes.iter()) {
+                    if input_dtype != supertype.as_ref() {
+                        *input_node = expr_arena.add(AExpr::Cast {
+                            expr: *input_node,
+                            dtype: supertype.clone().into_owned(),
+                            options: CastOptions::Strict,
+                        })
+                    }
+                }
 
                 Ok(Some(get_expr(&input, fused_op, expr_arena)))
             },

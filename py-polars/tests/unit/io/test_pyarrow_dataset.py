@@ -240,9 +240,7 @@ def test_pyarrow_dataset_partial_predicate_pushdown(
     binop_pred = "converted pyarrow predicate: <pyarrow.compute.Expression (a > 1)>"
     assert binop_pred in capture
 
-    resid_pred = (
-        'residual predicate: Some([([(col("a").cast(Float64)) * (col("b"))]) > (25.0)])'
-    )
+    resid_pred = 'residual predicate: Some((col("a").cast(Float64) * col("b")) > 25.0)'
     assert resid_pred in capture
     # Verify: correctness
     expected = (
@@ -417,7 +415,7 @@ def test_pyarrow_dataset_predicate_verbose_log(
 
     assert (
         "[SENSITIVE]: python_scan_predicate: "
-        'predicate node: [(col("a")) < (3)], '
+        'predicate node: col("a") < 3, '
         "converted pyarrow predicate: <pyarrow.compute.Expression (a < 3)>, "
         "residual predicate: None"
     ) in capture
@@ -430,9 +428,9 @@ def test_pyarrow_dataset_predicate_verbose_log(
 
     assert (
         "[SENSITIVE]: python_scan_predicate: "
-        'predicate node: [(col("a").strict_cast(String)) < ("3")], '
+        'predicate node: col("a").strict_cast(String) < "3", '
         "converted pyarrow predicate: <conversion failed>, "
-        'residual predicate: Some([(col("a").strict_cast(String)) < ("3")])'
+        'residual predicate: Some(col("a").strict_cast(String) < "3")'
     ) in capture
 
 

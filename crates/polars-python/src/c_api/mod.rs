@@ -35,6 +35,7 @@ use crate::dataframe::PyDataFrame;
 use crate::expr::PyExpr;
 use crate::expr::datatype::PyDataTypeExpr;
 use crate::expr::selector::PySelector;
+use crate::io::arrow_c_stream::PyArrowCStreamReader;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::lazyframe::PyInProcessQuery;
 use crate::lazyframe::{PyLazyFrame, PyOptFlags};
@@ -125,6 +126,7 @@ pub fn _polars_runtime(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "sql")]
     m.add_class::<PySQLContext>().unwrap();
     m.add_class::<PyCategories>().unwrap();
+    m.add_class::<PyArrowCStreamReader>().unwrap();
 
     // Submodules
     // LogicalPlan objects

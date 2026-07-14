@@ -649,3 +649,18 @@ def test_top_k_dyn_pred_pushdown() -> None:
     assert pred is not None
     assert with_cols is not None
     assert pred.start() > with_cols.start()
+
+
+def test_top_k_bottom_k_categorical_lexical_28344() -> None:
+    s = pl.Series("c", ["9", "1", "5", "3"], dtype=pl.Categorical)
+
+    assert_series_equal(
+        s.top_k(2),
+        pl.Series("c", ["9", "5"], dtype=pl.Categorical),
+        check_order=False,
+    )
+    assert_series_equal(
+        s.bottom_k(2),
+        pl.Series("c", ["1", "3"], dtype=pl.Categorical),
+        check_order=False,
+    )

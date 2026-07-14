@@ -17,9 +17,7 @@ use polars::frame::row::Row;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 use polars::prelude::ColumnMapping;
-use polars::prelude::default_values::{
-    DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
-};
+use polars::prelude::default_values::DefaultFieldValues;
 use polars::prelude::deletion::{DeletionFilesList, DeltaDeletionVectorProvider};
 use polars::series::ops::NullBehavior;
 use polars_buffer::Buffer;
@@ -32,6 +30,7 @@ use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
+use polars_plan::dsl::default_values::IcebergDefaultFieldValues;
 use polars_utils::compression::{BrotliLevel, GzipLevel, ZstdLevel};
 use polars_utils::pl_serialize;
 use polars_utils::pl_str::PlSmallStr;
@@ -1933,14 +1932,19 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
 
         Ok(Wrap(match &*default_values_type {
             "iceberg" => {
-                let dict: Bound<'_, PyDict> = ob.extract()?;
+                let (identity_transformed_partition_values, initial_defaults): (
+                    Bound<'_, PyDict>,
+                    Bound<'_, PyDict>,
+                ) = ob.extract()?;
 
-                let mut out = PlIndexMap::new();
+                let mut converted_identity_transformed_partition_values = PlIndexMap::new();
+                let mut converted_initial_defaults = PlIndexMap::new();
 
-                for (k, v) in dict
-                    .try_iter()?
-                    .zip(dict.call_method0("values")?.try_iter()?)
-                {
+                for (k, v) in identity_transformed_partition_values.try_iter()?.zip(
+                    identity_transformed_partition_values
+                        .call_method0("values")?
+                        .try_iter()?,
+                ) {
                     let k: u32 = k?.extract()?;
                     let v = v?;
 
@@ -1951,12 +1955,28 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Wrap<DefaultFieldValues> {
                         Err(err_msg)
                     };
 
-                    out.insert(k, v);
+                    converted_identity_transformed_partition_values.insert(k, v);
                 }
 
-                DefaultFieldValues::Iceberg(Arc::new(IcebergIdentityTransformedPartitionFields(
-                    out,
-                )))
+                for (k, v) in initial_defaults
+                    .try_iter()?
+                    .zip(initial_defaults.call_method0("values")?.try_iter()?)
+                {
+                    let k: u32 = k?.extract()?;
+                    let v = get_series(&v?)?;
+                    let v = Scalar::new(
+                        v.dtype().clone(),
+                        v.get(0).map_err(to_py_err)?.into_static(),
+                    );
+                    converted_initial_defaults.insert(k, v);
+                }
+
+                DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
+                    identity_transformed_partition_fields: PlIndexMapHashable(
+                        converted_identity_transformed_partition_values,
+                    ),
+                    initial_defaults: PlIndexMapHashable(converted_initial_defaults),
+                }))
             },
 
             v => {
