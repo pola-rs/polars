@@ -11,7 +11,7 @@ jobs:
   main:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Lint Markdown and TOML
         uses: dprint/check@v2.3
       - name: Spell Check with Typos
