@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import io
 import subprocess
 import sys
 from typing import TYPE_CHECKING
+
+from polars.exceptions import ComputeError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -405,3 +408,27 @@ print("OK", end="")
         )
         == b"OK"
     )
+
+
+@pytest.mark.slow
+def test_scan_select_len_overflow_28351(plmonkeypatch: PlMonkeyPatch) -> None:
+    plmonkeypatch.setenv("POLARS_IDEAL_MORSEL_SIZE", str((1 << 32) - 1))
+    s = pl.Series([{}], dtype=pl.Struct({})).new_from_index(0, (1 << 31) - 1)
+
+    files = [io.BytesIO(), io.BytesIO(), io.BytesIO()]
+
+    for f in files:
+        s.to_frame().write_ipc(f)
+
+    assert (
+        pl.scan_ipc(files).head((1 << 32) - 1).select(pl.len()).collect().item()
+        == (1 << 32) - 1
+    )
+
+    q = pl.scan_ipc(files).select(pl.len())
+
+    if pl.get_index_type() == pl.UInt32:
+        with pytest.raises(ComputeError):
+            q.collect()
+    else:
+        assert q.collect() == 3 * ((1 << 31) - 1)
