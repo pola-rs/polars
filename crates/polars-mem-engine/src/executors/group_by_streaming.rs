@@ -139,7 +139,8 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
     };
 
     if keys.len() == 1 {
-        if let DataType::Struct(fields) = keys[0].dtype()
+        #[cfg(feature = "dtype-struct")]
+        if let polars_core::prelude::DataType::Struct(fields) = keys[0].dtype()
             && fields.is_empty()
         {
             let nc = keys[0].null_count();
