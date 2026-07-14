@@ -654,5 +654,13 @@ def test_top_k_dyn_pred_pushdown() -> None:
 def test_top_k_bottom_k_categorical_lexical_28344() -> None:
     s = pl.Series("c", ["9", "1", "5", "3"], dtype=pl.Categorical)
 
-    assert set(s.top_k(2)) == {"9", "5"}
-    assert set(s.bottom_k(2)) == {"1", "3"}
+    assert_series_equal(
+        s.top_k(2),
+        pl.Series("c", ["9", "5"], dtype=pl.Categorical),
+        check_order=False,
+    )
+    assert_series_equal(
+        s.bottom_k(2),
+        pl.Series("c", ["1", "3"], dtype=pl.Categorical),
+        check_order=False,
+    )
