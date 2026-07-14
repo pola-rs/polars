@@ -6,6 +6,7 @@ use polars_core::error::constants::LENGTH_LIMIT_MSG;
 use polars_core::prelude::sum_output_dtype;
 use polars_core::with_match_physical_numeric_polars_type;
 use polars_utils::float::IsFloat;
+use polars_utils::index::{idxsize_to_u64, idxsize_try_from};
 
 use super::*;
 
@@ -150,18 +151,18 @@ impl Reducer for IdxTypeCheckedSumReducer {
         b: Option<<Self::Dtype as PolarsNumericType>::Native>,
         _seq_id: u64,
     ) {
-        *a += b.map(Into::into).unwrap_or(0);
+        *a += b.map(idxsize_to_u64).unwrap_or(0);
     }
 
     fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         for arr in ca.downcast_iter() {
             if arr.has_nulls() {
                 for x in arr.iter() {
-                    *v += x.copied().map(Into::into).unwrap_or(0);
+                    *v += x.copied().map(idxsize_to_u64).unwrap_or(0);
                 }
             } else {
                 for x in arr.values_iter().copied() {
-                    *v += x as u64;
+                    *v += idxsize_to_u64(x);
                 }
             }
         }
@@ -176,7 +177,10 @@ impl Reducer for IdxTypeCheckedSumReducer {
         assert!(m.is_none());
 
         let len = v.len();
-        let v: Vec<IdxSize> = v.into_iter().filter_map(|x| x.try_into().ok()).collect();
+        let v: Vec<IdxSize> = v
+            .into_iter()
+            .filter_map(|x| idxsize_try_from(x).ok())
+            .collect();
 
         polars_ensure!(
             v.len() == len,

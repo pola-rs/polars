@@ -424,6 +424,16 @@ def test_scan_select_len_overflow_28351(plmonkeypatch: PlMonkeyPatch) -> None:
         pl.scan_ipc(files).head((1 << 32) - 1).select(pl.len()).collect().item()
         == (1 << 32) - 1
     )
+    assert (
+        pl.scan_ipc(files)
+        # .head((1 << 32) - 2)
+        .group_by(pl.first())
+        .agg(pl.len())
+        .select("len")
+        .collect()
+        .item()
+        == (1 << 32) - 2
+    )
 
     q = pl.scan_ipc(files).select(pl.len())
 

@@ -89,7 +89,7 @@ pub fn into_reduction(
 
                 (out, expr)
             } else {
-                // Support len aggregation on 0-width morsels.
+                // Support len aggregation on 0-width morsels, used by `scan_*().select(len())`.
                 // Notes:
                 // * We do this instead of projecting a scalar, because scalar literals don't
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).

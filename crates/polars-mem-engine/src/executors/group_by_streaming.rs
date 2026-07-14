@@ -139,6 +139,15 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
     };
 
     if keys.len() == 1 {
+        if let DataType::Struct(fields) = keys[0].dtype()
+            && fields.is_empty()
+        {
+            let nc = keys[0].null_count();
+            let len = keys[0].len();
+
+            return Ok((len > nc) as usize + (nc != 0) as usize);
+        }
+
         // we sample as that will work also with sorted data.
         // not that sampling without replacement is *very* expensive. don't do that.
         let s = keys[0].sample_n(sample_size, true, false, None).unwrap();
