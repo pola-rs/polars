@@ -1,4 +1,4 @@
-_extends: polars:.github/release-drafter.yml
+_extends: polars:release-drafter.yml
 
 name-template: Rust Polars $RESOLVED_VERSION
 tag-template: rs-$RESOLVED_VERSION
