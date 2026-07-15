@@ -172,13 +172,24 @@ color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62
 # https://github.com/tikv/jemallocator/pull/168
 tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "0d683dfb157097e2075d5e0eaf25f71f514a7552" }
 
-[profile.mindebug-dev]
-inherits = "dev"
+[profile.dev]
 debug = "line-tables-only"
+
+[profile.debug-dev]
+inherits = "dev"
+debug = true
 
 [profile.release]
 lto = "thin"
 debug = "line-tables-only"
+
+# SQL parser is in the cold path
+# reduce binary size
+[profile.release.package.sqlparser]
+opt-level = "s"
+
+[profile.release.package.polars-sql]
+opt-level = "s"
 
 [profile.nodebug-release]
 inherits = "release"

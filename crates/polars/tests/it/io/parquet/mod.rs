@@ -277,7 +277,7 @@ fn test_ext_store_sink_and_scan_parquet() -> PolarsResult<()> {
     let mut wrap = CloudWriterIoTraitWrap::from(CloudWriter::new(
         polars_store,
         obj_path,
-        8 * 1024 * 1024,
+        NonZeroUsize::new(8 * 1024 * 1024),
         NonZeroUsize::new(1).unwrap(),
         None,
     ));

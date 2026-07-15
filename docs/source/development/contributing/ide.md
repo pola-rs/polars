@@ -111,6 +111,8 @@ for more information about the `launch.json` file.
 
 #### Running the debugger
 
+0. First, compile Polars with full debug information using `make build-debug`.
+
 1. Create a Python script containing Polars code. Ensure that your virtual environment is activated.
 
 2. Set breakpoints in any `.rs` or `.py` file.

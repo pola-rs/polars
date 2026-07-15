@@ -17,7 +17,7 @@ pub struct FileProvider {
     pub base_path: PlRefPath,
     pub cloud_options: Option<Arc<CloudOptions>>,
     pub provider_type: FileProviderType,
-    pub upload_chunk_size: NonZeroUsize,
+    pub upload_chunk_size: Option<NonZeroUsize>,
     pub upload_max_concurrency: NonZeroUsize,
     pub io_metrics: Option<Arc<IOMetrics>>,
     pub sinked_path_info_list: Option<SinkedPathInfoList>,
@@ -91,7 +91,7 @@ impl FileProvider {
         Writable::try_new(
             path,
             self.cloud_options.as_deref(),
-            self.upload_chunk_size.get(),
+            self.upload_chunk_size,
             self.upload_max_concurrency.get(),
             self.io_metrics.clone(),
         )

@@ -123,7 +123,8 @@ This can be done by going through the following steps in sequence:
 1. Install the latest [Rust compiler](https://www.rust-lang.org/tools/install)
 2. Install [maturin](https://maturin.rs/): `pip install maturin`
 3. `cd py-polars` and choose one of the following:
-   - `make build`, slow binary with debug assertions and symbols, fast compile times
+   - `make build`, slow binary with debug assertions and limited symbols, fast compile times
+   - `make build-debug`, same as `make build`, but with all symbols, produces large binaries
    - `make build-release`, fast binary without debug assertions, minimal debug symbols, long compile
      times
    - `make build-nodebug-release`, same as build-release but without any debug symbols, slightly

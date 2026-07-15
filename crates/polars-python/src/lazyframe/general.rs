@@ -150,7 +150,7 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "csv")]
-    #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype,
+    #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype, overwrite_dtype_slice,
         low_memory, comment_prefix, quote_char, null_values, empty_string_is_null,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
@@ -168,6 +168,7 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
+        overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
         comment_prefix: Option<&str>,
         quote_char: Option<&str>,
@@ -216,6 +217,12 @@ impl PyLazyFrame {
                 .map(|(name, dtype)| Field::new((&*name).into(), dtype.0))
                 .collect::<Schema>()
         });
+        let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {
+            overwrite_dtype
+                .into_iter()
+                .map(|dtype| dtype.0)
+                .collect::<Vec<_>>()
+        });
 
         let sources = sources.0;
         let (first_path, sources) = match source {
@@ -244,6 +251,7 @@ impl PyLazyFrame {
             .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.map(Arc::new))
+            .with_dtype_overwrite_by_position(overwrite_dtype_slice.map(Arc::new))
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .with_low_memory(low_memory)
             .with_comment_prefix(comment_prefix.map(|x| x.into()))

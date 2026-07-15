@@ -57,3 +57,5 @@ target/
 # You can put anything here that needs to be done to prepare your env.
 .user_env.*
 site/
+
+.claude/
