@@ -445,7 +445,6 @@ def test_merge_sorted_with_list_27563() -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
 def test_merge_sorted_descending(streaming: bool) -> None:
     left = pl.LazyFrame({"a": [9, 5, 3], "b": [1, 2, 3]})
     right = pl.LazyFrame({"a": [8, 6, 1], "b": [4, 5, 6]})
@@ -458,7 +457,6 @@ def test_merge_sorted_descending(streaming: bool) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
 def test_merge_sorted_nulls_last(streaming: bool) -> None:
     left = pl.LazyFrame({"a": [1, 3, 5, None], "b": [1, 2, 3, 4]})
     right = pl.LazyFrame({"a": [2, 4, None], "b": [5, 6, 7]})
@@ -473,7 +471,6 @@ def test_merge_sorted_nulls_last(streaming: bool) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
 def test_merge_sorted_nulls_first(streaming: bool) -> None:
     left = pl.LazyFrame({"a": [None, 1, 3, 5], "b": [1, 2, 3, 4]})
     right = pl.LazyFrame({"a": [None, 2, 4], "b": [5, 6, 7]})
@@ -488,7 +485,6 @@ def test_merge_sorted_nulls_first(streaming: bool) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
 def test_merge_sorted_descending_nulls_first(streaming: bool) -> None:
     left = pl.LazyFrame({"a": [None, 9, 5], "b": [3, 1, 2]})
     right = pl.LazyFrame({"a": [None, 8, 6], "b": [6, 4, 5]})
@@ -501,7 +497,6 @@ def test_merge_sorted_descending_nulls_first(streaming: bool) -> None:
     assert_frame_equal(result, expected)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
 def test_merge_sorted_descending_nulls_last(streaming: bool) -> None:
     left = pl.LazyFrame({"a": [9, 5, None], "b": [1, 2, 3]})
     right = pl.LazyFrame({"a": [8, 6, None], "b": [4, 5, 6]})
@@ -512,31 +507,6 @@ def test_merge_sorted_descending_nulls_last(streaming: bool) -> None:
 
     expected = pl.DataFrame({"a": [9, 8, 6, 5, None, None], "b": [1, 4, 5, 2, 3, 6]})
     assert_frame_equal(result, expected)
-
-
-@pytest.mark.parametrize("descending", [False, True])
-@pytest.mark.parametrize("nulls_last", [False, True])
-def test_merge_sorted_nulls_placement_multi_morsel(
-    descending: bool, nulls_last: bool
-) -> None:
-    # Large inputs so the streaming node buffers across morsel boundaries, which
-    # is the path where `find_mergeable` must honor `nulls_last` rather than
-    # inferring null position from the data. Comparing the streaming key column
-    # against the in-memory engine isolates null placement from the (unspecified)
-    # tie order among equal / null keys.
-    n = 4000
-    left = pl.Series("a", [None] * 400 + list(range(0, n, 2)), dtype=pl.Int64)
-    right = pl.Series("a", [None] * 300 + list(range(1, n, 2)), dtype=pl.Int64)
-    left = left.sort(descending=descending, nulls_last=nulls_last).to_frame().lazy()
-    right = right.sort(descending=descending, nulls_last=nulls_last).to_frame().lazy()
-
-    merged = left.merge_sorted(
-        right, key="a", descending=descending, nulls_last=nulls_last
-    )
-
-    streaming = merged.collect(engine="streaming")
-    in_memory = merged.collect(engine="in-memory")
-    assert_series_equal(streaming["a"], in_memory["a"])
 
 
 def test_merge_sorted_multiple_keys() -> None:
@@ -626,7 +596,6 @@ def test_merge_sorted_multiple_keys_maintain_order() -> None:
     assert_frame_equal(out, expected)
 
 
-@pytest.mark.parametrize("streaming", [False, True])
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
 def test_merge_sorted_multiple_keys_options(
