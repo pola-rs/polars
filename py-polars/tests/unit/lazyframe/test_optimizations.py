@@ -18,7 +18,7 @@ def test_is_null_followed_by_all() -> None:
         pl.col("val").is_null().all()
     )
 
-    assert r'[[(col("val").len()) == (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() == col("val").null_count())]' in result_lf.explain()
     assert "is_null" not in result_lf.collect_schema()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -143,7 +143,7 @@ def test_is_not_null_followed_by_sum() -> None:
         pl.col("val").is_not_null().sum()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "is_not_null" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -173,7 +173,7 @@ def test_drop_nulls_followed_by_len() -> None:
         pl.col("val").drop_nulls().len()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -198,7 +198,7 @@ def test_drop_nulls_followed_by_count() -> None:
         pl.col("val").drop_nulls().count()
     )
 
-    assert r'[[(col("val").len()) - (col("val").null_count())]]' in result_lf.explain()
+    assert r'[(col("val").len() - col("val").null_count())]' in result_lf.explain()
     assert "drop_nulls" not in result_lf.explain()
     assert_frame_equal(expected_df, result_lf.collect())
 
@@ -697,6 +697,13 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
         q.collect(),
         pl.DataFrame({"x": [4, 5]}),
     )
+
+
+def test_slice_pushdown_shared_join_input_28127() -> None:
+    lf = pl.LazyFrame({"a": ["x"]}).filter(pl.lit(True)).select("a").slice(0, 1)
+    q = lf.join(lf, on="a", how="inner")
+
+    assert_frame_equal(q.collect(), q.collect(optimizations=pl.QueryOptFlags.none()))
 
 
 def test_drop_nulls_first_last_optimization_25478() -> None:

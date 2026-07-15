@@ -29,7 +29,7 @@ struct ShiftState {
     frames: VecDeque<SpillFrame>,
     fill: DataFrame,
     seq: MorselSeq,
-    spill_ctx: Arc<MostRecentSpillContext>,
+    spill_ctx: MostRecentSpillContext,
 }
 
 impl ShiftState {
@@ -52,7 +52,7 @@ impl ShiftState {
                     }
                     self.rows_received += morsel.height();
                     self.frames
-                        .push_back(SpillFrame::new(morsel.into_df(), &*self.spill_ctx).await);
+                        .push_back(SpillFrame::new(morsel.into_df(), &self.spill_ctx).await);
                 }
             }
 

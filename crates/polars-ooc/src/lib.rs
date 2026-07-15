@@ -10,11 +10,11 @@ pub use memory_manager::memory_manager;
 use polars_utils::relaxed_cell::RelaxedCell;
 pub use spill_context::{
     LeastRecentSpillContext, MostRecentSpillContext, ParameterFreeSpillContext, RandomSpillContext,
-    SpillContext,
+    SpillContextParam, WeakSpillContext,
 };
 pub use spill_file::{flush_ooc_cleanup, init_ooc_cleaner};
 pub use spill_frame::SpillFrame;
-pub use spill_token::{DynSpillToken, PinnedMut, PinnedRef, SpillToken};
+pub use spill_token::{PinnedMut, PinnedRef, SpillToken};
 
 pub trait Spillable: Send + Sync + 'static {
     type Spilled;

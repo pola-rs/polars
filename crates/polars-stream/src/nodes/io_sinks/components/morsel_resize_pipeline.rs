@@ -75,7 +75,10 @@ impl MorselResizePipeline {
                 } else {
                     continue;
                 }
-            } else if let Ok(morsel) = morsel_rx.recv().await {
+            } else if let Ok(morsel) = {
+                drop(wait_token.take());
+                morsel_rx.recv().await
+            } {
                 assert_eq!(
                     logical_received_size.num_rows,
                     physical_received_size.num_rows

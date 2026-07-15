@@ -40,6 +40,7 @@ pub fn start_partition_sink_pipeline(
     let max_open_sinks = config.max_open_sinks().get();
     let upload_chunk_size = config.partitioned_upload_chunk_size();
     let upload_max_concurrency = config.partitioned_upload_concurrency();
+    let bytes_bufferer_config = config.bytes_bufferer_config();
 
     let IOSinkNodeConfig {
         file_format,
@@ -89,13 +90,13 @@ pub fn start_partition_sink_pipeline(
         cloud_options,
         provider_type: file_path_provider,
         upload_chunk_size,
-        upload_max_concurrency: upload_max_concurrency.get(),
+        upload_max_concurrency,
         io_metrics,
         sinked_path_info_list: sinked_path_info_list.clone(),
     });
 
     let file_writer_starter: Arc<dyn FileWriterStarter> =
-        create_file_writer_starter(&file_format, &file_schema)?;
+        create_file_writer_starter(&file_format, &file_schema, bytes_bufferer_config)?;
 
     let mut target_sink_morsel_size = file_writer_starter.target_sink_morsel_size();
 
@@ -127,7 +128,7 @@ pub fn start_partition_sink_pipeline(
             build_sinked_path_info_list: {}",
             partitioner.verbose_display(),
             file_writer_starter.writer_name(),
-            &file_provider.provider_type,
+            file_provider.provider_type,
             max_open_sinks,
             inflight_morsel_limit,
             target_sink_morsel_size,

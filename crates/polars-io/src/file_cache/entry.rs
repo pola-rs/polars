@@ -184,7 +184,7 @@ impl Inner {
             if let Err(e) = file.allocate(remote_metadata.size) {
                 let msg = format!(
                     "failed to reserve {} bytes on disk to download uri = {}: {:?}",
-                    remote_metadata.size, &self.uri, e
+                    remote_metadata.size, self.uri, e
                 );
 
                 if raise_alloc_err == Some(true)
