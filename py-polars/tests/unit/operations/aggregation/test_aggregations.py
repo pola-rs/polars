@@ -1606,3 +1606,16 @@ def test_unordered_implode_reduction_27373(
         pl.col("val").map_elements(sorted, return_dtype=pl.List(dtype))
     )
     assert_frame_equal(actual, expected, check_row_order=False)
+
+
+@pytest.mark.parametrize("fn", [pl.Expr.quantile, pl.Expr.approx_quantile])
+def test_quantile_varying_quantiles_unsupported(
+    fn: Callable[[pl.Expr, pl.Expr], pl.Expr],
+) -> None:
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0], "q": [0.1, 0.5, 0.9]})
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match=r"does not support varying (approximate )?quantiles",
+    ):
+        df.select(fn(pl.col("a"), pl.col("q")))
