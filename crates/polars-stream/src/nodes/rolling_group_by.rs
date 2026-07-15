@@ -261,7 +261,11 @@ impl ComputeNode for RollingGroupBy {
                     .await?;
 
                     _ = send
-                        .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                        .send(Morsel::new_unregistered(
+                            df,
+                            self.seq.successor(),
+                            SourceToken::new(),
+                        ))
                         .await;
                 }
 
@@ -316,7 +320,8 @@ impl ComputeNode for RollingGroupBy {
             while let Ok(morsel) = recv.recv().await
                 && self.slice_length > 0
             {
-                let (df, seq, source_token, wait_token) = morsel.into_inner();
+                let (sf, seq, source_token, wait_token) = morsel.into_inner();
+                let df = sf.into_df().await;
                 self.seq = seq;
                 drop(wait_token);
 
@@ -362,7 +367,11 @@ impl ComputeNode for RollingGroupBy {
 
                 if let Some((windows, df, key)) = self.next_windows(false)? {
                     if distributor
-                        .send((Morsel::new(df, seq, source_token), key, windows))
+                        .send((
+                            Morsel::new_unregistered(df, seq, source_token),
+                            key,
+                            windows,
+                        ))
                         .await
                         .is_err()
                     {
