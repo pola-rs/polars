@@ -136,13 +136,9 @@ impl BuildState {
         };
 
         while let Ok(morsel) = recv.recv().await {
-            let hash_keys = select_keys(
-                morsel.df(),
-                key_selectors,
-                params,
-                &state.in_memory_exec_state,
-            )
-            .await?;
+            let df = morsel.df().await;
+            let hash_keys =
+                select_keys(&df, key_selectors, params, &state.in_memory_exec_state).await?;
 
             hash_keys.gen_idxs_per_partition(
                 &partitioner,
@@ -283,7 +279,8 @@ impl ProbeState {
         };
 
         while let Ok(morsel) = recv.recv().await {
-            let (df, in_seq, src_token, wait_token) = morsel.into_inner();
+            let (sf, in_seq, src_token, wait_token) = morsel.into_inner();
+            let df = sf.into_df().await;
             if df.height() == 0 {
                 continue;
             }
@@ -322,7 +319,7 @@ impl ProbeState {
                     df.take_slice_unchecked(&probe_match)
                 };
 
-                let mut morsel = Morsel::new(out_df, in_seq, src_token.clone());
+                let mut morsel = Morsel::new_unregistered(out_df, in_seq, src_token.clone());
                 if let Some(token) = wait_token {
                     morsel.set_consume_token(token);
                 }
