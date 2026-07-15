@@ -122,7 +122,7 @@ pub fn start_partition_sink_pipeline(
             inflight_morsel_limit: {}, \
             target_sink_morsel_size: {:?}, \
             file_size_limit: {:?}, \
-            upload_chunk_size: {}, \
+            upload_chunk_size: {:?}, \
             upload_concurrency: {}, \
             io_metrics: {}, \
             build_sinked_path_info_list: {}",
