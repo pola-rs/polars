@@ -1536,9 +1536,26 @@ def test_duplicated_columns(chunk_override: None) -> None:
     1,2
     """
     )
-    assert pl.read_csv(csv.encode()).columns == ["a", "a_duplicated_0"]
+    with pytest.raises(
+        pl.exceptions.DuplicateError,
+        match="duplicate column name 'a' found in CSV",
+    ):
+        pl.read_csv(csv.encode())
     new = ["c", "d"]
     assert pl.read_csv(csv.encode(), new_columns=new).columns == new
+
+
+def test_duplicated_columns_collision() -> None:
+    csv = textwrap.dedent(
+        """a,a_duplicated_0,a
+    1,2,3
+    """
+    )
+    with pytest.raises(
+        pl.exceptions.DuplicateError,
+        match="duplicate column name 'a' found in CSV",
+    ):
+        pl.read_csv(csv.encode())
 
 
 def test_error_message(chunk_override: None) -> None:

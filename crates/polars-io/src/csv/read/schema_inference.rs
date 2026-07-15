@@ -1,5 +1,6 @@
 use polars_buffer::Buffer;
 use polars_core::prelude::*;
+use polars_error::{PolarsResult, polars_bail};
 #[cfg(feature = "polars-time")]
 use polars_time::chunkedarray::string::infer as date_infer;
 #[cfg(feature = "polars-time")]
@@ -20,10 +21,11 @@ pub(super) fn infer_file_schema_impl(
     infer_all_as_str: bool,
     parse_options: &CsvParseOptions,
     schema_overwrite: Option<&Schema>,
-) -> Schema {
+) -> PolarsResult<Schema> {
     let mut headers = header_line
         .as_ref()
         .map(|line| infer_headers(line, parse_options))
+        .transpose()?
         .unwrap_or_else(|| Vec::with_capacity(8));
 
     let extend_header_with_unknown_column = header_line.is_none();
@@ -43,10 +45,13 @@ pub(super) fn infer_file_schema_impl(
         );
     }
 
-    build_schema(&headers, &column_types, schema_overwrite)
+    Ok(build_schema(&headers, &column_types, schema_overwrite))
 }
 
-fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec<PlSmallStr> {
+fn infer_headers(
+    mut header_line: &[u8],
+    parse_options: &CsvParseOptions,
+) -> PolarsResult<Vec<PlSmallStr>> {
     let len = header_line.len();
 
     if header_line.last().copied() == Some(b'\r') {
@@ -72,19 +77,22 @@ fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec
         .collect::<Vec<_>>();
 
     let mut deduplicated_headers = Vec::with_capacity(headers.len());
-    let mut header_names = PlHashMap::with_capacity(headers.len());
+    let mut header_names: PlHashMap<&str, usize> = PlHashMap::with_capacity(headers.len());
 
     for name in &headers {
         let count = header_names.entry(name.as_ref()).or_insert(0usize);
         if *count != 0 {
-            deduplicated_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
-        } else {
-            deduplicated_headers.push(PlSmallStr::from_str(name))
+            polars_bail!(
+                Duplicate:
+                "duplicate column name '{}' found in CSV, consider specifying unique column names with the `new_columns` argument",
+                name
+            )
         }
+        deduplicated_headers.push(PlSmallStr::from_str(name));
         *count += 1;
     }
 
-    deduplicated_headers
+    Ok(deduplicated_headers)
 }
 
 fn infer_types_from_line(
