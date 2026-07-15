@@ -366,7 +366,7 @@ impl Bitmap {
         self.storage.deref().as_ptr()
     }
 
-    /// If this bitmap has an offset aligned with the size of `*const u8`, returns
+    /// If this bitmap has a bit offset that is a multiple of 8, returns
     /// an offset-adjusted `Some(ptr)`.
     pub fn as_aligned_ptr(&self) -> Option<*const u8> {
         self.offset
