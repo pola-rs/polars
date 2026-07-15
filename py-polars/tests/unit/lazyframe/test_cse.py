@@ -1557,3 +1557,12 @@ def test_projection_pushdown_cache_node_inputs_point_to_same_node_28279() -> Non
     )
 
     assert_frame_equal(q.collect(), pl.DataFrame({"symbol": ["s2"], "r1": 0.555556}))
+
+
+def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    q1 = df.with_columns(y="x")
+    q2 = q1.with_columns(z=pl.coalesce(pl.col.x.min(), pl.col.x.min()))
+    q3 = q1.join(q2.select("x", "z"), on="x")
+    q4 = q3.join(q1, on="x").filter(pl.col("z").is_not_null())
+    assert_frame_equal(q4.select(pl.col.x.min()).collect(), pl.DataFrame({"x": [1]}))
