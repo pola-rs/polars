@@ -111,7 +111,7 @@ See the [User Guide](https://docs.pola.rs/user-guide/installation/#feature-flags
 on optional dependencies
 
 <details>
-<summary>Compile Polars from source</summary>
+<summary><b>Compile Polars from source</b></summary>
 
 If you want a bleeding edge release or maximal performance you should compile Polars from source.
 
@@ -146,8 +146,7 @@ under Rosetta
 ## Contributing
 
 Want to contribute? Read our [contributing guide](https://docs.pola.rs/development/contributing/).
-You can [join the Polars Discord server](https://discord.gg/4UfP5cfBE7) for any help
-along the way.
+You can [join the Polars Discord server](https://discord.gg/4UfP5cfBE7) for any help along the way.
 
 ## Distributed Polars
 
