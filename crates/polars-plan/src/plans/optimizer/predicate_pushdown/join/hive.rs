@@ -57,9 +57,6 @@ pub fn rewrite_hive(
     // We do that by pushing down an is_in predicate
     // Later in the optimizer we prune the hive paths
     // based on all the predicates.
-    // Supported for Inner/Left/Right/Semi: each of these has one side whose join-key column
-    // always survives the metadata pre-join intact (holding the complete matched-or-not value
-    // set), which we use as the source of truth for both `is_in` predicates.
     #[cfg(feature = "is_in")]
     if !opt.hive_rewrite_active
         && let (MaintainOrderJoin::None, true, Some(hive_left), Some(hive_right)) = (
