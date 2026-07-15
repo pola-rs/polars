@@ -15,6 +15,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
@@ -629,4 +630,97 @@ print("OK", end="")
             timeout=3,
         ).decode()
         == "OK"
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_upload_chunk_size_config(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+
+    capfd.readouterr()
+    with pytest.raises(OSError):
+        pl.LazyFrame({"x": 1}).sink_ipc(
+            "s3://.../...",
+            storage_options={
+                "max_retries": 0,
+                "aws_endpoint_url": "https://localhost:333",
+            },
+        )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(33554432)"
+    )
+
+    plmonkeypatch.setenv("POLARS_UPLOAD_CHUNK_SIZE", "13579")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(13579)"
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_upload_chunk_size_config_partitioned(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(
+        pl.PartitionBy(
+            format_file_uri(tmp_path / "data.ipc"),
+            max_rows_per_file=1,
+        )
+    )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+
+    capfd.readouterr()
+    with pytest.raises(OSError):
+        pl.LazyFrame({"x": 1}).sink_ipc(
+            pl.PartitionBy(
+                "s3://.../...",
+                max_rows_per_file=1,
+            ),
+            storage_options={
+                "max_retries": 0,
+                "aws_endpoint_url": "https://localhost:333",
+            },
+        )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(6291456)"
+    )
+
+    plmonkeypatch.setenv("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE", "13579")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(
+        pl.PartitionBy(
+            format_file_uri(tmp_path / "data.ipc"),
+            max_rows_per_file=1,
+        )
+    )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(13579)"
     )

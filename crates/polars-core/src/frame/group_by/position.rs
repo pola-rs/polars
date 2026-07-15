@@ -567,6 +567,7 @@ impl GroupsType {
             },
         }
     }
+
     pub fn as_list_chunked(&self) -> ListChunked {
         match self {
             GroupsType::Idx(groups) => groups
