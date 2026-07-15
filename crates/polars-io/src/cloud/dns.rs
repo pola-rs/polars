@@ -21,8 +21,7 @@ const DEFAULT_DNS_CACHE_TTL_SECS: u64 = 5;
 /// Entries are never evicted. This is ok for object-store endpoints (low cardinality).
 /// Revisit with a size cap if keys become externally driven (e.g. per-bucket
 /// virtual-hosted hosts at scale).
-static DNS_CACHE: LazyLock<Arc<RwLock<HashMap<String, CachedAddrs>>>> =
-    LazyLock::new(Default::default);
+static DNS_CACHE: LazyLock<RwLock<HashMap<String, CachedAddrs>>> = LazyLock::new(Default::default);
 
 pub(crate) fn get_dns_cache_ttl() -> Duration {
     let ttl = Duration::from_secs(
@@ -48,7 +47,7 @@ struct CachedAddrs {
 /// Shuffle resolver with basic DNS cache. TTL is fixed and set by the calling site.
 #[derive(Clone, Debug)]
 pub struct CachingResolver {
-    cache: Arc<RwLock<HashMap<String, CachedAddrs>>>,
+    cache: &'static RwLock<HashMap<String, CachedAddrs>>,
     // Since the OS does not return the TTL as provided by DNS, the calling site
     // is responsible for providing one.
     ttl: Duration,
@@ -57,7 +56,7 @@ pub struct CachingResolver {
 impl CachingResolver {
     pub fn new(ttl: Duration) -> Self {
         Self {
-            cache: DNS_CACHE.clone(),
+            cache: &DNS_CACHE,
             ttl,
         }
     }
@@ -65,7 +64,7 @@ impl CachingResolver {
 
 impl Resolve for CachingResolver {
     fn resolve(&self, name: Name) -> Resolving {
-        let cache = self.cache.clone();
+        let cache = self.cache;
         let ttl = self.ttl;
         let key = name.as_str().to_string();
 
