@@ -79,7 +79,7 @@ pub fn start_single_file_sink_pipeline(
                 .open_into_writable_async(
                     cloud_options.as_deref(),
                     mkdir,
-                    upload_chunk_size.get(),
+                    upload_chunk_size,
                     upload_max_concurrency.get(),
                     io_metrics,
                 )
@@ -98,7 +98,7 @@ pub fn start_single_file_sink_pipeline(
             file_writer_starter: {}, \
             target_sink_morsel_size: {:?}, \
             inflight_morsel_limit: {}, \
-            upload_chunk_size: {}, \
+            upload_chunk_size: {:?}, \
             upload_concurrency: {}, \
             io_metrics: {}, \
             build_sinked_path_info_list: {}",

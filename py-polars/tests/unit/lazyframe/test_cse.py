@@ -1525,3 +1525,134 @@ def test_cse_existing_predicate_at_scan_27748() -> None:
         q.collect(),
         pl.DataFrame({"x": False, "y0": False, "y1": True, "x_not": True}),
     )
+
+
+def test_projection_pushdown_cache_node_inputs_point_to_same_node_28279() -> None:
+    base = pl.DataFrame(
+        {
+            "symbol": ["s1", "s2"] * 3,
+            "price": [float(i) for i in range(6)],
+            "function_code": [66 if i % 2 else 83 for i in range(6)],
+        }
+    ).lazy()
+
+    df_order = base.filter(pl.col("function_code") == 66)  # frame filter
+
+    cse_expr = pl.col("price") * 2
+
+    A = df_order.group_by("symbol").agg(
+        cse_expr.sum().alias("a_total"),
+        cse_expr.filter(pl.col("price") > 3).sum().alias("a_0"),
+    )
+
+    B = df_order.group_by("symbol").agg(
+        pl.col("price").count().alias("b_count"),
+    )
+
+    j = A.join(B, on="symbol", how="full")  # how="left" also panics
+
+    q = j.select(
+        pl.col("symbol"),
+        (pl.col("a_0") / pl.col("a_total")).alias("r1"),
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"symbol": ["s2"], "r1": 0.555556}))
+
+
+def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    q1 = df.with_columns(y="x")
+    q2 = q1.with_columns(z=pl.coalesce(pl.col.x.min(), pl.col.x.min()))
+    q3 = q1.join(q2.select("x", "z"), on="x")
+    q4 = q3.join(q1, on="x").filter(pl.col("z").is_not_null())
+    assert_frame_equal(q4.select(pl.col.x.min()).collect(), pl.DataFrame({"x": [1]}))
+
+
+def test_cspe_with_non_pushable_filters_19479() -> None:
+    # The predicates reference a column computed within the common subplan, so they
+    # cannot be pushed past it. We keep the cache so the subplan is shared.
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+
+    expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
+    expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
+
+    result = pl.concat([expr1, expr2])
+    assert str(result.explain()).count("CACHE[id:") == 2
+
+    assert_frame_equal(
+        result.collect(),
+        pl.concat([expr1, expr2]).collect(
+            optimizations=pl.QueryOptFlags(comm_subplan_elim=False)
+        ),
+    )
+
+
+def test_cspe_with_pushable_filters_19479() -> None:
+    # The predicates can be pushed past the common subplan, so we prefer predicate
+    # pushdown over caching the subplan.
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+
+    expr1 = common_subplan.filter(pl.col("bar") * 2 > 4)
+    expr2 = common_subplan.filter(pl.col("bar") * 2 < 8)
+
+    result = pl.concat([expr1, expr2])
+    assert "CACHE[id:" not in result.explain()
+
+    assert_frame_equal(
+        result.collect(),
+        pl.concat([expr1, expr2]).collect(
+            optimizations=pl.QueryOptFlags(comm_subplan_elim=False)
+        ),
+    )
+
+
+def test_cspe_with_mixed_filters_19479() -> None:
+    # Some predicates can be pushed past the common subplan while others cannot.
+    # As not _all_ predicates can be pushed, we keep the caches so the subplan stays
+    # shared across all branches rather than removing them for a partial pushdown.
+    q_base = pl.LazyFrame(
+        {"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]}
+    ).with_columns(pl.col("foo") * 2)
+
+    # `foo * 2` is computed within the subplan -> not pushable.
+    q1 = q_base.filter(pl.col("foo") * 2 > 4)
+    q2 = q_base.filter(pl.col("foo") * 2 < 8)
+    # `bar` is available before the subplan -> pushable.
+    q3 = q_base.filter(pl.col("bar") * 2 > 4)
+    q4 = q_base.filter(pl.col("bar") * 2 < 8)
+
+    q = pl.concat([q1, q2, q3, q4])
+    plan = q.explain()
+
+    # All branches keep sharing the cached subplan.
+    assert plan.count("CACHE[id:") == 4
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(comm_subplan_elim=False)),
+    )
+
+
+def test_cspe_with_filters_sink_multiple_19479() -> None:
+    lazy_df = pl.LazyFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    common_subplan = lazy_df.with_columns(pl.col("foo") * 2)
+
+    expr1 = common_subplan.filter(pl.col("foo") * 2 > 4)
+    expr2 = common_subplan.filter(pl.col("foo") * 2 < 8)
+
+    assert str(pl.explain_all([expr1, expr2])).count("CACHE[id:") == 2
+
+
+def test_cspe_with_pushable_filters_scan_19479(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    df = pl.DataFrame({"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]})
+    df.write_parquet(tmp_path / "df.parquet")
+
+    common_subplan = pl.scan_parquet(tmp_path / "df.parquet")
+    expr1 = common_subplan.filter(pl.col("foo") > 4)
+    expr2 = common_subplan.filter(pl.col("foo") < 8)
+
+    result = pl.concat([expr1, expr2])
+    assert "CACHE[id:" not in result.explain()

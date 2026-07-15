@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import sys
 import typing
 from typing import IO, TYPE_CHECKING, Any
@@ -621,7 +622,8 @@ def test_scan_ipc_slice_empty_file() -> None:
     sys.platform == "win32",
     reason="needs unix-only `resource` module to measure memory usage",
 )
-def test_sink_ipc_memory_usage() -> None:
+@pytest.mark.parametrize("force_async", [True, False])
+def test_sink_ipc_memory_usage(force_async: bool) -> None:
     import subprocess
     import sys
 
@@ -658,6 +660,10 @@ print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 """,
                         str(n_chunks),
                     ],
+                    env={
+                        "POLARS_FORCE_ASYNC": "1" if force_async else "0",
+                        **os.environ,
+                    },
                 ).decode()
             )
             for _ in range(n_runs)

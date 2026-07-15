@@ -77,6 +77,7 @@ impl Resolve for CachingResolver {
                 }
             }
 
+            let t0 = Instant::now();
             let addrs = Arc::new(
                 polars_core::runtime::ASYNC
                     .spawn_blocking(move || {
@@ -87,15 +88,32 @@ impl Resolve for CachingResolver {
                     .await
                     .map_err(DynErr::from)??,
             );
+            let elapsed = t0.elapsed();
 
             write_guard.insert(
-                key,
+                key.clone(),
                 CachedAddrs {
                     addrs: addrs.clone(),
                     fetched_at: Instant::now(),
                 },
             );
             drop(write_guard);
+
+            if let Some(threshold) = polars_config::config().dns_log_threshold()
+                && elapsed.gt(&threshold)
+            {
+                let display_key = if polars_config::config().verbose_sensitive() {
+                    key.as_str()
+                } else {
+                    "<name suppressed>"
+                };
+                eprintln!(
+                    "[dns_cache] dns lookup for {} took {:.1} ms, exceeded threshold of {} ms",
+                    display_key,
+                    elapsed.as_secs_f64() * 1000.0,
+                    threshold.as_secs_f64() * 1000.0
+                )
+            }
 
             Ok(shuffle_addrs(&addrs))
         })

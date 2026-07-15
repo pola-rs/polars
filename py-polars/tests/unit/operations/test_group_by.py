@@ -3171,3 +3171,27 @@ def test_group_by_max_sorted_nan_28121() -> None:
     out = df.group_by("g").agg(pl.col("x").max())
     expected = pl.DataFrame({"g": [1], "x": [2.0]})
     assert_frame_equal(out, expected)
+
+
+@pytest.mark.parametrize(
+    ("agg", "args"),
+    [
+        ("first", []),
+        ("last", []),
+        ("min", []),
+        ("max", []),
+        ("mean", []),
+        ("median", []),
+        ("var", []),
+        ("std", []),
+        ("skew", []),
+        ("kurtosis", []),
+        ("quantile", [0.5]),
+    ],
+)
+def test_group_by_f16_agg_28353(agg: str, args: list[float]) -> None:
+    df64 = pl.DataFrame({"g": ["a", "a", "b", "b"], "x": [1.0, 2.0, 3.0, 4.0]})
+    out64 = df64.group_by("g").agg(getattr(pl.col.x, agg)(*args))
+    df16 = df64.with_columns(pl.col.x.cast(pl.Float16))
+    out16 = df16.group_by("g").agg(getattr(pl.col.x, agg)(*args).cast(pl.Float64))
+    assert_frame_equal(out16, out64, check_row_order=False, rel_tol=1e-3, abs_tol=1e-4)

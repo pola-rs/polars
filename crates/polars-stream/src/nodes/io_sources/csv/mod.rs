@@ -438,7 +438,7 @@ impl FileReader for CsvFileReader {
                             break;
                         }
 
-                        let morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                        let morsel = Morsel::new_unregistered(df, morsel_seq, source_token.clone());
                         if morsel_tx.send_morsel(morsel).await.is_err() {
                             break;
                         }
