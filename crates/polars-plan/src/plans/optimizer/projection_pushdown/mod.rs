@@ -50,6 +50,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         },
     );
 
+    #[allow(clippy::disallowed_types)]
     let mut cache_inputs = PlHashMap::default();
 
     ir_graph_traversal(
@@ -117,6 +118,7 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     names_set_scratch3: &'a mut ScratchIndexSet<PlSmallStr>,
     names_vec_scratch: &'a mut ScratchVec<PlSmallStr>,
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     cache_inputs: &'a mut PlHashMap<UniqueId, Node>,
     default_edge: Edge,
     maintain_errors: bool,
