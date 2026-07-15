@@ -167,7 +167,7 @@ impl Bitmap {
         AlignedBitmapSlice::new(&self.storage, self.offset, self.length)
     }
 
-    /// Reallocates if this bitmap has an offset that is not a multiple of 8.
+    /// Reallocates if this bitmap has a bit offset that is not a multiple of 8.
     pub fn to_aligned_bitmap(&self) -> Bitmap {
         if self.offset.is_multiple_of(8) {
             self.clone()
