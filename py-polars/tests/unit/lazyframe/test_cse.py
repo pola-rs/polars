@@ -1569,24 +1569,24 @@ def test_cspe_with_pushable_filters_19479() -> None:
 
 def test_cspe_with_mixed_filters_19479() -> None:
     # Some predicates can be pushed past the common subplan while others cannot.
-    # We keep the cache for the subplans whose predicate is blocked and push the
-    # others down.
+    # As not _all_ predicates can be pushed, we keep the caches so the subplan stays
+    # shared across all branches rather than removing them for a partial pushdown.
     q_base = pl.LazyFrame(
         {"foo": [1, 2, 3, 4, 5], "bar": [6, 7, 8, 9, 10]}
     ).with_columns(pl.col("foo") * 2)
 
-    # `foo * 2` is computed within the subplan -> not pushable -> stays cached.
+    # `foo * 2` is computed within the subplan -> not pushable.
     q1 = q_base.filter(pl.col("foo") * 2 > 4)
     q2 = q_base.filter(pl.col("foo") * 2 < 8)
-    # `bar` is available before the subplan -> pushable -> cache removed.
+    # `bar` is available before the subplan -> pushable.
     q3 = q_base.filter(pl.col("bar") * 2 > 4)
     q4 = q_base.filter(pl.col("bar") * 2 < 8)
 
     q = pl.concat([q1, q2, q3, q4])
     plan = q.explain()
 
-    # Two cache occurrences remain for the non-pushable predicates.
-    assert plan.count("CACHE[id:") == 2
+    # All branches keep sharing the cached subplan.
+    assert plan.count("CACHE[id:") == 4
 
     assert_frame_equal(
         q.collect(),

@@ -7,7 +7,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::Expr;
-use crate::plans::deep_copy::{deep_copy_ir, deep_copy_ir_delete_caches};
+use crate::plans::deep_copy::deep_copy_ir_delete_caches;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::visitor::AexprNode;
@@ -285,69 +285,22 @@ pub(crate) fn set_cache_states(
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
             // # CHECK IF WE NEED TO REMOVE CACHES
-            // If we encounter multiple predicates, the caches carry different filters above them.
-            // We do not want to blindly remove the caches in favor of predicate pushdown: if a
-            // predicate cannot actually be pushed past the cached subplan (e.g. because it refers
-            // to a column computed within the cached subplan), removing the cache loses the scan
-            // sharing without gaining any pushdown.
+            // If we encounter multiple distinct predicates, the caches carry different filters
+            // above them (predicate pushdown was blocked by the cache nodes). Removing the caches
+            // lets pushdown resume, but this only pays off if the predicates can actually be pushed
+            // past the cached subplan. If a predicate refers to a column computed within the cached
+            // subplan, it cannot be pushed and removing the caches would lose the subplan sharing
+            // without any benefit. See #19479.
             //
-            // We therefore decide _per cache node_ whether removing it enables predicate pushdown.
-            // A cache node is only removed if its predicate is pushed _past_ the node directly
-            // below the cache. Otherwise, we keep the cache node so the subplan stays shared.
+            // We therefore only remove the caches if _every_ filter above them is actually pushed
+            // by predicate pushdown. We probe this on cache-free copies of the subplans, buffering
+            // the optimized copies. If any filter was not pushed we bail out, keeping the caches;
+            // otherwise we commit the buffered copies, removing the caches.
             if v.predicate_union.len() > 1 {
-                // The cache nodes that we keep because their predicate could not be pushed past
-                // the cached subplan.
-                let mut kept_cache_nodes = Vec::with_capacity(v.cache_nodes.len());
+                let mut replacements = Vec::with_capacity(v.cache_nodes.len());
+                let mut remove_caches = true;
 
                 for (&cache, parents) in v.cache_nodes.iter().zip(v.parents.iter()) {
-                    // The filter (if any) sits directly above the cache node, i.e. it is the
-                    // top-most parent. If there is no filter, there is nothing to push down and
-                    // we simply keep the cache node.
-                    let Some(filter_node) = get_filter_node(*parents, lp_arena) else {
-                        kept_cache_nodes.push(cache);
-                        continue;
-                    };
-                    let IR::Filter { predicate, .. } = lp_arena.get(filter_node) else {
-                        unreachable!()
-                    };
-                    let predicate = predicate.clone();
-
-                    // We test the effect of predicate pushdown on a private copy of the subplan.
-                    // The cache nodes' children are shared between all cache occurrences, so we
-                    // must not mutate them in-place while probing. We keep the cache node in the
-                    // copy and allow the predicate to be pushed past a single cache node.
-                    let copied_node = deep_copy_ir(filter_node, lp_arena, expr_arena);
-                    let mut probe_pd = PredicatePushDown::new(pushdown_maintain_errors, streaming)
-                        .block_at_cache(1);
-                    let lp = lp_arena.take(copied_node);
-                    let lp = probe_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(copied_node, lp);
-
-                    // Find the cache node in the optimized copy and inspect the node directly
-                    // below it. If that node is a filter carrying (part of) our predicate, the
-                    // predicate was _not_ pushed past the cached subplan and we keep the cache.
-                    let pushed_past_cache =
-                        predicate_pushed_past_cache(copied_node, &predicate, lp_arena, expr_arena);
-
-                    if !pushed_past_cache {
-                        kept_cache_nodes.push(cache);
-                    }
-                }
-
-                // If at most one cache node is kept, there is no subplan sharing left to realize,
-                // so we remove all remaining cache nodes and run predicate pushdown on every
-                // occurrence.
-                let remove_all = kept_cache_nodes.len() <= 1;
-
-                if verbose && remove_all {
-                    eprintln!("cache nodes will be removed because predicates don't match")
-                }
-
-                for (&cache, parents) in v.cache_nodes.iter().zip(v.parents.iter()) {
-                    if !remove_all && kept_cache_nodes.contains(&cache) {
-                        continue;
-                    }
-
                     // Restart predicate and projection pushdown from most top parent.
                     // This to ensure we continue the optimization where it was blocked initially.
                     // We pick up the blocked filter and projection.
@@ -361,30 +314,46 @@ pub(crate) fn set_cache_states(
                         node = p_node
                     }
 
-                    let copied_node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
+                    // The filter (if any) that blocked pushdown sits directly above the cache.
+                    let filter_predicate = get_filter_node(*parents, lp_arena).map(|filter_node| {
+                        let IR::Filter { predicate, .. } = lp_arena.get(filter_node) else {
+                            unreachable!()
+                        };
+                        predicate.clone()
+                    });
 
+                    // Copy the subplan without caches and re-run predicate pushdown on the copy.
+                    let copied_node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
                     let lp = lp_arena.take(copied_node);
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(node, lp);
+
+                    // If there is no filter or the filter was not pushed past the (former) cached
+                    // subplan, removing the caches provides no benefit and we keep them.
+                    let filter_pushed = filter_predicate
+                        .as_ref()
+                        .is_some_and(|pred| filter_was_pushed(&lp, pred, lp_arena, expr_arena));
+                    if !filter_pushed {
+                        remove_caches = false;
+                        break;
+                    }
+
+                    replacements.push((node, lp));
                 }
 
-                if remove_all {
-                    // We removed all cache nodes for this cache id; nothing left to share.
+                if remove_caches {
+                    if verbose {
+                        eprintln!("cache nodes will be removed because predicates don't match")
+                    }
+                    for (node, lp) in replacements {
+                        lp_arena.replace(node, lp);
+                    }
                     continue;
                 }
 
-                // The remaining (kept) cache nodes still share the same child subplan. Optimize
-                // that child once and reuse it for all kept occurrences. We already ran predicate
-                // pushdown on the removed occurrences above, so we can skip the regular
-                // single-predicate handling below and move on to the next cache id.
-                let first_child = *v.children.first().expect("at least one child");
-                let child_lp = lp_arena.take(first_child);
-                let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
-                lp_arena.replace(first_child, lp.clone());
-                for &child in &v.children[1..] {
-                    lp_arena.replace(child, lp.clone());
-                }
-                continue;
+                // Not all filters could be pushed: keep the caches. We fall through to the regular
+                // handling below, which - as `allow_parent_predicate_pushdown` is `false` for
+                // multiple predicates - runs predicate pushdown on the shared subplan while leaving
+                // the filters above the caches in place.
             }
             // Below we restart projection and predicates pushdown
             // on the first cache node. As it are cache nodes, the others are the same
@@ -467,42 +436,33 @@ fn get_filter_node(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<Node> {
         .find(|&parent| matches!(lp_arena.get(parent), IR::Filter { .. }))
 }
 
-/// After running predicate pushdown (with `block_at_cache(1)`) on the subplan rooted at `node`,
-/// determine whether `predicate` was pushed _past_ the (single) cache node in the subplan.
+/// Determine whether `predicate` was pushed down when running predicate pushdown on a cache-free
+/// copy of a cached subplan (rooted at `optimized_lp`).
 ///
-/// If pushdown was blocked exactly at the cache node, the predicate is re-applied as a filter
-/// directly below the cache node (i.e. still guarding the shared subplan) and carries our original
-/// predicate. In that case removing the cache node buys us nothing, so we return `false`. If the
-/// predicate was pushed further down, the node below the cache is something other than that filter
-/// and we return `true`.
-fn predicate_pushed_past_cache(
-    node: Node,
+/// If the predicate could not be pushed, it is re-applied as a `Filter` at the top of the subplan
+/// still carrying our original predicate. In that case removing the caches buys us nothing, so we
+/// return `false`. Only `SimpleProjection` nodes may end up above that filter.
+fn filter_was_pushed(
+    optimized_lp: &IR,
     predicate: &ExprIR,
     lp_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
 ) -> bool {
-    // Locate the (single) cache node. Only `Filter`/`SimpleProjection` nodes may sit above it.
-    let mut current = node;
-    let cache_input = loop {
-        match lp_arena.get(current) {
-            IR::Cache { input, .. } => break *input,
-            IR::Filter { input, .. } | IR::SimpleProjection { input, .. } => current = *input,
-            // No cache node remained: the predicate was necessarily pushed past it.
-            _ => return true,
-        }
-    };
+    // Skip any projections that pushdown may have inserted above the filter.
+    let mut current = optimized_lp;
+    while let IR::SimpleProjection { input, .. } = current {
+        current = lp_arena.get(*input);
+    }
 
-    // The predicate was blocked at the cache iff the node directly below the cache is a filter
-    // that (still) contains our predicate.
-    let IR::Filter {
-        predicate: child_predicate,
-        ..
-    } = lp_arena.get(cache_input)
-    else {
-        return true;
-    };
-
-    !expr_ir_eq(predicate, child_predicate, expr_arena)
+    // The predicate was not pushed iff the top-most non-projection node is a filter that still
+    // carries our original predicate.
+    match current {
+        IR::Filter {
+            predicate: top_predicate,
+            ..
+        } => !expr_ir_eq(predicate, top_predicate, expr_arena),
+        _ => true,
+    }
 }
 
 fn expr_ir_eq(l: &ExprIR, r: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
