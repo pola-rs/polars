@@ -125,6 +125,16 @@ if __name__ == "__main__":
         message="datetime.datetime.utcnow\\(\\) is deprecated.*",
         category=DeprecationWarning,
     )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"arr\.to_struct\(\)",
+        category=DeprecationWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=r"list\.to_struct\(\)",
+        category=DeprecationWarning,
+    )
 
     OutputChecker = doctest.OutputChecker
 
