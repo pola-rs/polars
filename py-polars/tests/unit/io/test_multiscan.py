@@ -1037,3 +1037,120 @@ def test_hive_join_rewrite_pre_partition_hive_flag(tmp_path: Path) -> None:
             "foo"
         ),
     )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_left_join(tmp_path: Path) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 2], "y": [100, 200]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = left.join(right, left_on="foo", right_on="bar", how="left")
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" in plan
+    assert "PLAN 3:" not in plan
+    assert plan.count("LEFT JOIN:") == 3
+    assert "foo=1" in plan
+    assert "foo=2" in plan
+    assert "foo=3" in plan
+    assert "bar=1" in plan
+    assert "bar=2" in plan
+
+    out = q.sort("foo")
+    assert_frame_equal(
+        out.collect().sort("foo"),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "foo"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_right_join(tmp_path: Path) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 2, 4], "y": [100, 200, 400]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = left.join(right, left_on="foo", right_on="bar", how="right")
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" in plan
+    assert "PLAN 3:" not in plan
+    assert plan.count("RIGHT JOIN:") == 3
+    assert "foo=1" in plan
+    assert "foo=2" in plan
+    assert "foo=3" not in plan
+    assert "bar=1" in plan
+    assert "bar=2" in plan
+    assert "bar=4" in plan
+
+    out = q.sort("bar")
+    assert_frame_equal(
+        out.collect().sort("bar"),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "bar"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
+    left_root = tmp_path / "left"
+    right_root = tmp_path / "right"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        left_root, partition_by="foo"
+    )
+    pl.DataFrame({"bar": [1, 2], "y": [100, 200]}).write_parquet(
+        right_root, partition_by="bar"
+    )
+
+    left = pl.scan_parquet(left_root, hive_partitioning=True)
+    right = pl.scan_parquet(right_root, hive_partitioning=True)
+
+    q = left.join(right, left_on="foo", right_on="bar", how="semi")
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" not in plan
+    assert plan.count("SEMI JOIN:") == 2
+    assert "foo=1" in plan
+    assert "foo=2" in plan
+    assert "foo=3" not in plan
+
+    out = q.sort("foo")
+    result = out.collect().sort("foo")
+    assert result.schema == pl.Schema({"foo": pl.Int64, "x": pl.Int64})
+    assert_frame_equal(
+        result,
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "foo"
+        ),
+    )
