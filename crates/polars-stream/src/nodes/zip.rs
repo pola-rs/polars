@@ -60,6 +60,8 @@ impl InputHead {
         }
 
         if morsel.height() > 0 {
+            // Note that we intentionally don't consume the consume token here
+            // despite buffering it, only when the morsel actually gets zipped.
             ctx.register(morsel.sf()).await;
             self.morsels.push_back(morsel);
         }
