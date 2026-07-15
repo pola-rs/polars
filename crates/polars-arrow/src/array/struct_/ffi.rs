@@ -44,8 +44,8 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
             .map(|index| {
                 let child = array.child(index)?;
                 ffi::try_from(child).map(|arr| {
-                    // there is a discrepancy with how polars_arrow exports sliced
-                    // struct array and how pyarrow does it.
+                    // Old versions of polars_arrow exported sliced
+                    // struct arrays differently.
                     // # Pyarrow
                     // ## struct array len 3
                     //  * slice 1 by with len 2
@@ -53,7 +53,7 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for StructArray {
                     //      length on struct array: 2
                     //      offset on value array: 0
                     //      length on value array: 3
-                    // # Arrow2
+                    // # polars_arrow (old)
                     // ## struct array len 3
                     //  * slice 1 by with len 2
                     //      offset on struct array: 0
