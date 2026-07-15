@@ -175,7 +175,10 @@ impl StructArray {
     /// This operation is `O(F)` where `F` is the number of fields.
     pub fn slice(&mut self, offset: usize, length: usize) {
         assert!(
-            offset + length <= self.len(),
+            match offset.checked_add(length) {
+                Some(end) => end <= self.len(),
+                None => false,
+            },
             "offset + length may not exceed length of array"
         );
         unsafe { self.slice_unchecked(offset, length) }

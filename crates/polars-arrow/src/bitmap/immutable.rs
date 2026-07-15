@@ -259,7 +259,10 @@ impl Bitmap {
     /// exceeds the allocated capacity of `self`.
     #[inline]
     pub fn slice(&mut self, offset: usize, length: usize) {
-        assert!(offset + length <= self.length);
+        let end = offset
+            .checked_add(length)
+            .expect("offset + length overflow");
+        assert!(end <= self.length);
         unsafe { self.slice_unchecked(offset, length) }
     }
 
@@ -317,7 +320,10 @@ impl Bitmap {
     #[inline]
     #[must_use]
     pub fn sliced(self, offset: usize, length: usize) -> Self {
-        assert!(offset + length <= self.length);
+        let end = offset
+            .checked_add(length)
+            .expect("offset + length overflow");
+        assert!(end <= self.length);
         unsafe { self.sliced_unchecked(offset, length) }
     }
 
