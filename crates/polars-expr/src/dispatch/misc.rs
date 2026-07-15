@@ -38,7 +38,26 @@ pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "approx_quantile")]
 pub(super) fn approx_quantile(s: &[Column], error: f64) -> PolarsResult<Column> {
-    todo!("[amber]");
+    assert!(s.len() == 2);
+    let input = &s[0];
+    let mut quantile = s[1].as_materialized_series();
+    polars_ensure!(quantile.len() <= 1, ComputeError:
+        "polars does not support varying approximate quantiles yet, \
+        make sure the 'quantile' expression input produces a single quantile or a list of quantiles"
+    );
+
+    let inner_s;
+    if quantile.dtype().is_list() {
+        let list = quantile.list()?;
+        inner_s = list.get_as_series(0).unwrap();
+        if inner_s.has_nulls() {
+            polars_bail!(ComputeError: "quantile expression contains null values");
+        }
+        quantile = &inner_s;
+    }
+
+    let sc = polars_ops::prelude::approx_quantile(input, &quantile, error)?;
+    Ok(sc.into_column(input.name().clone()))
 }
 
 #[cfg(feature = "diff")]
