@@ -1,8 +1,9 @@
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
+use futures::stream::{FuturesUnordered, StreamExt};
 use hashbrown::HashMap;
 use polars_core::runtime::ASYNC;
 use reqwest::dns::{Addrs, Name, Resolve, Resolving};
@@ -25,6 +26,8 @@ const DEFAULT_DNS_CACHE_TTL_SECS: u64 = 5;
 /// virtual-hosted hosts at scale).
 static DNS_CACHE: LazyLock<RwLock<HashMap<String, CachedAddrs>>> = LazyLock::new(Default::default);
 
+/// Hard-coded DNS TTL cache, as the operating system does not return it with the
+/// calls used. Defaults to AWS TTL.
 pub(crate) fn get_dns_cache_ttl() -> Duration {
     let ttl = Duration::from_secs(
         std::env::var("POLARS_DNS_CACHE_TTL_SECS")
@@ -42,6 +45,7 @@ pub(crate) fn get_dns_cache_ttl() -> Duration {
 
 const DEFAULT_DNS_MAX_STALE_SECS: u64 = 300;
 
+/// Upper limit for serving stale DNS while refresh is happening in the background.
 pub(crate) fn get_dns_max_stale() -> Option<Duration> {
     let max_stale = Duration::from_secs(
         std::env::var("POLARS_DNS_MAX_STALE_SECS")
@@ -60,6 +64,114 @@ pub(crate) fn get_dns_max_stale() -> Option<Duration> {
         None
     } else {
         Some(max_stale)
+    }
+}
+
+const DEFAULT_DNS_ATTEMPT_TIMEOUT_MS: u64 = 500;
+
+/// DNS lookup attempt timeout before hedging kicks in.
+static DNS_ATTEMPT_TIMEOUT: LazyLock<Duration> = LazyLock::new(|| {
+    let ms = std::env::var("POLARS_DNS_ATTEMPT_TIMEOUT_MS")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_DNS_ATTEMPT_TIMEOUT_MS);
+
+    if polars_config::config().verbose() {
+        eprintln!("[dns_cache] lookup attempt timeout: {ms}ms");
+    }
+
+    Duration::from_millis(ms)
+});
+
+const DEFAULT_DNS_LOOKUP_ATTEMPTS: u64 = 3;
+
+/// Total DNS lookup attempts (timeout-bounded retries + one final unbounded).
+static DNS_LOOKUP_ATTEMPTS: LazyLock<u64> = LazyLock::new(|| {
+    let attempts = std::env::var("POLARS_DNS_LOOKUP_ATTEMPTS")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_DNS_LOOKUP_ATTEMPTS)
+        .max(1);
+
+    if polars_config::config().verbose() {
+        eprintln!("[dns_cache] lookup attempts: {attempts}");
+    }
+
+    attempts
+});
+
+/// DNS lookup with hedged attempts once the timeout has been exceeded.
+async fn lookup_hedged(key: &str) -> Result<Vec<SocketAddr>, DynErr> {
+    let spawn_lookup = |key: String| {
+        ASYNC.spawn_blocking(move || {
+            (key.as_str(), 0u16)
+                .to_socket_addrs()
+                .map(|it| it.collect::<Vec<_>>())
+        })
+    };
+
+    let mut in_flight = FuturesUnordered::new();
+    in_flight.push(spawn_lookup(key.to_string()));
+    let mut launched = 1;
+    let mut last_err: Option<DynErr>;
+
+    let t0 = Instant::now();
+
+    loop {
+        let can_hedge = launched < *DNS_LOOKUP_ATTEMPTS;
+
+        tokio::select! {
+            biased;
+
+            completed = in_flight.next() => {
+                match completed {
+                    // First success wins.
+                    Some(Ok(Ok(addrs))) => {
+                        let elapsed = t0.elapsed();
+
+                        if let Some(threshold) = polars_config::config().dns_log_threshold()
+                                && elapsed.gt(&threshold)
+                        {
+                            let display_key = if polars_config::config().verbose_sensitive() {
+                                key
+                            } else {
+                                "<name suppressed>"
+                            };
+                            eprintln!(
+                                "[dns_cache] dns lookup for {} took {:.1} ms, exceeded threshold of {} ms",
+                                display_key,
+                                elapsed.as_secs_f64() * 1000.0,
+                                threshold.as_secs_f64() * 1000.0
+                            )
+                        };
+
+                        return Ok(addrs)},
+                    Some(Ok(Err(io_err))) => {
+                        last_err = Some(io_err.into());
+                        if in_flight.is_empty() {
+                            if can_hedge {
+                                in_flight.push(spawn_lookup(key.to_string()));
+                                launched += 1;
+                            } else {
+                                return Err(last_err.unwrap());
+                            }
+                        }
+                    },
+                    Some(Err(join_err)) => {
+                        last_err = Some(join_err.into());
+                        if in_flight.is_empty() && !can_hedge {
+                            return Err(last_err.unwrap());
+                        }
+                    },
+                    None => unreachable!("in_flight drained while still looping"),
+                }
+            }
+
+            _ = tokio::time::sleep(*DNS_ATTEMPT_TIMEOUT), if can_hedge => {
+                in_flight.push(spawn_lookup(key.to_string()));
+                launched += 1;
+            }
+        }
     }
 }
 
@@ -127,18 +239,11 @@ impl Resolve for CachingResolver {
                             let key = key.clone();
                             let refreshing = entry.refreshing.clone();
                             ASYNC.spawn(async move {
-                                let key_clone = key.clone();
-                                let result = ASYNC
-                                    .spawn_blocking(move || {
-                                        (key_clone.as_str(), 0u16)
-                                            .to_socket_addrs()
-                                            .map(|it| it.collect::<Vec<_>>())
-                                    })
-                                    .await;
+                                let result = lookup_hedged(&key).await;
 
                                 // Swap in the new set only on success; on failure keep
                                 // serving the old addrs (next stale hit re-triggers).
-                                if let Ok(Ok(addrs)) = result {
+                                if let Ok(addrs) = result {
                                     let mut write_guard = cache.write().await;
                                     write_guard.insert(
                                         key,
@@ -169,19 +274,8 @@ impl Resolve for CachingResolver {
                     return Ok(shuffle_addrs(&entry.addrs));
                 }
             }
-
             let t0 = Instant::now();
-            let addrs = Arc::new(
-                ASYNC
-                    .spawn_blocking(move || {
-                        (key_clone.as_str(), 0u16)
-                            .to_socket_addrs()
-                            .map(|it| it.collect::<Vec<_>>())
-                    })
-                    .await
-                    .map_err(DynErr::from)??,
-            );
-            let elapsed = t0.elapsed();
+            let addrs = Arc::new(lookup_hedged(&key_clone).await?);
 
             write_guard.insert(
                 key.clone(),
@@ -192,22 +286,6 @@ impl Resolve for CachingResolver {
                 },
             );
             drop(write_guard);
-
-            if let Some(threshold) = polars_config::config().dns_log_threshold()
-                && elapsed.gt(&threshold)
-            {
-                let display_key = if polars_config::config().verbose_sensitive() {
-                    key.as_str()
-                } else {
-                    "<name suppressed>"
-                };
-                eprintln!(
-                    "[dns_cache] dns lookup for {} took {:.1} ms, exceeded threshold of {} ms",
-                    display_key,
-                    elapsed.as_secs_f64() * 1000.0,
-                    threshold.as_secs_f64() * 1000.0
-                )
-            }
 
             Ok(shuffle_addrs(&addrs))
         })
