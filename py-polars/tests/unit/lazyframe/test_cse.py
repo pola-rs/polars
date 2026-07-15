@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -1566,6 +1567,16 @@ def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> Non
     q3 = q1.join(q2.select("x", "z"), on="x")
     q4 = q3.join(q1, on="x").filter(pl.col("z").is_not_null())
     assert_frame_equal(q4.select(pl.col.x.min()).collect(), pl.DataFrame({"x": [1]}))
+
+
+def test_csee_height_mismatch_28364() -> None:
+    buf = io.BytesIO()
+    pl.LazyFrame({"x": [1, 2]}).sink_ipc(buf, record_batch_size=1)
+    df = pl.scan_ipc(buf)
+    q1 = df.with_columns(z=pl.coalesce(pl.col.x.min(), pl.col.x.min()))
+    out = df.join(q1, on='x').collect()
+    expected = pl.DataFrame({"x": [1, 2], "z": [1, 1]})
+    assert_frame_equal(out, expected)
 
 
 def test_cspe_with_non_pushable_filters_19479() -> None:
