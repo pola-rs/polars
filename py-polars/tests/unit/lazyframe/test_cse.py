@@ -1574,7 +1574,7 @@ def test_csee_height_mismatch_28364() -> None:
     pl.LazyFrame({"x": [1, 2]}).sink_ipc(buf, record_batch_size=1)
     df = pl.scan_ipc(buf)
     q1 = df.with_columns(z=pl.coalesce(pl.col.x.min(), pl.col.x.min()))
-    out = df.join(q1, on='x').collect()
+    out = df.join(q1, on="x").collect()
     expected = pl.DataFrame({"x": [1, 2], "z": [1, 1]})
     assert_frame_equal(out, expected)
 
