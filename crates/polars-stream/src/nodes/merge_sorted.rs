@@ -16,8 +16,6 @@ use crate::nodes::compute_node_prelude::*;
 pub struct MergeSortedNode {
     seq: MorselSeq,
 
-    starting_nulls: bool,
-
     maintain_order: bool,
 
     descending: bool,
@@ -33,8 +31,6 @@ impl MergeSortedNode {
     pub fn new(maintain_order: bool, descending: bool, nulls_last: bool) -> Self {
         Self {
             seq: MorselSeq::default(),
-
-            starting_nulls: false,
 
             maintain_order,
 
@@ -54,8 +50,6 @@ impl MergeSortedNode {
 fn find_mergeable(
     left_unmerged: &mut VecDeque<DataFrame>,
     right_unmerged: &mut VecDeque<DataFrame>,
-    is_first: bool,
-    starting_nulls: &mut bool,
     maintain_order: bool,
     descending: bool,
     nulls_last: bool,
@@ -268,7 +262,6 @@ impl ComputeNode for MergeSortedNode {
         let send = send_ports[0].take().unwrap().parallel();
 
         let seq = &mut self.seq;
-        let starting_nulls = &mut self.starting_nulls;
         let maintain_order = self.maintain_order;
         let descending = self.descending;
         let nulls_last = self.nulls_last;
@@ -354,8 +347,6 @@ impl ComputeNode for MergeSortedNode {
                         while let Some((left_mergeable, right_mergeable)) = find_mergeable(
                             left_unmerged,
                             right_unmerged,
-                            seq.to_u64() == 0,
-                            starting_nulls,
                             maintain_order,
                             descending,
                             nulls_last,
@@ -417,8 +408,6 @@ impl ComputeNode for MergeSortedNode {
                     while let Some((left_mergeable, right_mergeable)) = find_mergeable(
                         left_unmerged,
                         right_unmerged,
-                        seq.to_u64() == 0,
-                        starting_nulls,
                         maintain_order,
                         descending,
                         nulls_last,
