@@ -113,7 +113,6 @@ async fn lookup_hedged(key: &str) -> Result<Vec<SocketAddr>, DynErr> {
     let mut in_flight = FuturesUnordered::new();
     in_flight.push(spawn_lookup(key.to_string()));
     let mut launched = 1;
-    let mut last_err: Option<DynErr>;
 
     let t0 = Instant::now();
 
@@ -124,13 +123,20 @@ async fn lookup_hedged(key: &str) -> Result<Vec<SocketAddr>, DynErr> {
             biased;
 
             completed = in_flight.next() => {
+
+                let completed: Option<Result<Vec<SocketAddr>, DynErr>> = completed.map(|joined| {
+                    joined
+                        .map_err(DynErr::from)
+                        .and_then(|res| res.map_err(DynErr::from))
+                });
+
                 match completed {
                     // First success wins.
-                    Some(Ok(Ok(addrs))) => {
+                    Some(Ok(addrs)) => {
                         let elapsed = t0.elapsed();
 
                         if let Some(threshold) = polars_config::config().dns_log_threshold()
-                                && elapsed.gt(&threshold)
+                            && elapsed.gt(&threshold)
                         {
                             let display_key = if polars_config::config().verbose_sensitive() {
                                 key
@@ -146,21 +152,14 @@ async fn lookup_hedged(key: &str) -> Result<Vec<SocketAddr>, DynErr> {
                         };
 
                         return Ok(addrs)},
-                    Some(Ok(Err(io_err))) => {
-                        last_err = Some(io_err.into());
+                    Some(Err(err)) => {
                         if in_flight.is_empty() {
                             if can_hedge {
                                 in_flight.push(spawn_lookup(key.to_string()));
                                 launched += 1;
                             } else {
-                                return Err(last_err.unwrap());
+                                return Err(err);
                             }
-                        }
-                    },
-                    Some(Err(join_err)) => {
-                        last_err = Some(join_err.into());
-                        if in_flight.is_empty() && !can_hedge {
-                            return Err(last_err.unwrap());
                         }
                     },
                     None => unreachable!("in_flight drained while still looping"),
@@ -264,7 +263,6 @@ impl Resolve for CachingResolver {
             }
 
             // Cache miss or expired
-            let key_clone = key.clone();
             let mut write_guard = cache.write().await;
 
             // Re-check in case the cache has been populated in the meanwhile
@@ -274,11 +272,11 @@ impl Resolve for CachingResolver {
                     return Ok(shuffle_addrs(&entry.addrs));
                 }
             }
-            let t0 = Instant::now();
-            let addrs = Arc::new(lookup_hedged(&key_clone).await?);
+
+            let addrs = Arc::new(lookup_hedged(&key).await?);
 
             write_guard.insert(
-                key.clone(),
+                key,
                 CachedAddrs {
                     addrs: addrs.clone(),
                     fetched_at: Instant::now(),
