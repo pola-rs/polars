@@ -36,6 +36,11 @@ pub(super) fn approx_n_unique(s: &Column) -> PolarsResult<Column> {
         .map(|v| Column::new_scalar(s.name().clone(), Scalar::new(IDX_DTYPE, v.into()), 1))
 }
 
+#[cfg(feature = "approx_quantile")]
+pub(super) fn approx_quantile(s: &[Column], error: f64) -> PolarsResult<Column> {
+    todo!("[amber]");
+}
+
 #[cfg(feature = "diff")]
 pub(super) fn diff(s: &[Column], null_behavior: NullBehavior) -> PolarsResult<Column> {
     let s1 = s[0].as_materialized_series();

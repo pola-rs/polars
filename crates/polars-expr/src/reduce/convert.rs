@@ -5,6 +5,8 @@ use super::*;
 use crate::reduce::any_all::{new_all_reduction, new_any_reduction};
 #[cfg(feature = "approx_unique")]
 use crate::reduce::approx_n_unique::new_approx_n_unique_reduction;
+#[cfg(feature = "approx_quantile")]
+use crate::reduce::approx_quantile::new_approx_quantile_reduction;
 #[cfg(feature = "bitwise")]
 use crate::reduce::bitwise::{
     new_bitwise_and_reduction, new_bitwise_or_reduction, new_bitwise_xor_reduction,
@@ -137,12 +139,11 @@ pub fn into_reduction(
             function: IRFunctionExpr::ApproxQuantile { error },
             options: _,
         } => {
-            use crate::reduce::approx_quantile::new_approx_quantile_reduction;
-
             assert!(inner_exprs.len() == 2);
             let input = inner_exprs[0].node();
-            let out = new_approx_quantile_reduction(get_dt(input)?)?;
-            (out, input)
+            let quantiles = inner_exprs[1].node();
+            let out = new_approx_quantile_reduction(get_dt(input)?, *error)?;
+            return Ok((out, vec![input, quantiles]));
         },
 
         #[cfg(feature = "bitwise")]
