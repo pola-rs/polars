@@ -167,6 +167,15 @@ impl Bitmap {
         AlignedBitmapSlice::new(&self.storage, self.offset, self.length)
     }
 
+    /// Reallocates if this bitmap has an offset that is not a multiple of 8.
+    pub fn to_aligned_bitmap(&self) -> Bitmap {
+        if self.offset.is_multiple_of(8) {
+            self.clone()
+        } else {
+            Bitmap::from_trusted_len_iter(self.iter())
+        }
+    }
+
     /// Returns the byte slice of this [`Bitmap`].
     ///
     /// The returned tuple contains:
@@ -355,6 +364,14 @@ impl Bitmap {
     /// This pointer is allocated iff `self.len() > 0`.
     pub(crate) fn as_ptr(&self) -> *const u8 {
         self.storage.deref().as_ptr()
+    }
+
+    /// If this bitmap has an offset aligned with the size of `*const u8`, returns
+    /// an offset-adjusted `Some(ptr)`.
+    pub fn as_aligned_ptr(&self) -> Option<*const u8> {
+        self.offset
+            .is_multiple_of(8)
+            .then(|| unsafe { self.as_ptr().add(self.offset / 8) })
     }
 
     /// Returns a pointer to the start of this [`Bitmap`] (ignores `offsets`)

@@ -7,7 +7,7 @@ use crate::ffi;
 
 unsafe impl ToFfi for StructArray {
     fn buffers(&self) -> Vec<Option<*const u8>> {
-        vec![self.validity.as_ref().map(|x| x.as_ptr())]
+        vec![self.validity.as_ref().map(|x| x.as_aligned_ptr().unwrap())]
     }
 
     fn children(&self) -> Vec<Box<dyn Array>> {
@@ -15,16 +15,19 @@ unsafe impl ToFfi for StructArray {
     }
 
     fn offset(&self) -> Option<usize> {
-        Some(
-            self.validity
-                .as_ref()
-                .map(|bitmap| bitmap.offset())
-                .unwrap_or_default(),
-        )
+        Some(0)
     }
 
     fn to_ffi_aligned(&self) -> Self {
-        self.clone()
+        let mut ret = self.clone();
+
+        if let Some(validity) = ret.validity()
+            && validity.as_aligned_ptr().is_none()
+        {
+            ret.validity = Some(validity.to_aligned_bitmap());
+        }
+
+        ret
     }
 }
 
