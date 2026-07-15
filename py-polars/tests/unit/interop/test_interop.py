@@ -1557,17 +1557,19 @@ def test_sliced_struct_arrow_export_19612() -> None:
         {"x": [{"value": "A"}, None, {"value": "B"}, None]},
     )
 
-    tbls = [
+    arrow_tbls = [
         df.slice(0, 1).to_arrow(),
         df.slice(1, 1).to_arrow(),
         df.slice(2, 1).to_arrow(),
         df.slice(3, 1).to_arrow(),
     ]
 
-    expect_outputs = [{"value": "A"}, None, {"value": "B"}, None]
+    expected_row_values = [{"value": "A"}, None, {"value": "B"}, None]
 
-    for tbl, expect in zip(tbls, expect_outputs, strict=True):
+    for arrow_tbl, expect_row_value in zip(
+        arrow_tbls, expected_row_values, strict=True
+    ):
         assert_frame_equal(
-            pl.DataFrame(tbl),
-            pl.DataFrame({"x": [expect]}, schema=df.schema),
+            pl.DataFrame(arrow_tbl),
+            pl.DataFrame({"x": [expect_row_value]}, schema=df.schema),
         )
