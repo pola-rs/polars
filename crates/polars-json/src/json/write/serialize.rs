@@ -322,12 +322,8 @@ fn fixed_size_list_serializer<'a>(
 ) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let mut serializer = new_serializer(
         array.values().as_ref(),
-        offset * array.size(),
-        if take < usize::MAX {
-            take * array.size()
-        } else {
-            usize::MAX
-        },
+        offset.saturating_mul(array.size()),
+        take.saturating_mul(array.size()),
     );
 
     Box::new(BufStreamingIterator::new(
