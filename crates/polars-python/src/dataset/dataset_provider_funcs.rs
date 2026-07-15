@@ -145,7 +145,7 @@ pub fn to_dataset_scan(
 
         let Ok(lf) = get_lf(scan.bind(py)) else {
             return Err(
-                PyValueError::new_err(format!("cannot extract LazyFrame from {}", &scan)).into(),
+                PyValueError::new_err(format!("cannot extract LazyFrame from {}", scan)).into(),
             );
         };
 

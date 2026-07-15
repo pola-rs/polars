@@ -1,8 +1,7 @@
 use std::ops::ControlFlow;
 
-use polars_core::prelude::{PlHashMap, PlHashSet};
 use polars_error::PolarsResult;
-use polars_utils::aliases::{InitHashMaps, PlIndexMap};
+use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
@@ -127,6 +126,7 @@ type TwoParents = [Option<Node>; 2];
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
 // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
 // - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<IR>,
@@ -135,6 +135,7 @@ pub(crate) fn set_cache_states(
     verbose: bool,
     pushdown_maintain_errors: bool,
     streaming: bool,
+    partition_hive: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
@@ -150,9 +151,9 @@ pub(crate) fn set_cache_states(
         parents: Vec<TwoParents>,
         cache_nodes: Vec<Node>,
         // Union over projected names.
-        names_union: PlHashSet<PlSmallStr>,
+        names_union: PlIndexSet<PlSmallStr>,
         // Union over predicates.
-        predicate_union: PlHashMap<Expr, u32>,
+        predicate_union: PlIndexMap<Expr, u32>,
     }
     let mut cache_schema_and_children = PlIndexMap::new();
 
@@ -280,7 +281,8 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, streaming);
+        let mut pred_pd =
+            PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
@@ -335,7 +337,8 @@ pub(crate) fn set_cache_states(
                 let start_lp = lp_arena.take(node);
 
                 let mut pred_pd =
-                    PredicatePushDown::new(pushdown_maintain_errors, streaming).block_at_cache(1);
+                    PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive)
+                        .block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
 

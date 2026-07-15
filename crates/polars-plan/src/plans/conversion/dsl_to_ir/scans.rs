@@ -1063,12 +1063,13 @@ enum CachedSourceKey {
         paths: Buffer<PlRefPath>,
         schema: Option<SchemaRef>,
         schema_overwrite: Option<SchemaRef>,
+        dtype_overwrite: Option<Arc<Vec<DataType>>>,
     },
 }
 
 #[derive(Default, Clone)]
 pub(super) struct SourcesToFileInfo {
-    inner: Arc<RwLock<PlHashMap<CachedSourceKey, (FileInfo, FileScanIR)>>>,
+    inner: Arc<RwLock<PlIndexMap<CachedSourceKey, (FileInfo, FileScanIR)>>>,
 }
 
 impl SourcesToFileInfo {
@@ -1408,6 +1409,7 @@ this scan to succeed with an empty DataFrame.",
                     paths: paths.clone(),
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
+                    dtype_overwrite: options.dtype_overwrite.clone(),
                 };
                 let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);
@@ -1419,6 +1421,7 @@ this scan to succeed with an empty DataFrame.",
                     paths: paths.clone(),
                     schema: options.schema.clone(),
                     schema_overwrite: options.schema_overwrite.clone(),
+                    dtype_overwrite: None,
                 };
                 let guard = self.inner.read().unwrap();
                 let v = guard.get(&key);

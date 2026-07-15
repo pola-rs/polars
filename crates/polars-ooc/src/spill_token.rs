@@ -38,7 +38,7 @@ struct LockState {
     waiters: UnitVec<Waker>,
 
     // The current context this spill token is registered at.
-    cur_ctx: Option<WeakSpillContext>,
+    cur_ctx: Option<(WeakSpillContext, SpillContextParam)>,
 }
 
 struct SpillTokenInner<T: Spillable> {
@@ -330,6 +330,67 @@ impl<T: Spillable> SpillTokenInner<T> {
     }
 }
 
+impl<T, S> Clone for SpillTokenInner<T>
+where
+    T: Clone + Spillable<Spilled = S>,
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        if let Some(r) = ASYNC.block_in_place_on(self.pin_or_lock()) {
+            return SpillTokenInner {
+                value_slot: UnsafeCell::new(ValueSlot::InMemory(r.clone())),
+                spilled_value: UnsafeCell::new(None),
+                registration_id: AtomicU32::new(0),
+                state: AtomicU64::new(0),
+                lock: Mutex::default(),
+            };
+        }
+
+        // We now hold the lock, meaning the value was spilled.
+        unsafe {
+            let lock_guard = WithDrop::new(self, |slf| {
+                slf.wake_waiters(slf.state.fetch_and(!LOCK_BIT, Ordering::AcqRel));
+            });
+
+            let ValueSlot::Spilled {
+                n_bytes,
+                spill_ctx,
+                reinsert_reg_id: _,
+                spill_time_ns: _,
+                spilled_start: _,
+            } = &*lock_guard.value_slot.get()
+            else {
+                unreachable!()
+            };
+
+            // Simulate a spill.
+            let clone_spill_start = Instant::now();
+            let spilled_value = (&*lock_guard.spilled_value.get()).as_ref().unwrap().clone();
+            let (spill_time_ns, spilled_start) = if let Some(strong) = spill_ctx.upgrade() {
+                strong
+                    .stats()
+                    .add_successful_spill(*n_bytes, clone_spill_start)
+            } else {
+                // Dummy, context is already dead.
+                (0, Instant::now())
+            };
+            SpillTokenInner {
+                value_slot: UnsafeCell::new(ValueSlot::Spilled {
+                    n_bytes: *n_bytes,
+                    spill_ctx: spill_ctx.clone(),
+                    reinsert_reg_id: 0,
+                    spill_time_ns,
+                    spilled_start,
+                }),
+                spilled_value: UnsafeCell::new(Some(spilled_value)),
+                registration_id: AtomicU32::new(0),
+                state: AtomicU64::new(SPILLED_BIT),
+                lock: Mutex::default(),
+            }
+        }
+    }
+}
+
 pub enum TrySpillError {
     AlreadySpilled,
     Pinned,
@@ -337,11 +398,11 @@ pub enum TrySpillError {
 
 pub(crate) trait DynSpillToken: Send + Sync + 'static {
     /// Register this spill token at a new context, returning the registration ID.
-    fn register(&self, ctx: WeakSpillContext) -> u32;
+    fn register(&self, ctx: WeakSpillContext, param: SpillContextParam) -> u32;
 
     /// Unregisters this spill token from its current context, returning where
     /// it was registered, if anywhere.
-    fn unregister(&self) -> Option<WeakSpillContext>;
+    fn unregister(&self) -> Option<(WeakSpillContext, SpillContextParam)>;
 
     /// Returns the current context registration ID of this spill token without modifying it.
     fn current_registration_id(&self) -> u32;
@@ -370,13 +431,13 @@ pub(crate) trait DynSpillToken: Send + Sync + 'static {
 }
 
 impl<T: Spillable> DynSpillToken for SpillTokenInner<T> {
-    fn register(&self, ctx: WeakSpillContext) -> u32 {
+    fn register(&self, ctx: WeakSpillContext, param: SpillContextParam) -> u32 {
         let mut lock = self.lock.lock().unwrap();
-        lock.cur_ctx = Some(ctx);
+        lock.cur_ctx = Some((ctx, param));
         self.registration_id.fetch_add(1, Ordering::Release) + 1
     }
 
-    fn unregister(&self) -> Option<WeakSpillContext> {
+    fn unregister(&self) -> Option<(WeakSpillContext, SpillContextParam)> {
         let mut lock = self.lock.lock().unwrap();
         self.registration_id.fetch_add(1, Ordering::Release);
         lock.cur_ctx.take()
@@ -523,9 +584,7 @@ impl<T: Spillable> SpillToken<T> {
 
     /// Unregisters this spill token from its current context, if any, returning it.
     pub fn unregister(&mut self) -> Option<(WeakSpillContext, SpillContextParam)> {
-        let ctx = self.inner.unregister()?;
-        let param = SpillContextParam(()); // TODO: get this once we support contexts with parameters.
-        Some((ctx, param))
+        self.inner.unregister()
     }
 
     /// Try to get a reference to the underlying value, returning None if it was spilled.
@@ -571,6 +630,19 @@ impl<T: Spillable> SpillToken<T> {
             unreachable!()
         };
         value
+    }
+}
+
+impl<T, S> Clone for SpillToken<T>
+where
+    T: Clone + Spillable<Spilled = S>,
+    S: Clone,
+{
+    fn clone(&self) -> Self {
+        // Note: we don't register the clone, perhaps we should?
+        Self {
+            inner: Arc::new((*self.inner).clone()),
+        }
     }
 }
 

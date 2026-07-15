@@ -78,14 +78,25 @@ def test_sort_categoricals_6014_lexical() -> None:
     assert out.to_dict(as_series=False) == {"key": ["aaa", "bbb", "ccc"]}
 
 
-def test_categorical_get_categories() -> None:
+def test_categorical_categories() -> None:
+    categorical = pl.Categorical(categories=pl.Categories.random())
+    s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=categorical)
+    assert isinstance(s.dtype, pl.Categorical)
+    assert all(s.dtype.categories[x] in {0, 1, 2} for x in s)
+    assert all(s.dtype.categories[x] in {"foo", "bar", "ham"} for x in [0, 1, 2])
+    assert list(s.dtype.categories) == ["foo", "bar", "ham"]
+
+
+def test_categorical_get_categories_deprecated() -> None:
     s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
-    assert set(s.cat.get_categories().to_list()) >= {"foo", "bar", "ham"}
+    with pytest.deprecated_call():
+        assert set(s.cat.get_categories().to_list()) >= {"foo", "bar", "ham"}
 
 
 def test_cat_to_local() -> None:
     s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    assert_series_equal(s, s.cat.to_local())
+    with pytest.deprecated_call():
+        assert_series_equal(s, s.cat.to_local())
 
 
 def test_cat_uses_lexical_ordering() -> None:

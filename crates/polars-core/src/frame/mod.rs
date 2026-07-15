@@ -268,7 +268,7 @@ impl DataFrame {
         debug_assert!(
             self.get_column_index(&name).is_none(),
             "with_row_index_mut(): column with name {} already exists",
-            &name
+            name
         );
 
         let offset = offset.unwrap_or(0);

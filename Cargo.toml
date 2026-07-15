@@ -160,6 +160,7 @@ features = [
 
 [workspace.lints.clippy]
 collapsible_if = "allow"
+question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
@@ -178,6 +179,14 @@ debug = "line-tables-only"
 [profile.release]
 lto = "thin"
 debug = "line-tables-only"
+
+# SQL parser is in the cold path
+# reduce binary size
+[profile.release.package.sqlparser]
+opt-level = "s"
+
+[profile.release.package.polars-sql]
+opt-level = "s"
 
 [profile.nodebug-release]
 inherits = "release"

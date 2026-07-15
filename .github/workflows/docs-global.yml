@@ -18,7 +18,7 @@ jobs:
   markdown-link-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.client_payload.sha }}
       - uses: tcort/github-action-markdown-link-check@v1.1.1
@@ -29,7 +29,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.client_payload.sha }}
 
@@ -55,7 +55,7 @@ jobs:
     # Running under ubuntu doesn't have enough disk space
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.client_payload.sha }}
 

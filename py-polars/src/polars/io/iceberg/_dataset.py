@@ -14,6 +14,7 @@ from polars.io.iceberg._utils import (
     IcebergStatisticsLoader,
     IdentityTransformedPartitionValuesBuilder,
     _normalize_windows_iceberg_file_uri,
+    extract_field_initial_default,
     try_convert_pyarrow_predicate,
 )
 from polars.io.scan_options.cast_options import ScanCastOptions
@@ -357,8 +358,6 @@ class IcebergScanResolver:
         fallback_reason = (
             "forced reader_override='pyiceberg'"
             if reader_override == "pyiceberg"
-            else f"unsupported table format version: {tbl.format_version}"
-            if not tbl.format_version <= 2
             else None
         )
 
@@ -369,6 +368,17 @@ class IcebergScanResolver:
             if selected_fields == ("*",)
             else iceberg_schema.select(*selected_fields)
         )
+
+        initial_defaults = {
+            x: value
+            for x in projected_iceberg_schema.field_ids
+            if (
+                value := extract_field_initial_default(
+                    projected_iceberg_schema.find_field(x)
+                )
+            )
+            is not None
+        }
 
         sources = []
         missing_field_defaults = IdentityTransformedPartitionValuesBuilder(
@@ -494,7 +504,7 @@ class IcebergScanResolver:
                 sources=sources,
                 projected_iceberg_schema=projected_iceberg_schema,
                 column_mapping=column_mapping,
-                default_values=identity_transformed_values,
+                default_values=(identity_transformed_values, initial_defaults),
                 deletion_files=deletion_files,
                 min_max_statistics=min_max_statistics,
                 statistics_loader=statistics_loader,
@@ -555,7 +565,7 @@ class _NativeIcebergScanData(_ResolvedScanDataBase):
     sources: list[str]
     projected_iceberg_schema: pyiceberg.schema.Schema
     column_mapping: pa.Schema
-    default_values: dict[int, pl.Series | str]
+    default_values: tuple[dict[int, pl.Series | str], dict[int, pl.Series]]
     deletion_files: dict[int, list[str]]
     min_max_statistics: pl.DataFrame | None
     # This is here for test purposes, as the `min_max_statistics` on this
