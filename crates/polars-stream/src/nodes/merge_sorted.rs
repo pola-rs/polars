@@ -54,11 +54,11 @@ impl MergeSortedNode {
 fn find_mergeable(
     left_unmerged: &mut VecDeque<DataFrame>,
     right_unmerged: &mut VecDeque<DataFrame>,
-
     is_first: bool,
     starting_nulls: &mut bool,
     maintain_order: bool,
     descending: bool,
+    nulls_last: bool,
 ) -> PolarsResult<Option<(DataFrame, DataFrame)>> {
     fn first_non_empty(vd: &mut VecDeque<DataFrame>) -> Option<DataFrame> {
         let mut df = vd.pop_front()?;
@@ -129,7 +129,7 @@ fn find_mergeable(
         assert!(!right_key_last.is_empty());
 
         if has_nulls {
-            if *starting_nulls {
+            if !nulls_last {
                 // If there are starting nulls do those first, then repeat
                 // without the nulls.
                 left_cutoff = left_null_count;
@@ -367,6 +367,7 @@ impl ComputeNode for MergeSortedNode {
                             starting_nulls,
                             maintain_order,
                             descending,
+                            nulls_last,
                         )? {
                             let left_mergeable =
                                 Morsel::new(left_mergeable, *seq, source_token.clone());
@@ -429,6 +430,7 @@ impl ComputeNode for MergeSortedNode {
                         starting_nulls,
                         maintain_order,
                         descending,
+                        nulls_last,
                     )? {
                         let left_mergeable =
                             Morsel::new(left_mergeable, *seq, source_token.clone());
