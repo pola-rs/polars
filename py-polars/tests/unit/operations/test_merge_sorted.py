@@ -594,9 +594,7 @@ def test_merge_sorted_multiple_keys_maintain_order() -> None:
 
 @pytest.mark.parametrize("descending", [False, True])
 @pytest.mark.parametrize("nulls_last", [False, True])
-def test_merge_sorted_multiple_keys_options(
-    descending: bool, nulls_last: bool
-) -> None:
+def test_merge_sorted_multiple_keys_options(descending: bool, nulls_last: bool) -> None:
     # The row-encoded (multi-key) path must apply descending / nulls_last exactly
     # once: baked into the encoding, not re-applied by the merge itself.
     left = pl.LazyFrame(
