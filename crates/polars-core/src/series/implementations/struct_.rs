@@ -85,8 +85,34 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
-        let ca = self.0.get_row_encoded(Default::default())?;
-        ca.group_tuples(multithreaded, sorted)
+        if self.struct_fields().is_empty() {
+            if self.has_nulls() {
+                BooleanChunked::with_chunk(
+                    self.name().clone(),
+                    BooleanArray::new(
+                        ArrowDataType::Boolean,
+                        self.rechunk_validity().unwrap(),
+                        None,
+                    ),
+                )
+                .group_tuples(multithreaded, sorted)
+            } else {
+                use polars_error::constants::LENGTH_LIMIT_MSG;
+
+                Ok(GroupsType::Slice {
+                    groups: vec![[
+                        0,
+                        IdxSize::try_from(self.len())
+                            .map_err(|_| polars_err!(ComputeError: LENGTH_LIMIT_MSG))?,
+                    ]],
+                    overlapping: false,
+                    monotonic: true,
+                })
+            }
+        } else {
+            let ca = self.0.get_row_encoded(Default::default())?;
+            ca.group_tuples(multithreaded, sorted)
+        }
     }
 
     #[cfg(feature = "zip_with")]

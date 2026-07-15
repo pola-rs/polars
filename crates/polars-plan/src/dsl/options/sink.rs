@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlHashSet;
+use polars_core::prelude::PlIndexSet;
 use polars_core::schema::Schema;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
@@ -91,7 +91,7 @@ impl SinkTarget {
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
-        cloud_upload_chunk_size: usize,
+        cloud_upload_chunk_size: Option<NonZeroUsize>,
         cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Writable> {
@@ -117,7 +117,7 @@ impl SinkTarget {
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
-        cloud_upload_chunk_size: usize,
+        cloud_upload_chunk_size: Option<NonZeroUsize>,
         cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Writable> {
@@ -408,7 +408,7 @@ impl PartitionedSinkOptionsIR {
                 if keys.is_empty() {
                     Cow::Borrowed(input_schema)
                 } else if !include_keys {
-                    let key_output_names: PlHashSet<&PlSmallStr> =
+                    let key_output_names: PlIndexSet<&PlSmallStr> =
                         keys.iter().map(|e| e.output_name()).collect();
 
                     Cow::Owned(

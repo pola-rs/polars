@@ -168,7 +168,7 @@ impl From<CloudRetryConfig> for object_store::RetryConfig {
         };
 
         if verbose() {
-            eprintln!("object-store retry config: {:?}", &out)
+            eprintln!("object-store retry config: {:?}", out)
         }
 
         return out;
@@ -517,8 +517,17 @@ impl CloudOptions {
             builder
         };
 
+        let builder = if builder
+            .get_config_value(&AmazonS3ConfigKey::Checksum)
+            .is_none()
+        {
+            // AWS default checksum, which is also more efficient than SHA256.
+            builder.with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
+        } else {
+            builder
+        };
+
         let out = builder
-            .with_checksum_algorithm(object_store::aws::Checksum::CRC64NVME)
             .with_unsigned_payload(true)
             .build()
             .map_err(|e| ObjectStoreErrorContext::new(url).attach_err_info(e))?;
@@ -573,7 +582,7 @@ impl CloudOptions {
                 if verbose {
                     eprintln!(
                         "[CloudOptions::build_azure]: Using credential provider {:?}",
-                        &v
+                        v
                     );
                 }
                 builder.with_credentials(v.into_azure_provider())

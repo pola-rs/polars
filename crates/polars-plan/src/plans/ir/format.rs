@@ -3,7 +3,7 @@ use std::fmt::{self, Display, Formatter, Write};
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
-use polars_utils::aliases::{InitHashMaps as _, PlHashSet};
+use polars_utils::aliases::{InitHashMaps as _, PlIndexSet};
 use polars_utils::format_list_truncated;
 use polars_utils::slice_enum::Slice;
 use polars_utils::unique_id::UniqueId;
@@ -152,7 +152,7 @@ impl<'a> IRDisplay<'a> {
         &self,
         f: &mut Formatter,
         indent: usize,
-        seen_caches: &mut PlHashSet<UniqueId>,
+        seen_caches: &mut PlIndexSet<UniqueId>,
     ) -> fmt::Result {
         if indent != 0 {
             writeln!(f)?;
@@ -269,7 +269,6 @@ impl<'a> IRDisplay<'a> {
             MergeSorted {
                 input_left,
                 input_right,
-                key: _,
                 ..
             } => {
                 write_ir_non_recursive(f, ir_node, self.lp.expr_arena, output_schema, indent)?;
@@ -309,11 +308,21 @@ impl<'a> ExprIRDisplay<'a> {
             expr_arena: self.expr_arena,
         }
     }
+
+    fn parenthesize_if_binexpr(self) -> impl Display + 'a {
+        std::fmt::from_fn(move |f| {
+            if let AExpr::BinaryExpr { .. } = self.expr_arena.get(self.node) {
+                write!(f, "({self})")
+            } else {
+                write!(f, "{self}")
+            }
+        })
+    }
 }
 
 impl Display for IRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let mut seen_caches = PlHashSet::new();
+        let mut seen_caches = PlIndexSet::new();
         self._format(f, 0, &mut seen_caches)
     }
 }
@@ -368,6 +377,7 @@ impl Display for ExprIRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let root = self.expr_arena.get(self.node);
 
+        let has_alias = matches!(self.output_name, OutputName::Alias(_));
         use AExpr::*;
         match root {
             Element => f.write_str("element()"),
@@ -379,7 +389,7 @@ impl Display for ExprIRDisplay<'_> {
                 offset,
                 closed_window: _,
             } => {
-                let function = self.with_root(function);
+                let function = self.with_root(function).parenthesize_if_binexpr();
                 let index_column = self.with_root(index_column);
                 write!(
                     f,
@@ -392,10 +402,10 @@ impl Display for ExprIRDisplay<'_> {
                 order_by,
                 mapping: _,
             } => {
-                let function = self.with_root(function);
+                let function = self.with_root(function).parenthesize_if_binexpr();
                 let partition_by = self.with_slice(partition_by);
                 if let Some((order_by, _)) = order_by {
-                    let order_by = self.with_root(order_by);
+                    let order_by = self.with_root(order_by).parenthesize_if_binexpr();
                     write!(
                         f,
                         "{function}.over(partition_by: {partition_by}, order_by: {order_by})"
@@ -406,7 +416,7 @@ impl Display for ExprIRDisplay<'_> {
             },
             Len => write!(f, "len()"),
             Explode { expr, options } => {
-                let expr = self.with_root(expr);
+                let expr = self.with_root(expr).parenthesize_if_binexpr();
                 write!(f, "{expr}.explode(")?;
                 match (options.empty_as_null, options.keep_nulls) {
                     (true, true) => {},
@@ -421,12 +431,17 @@ impl Display for ExprIRDisplay<'_> {
             StructField(name) => write!(f, "field(\"{name}\")"),
             Literal(v) => write!(f, "{v:?}"),
             BinaryExpr { left, op, right } => {
-                let left = self.with_root(left);
-                let right = self.with_root(right);
-                write!(f, "[({left}) {op:?} ({right})]")
+                let left = self.with_root(left).parenthesize_if_binexpr();
+                let right = self.with_root(right).parenthesize_if_binexpr();
+                let fmt = format_args!("{left} {op:?} {right}");
+                if has_alias {
+                    write!(f, "({fmt})")
+                } else {
+                    f.write_fmt(fmt)
+                }
             },
             Sort { expr, options } => {
-                let expr = self.with_root(expr);
+                let expr = self.with_root(expr).parenthesize_if_binexpr();
                 if options.descending {
                     write!(f, "{expr}.sort(desc)")
                 } else {
@@ -438,12 +453,12 @@ impl Display for ExprIRDisplay<'_> {
                 by,
                 sort_options,
             } => {
-                let expr = self.with_root(expr);
+                let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let by = self.with_slice(by);
                 write!(f, "{expr}.sort_by(by={by}, sort_option={sort_options:?})",)
             },
             Filter { input, by } => {
-                let input = self.with_root(input);
+                let input = self.with_root(input).parenthesize_if_binexpr();
                 let by = self.with_root(by);
 
                 write!(f, "{input}.filter({by})")
@@ -454,7 +469,7 @@ impl Display for ExprIRDisplay<'_> {
                 returns_scalar,
                 null_on_oob: _,
             } => {
-                let expr = self.with_root(expr);
+                let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let idx = self.with_root(idx);
                 expr.fmt(f)?;
 
@@ -471,7 +486,7 @@ impl Display for ExprIRDisplay<'_> {
                         input,
                         propagate_nans,
                     } => {
-                        self.with_root(input).fmt(f)?;
+                        self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
                         if *propagate_nans {
                             write!(f, ".nan_min()")
                         } else {
@@ -482,21 +497,45 @@ impl Display for ExprIRDisplay<'_> {
                         input,
                         propagate_nans,
                     } => {
-                        self.with_root(input).fmt(f)?;
+                        self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
                         if *propagate_nans {
                             write!(f, ".nan_max()")
                         } else {
                             write!(f, ".max()")
                         }
                     },
-                    Median(expr) => write!(f, "{}.median()", self.with_root(expr)),
-                    Mean(expr) => write!(f, "{}.mean()", self.with_root(expr)),
-                    First(expr) => write!(f, "{}.first()", self.with_root(expr)),
-                    FirstNonNull(expr) => write!(f, "{}.first_non_null()", self.with_root(expr)),
-                    Last(expr) => write!(f, "{}.last()", self.with_root(expr)),
-                    LastNonNull(expr) => write!(f, "{}.last_non_null()", self.with_root(expr)),
+                    Median(expr) => write!(
+                        f,
+                        "{}.median()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
+                    Mean(expr) => write!(
+                        f,
+                        "{}.mean()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
+                    First(expr) => write!(
+                        f,
+                        "{}.first()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
+                    FirstNonNull(expr) => write!(
+                        f,
+                        "{}.first_non_null()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
+                    Last(expr) => write!(
+                        f,
+                        "{}.last()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
+                    LastNonNull(expr) => write!(
+                        f,
+                        "{}.last_non_null()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
                     Item { input, allow_empty } => {
-                        self.with_root(input).fmt(f)?;
+                        self.with_root(input).parenthesize_if_binexpr().fmt(f)?;
                         if *allow_empty {
                             write!(f, ".item(allow_empty=true)")
                         } else {
@@ -508,24 +547,60 @@ impl Display for ExprIRDisplay<'_> {
                         maintain_order,
                     } => {
                         if *maintain_order {
-                            write!(f, "{}.implode()", self.with_root(input))
+                            write!(
+                                f,
+                                "{}.implode()",
+                                self.with_root(input).parenthesize_if_binexpr()
+                            )
                         } else {
-                            write!(f, "{}.implode(maintain_order=false)", self.with_root(input))
+                            write!(
+                                f,
+                                "{}.implode(maintain_order=false)",
+                                self.with_root(input).parenthesize_if_binexpr()
+                            )
                         }
                     },
-                    NUnique(expr) => write!(f, "{}.n_unique()", self.with_root(expr)),
-                    Sum(expr) => write!(f, "{}.sum()", self.with_root(expr)),
-                    AggGroups(expr) => write!(f, "{}.groups()", self.with_root(expr)),
+                    NUnique(expr) => write!(
+                        f,
+                        "{}.n_unique()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
+                    Sum(expr) => write!(
+                        f,
+                        "{}.sum()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
+                    AggGroups(expr) => write!(
+                        f,
+                        "{}.groups()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
                     Count {
                         input,
                         include_nulls: false,
-                    } => write!(f, "{}.count()", self.with_root(input)),
+                    } => write!(
+                        f,
+                        "{}.count()",
+                        self.with_root(input).parenthesize_if_binexpr()
+                    ),
                     Count {
                         input,
                         include_nulls: true,
-                    } => write!(f, "{}.len()", self.with_root(input)),
-                    Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
-                    Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
+                    } => write!(
+                        f,
+                        "{}.len()",
+                        self.with_root(input).parenthesize_if_binexpr()
+                    ),
+                    Var(expr, _) => write!(
+                        f,
+                        "{}.var()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
+                    Std(expr, _) => write!(
+                        f,
+                        "{}.std()",
+                        self.with_root(expr).parenthesize_if_binexpr()
+                    ),
                 }
             },
             Cast {
@@ -533,7 +608,7 @@ impl Display for ExprIRDisplay<'_> {
                 dtype,
                 options,
             } => {
-                self.with_root(expr).fmt(f)?;
+                self.with_root(expr).parenthesize_if_binexpr().fmt(f)?;
                 if options.is_strict() {
                     write!(f, ".strict_cast({dtype:?})")
                 } else {
@@ -553,7 +628,7 @@ impl Display for ExprIRDisplay<'_> {
             Function {
                 input, function, ..
             } => {
-                let fst = self.with_root(&input[0]);
+                let fst = self.with_root(&input[0]).parenthesize_if_binexpr();
                 fst.fmt(f)?;
                 if input.len() >= 2 {
                     write!(f, ".{function}({})", self.with_slice(&input[1..]))
@@ -562,7 +637,7 @@ impl Display for ExprIRDisplay<'_> {
                 }
             },
             AnonymousFunction { input, fmt_str, .. } | AnonymousAgg { input, fmt_str, .. } => {
-                let fst = self.with_root(&input[0]);
+                let fst = self.with_root(&input[0]).parenthesize_if_binexpr();
                 fst.fmt(f)?;
                 if input.len() >= 2 {
                     write!(f, ".{fmt_str}({})", self.with_slice(&input[1..]))
@@ -575,7 +650,7 @@ impl Display for ExprIRDisplay<'_> {
                 evaluation,
                 variant,
             } => {
-                let expr = self.with_root(expr);
+                let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let evaluation = self.with_root(evaluation);
                 match variant {
                     EvalVariant::List => write!(f, "{expr}.list.eval({evaluation})"),
@@ -595,7 +670,7 @@ impl Display for ExprIRDisplay<'_> {
             },
             #[cfg(feature = "dtype-struct")]
             StructEval { expr, evaluation } => {
-                let expr = self.with_root(expr);
+                let expr = self.with_root(expr).parenthesize_if_binexpr();
                 let evaluation = self.with_slice(evaluation);
                 write!(f, "{expr}.struct.with_fields({evaluation})")
             },
@@ -604,9 +679,9 @@ impl Display for ExprIRDisplay<'_> {
                 offset,
                 length,
             } => {
-                let input = self.with_root(input);
-                let offset = self.with_root(offset);
-                let length = self.with_root(length);
+                let input = self.with_root(input).parenthesize_if_binexpr();
+                let offset = self.with_root(offset).parenthesize_if_binexpr();
+                let length = self.with_root(length).parenthesize_if_binexpr();
 
                 write!(f, "{input}.slice(offset={offset}, length={length})")
             },

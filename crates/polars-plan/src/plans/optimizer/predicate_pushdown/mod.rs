@@ -5,7 +5,6 @@ mod keys;
 mod utils;
 
 pub use dynamic::{DynamicPred, DynamicPredWeakRef, PredicateExpr, TrivialPredicateExpr};
-use polars_core::datatypes::{PlHashMap, PlIndexMap};
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchUnitVec;
@@ -27,15 +26,22 @@ pub struct PredicatePushDown {
     streaming: bool,
     // Controls pushing filters past fallible projections
     maintain_errors: bool,
+    // Set while re-processing the branches `join::hive::rewrite_hive` so we don't re-enter
+    // the hive rewriting part
+    pub(super) hive_rewrite_active: bool,
+    // Rewrite hive partitioned join.
+    pub(super) partition_hive: bool,
 }
 
 impl PredicatePushDown {
-    pub fn new(maintain_errors: bool, streaming: bool) -> Self {
+    pub fn new(maintain_errors: bool, streaming: bool, partition_hive: bool) -> Self {
         Self {
             caches_pass_allowance: 0,
             nodes_scratch: ScratchUnitVec::default(),
             streaming,
             maintain_errors,
+            hive_rewrite_active: false,
+            partition_hive,
         }
     }
 }
@@ -413,7 +419,7 @@ impl PredicatePushDown {
                 } else {
                     &[]
                 };
-                let mut names_set = PlHashSet::<PlSmallStr>::with_capacity(subset.len());
+                let mut names_set = PlIndexSet::<PlSmallStr>::with_capacity(subset.len());
                 for name in subset.iter() {
                     names_set.insert(name.clone());
                 }
@@ -516,7 +522,7 @@ impl PredicatePushDown {
                             columns,
                             separator: _,
                         } => {
-                            let exclude = columns.iter().cloned().collect::<PlHashSet<_>>();
+                            let exclude = columns.iter().cloned().collect::<PlIndexSet<_>>();
 
                             let local_predicates =
                                 transfer_to_local_by_name(expr_arena, &mut acc_predicates, |x| {

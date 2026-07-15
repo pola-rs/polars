@@ -506,7 +506,9 @@ def numpy_to_pyseries(
     if not values.dtype.isnative:
         # Only native byte order is supported, so swap to a native-order copy.
         values = values.astype(values.dtype.newbyteorder("="))
-    values = np.ascontiguousarray(values)
+    # Require aligned, C-contiguous, >=1d; an unaligned view would otherwise panic.
+    values = np.atleast_1d(values)
+    values = np.require(values, requirements=["A", "C"])
 
     if values.ndim == 1:
         values, dtype = numpy_values_and_dtype(values)

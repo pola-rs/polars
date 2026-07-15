@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import operator
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, cast
@@ -35,7 +36,7 @@ from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
 
     from polars._typing import EpochTimeUnit, PolarsDataType, TimeUnit
     from tests.conftest import PlMonkeyPatch
@@ -2534,3 +2535,17 @@ def test_is_sorted_struct_27613() -> None:
     s = pl.Series([{"x": 2}, {"x": 1}, None])
     assert s.is_sorted(descending=True, nulls_last=True)
     assert not s.is_sorted(descending=True, nulls_last=False)
+
+
+@pytest.mark.parametrize("op", [operator.add, operator.sub])
+@pytest.mark.parametrize(
+    "temporal_dtype",
+    [pl.Date, pl.Datetime, pl.Time, pl.Duration],
+)
+def test_series_temporal_arithmetic_raises_19135(
+    temporal_dtype: PolarsDataType, op: Callable[[Any, Any], Any]
+) -> None:
+    a = pl.Series("a", [], dtype=temporal_dtype)
+    b = pl.Series("b", [], dtype=pl.Int32)
+    with pytest.raises(InvalidOperationError):
+        op(a, b)

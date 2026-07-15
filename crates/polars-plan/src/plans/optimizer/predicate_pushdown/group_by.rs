@@ -44,7 +44,7 @@ pub(super) fn process_group_by(
     // rewriting the predicate to reference the original column name.
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
     let input_schema = lp_arena.get(input).schema(lp_arena);
-    let mut alias_rename_map: PlHashMap<PlSmallStr, PlSmallStr> = PlHashMap::new();
+    let mut alias_rename_map: PlIndexMap<PlSmallStr, PlSmallStr> = PlIndexMap::new();
     let mut key_schema = Schema::with_capacity(keys.len());
     for key in &keys {
         if let AExpr::Column(c) = expr_arena.get(key.node()) {
