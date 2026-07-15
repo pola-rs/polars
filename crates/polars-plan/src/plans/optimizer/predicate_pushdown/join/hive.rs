@@ -20,6 +20,16 @@ fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartition
     None
 }
 
+#[cfg(feature = "is_in")]
+fn hive_rewrite_supports_join_type(how: &JoinType) -> bool {
+    match how {
+        JoinType::Inner | JoinType::Left | JoinType::Right => true,
+        #[cfg(feature = "semi_anti_join")]
+        JoinType::Semi => true,
+        _ => false,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn rewrite_hive(
     input_left: Node,
@@ -47,11 +57,14 @@ pub fn rewrite_hive(
     // We do that by pushing down an is_in predicate
     // Later in the optimizer we prune the hive paths
     // based on all the predicates.
+    // Supported for Inner/Left/Right/Semi: each of these has one side whose join-key column
+    // always survives the metadata pre-join intact (holding the complete matched-or-not value
+    // set), which we use as the source of truth for both `is_in` predicates.
     #[cfg(feature = "is_in")]
     if !opt.hive_rewrite_active
-        && let (MaintainOrderJoin::None, JoinType::Inner, Some(hive_left), Some(hive_right)) = (
+        && let (MaintainOrderJoin::None, true, Some(hive_left), Some(hive_right)) = (
             &options.args.maintain_order,
-            &options.args.how,
+            hive_rewrite_supports_join_type(&options.args.how),
             is_hive_partitioned(input_left, ir_arena),
             is_hive_partitioned(input_right, ir_arena),
         )
@@ -99,6 +112,11 @@ pub fn rewrite_hive(
                 )
                 .unwrap();
 
+            let l_key_name = if partitions.schema().contains(l.as_str()) {
+                l.clone()
+            } else {
+                r.clone()
+            };
             let r_key_name = if partitions.schema().contains(r.as_str()) {
                 r.clone()
             } else {
@@ -108,6 +126,7 @@ pub fn rewrite_hive(
             if !opt.partition_hive {
                 let (l_pred, r_pred) = make_predicates(
                     &partitions,
+                    l_key_name.clone(),
                     l.clone(),
                     r_key_name.clone(),
                     r.clone(),
@@ -143,6 +162,7 @@ pub fn rewrite_hive(
 
                     let (l_pred, r_pred) = make_predicates(
                         &chunk,
+                        l_key_name.clone(),
                         l.clone(),
                         r_key_name.clone(),
                         r.clone(),
@@ -194,13 +214,14 @@ pub fn rewrite_hive(
 #[cfg(feature = "is_in")]
 fn make_predicates(
     partitions: &DataFrame,
-    name_left: PlSmallStr,
+    extract_name_left: PlSmallStr,
+    predicate_name_left: PlSmallStr,
     extract_name_right: PlSmallStr,
     predicate_name_right: PlSmallStr,
     expr_arena: &mut Arena<AExpr>,
 ) -> (ExprIR, ExprIR) {
     let l_values = partitions
-        .column(&name_left)
+        .column(&extract_name_left)
         .unwrap()
         .as_materialized_series()
         .implode()
@@ -214,7 +235,7 @@ fn make_predicates(
         .unwrap()
         .into_series();
 
-    let l_pred = AExprBuilder::col(name_left, expr_arena)
+    let l_pred = AExprBuilder::col(predicate_name_left, expr_arena)
         .is_in(
             AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(l_values)), expr_arena),
             false, // nulls_equal
