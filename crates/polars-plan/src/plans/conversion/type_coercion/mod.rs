@@ -364,6 +364,11 @@ impl OptimizationRule for TypeCoercionRule {
                         right: new_high.unwrap_or(high).node(),
                     },
                     None => {
+                        let CastingRules::Supertype(supertype_options) =
+                            unpack!(options.cast_options)
+                        else {
+                            return Ok(None);
+                        };
                         let mut low = new_low.unwrap_or(low);
                         let mut high = new_high.unwrap_or(high);
 
@@ -388,11 +393,6 @@ impl OptimizationRule for TypeCoercionRule {
                             &high_dtype,
                         )?);
 
-                        let CastingRules::Supertype(supertype_options) =
-                            unpack!(options.cast_options)
-                        else {
-                            return Ok(None);
-                        };
                         let super_type = unpack!(get_supertype_with_options(
                             &low_st,
                             &high_st,
