@@ -106,15 +106,6 @@ fn find_mergeable(
 
         let has_nulls = left_null_count > 0 || right_null_count > 0;
 
-        // If we are on the first morsel we need to decide whether we have
-        // nulls first or not.
-        if is_first
-            && has_nulls
-            && (left_key.head(Some(1)).has_nulls() || right_key.head(Some(1)).has_nulls())
-        {
-            *starting_nulls = true;
-        }
-
         // For both left and right, find row index of the minimum of the maxima
         // of the left and right key columns. We can safely merge until this
         // point.
