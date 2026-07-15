@@ -107,8 +107,8 @@ def test_merge_sorted_unbalanced(size: int, ra: list[int]) -> None:
             pl.Series("b", [x * 7 for x in range(len(ra))], pl.Int32),
         ]
     )
-
-    lf = lhs.lazy().merge_sorted(rhs.lazy(), "a")
+    nulls_last = ra[0] is not None
+    lf = lhs.lazy().merge_sorted(rhs.lazy(), "a", nulls_last=nulls_last)
     df = lf.collect(engine="streaming")
 
     nulls_last = ra[0] is not None
@@ -512,6 +512,31 @@ def test_merge_sorted_descending_nulls_last(streaming: bool) -> None:
 
     expected = pl.DataFrame({"a": [9, 8, 6, 5, None, None], "b": [1, 4, 5, 2, 3, 6]})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("descending", [False, True])
+@pytest.mark.parametrize("nulls_last", [False, True])
+def test_merge_sorted_nulls_placement_multi_morsel(
+    descending: bool, nulls_last: bool
+) -> None:
+    # Large inputs so the streaming node buffers across morsel boundaries, which
+    # is the path where `find_mergeable` must honor `nulls_last` rather than
+    # inferring null position from the data. Comparing the streaming key column
+    # against the in-memory engine isolates null placement from the (unspecified)
+    # tie order among equal / null keys.
+    n = 4000
+    left = pl.Series("a", [None] * 400 + list(range(0, n, 2)), dtype=pl.Int64)
+    right = pl.Series("a", [None] * 300 + list(range(1, n, 2)), dtype=pl.Int64)
+    left = left.sort(descending=descending, nulls_last=nulls_last).to_frame().lazy()
+    right = right.sort(descending=descending, nulls_last=nulls_last).to_frame().lazy()
+
+    merged = left.merge_sorted(
+        right, key="a", descending=descending, nulls_last=nulls_last
+    )
+
+    streaming = merged.collect(engine="streaming")
+    in_memory = merged.collect(engine="in-memory")
+    assert_series_equal(streaming["a"], in_memory["a"])
 
 
 def test_merge_sorted_multiple_keys() -> None:
