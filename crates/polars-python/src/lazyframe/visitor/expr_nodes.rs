@@ -1141,7 +1141,7 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                                 .into_py_any(py)
                         },
                         PlanCallback::Rust(_) => {
-                            return Err(PyNotImplementedError::new_err("map_field_names"));
+                            return Err(PyNotImplementedError::new_err("map_field_names with rust callback"));
                         },
                     },
                 },
