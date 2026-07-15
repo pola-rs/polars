@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import os
+import subprocess
+import sys
 from itertools import permutations
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -13,6 +15,7 @@ import pytest
 import polars as pl
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
+from tests.unit.io.conftest import format_file_uri
 
 if TYPE_CHECKING:
     from polars._typing import EngineType
@@ -579,3 +582,145 @@ def test_sink_morsel_splitting_with_user_configuration(
         ]
 
     assert record_batch_lengths == expected_written_chunk_lengths
+
+
+@pytest.mark.write_disk
+def test_sink_deadlock_28284(tmp_path: Path) -> None:
+    data_path = tmp_path / "lineitem.parquet"
+    out_path = tmp_path / "out.parquet"
+
+    pl.DataFrame(
+        {
+            "l_extendedprice": [1.0, 2.0, 3.0, 4.0],
+            "l_discount": [0.05, 0.06, 0.05, 0.07],
+            "l_quantity": [10, 20, 30, 5],
+        }
+    ).write_parquet(data_path)
+
+    assert (
+        subprocess.check_output(
+            [
+                sys.executable,
+                "-c",
+                """\
+import sys
+
+import polars as pl
+
+(_, data_path, out_path) = sys.argv
+
+q = (
+    pl.scan_parquet(data_path)
+    .filter(pl.col("l_discount").is_between(0.05, 0.07), pl.col("l_quantity") < 24)
+    .select(
+        (pl.col("l_extendedprice") * pl.col("l_discount")).sum().alias("revenue")
+    )
+)
+
+sink = q.sink_parquet(out_path, lazy=True)
+preview = q.head(10)
+count = q.select(pl.len())
+
+pl.collect_all([sink, preview, count], engine="streaming")
+print("OK", end="")
+""",
+                str(data_path),
+                str(out_path),
+            ],
+            timeout=3,
+        ).decode()
+        == "OK"
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_upload_chunk_size_config(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+
+    capfd.readouterr()
+    with pytest.raises(OSError):
+        pl.LazyFrame({"x": 1}).sink_ipc(
+            "s3://.../...",
+            storage_options={
+                "max_retries": 0,
+                "aws_endpoint_url": "https://localhost:333",
+            },
+        )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(33554432)"
+    )
+
+    plmonkeypatch.setenv("POLARS_UPLOAD_CHUNK_SIZE", "13579")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(format_file_uri(tmp_path / "data.ipc"))
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(13579)"
+    )
+
+
+@pytest.mark.write_disk
+def test_sink_upload_chunk_size_config_partitioned(
+    tmp_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    capfd: pytest.CaptureFixture[str],
+) -> None:
+    plmonkeypatch.setenv("POLARS_VERBOSE", "1")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(
+        pl.PartitionBy(
+            format_file_uri(tmp_path / "data.ipc"),
+            max_rows_per_file=1,
+        )
+    )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith("None")
+
+    capfd.readouterr()
+    with pytest.raises(OSError):
+        pl.LazyFrame({"x": 1}).sink_ipc(
+            pl.PartitionBy(
+                "s3://.../...",
+                max_rows_per_file=1,
+            ),
+            storage_options={
+                "max_retries": 0,
+                "aws_endpoint_url": "https://localhost:333",
+            },
+        )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(6291456)"
+    )
+
+    plmonkeypatch.setenv("POLARS_PARTITIONED_UPLOAD_CHUNK_SIZE", "13579")
+
+    capfd.readouterr()
+    pl.LazyFrame({"x": 1}).sink_ipc(
+        pl.PartitionBy(
+            format_file_uri(tmp_path / "data.ipc"),
+            max_rows_per_file=1,
+        )
+    )
+    capture = capfd.readouterr().err
+
+    assert capture[19 + capture.index("upload_chunk_size: ") :].startswith(
+        "Some(13579)"
+    )

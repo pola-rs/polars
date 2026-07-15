@@ -526,14 +526,24 @@ impl LazyFrame {
 
     pub(crate) fn optimize_with_scratch(
         self,
-        lp_arena: &mut Arena<IR>,
+        ir_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         scratch: &mut Vec<Node>,
     ) -> PolarsResult<Node> {
+        let mut opt_flags = self.opt_state;
+        // Unset CSE
+        // This can be turned on again during ir-conversion.
+        #[allow(clippy::eq_op)]
+        #[cfg(feature = "cse")]
+        if opt_flags.contains(OptFlags::EAGER) {
+            opt_flags &= !(OptFlags::COMM_SUBEXPR_ELIM | OptFlags::COMM_SUBEXPR_ELIM);
+        }
+        let root = to_alp(self.logical_plan, expr_arena, ir_arena, &mut opt_flags)?;
+
         let lp_top = optimize(
-            self.logical_plan,
-            self.opt_state,
-            lp_arena,
+            root,
+            opt_flags,
+            ir_arena,
             expr_arena,
             scratch,
             apply_scan_predicate_to_scan_ir,

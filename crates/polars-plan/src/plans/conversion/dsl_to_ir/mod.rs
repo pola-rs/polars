@@ -702,6 +702,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             exprs,
             options,
         } => {
+            // The (0, 0) DataFrame is an exception - with_columns on it acts like select.
+            if let DslPlan::DataFrameScan { df, schema: _ } = input.as_ref() {
+                if df.shape() == (0, 0) {
+                    return to_alp_impl(
+                        DslPlan::Select {
+                            expr: exprs,
+                            input,
+                            options,
+                        },
+                        ctxt,
+                    );
+                }
+            }
+
             let input = to_alp_impl(owned(input), ctxt)
                 .map_err(|e| e.context(failed_here!(with_columns)))?;
             let (exprs, schema) =

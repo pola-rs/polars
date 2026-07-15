@@ -126,6 +126,7 @@ type TwoParents = [Option<Node>; 2];
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
 // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
 // - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<IR>,
@@ -134,6 +135,7 @@ pub(crate) fn set_cache_states(
     verbose: bool,
     pushdown_maintain_errors: bool,
     streaming: bool,
+    partition_hive: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
@@ -298,7 +300,8 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, streaming);
+        let mut pred_pd =
+            PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
@@ -354,7 +357,8 @@ pub(crate) fn set_cache_states(
                 let start_lp = lp_arena.take(node);
 
                 let mut pred_pd =
-                    PredicatePushDown::new(pushdown_maintain_errors, v.streaming).block_at_cache(1);
+                    PredicatePushDown::new(pushdown_maintain_errors, v.streaming, partition_hive)
+                        .block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
 

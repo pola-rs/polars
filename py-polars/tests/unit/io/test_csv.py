@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gzip
 import io
-import os
 import sys
 import textwrap
 import warnings
@@ -968,14 +967,6 @@ def test_csv_globbing(chunk_override: None, io_files_path: Path) -> None:
     assert df.row(-1) == ("seafood", 1)
     assert df.row(0) == ("vegetables", 2)
 
-    with PlMonkeyPatch.context() as mp:
-        mp.setenv("POLARS_FORCE_ASYNC", "0")
-
-        with pytest.raises(ValueError):
-            _ = pl.read_csv(
-                path, schema_overrides=[pl.String, pl.Int64, pl.Int64, pl.Int64]
-            )
-
     dtypes = {
         "category": pl.String,
         "calories": pl.Int32,
@@ -985,6 +976,24 @@ def test_csv_globbing(chunk_override: None, io_files_path: Path) -> None:
 
     df = pl.read_csv(path, schema_overrides=dtypes)
     assert df.dtypes == list(dtypes.values())
+
+
+@pytest.mark.parametrize("auto_streaming", ["0", "1"])
+def test_csv_globbing_schema_overrides_by_position(
+    chunk_override: None,
+    io_files_path: Path,
+    plmonkeypatch: PlMonkeyPatch,
+    auto_streaming: str,
+) -> None:
+    plmonkeypatch.setenv("POLARS_AUTO_STREAMING", auto_streaming)
+    plmonkeypatch.setenv("POLARS_FORCE_STREAMING", "0")
+    plmonkeypatch.setenv("POLARS_FORCE_ASYNC", "0")
+
+    path = io_files_path / "foods*.csv"
+    df = pl.read_csv(path, schema_overrides=[pl.String, pl.Float64, pl.String])
+
+    assert df.shape == (135, 4)
+    assert df.dtypes == [pl.String, pl.Float64, pl.String, pl.Int64]
 
 
 def test_csv_schema_offset(chunk_override: None, foods_file_path: Path) -> None:
@@ -2143,15 +2152,10 @@ def test_read_csv_invalid_schema_overrides_length(chunk_override: None) -> None:
     )
     f = io.StringIO(csv)
 
-    # streaming dispatches read_csv -> _scan_csv_impl which does not accept a list
-    if os.getenv("POLARS_AUTO_STREAMING", os.getenv("POLARS_FORCE_STREAMING")) == "1":
-        err = TypeError
-        match = "expected 'schema_overrides' dict, found 'list'"
-    else:
-        err = InvalidOperationError  # type: ignore[assignment]
-        match = "The number of schema overrides must be less than or equal to the number of fields"
-
-    with pytest.raises(err, match=match):
+    with pytest.raises(
+        InvalidOperationError,
+        match="The number of schema overrides must be less than or equal to the number of fields",
+    ):
         pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 
 

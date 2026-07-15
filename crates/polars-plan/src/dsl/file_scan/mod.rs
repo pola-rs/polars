@@ -690,7 +690,7 @@ impl CastColumnsPolicy {
                                 "encountered extra struct field: {}, \
                                 hint: specify this field in the schema, or pass \
                                 cast_options=pl.ScanCastOptions(extra_struct_fields='ignore')",
-                                &fld.name,
+                                fld.name,
                             ));
                         },
                     }

@@ -683,7 +683,7 @@ pub fn lower_ir(
                 if config::verbose() {
                     eprintln!(
                         "lower_ir: scan IR lowered as 0-width InMemorySource with height {} ({:?})",
-                        num_rows, &row_counter
+                        num_rows, row_counter
                     )
                 }
 
