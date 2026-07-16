@@ -1233,3 +1233,23 @@ def test_projection_pushdown_groupby_len_28094() -> None:
     )
 
     assert q.collect().item() == 1
+
+
+@pytest.mark.parametrize("engine", ["streaming", "in-memory", "auto"])
+def test_predicate_pushdown_with_cse_sink_cross_filter_28287(
+    engine: str,
+) -> None:
+    left = pl.DataFrame({"x": [1, 2, 3]}).lazy()
+    right = pl.DataFrame({"y": [10, 20]}).lazy()
+
+    filtered = left.join(right, how="cross").filter(pl.col("x") + pl.col("y") == 22)
+    row_sum = (pl.col("x") + pl.col("y")).alias("row_sum")
+    lf = (
+        pl.concat([filtered, filtered.select(row_sum)], how="horizontal_extend")
+        .unique("row_sum")
+        .drop("row_sum")
+    )
+
+    f = io.BytesIO()
+    lf.sink_parquet(f, engine=engine)  # type: ignore[call-overload]
+    assert_frame_equal(pl.read_parquet(f), pl.DataFrame({"x": 2, "y": 20}))

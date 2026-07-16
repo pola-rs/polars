@@ -21,7 +21,7 @@ impl ListNameSpace {
         self,
         n: Expr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Expr {
         self.0.map_binary(
@@ -40,7 +40,7 @@ impl ListNameSpace {
         self,
         fraction: Expr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Expr {
         self.0.map_binary(
