@@ -348,7 +348,7 @@ bigidx = [
   "polars-core/bigidx",
   "polars-lazy?/bigidx",
   "polars-ops/big_idx",
-  "polars-plan/bigidx",
+  "polars-plan?/bigidx",
   "polars-utils/bigidx",
 ]
 polars_cloud_client = ["polars-lazy?/polars_cloud_client"]
