@@ -132,6 +132,13 @@ impl LazyCsvReader {
         self
     }
 
+    /// Overwrite dtypes by position.
+    #[must_use]
+    pub fn with_dtype_overwrite_by_position(mut self, dtypes: Option<Arc<Vec<DataType>>>) -> Self {
+        self.read_options.dtype_overwrite = dtypes;
+        self
+    }
+
     /// Set whether the CSV file has headers
     #[must_use]
     pub fn with_has_header(mut self, has_header: bool) -> Self {

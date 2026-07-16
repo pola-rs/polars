@@ -547,7 +547,7 @@ pub trait ListNameSpaceImpl: AsList {
         &self,
         n: &Series,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
@@ -612,7 +612,7 @@ pub trait ListNameSpaceImpl: AsList {
         &self,
         fraction: &Series,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
@@ -892,7 +892,7 @@ fn sample_n_broadcast_list(
     single_list: Option<Series>,
     n: &IdxCa,
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
     target_len: usize,
     name: PlSmallStr,
@@ -929,7 +929,7 @@ fn sample_frac_broadcast_list(
     single_list: Option<Series>,
     fraction: &Float64Chunked,
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
     target_len: usize,
     name: PlSmallStr,

@@ -10,7 +10,10 @@ use polars_utils::compression::ZstdLevel;
 
 use crate::spill_context::ParameterFreeSpillContext;
 use crate::spill_file::SpillFile;
-use crate::{BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
+use crate::{
+    BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillContextParam, SpillToken, Spillable,
+    WeakSpillContext, memory_manager,
+};
 
 impl Spillable for DataFrame {
     type Spilled = Arc<SpillFile>;
@@ -101,16 +104,19 @@ impl SpillFrame {
 
     pub async fn new<C: ParameterFreeSpillContext>(df: DataFrame, ctx: &C) -> Self {
         let slf = Self::new_unregistered(df);
-        ctx.register(&slf);
-        memory_manager().spill().await;
+        ctx.register(&slf).await;
         slf
     }
 
     pub fn new_blocking<C: ParameterFreeSpillContext>(df: DataFrame, ctx: &C) -> Self {
         let slf = Self::new_unregistered(df);
-        ctx.register(&slf);
+        ctx.register_no_spill_check(&slf);
         memory_manager().spill_blocking();
         slf
+    }
+
+    pub fn unregister(&mut self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        self.token.unregister()
     }
 
     /// The height of the contained DataFrame. Does not need to unspill DataFrame.

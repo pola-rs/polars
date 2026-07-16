@@ -89,7 +89,7 @@ pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {
 pub(super) fn sample_n(
     s: &[Column],
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
 ) -> PolarsResult<Column> {
     let list = s[0].list()?;
@@ -102,7 +102,7 @@ pub(super) fn sample_n(
 pub(super) fn sample_fraction(
     s: &[Column],
     with_replacement: bool,
-    shuffle: bool,
+    shuffle: Option<bool>,
     seed: Option<u64>,
 ) -> PolarsResult<Column> {
     let list = s[0].list()?;

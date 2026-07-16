@@ -617,13 +617,17 @@ class PyDataFrame:
     def div_df(self, s: PyDataFrame) -> PyDataFrame: ...
     def rem_df(self, s: PyDataFrame) -> PyDataFrame: ...
     def sample_n(
-        self, n: PySeries, with_replacement: bool, shuffle: bool, seed: int | None
+        self,
+        n: PySeries,
+        with_replacement: bool,
+        shuffle: bool | None,
+        seed: int | None,
     ) -> PyDataFrame: ...
     def sample_frac(
         self,
         frac: PySeries,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: bool | None,
         seed: int | None,
     ) -> PyDataFrame: ...
     def rechunk(self) -> PyDataFrame: ...
@@ -860,6 +864,7 @@ class PyLazyFrame:
         n_rows: int | None,
         cache: bool,
         overwrite_dtype: Sequence[tuple[str, Any]] | None,
+        overwrite_dtype_slice: Sequence[DataType] | None,
         low_memory: bool,
         comment_prefix: str | None,
         quote_char: str | None,
@@ -1402,10 +1407,14 @@ class PyExpr:
     def to_physical(self) -> PyExpr: ...
     def shuffle(self, seed: int | None) -> PyExpr: ...
     def sample_n(
-        self, n: PyExpr, with_replacement: bool, shuffle: bool, seed: int | None
+        self, n: PyExpr, with_replacement: bool, shuffle: bool | None, seed: int | None
     ) -> PyExpr: ...
     def sample_frac(
-        self, frac: PyExpr, with_replacement: bool, shuffle: bool, seed: int | None
+        self,
+        frac: PyExpr,
+        with_replacement: bool,
+        shuffle: bool | None,
+        seed: int | None,
     ) -> PyExpr: ...
     def ewm_mean(
         self, alpha: float, adjust: bool, min_periods: int, ignore_nulls: bool
@@ -1630,13 +1639,17 @@ class PyExpr:
     def list_sum(self) -> PyExpr: ...
     def list_drop_nulls(self) -> PyExpr: ...
     def list_sample_n(
-        self, n: PyExpr, with_replacement: bool, shuffle: bool, seed: int | None = None
+        self,
+        n: PyExpr,
+        with_replacement: bool,
+        shuffle: bool | None,
+        seed: int | None = None,
     ) -> PyExpr: ...
     def list_sample_fraction(
         self,
         fraction: PyExpr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: bool | None,
         seed: int | None = None,
     ) -> PyExpr: ...
     def list_gather(self, index: PyExpr, null_on_oob: bool) -> PyExpr: ...
@@ -2121,6 +2134,10 @@ class PyOptFlags:
     @sort_collapse.setter
     def sort_collapse(self, value: bool) -> None: ...
     @property
+    def pre_partition_hive(self) -> bool: ...
+    @pre_partition_hive.setter
+    def pre_partition_hive(self, value: bool) -> None: ...
+    @property
     def eager(self) -> bool: ...
     @eager.setter
     def eager(self, value: bool) -> None: ...
@@ -2420,6 +2437,7 @@ class PyCategories:
     def physical(self) -> str: ...
     def get_cat(self, s: str) -> int | None: ...
     def cat_to_str(self, cat: int) -> str | None: ...
+    def num_cats_upper_bound(self) -> int: ...
     def is_global(self) -> bool: ...
 
 # arrow c stream
