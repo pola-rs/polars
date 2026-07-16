@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 use std::sync::Arc;
 
 use polars_core::chunked_array::cast::CastOptions;
+use polars_core::datatypes::AnyValue;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     DataType, Field, IDX_DTYPE, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, PlIndexSet,
@@ -2922,7 +2923,7 @@ pub fn build_length_preserving_select_stream(
         .iter()
         .any(|expr| is_length_preserving_ctx(expr.node(), &mut ctx));
     let input_schema = input.output_schema(ctx.phys_sm);
-    if exprs.is_empty() || input_schema.is_empty() || already_length_preserving {
+    if exprs.is_empty() || already_length_preserving {
         return build_select_stream_with_ctx(input, exprs, &mut ctx);
     }
 
@@ -2930,12 +2931,34 @@ pub fn build_length_preserving_select_stream(
     // remove it from the final selector. This should ensure scalars gets zipped
     // back to the input to broadcast them.
     let tmp_name = unique_column_name();
-    let first_col = ctx.expr_arena.add(AExpr::Column(
-        input_schema.iter_names_cloned().next().unwrap(),
-    ));
+    let height_ae = if let Some(name) = input_schema.iter_names_cloned().next() {
+        AExpr::Column(name)
+    } else {
+        let function = IRFunctionExpr::Repeat;
+        let options = function.function_options();
+
+        // repeat(lit({}), len()) within each morsel.
+        let value = ctx
+            .expr_arena
+            .add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
+                DataType::Struct(vec![]),
+                AnyValue::StructOwned(Box::new((vec![], vec![]))),
+            ))));
+        let n = ctx.expr_arena.add(AExpr::Len);
+        AExpr::Function {
+            input: vec![
+                ExprIR::from_node(value, ctx.expr_arena),
+                ExprIR::from_node(n, ctx.expr_arena),
+            ],
+            function,
+            options,
+        }
+    };
+
+    let height_col = ctx.expr_arena.add(height_ae);
     let mut tmp_exprs = Vec::with_capacity(exprs.len() + 1);
     tmp_exprs.extend(exprs.iter().cloned());
-    tmp_exprs.push(ExprIR::new(first_col, OutputName::Alias(tmp_name.clone())));
+    tmp_exprs.push(ExprIR::new(height_col, OutputName::Alias(tmp_name.clone())));
 
     let out_stream = build_select_stream_with_ctx(input, &tmp_exprs, &mut ctx)?;
     let PhysNodeKind::Select { selectors, .. } = &mut ctx.phys_sm[out_stream.node].kind else {

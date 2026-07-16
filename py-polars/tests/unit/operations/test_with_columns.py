@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.exceptions import ShapeError
 from polars.testing import assert_frame_equal
 
 
@@ -180,10 +181,16 @@ def test_with_columns_scalar_20981() -> None:
 
 
 def test_lazy_with_columns_to_select_28285() -> None:
-    out = (
+    q = (
         pl.LazyFrame()
         .with_columns(a=pl.int_range(5))
         .with_columns(a=pl.lit(2, dtype=pl.Int64))
     )
-    expected = pl.LazyFrame({"a": [2, 2, 2, 2, 2]})
-    assert_frame_equal(out, expected)
+
+    with pytest.raises(ShapeError):
+        q.collect()
+
+    q = pl.LazyFrame().with_columns(a=pl.int_range(5), b=1).with_columns(a=2, b=2)
+
+    with pytest.raises(ShapeError):
+        q.collect()

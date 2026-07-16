@@ -224,7 +224,7 @@ def test_slice_pushdown_literal_projection_14349() -> None:
     assert_frame_equal(expect, out)
 
     assert pl.LazyFrame().select(x=1).head(1).collect().height == 1
-    assert pl.LazyFrame().with_columns(x=1).head(1).collect().height == 1
+    assert pl.LazyFrame(height=1).with_columns(x=1).head(1).collect().height == 1
 
     q = lf.select(x=1).head(1)
     assert q.collect().height == 1
