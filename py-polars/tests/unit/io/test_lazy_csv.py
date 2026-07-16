@@ -689,3 +689,17 @@ def test_scan_csv_new_columns_resolves_at_ir_22334() -> None:
 
     with pytest.raises(FileNotFoundError):
         q.collect()
+
+
+def test_scan_csv_new_columns_28343() -> None:
+    assert_frame_equal(
+        pl.scan_csv(
+            b"""\
+0,0
+1,2,3,4
+""",
+            has_header=False,
+            new_columns=["x", "y", "z", "t"],
+        ).collect(),
+        pl.DataFrame({"x": [0, 1], "y": [0, 2], "z": [None, 3], "t": [None, 4]}),
+    )
