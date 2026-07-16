@@ -9,6 +9,8 @@ use polars::frame::PivotColumnNaming;
 use polars::io::RowIndex;
 use polars::prelude::iceberg_sink_state::IcebergSinkState;
 use polars::time::*;
+#[cfg(feature = "csv")]
+use polars_buffer::Buffer;
 use polars_core::prelude::*;
 use polars_core::query_result::QueryResult;
 #[cfg(feature = "parquet")]
@@ -151,9 +153,9 @@ impl PyLazyFrame {
     #[cfg(feature = "csv")]
     #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype, overwrite_dtype_slice,
         low_memory, comment_prefix, quote_char, null_values, empty_string_is_null,
-        infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
+        infer_schema_length, new_columns, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
-        cloud_options, credential_provider, include_file_paths, missing_columns
+        cloud_options, credential_provider, include_file_paths, extra_columns, missing_columns
     )
     )]
     fn new_from_csv(
@@ -174,6 +176,7 @@ impl PyLazyFrame {
         null_values: Option<Wrap<NullValues>>,
         empty_string_is_null: bool,
         infer_schema_length: Option<usize>,
+        new_columns: Option<Wrap<Buffer<PlSmallStr>>>,
         with_schema_modify: Option<Py<PyAny>>,
         rechunk: bool,
         skip_rows_after_header: usize,
@@ -189,6 +192,7 @@ impl PyLazyFrame {
         cloud_options: OptPyCloudOptions,
         credential_provider: Option<Py<PyAny>>,
         include_file_paths: Option<String>,
+        extra_columns: Wrap<ExtraColumnsPolicy>,
         missing_columns: Option<Wrap<MissingColumnsPolicy>>,
     ) -> PyResult<Self> {
         let null_values = null_values.map(|w| w.0);
@@ -268,7 +272,12 @@ impl PyLazyFrame {
             .with_glob(glob)
             .with_raise_if_empty(raise_if_empty)
             .with_include_file_paths(include_file_paths.map(|x| x.into()))
+            .with_extra_columns_policy(extra_columns.0)
             .with_missing_columns_policy(missing_columns.map(|x| x.0));
+
+        if let Some(new_columns) = new_columns {
+            r = r.with_column_names_overwrite(new_columns.0);
+        }
 
         if let Some(lambda) = with_schema_modify {
             let f = |schema: Schema| {

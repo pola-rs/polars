@@ -19,8 +19,11 @@ pub(super) fn infer_file_schema_impl(
     content_lines: &[Buffer<u8>],
     infer_all_as_str: bool,
     parse_options: &CsvParseOptions,
+    column_names_overwrite: Option<&[PlSmallStr]>,
     schema_overwrite: Option<&Schema>,
-) -> Schema {
+    ignore_extra_columns: bool,
+    insert_missing_columns: bool,
+) -> PolarsResult<Schema> {
     let mut headers = header_line
         .as_ref()
         .map(|line| infer_headers(line, parse_options))
@@ -43,7 +46,48 @@ pub(super) fn infer_file_schema_impl(
         );
     }
 
-    build_schema(&headers, &column_types, schema_overwrite)
+    if let Some(column_names_overwrite) = column_names_overwrite {
+        let mut err_hint: String = String::new();
+
+        if column_names_overwrite.len() < headers.len() && !ignore_extra_columns {
+            let n = headers.len() - column_names_overwrite.len();
+            err_hint = format!("pass extra_columns='ignore' to ignore ({n}) extra columns.")
+        }
+
+        if column_names_overwrite.len() > headers.len() && !insert_missing_columns {
+            let n = column_names_overwrite.len() - headers.len();
+            err_hint = format!(
+                "pass missing_columns='insert' to create ({n}) missing columns with all-NULL values."
+            );
+        }
+
+        if !err_hint.is_empty() {
+            polars_bail!(
+                SchemaMismatch:
+                "provided `new_columns` does not match number of columns in file ({} != {} in file). \
+                Ensure the number of names match, or {err_hint}",
+                column_names_overwrite.len(),
+                headers.len(),
+            )
+        }
+
+        headers.truncate(column_names_overwrite.len());
+        column_types.truncate(column_names_overwrite.len());
+
+        for (i, name) in column_names_overwrite.iter().cloned().enumerate() {
+            if i < headers.len() {
+                headers[i] = name
+            } else {
+                headers.push(name)
+            }
+
+            if i >= column_types.len() {
+                column_types.push(PlIndexSet::from_iter(Some(DataType::Null)))
+            }
+        }
+    }
+
+    Ok(build_schema(&headers, &column_types, schema_overwrite))
 }
 
 fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec<PlSmallStr> {

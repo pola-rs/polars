@@ -1,7 +1,6 @@
 use std::cmp;
 use std::iter::Iterator;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 
 use polars_buffer::Buffer;
 use polars_core::prelude::Schema;
@@ -32,6 +31,8 @@ pub type InspectContentFn<'a> = Box<dyn FnMut(&[u8]) + 'a>;
 pub fn read_until_start_and_infer_schema_from_compressed_reader(
     options: &CsvReadOptions,
     projected_schema: Option<SchemaRef>,
+    ignore_extra_columns: bool,
+    insert_missing_columns: bool,
     mut inspect_first_content_row_fn: Option<InspectContentFn<'_>>,
     reader: &mut CompressedReader,
 ) -> PolarsResult<(Schema, Buffer<u8>)> {
@@ -189,6 +190,8 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
         infer_all_as_str,
         options,
         projected_schema,
+        ignore_extra_columns,
+        insert_missing_columns,
     )?;
 
     Ok((inferred_schema, leftover))
@@ -210,6 +213,8 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
 pub fn read_until_start_and_infer_schema(
     options: &CsvReadOptions,
     projected_schema: Option<SchemaRef>,
+    ignore_extra_columns: bool,
+    insert_missing_columns: bool,
     decompressed_file_size_hint: Option<usize>,
     mut inspect_first_content_row_fn: Option<InspectContentFn<'_>>,
     reader: &mut ByteSourceReader<ReaderSource>,
@@ -370,6 +375,8 @@ pub fn read_until_start_and_infer_schema(
         infer_all_as_str,
         options,
         projected_schema,
+        ignore_extra_columns,
+        insert_missing_columns,
     )?;
 
     Ok((inferred_schema, leftover))
@@ -761,6 +768,8 @@ fn infer_schema(
     infer_all_as_str: bool,
     options: &CsvReadOptions,
     projected_schema: Option<SchemaRef>,
+    ignore_extra_columns: bool,
+    insert_missing_columns: bool,
 ) -> PolarsResult<Schema> {
     let has_no_inference_data = if options.has_header {
         header_line.is_none()
@@ -780,31 +789,84 @@ fn infer_schema(
             content_lines,
             infer_all_as_str,
             &options.parse_options,
+            options.column_names_overwrite.as_deref(),
             options.schema_overwrite.as_deref(),
-        )
+            ignore_extra_columns,
+            insert_missing_columns,
+        )?
     };
 
     if let Some(schema) = &options.schema {
-        // Note: User can provide schema with more columns, they will simply
-        // be projected as NULL.
-        // TODO: Should maybe expose a missing_columns parameter to the API for this.
-        if schema.len() < inferred_schema.len() && !options.parse_options.truncate_ragged_lines {
-            polars_bail!(
-                SchemaMismatch:
-                "provided schema does not match number of columns in file ({} != {} in file)",
-                schema.len(),
-                inferred_schema.len(),
-            );
+        if !has_no_inference_data {
+            if !ignore_extra_columns {
+                let mut extra_names = vec![];
+
+                let num_extra_names = if options.has_header {
+                    extra_names.extend(
+                        inferred_schema
+                            .iter_names()
+                            .filter(|name| !schema.contains(name))
+                            .collect::<Vec<_>>(),
+                    );
+                    extra_names.len()
+                } else {
+                    inferred_schema.len().saturating_sub(schema.len())
+                };
+
+                if num_extra_names != 0 {
+                    let mut names = String::new();
+
+                    if !extra_names.is_empty() {
+                        names = format!(" (extra names: {extra_names:?})");
+                    }
+
+                    polars_bail!(
+                        SchemaMismatch:
+                        "CSV file contained column names not specified in schema (n_extra = {num_extra_names}). \
+                        Specify these names in the schema, or pass `extra_columns='ignore'` to \
+                        ignore these columns.{names}"
+                    )
+                }
+            }
+
+            if !insert_missing_columns {
+                let mut missing_names = vec![];
+
+                let num_missing_names = if options.has_header {
+                    missing_names.extend(
+                        schema
+                            .iter_names()
+                            .filter(|name| !inferred_schema.contains(name))
+                            .collect::<Vec<_>>(),
+                    );
+                    missing_names.len()
+                } else {
+                    schema.len().saturating_sub(inferred_schema.len())
+                };
+
+                if num_missing_names != 0 {
+                    let mut names = String::new();
+
+                    if !missing_names.is_empty() {
+                        names = format!(" (missing names: {missing_names:?})");
+                    }
+
+                    polars_bail!(
+                        SchemaMismatch:
+                        "column names specified in schema not found in CSV file (n_missing = {num_missing_names}). \
+                        Remove these names from the schema, or pass `missing_columns='insert'` to \
+                        insert these columns with NULL row values.{names}"
+                    )
+                }
+            }
         }
 
-        if options.parse_options.truncate_ragged_lines {
-            inferred_schema = Arc::unwrap_or_clone(schema.clone());
+        if !options.has_header {
+            inferred_schema = schema.as_ref().clone();
         } else {
-            inferred_schema = schema
-                .iter_names()
-                .zip(inferred_schema.into_iter().map(|(_, dtype)| dtype))
-                .map(|(name, dtype)| (name.clone(), dtype))
-                .collect();
+            for (name, dtype) in schema.iter() {
+                inferred_schema.insert(name.clone(), dtype.clone());
+            }
         }
     }
 

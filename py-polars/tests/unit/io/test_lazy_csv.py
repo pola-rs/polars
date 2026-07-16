@@ -11,7 +11,11 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
@@ -130,7 +134,6 @@ def test_scan_csv_schema_overwrite_and_small_dtypes_overwrite(
 
 
 @pytest.mark.parametrize("file_name", ["foods1.csv", "foods*.csv"])
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_scan_csv_schema_new_columns_dtypes(
     io_files_path: Path, file_name: str
 ) -> None:
@@ -167,25 +170,18 @@ def test_scan_csv_schema_new_columns_dtypes(
         == df1.select("sugars", pl.col("calories").cast(pl.Int64)).rows()
     )
 
-    # partially rename columns / overwrite dtypes
-    df4 = pl.scan_csv(
-        file_path,
-        schema_overrides=[pl.String, pl.String],
-        new_columns=["category", "calories"],
-    ).collect()
-    assert df4.dtypes == [pl.String, pl.String, pl.Float64, pl.Int64]
-    assert df4.columns == ["category", "calories", "fats_g", "sugars_g"]
-
-    df5 = pl.scan_csv(
-        file_path,
-        schema_overrides=[pl.String, pl.String],
-        new_columns=["category"],
-    ).collect()
-    assert df5.dtypes == [pl.String, pl.String, pl.Float64, pl.Int64]
-    assert df5.columns == ["category", "calories", "fats_g", "sugars_g"]
+    with pytest.raises(
+        SchemaError,
+        match=r"new_columns.*does not match number of columns in file",
+    ):
+        pl.scan_csv(
+            file_path,
+            schema_overrides=[pl.String, pl.String],
+            new_columns=["category", "calories"],
+        ).collect()
 
     # cannot have len(new_columns) > len(actual columns)
-    with pytest.raises(ShapeError):
+    with pytest.raises(SchemaError):
         pl.scan_csv(
             file_path,
             schema_overrides=[pl.String, pl.String],
@@ -200,6 +196,21 @@ def test_scan_csv_schema_new_columns_dtypes(
             new_columns=["category", "calories", "fats", "sugars"],
             with_column_names=lambda cols: [col.capitalize() for col in cols],
         ).collect()
+
+
+def test_scan_csv_headers_but_no_data_13770() -> None:
+    schema = {"name": pl.String, "age": pl.Int32}
+    df = (
+        pl.scan_csv(
+            b"name, age\n",
+            schema=schema,
+            new_columns=[*schema],
+        )
+        .head()
+        .collect(engine="streaming")
+    )
+    assert df.height == 0
+    assert df.schema == schema
 
 
 def test_scan_csv_schema_overrides_dtype_list_17813() -> None:
@@ -408,29 +419,26 @@ ID00316,.,19940315,
         }
 
 
-@pytest.mark.write_disk
 def test_csv_respect_user_schema_ragged_lines_15254() -> None:
-    with tempfile.NamedTemporaryFile() as f:
-        f.write(
-            b"""
+    buf = b"""
 A,B,C
 1,2,3
 4,5,6,7,8
 9,10,11
-""".strip()
-        )
-        f.seek(0)
+"""
 
-        df = pl.scan_csv(
-            f.name, schema=dict.fromkeys("ABCDE", pl.String), truncate_ragged_lines=True
-        ).collect()
-        assert df.to_dict(as_series=False) == {
-            "A": ["1", "4", "9"],
-            "B": ["2", "5", "10"],
-            "C": ["3", "6", "11"],
-            "D": [None, "7", None],
-            "E": [None, "8", None],
-        }
+    df = pl.scan_csv(
+        buf,
+        schema=dict.fromkeys("ABCDE", pl.String),
+        missing_columns="insert",
+    ).collect()
+    assert df.to_dict(as_series=False) == {
+        "A": ["1", "4", "9"],
+        "B": ["2", "5", "10"],
+        "C": ["3", "6", "11"],
+        "D": [None, "7", None],
+        "E": [None, "8", None],
+    }
 
 
 @pytest.mark.parametrize("streaming", [True, False])
@@ -444,7 +452,6 @@ A,B,C
         ],
     ],
 )
-@pytest.mark.may_fail_auto_streaming  # missing_columns parameter for CSV
 def test_file_list_schema_mismatch(
     tmp_path: Path, dfs: list[pl.DataFrame], streaming: bool
 ) -> None:
@@ -456,15 +463,18 @@ def test_file_list_schema_mismatch(
         df.write_csv(path)
 
     lf = pl.scan_csv(paths)
+
     with pytest.raises((ComputeError, pl.exceptions.ColumnNotFoundError)):
         lf.collect(engine="streaming" if streaming else "in-memory")
 
-    if streaming:
-        pytest.xfail(reason="missing_columns parameter for CSV")
-
     if len({df.width for df in dfs}) == 1:
         expect = pl.concat(df.select(x=pl.first().cast(pl.Int8)) for df in dfs)
-        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(  # type: ignore[call-overload]
+        out = pl.scan_csv(
+            paths,
+            schema={"x": pl.Int8},
+            new_columns=["x"],
+            extra_columns="ignore",
+        ).collect(  # type: ignore[call-overload]
             engine="streaming" if streaming else "in-memory"  # type: ignore[redundant-expr]
         )
 
@@ -581,7 +591,7 @@ a,b,c
     schema = dict.fromkeys(["a", "b", "c", "d", "e"], pl.String)
 
     assert_frame_equal(
-        pl.scan_csv(data, schema=schema).collect(),
+        pl.scan_csv(data, schema=schema, missing_columns="insert").collect(),
         pl.DataFrame(
             {
                 "a": "a",
@@ -682,3 +692,73 @@ def test_scan_csv_count_rows_async_with_schema(
     schema = pl.Schema({"a": pl.Int64})
     out = pl.scan_csv(file_path, schema=schema).select(pl.len()).collect()
     assert out.item() == 10
+
+
+def test_scan_csv_with_schema_respects_file_column_order_11723() -> None:
+    buf = b"""\
+a,b
+A,B
+"""
+
+    assert_frame_equal(
+        pl.scan_csv(
+            buf,
+            schema={"b": pl.String, "a": pl.String},
+        ).collect(),
+        pl.DataFrame({"b": "B", "a": "A"}),
+    )
+
+    with pytest.raises(
+        SchemaError,
+        match=r"Specify.*or pass `extra_columns='ignore'`",
+    ):
+        pl.scan_csv(buf, schema={"b": pl.String}).collect()
+
+    with pytest.raises(SchemaError):
+        pl.scan_csv(buf, schema={"x": pl.String, "y": pl.String}).collect()
+
+    assert_frame_equal(
+        pl.scan_csv(
+            buf,
+            schema={"b": pl.String},
+            extra_columns="ignore",
+        ).collect(),
+        pl.DataFrame({"b": "B"}),
+    )
+
+    with pytest.raises(
+        SchemaError,
+        match=r"Remove.*or pass `missing_columns='insert'`",
+    ):
+        pl.scan_csv(
+            buf,
+            schema={
+                "a": pl.String,
+                "b": pl.String,
+                "c": pl.Int64,
+            },
+        ).collect()
+
+    assert_frame_equal(
+        pl.scan_csv(
+            buf,
+            schema={
+                "a": pl.String,
+                "b": pl.String,
+                "c": pl.Int64,
+            },
+            missing_columns="insert",
+        ).collect(),
+        pl.DataFrame({"a": "A", "b": "B", "c": pl.Series([None], dtype=pl.Int64)}),
+    )
+
+    schema = {"x": pl.String, "y": pl.String}
+    assert_frame_equal(
+        pl.scan_csv(buf, schema=schema, new_columns=[*schema]).collect(),
+        pl.DataFrame({"x": "A", "y": "B"}),
+    )
+
+    assert_frame_equal(
+        pl.scan_csv(buf, schema=schema, has_header=False, skip_rows=1).collect(),
+        pl.DataFrame({"x": "A", "y": "B"}),
+    )

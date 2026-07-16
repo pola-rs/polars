@@ -876,9 +876,11 @@ class PyLazyFrame:
         decimal_comma: bool,
         glob: bool,
         schema: Any | None,
+        new_columns: Sequence[str] | None,
         cloud_options: dict[str, Any] | None,
         credential_provider: Any | None,
         include_file_paths: str | None,
+        extra_columns: str | None,
         missing_columns: str | None,
     ) -> PyLazyFrame: ...
     @staticmethod

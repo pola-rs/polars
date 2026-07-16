@@ -69,6 +69,8 @@ def read_csv(
     schema_overrides: (
         Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
     ) = None,
+    extra_columns: Literal["ignore", "raise"] | None = None,
+    missing_columns: Literal["insert", "raise"] | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
     empty_string_is_null: bool = True,
     ignore_errors: bool = False,
@@ -148,6 +150,26 @@ def read_csv(
         the provided `schema` must match the order of the columns in the CSV being read.
     schema_overrides
         Overwrite dtypes for specific or all columns during schema inference.
+    extra_columns
+        Configuration for behavior when extra columns outside of the
+        defined schema are encountered in the data:
+
+        * `ignore`: Silently ignores.
+        * `raise`: Raises an error.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+    missing_columns
+        Configuration for behavior when columns defined in the schema are
+        missing from the data:
+
+        * ``"insert"``: Insert the missing columns with NULL values.
+        * ``"raise"``: Raise an error.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
     null_values
         Values to interpret as null values. You can provide a:
 
@@ -490,19 +512,22 @@ def read_csv(
         or os.getenv("POLARS_AUTO_STREAMING") == "1"
     )
 
+    # TODO: 2.0 always dispatch to scan_csv
     if streaming or (
-        # Check that it is not a BytesIO object
-        isinstance(v := source, (str, Path))
-        and (
-            # HuggingFace only for now ⊂( ◜◒◝ )⊃
-            str(v).startswith("hf://")
-            # Also dispatch on FORCE_ASYNC, so that this codepath gets run
-            # through by our test suite during CI.
-            or (os.getenv("POLARS_FORCE_ASYNC") == "1" and encoding_supported_in_lazy)
-            # TODO: We can't dispatch this for all paths due to a few reasons:
-            # * `scan_csv` does not support compressed files
-            # * The `storage_options` configuration keys are different between
-            #   fsspec and object_store (would require a breaking change)
+        extra_columns is not None
+        or missing_columns is not None
+        or (
+            isinstance(v := source, (str, Path))
+            and (
+                # HuggingFace only for now ⊂( ◜◒◝ )⊃
+                str(v).startswith("hf://")
+                # Also dispatch on FORCE_ASYNC, so that this codepath gets run
+                # through by our test suite during CI.
+                or (
+                    os.getenv("POLARS_FORCE_ASYNC") == "1"
+                    and encoding_supported_in_lazy
+                )
+            )
         )
     ):
         source_normalized: str | list[str] | IO[str] | IO[bytes] | bytes | bytearray
@@ -548,6 +573,8 @@ def read_csv(
             truncate_ragged_lines=truncate_ragged_lines,
             decimal_comma=decimal_comma,
             glob=glob,
+            extra_columns=extra_columns or "raise",
+            missing_columns=missing_columns or "raise",
         )
 
         if columns:
@@ -797,6 +824,7 @@ def scan_csv(
     retries: int | None = None,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
+    extra_columns: Literal["ignore", "raise"] | None = None,
     missing_columns: Literal["insert", "raise"] | None = None,
 ) -> LazyFrame:
     r"""
@@ -955,6 +983,17 @@ def scan_csv(
             File cache is no longer supported.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    extra_columns
+        Configuration for behavior when extra columns outside of the
+        defined schema are encountered in the data:
+
+        * `ignore`: Silently ignores.
+        * `raise`: Raises an error.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
     missing_columns
         Configuration for behavior when columns defined in the schema are
         missing from the data:
@@ -1038,17 +1077,11 @@ def scan_csv(
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
 
-    if new_columns:
-        if with_column_names:
-            msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
-            raise ValueError(msg)
-
-        # wrap new column names as a callable
-        def with_column_names(cols: list[str]) -> list[str]:
-            if len(cols) > len(new_columns):
-                return new_columns + cols[len(new_columns) :]  # type: ignore[operator]
-            else:
-                return new_columns  # type: ignore[return-value]
+    if new_columns is not None and with_column_names is not None:
+        msg = (
+            "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
+        )
+        raise ValueError(msg)
 
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
@@ -1075,6 +1108,12 @@ def scan_csv(
 
     cache_deprecated = False
 
+    if extra_columns is not None:
+        msg = "The `extra_columns` parameter of `scan_csv` is considered unstable."
+        issue_unstable_warning(msg)
+    else:
+        extra_columns = "raise"
+
     if missing_columns is not None:
         msg = "The `missing_columns` parameter of `scan_csv` is considered unstable."
         issue_unstable_warning(msg)
@@ -1098,6 +1137,7 @@ def scan_csv(
         empty_string_is_null=empty_string_is_null,
         ignore_errors=ignore_errors,
         cache=cache_deprecated,
+        new_columns=new_columns,
         with_column_names=with_column_names,
         infer_schema_length=infer_schema_length,
         n_rows=n_rows,
@@ -1116,6 +1156,7 @@ def scan_csv(
         storage_options=storage_options,
         credential_provider=credential_provider_builder,
         include_file_paths=include_file_paths,
+        extra_columns=extra_columns,
         missing_columns=missing_columns,
     )
 
@@ -1143,6 +1184,7 @@ def _scan_csv_impl(
     empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     cache: bool = True,
+    new_columns: Sequence[str] | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     n_rows: int | None = None,
@@ -1161,6 +1203,7 @@ def _scan_csv_impl(
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderBuilder | None = None,
     include_file_paths: str | None = None,
+    extra_columns: Literal["ignore", "raise"] = "raise",
     missing_columns: Literal["insert", "raise"] | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
@@ -1183,12 +1226,6 @@ def _scan_csv_impl(
     else:
         sources = []
 
-    # TODO: This is a hack. We conditionally set `missing_columns` to mimic
-    # existing behavior. This should be removed once the workaround is no
-    # longer needed.
-    if missing_columns is None and schema is not None and has_header:
-        missing_columns = "insert"
-
     pylf = PyLazyFrame.new_from_csv(
         source,
         sources,
@@ -1207,6 +1244,7 @@ def _scan_csv_impl(
         null_values=processed_null_values,
         empty_string_is_null=empty_string_is_null,
         infer_schema_length=infer_schema_length,
+        new_columns=new_columns,
         with_schema_modify=with_column_names,
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
@@ -1222,6 +1260,7 @@ def _scan_csv_impl(
         cloud_options=storage_options,
         credential_provider=credential_provider,
         include_file_paths=include_file_paths,
+        extra_columns=extra_columns,
         missing_columns=missing_columns,
     )
     return wrap_ldf(pylf)
