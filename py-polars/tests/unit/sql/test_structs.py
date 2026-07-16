@@ -188,7 +188,7 @@ def test_struct_field_selection_wildcards(
     if fields.endswith(".other.*"):
         expected = expected["other"].struct.unnest()
     if excluding:
-        expected = expected.drop(excluding.strip(")(").split(","))
+        expected = expected.drop(excluding.strip(")(").split(",")).clear()
     if rename:
         expected = expected.rename(rename)
 
