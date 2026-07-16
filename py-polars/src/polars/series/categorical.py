@@ -3,12 +3,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from polars._utils.deprecation import deprecated
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
     from polars import Series
     from polars._plr import PySeries
+    from polars._typing import (
+        PolarsDataType,
+    )
 
 
 @expr_dispatch
@@ -20,6 +24,11 @@ class CatNameSpace:
     def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
+    @deprecated(
+        "`cat.get_categories()` is deprecated. To get the distinct values present in "
+        "a Categorical column, use `Series.unique()`. For the fixed category list of an "
+        "Enum, use its `dtype.categories`. This method will be removed in Polars 2.0.",
+    )
     def get_categories(self) -> Series:
         """
         Get the categories stored in this data type.
@@ -49,6 +58,10 @@ class CatNameSpace:
         """
         return self._s.cat_is_local()
 
+    @deprecated(
+        "`cat.to_local()` is deprecated; Categoricals no longer have a local scope. "
+        "This method will be removed in Polars 2.0."
+    )
     def to_local(self) -> Series:
         """Simply returns the column as-is, local representations are deprecated."""
         return wrap_s(self._s.cat_to_local())
@@ -248,4 +261,33 @@ class CatNameSpace:
             "ya"
             "onf"
         ]
+        """
+
+    @unstable()
+    def to(self, dtype: PolarsDataType, *, strict: bool = True) -> Series:
+        """
+        Create a Series with a categorical or enum `dtype`.
+
+        The input series must be the physical type of the categorical or enum dtype.
+
+        Parameters
+        ----------
+        dtype
+            The target categorical or enum dtype.
+        strict
+            Whether to panic when encountering an illegal category.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+        """
+
+    @unstable()
+    def physical(self) -> Series:
+        """
+        Get the physical values of a Series with a categorical or enum data type.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
         """

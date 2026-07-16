@@ -12,9 +12,7 @@ members = [
   "pyo3-polars/pyo3-polars",
   "pyo3-polars/pyo3-polars-derive",
 ]
-default-members = [
-  "crates/*",
-]
+default-members = ["crates/*"]
 
 [workspace.package]
 version = "0.54.4"
@@ -162,23 +160,36 @@ features = [
 
 [workspace.lints.clippy]
 collapsible_if = "allow"
+question_mark = "allow" # https://github.com/rust-lang/rust-clippy/issues/17384
 
 [patch.crates-io]
 # packed_simd_2 = { git = "https://github.com/rust-lang/packed_simd", rev = "e57c7ba11386147e6d2cbad7c88f376aab4bdc86" }
 # simd-json = { git = "https://github.com/ritchie46/simd-json", branch = "alignment" }
-object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_with_dns_resolver" }
+# custom DNS resolver - ref https://github.com/apache/arrow-rs-object-store/pull/728
+object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", rev = "f50a6e5c564b2b5933eca15cd20ff9b5614374a1" }
 color-backtrace = { git = "https://github.com/orlp/color-backtrace", rev = "bb62ccf1e9eb1f6b7af5f16acff1fd7151a876dd" }
 
 # https://github.com/tikv/jemallocator/pull/168
 tikv-jemalloc-sys = { git = "https://github.com/pola-rs/jemallocator", rev = "0d683dfb157097e2075d5e0eaf25f71f514a7552" }
 
-[profile.mindebug-dev]
-inherits = "dev"
+[profile.dev]
 debug = "line-tables-only"
+
+[profile.debug-dev]
+inherits = "dev"
+debug = true
 
 [profile.release]
 lto = "thin"
 debug = "line-tables-only"
+
+# SQL parser is in the cold path
+# reduce binary size
+[profile.release.package.sqlparser]
+opt-level = "s"
+
+[profile.release.package.polars-sql]
+opt-level = "s"
 
 [profile.nodebug-release]
 inherits = "release"

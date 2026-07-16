@@ -54,6 +54,7 @@ from polars._utils.slice import LazyPolarsSlice
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _is_generator,
+    _Omitted,
     display_dot_graph,
     extend_bool,
     is_bool_sequence,
@@ -145,6 +146,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         IpcCompression,
+        JoinBuildSide,
         JoinStrategy,
         JoinValidation,
         Label,
@@ -2037,6 +2039,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.bottom_k(k, by=by, reverse=reverse))
 
     @forward_old_opt_flags()
+    @deprecated(
+        "`LazyFrame.profile` is deprecated. "
+        "It was made for the older in-memory engine, but from version 2.0, "
+        "Polars uses a streaming engine by default. Due to the concurrent "
+        "nature of the streaming engine, the profiling information from this "
+        "function would be misleading.",
+    )
     def profile(
         self,
         *,
@@ -2059,6 +2068,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
+
+        .. deprecated:: 1.43.0
+            It was made for the older in-memory engine, but from version 2.0,
+            Polars uses a streaming engine by default. Due to the concurrent
+            nature of the streaming engine, the profiling information from this
+            function would be misleading.
 
         This will run the query and return a tuple
         containing the materialized DataFrame and a DataFrame that
@@ -5091,7 +5106,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Parameters
         ----------
         predicates
-            Expression that evaluates to a boolean Series.
+            Expression(s) that evaluate to a boolean Series. When multiple predicates
+            are provided they are combined using `&` (logical AND), so a row is only
+            removed when *every* predicate evaluates to True for that row.
         constraints
             Column filters; use `name = value` to filter columns using the supplied
             value. Each constraint behaves the same as `pl.col(name).eq(value)`,
@@ -6326,6 +6343,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         nulls_equal: bool = False,
         coalesce: bool | None = None,
         maintain_order: MaintainOrderJoin | None = None,
+        build_side: JoinBuildSide = "auto",
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> LazyFrame:
@@ -6427,6 +6445,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                  - First preserves the order of the left DataFrame, then the right.
                * - **right_left**
                  - First preserves the order of the right DataFrame, then the left.
+        build_side: {'auto', 'prefer_left', 'prefer_right', 'force_left', 'force_right'}
+            Which side of the join will be used as the build side. This side will be
+            likely be held in memory as a hash table. Note that unless a `force_`
+            variant is chosen, the chosen side might differ across Polars versions or
+            even between different runs.
+
+            .. list-table ::
+               :header-rows: 0
+
+               * - **auto**
+                 - *(Default)* Let Polars figure out the build side.
+               * - **prefer_left**
+                 - Unless there's a very good reason to believe that the right side is
+                   smaller, use the left side.
+               * - **prefer_right**
+                 - Unless there's a very good reason to believe that the left side is
+                   smaller, use the right side.
+               * - **force_left**
+                 - Always use the left side.
+               * - **force_right**
+                 - Always use the right side.
+
+            .. warning::
+                This functionality is considered **experimental**. It may be removed or
+                changed at any point without it being considered a breaking change.
 
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
@@ -6570,6 +6613,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     suffix,
                     validate,
                     maintain_order,
+                    build_side=build_side,
                     coalesce=None,
                 )
             )
@@ -6597,6 +6641,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 suffix,
                 validate,
                 maintain_order,
+                build_side,
                 coalesce,
             )
         )
@@ -8126,7 +8171,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         columns: ColumnNameOrSelector | Iterable[ColumnNameOrSelector],
         *more_columns: ColumnNameOrSelector,
-        empty_as_null: bool = True,
+        empty_as_null: bool = _Omitted,
         keep_nulls: bool = True,
     ) -> LazyFrame:
         """
@@ -8152,7 +8197,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "numbers": [[1], [2, 3], [4, 5], [6, 7, 8]],
         ...     }
         ... )
-        >>> lf.explode("numbers").collect()
+        >>> lf.explode("numbers", empty_as_null=False).collect()
         shape: (8, 2)
         ┌─────────┬─────────┐
         │ letters ┆ numbers │
@@ -8169,6 +8214,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ c       ┆ 8       │
         └─────────┴─────────┘
         """
+        if empty_as_null is _Omitted:
+            issue_deprecation_warning(
+                "In Polars 2.0, the default behavior for `empty_as_null` will change to `False`. "
+                "To keep the current behavior, explicitly set `empty_as_null=True`."
+            )
+            empty_as_null = True
         subset = parse_list_into_selector(columns) | parse_list_into_selector(  # type: ignore[arg-type]
             more_columns
         )
@@ -9084,7 +9135,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
     def merge_sorted(
         self,
         other: LazyFrame,
-        key: str,
+        key: str | Sequence[str],
         *,
         maintain_order: bool = False,
     ) -> LazyFrame:
@@ -9093,7 +9144,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         The output of this operation will also be sorted.
         It is the callers responsibility that the frames
-        are sorted in ascending order by the key, with null
+        are sorted in ascending order by the key(s), with null
         keys at the end, otherwise the order of the output
         will not make sense.
 
@@ -9104,7 +9155,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             Other DataFrame that must be merged
         key
-            Key that is sorted.
+            Key column(s) that the frames are sorted by. A single column name or a
+            sequence of column names can be passed. When multiple keys are given the
+            frames are merged as if sorted by those keys in order.
         maintain_order
             If ``True``, the output is guaranteed to have left-biased ordering
             for equal keys: rows from the left frame appear before rows from
@@ -9157,15 +9210,38 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ elise  ┆ 44  │
         └────────┴─────┘
 
+        Multiple keys can be passed to merge frames sorted by a composite key. The
+        frames are merged as if sorted by ``key_1``, then ``key_2``.
+
+        >>> df0 = pl.LazyFrame({"key_1": [1, 1, 3], "key_2": [1, 4, 2]})
+        >>> df1 = pl.LazyFrame({"key_1": [1, 2, 3], "key_2": [2, 1, 1]})
+        >>> df0.merge_sorted(df1, key=["key_1", "key_2"]).collect()
+        shape: (6, 2)
+        ┌───────┬───────┐
+        │ key_1 ┆ key_2 │
+        │ ---   ┆ ---   │
+        │ i64   ┆ i64   │
+        ╞═══════╪═══════╡
+        │ 1     ┆ 1     │
+        │ 1     ┆ 2     │
+        │ 1     ┆ 4     │
+        │ 2     ┆ 1     │
+        │ 3     ┆ 1     │
+        │ 3     ┆ 2     │
+        └───────┴───────┘
+
         Notes
         -----
         Unless ``maintain_order=True``, no guarantee is given over the output
         row order when the key is equal between the both dataframes.
 
-        The key must be sorted in ascending order.
+        The key(s) must be sorted in ascending order.
         """
         require_same_type(self, other)
-        return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key, maintain_order))
+        keys = [key] if isinstance(key, str) else list(key)
+        return self._from_pyldf(
+            self._ldf.merge_sorted(other._ldf, keys, maintain_order)
+        )
 
     def set_sorted(
         self,

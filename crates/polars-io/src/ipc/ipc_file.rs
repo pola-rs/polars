@@ -101,9 +101,31 @@ pub struct IpcReader<R: MmapBytesReader> {
     include_file_path: Option<(PlSmallStr, PlRefStr)>,
     pub(super) row_index: Option<RowIndex>,
     // Stores the as key semaphore to make sure we don't write to the memory mapped file.
-    pub(super) memory_map: Option<PathBuf>,
+    memory_map: memory_mapped_hidden::Key,
     metadata: Option<read::FileMetadata>,
     schema: Option<ArrowSchemaRef>,
+}
+
+mod memory_mapped_hidden {
+    use std::path::PathBuf;
+
+    #[derive(Default)]
+    pub struct Key {
+        inner: Option<PathBuf>,
+    }
+
+    impl Key {
+        /// # Safety
+        /// The users guarantees that the arrow data in the given path is valid
+        /// and remains valid throughout memory mapping.
+        pub unsafe fn new(inner: Option<PathBuf>) -> Self {
+            Self { inner }
+        }
+
+        pub fn is_set(&self) -> bool {
+            self.inner.is_some()
+        }
+    }
 }
 
 fn check_mmap_err(err: PolarsError) -> PolarsResult<()> {
@@ -184,8 +206,12 @@ impl<R: MmapBytesReader> IpcReader<R> {
 
     /// Set if the file is to be memory_mapped. Only works with uncompressed files.
     /// The file name must be passed to register the memory mapped file.
-    pub fn memory_mapped(mut self, path_buf: Option<PathBuf>) -> Self {
-        self.memory_map = path_buf;
+    ///
+    /// # Safety
+    /// The users guarantees that the arrow data in the given path is valid
+    /// and remains valid throughout memory mapping.
+    pub unsafe fn memory_mapped(mut self, path_buf: Option<PathBuf>) -> Self {
+        self.memory_map = unsafe { memory_mapped_hidden::Key::new(path_buf) };
         self
     }
 
@@ -196,13 +222,17 @@ impl<R: MmapBytesReader> IpcReader<R> {
         predicate: Option<Arc<dyn PhysicalIoExpr>>,
         verbose: bool,
     ) -> PolarsResult<DataFrame> {
-        if self.memory_map.is_some() && self.reader.to_file().is_some() {
+        if self.memory_map.is_set() && self.reader.to_file().is_some() {
             if verbose {
                 eprintln!("memory map ipc file")
             }
-            match self.finish_memmapped(predicate.clone()) {
-                Ok(df) => return Ok(df),
-                Err(err) => check_mmap_err(err)?,
+            // # Safety
+            // Can only be set by a user that guarantees correct arrow data.
+            unsafe {
+                match self.finish_memmapped(predicate.clone()) {
+                    Ok(df) => return Ok(df),
+                    Err(err) => check_mmap_err(err)?,
+                }
             }
         }
         let rechunk = self.rechunk;
@@ -247,7 +277,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             include_file_path: None,
             projection: None,
             row_index: None,
-            memory_map: None,
+            memory_map: Default::default(),
             metadata: None,
             schema: None,
         }
@@ -286,12 +316,16 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
                 return PolarsResult::Ok(df);
             }
 
-            if self.memory_map.is_some() && self.reader.to_file().is_some() {
-                match self.finish_memmapped(None) {
-                    Ok(df) => {
-                        return Ok(df);
-                    },
-                    Err(err) => check_mmap_err(err)?,
+            if self.memory_map.is_set() && self.reader.to_file().is_some() {
+                // Safety:
+                // Can only be set by user that guarantees valid arrow data.
+                unsafe {
+                    match self.finish_memmapped(None) {
+                        Ok(df) => {
+                            return Ok(df);
+                        },
+                        Err(err) => check_mmap_err(err)?,
+                    }
                 }
             }
             let rechunk = self.rechunk;

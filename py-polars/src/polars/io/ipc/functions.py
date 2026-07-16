@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import os
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Literal
+from typing import IO, TYPE_CHECKING, Any, Literal
 
 import polars._reexport as pl
 import polars.functions as F
@@ -13,6 +13,7 @@ from polars._utils.deprecation import (
     issue_deprecation_warning,
 )
 from polars._utils.various import (
+    is_non_empty_sequence_of,
     is_str_sequence,
     normalize_filepath,
 )
@@ -50,7 +51,7 @@ def read_ipc(
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
     use_pyarrow: bool = False,
-    memory_map: bool = True,
+    memory_map: bool = False,
     storage_options: StorageOptionsDict | None = None,
     row_index_name: str | None = None,
     row_index_offset: int = 0,
@@ -113,8 +114,13 @@ def read_ipc(
     Therefore always prefer `scan_ipc` if you want to work with `LazyFrame` s.
 
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
-    That means that you cannot write to the same filename.
-    E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
+        That means that:
+
+        - Arrow data in the file is not validated to be correct and invalid arrow
+          data is UB! Ensure this file is correct or set `memory_map=False`.
+        - You cannot write to the same filename.
+          E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")`
+          will fail.
     """
     if (
         # Check that it is not a BytesIO object
@@ -159,16 +165,37 @@ def read_ipc(
         source, use_pyarrow=use_pyarrow, storage_options=storage_options
     ) as data:
         if use_pyarrow:
-            pyarrow_feather = import_optional(
-                "pyarrow.feather",
+            pyarrow_ipc = import_optional(
+                "pyarrow.ipc",
                 err_prefix="",
                 err_suffix="is required when using 'read_ipc(..., use_pyarrow=True)'",
             )
-            tbl = pyarrow_feather.read_table(
+
+            if columns is not None and is_non_empty_sequence_of(columns, str):
+                initial_pos: Any = None
+
+                if hasattr(data, "tell") and callable(data.tell):
+                    initial_pos = data.tell()
+
+                with pyarrow_ipc.open_file(data) as ipc_f:
+                    schema = ipc_f.schema
+
+                idx_lookup = {name: i for i, name in enumerate(schema.names)}
+                columns = [idx_lookup[name] for name in columns]
+
+                if (
+                    initial_pos is not None
+                    and hasattr(data, "seek")
+                    and callable(data.seek)
+                ):
+                    data.seek(initial_pos)
+
+            with pyarrow_ipc.open_file(
                 data,
-                memory_map=memory_map,
-                columns=columns,
-            )
+                options=pyarrow_ipc.IpcReadOptions(included_fields=columns),
+            ) as ipc_f:
+                tbl = ipc_f.read_all()
+
             df = pl.DataFrame._from_arrow(tbl, rechunk=rechunk)
             if row_index_name is not None:
                 df = df.with_row_index(row_index_name, row_index_offset)

@@ -1,11 +1,10 @@
 use std::io;
-#[cfg(feature = "cloud")]
 use std::num::NonZeroUsize;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
-pub use async_writeable::{AsyncDynWriteable, AsyncWriteable};
+pub use async_writable::{AsyncDynWritable, AsyncWritable};
 use polars_error::{PolarsResult, feature_gated, polars_err};
 use polars_utils::create_file;
 use polars_utils::file::close_file;
@@ -18,33 +17,35 @@ use crate::metrics::IOMetrics;
 use crate::resolve_homedir;
 
 // TODO document precise contract.
-pub trait WriteableTrait: std::io::Write {
+pub trait WritableTrait: std::io::Write {
     fn close(&mut self) -> std::io::Result<()>;
     fn sync_all(&self) -> std::io::Result<()>;
     fn sync_data(&self) -> std::io::Result<()>;
 }
 
-/// Holds a non-async writeable file, abstracted over local files or cloud files.
+/// Holds a non-async writable file, abstracted over local files or cloud files.
 ///
 /// This implements `DerefMut` to a trait object implementing [`std::io::Write`].
 ///
-/// Also see: `Writeable::try_into_async_writeable` and `AsyncWriteable`.
+/// Also see: `Writable::try_into_async_writable` and `AsyncWritable`.
 #[allow(clippy::large_enum_variant)] // It will be boxed
-pub enum Writeable {
+pub enum Writable {
     /// An abstract implementation for writable.
     ///
     /// This is used to implement writing to in-memory and arbitrary file descriptors.
-    Dyn(Box<dyn WriteableTrait + Send>),
+    Dyn(Box<dyn WritableTrait + Send>),
     Local(std::fs::File),
     #[cfg(feature = "cloud")]
     Cloud(crate::cloud::cloud_writer::CloudWriterIoTraitWrap),
 }
 
-impl Writeable {
+impl Writable {
     pub fn try_new(
         path: PlRefPath,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_options: Option<&CloudOptions>,
-        #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_chunk_size: usize,
+        #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_chunk_size: Option<
+            NonZeroUsize,
+        >,
         #[cfg_attr(not(feature = "cloud"), expect(unused))] cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
     ) -> PolarsResult<Self> {
@@ -97,25 +98,42 @@ impl Writeable {
         })
     }
 
-    /// This returns `Result<>` - if a write was performed before calling this,
-    /// `CloudWriter` can be in an Err(_) state.
+    /// If this writer holds a cloud writer, it will `mem::take(T)`. `T` is unmodified for other
+    /// writer types.
     #[cfg(feature = "cloud")]
-    pub fn try_into_async_writeable(self) -> PolarsResult<AsyncWriteable> {
-        use self::async_writeable::AsyncDynWriteable;
-
+    pub async fn write_all_owned<T>(&mut self, src: &mut T) -> io::Result<()>
+    where
+        T: AsRef<[u8]> + Default + Drop, // `Drop` is to exclude `&[u8]` slices.
+        bytes::Bytes: From<T>,
+    {
         match self {
-            Self::Dyn(v) => Ok(AsyncWriteable::Dyn(AsyncDynWriteable(v))),
-            Self::Local(v) => Ok(AsyncWriteable::Local(tokio::fs::File::from_std(v))),
-            Self::Cloud(v) => Ok(AsyncWriteable::Cloud(v)),
+            Self::Cloud(v) => {
+                v.write_all_owned(bytes::Bytes::from(std::mem::take(src)))
+                    .await
+            },
+            Self::Dyn(_) | Self::Local(_) => self.write_all(src.as_ref()),
         }
     }
 
-    pub fn as_buffered(&mut self) -> BufferedWriteable<'_> {
+    /// This returns `Result<>` - if a write was performed before calling this,
+    /// `CloudWriter` can be in an Err(_) state.
+    #[cfg(feature = "cloud")]
+    pub fn try_into_async_writable(self) -> PolarsResult<AsyncWritable> {
+        use self::async_writable::AsyncDynWritable;
+
         match self {
-            Writeable::Dyn(v) => BufferedWriteable::BufWriter(std::io::BufWriter::new(v.as_mut())),
-            Writeable::Local(v) => BufferedWriteable::BufWriter(std::io::BufWriter::new(v)),
+            Self::Dyn(v) => Ok(AsyncWritable::Dyn(AsyncDynWritable(v))),
+            Self::Local(v) => Ok(AsyncWritable::Local(tokio::fs::File::from_std(v))),
+            Self::Cloud(v) => Ok(AsyncWritable::Cloud(v)),
+        }
+    }
+
+    pub fn as_buffered(&mut self) -> BufferedWritable<'_> {
+        match self {
+            Writable::Dyn(v) => BufferedWritable::BufWriter(std::io::BufWriter::new(v.as_mut())),
+            Writable::Local(v) => BufferedWritable::BufWriter(std::io::BufWriter::new(v)),
             #[cfg(feature = "cloud")]
-            Writeable::Cloud(v) => BufferedWriteable::Direct(v as _),
+            Writable::Cloud(v) => BufferedWritable::Direct(v as _),
         }
     }
 
@@ -153,7 +171,7 @@ impl Writeable {
     }
 }
 
-impl io::Write for Writeable {
+impl io::Write for Writable {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         match self {
             Self::Dyn(v) => v.write(buf),
@@ -168,7 +186,7 @@ impl io::Write for Writeable {
     }
 }
 
-impl Deref for Writeable {
+impl Deref for Writable {
     type Target = dyn io::Write + Send;
 
     fn deref(&self) -> &Self::Target {
@@ -181,7 +199,7 @@ impl Deref for Writeable {
     }
 }
 
-impl DerefMut for Writeable {
+impl DerefMut for Writable {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::Dyn(v) => v,
@@ -193,12 +211,12 @@ impl DerefMut for Writeable {
 }
 
 /// Avoid BufWriter wrapping on writers that already have internal buffering.
-pub enum BufferedWriteable<'a> {
+pub enum BufferedWritable<'a> {
     BufWriter(std::io::BufWriter<&'a mut (dyn std::io::Write + Send)>),
     Direct(&'a mut (dyn std::io::Write + Send)),
 }
 
-impl<'a> Deref for BufferedWriteable<'a> {
+impl<'a> Deref for BufferedWritable<'a> {
     type Target = dyn io::Write + Send + 'a;
 
     fn deref(&self) -> &Self::Target {
@@ -209,7 +227,7 @@ impl<'a> Deref for BufferedWriteable<'a> {
     }
 }
 
-impl DerefMut for BufferedWriteable<'_> {
+impl DerefMut for BufferedWritable<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
             Self::BufWriter(v) => v as _,
@@ -222,7 +240,7 @@ impl DerefMut for BufferedWriteable<'_> {
 async fn new_cloud_writer(
     path: PlRefPath,
     cloud_options: Option<&CloudOptions>,
-    cloud_upload_chunk_size: usize,
+    cloud_upload_chunk_size: Option<NonZeroUsize>,
     cloud_upload_concurrency: NonZeroUsize,
     io_metrics: Option<Arc<IOMetrics>>,
 ) -> PolarsResult<crate::cloud::cloud_writer::CloudWriter> {
@@ -246,8 +264,9 @@ async fn new_cloud_writer(
 }
 
 #[cfg(feature = "cloud")]
-mod async_writeable {
+mod async_writable {
     use std::io;
+    use std::num::NonZeroUsize;
     use std::ops::{Deref, DerefMut};
     use std::pin::Pin;
     use std::sync::Arc;
@@ -260,15 +279,15 @@ mod async_writeable {
     use tokio::io::AsyncWriteExt;
     use tokio::task;
 
-    use super::{Writeable, WriteableTrait};
+    use super::{Writable, WritableTrait};
     use crate::cloud::CloudOptions;
     use crate::metrics::IOMetrics;
     use crate::utils::sync_on_close::SyncOnCloseType;
 
     /// Turn an abstract io::Write into an abstract tokio::io::AsyncWrite.
-    pub struct AsyncDynWriteable(pub Box<dyn WriteableTrait + Send>);
+    pub struct AsyncDynWritable(pub Box<dyn WritableTrait + Send>);
 
-    impl tokio::io::AsyncWrite for AsyncDynWriteable {
+    impl tokio::io::AsyncWrite for AsyncDynWritable {
         fn poll_write(
             self: Pin<&mut Self>,
             _cx: &mut Context<'_>,
@@ -288,35 +307,35 @@ mod async_writeable {
         }
     }
 
-    /// Holds an async writeable file, abstracted over local files or cloud files.
+    /// Holds an async writable file, abstracted over local files or cloud files.
     ///
     /// This implements `DerefMut` to a trait object implementing [`tokio::io::AsyncWrite`].
     ///
     /// Note: It is important that you do not call `shutdown()` on the deref'ed `AsyncWrite` object.
-    /// You should instead call the [`AsyncWriteable::close`] at the end.
-    pub enum AsyncWriteable {
-        Dyn(AsyncDynWriteable),
+    /// You should instead call the [`AsyncWritable::close`] at the end.
+    pub enum AsyncWritable {
+        Dyn(AsyncDynWritable),
         Local(tokio::fs::File),
         Cloud(crate::cloud::cloud_writer::CloudWriterIoTraitWrap),
     }
 
-    impl AsyncWriteable {
+    impl AsyncWritable {
         pub async fn try_new(
             path: PlRefPath,
             cloud_options: Option<&CloudOptions>,
-            cloud_upload_chunk_size: usize,
+            cloud_upload_chunk_size: Option<NonZeroUsize>,
             cloud_upload_concurrency: usize,
             io_metrics: Option<Arc<IOMetrics>>,
         ) -> PolarsResult<Self> {
             // TODO: Native async impl
-            Writeable::try_new(
+            Writable::try_new(
                 path,
                 cloud_options,
                 cloud_upload_chunk_size,
                 cloud_upload_concurrency,
                 io_metrics,
             )
-            .and_then(|x| x.try_into_async_writeable())
+            .and_then(|x| x.try_into_async_writable())
         }
 
         /// If this writer holds a cloud writer, it will `mem::take(T)`. `T` is unmodified for other
@@ -371,7 +390,7 @@ mod async_writeable {
         }
     }
 
-    impl Deref for AsyncWriteable {
+    impl Deref for AsyncWritable {
         type Target = dyn tokio::io::AsyncWrite + Send + Unpin;
 
         fn deref(&self) -> &Self::Target {
@@ -383,7 +402,7 @@ mod async_writeable {
         }
     }
 
-    impl DerefMut for AsyncWriteable {
+    impl DerefMut for AsyncWritable {
         fn deref_mut(&mut self) -> &mut Self::Target {
             match self {
                 Self::Dyn(v) => v,

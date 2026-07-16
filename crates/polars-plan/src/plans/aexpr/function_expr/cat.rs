@@ -14,6 +14,8 @@ pub enum IRCategoricalFunction {
     EndsWith(String),
     #[cfg(feature = "strings")]
     Slice(i64, Option<usize>),
+    To(DataType, bool),
+    Physical,
 }
 
 impl IRCategoricalFunction {
@@ -31,6 +33,8 @@ impl IRCategoricalFunction {
             EndsWith(_) => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "strings")]
             Slice(_, _) => mapper.with_dtype(DataType::String),
+            To(dt, _strict) => mapper.with_dtype(dt.clone()),
+            Physical => mapper.try_map_dtype(|dt| Ok(DataType::from(dt.cat_physical()?))),
         }
     }
 
@@ -42,6 +46,7 @@ impl IRCategoricalFunction {
             C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
                 FunctionOptions::elementwise()
             },
+            C::To(_, _) | C::Physical => FunctionOptions::elementwise(),
         }
     }
 }
@@ -61,6 +66,8 @@ impl Display for IRCategoricalFunction {
             EndsWith(_) => "ends_with",
             #[cfg(feature = "strings")]
             Slice(_, _) => "slice",
+            To(_, _) => "to",
+            Physical => "physical",
         };
         write!(f, "cat.{s}")
     }

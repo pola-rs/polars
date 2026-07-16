@@ -199,7 +199,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().top_k_by("a", 2))
-        .explode(cs.all().exclude("c")),
+        .explode(cs.all().exclude("c"), empty_as_null=False),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -213,7 +213,7 @@ def test_top_k() -> None:
     assert_frame_equal(
         df2.group_by("c", maintain_order=True)
         .agg(pl.all().bottom_k_by("a", 2))
-        .explode(cs.all().exclude("c")),
+        .explode(cs.all().exclude("c"), empty_as_null=False),
         pl.DataFrame(
             {
                 "c": ["Apple", "Apple", "Orange", "Banana", "Banana"],
@@ -649,3 +649,18 @@ def test_top_k_dyn_pred_pushdown() -> None:
     assert pred is not None
     assert with_cols is not None
     assert pred.start() > with_cols.start()
+
+
+def test_top_k_bottom_k_categorical_lexical_28344() -> None:
+    s = pl.Series("c", ["9", "1", "5", "3"], dtype=pl.Categorical)
+
+    assert_series_equal(
+        s.top_k(2),
+        pl.Series("c", ["9", "5"], dtype=pl.Categorical),
+        check_order=False,
+    )
+    assert_series_equal(
+        s.bottom_k(2),
+        pl.Series("c", ["1", "3"], dtype=pl.Categorical),
+        check_order=False,
+    )

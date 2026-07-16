@@ -172,7 +172,7 @@ pub enum Selector {
 
 fn dtype_selector(
     schema: &Schema,
-    ignored_columns: &PlHashSet<PlSmallStr>,
+    ignored_columns: &PlIndexSet<PlSmallStr>,
     f: impl Fn(&DataType) -> bool,
 ) -> PlIndexSet<PlSmallStr> {
     PlIndexSet::from_iter(
@@ -192,7 +192,7 @@ impl Selector {
     pub fn into_columns(
         &self,
         schema: &Schema,
-        ignored_columns: &PlHashSet<PlSmallStr>,
+        ignored_columns: &PlIndexSet<PlSmallStr>,
     ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         let out = match self {
             Self::Union(lhs, rhs) => {
@@ -406,7 +406,7 @@ impl DataTypeSelector {
     fn into_columns(
         &self,
         schema: &Schema,
-        ignored_columns: &PlHashSet<PlSmallStr>,
+        ignored_columns: &PlIndexSet<PlSmallStr>,
     ) -> PolarsResult<PlIndexSet<PlSmallStr>> {
         Ok(match self {
             Self::Union(lhs, rhs) => {
@@ -446,7 +446,7 @@ impl DataTypeSelector {
                 .collect(),
             Self::Empty => Default::default(),
             Self::AnyOf(dtypes) => {
-                let dtypes = PlHashSet::from_iter(dtypes.iter().cloned());
+                let dtypes = PlIndexSet::from_iter(dtypes.iter().cloned());
                 dtype_selector(schema, ignored_columns, |dtype| dtypes.contains(dtype))
             },
             Self::Integer => dtype_selector(schema, ignored_columns, |dtype| dtype.is_integer()),

@@ -55,7 +55,7 @@ echo -e "SCHEDULER_ID=$SCHEDULER_ID\nSCHEDULER_IP=$SCHEDULER_IP" > /opt/polars/s
 cat << EOF > /tmp/polars/config.toml
 cluster_id = "polars-on-premises-cluster"
 instance_id = "$SCHEDULER_ID"
-license = "/opt/polars/polars-on-premises_license.json"
+license.on_prem_enterprise.license_path = "/opt/polars/polars-on-premises_license.json"
 
 [scheduler]
 enabled = true
@@ -127,7 +127,7 @@ export $SCHEDULER_IP
 cat << EOF > /tmp/polars/config.toml
 cluster_id = "polars-on-premises-cluster"
 instance_id = "$(hostname)"
-license = "/opt/polars/polars-on-premises_license.json"
+license.on_prem_enterprise.license_path = "/opt/polars/polars-on-premises_license.json"
 
 [worker]
 enabled = true
@@ -221,7 +221,7 @@ import datetime
 import polars as pl
 import polars_cloud as pc
 
-ctx = pc.ClusterContext(compute_address=os.environ["SCHEDULER_IP"])
+ctx = pc.ClusterContext(uri="http://"+os.environ["SCHEDULER_IP"])
 
 (
     pl.scan_parquet(...)

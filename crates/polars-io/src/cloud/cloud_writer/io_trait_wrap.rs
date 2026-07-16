@@ -6,7 +6,7 @@ use futures::FutureExt;
 use polars_core::runtime::ASYNC;
 
 use crate::cloud::cloud_writer::CloudWriter;
-use crate::utils::file::WriteableTrait;
+use crate::utils::file::WritableTrait;
 
 /// Wrapper on [`CloudWriter`] that implements [`std::io::Write`] and [`tokio::io::AsyncWrite`].
 pub struct CloudWriterIoTraitWrap {
@@ -187,7 +187,7 @@ impl std::io::Write for CloudWriterIoTraitWrap {
     }
 }
 
-impl WriteableTrait for CloudWriterIoTraitWrap {
+impl WritableTrait for CloudWriterIoTraitWrap {
     fn close(&mut self) -> std::io::Result<()> {
         ASYNC.block_in_place_on(async {
             self.finish_active_poll().await?;

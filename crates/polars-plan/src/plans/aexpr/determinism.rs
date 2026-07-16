@@ -162,6 +162,7 @@ fn is_inherently_nondeterministic_fn(f: &IRFunctionExpr) -> bool {
         F::Repeat => false,
         #[cfg(feature = "round_series")]
         F::Clip { .. } => false,
+        F::AsList => false,
         #[cfg(feature = "dtype-struct")]
         F::AsStruct => false,
         #[cfg(feature = "top_k")]

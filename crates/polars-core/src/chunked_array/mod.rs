@@ -51,7 +51,6 @@ pub mod temporal;
 mod to_vec;
 mod trusted_len;
 pub(crate) use arg_min_max::*;
-use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
 
@@ -745,7 +744,10 @@ impl ArrayChunked {
         length: usize,
     ) -> Self {
         let dtype = DataType::Array(Box::new(inner_dtype.clone()), width);
-        let arrow_dtype = dtype.to_arrow(CompatLevel::newest()).to_storage_recursive();
+        let arrow_dtype = inner_dtype
+            .to_physical()
+            .to_arrow(CompatLevel::newest())
+            .to_fixed_size_list(width, true);
         let field = Arc::new(Field::new(name, dtype));
         if width == 0 {
             use arrow::array::builder::{ArrayBuilder, make_builder};

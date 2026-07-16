@@ -70,8 +70,32 @@ shuffle_location.s3.url = "s3://bucket/path/to/key"
 shuffle_location.s3.aws_endpoint_url = "http://your-s3-compatible-storage-host:8080"
 ```
 
-The allowed keys under `shuffle_location.s3` are the same as in
-[`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)(_e.g._
-`aws_access_key_id`, `aws_secret_access_key`, `aws_session_token`, `aws_region`). We currently only
-support the AWS keys of the `storage_options` dictionary, but note that you can use any other cloud
-provider that supports the S3 API, such as MinIO or DigitalOcean Spaces.
+## Google Cloud Storage
+
+Shuffle data can also be stored in Google Cloud Storage:
+
+```toml
+[worker]
+enabled = true
+shuffle_location.gcs.url = "gs://bucket/path/to/key"
+shuffle_location.gcs.google_service_account_path = "/etc/polars/gcs-service-account.json"
+```
+
+## Azure Blob Storage
+
+Shuffle data can also be stored in Azure Blob Storage:
+
+```toml
+[worker]
+enabled = true
+shuffle_location.abs.url = "az://container/path/to/key"
+shuffle_location.abs.azure_storage_account_name = "YOURACCOUNT"
+shuffle_location.abs.azure_storage_account_key = "YOURKEY"
+```
+
+!!! note "Object store options"
+
+    For the object store options (`s3`, `gcs`, and `abs`), the allowed keys are the same as in
+    [`scan_parquet()`](https://docs.pola.rs/api/python/stable/reference/api/polars.scan_parquet.html)
+    (_e.g._ `aws_access_key_id`, `google_service_account_path`, `azure_storage_account_name`). You
+    can use any other cloud provider that supports the S3 API, such as MinIO or DigitalOcean Spaces.

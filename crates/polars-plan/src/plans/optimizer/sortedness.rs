@@ -20,14 +20,14 @@ use crate::plans::{
 
 /// Container for sortedness state at each stage in an IR plan.
 #[derive(Debug)]
-pub struct IRPlanSorted(PlHashMap<Node, IRSorted>);
+pub struct IRPlanSorted(PlIndexMap<Node, IRSorted>);
 
 impl IRPlanSorted {
     pub fn resolve(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Self {
-        let mut seen = PlHashSet::default();
-        let mut sortedness = PlHashMap::default();
-        let mut cache_proxy = PlHashMap::default();
-        let mut names_set_scratch = ScratchHashSet::default();
+        let mut seen = PlIndexSet::default();
+        let mut sortedness = PlIndexMap::default();
+        let mut cache_proxy = PlIndexMap::default();
+        let mut names_set_scratch = ScratchIndexSet::default();
         is_sorted_rec(
             root,
             ir_arena,
@@ -168,10 +168,10 @@ pub fn expr_is_sorted(
 }
 
 pub fn is_sorted(root: Node, ir_arena: &Arena<IR>, expr_arena: &Arena<AExpr>) -> Option<IRSorted> {
-    let mut seen = PlHashSet::default();
-    let mut sortedness = PlHashMap::default();
-    let mut cache_proxy = PlHashMap::default();
-    let mut names_set_scratch = ScratchHashSet::default();
+    let mut seen = PlIndexSet::default();
+    let mut sortedness = PlIndexMap::default();
+    let mut cache_proxy = PlIndexMap::default();
+    let mut names_set_scratch = ScratchIndexSet::default();
 
     is_sorted_rec(
         root,
@@ -191,10 +191,10 @@ fn is_sorted_rec(
     root: Node,
     ir_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
-    seen: &mut PlHashSet<Node>,
-    sortedness: &mut PlHashMap<Node, IRSorted>,
-    cache_proxy: &mut PlHashMap<UniqueId, Option<IRSorted>>,
-    names_set_scratch: &mut ScratchHashSet<PlSmallStr>,
+    seen: &mut PlIndexSet<Node>,
+    sortedness: &mut PlIndexMap<Node, IRSorted>,
+    cache_proxy: &mut PlIndexMap<UniqueId, Option<IRSorted>>,
+    names_set_scratch: &mut ScratchIndexSet<PlSmallStr>,
     create_full_map: bool,
 ) -> Option<IRSorted> {
     if let Some(s) = sortedness.get(&root) {
@@ -562,12 +562,13 @@ fn is_sorted_rec(
         IR::SinkMultiple { .. } => None,
         #[cfg(feature = "merge_sorted")]
         IR::MergeSorted { key, .. } => Some(IRSorted(
-            [Sorted {
-                column: key.clone(),
-                descending: None,
-                nulls_last: None,
-            }]
-            .into(),
+            key.iter()
+                .map(|column| Sorted {
+                    column: column.clone(),
+                    descending: None,
+                    nulls_last: None,
+                })
+                .collect(),
         )),
         IR::Distinct { input, options } => {
             if !options.maintain_order {

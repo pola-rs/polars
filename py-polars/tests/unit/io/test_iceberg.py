@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import io
 import itertools
+import json
 import os
 import pickle
 import sys
@@ -73,9 +74,13 @@ from polars.io.iceberg._utils import (
 )
 from polars.testing import assert_frame_equal
 from tests.unit.io.conftest import normalize_path_separator_pl
+from tests.unit.io.test_scan_row_deletion import write_position_deletes  # noqa: F401
 
 if TYPE_CHECKING:
     from tests.conftest import PlMonkeyPatch
+    from tests.unit.io.test_scan_row_deletion import (
+        WritePositionDeletes,
+    )
 
     # Mypy does not understand the constructors and we can't construct the inputs
     # explicitly since they are abstract base classes.
@@ -117,6 +122,33 @@ with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
     from pyiceberg.catalog.sql import SqlCatalog
     from pyiceberg.io.pyarrow import schema_to_pyarrow
+
+
+@pytest.fixture(autouse=True)
+def sqlcatalog_uses_null_pool_connections(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    # note: SqlCatalog is sqlite-backed, and pyiceberg builds its engine with
+    # a SingletonThreadPool that can raise a ResourceWarning on test shutdown;
+    # we ensure it uses a NullPool instead, resolving the connection "leak"
+    import pyiceberg.catalog.sql as pyiceberg_sql
+    from sqlalchemy.pool import NullPool
+
+    tmp_path = tmp_path_factory.mktemp("iceberg_catalogs")
+    original_create_engine = pyiceberg_sql.create_engine
+    counter = itertools.count()
+
+    def create_engine(url: str, **kwargs: Any) -> Any:
+        if url == "sqlite:///:memory:":
+            # need to use a file-backed catalog, otherwise NullPool connections
+            # will be working with different in-memory databases on each call
+            url = f"sqlite:///{tmp_path}/catalog_{next(counter)}.db"
+
+        kwargs["poolclass"] = NullPool
+        return original_create_engine(url, **kwargs)
+
+    monkeypatch.setattr(pyiceberg_sql, "create_engine", create_engine)
 
 
 def new_iceberg_scan_resolver(
@@ -2247,6 +2279,7 @@ def test_scan_iceberg_min_max_statistics_filter(
             coalesced_min_max_values.select(pl.struct(pl.all()).alias("coalesced")),
         ],
         how="horizontal",
+        strict=True,
     ).filter(pl.first() != pl.last())
 
     # Float statistics are available after coalescing from an identity partition field.
@@ -2449,7 +2482,8 @@ def test_scan_iceberg_categorical_24140(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
+@pytest.mark.parametrize("reader_override", ["native", "pyiceberg"])
+def test_scan_iceberg_fast_count(tmp_path: Path, reader_override: Any) -> None:
     catalog = SqlCatalog(
         "default",
         uri="sqlite:///:memory:",
@@ -2467,7 +2501,9 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
 
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        pl.scan_iceberg(
+            tbl, reader_override=reader_override, use_metadata_statistics=True
+        )
         .select(pl.len())
         .collect()
         .item()
@@ -2475,7 +2511,9 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     )
 
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        pl.scan_iceberg(
+            tbl, reader_override=reader_override, use_metadata_statistics=True
+        )
         .filter(pl.col("a") <= 2)
         .select(pl.len())
         .collect()
@@ -2484,7 +2522,9 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     )
 
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        pl.scan_iceberg(
+            tbl, reader_override=reader_override, use_metadata_statistics=True
+        )
         .head(3)
         .select(pl.len())
         .collect()
@@ -2493,7 +2533,9 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
     )
 
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=True)
+        pl.scan_iceberg(
+            tbl, reader_override=reader_override, use_metadata_statistics=True
+        )
         .slice(1, 3)
         .select(pl.len())
         .collect()
@@ -2516,10 +2558,18 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
         p,
     )
 
+    if reader_override == "pyiceberg":
+        return
+
     # `use_metadata_statistics=False` should disable sourcing the row count from
     # Iceberg metadata.
+
     assert (
-        pl.scan_iceberg(tbl, reader_override="native", use_metadata_statistics=False)
+        pl.scan_iceberg(
+            tbl,
+            reader_override=reader_override,
+            use_metadata_statistics=False,
+        )
         .select(pl.len())
         .collect()
         .item()
@@ -2530,7 +2580,7 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
         pickle.loads(
             pickle.dumps(
                 pl.scan_iceberg(
-                    tbl, reader_override="native", use_metadata_statistics=False
+                    tbl, reader_override=reader_override, use_metadata_statistics=False
                 ).select(pl.len())
             )
         )
@@ -2549,12 +2599,15 @@ def test_scan_iceberg_fast_count(tmp_path: Path) -> None:
             else "No such file or directory"
         ),
     ):
-        pl.scan_iceberg(tbl, reader_override="native").collect()
+        pl.scan_iceberg(tbl, reader_override=reader_override).collect()
 
     # `select(len())` should be able to return the result from the Iceberg metadata
     # without looking at the underlying data files.
     assert (
-        pl.scan_iceberg(tbl, reader_override="native").select(pl.len()).collect().item()
+        pl.scan_iceberg(tbl, reader_override=reader_override)
+        .select(pl.len())
+        .collect()
+        .item()
         == 5
     )
 
@@ -2677,3 +2730,128 @@ def test_scan_iceberg_partial_and_pushdown(
     # Verify: correctness
     assert len(result) == 2
     assert result["a"].to_list() == [2, 3]
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_row_estimate(
+    tmp_path: Path,
+    write_position_deletes: WritePositionDeletes,  # noqa: F811
+) -> None:
+    catalog = SqlCatalog(
+        "default",
+        uri="sqlite:///:memory:",
+        warehouse=format_file_uri_iceberg(tmp_path),
+    )
+    catalog.create_namespace("namespace")
+
+    catalog.create_table(
+        "namespace.table",
+        IcebergSchema(NestedField(1, "a", LongType())),
+    )
+
+    tbl = catalog.load_table("namespace.table")
+
+    pl.DataFrame({"a": [0, 1, 2, 3, 4]}).write_iceberg(tbl, mode="append")
+
+    q = pl.scan_iceberg(tbl, use_metadata_statistics=True)
+    plan = q.explain()
+
+    assert "ESTIMATED ROWS: 5" in plan
+
+    file_paths = [
+        _normalize_windows_iceberg_file_uri(x.file.file_path)
+        for x in tbl.scan().plan_files()
+    ]
+
+    deletion_files = (
+        "iceberg-position-delete",
+        {
+            0: [
+                write_position_deletes(pl.Series([1, 2])),
+            ],
+        },
+    )
+
+    q = pl.scan_parquet(
+        file_paths,
+        _deletion_files=deletion_files,  # type: ignore[arg-type]
+        _row_count=(5, 2),
+    )
+    plan = q.explain()
+
+    assert "ESTIMATED ROWS: 3" in plan
+    assert q.select(pl.len()).collect().item() == 3
+    assert q.collect().height == 3
+
+
+def test_convert_iceberg_storage_options_dot_filtering() -> None:
+    from polars.io.iceberg._dataset import (
+        _convert_iceberg_to_object_store_storage_options,
+    )
+
+    result = _convert_iceberg_to_object_store_storage_options(
+        {
+            "user": "foo",
+            "hdfs.host": "localhost",
+            "hdfs.port": "9005",
+            # "dfs.replication": "3",
+            # "write.parquet.compression": "zstd",
+            "other.foo": "bar",
+        }
+    )
+
+    # keep
+    assert result["user"] == "foo"
+    assert result["hdfs.host"] == "localhost"
+    assert result["hdfs.port"] == "9005"
+
+    # drop
+    assert "dfs.replication" not in result
+    assert "write.parquet.compression" not in result
+    assert "other.foo" not in result
+
+
+@pytest.mark.write_disk
+def test_scan_iceberg_v3_field_initial_default(tmp_path: Path) -> None:
+    table, catalog = new_iceberg_table(
+        tmp_path, schema=IcebergSchema(NestedField(1, "height_provider", IntegerType()))
+    )
+
+    pl.LazyFrame(
+        {"height_provider": 1},
+        schema={"height_provider": pl.Int32},
+    ).sink_iceberg(table, mode="append")
+
+    md_path = Path(
+        table.metadata_location.removeprefix("file:")
+        # Windows //C:/... -> C:/...
+        .removeprefix("//")
+    )
+    md_object = json.loads(md_path.read_text())
+
+    md_object["format-version"] = 3
+    md_object["schemas"][-1]["fields"] += [
+{ "id": 102, "name": "BooleanType", "required": False, "type": "boolean", "initial-default": True },
+{ "id": 103, "name": "IntegerType", "required": False, "type": "int", "initial-default": 1 },
+{ "id": 104, "name": "LongType", "required": False, "type": "long", "initial-default": 1 },
+{ "id": 105, "name": "FloatType", "required": False, "type": "float", "initial-default": 1.0 },
+{ "id": 106, "name": "DoubleType", "required": False, "type": "double", "initial-default": 1.0 },
+{ "id": 107, "name": "DateType", "required": False, "type": "date", "initial-default": "2025-01-01" },
+{ "id": 108, "name": "TimeType", "required": False, "type": "time", "initial-default": "11:30:00" },
+{ "id": 109, "name": "TimestampType", "required": False, "type": "timestamp", "initial-default": "2025-01-01T00:00:00" },
+{ "id": 110, "name": "TimestamptzType", "required": False, "type": "timestamptz", "initial-default": "2025-01-01T00:00:00+00:00" },
+{ "id": 111, "name": "StringType", "required": False, "type": "string", "initial-default": "A" },
+{ "id": 112, "name": "BinaryType", "required": False, "type": "binary", "initial-default": "41" },
+{ "id": 113, "name": "DecimalType", "required": False, "type": "decimal(18, 2)", "initial-default": "1.00" },
+{ "id": 114, "name": "FixedType", "required": False, "type": "fixed[1]", "initial-default": "41" },
+{ "id": 115, "name": "UUIDType", "required": False, "type": "uuid", "initial-default": "30303030-3131-3131-3030-303031313131" }
+]  # fmt: skip
+
+    md_path.write_text(json.dumps(md_object))
+    table = catalog.load_table(table.name())
+    expect = _TableDataAllTypes.new().polars_df
+
+    assert_frame_equal(
+        pl.scan_iceberg(table).collect(),
+        expect,
+    )

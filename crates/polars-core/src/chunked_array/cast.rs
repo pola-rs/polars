@@ -175,6 +175,12 @@ where
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(cats, _mapping) => {
+                polars_warn!(
+                    Deprecation,
+                    "casting from {:?} to {dtype:?} is deprecated.\n\
+                    Instead of `.cast({dtype:?}`, use `.cat.to({dtype:?})`.",
+                    T::get_static_dtype()
+                );
                 let s = self.cast_with_options(&cats.physical().dtype(), options)?;
                 with_match_categorical_physical_type!(cats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.
@@ -189,6 +195,12 @@ where
             // TODO @ cat-rework: remove after exposing to/from physical functions.
             #[cfg(feature = "dtype-categorical")]
             DataType::Enum(fcats, _mapping) => {
+                polars_warn!(
+                    Deprecation,
+                    "casting from {:?} to {dtype:?} is deprecated.\n\
+                    Instead of `.cast({dtype:?}`, use `.cat.to({dtype:?})`.",
+                    T::get_static_dtype()
+                );
                 let s = self.cast_with_options(&fcats.physical().dtype(), options)?;
                 with_match_categorical_physical_type!(fcats.physical(), |$C| {
                     // SAFETY: we are guarded by the type system.

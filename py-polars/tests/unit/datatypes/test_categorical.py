@@ -8,9 +8,12 @@ from typing import TYPE_CHECKING
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric.strategies.core import series
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -639,7 +642,7 @@ def test_categorical_vstack() -> None:
         {"a": pl.Series(["a", "b", "c", "d", "e", "f"], dtype=pl.Categorical)}
     )
     assert_frame_equal(df3, expected)
-    assert set(df3.get_column("a").cat.get_categories().to_list()) >= {
+    assert set(df3.get_column("a").unique().to_list()) == {
         "a",
         "b",
         "c",
@@ -731,7 +734,10 @@ def test_get_cat_categories_multiple_chunks() -> None:
     df = pl.concat(
         [df for _ in range(100)], how="vertical", rechunk=False, parallel=True
     )
-    cats = df.lazy().select(pl.col("e").cat.get_categories()).collect()["e"].to_list()
+    with pytest.deprecated_call():
+        cats = (
+            df.lazy().select(pl.col("e").cat.get_categories()).collect()["e"].to_list()
+        )
     assert set(cats) >= {"a", "b"}
 
 
@@ -1020,3 +1026,28 @@ def test_categorical_cast_from_invalid_int() -> None:
     s = pl.Series("a", [0, 1000, 2000, 3000]).cast(dt, strict=False)
     assert s.null_count() == 3
     assert_series_equal(s, pl.Series("a", ["test", None, None, None], dtype=dt))
+
+
+@given(data=st.data())
+def test_categories_to_series(data: st.DataObject) -> None:
+    categories = pl.Categories.random()
+    s = data.draw(series(dtype=pl.Categorical(categories)))
+    assert isinstance(s.dtype, pl.Categorical)
+    assert_series_equal(
+        s.dtype.categories.to_series(),
+        s.unique(maintain_order=True).cast(pl.String).drop_nulls(),
+        check_names=False,
+    )
+
+
+@given(data=st.data())
+def test_categories_to_dict(data: st.DataObject) -> None:
+    categories = pl.Categories.random()
+    s = data.draw(series(dtype=pl.Categorical(categories)))
+    assert isinstance(s.dtype, pl.Categorical)
+    assert s.dtype.categories.to_dict() == {
+        key: i
+        for i, key in enumerate(
+            s.unique(maintain_order=True).cast(pl.String).drop_nulls().to_list()
+        )
+    }

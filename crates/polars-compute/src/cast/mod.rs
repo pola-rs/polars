@@ -29,7 +29,7 @@ use binview_to::{
 };
 pub use binview_to::{binview_to_fixed_size_list_dyn, binview_to_primitive_dyn};
 use dictionary_to::*;
-use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err, polars_warn};
 use polars_utils::IdxSize;
 use polars_utils::float16::pf16;
 pub use primitive_to::*;
@@ -501,6 +501,8 @@ pub fn cast(
         },
 
         (_, List(to)) => {
+            warn_cast_to_list_deprecated(from_type);
+
             // cast primitive to list's primitive
             let values = cast(array, &to.dtype, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
@@ -514,6 +516,8 @@ pub fn cast(
         },
 
         (_, LargeList(to)) if from_type != &LargeBinary => {
+            warn_cast_to_list_deprecated(from_type);
+
             // cast primitive to list's primitive
             let values = cast(array, &to.dtype, options)?;
             // create offsets, where if array.len() = 2, we have [0,1,2]
@@ -554,16 +558,35 @@ pub fn cast(
                 Float32 => utf8view_to_primitive_dyn::<f32>(arr, to_type, options),
                 Float64 => utf8view_to_primitive_dyn::<f64>(arr, to_type, options),
                 Timestamp(time_unit, None) => {
+                    polars_warn!(
+                        Deprecation,
+                        "Casting from String to DateTime is deprecated and will be removed in Polars 2.0.\n\
+                        Use `str.to_datetime()` instead."
+                    );
                     utf8view_to_naive_timestamp_dyn(array, time_unit.to_owned())
                 },
-                Timestamp(time_unit, Some(time_zone)) => utf8view_to_timestamp(
-                    array.as_any().downcast_ref().unwrap(),
-                    RFC3339,
-                    time_zone.clone(),
-                    time_unit.to_owned(),
-                )
-                .map(|arr| arr.boxed()),
-                Date32 => utf8view_to_date32_dyn(array),
+                Timestamp(time_unit, Some(time_zone)) => {
+                    polars_warn!(
+                        Deprecation,
+                        "Casting from String to DateTime is deprecated and will be removed in Polars 2.0.\n\
+                        Use `str.to_datetime(..., \"time_zone={time_zone}\")` instead."
+                    );
+                    utf8view_to_timestamp(
+                        array.as_any().downcast_ref().unwrap(),
+                        RFC3339,
+                        time_zone.clone(),
+                        time_unit.to_owned(),
+                    )
+                    .map(|arr| arr.boxed())
+                },
+                Date32 => {
+                    polars_warn!(
+                        Deprecation,
+                        "Casting from String to Date is deprecated and will be removed in Polars 2.0.\n\
+                        Use `str.to_date()` instead."
+                    );
+                    utf8view_to_date32_dyn(array)
+                },
                 #[cfg(feature = "dtype-decimal")]
                 Decimal(precision, scale) => {
                     Ok(binview_to_decimal(&arr.to_binview(), *precision, *scale).to_boxed())
@@ -1137,6 +1160,14 @@ fn from_to_binview(
         ),
     };
     Ok(binview)
+}
+
+fn warn_cast_to_list_deprecated(from_type: &ArrowDataType) {
+    polars_warn!(
+        Deprecation,
+        "casting from {from_type:?} to list type is deprecated\n\
+        Hint: Use pl.list(expr) to turn the {from_type:?} column into a column of single-element lists."
+    )
 }
 
 #[cfg(test)]

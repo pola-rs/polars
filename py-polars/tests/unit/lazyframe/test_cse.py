@@ -210,7 +210,7 @@ def test_schema_row_index_cse(maintain_order: bool) -> None:
         # Sort the lists to make sure that the result is correctly ordered
         list_cols = [c for c in result.columns if c != "A"]
         result = (
-            result.explode(list_cols)
+            result.explode(list_cols, empty_as_null=False)
             .sort("Idx")
             .group_by("A", maintain_order=True)
             .all()
@@ -986,7 +986,7 @@ def test_multiplex_predicate_pushdown() -> None:
         )
         ldf = pl.scan_parquet(tmppath, hive_partitioning=True)
         ldf = ldf.filter(pl.col("a").eq(1)).select("b")
-        assert 'SELECTION: [(col("a")) == (1)]' in pl.explain_all([ldf, ldf])
+        assert 'SELECTION: col("a") == 1' in pl.explain_all([ldf, ldf])
 
 
 def test_cse_custom_io_source_same_object() -> None:
@@ -1269,7 +1269,7 @@ def test_cse_map_batches_distinct_functions() -> None:
         lambda df: df.select(pl.col("b").alias("y")),
         schema=pl.Schema({"y": pl.Int64}),
     )
-    result = pl.concat([lf1, lf2], how="horizontal").collect(
+    result = pl.concat([lf1, lf2], how="horizontal", strict=True).collect(
         optimizations=pl.QueryOptFlags(comm_subplan_elim=True)
     )
     assert result.columns == ["x", "y"]
@@ -1525,3 +1525,44 @@ def test_cse_existing_predicate_at_scan_27748() -> None:
         q.collect(),
         pl.DataFrame({"x": False, "y0": False, "y1": True, "x_not": True}),
     )
+
+
+def test_projection_pushdown_cache_node_inputs_point_to_same_node_28279() -> None:
+    base = pl.DataFrame(
+        {
+            "symbol": ["s1", "s2"] * 3,
+            "price": [float(i) for i in range(6)],
+            "function_code": [66 if i % 2 else 83 for i in range(6)],
+        }
+    ).lazy()
+
+    df_order = base.filter(pl.col("function_code") == 66)  # frame filter
+
+    cse_expr = pl.col("price") * 2
+
+    A = df_order.group_by("symbol").agg(
+        cse_expr.sum().alias("a_total"),
+        cse_expr.filter(pl.col("price") > 3).sum().alias("a_0"),
+    )
+
+    B = df_order.group_by("symbol").agg(
+        pl.col("price").count().alias("b_count"),
+    )
+
+    j = A.join(B, on="symbol", how="full")  # how="left" also panics
+
+    q = j.select(
+        pl.col("symbol"),
+        (pl.col("a_0") / pl.col("a_total")).alias("r1"),
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"symbol": ["s2"], "r1": 0.555556}))
+
+
+def test_projection_pushdown_cache_node_inputs_point_to_same_node_28367() -> None:
+    df = pl.LazyFrame({"x": [1, 2]})
+    q1 = df.with_columns(y="x")
+    q2 = q1.with_columns(z=pl.coalesce(pl.col.x.min(), pl.col.x.min()))
+    q3 = q1.join(q2.select("x", "z"), on="x")
+    q4 = q3.join(q1, on="x").filter(pl.col("z").is_not_null())
+    assert_frame_equal(q4.select(pl.col.x.min()).collect(), pl.DataFrame({"x": [1]}))
