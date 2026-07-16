@@ -82,7 +82,7 @@ pub(super) fn optimize_functions(
         IRFunctionExpr::Reverse => {
             let input = expr_arena.get(input[0].node());
             match input {
-                AExpr::Sort { expr, options } => {
+                AExpr::Sort { expr, options } if !options.maintain_order => {
                     let mut options = *options;
                     options.descending = !options.descending;
                     options.nulls_last = !options.nulls_last;
@@ -95,7 +95,7 @@ pub(super) fn optimize_functions(
                     expr,
                     by,
                     sort_options,
-                } => {
+                } if !sort_options.maintain_order => {
                     let mut sort_options = sort_options.clone();
                     sort_options.descending = sort_options.descending.iter().map(|x| !*x).collect();
                     sort_options.nulls_last = sort_options.nulls_last.iter().map(|x| !*x).collect();
