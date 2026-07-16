@@ -682,3 +682,17 @@ def test_scan_csv_count_rows_async_with_schema(
     schema = pl.Schema({"a": pl.Int64})
     out = pl.scan_csv(file_path, schema=schema).select(pl.len()).collect()
     assert out.item() == 10
+
+
+def test_scan_csv_new_columns_infer_schema_length_28343() -> None:
+    assert_frame_equal(
+        pl.scan_csv(
+            b"""\
+0,0
+1,2,3,4
+""",
+            has_header=False,
+            new_columns=["x", "y", "z", "t"],
+        ).collect(),
+        pl.DataFrame({"x": [0, 1], "y": [0, 2], "z": [None, 3], "t": [None, 4]}),
+    )
