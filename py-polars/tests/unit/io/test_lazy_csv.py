@@ -682,3 +682,10 @@ def test_scan_csv_count_rows_async_with_schema(
     schema = pl.Schema({"a": pl.Int64})
     out = pl.scan_csv(file_path, schema=schema).select(pl.len()).collect()
     assert out.item() == 10
+
+
+def test_scan_csv_new_columns_resolves_at_ir_22334() -> None:
+    q = pl.scan_csv("/non-existent", new_columns=["a", "b"])
+
+    with pytest.raises(FileNotFoundError):
+        q.collect()
