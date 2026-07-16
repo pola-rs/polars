@@ -95,7 +95,7 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
 
         let row_byte_values = unsafe { arr.values().get_unchecked(row_byte_range.clone()) };
 
-        let view = if row_byte_len <= 12 {
+        let view = if row_byte_len <= View::MAX_INLINE_SIZE as usize {
             unsafe { View::new_inline_unchecked(row_byte_values) }
         } else {
             if row_byte_range.end > current_buffer_range.end {
