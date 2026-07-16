@@ -207,6 +207,8 @@ impl FileReader for IpcFileReader {
             pre_slice: pre_slice_arg,
             predicate: None,
             cast_columns_policy: _,
+            extra_columns_policy: _,
+            missing_columns_policy: _,
             num_pipelines,
             disable_morsel_split,
             last_morsel_pipelines,

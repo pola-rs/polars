@@ -219,6 +219,8 @@ impl<'a> CoreReader<'a> {
         let (inferred_schema, leftover) = read_until_start_and_infer_schema_from_compressed_reader(
             &read_options,
             None,
+            false,
+            false,
             None,
             &mut compressed_reader,
         )?;

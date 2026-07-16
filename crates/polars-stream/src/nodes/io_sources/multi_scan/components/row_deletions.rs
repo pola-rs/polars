@@ -116,6 +116,10 @@ impl DeletionFilesProvider {
                 reader_builder,
                 projected_schema,
             } => {
+                use polars_plan::dsl::{ExtraColumnsPolicy, MissingColumnsPolicy};
+
+                use crate::nodes::io_sources::multi_scan::components::projection::Projection;
+
                 let paths = paths.get(&scan_source_idx)?;
 
                 if verbose {
@@ -165,20 +169,19 @@ impl DeletionFilesProvider {
                 //
                 // This does mean deletion file loads are tied to `NUM_READERS_PRE_INIT`, but this
                 // should be fine as the size of the data should not be too big.
-                let handle = AbortOnDropHandle::new(executor::spawn(
-                    TaskPriority::Low,
-                    async move {
+                let handle =
+                    AbortOnDropHandle::new(executor::spawn(TaskPriority::Low, async move {
                         let handles = file_readers
                             .into_iter()
                             .map(|init_fut| {
-                                use crate::nodes::io_sources::multi_scan::components::projection::Projection;
-
                                 let begin_read_args = BeginReadArgs {
                                     projection: Projection::Plain(projected_schema.clone()),
                                     row_index: None,
                                     pre_slice: None,
                                     predicate: None,
                                     cast_columns_policy: CastColumnsPolicy::ERROR_ON_MISMATCH,
+                                    extra_columns_policy: ExtraColumnsPolicy::Raise,
+                                    missing_columns_policy: MissingColumnsPolicy::Raise,
                                     num_pipelines,
                                     disable_morsel_split: false,
                                     last_morsel_pipelines: 1,
@@ -279,8 +282,7 @@ impl DeletionFilesProvider {
                         }
 
                         Ok(mask)
-                    },
-                ));
+                    }));
 
                 Some(RowDeletionsInit::Initializing(handle))
             },

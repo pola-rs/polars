@@ -17,7 +17,12 @@ import zstandard
 
 import polars as pl
 from polars._utils.various import normalize_filepath
-from polars.exceptions import ComputeError, InvalidOperationError, NoDataError
+from polars.exceptions import (
+    ComputeError,
+    InvalidOperationError,
+    NoDataError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.conftest import PlMonkeyPatch
 
@@ -1661,18 +1666,27 @@ def test_csv_scan_categorical(chunk_override: None, tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
-def test_csv_scan_new_columns_less_than_original_columns(
-    chunk_override: None, tmp_path: Path
-) -> None:
+def test_csv_scan_new_columns_missing(chunk_override: None, tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     df = pl.DataFrame({"x": ["A"], "y": ["A"], "z": "A"})
 
     file_path = tmp_path / "test_csv_scan_new_columns.csv"
     df.write_csv(file_path)
-    result = pl.scan_csv(file_path, new_columns=["x_new", "y_new"]).collect()
 
-    assert result.columns == ["x_new", "y_new", "z"]
+    with pytest.raises(SchemaError):
+        pl.scan_csv(
+            file_path,
+            new_columns=["x_new", "y_new"],
+        ).collect()
+
+    result = pl.scan_csv(
+        file_path,
+        new_columns=["x_new", "y_new"],
+        extra_columns="ignore",
+    ).collect()
+
+    assert result.columns == ["x_new", "y_new"]
 
 
 def test_read_csv_chunked(chunk_override: None) -> None:
@@ -1921,6 +1935,7 @@ def test_provide_schema(chunk_override: None) -> None:
         io.StringIO("A\nB,ragged\nC"),
         has_header=False,
         schema={"A": pl.String, "B": pl.String, "C": pl.String},
+        missing_columns="insert",
     ).to_dict(as_series=False) == {
         "A": ["A", "B", "C"],
         "B": [None, "ragged", None],
@@ -2825,19 +2840,24 @@ def test_write_csv_large_number_autoformat_decimal_comma(chunk_override: None) -
 
 
 def test_stop_split_fields_simd_23651(chunk_override: None) -> None:
-    csv = """C,NEMP.WORLD,DAILY,AEMO,PUBLIC,2025/05/29,04:05:04,0000000465336084,,0000000465336084
+    buf = b"""C,NEMP.WORLD,DAILY,AEMO,PUBLIC,2025/05/29,04:05:04,0000000465336084,,0000000465336084
     I,DISPATCH,CASESOLUTION,1,SETTLEMENTDATE,RUNNO,INTERVENTION,CASESUBTYPE,SOLUTIONSTATUS,SPDVERSION,NONPHYSICALLOSSES,TOTALOBJECTIVE,TOTALAREAGENVIOLATION,TOTALINTERCONNECTORVIOLATION,TOTALGENERICVIOLATION,TOTALRAMPRATEVIOLATION,TOTALUNITMWCAPACITYVIOLATION,TOTAL5MINVIOLATION,TOTALREGVIOLATION,TOTAL6SECVIOLATION,TOTAL60SECVIOLATION,TOTALASPROFILEVIOLATION,TOTALFASTSTARTVIOLATION,TOTALENERGYOFFERVIOLATION,LASTCHANGED
     D,DISPATCH,CASESOLUTION,1,"2025/05/28 04:05:00",1,0,,0,,0,-60421745.3380,0,0,0,0,0,,,,,0,0,0,"2025/05/28 04:00:04"
     D,DISPATCH,CASESOLUTION,1,"2025/05/28 04:10:00",1,0,,0,,0,-60871813.2780,0,0,0,0,0,,,,,0,0,0,"2025/05/28 04:05:04"
     D,DISPATCH,CASESOLUTION,1,"2025/05/28 04:15:00",1,0,,1,,0,-61228162.2270,0,0,0,0,0,,,,,0,0,0,"2025/05/28 04:10:03"
     D,DISPATCH,CASESOLUTION,1,"2025/05/28 04:20:00",1,0,,1,,0,-60901926.5760,0,0,0,0,0,,,,,0,0,0,"2025/05/28 04:15:03"
     D,DISPATCH,CASESOLUTION,1,"""
-    buf = io.StringIO(csv)
 
     schema = {f"column_{i + 1}": pl.String for i in range(27)}
 
-    buf = io.StringIO(csv)
-    df = pl.read_csv(buf, truncate_ragged_lines=True, has_header=False, schema=schema)
+    assert pl.read_csv(buf, n_rows=0, truncate_ragged_lines=True).width == 10
+
+    df = pl.read_csv(
+        buf,
+        has_header=False,
+        schema=schema,
+        missing_columns="insert",
+    )
     assert df.shape == (7, 27)
     assert df["column_26"].null_count() == 7
 
@@ -3036,8 +3056,14 @@ def test_provided_schema_mismatch_raise(chunk_override: None, read_fn: str) -> N
 def test_provided_schema_mismatch_truncate(chunk_override: None, read_fn: str) -> None:
     csv_str = b"A,B\n1,2"
     schema = {"A": pl.Int64}
+
     df = (
-        getattr(pl, read_fn)(csv_str, schema=schema, truncate_ragged_lines=True)
+        getattr(pl, read_fn)(
+            csv_str,
+            schema=schema,
+            extra_columns="ignore",
+            truncate_ragged_lines=True,
+        )
         .lazy()
         .collect()
     )

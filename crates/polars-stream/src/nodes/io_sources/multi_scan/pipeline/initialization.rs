@@ -237,6 +237,7 @@ async fn finish_initialize_multi_scan_pipeline(
         Arc::new(row_deletions);
 
     let cast_columns_policy = config.cast_columns_policy.clone();
+    let extra_columns_policy = config.extra_columns_policy;
     let missing_columns_policy = config.missing_columns_policy;
     let include_file_paths = config.include_file_paths.clone();
 
@@ -441,6 +442,7 @@ async fn finish_initialize_multi_scan_pipeline(
                 reader_capabilities,
                 file_projection_builder,
                 cast_columns_policy,
+                extra_columns_policy,
                 missing_columns_policy,
                 forbid_extra_columns: config.forbid_extra_columns.clone(),
                 num_pipelines,
