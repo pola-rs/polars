@@ -1,5 +1,6 @@
 use std::ops::ControlFlow;
 
+use num_traits::NumCast;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_utils::UnitVec;
 use polars_utils::collection::{Collection, CollectionWrap, MappedCollection};
@@ -116,8 +117,7 @@ impl CommonSlice {
                 assert!(max_end <= 0);
 
                 let len = min_offset.abs_diff(max_end);
-                #[cfg_attr(feature = "bigidx", expect(clippy::useless_conversion))]
-                let len: IdxSize = len.try_into().unwrap_or(IdxSize::MAX);
+                let len = NumCast::from(len).unwrap_or(IdxSize::MAX);
 
                 (
                     ExtractedSlice {
@@ -157,9 +157,7 @@ impl Slice {
                         Some(IdxSize::MAX)
                     }
                 },
-                AnyValue::UInt64(len) => len.try_into().ok(),
-                AnyValue::UInt32(len) => len.try_into().ok(),
-                _ => None,
+                len => len.extract::<IdxSize>(),
             }
         {
             return Self::Extracted(ExtractedSlice { offset, len });
