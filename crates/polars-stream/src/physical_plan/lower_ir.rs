@@ -757,6 +757,7 @@ pub fn lower_ir(
                         // scheduler). The streaming reader reads per-file
                         // footers at scan time and only needs `first_metadata`.
                         metadata_per_source: _,
+                        bytes_per_source: _,
                     } => Arc::new(
                         crate::nodes::io_sources::parquet::builder::ParquetReaderBuilder {
                             options: Arc::new(options.clone()),

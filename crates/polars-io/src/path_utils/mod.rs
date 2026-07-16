@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use polars_buffer::Buffer;
 use polars_core::config;
 use polars_core::error::{PolarsResult, polars_bail, to_compute_err};
+use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_path::{CloudScheme, PlRefPath};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -236,6 +237,15 @@ pub async fn expand_paths(
         .map(|x| x.0)
 }
 
+/// Byte size per expanded path, as returned by [`expand_paths_hive`].
+///
+/// One slot per path, in the same order as the expanded paths. `Some` only
+/// when every path has a known size (the cloud LIST / fs stat provides them
+/// for free). A scan that mixes a glob with an explicit file, or any source
+/// we can't size cheaply, yields `None` and the consumer falls back to
+/// count-based behaviour.
+pub type BytesPerSource = Option<Arc<[u64]>>;
+
 struct HiveIdxTracker<'a> {
     idx: usize,
     paths: &'a [PlRefPath],
@@ -272,7 +282,7 @@ async fn expand_path_cloud(
     cloud_options: Option<&CloudOptions>,
     glob: bool,
     first_path_has_scheme: bool,
-) -> PolarsResult<(usize, Vec<PlRefPath>)> {
+) -> PolarsResult<(usize, Vec<(PlRefPath, Option<u64>)>)> {
     let format_path = |scheme: &str, bucket: &str, location: &str| {
         if first_path_has_scheme {
             format!("{scheme}://{bucket}/{location}")
@@ -298,12 +308,16 @@ async fn expand_path_cloud(
         path.has_scheme() || path.as_std_path().is_file()
     } {
         (
+            // A concrete file / prefix, not a LIST result, so no size is known.
             0,
-            vec![PlRefPath::new(format_path(
-                cloud_location.scheme,
-                &cloud_location.bucket,
-                prefix.as_ref(),
-            ))],
+            vec![(
+                PlRefPath::new(format_path(
+                    cloud_location.scheme,
+                    &cloud_location.bucket,
+                    prefix.as_ref(),
+                )),
+                None,
+            )],
         )
     } else {
         use futures::TryStreamExt;
@@ -326,14 +340,18 @@ async fn expand_path_cloud(
                 let out = s
                     .list(Some(prefix_ref))
                     .try_filter_map(|x| async move {
+                        // Retain the LIST-reported byte size (free) with the path.
                         let out = (x.size > 0).then(|| {
-                            PlRefPath::new({
-                                format_path(
-                                    cloud_location.scheme,
-                                    &cloud_location.bucket,
-                                    x.location.as_ref(),
-                                )
-                            })
+                            (
+                                PlRefPath::new({
+                                    format_path(
+                                        cloud_location.scheme,
+                                        &cloud_location.bucket,
+                                        x.location.as_ref(),
+                                    )
+                                }),
+                                Some(x.size),
+                            )
                         });
                         Ok(out)
                     })
@@ -376,9 +394,9 @@ pub async fn expand_paths_hive(
     hidden_file_prefix: &[PlSmallStr],
     #[allow(unused_variables)] cloud_options: &mut Option<CloudOptions>,
     check_directory_level: bool,
-) -> PolarsResult<(Buffer<PlRefPath>, usize)> {
+) -> PolarsResult<(Buffer<PlRefPath>, usize, BytesPerSource)> {
     let Some(first_path) = paths.first() else {
-        return Ok((vec![].into(), 0));
+        return Ok((vec![].into(), 0, None));
     };
 
     let first_path_has_scheme = first_path.has_scheme();
@@ -398,6 +416,11 @@ pub async fn expand_paths_hive(
         exts: [None, None],
         is_hidden_file: &is_hidden_file,
     };
+
+    // Byte size per expanded path, collected where it is free (cloud LIST,
+    // fs stat). Order-independent, so the path sorting below need not touch
+    // it; the aligned size vector is built by lookup after expansion.
+    let mut sizes_by_path: PlHashMap<PlRefPath, u64> = PlHashMap::default();
 
     let mut hive_idx_tracker = HiveIdxTracker {
         idx: usize::MAX,
@@ -419,7 +442,8 @@ pub async fn expand_paths_hive(
                 )
                 .await?;
 
-                return Ok((paths.into(), expand_start_idx));
+                // HF listing doesn't surface per-file sizes here; degrade to None.
+                return Ok((paths.into(), expand_start_idx, None));
             }
 
             for (path_idx, path) in paths.iter().enumerate() {
@@ -484,13 +508,17 @@ pub async fn expand_paths_hive(
 
                     let iter = crate::async_glob(path.into_owned(), cloud_options.as_ref()).await?;
 
-                    if first_path_has_scheme {
-                        out_paths.extend(iter.into_iter().map(PlRefPath::new))
-                    } else {
-                        // FORCE_ASYNC, remove leading file:// as the caller may not be expecting a
-                        // URI result.
-                        out_paths.extend(iter.iter().map(|x| &x[7..]).map(PlRefPath::new))
-                    };
+                    for (url, size) in iter {
+                        // FORCE_ASYNC (no scheme on first path): strip the leading
+                        // `file://` the caller may not be expecting.
+                        let p = if first_path_has_scheme {
+                            PlRefPath::new(url)
+                        } else {
+                            PlRefPath::new(&url[7..])
+                        };
+                        sizes_by_path.insert(p.clone(), size);
+                        out_paths.push(p);
+                    }
                 } else {
                     let (expand_start_idx, paths) = expand_path_cloud(
                         path.into_owned(),
@@ -499,7 +527,12 @@ pub async fn expand_paths_hive(
                         first_path_has_scheme,
                     )
                     .await?;
-                    out_paths.extend_from_slice(&paths);
+                    for (p, size) in paths {
+                        if let Some(size) = size {
+                            sizes_by_path.insert(p.clone(), size);
+                        }
+                        out_paths.push(p);
+                    }
                     hive_idx_tracker.update(expand_start_idx, path_idx)?;
                 };
 
@@ -547,7 +580,9 @@ pub async fn expand_paths_hive(
                         if md.is_dir() {
                             stack.push_back(Cow::Owned(path));
                         } else if md.len() > 0 {
-                            out_paths.push(PlRefPath::try_from_path(&path)?);
+                            let p = PlRefPath::try_from_path(&path)?;
+                            sizes_by_path.insert(p.clone(), md.len());
+                            out_paths.push(p);
                         }
                     }
                 }
@@ -562,7 +597,9 @@ pub async fn expand_paths_hive(
                     let path = path.map_err(to_compute_err)?;
                     let md = path.metadata()?;
                     if !md.is_dir() && md.len() > 0 {
-                        out_paths.push(PlRefPath::try_from_path(&path)?);
+                        let p = PlRefPath::try_from_path(&path)?;
+                        sizes_by_path.insert(p.clone(), md.len());
+                        out_paths.push(p);
                     }
                 }
             } else {
@@ -587,7 +624,20 @@ pub async fn expand_paths_hive(
         }
     }
 
-    return Ok((out_paths.paths.into(), hive_idx_tracker.idx));
+    // Build the per-source size vector aligned with the final (sorted) path
+    // order. All-or-nothing: `Some` only if every path has a known size.
+    let bytes_per_source: BytesPerSource = out_paths
+        .paths
+        .iter()
+        .map(|p| sizes_by_path.get(p).copied())
+        .collect::<Option<Vec<u64>>>()
+        .map(Arc::from);
+
+    return Ok((
+        out_paths.paths.into(),
+        hive_idx_tracker.idx,
+        bytes_per_source,
+    ));
 
     /// Wrapper around `Vec<PathBuf>` that also tracks file extensions, so that
     /// we don't have to traverse the entire list again to validate extensions.
@@ -610,23 +660,6 @@ pub async fn expand_paths_hive(
             Self::update_ext_status(exts, &value);
 
             self.paths.push(value)
-        }
-
-        fn extend(&mut self, values: impl IntoIterator<Item = PlRefPath>) {
-            let exts = &mut self.exts;
-
-            self.paths.extend(
-                values
-                    .into_iter()
-                    .filter(|x| !(self.is_hidden_file)(x))
-                    .inspect(|x| {
-                        Self::update_ext_status(exts, x);
-                    }),
-            )
-        }
-
-        fn extend_from_slice(&mut self, values: &[PlRefPath]) {
-            self.extend(values.iter().cloned())
         }
 
         fn update_ext_status(exts: &mut [Option<(PlSmallStr, PlRefPath)>; 2], value: &PlRefPath) {

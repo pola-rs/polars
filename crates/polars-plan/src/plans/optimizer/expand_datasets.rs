@@ -384,6 +384,7 @@ fn expand_python_dataset(
                     // Metadata is resolved later in `parquet_file_info`.
                     first_metadata: None,
                     metadata_per_source: None,
+                    bytes_per_source: None,
                 },
 
                 #[cfg(feature = "json")]

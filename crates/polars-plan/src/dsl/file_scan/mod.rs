@@ -94,6 +94,22 @@ const _: () = {
     assert!(std::mem::size_of::<FileScanIR>() <= 80);
 };
 
+/// Footer metadata per scan source.
+///
+/// `None` if the scan retained no per-source metadata. Otherwise the vector
+/// has one slot per source (a scanned file or in-memory buffer), in the same
+/// order as the scan's `sources` list: slot `i` holds the decoded footer of
+/// source `i`, or `None` if that footer was never read. `Full` resolve fills
+/// every slot; `Sampled` fills only the slots its wave read.
+///
+/// A `None` slot means "unknown": consumers must fall back, never guess.
+// TODO: Follow-up refactor of this type, in two parts: (1) promote the outer
+// `Option` to a three-state enum (unresolved / sparse / full); (2) replace the
+// inner `Option` with per-slot knowledge states (footer / row-count-only /
+// unread / failed). Gated on the first consumer that branches on these.
+#[cfg(feature = "parquet")]
+pub type MetadataPerSource = Option<Arc<[Option<FileMetadataRef>]>>;
+
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -116,12 +132,21 @@ pub enum FileScanIR {
         /// `ParquetReaderBuilder` as its initial hint.
         #[cfg_attr(feature = "dsl-schema", serde(skip))]
         first_metadata: Option<FileMetadataRef>,
-        /// Per-source metadata for the distributed scheduler. `Some(s)`
-        /// only in `Full` resolve mode, with `s[i]` for `sources[i]`.
-        /// `s[0] == first_metadata` so callers iterate uniformly
-        /// without special-casing the first source.
+        /// Per-source footer metadata for the distributed scheduler (slot
+        /// semantics on [`MetadataPerSource`]). Slot 0 always holds
+        /// `first_metadata`, since source 0 is always read; unknown slots
+        /// fall back (e.g. to `bytes_per_source`).
         #[cfg_attr(feature = "dsl-schema", serde(skip))]
-        metadata_per_source: Option<Arc<[FileMetadataRef]>>,
+        metadata_per_source: MetadataPerSource,
+        /// Byte size per scan source, retained from path expansion (the
+        /// cloud LIST / fs stat already returns them). One slot per source,
+        /// in the same order as `sources`; present only when every source
+        /// has a known size, `None` otherwise. Unlike `metadata_per_source`
+        /// these are available in any resolve mode (they come from the
+        /// listing, not the footers), and drive the cloud scheduler's
+        /// size-weighted multi-file scan distribution.
+        #[cfg_attr(feature = "dsl-schema", serde(skip))]
+        bytes_per_source: Option<Arc<[u64]>>,
     },
 
     #[cfg(feature = "ipc")]
@@ -189,7 +214,7 @@ impl FileScanIR {
     /// `surviving_indices` yields ascending indices into the pre-filter list.
     pub fn gather_after_filter<I>(&mut self, first_file_dropped: bool, surviving_indices: I)
     where
-        I: Iterator<Item = usize>,
+        I: Iterator<Item = usize> + Clone,
     {
         // Parquet: clear `first_metadata` if file 0 dropped; gather
         // `metadata_per_source` by surviving indices so slice[i] still
@@ -203,12 +228,19 @@ impl FileScanIR {
                 options: _,
                 first_metadata,
                 metadata_per_source,
+                bytes_per_source,
             } => {
                 if first_file_dropped {
                     *first_metadata = None;
                 }
                 if let Some(slice) = metadata_per_source {
-                    *slice = surviving_indices.map(|i| slice[i].clone()).collect();
+                    *slice = surviving_indices
+                        .clone()
+                        .map(|i| slice[i].clone())
+                        .collect();
+                }
+                if let Some(slice) = bytes_per_source {
+                    *slice = surviving_indices.map(|i| slice[i]).collect();
                 }
             },
             #[cfg(feature = "ipc")]
@@ -494,6 +526,7 @@ mod _file_scan_eq_hash {
             options: &'a polars_io::prelude::ParquetOptions,
             first_metadata: Option<usize>,
             metadata_per_source: Option<usize>,
+            bytes_per_source: Option<usize>,
         },
 
         #[cfg(feature = "ipc")]
@@ -541,10 +574,12 @@ mod _file_scan_eq_hash {
                     options,
                     first_metadata,
                     metadata_per_source,
+                    bytes_per_source,
                 } => FileScanEqHashWrap::Parquet {
                     options,
                     first_metadata: first_metadata.as_ref().map(arc_as_ptr),
                     metadata_per_source: metadata_per_source.as_ref().map(arc_as_ptr),
+                    bytes_per_source: bytes_per_source.as_ref().map(arc_as_ptr),
                 },
 
                 #[cfg(feature = "ipc")]

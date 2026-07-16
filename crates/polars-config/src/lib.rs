@@ -47,6 +47,10 @@ const DEFAULT_PRUNE_PARQUET_METADATA: bool = false;
 
 const RESOLVE_METADATA_LEVEL: &str = "POLARS_RESOLVE_METADATA_LEVEL";
 
+const RESOLVE_SAMPLE_LIMIT: &str = "POLARS_RESOLVE_SAMPLE_LIMIT";
+// 0 = auto (see `resolve_sample_limit()`).
+const DEFAULT_RESOLVE_SAMPLE_LIMIT: u64 = 0;
+
 // Private.
 const VERBOSE_SENSITIVE: &str = "POLARS_VERBOSE_SENSITIVE";
 const DEFAULT_VERBOSE_SENSITIVE: bool = false;
@@ -112,6 +116,7 @@ static KNOWN_OPTIONS: &[&str] = &[
     PRUNE_PARQUET_METADATA,
     ALLOW_NESTED_CSPE,
     RESOLVE_METADATA_LEVEL,
+    RESOLVE_SAMPLE_LIMIT,
     /*
     Not yet supported public options:
 
@@ -163,6 +168,7 @@ pub struct Config {
     prune_parquet_metadata: AtomicBool,
     allow_nested_cspe: AtomicBool,
     resolve_metadata_level: AtomicU8,
+    resolve_sample_limit: AtomicU64,
 
     // Private.
     verbose_sensitive: AtomicBool,
@@ -195,6 +201,7 @@ impl Config {
             ),
             prune_parquet_metadata: AtomicBool::new(DEFAULT_PRUNE_PARQUET_METADATA),
             resolve_metadata_level: AtomicU8::new(ResolveMode::default() as u8),
+            resolve_sample_limit: AtomicU64::new(DEFAULT_RESOLVE_SAMPLE_LIMIT),
 
             // Private.
             verbose_sensitive: AtomicBool::new(DEFAULT_VERBOSE_SENSITIVE),
@@ -292,6 +299,11 @@ impl Config {
             RESOLVE_METADATA_LEVEL => self.resolve_metadata_level.store(
                 val.and_then(|x| parse::parse_resolve_mode(var, x))
                     .unwrap_or_default() as u8,
+                Ordering::Relaxed,
+            ),
+            RESOLVE_SAMPLE_LIMIT => self.resolve_sample_limit.store(
+                val.and_then(|x| parse::parse_u64(var, x))
+                    .unwrap_or(DEFAULT_RESOLVE_SAMPLE_LIMIT),
                 Ordering::Relaxed,
             ),
 
@@ -439,6 +451,18 @@ impl Config {
     #[inline(always)]
     pub fn resolve_metadata_level(&self) -> ResolveMode {
         ResolveMode::from_discriminant(self.resolve_metadata_level.load(Ordering::Relaxed))
+    }
+
+    /// Caps the footer sample size of a `Sampled` metadata resolve: for `n`
+    /// sources the sample is `min(max(sqrt(n), 16), limit, n)`. `None` (the
+    /// default) uses the concurrency budget, floored at 16, as the limit; an
+    /// explicit value is authoritative.
+    #[inline(always)]
+    pub fn resolve_sample_limit(&self) -> Option<u64> {
+        match self.resolve_sample_limit.load(Ordering::Relaxed) {
+            0 => None,
+            n => Some(n),
+        }
     }
 
     /// Whether we should do verbose printing on sensitive information.

@@ -95,7 +95,7 @@ pub(super) fn prune_parquet_metadata(
         *first_metadata = first_metadata.as_ref().map(prune_one);
         *metadata_per_source = metadata_per_source
             .as_ref()
-            .map(|s| s.iter().map(prune_one).collect());
+            .map(|s| s.iter().map(|m| m.as_ref().map(prune_one)).collect());
     }
 }
 

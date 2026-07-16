@@ -209,7 +209,7 @@ impl Matcher {
 pub async fn glob(
     url: PlRefPath,
     cloud_options: Option<&CloudOptions>,
-) -> PolarsResult<Vec<String>> {
+) -> PolarsResult<Vec<(String, u64)>> {
     // Find the fixed prefix, up to the first '*'.
 
     let (
@@ -239,8 +239,10 @@ pub async fn glob(
             store
                 .list(path)
                 .try_filter_map(|x| async move {
+                    // Keep the LIST-reported byte size alongside the path; it
+                    // is free here and feeds size-weighted scan distribution.
                     let out = (x.size > 0 && matcher.is_matching(x.location.as_ref()))
-                        .then_some(x.location);
+                        .then_some((x.location, x.size));
                     Ok(out)
                 })
                 .try_collect::<Vec<_>>()
@@ -248,10 +250,10 @@ pub async fn glob(
         })
         .await?;
 
-    locations.sort_unstable();
+    locations.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     Ok(locations
         .into_iter()
-        .map(|l| full_url(scheme, &bucket, l))
+        .map(|(l, size)| (full_url(scheme, &bucket, l), size))
         .collect::<Vec<_>>())
 }
 
