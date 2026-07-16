@@ -75,15 +75,10 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
     };
 
     let comment_prefix = options.parse_options.comment_prefix.as_ref();
-    let infer_schema_length = if options.schema.is_some() {
-        // Don't actually infer if the schema is set.
-        Some(0)
-    } else {
-        options.infer_schema_length
-    };
+    let infer_schema_length = options.infer_schema_length.unwrap_or(usize::MAX);
 
     let mut header_line = None;
-    let mut content_lines = Vec::with_capacity(infer_schema_length.unwrap_or_else(|| {
+    let mut content_lines = Vec::with_capacity(options.infer_schema_length.unwrap_or_else(|| {
         reader
             .total_len_estimate()
             .saturating_div(ESTIMATED_BYTES_PER_ROW)
@@ -94,7 +89,8 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
     // the initial read size. We have to retain the row memory for schema inference and also for
     // actual morsel generation. If `infer_schema_length` is set to `None` we will have to read the
     // full input anyway so we can do so once and avoid re-copying.
-    let initial_read_size = infer_schema_length
+    let initial_read_size = options
+        .infer_schema_length
         .map(|isl| {
             cmp::max(
                 CompressedReader::initial_read_size(),
@@ -163,7 +159,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
                     State::InferCollect => {
                         if !is_comment_line(line, comment_prefix) {
                             content_lines.push(mem_slice_line.clone());
-                            if content_lines.len() >= infer_schema_length.unwrap_or(usize::MAX) {
+                            if content_lines.len() >= infer_schema_length {
                                 state = State::Done;
                                 continue;
                             }
@@ -181,7 +177,7 @@ pub fn read_until_start_and_infer_schema_from_compressed_reader(
         },
     )?;
 
-    let infer_all_as_str = infer_schema_length == Some(0);
+    let infer_all_as_str = infer_schema_length == 0;
 
     let inferred_schema = infer_schema(
         &header_line,
@@ -255,15 +251,10 @@ pub fn read_until_start_and_infer_schema(
     };
 
     let comment_prefix = options.parse_options.comment_prefix.as_ref();
-    let infer_schema_length = if options.schema.is_some() {
-        // Don't actually infer if the schema is set.
-        Some(0)
-    } else {
-        options.infer_schema_length
-    };
+    let infer_schema_length = options.infer_schema_length.unwrap_or(usize::MAX);
 
     let mut header_line = None;
-    let mut content_lines = Vec::with_capacity(infer_schema_length.unwrap_or_else(|| {
+    let mut content_lines = Vec::with_capacity(options.infer_schema_length.unwrap_or_else(|| {
         decompressed_file_size_hint
             .map(|size| size.saturating_div(ESTIMATED_BYTES_PER_ROW))
             .unwrap_or(100)
@@ -274,7 +265,8 @@ pub fn read_until_start_and_infer_schema(
     // the initial read size. We have to retain the row memory for schema inference and also for
     // actual morsel generation. If `infer_schema_length` is set to `None` we will have to read the
     // full input anyway so we can do so once and avoid re-copying.
-    let initial_read_size = infer_schema_length
+    let initial_read_size = options
+        .infer_schema_length
         .map(|isl| {
             cmp::max(
                 CompressedReader::initial_read_size(),
@@ -344,7 +336,7 @@ pub fn read_until_start_and_infer_schema(
                     State::InferCollect => {
                         if !is_comment_line(line, comment_prefix) {
                             content_lines.push(mem_slice_line.clone());
-                            if content_lines.len() >= infer_schema_length.unwrap_or(usize::MAX) {
+                            if content_lines.len() >= infer_schema_length {
                                 state = State::Done;
                                 continue;
                             }
@@ -362,7 +354,7 @@ pub fn read_until_start_and_infer_schema(
         },
     )?;
 
-    let infer_all_as_str = infer_schema_length == Some(0);
+    let infer_all_as_str = infer_schema_length == 0;
 
     let inferred_schema = infer_schema(
         &header_line,
