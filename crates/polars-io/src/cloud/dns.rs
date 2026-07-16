@@ -1,6 +1,6 @@
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
 
 use futures::stream::{FuturesUnordered, StreamExt};
@@ -11,15 +11,17 @@ use tokio::sync::RwLock;
 
 type DynErr = Box<dyn std::error::Error + Send + Sync>;
 
-use std::sync::LazyLock;
-
 const DEFAULT_DNS_CACHE_TTL_SECS: u64 = 5;
 
 /// Process-wide DNS cache shared by all `CachingResolver` instances, so resolved
 /// addrs survive client teardown/rebuild (e.g. object-store cache eviction).
+/// In addition, addrs will be shared across object stores that share the same
+/// domain name, e.g., in the case of different buckets in the same region with
+/// path-style hosts in AWS.
 ///
-/// Assumes resolution is process-uniform: the key is the hostname alone, so this
-/// must not be shared if per-client resolver config is ever introduced.
+/// The hostname-only key assumes all clients resolve names identically (true
+/// today); per-client config that changes *answers* (e.g. custom nameservers)
+/// would require keying or splitting this cache.
 ///
 /// Entries are never evicted. This is ok for object-store endpoints (low cardinality).
 /// Revisit with a size cap if keys become externally driven (e.g. per-bucket
@@ -169,8 +171,6 @@ impl Resolve for CachingResolver {
                             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
                             .is_ok()
                         {
-                            let cache = cache.clone();
-                            let key = key.clone();
                             let refreshing = entry.refreshing.clone();
                             ASYNC.spawn(async move {
                                 let result =
