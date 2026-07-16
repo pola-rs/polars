@@ -92,11 +92,10 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
             row_byte_len <= BINVIEW_MAX_ROW_BYTE_LEN,
             "max string/binary length exceeded"
         );
-        let row_byte_len: u32 = row_byte_len as _;
 
         let row_byte_values = unsafe { arr.values().get_unchecked(row_byte_range.clone()) };
 
-        views.push(if row_byte_len <= 12 {
+        let view = if row_byte_len <= 12 {
             unsafe { View::new_inline_unchecked(row_byte_values) }
         } else {
             if row_byte_range.end > current_buffer_range.end {
@@ -132,7 +131,9 @@ pub fn binary_to_binview<O: Offset>(arr: &BinaryArray<O>) -> BinaryViewArray {
             unsafe {
                 View::new_noninline_unchecked(row_byte_values, (buffers.len() - 1) as u32, offset)
             }
-        });
+        };
+
+        views.push(view);
     }
 
     unsafe {
