@@ -725,22 +725,6 @@ def test_cat_append_lexical_sorted_flag() -> None:
     assert not (s1.is_sorted())
 
 
-def test_get_cat_categories_multiple_chunks() -> None:
-    df = pl.DataFrame(
-        [
-            pl.Series("e", ["a", "b"], pl.Categorical),
-        ]
-    )
-    df = pl.concat(
-        [df for _ in range(100)], how="vertical", rechunk=False, parallel=True
-    )
-    with pytest.deprecated_call():
-        cats = (
-            df.lazy().select(pl.col("e").cat.get_categories()).collect()["e"].to_list()
-        )
-    assert set(cats) >= {"a", "b"}
-
-
 @pytest.mark.parametrize(
     "f",
     [

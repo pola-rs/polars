@@ -87,18 +87,6 @@ def test_categorical_categories() -> None:
     assert list(s.dtype.categories) == ["foo", "bar", "ham"]
 
 
-def test_categorical_get_categories_deprecated() -> None:
-    s = pl.Series("cats", ["foo", "bar", "foo", "foo", "ham"], dtype=pl.Categorical)
-    with pytest.deprecated_call():
-        assert set(s.cat.get_categories().to_list()) >= {"foo", "bar", "ham"}
-
-
-def test_cat_to_local() -> None:
-    s = pl.Series(["a", "b", "a"], dtype=pl.Categorical)
-    with pytest.deprecated_call():
-        assert_series_equal(s, s.cat.to_local())
-
-
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum])
 def test_cat_len_bytes(dtype: PolarsDataType) -> None:
     # test Series
