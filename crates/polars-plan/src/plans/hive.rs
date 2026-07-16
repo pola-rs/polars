@@ -113,8 +113,8 @@ pub fn hive_partitions_from_paths(
         let path = path.sliced(hive_start_idx..path.as_str().len());
 
         let mut hive_schema = Schema::with_capacity(16);
-        let mut schema_inference_map: PlHashMap<&str, PlHashSet<DataType>> =
-            PlHashMap::with_capacity(16);
+        let mut schema_inference_map: PlIndexMap<&str, PlIndexSet<DataType>> =
+            PlIndexMap::with_capacity(16);
 
         for (name, _) in get_hive_parts_iter!(&path) {
             // If the column is also in the file we can use the dtype stored there.
@@ -130,7 +130,7 @@ pub fn hive_partitions_from_paths(
             }
 
             hive_schema.insert_at_index(hive_schema.len(), name.into(), DataType::String)?;
-            schema_inference_map.insert(name, PlHashSet::with_capacity(4));
+            schema_inference_map.insert(name, PlIndexSet::with_capacity(4));
         }
 
         if hive_schema.is_empty() && schema_inference_map.is_empty() {
@@ -153,7 +153,7 @@ pub fn hive_partitions_from_paths(
                 }
             }
 
-            for (name, ref possibilities) in schema_inference_map.drain() {
+            for (name, ref possibilities) in schema_inference_map.drain(..) {
                 let dtype = finish_infer_field_schema(possibilities);
                 *hive_schema.try_get_mut(name).unwrap() = dtype;
             }

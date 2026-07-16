@@ -261,10 +261,11 @@ impl WeakSpillContext {
 }
 
 /// An opaque parameter passed into a spill context during registering.
+#[derive(Clone)]
 pub struct SpillContextParam(pub(crate) ());
 
 impl WeakSpillContext {
-    pub fn register<T, S>(&self, token: &T, _param: SpillContextParam)
+    pub fn register<T, S>(&self, token: &T, param: SpillContextParam)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
@@ -272,17 +273,27 @@ impl WeakSpillContext {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.local.get_or_default().write().unwrap();
         if self.0.context_id() == self.1 {
-            local.push_back(&dyn_arc, dyn_arc.register(self.clone()));
+            local.push_back(&dyn_arc, dyn_arc.register(self.clone(), param));
         }
     }
 }
 
 pub trait ParameterFreeSpillContext {
-    fn register<T, S>(&self, token: &T)
+    fn register_no_spill_check<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
         Self: Sized;
+
+    fn register<T, S>(&self, token: &T) -> impl Future<Output = ()>
+    where
+        T: AsRef<SpillToken<S>>,
+        S: Spillable,
+        Self: Sized,
+    {
+        self.register_no_spill_check(token);
+        memory_manager().spill()
+    }
 }
 
 /// A context that spills the most-recently registered spillable when asked.
@@ -300,14 +311,17 @@ impl MostRecentSpillContext {
 }
 
 impl ParameterFreeSpillContext for MostRecentSpillContext {
-    fn register<T, S>(&self, token: &T)
+    fn register_no_spill_check<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.register(self.0.downgrade()));
+        local.push_back(
+            &dyn_arc,
+            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
+        );
     }
 }
 
@@ -334,14 +348,17 @@ impl LeastRecentSpillContext {
 }
 
 impl ParameterFreeSpillContext for LeastRecentSpillContext {
-    fn register<T, S>(&self, token: &T)
+    fn register_no_spill_check<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.register(self.0.downgrade()));
+        local.push_back(
+            &dyn_arc,
+            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
+        );
     }
 }
 
@@ -364,14 +381,17 @@ impl RandomSpillContext {
 }
 
 impl ParameterFreeSpillContext for RandomSpillContext {
-    fn register<T, S>(&self, token: &T)
+    fn register_no_spill_check<T, S>(&self, token: &T)
     where
         T: AsRef<SpillToken<S>>,
         S: Spillable,
     {
         let dyn_arc = token.as_ref().upcast();
         let mut local = self.0.0.local.get_or_default().write().unwrap();
-        local.push_back(&dyn_arc, dyn_arc.register(self.0.downgrade()));
+        local.push_back(
+            &dyn_arc,
+            dyn_arc.register(self.0.downgrade(), SpillContextParam(())),
+        );
     }
 }
 

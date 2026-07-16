@@ -4,7 +4,7 @@ use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
 use polars_core::prelude::row_encode::encode_rows_unordered;
 use polars_core::prelude::*;
-use polars_core::with_match_physical_integer_polars_type;
+use polars_core::series::BitRepr;
 use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 // If invert is true then this is an `is_duplicated`.
@@ -95,10 +95,15 @@ fn dispatcher(s: &Series, invert: bool) -> PolarsResult<BooleanChunked> {
             len => BooleanChunked::full(s.name().clone(), invert, len),
         },
         dt if dt.is_primitive_numeric() => {
-            with_match_physical_integer_polars_type!(s.dtype(), |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                is_unique_ca(ca, invert)
-            })
+            use BitRepr as B;
+            match s.bit_repr().unwrap() {
+                B::U8(ca) => is_unique_ca(&ca, invert),
+                B::U16(ca) => is_unique_ca(&ca, invert),
+                B::U32(ca) => is_unique_ca(&ca, invert),
+                B::U64(ca) => is_unique_ca(&ca, invert),
+                #[cfg(feature = "dtype-u128")]
+                B::U128(ca) => is_unique_ca(&ca, invert),
+            }
         },
         dt => polars_bail!(opq = is_unique, dt),
     };

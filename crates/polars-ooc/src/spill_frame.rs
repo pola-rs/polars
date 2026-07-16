@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use polars_async::ASYNC;
 use polars_core::frame::DataFrame;
@@ -9,11 +10,13 @@ use polars_utils::compression::ZstdLevel;
 
 use crate::spill_context::ParameterFreeSpillContext;
 use crate::spill_file::SpillFile;
-use crate::{BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillToken, Spillable, memory_manager};
+use crate::{
+    BYTES_SPILLED_TO_DISK, PinnedMut, PinnedRef, SpillContextParam, SpillToken, Spillable,
+    WeakSpillContext, memory_manager,
+};
 
 impl Spillable for DataFrame {
-    // TODO: just a dummy spill for now. Boxed to reduce size.
-    type Spilled = SpillFile;
+    type Spilled = Arc<SpillFile>;
 
     fn estimate_byte_size(&self) -> usize {
         self.estimated_size()
@@ -37,7 +40,7 @@ impl Spillable for DataFrame {
             .unwrap_or_else(|e| panic!("failed to encode spill file for '{context_id}': {e}",));
 
         // Do file creation / writing on tokio.
-        ASYNC
+        let file = ASYNC
             .spawn(async move {
                 let size = buf.len() as u64;
                 let spill_file = SpillFile::new(&context_id, "ipc", size);
@@ -60,7 +63,8 @@ impl Spillable for DataFrame {
                 }
             })
             .await
-            .unwrap()
+            .unwrap();
+        Arc::new(file)
     }
 
     async fn unspill(location: &Self::Spilled) -> Self {
@@ -79,6 +83,7 @@ impl Spillable for DataFrame {
     }
 }
 
+#[derive(Clone)]
 pub struct SpillFrame {
     token: SpillToken<DataFrame>,
     height: usize,
@@ -99,16 +104,19 @@ impl SpillFrame {
 
     pub async fn new<C: ParameterFreeSpillContext>(df: DataFrame, ctx: &C) -> Self {
         let slf = Self::new_unregistered(df);
-        ctx.register(&slf);
-        memory_manager().spill().await;
+        ctx.register(&slf).await;
         slf
     }
 
     pub fn new_blocking<C: ParameterFreeSpillContext>(df: DataFrame, ctx: &C) -> Self {
         let slf = Self::new_unregistered(df);
-        ctx.register(&slf);
+        ctx.register_no_spill_check(&slf);
         memory_manager().spill_blocking();
         slf
+    }
+
+    pub fn unregister(&mut self) -> Option<(WeakSpillContext, SpillContextParam)> {
+        self.token.unregister()
     }
 
     /// The height of the contained DataFrame. Does not need to unspill DataFrame.

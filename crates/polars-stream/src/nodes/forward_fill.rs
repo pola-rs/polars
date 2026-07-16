@@ -75,12 +75,13 @@ impl ComputeNode for ForwardFillNode {
                     continue;
                 }
 
-                let column = &morsel.df()[0];
-                let height = column.len();
-                let null_count = column.null_count();
-
                 let morsel_last = last.clone();
                 let morsel_consecutive_nulls = *consecutive_nulls;
+
+                let df = morsel.df().await;
+                let column = &df[0];
+                let height = column.len();
+                let null_count = column.null_count();
 
                 if null_count == height {
                     // All null.
@@ -95,6 +96,7 @@ impl ComputeNode for ForwardFillNode {
                     *consecutive_nulls = 0;
                 }
                 *consecutive_nulls = IdxSize::min(*consecutive_nulls, limit);
+                drop(df);
 
                 if distributor
                     .send((morsel, morsel_last, morsel_consecutive_nulls))
@@ -115,78 +117,82 @@ impl ComputeNode for ForwardFillNode {
                 let wait_group = WaitGroup::default();
 
                 while let Ok((morsel, last, consecutive_nulls)) = recv.recv().await {
-                    let mut morsel = morsel.try_map(|df| {
-                        let column = &df[0];
-                        let height = column.len();
-                        let null_count = column.null_count();
-                        let name = column.name().clone();
+                    let mut morsel = morsel
+                        .try_map(|df| {
+                            let column = &df[0];
+                            let height = column.len();
+                            let null_count = column.null_count();
+                            let name = column.name().clone();
 
-                        // Remaining fill limit for the start morsel.
-                        let leading_limit = limit.saturating_sub(consecutive_nulls) as usize;
+                            // Remaining fill limit for the start morsel.
+                            let leading_limit = limit.saturating_sub(consecutive_nulls) as usize;
 
-                        let out = if null_count == 0
-                            || (null_count == height && (last.is_null() || leading_limit == 0))
-                        {
-                            // Fast path: output = input.
-                            column.clone()
-                        } else if null_count == height {
-                            // Fast path: input is all nulls.
-                            let mut out = Column::new_scalar(
-                                name,
-                                Scalar::new(dtype.clone(), last),
-                                height.min(leading_limit),
-                            );
-                            if leading_limit < height {
-                                out.append_owned(Column::full_null(
-                                    PlSmallStr::EMPTY,
-                                    height - leading_limit,
-                                    &dtype,
-                                ))?;
-                            }
-                            out
-                        } else if last.is_null()
-                            || leading_limit == 0
-                            || unsafe { !column.get_unchecked(0).is_null() }
-                        {
-                            // Faster path: result is equal to performing a normal `forward_fill` on
-                            // the column.
-                            column.fill_null(FillNullStrategy::Forward(Some(limit as IdxSize)))?
-                        } else {
-                            // Output = concat[
-                            //     repeat_n(last, min(leading, leading_limit)),
-                            //     repeat_n(NULL, leading - min(leading, leading_limit)),
-                            //     forward_fill(column[leading..]),
-                            // ]
-
-                            // @Performance. If you want to make this fully optimal (although it is
-                            // likely overkill), you can implement a kernel of `forward_fill` with a
-                            // `init` value. This would remove the need for these appends.
-                            let leading = column.first_non_null().unwrap();
-                            let fill_last_count = leading_limit.min(leading);
-                            let mut out = Column::new_scalar(
-                                name.clone(),
-                                Scalar::new(dtype.clone(), last),
-                                fill_last_count,
-                            );
-                            if fill_last_count < leading {
-                                out.append_owned(Column::full_null(
+                            let out = if null_count == 0
+                                || (null_count == height && (last.is_null() || leading_limit == 0))
+                            {
+                                // Fast path: output = input.
+                                column.clone()
+                            } else if null_count == height {
+                                // Fast path: input is all nulls.
+                                let mut out = Column::new_scalar(
                                     name,
-                                    leading - fill_last_count,
-                                    &dtype,
-                                ))?;
-                            }
+                                    Scalar::new(dtype.clone(), last),
+                                    height.min(leading_limit),
+                                );
+                                if leading_limit < height {
+                                    out.append_owned(Column::full_null(
+                                        PlSmallStr::EMPTY,
+                                        height - leading_limit,
+                                        &dtype,
+                                    ))?;
+                                }
+                                out
+                            } else if last.is_null()
+                                || leading_limit == 0
+                                || unsafe { !column.get_unchecked(0).is_null() }
+                            {
+                                // Faster path: result is equal to performing a normal `forward_fill` on
+                                // the column.
+                                column
+                                    .fill_null(FillNullStrategy::Forward(Some(limit as IdxSize)))?
+                            } else {
+                                // Output = concat[
+                                //     repeat_n(last, min(leading, leading_limit)),
+                                //     repeat_n(NULL, leading - min(leading, leading_limit)),
+                                //     forward_fill(column[leading..]),
+                                // ]
 
-                            let mut tail = column.slice(leading as i64, height - leading);
-                            if tail.has_nulls() {
-                                tail = tail
-                                    .fill_null(FillNullStrategy::Forward(Some(limit as IdxSize)))?;
-                            }
-                            out.append_owned(tail)?;
-                            out
-                        };
+                                // @Performance. If you want to make this fully optimal (although it is
+                                // likely overkill), you can implement a kernel of `forward_fill` with a
+                                // `init` value. This would remove the need for these appends.
+                                let leading = column.first_non_null().unwrap();
+                                let fill_last_count = leading_limit.min(leading);
+                                let mut out = Column::new_scalar(
+                                    name.clone(),
+                                    Scalar::new(dtype.clone(), last),
+                                    fill_last_count,
+                                );
+                                if fill_last_count < leading {
+                                    out.append_owned(Column::full_null(
+                                        name,
+                                        leading - fill_last_count,
+                                        &dtype,
+                                    ))?;
+                                }
 
-                        PolarsResult::Ok(out.into_frame())
-                    })?;
+                                let mut tail = column.slice(leading as i64, height - leading);
+                                if tail.has_nulls() {
+                                    tail = tail.fill_null(FillNullStrategy::Forward(Some(
+                                        limit as IdxSize,
+                                    )))?;
+                                }
+                                out.append_owned(tail)?;
+                                out
+                            };
+
+                            PolarsResult::Ok(out.into_frame())
+                        })
+                        .await?;
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

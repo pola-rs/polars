@@ -268,7 +268,7 @@ impl DataFrame {
         debug_assert!(
             self.get_column_index(&name).is_none(),
             "with_row_index_mut(): column with name {} already exists",
-            &name
+            name
         );
 
         let offset = offset.unwrap_or(0);
@@ -1011,7 +1011,7 @@ impl DataFrame {
             unsafe { self.columns_mut() }.push(column)
         } else {
             // Unordered column insertion is not handled.
-            panic!()
+            panic!("{:?}, {}", output_schema, column.name());
         }
 
         Ok(self)

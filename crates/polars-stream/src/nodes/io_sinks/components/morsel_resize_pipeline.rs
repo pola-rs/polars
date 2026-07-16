@@ -75,7 +75,10 @@ impl MorselResizePipeline {
                 } else {
                     continue;
                 }
-            } else if let Ok(morsel) = morsel_rx.recv().await {
+            } else if let Ok(morsel) = {
+                drop(wait_token.take());
+                morsel_rx.recv().await
+            } {
                 assert_eq!(
                     logical_received_size.num_rows,
                     physical_received_size.num_rows
@@ -86,7 +89,9 @@ impl MorselResizePipeline {
                 let df: DataFrame;
                 drop(wait_token.take());
 
-                (df, _, _, wait_token) = morsel.into_inner();
+                let sf;
+                (sf, _, _, wait_token) = morsel.into_inner();
+                df = sf.into_df().await;
 
                 if df.height() == 0 {
                     continue;

@@ -5,16 +5,19 @@ use std::sync::Arc;
 
 use edge::Edge;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, PlHashMap, ScratchIndexMap, ScratchIndexSet};
+use polars_core::prelude::{Column, DataType, ScratchIndexMap, ScratchIndexSet};
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
 use polars_ops::frame::{JoinCoalesce, JoinType};
+#[allow(clippy::disallowed_types)]
+use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::itertools::Itertools as _;
 use polars_utils::itertools::iters_eq::iters_eq;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::scratch_vec::ScratchVec;
+use polars_utils::unique_id::UniqueId;
 
 use crate::dsl::{FileScanIR, JoinTypeOptionsIR, PredicateFileSkip};
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
@@ -24,8 +27,8 @@ use crate::plans::optimizer::projection_pushdown::edge::{
 };
 use crate::plans::projection_height::{ExprProjectionHeight, aexpr_projection_height_rec};
 use crate::plans::{
-    AExpr, ArenaExprIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder, IRFunctionExpr,
-    OutputName, det_join_schema,
+    AExpr, ArenaExprIter, ArenaLpIter, ExprIR, ExprOrigin, FunctionIR, IR, IRAggExpr, IRBuilder,
+    IRFunctionExpr, OutputName, det_join_schema,
 };
 use crate::prelude::{DistinctOptionsIR, ProjectionOptions};
 use crate::traversal::edge_provider::NodeEdgesProvider;
@@ -33,7 +36,7 @@ use crate::traversal::visitor::{NodeVisitor, SubtreeVisit};
 use crate::utils::{aexpr_to_leaf_names_iter, rename_columns};
 
 pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mut Arena<AExpr>) {
-    let schema_cache = &mut PlHashMap::default();
+    let schema_cache = &mut Default::default();
 
     // Put a simple projection on top so that the root node has a valid ParentKeyAndPort to point to.
     let root_ir = ir_arena.take(root);
@@ -47,6 +50,9 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
         },
     );
 
+    #[allow(clippy::disallowed_types)]
+    let mut cache_inputs = PlHashMap::default();
+
     ir_graph_traversal(
         optimize_root,
         &mut ProjectionPushdownVisitor {
@@ -59,6 +65,7 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
             names_set_scratch3: &mut ScratchIndexSet::default(),
             names_vec_scratch: &mut ScratchVec::default(),
             rename_map: &mut ScratchIndexMap::default(),
+            cache_inputs: &mut cache_inputs,
             default_edge: Edge::new(
                 Projection::All,
                 None,
@@ -82,10 +89,27 @@ pub fn projection_pushdown(root: Node, ir_arena: &mut Arena<IR>, expr_arena: &mu
     };
 
     ir_arena.swap(root, input);
+
+    // Ensure cache nodes for an ID all point to same input Node.
+    let cache_nodes = Vec::from_iter(
+        ir_arena
+            .iter(root)
+            .filter_map(|(node, ir)| matches!(ir, IR::Cache { .. }).then_some(node)),
+    );
+
+    for node in cache_nodes {
+        let IR::Cache { input, id } = ir_arena.get_mut(node) else {
+            unreachable!()
+        };
+        if let Some(optimized_cache) = cache_inputs.get(id) {
+            *input = *optimized_cache;
+        }
+    }
 }
 
 pub struct ProjectionPushdownVisitor<'a, 'arena> {
     expr_arena: &'arena mut Arena<AExpr>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
     schema_cache: &'a mut PlHashMap<Node, Arc<Schema>>,
     ae_nodes_scratch: &'a mut ScratchVec<Node>,
     ae_height_scratch: &'a mut ScratchVec<ExprProjectionHeight>,
@@ -94,6 +118,8 @@ pub struct ProjectionPushdownVisitor<'a, 'arena> {
     names_set_scratch3: &'a mut ScratchIndexSet<PlSmallStr>,
     names_vec_scratch: &'a mut ScratchVec<PlSmallStr>,
     rename_map: &'a mut ScratchIndexMap<PlSmallStr, PlSmallStr>,
+    #[allow(clippy::disallowed_types)] // We don't iterate over cache.
+    cache_inputs: &'a mut PlHashMap<UniqueId, Node>,
     default_edge: Edge,
     maintain_errors: bool,
 }
@@ -192,6 +218,10 @@ impl<'a, 'arena> NodeVisitor for ProjectionPushdownVisitor<'a, 'arena> {
                 );
             },
 
+            IR::Cache { input, id } => {
+                self.cache_inputs.insert(*id, *input);
+            },
+
             _ => {},
         }
 
@@ -277,6 +307,7 @@ impl ProjectionPushdownVisitor<'_, '_> {
             }};
         }
 
+        #[allow(clippy::disallowed_types)] // We don't iterate over cache.
         fn pushdown_with_added_names(
             key: Node,
             edges: &mut dyn NodeEdgesProvider<<ProjectionPushdownVisitor as NodeVisitor>::Edge>,
@@ -1258,7 +1289,9 @@ impl ProjectionPushdownVisitor<'_, '_> {
             IR::MergeSorted { key, .. } => {
                 let (projected_names, _) = projected_names_subset_or_return!();
                 let len_before_added_names = projected_names.len();
-                projected_names.insert(key.clone());
+                for key in key.iter() {
+                    projected_names.insert(key.clone());
+                }
                 pushdown_with_added_names!(len_before_added_names)
             },
 

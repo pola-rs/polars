@@ -5926,6 +5926,12 @@ class Series:
         """
         Compute the element-wise value for the sine.
 
+        Notes
+        -----
+        Input values are interpreted as radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
+
         Examples
         --------
         >>> import math
@@ -5943,6 +5949,12 @@ class Series:
     def cos(self) -> Series:
         """
         Compute the element-wise value for the cosine.
+
+        Notes
+        -----
+        Input values are interpreted as radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
 
         Examples
         --------
@@ -5962,6 +5974,12 @@ class Series:
         """
         Compute the element-wise value for the tangent.
 
+        Notes
+        -----
+        Input values are interpreted as radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
+
         Examples
         --------
         >>> import math
@@ -5979,6 +5997,12 @@ class Series:
     def cot(self) -> Series:
         """
         Compute the element-wise value for the cotangent.
+
+        Notes
+        -----
+        Input values are interpreted as radians.
+        To convert from degrees to radians,
+        call :meth:`.radians() <polars.Series.radians>`.
 
         Examples
         --------
@@ -5998,6 +6022,12 @@ class Series:
         """
         Compute the element-wise value for the inverse sine.
 
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.0, 0.0, -1.0])
@@ -6015,6 +6045,12 @@ class Series:
         """
         Compute the element-wise value for the inverse cosine.
 
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
+
         Examples
         --------
         >>> s = pl.Series("a", [1.0, 0.0, -1.0])
@@ -6031,6 +6067,12 @@ class Series:
     def arctan(self) -> Series:
         """
         Compute the element-wise value for the inverse tangent.
+
+        Notes
+        -----
+        The returned value is in radians.
+        To convert from radians to degrees,
+        call :meth:`.degrees() <polars.Series.degrees>`.
 
         Examples
         --------
@@ -9025,6 +9067,53 @@ class Series:
             3
         ]
         """  # noqa: W505
+
+    def degrees(self) -> Series:
+        """
+        Convert from radians to degrees.
+
+        Examples
+        --------
+        >>> import math
+        >>> s = pl.Series("a", [x * math.pi for x in range(-4, 5)])
+        >>> s.degrees()
+        shape: (9,)
+        Series: 'a' [f64]
+        [
+            -720.0
+            -540.0
+            -360.0
+            -180.0
+            0.0
+            180.0
+            360.0
+            540.0
+            720.0
+        ]
+        """
+
+    def radians(self) -> Series:
+        """
+        Convert from degrees to radians.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [-720, -540, -360, -180, 0, 180, 360, 540, 720])
+        >>> s.radians()
+        shape: (9,)
+        Series: 'a' [f64]
+        [
+            -12.566371
+            -9.424778
+            -6.283185
+            -3.141593
+            0.0
+            3.141593
+            6.283185
+            9.424778
+            12.566371
+        ]
+        """
 
     def reshape(self, dimensions: tuple[int, ...]) -> Series:
         """

@@ -207,7 +207,7 @@ def test_fused_arithm() -> None:
 
     # check if we constant fold instead of fma
     q = df.lazy().select(pl.lit(1) * pl.lit(2) - pl.col("c"))
-    assert """(2) - (col("c")""" in q.explain()
+    assert """2 - col("c")""" in q.explain()
 
     # Check if fused is turned off for literals see: #9857
     for expr in [
@@ -1012,3 +1012,17 @@ def test_bitwise_bool_ops_deprecated(
     )
     with pytest.warns(DeprecationWarning, match=rf"^{re.escape(msg)}$"):
         lf.select(op(pl.col("int"), pl.col("bool"))).collect_schema()
+
+
+def test_fma_unknown_type_coercion_28315() -> None:
+    df = pl.DataFrame(
+        {"x": [0.0, 1.0], "w": [1.0, 1.0]},
+        schema={"x": pl.Float32, "w": pl.Float32},
+    )
+
+    expr = pl.col("x") * pl.col("w") + 1e-30 * (pl.col("x") == 0)
+
+    assert_frame_equal(
+        df.select(expr),
+        pl.Series("x", [1e-30, 1.0], dtype=pl.Float32).to_frame(),
+    )

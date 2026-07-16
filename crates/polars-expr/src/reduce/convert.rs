@@ -1,4 +1,3 @@
-// use polars_core::error::feature_gated;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
@@ -23,7 +22,7 @@ use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
 use crate::reduce::min_max_by::{new_max_by_reduction, new_min_by_reduction};
 #[cfg(feature = "moment")]
 use crate::reduce::skew_kurtosis::{new_kurtosis_reduction, new_skew_reduction};
-use crate::reduce::sum::new_sum_reduction;
+use crate::reduce::sum::{IdxTypeCheckedSumReducer, new_sum_reduction};
 use crate::reduce::var_std::new_var_std_reduction;
 
 /// Converts a node into a reduction + its associated selector expression.
@@ -90,7 +89,7 @@ pub fn into_reduction(
 
                 (out, expr)
             } else {
-                // Support len aggregation on 0-width morsels.
+                // Support len aggregation on 0-width morsels, used by `scan_*().select(len())`.
                 // Notes:
                 // * We do this instead of projecting a scalar, because scalar literals don't
                 //   project to the height of the DataFrame (in the PhysicalExpr impl).
@@ -102,7 +101,8 @@ pub fn into_reduction(
                     "not implemented: len() of groups with no columns"
                 );
 
-                let out: Box<dyn GroupedReduction> = new_sum_reduction(DataType::IDX_DTYPE)?;
+                let out: Box<dyn GroupedReduction> =
+                    Box::new(IdxTypeCheckedSumReducer::new_grouped_reduction());
                 let expr = expr_arena.add(AExpr::Len);
 
                 (out, expr)
