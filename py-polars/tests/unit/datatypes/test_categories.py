@@ -124,25 +124,28 @@ def test_global_categories_gc() -> None:
             """\
 import polars as pl
 
+cats = pl.Categories()
+assert cats.is_global()
+
 df = pl.DataFrame({"x": ["a", "b", "c"]}, schema={"x": pl.Categorical})
-assert set(df["x"].cat.get_categories().to_list()) == {"a", "b", "c"}
+assert set(list(cats)) == {"a", "b", "c"}
 df2 = pl.DataFrame({"x": ["d", "e", "f"]}, schema={"x": pl.Categorical})
-assert set(df["x"].cat.get_categories().to_list()) == {"a", "b", "c", "d", "e", "f"}
+assert set(list(cats)) == {"a", "b", "c", "d", "e", "f"}
 del df
 del df2
 df3 = pl.DataFrame({"x": ["x"]}, schema={"x": pl.Categorical})
-assert set(df3["x"].cat.get_categories().to_list()) == {"x"}
+assert set(list(cats)) == {"x"}
 del df3
 
 keep_alive = pl.DataFrame({"x": []}, schema={"x": pl.Categorical})
 df = pl.DataFrame({"x": ["a", "b", "c"]}, schema={"x": pl.Categorical})
-assert set(df["x"].cat.get_categories().to_list()) == {"a", "b", "c"}
+assert set(list(cats)) == {"a", "b", "c"}
 df2 = pl.DataFrame({"x": ["d", "e", "f"]}, schema={"x": pl.Categorical})
-assert set(df["x"].cat.get_categories().to_list()) == {"a", "b", "c", "d", "e", "f"}
+assert set(list(cats)) == {"a", "b", "c", "d", "e", "f"}
 del df
 del df2
 df3 = pl.DataFrame({"x": ["x"]}, schema={"x": pl.Categorical})
-assert set(df3["x"].cat.get_categories().to_list()) == {"a", "b", "c", "d", "e", "f", "x"}
+assert set(list(cats)) == {"a", "b", "c", "d", "e", "f", "x"}
 
 print("OK", end="")
 """,
