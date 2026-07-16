@@ -157,10 +157,8 @@ impl Slice {
                         Some(IdxSize::MAX)
                     }
                 },
-                #[cfg(feature = "bigidx")]
-                AnyValue::UInt64(len) => Some(len),
-                #[cfg(not(feature = "bigidx"))]
-                AnyValue::UInt32(len) => Some(len),
+                AnyValue::UInt64(len) => len.try_into().ok(),
+                AnyValue::UInt32(len) => len.try_into().ok(),
                 _ => None,
             }
         {
@@ -203,16 +201,7 @@ impl Slice {
                 )))),
                 expr_arena.add(AExpr::Literal(LiteralValue::Scalar(Scalar::new(
                     DataType::IDX_DTYPE,
-                    {
-                        #[cfg(not(feature = "bigidx"))]
-                        {
-                            AnyValue::UInt32(*len)
-                        }
-                        #[cfg(feature = "bigidx")]
-                        {
-                            AnyValue::UInt64(*len)
-                        }
-                    },
+                    AnyValue::from(*len),
                 )))),
             ),
             Self::Opaque { offset, len } => (*offset, *len),
@@ -482,4 +471,34 @@ fn aexpr_slice_pushdown_top(
     }
 
     state
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slice_length_uses_idx_dtype() {
+        let mut arena = Arena::new();
+        let offset = arena.add(AExpr::Literal(Scalar::from(1_i64).into()));
+        let length = arena.add(AExpr::Literal(Scalar::from(2 as IdxSize).into()));
+
+        let slice = Slice::from_nodes(offset, length, &arena);
+        assert_eq!(
+            slice,
+            Slice::Extracted(ExtractedSlice { offset: 1, len: 2 })
+        );
+
+        let input = arena.add(AExpr::Literal(Scalar::from(0_i64).into()));
+        slice.slice_arena_node(input, &mut arena);
+
+        let AExpr::Slice { length, .. } = arena.get(input) else {
+            panic!("expected a slice expression");
+        };
+        let AExpr::Literal(LiteralValue::Scalar(length)) = arena.get(*length) else {
+            panic!("expected a scalar slice length");
+        };
+        assert_eq!(length.dtype(), &DataType::IDX_DTYPE);
+        assert_eq!(length.as_any_value().idx(), 2);
+    }
 }
