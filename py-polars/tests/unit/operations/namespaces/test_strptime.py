@@ -906,7 +906,22 @@ def test_date_parse_omit_day_month() -> None:
             "2022 December",
         ]
     )
-    result = s.str.strptime(pl.Date, "%Y %B")
+    s_abbrev = pl.Series(
+        [
+            "2022 Jan",
+            "2022 Feb",
+            "2022 Mar",
+            "2022 Apr",
+            "2022 May",
+            "2022 Jun",
+            "2022 Jul",
+            "2022 Aug",
+            "2022 Sep",
+            "2022 Oct",
+            "2022 Nov",
+            "2022 Dec",
+        ]
+    )
     expected = pl.Series(
         [
             date(2022, 1, 1),
@@ -923,7 +938,9 @@ def test_date_parse_omit_day_month() -> None:
             date(2022, 12, 1),
         ]
     )
-    assert_series_equal(result, expected)
+    assert_series_equal(s.str.strptime(pl.Date, "%Y %B"), expected)
+    assert_series_equal(s_abbrev.str.strptime(pl.Date, "%Y %b"), expected)
+    assert_series_equal(s_abbrev.str.strptime(pl.Date, "%Y %B"), expected)
 
 
 @pytest.mark.parametrize("length", [1, 5])

@@ -225,12 +225,11 @@ pub trait StringMethods: AsString {
         let fmt = strptime::compile_fmt(fmt)?;
 
         // We can use the fast parser.
-        let ca = if let Some(fmt_len) = strptime::fmt_len(fmt.as_bytes()) {
+        let ca = if strptime::fast_parser_supported(fmt.as_bytes()) {
             let mut strptime_cache = StrpTimeState::default();
             let mut convert = LruCachedFunc::new(
                 |s: &str| {
-                    // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
-                    match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) } {
+                    match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
                         // Fallback to chrono.
                         None => NaiveDate::parse_from_str(s, &fmt).ok(),
                         Some(ndt) => Some(ndt.date()),
@@ -305,14 +304,12 @@ pub trait StringMethods: AsString {
                 TimeUnit::Microseconds => infer::transform_datetime_us,
                 TimeUnit::Milliseconds => infer::transform_datetime_ms,
             };
-            // We can use the fast parser.
-            let ca = if let Some(fmt_len) = self::strptime::fmt_len(fmt.as_bytes()) {
+            let ca = if strptime::fast_parser_supported(fmt.as_bytes()) {
                 let mut strptime_cache = StrpTimeState::default();
                 let mut convert = LruCachedFunc::new(
                     |s: &str| {
                         // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
-                        match unsafe { strptime_cache.parse(s.as_bytes(), fmt.as_bytes(), fmt_len) }
-                        {
+                        match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
                             None => transform(s, &fmt),
                             Some(ndt) => Some(func(ndt)),
                         }

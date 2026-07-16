@@ -33,7 +33,7 @@ fn update_and_parse<T: atoi_simd::Parse>(
 #[inline]
 fn parse_month_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)> {
     let new_offset = offset + 3;
-    match &val[offset..new_offset] {
+    match val.get(offset..new_offset)? {
         b"Jan" => Some((1, new_offset)),
         b"Feb" => Some((2, new_offset)),
         b"Mar" => Some((3, new_offset)),
@@ -49,91 +49,33 @@ fn parse_month_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)> {
         _ => None,
     }
 }
+
+static FULL_MONTH: &[&str; 12] = &[
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+
 #[inline]
-fn parse_month_full(val: &[u8], offset: usize) -> Option<(u32, usize)> {
-    let min_offset = offset + 3;
-    match &val[offset..min_offset] {
-        b"Jan" => {
-            let new_offset = min_offset + 4;
-            match &val[min_offset..new_offset] {
-                b"uary" => Some((1, new_offset)),
-                _ => None,
-            }
-        },
-        b"Feb" => {
-            let new_offset = min_offset + 5;
-            match &val[min_offset..new_offset] {
-                b"ruary" => Some((2, new_offset)),
-                _ => None,
-            }
-        },
-        b"Mar" => {
-            let new_offset = min_offset + 2;
-            match &val[min_offset..new_offset] {
-                b"ch" => Some((3, new_offset)),
-                _ => None,
-            }
-        },
-        b"Apr" => {
-            let new_offset = min_offset + 2;
-            match &val[min_offset..new_offset] {
-                b"il" => Some((4, new_offset)),
-                _ => None,
-            }
-        },
-        b"May" => Some((5, min_offset)),
-        b"Jun" => {
-            let new_offset = min_offset + 1;
-            match &val[min_offset..new_offset] {
-                b"e" => Some((6, new_offset)),
-                _ => None,
-            }
-        },
-        b"Jul" => {
-            let new_offset = min_offset + 1;
-            match &val[min_offset..new_offset] {
-                b"y" => Some((7, new_offset)),
-                _ => None,
-            }
-        },
-        b"Aug" => {
-            let new_offset = min_offset + 3;
-            match &val[min_offset..new_offset] {
-                b"ust" => Some((8, new_offset)),
-                _ => None,
-            }
-        },
-        b"Sep" => {
-            let new_offset = min_offset + 6;
-            match &val[min_offset..new_offset] {
-                b"tember" => Some((9, new_offset)),
-                _ => None,
-            }
-        },
-        b"Oct" => {
-            let new_offset = min_offset + 4;
-            match &val[min_offset..new_offset] {
-                b"ober" => Some((10, new_offset)),
-                _ => None,
-            }
-        },
-        b"Nov" => {
-            let new_offset = min_offset + 5;
-            match &val[min_offset..new_offset] {
-                b"ember" => Some((11, new_offset)),
-                _ => None,
-            }
-        },
-        b"Dec" => {
-            let new_offset = min_offset + 5;
-            match &val[min_offset..new_offset] {
-                b"ember" => Some((12, new_offset)),
-                _ => None,
-            }
-        },
-        _ => None,
+fn parse_month_full_or_abbrev(val: &[u8], offset: usize) -> Option<(u32, usize)> {
+    let (month, offset) = parse_month_abbrev(val, offset)?;
+    let rest = &FULL_MONTH[(month - 1) as usize].as_bytes()[3..];
+    if val[offset..].starts_with(rest) {
+        Some((month, offset + rest.len()))
+    } else {
+        Some((month, offset))
     }
 }
+
 /// Tries to convert a chrono `fmt` to a `fmt` that the polars parser consumes.
 /// E.g. chrono supports single letter date identifiers like %F, whereas polars only consumes
 /// year, day, month distinctively with %Y, %d, %m.
@@ -168,33 +110,18 @@ pub(super) struct StrpTimeState {}
 
 impl StrpTimeState {
     #[inline]
-    // # Safety
-    // Caller must ensure that fmt adheres to the fmt rules of chrono and `fmt_len` is correct.
-    pub(super) unsafe fn parse(
-        &mut self,
-        val: &[u8],
-        fmt: &[u8],
-        fmt_len_val: u16,
-    ) -> Option<NaiveDateTime> {
+    pub(super) fn parse(&mut self, val: &[u8], fmt: &[u8]) -> Option<NaiveDateTime> {
         let mut offset = 0;
         let mut negative = false;
         if val.starts_with(b"-") && fmt.starts_with(b"%Y") {
             offset = 1;
             negative = true;
         }
-        #[allow(non_snake_case)]
-        let has_B_code = fmt.windows(2).any(|w| w == b"%B");
-        // SAFETY: this still ensures get_unchecked won't be out of bounds as val will be at least as big as we expect.
-        // After consuming the full month name, we'll double check remaining len is exactly equal.
-        let is_too_short = has_B_code && val.len() - offset < (fmt_len_val as usize);
-        if (!has_B_code && val.len() - offset != (fmt_len_val as usize)) || is_too_short {
-            return None;
-        }
 
         const ESCAPE: u8 = b'%';
+
+        // Minimal day/month is always 1, otherwise chrono may panic.
         let mut year: i32 = 1;
-        // minimal day/month is always 1
-        // otherwise chrono may panic.
         let mut month: u32 = 1;
         let mut day: u32 = 1;
         let mut hour: u32 = 0;
@@ -205,13 +132,8 @@ impl StrpTimeState {
         let mut fmt_iter = fmt.iter();
 
         while let Some(fmt_b) = fmt_iter.next() {
-            debug_assert!(offset < val.len());
-            let b = *val.get_unchecked(offset);
             if *fmt_b == ESCAPE {
-                // SAFETY: we must ensure we provide valid patterns
-                let next = fmt_iter.next();
-                debug_assert!(next.is_some());
-                match next.unwrap_unchecked() {
+                match fmt_iter.next()? {
                     b'Y' => {
                         (year, offset) = update_and_parse(4, offset, val)?;
                         if negative {
@@ -228,13 +150,7 @@ impl StrpTimeState {
                         (month, offset) = parse_month_abbrev(val, offset)?;
                     },
                     b'B' => {
-                        (month, offset) = parse_month_full(val, offset)?;
-                        // After variable sized month is consumed, verify remaining is exact len
-                        let new_fmt_len = fmt_len(fmt_iter.as_slice())?;
-                        let remaining_val_len = val.len() - offset;
-                        if remaining_val_len != (new_fmt_len as usize) {
-                            return None;
-                        }
+                        (month, offset) = parse_month_full_or_abbrev(val, offset)?;
                     },
                     b'd' => {
                         (day, offset) = update_and_parse(2, offset, val)?;
@@ -250,7 +166,7 @@ impl StrpTimeState {
                     },
                     b'y' => {
                         let new_offset = offset + 2;
-                        let bytes = val.get_unchecked(offset..new_offset);
+                        let bytes = val.get(offset..new_offset)?;
 
                         let (decade, parsed) =
                             atoi_simd::parse_prefix::<i32, true, false>(bytes).ok()?;
@@ -281,9 +197,8 @@ impl StrpTimeState {
                     },
                     _ => return None,
                 }
-            }
-            // consume
-            else if b == *fmt_b {
+            } else if val.get(offset) == Some(fmt_b) {
+                // Consume literal.
                 offset += 1;
             } else {
                 return None;
@@ -301,57 +216,27 @@ impl StrpTimeState {
     }
 }
 
-pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
+pub(super) fn fast_parser_supported(fmt: &[u8]) -> bool {
     let mut iter = fmt.iter();
-    let mut cnt = 0;
-
     while let Some(&val) = iter.next() {
         match val {
             b'%' => match iter.next() {
                 Some(&next_val) => match next_val {
-                    b'Y' => cnt += 4,
-                    b'y' => cnt += 2,
-                    b'd' => cnt += 2,
-                    b'm' => cnt += 2,
-                    b'b' => cnt += 3,
-                    b'B' => cnt += 3, // This is minimum size for full month
-                    b'H' => cnt += 2,
-                    b'M' => cnt += 2,
-                    b'S' => cnt += 2,
-                    b'9' => {
-                        cnt += 9;
-                        if matches!(iter.next(), Some(&b'f')) && iter.next().is_none() {
-                            return Some(cnt);
-                        } else {
-                            return None;
+                    b'Y' | b'y' | b'd' | b'm' | b'b' | b'B' | b'H' | b'M' | b'S' => {},
+
+                    b'9' | b'6' | b'3' => {
+                        if iter.next().is_some_and(|c| *c != b'f') {
+                            return false;
                         }
                     },
-                    b'6' => {
-                        cnt += 6;
-                        if matches!(iter.next(), Some(&b'f')) && iter.next().is_none() {
-                            return Some(cnt);
-                        } else {
-                            return None;
-                        }
-                    },
-                    b'3' => {
-                        cnt += 3;
-                        if matches!(iter.next(), Some(&b'f')) && iter.next().is_none() {
-                            return Some(cnt);
-                        } else {
-                            return None;
-                        }
-                    },
-                    _ => return None,
+                    _ => return false,
                 },
-                None => return None,
+                None => return false,
             },
-            _ => {
-                cnt += 1;
-            },
+            _ => {},
         }
     }
-    Some(cnt)
+    true
 }
 
 #[cfg(test)]
@@ -430,13 +315,10 @@ mod test {
         ];
 
         for (val, fmt, len, expected) in patterns {
-            assert_eq!(fmt_len(fmt.as_bytes()).unwrap(), len);
-            unsafe {
-                assert_eq!(
-                    StrpTimeState::default().parse(val.as_bytes(), fmt.as_bytes(), len),
-                    expected
-                )
-            };
+            assert_eq!(
+                StrpTimeState::default().parse(val.as_bytes(), fmt.as_bytes()),
+                expected
+            );
         }
     }
 }
