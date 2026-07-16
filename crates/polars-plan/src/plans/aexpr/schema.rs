@@ -867,6 +867,14 @@ fn get_truediv_dtype(left_dtype: &DataType, right_dtype: &DataType) -> PolarsRes
         (Decimal(_, scale_left), Decimal(_, scale_right)) => {
             Decimal(DEC128_MAX_PREC, *scale_left.max(scale_right))
         },
+        #[cfg(feature = "dtype-decimal")]
+        (l @ Decimal(_, _), r) if r.is_primitive_numeric() => {
+            if r.is_float() {
+                Float64
+            } else {
+                l.clone()
+            }
+        },
         #[cfg(all(feature = "dtype-u8", feature = "dtype-f16"))]
         (UInt8 | Int8, Float16) => Float16,
         #[cfg(all(feature = "dtype-u16", feature = "dtype-f16"))]

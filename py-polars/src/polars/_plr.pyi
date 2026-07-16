@@ -617,13 +617,17 @@ class PyDataFrame:
     def div_df(self, s: PyDataFrame) -> PyDataFrame: ...
     def rem_df(self, s: PyDataFrame) -> PyDataFrame: ...
     def sample_n(
-        self, n: PySeries, with_replacement: bool, shuffle: bool, seed: int | None
+        self,
+        n: PySeries,
+        with_replacement: bool,
+        shuffle: bool | None,
+        seed: int | None,
     ) -> PyDataFrame: ...
     def sample_frac(
         self,
         frac: PySeries,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: bool | None,
         seed: int | None,
     ) -> PyDataFrame: ...
     def rechunk(self) -> PyDataFrame: ...
@@ -1403,10 +1407,14 @@ class PyExpr:
     def to_physical(self) -> PyExpr: ...
     def shuffle(self, seed: int | None) -> PyExpr: ...
     def sample_n(
-        self, n: PyExpr, with_replacement: bool, shuffle: bool, seed: int | None
+        self, n: PyExpr, with_replacement: bool, shuffle: bool | None, seed: int | None
     ) -> PyExpr: ...
     def sample_frac(
-        self, frac: PyExpr, with_replacement: bool, shuffle: bool, seed: int | None
+        self,
+        frac: PyExpr,
+        with_replacement: bool,
+        shuffle: bool | None,
+        seed: int | None,
     ) -> PyExpr: ...
     def ewm_mean(
         self, alpha: float, adjust: bool, min_periods: int, ignore_nulls: bool
@@ -1633,13 +1641,17 @@ class PyExpr:
     def list_sum(self) -> PyExpr: ...
     def list_drop_nulls(self) -> PyExpr: ...
     def list_sample_n(
-        self, n: PyExpr, with_replacement: bool, shuffle: bool, seed: int | None = None
+        self,
+        n: PyExpr,
+        with_replacement: bool,
+        shuffle: bool | None,
+        seed: int | None = None,
     ) -> PyExpr: ...
     def list_sample_fraction(
         self,
         fraction: PyExpr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: bool | None,
         seed: int | None = None,
     ) -> PyExpr: ...
     def list_gather(self, index: PyExpr, null_on_oob: bool) -> PyExpr: ...

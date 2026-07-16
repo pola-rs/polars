@@ -811,6 +811,36 @@ fn insert_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKe
     });
 }
 
+fn split_multiplexers(roots: Vec<PhysNodeKey>, phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>) {
+    let mut refcount: SecondaryMap<PhysNodeKey, usize> = SecondaryMap::new();
+    visit_node_inputs_mut(roots.clone(), phys_sm, |i| {
+        *refcount.entry(i.node).unwrap().or_insert(0) += 1;
+    });
+
+    let mut split_map: SecondaryMap<PhysNodeKey, PhysNode> = SecondaryMap::new();
+    for (k, n) in phys_sm.iter() {
+        if let PhysNodeKind::Multiplexer { input } = n.kind {
+            if let PhysNodeKind::InMemorySource { .. } = phys_sm[input.node].kind {
+                split_map.insert(k, phys_sm[input.node].clone());
+            }
+        }
+    }
+
+    let mut replacements: SecondaryMap<PhysNodeKey, Vec<PhysStream>> = split_map
+        .into_iter()
+        .map(|(k, n)| {
+            let repls = (0..refcount[k]).map(|_| PhysStream::first(phys_sm.insert(n.clone())));
+            (k, repls.collect())
+        })
+        .collect();
+
+    visit_node_inputs_mut(roots, phys_sm, |i| {
+        if let Some(r) = replacements.get_mut(i.node) {
+            *i = r.pop().unwrap();
+        }
+    });
+}
+
 pub fn build_physical_plan(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -833,5 +863,6 @@ pub fn build_physical_plan(
         None,
     )?;
     insert_multiplexers(vec![phys_root.node], phys_sm);
+    split_multiplexers(vec![phys_root.node], phys_sm);
     Ok(phys_root.node)
 }

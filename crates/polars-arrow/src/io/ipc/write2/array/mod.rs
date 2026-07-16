@@ -216,17 +216,9 @@ fn write_bitmap(
 ) -> PolarsResult<()> {
     match bitmap {
         Some(bitmap) => {
-            let buf = match bitmap.as_buffer() {
-                (buf, 0, _) => buf,
-                _ => {
-                    let bytes = Bitmap::from_trusted_len_iter(bitmap.iter());
-                    let (buf, 0, _) = bytes.as_buffer() else {
-                        panic!()
-                    };
-                    buf
-                },
+            let (buf, 0, _) = bitmap.to_aligned_bitmap().as_buffer() else {
+                unreachable!()
             };
-
             write_bytes(ctx, BufferOrSlice::Buffer(&buf))?;
         },
         None => {

@@ -10617,7 +10617,7 @@ Consider using {self}.implode() instead"""
         *,
         fraction: float | IntoExprColumn | None = None,
         with_replacement: bool = False,
-        shuffle: bool = False,
+        shuffle: bool | None = None,
         seed: int | None = None,
     ) -> Expr:
         """
@@ -10633,7 +10633,12 @@ Consider using {self}.implode() instead"""
         with_replacement
             Allow values to be sampled more than once.
         shuffle
-            Shuffle the order of sampled data points.
+            Determines the order of the sampled elements.
+            If True, sampled elements are explicitly shuffled.
+            If False, the relative order of the sampled elements is preserved.
+            (i.e. they appear in the same order as the original input).
+            If None (default), no ordering guarantee; uses the most performant
+            algorithm.
         seed
             Seed for the random number generator. If set to None (default), a
             random seed is generated for each sample operation.
@@ -10641,7 +10646,11 @@ Consider using {self}.implode() instead"""
         Examples
         --------
         >>> df = pl.DataFrame({"a": [1, 2, 3]})
-        >>> df.select(pl.col("a").sample(fraction=1.0, with_replacement=True, seed=1))
+        >>> df.select(
+        ...     pl.col("a").sample(
+        ...         fraction=1.0, with_replacement=True, shuffle=False, seed=1
+        ...     )
+        ... )
         shape: (3, 1)
         ┌─────┐
         │ a   │
