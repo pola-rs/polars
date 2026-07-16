@@ -307,12 +307,9 @@ pub trait StringMethods: AsString {
             let ca = if strptime::fast_parser_supported(fmt.as_bytes()) {
                 let mut strptime_cache = StrpTimeState::default();
                 let mut convert = LruCachedFunc::new(
-                    |s: &str| {
-                        // SAFETY: fmt_len is correct, it was computed with this `fmt` str.
-                        match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
-                            None => transform(s, &fmt),
-                            Some(ndt) => Some(func(ndt)),
-                        }
+                    |s: &str| match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
+                        None => transform(s, &fmt),
+                        Some(ndt) => Some(func(ndt)),
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );
