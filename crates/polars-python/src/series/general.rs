@@ -44,18 +44,6 @@ impl PySeries {
         }
     }
 
-    pub fn cat_uses_lexical_ordering(&self) -> PyResult<bool> {
-        Ok(true)
-    }
-
-    pub fn cat_is_local(&self) -> PyResult<bool> {
-        Ok(false)
-    }
-
-    pub fn cat_to_local(&self, _py: Python) -> PyResult<Self> {
-        Ok(self.clone())
-    }
-
     fn estimated_size(&self) -> usize {
         self.series.read().estimated_size()
     }

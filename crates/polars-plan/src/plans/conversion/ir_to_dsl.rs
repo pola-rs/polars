@@ -357,7 +357,6 @@ pub fn ir_function_to_dsl(input: Vec<Expr>, function: IRFunctionExpr) -> Expr {
             use CategoricalFunction as C;
             use IRCategoricalFunction as IC;
             F::Categorical(match f {
-                IC::GetCategories => C::GetCategories,
                 #[cfg(feature = "strings")]
                 IC::LenBytes => C::LenBytes,
                 #[cfg(feature = "strings")]

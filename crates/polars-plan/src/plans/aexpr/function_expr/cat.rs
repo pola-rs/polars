@@ -3,7 +3,6 @@ use super::*;
 #[cfg_attr(feature = "ir_serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum IRCategoricalFunction {
-    GetCategories,
     #[cfg(feature = "strings")]
     LenBytes,
     #[cfg(feature = "strings")]
@@ -22,7 +21,6 @@ impl IRCategoricalFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use IRCategoricalFunction::*;
         match self {
-            GetCategories => mapper.with_dtype(DataType::String),
             #[cfg(feature = "strings")]
             LenBytes => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "strings")]
@@ -41,7 +39,6 @@ impl IRCategoricalFunction {
     pub fn function_options(&self) -> FunctionOptions {
         use IRCategoricalFunction as C;
         match self {
-            C::GetCategories => FunctionOptions::groupwise(),
             #[cfg(feature = "strings")]
             C::LenBytes | C::LenChars | C::StartsWith(_) | C::EndsWith(_) | C::Slice(_, _) => {
                 FunctionOptions::elementwise()
@@ -55,7 +52,6 @@ impl Display for IRCategoricalFunction {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         use IRCategoricalFunction::*;
         let s = match self {
-            GetCategories => "get_categories",
             #[cfg(feature = "strings")]
             LenBytes => "len_bytes",
             #[cfg(feature = "strings")]
