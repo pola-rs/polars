@@ -27,6 +27,9 @@ impl StackExec {
             && df.first_col_n_chunks() > 1
             && df.height() > 0
             && self.options.run_parallel
+            // This condition is necessary because we violate the assumption that a DataFrame has columns equal to its
+            // height in the in-memory engine's common subexpression elimination. We should fix this at some point.
+            && df.columns().iter().all(|c| c.len() == df.height())
         {
             let chunks = df.split_chunks().collect::<Vec<_>>();
             let iter = chunks.into_par_iter().map(|mut df| {

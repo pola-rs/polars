@@ -1550,3 +1550,26 @@ def test_from_pandas_timestamp_17382() -> None:
     assert isinstance(result, datetime)
     assert result.tzinfo == ZoneInfo("UTC")
     assert result == datetime(2021, 1, 1, 0, 0, 0, tzinfo=ZoneInfo("UTC"))
+
+
+def test_sliced_struct_arrow_export_19612() -> None:
+    df = pl.DataFrame(
+        {"x": [{"value": "A"}, None, {"value": "B"}, None]},
+    )
+
+    arrow_tbls = [
+        df.slice(0, 1).to_arrow(),
+        df.slice(1, 1).to_arrow(),
+        df.slice(2, 1).to_arrow(),
+        df.slice(3, 1).to_arrow(),
+    ]
+
+    expected_row_values = [{"value": "A"}, None, {"value": "B"}, None]
+
+    for arrow_tbl, expect_row_value in zip(
+        arrow_tbls, expected_row_values, strict=True
+    ):
+        assert_frame_equal(
+            pl.DataFrame(arrow_tbl),
+            pl.DataFrame({"x": [expect_row_value]}, schema=df.schema),
+        )

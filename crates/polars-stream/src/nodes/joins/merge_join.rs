@@ -407,7 +407,7 @@ async fn find_mergeable_task(
                         .await;
                     return Ok(());
                 };
-                build_unmerged.push_df(m.into_df());
+                build_unmerged.push_df(m.into_df().await);
             },
             Err(NeedMore::Probe | NeedMore::Both) if recv_probe.is_some() => {
                 let Ok(m) = recv_probe.as_mut().unwrap().recv().await else {
@@ -416,7 +416,7 @@ async fn find_mergeable_task(
                         .await;
                     return Ok(());
                 };
-                probe_unmerged.push_df(m.into_df());
+                probe_unmerged.push_df(m.into_df().await);
             },
             Err(other) => {
                 unreachable!("unexpected NeedMore value: {other:?}");
@@ -510,7 +510,7 @@ async fn compute_join_and_send(
             &params.output_schema,
         )?;
         if df.height() > 0 {
-            let mut morsel = Morsel::new(df, seq, source_token.clone());
+            let mut morsel = Morsel::new_unregistered(df, seq, source_token.clone());
             morsel.set_consume_token(wait_group.token());
             if send.send(morsel).await.is_err() {
                 return Ok(());
@@ -534,7 +534,7 @@ async fn compute_join_and_send(
         )?;
         if df_unmatched.height() > 0 {
             if params.args.maintain_order == MaintainOrderJoin::None {
-                let mut morsel = Morsel::new(df_unmatched, seq, source_token.clone());
+                let mut morsel = Morsel::new_unregistered(df_unmatched, seq, source_token.clone());
                 morsel.set_consume_token(wait_group.token());
                 if send.send(morsel).await.is_err() {
                     return Ok(());

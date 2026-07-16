@@ -200,7 +200,7 @@ impl DeletionFilesProvider {
                                         let mut dfs = vec![];
 
                                         while let Ok(morsel) = rx.recv().await {
-                                            dfs.push(morsel.into_df());
+                                            dfs.push(morsel.into_df().await);
                                         }
 
                                         handle.await?;

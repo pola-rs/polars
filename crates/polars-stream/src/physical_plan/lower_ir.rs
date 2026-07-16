@@ -1038,6 +1038,11 @@ pub fn lower_ir(
             right_on,
             options,
         } => {
+            if let Some(JoinTypeOptionsIR::CrossAndFilter { predicate: _ }) = &options.options {
+                // Should not have been created by the optimizer.
+                panic!()
+            };
+
             #[cfg(feature = "iejoin")]
             const RANGE_JOIN_PREFER_DESCENDING: bool = false;
 

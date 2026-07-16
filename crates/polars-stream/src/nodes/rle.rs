@@ -112,7 +112,11 @@ impl ComputeNode for RleNode {
 
                         let df = unsafe { DataFrame::new_unchecked(column.len(), vec![column]) };
                         _ = send
-                            .send(Morsel::new(df, self.seq.successor(), SourceToken::new()))
+                            .send(Morsel::new_unregistered(
+                                df,
+                                self.seq.successor(),
+                                SourceToken::new(),
+                            ))
                             .await;
 
                         self.last_length = 0;
@@ -132,8 +136,9 @@ impl ComputeNode for RleNode {
                             continue;
                         }
 
-                        assert_eq!(m.df().width(), 1);
-                        let column = &m.df()[0];
+                        let df_pin = m.df().await;
+                        assert_eq!(df_pin.width(), 1);
+                        let column = &df_pin[0];
 
                         lengths.clear();
                         polars_ops::series::rle_lengths(column, &mut lengths)?;
@@ -202,6 +207,7 @@ impl ComputeNode for RleNode {
                                 ShareStrategy::Always,
                             )
                         };
+                        drop(df_pin);
 
                         let lengths = Series::new(
                             PlSmallStr::from_static(RLE_LENGTH_COLUMN_NAME),
@@ -215,12 +221,12 @@ impl ComputeNode for RleNode {
                             [&lengths, &series].into_iter(),
                         )
                         .unwrap();
-                        *m.df_mut() = unsafe {
+                        m.set_df(unsafe {
                             DataFrame::new_unchecked(
                                 rle_struct.len(),
                                 vec![rle_struct.into_column()],
                             )
-                        };
+                        });
 
                         if send.send(m).await.is_err() {
                             break;
