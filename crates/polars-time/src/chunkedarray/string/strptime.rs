@@ -183,17 +183,17 @@ impl StrpTimeState {
                     },
                     b'9' => {
                         (nano, offset) = update_and_parse(9, offset, val)?;
-                        break;
+                        assert!(fmt_iter.next() == Some(&b'f'));
                     },
                     b'6' => {
                         (nano, offset) = update_and_parse(6, offset, val)?;
                         nano *= 1000;
-                        break;
+                        assert!(fmt_iter.next() == Some(&b'f'));
                     },
                     b'3' => {
                         (nano, offset) = update_and_parse(3, offset, val)?;
                         nano *= 1_000_000;
-                        break;
+                        assert!(fmt_iter.next() == Some(&b'f'));
                     },
                     _ => return None,
                 }
