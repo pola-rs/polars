@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowDataType;
 use polars_async::executor;
 use polars_core::frame::DataFrame;
 use polars_core::runtime::ASYNC;
@@ -238,7 +239,11 @@ impl ParquetReadImpl {
 
                 if disable_morsel_split {
                     if morsel_sender
-                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .send_morsel(Morsel::new_unregistered(
+                            df,
+                            morsel_seq,
+                            source_token.clone(),
+                        ))
                         .await
                         .is_err()
                     {
@@ -280,7 +285,11 @@ impl ParquetReadImpl {
                     last_morsel_pipelines,
                 ) {
                     if morsel_sender
-                        .send_morsel(Morsel::new(df, morsel_seq, source_token.clone()))
+                        .send_morsel(Morsel::new_unregistered(
+                            df,
+                            morsel_seq,
+                            source_token.clone(),
+                        ))
                         .await
                         .is_err()
                     {
@@ -353,10 +362,13 @@ impl ParquetReadImpl {
             )
         }
 
-        let allow_column_predicates = predicate
-            .as_ref()
-            .is_some_and(|x| x.column_predicates.is_sumwise_complete)
-            && row_index.is_none()
+        let allow_column_predicates = predicate.as_ref().is_some_and(|p| {
+            p.column_predicates.is_sumwise_complete
+                && !projected_arrow_fields.iter().any(|f| {
+                    matches!(f.arrow_field().dtype(), ArrowDataType::FixedSizeBinary(_))
+                        && p.column_predicates.predicates.contains_key(f.output_name())
+                })
+        }) && row_index.is_none()
             && !projected_arrow_fields.iter().any(|x| {
                 x.arrow_field().dtype().is_nested()
                     || matches!(x, ArrowFieldProjection::Mapped { .. })

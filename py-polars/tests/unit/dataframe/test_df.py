@@ -2070,24 +2070,16 @@ def test_extension() -> None:
     rc = sys.getrefcount(foos[0])
     assert rc == base_count
 
+    # Aggregating objects into a list raises, as nested objects
+    # are not supported
     df = pl.DataFrame({"groups": [1, 1, 2], "a": foos})
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 1
 
-    out = df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
-    s = out["a"].list.explode(empty_as_null=False)
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 3
-    del s
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="nested objects"):
+        df.group_by("groups", maintain_order=True).agg(pl.col("a").alias("a"))
 
-    assert out["a"].list.explode(empty_as_null=False).to_list() == foos
-    rc = sys.getrefcount(foos[0])
-    assert rc == base_count + 2
-    del out
+    # The failed query must not leak references
     rc = sys.getrefcount(foos[0])
     assert rc == base_count + 1
     del df

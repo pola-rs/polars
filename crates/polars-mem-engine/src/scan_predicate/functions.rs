@@ -9,9 +9,7 @@ use polars_core::schema::Schema;
 use polars_error::polars_warn;
 use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::ScanIOPredicate;
-use polars_plan::dsl::default_values::{
-    DefaultFieldValues, IcebergIdentityTransformedPartitionFields,
-};
+use polars_plan::dsl::default_values::{DefaultFieldValues, IcebergDefaultFieldValues};
 use polars_plan::dsl::deletion::DeletionFilesList;
 use polars_plan::dsl::{
     Operator, PredicateFileSkip, ScanSources, TableStatistics, UnifiedScanArgs,
@@ -23,6 +21,7 @@ use polars_plan::plans::predicates::{
 };
 use polars_plan::plans::{AExpr, ExprIRDisplay, FileInfo, IR, MintermIter};
 use polars_plan::utils::aexpr_to_leaf_names_iter;
+use polars_utils::aliases::PlIndexMapHashable;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{IdxSize, format_pl_smallstr};
@@ -557,11 +556,18 @@ where
 
     *default_values = default_values.as_ref().map(|x| match x {
         DefaultFieldValues::Iceberg(v) => {
-            let mut out = PlIndexMap::with_capacity(v.len());
-            let mut gather_indices = PlHashMap::with_capacity(v.len());
+            let IcebergDefaultFieldValues {
+                identity_transformed_partition_fields,
+                initial_defaults,
+            } = v.as_ref();
 
-            for (k, v) in v.iter() {
-                out.insert(
+            let mut new_identity_transformed_partition_fields =
+                PlIndexMap::with_capacity(identity_transformed_partition_fields.len());
+            let mut gather_indices =
+                PlHashMap::with_capacity(identity_transformed_partition_fields.len());
+
+            for (k, v) in identity_transformed_partition_fields.iter() {
+                new_identity_transformed_partition_fields.insert(
                     *k,
                     v.as_ref().map_err(Clone::clone).map(|partition_values| {
                         if !gather_indices.contains_key(&partition_values.len()) {
@@ -586,7 +592,12 @@ where
                 );
             }
 
-            DefaultFieldValues::Iceberg(Arc::new(IcebergIdentityTransformedPartitionFields(out)))
+            DefaultFieldValues::Iceberg(Arc::new(IcebergDefaultFieldValues {
+                identity_transformed_partition_fields: PlIndexMapHashable(
+                    new_identity_transformed_partition_fields,
+                ),
+                initial_defaults: initial_defaults.clone(),
+            }))
         },
     });
 }

@@ -6,12 +6,12 @@ use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlHashSet;
+use polars_core::prelude::PlIndexSet;
 use polars_core::schema::Schema;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::metrics::IOMetrics;
-use polars_io::utils::file::Writeable;
+use polars_io::utils::file::Writable;
 use polars_io::utils::sync_on_close::SyncOnCloseType;
 use polars_utils::IdxSize;
 use polars_utils::arena::Arena;
@@ -25,7 +25,7 @@ use crate::dsl::{AExpr, Expr, SpecialEq};
 use crate::plans::{ExprIR, ToFieldContext};
 use crate::prelude::PlanCallback;
 
-type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writeable>>>>;
+type DynSinkTarget = SpecialEq<Arc<std::sync::Mutex<Option<Writable>>>>;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "dsl-schema", derive(schemars::JsonSchema))]
@@ -87,21 +87,21 @@ impl SinkTarget {
         }
     }
 
-    pub fn open_into_writeable(
+    pub fn open_into_writable(
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
-        cloud_upload_chunk_size: usize,
+        cloud_upload_chunk_size: Option<NonZeroUsize>,
         cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
-    ) -> PolarsResult<Writeable> {
+    ) -> PolarsResult<Writable> {
         match self {
             SinkTarget::Path(path) => {
                 if mkdir {
                     polars_io::utils::mkdir::mkdir_recursive(path)?;
                 }
 
-                polars_io::utils::file::Writeable::try_new(
+                polars_io::utils::file::Writable::try_new(
                     path.clone(),
                     cloud_options,
                     cloud_upload_chunk_size,
@@ -113,14 +113,14 @@ impl SinkTarget {
         }
     }
 
-    pub async fn open_into_writeable_async(
+    pub async fn open_into_writable_async(
         &self,
         cloud_options: Option<&CloudOptions>,
         mkdir: bool,
-        cloud_upload_chunk_size: usize,
+        cloud_upload_chunk_size: Option<NonZeroUsize>,
         cloud_upload_concurrency: usize,
         io_metrics: Option<Arc<IOMetrics>>,
-    ) -> PolarsResult<Writeable> {
+    ) -> PolarsResult<Writable> {
         #[cfg(feature = "cloud")]
         {
             match self {
@@ -129,7 +129,7 @@ impl SinkTarget {
                         polars_io::utils::mkdir::tokio_mkdir_recursive(path).await?;
                     }
 
-                    polars_io::utils::file::Writeable::try_new(
+                    polars_io::utils::file::Writable::try_new(
                         path.clone(),
                         cloud_options,
                         cloud_upload_chunk_size,
@@ -143,7 +143,7 @@ impl SinkTarget {
 
         #[cfg(not(feature = "cloud"))]
         {
-            self.open_into_writeable(
+            self.open_into_writable(
                 cloud_options,
                 mkdir,
                 cloud_upload_chunk_size,
@@ -408,7 +408,7 @@ impl PartitionedSinkOptionsIR {
                 if keys.is_empty() {
                     Cow::Borrowed(input_schema)
                 } else if !include_keys {
-                    let key_output_names: PlHashSet<&PlSmallStr> =
+                    let key_output_names: PlIndexSet<&PlSmallStr> =
                         keys.iter().map(|e| e.output_name()).collect();
 
                     Cow::Owned(

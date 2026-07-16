@@ -1306,10 +1306,13 @@ impl Column {
         }
     }
 
-    /// Packs every element into a list.
-    pub fn as_list(&self) -> ListChunked {
+    /// Packs every element into a single-element list.
+    pub fn to_unit_list(&self) -> Column {
         // @scalar-opt
-        self.as_materialized_series().as_list()
+        match self {
+            Column::Series(s) => s.to_unit_list().into_column(),
+            Column::Scalar(s) => s.to_unit_list().into_column(),
+        }
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {

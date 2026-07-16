@@ -56,6 +56,12 @@ if TYPE_CHECKING:
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@deprecate_renamed_parameter(
+    "missing_utf8_is_empty_string",
+    "empty_string_is_null",
+    version="1.43.0",
+    mapper=lambda x: not x,
+)
 def read_csv(
     source: str | Path | IO[str] | IO[bytes] | bytes,
     *,
@@ -72,7 +78,7 @@ def read_csv(
         Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
     ) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
     n_threads: int | None = None,
@@ -158,9 +164,10 @@ def read_csv(
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
 
-    missing_utf8_is_empty_string
-        By default a missing value is considered to be null; if you would prefer missing
-        utf8 values to be treated as the empty string you can set this param True.
+    empty_string_is_null
+        By default a missing string value is considered to be null. If
+        `empty_string_is_null` is set to False, missing string values are considered to
+        decoded as empty strings.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         Before using this option, try to increase the number of lines used for schema
@@ -487,8 +494,6 @@ def read_csv(
     if not infer_schema:
         infer_schema_length = 0
 
-    # TODO: scan_csv doesn't support a "dtype slice" (i.e. list[DataType])
-    schema_overrides_is_list = isinstance(schema_overrides, Sequence)
     encoding_supported_in_lazy = encoding in {"utf8", "utf8-lossy"}
 
     streaming = (
@@ -504,11 +509,7 @@ def read_csv(
             str(v).startswith("hf://")
             # Also dispatch on FORCE_ASYNC, so that this codepath gets run
             # through by our test suite during CI.
-            or (
-                os.getenv("POLARS_FORCE_ASYNC") == "1"
-                and not schema_overrides_is_list
-                and encoding_supported_in_lazy
-            )
+            or (os.getenv("POLARS_FORCE_ASYNC") == "1" and encoding_supported_in_lazy)
             # TODO: We can't dispatch this for all paths due to a few reasons:
             # * `scan_csv` does not support compressed files
             # * The `storage_options` configuration keys are different between
@@ -527,9 +528,6 @@ def read_csv(
             source_normalized = source
 
         if not streaming:
-            if schema_overrides_is_list:
-                msg = "passing a list to `schema_overrides` is unsupported for hf:// paths"
-                raise ValueError(msg)
             if not encoding_supported_in_lazy:
                 msg = f"unsupported encoding {encoding} for hf:// paths"
                 raise ValueError(msg)
@@ -545,7 +543,7 @@ def read_csv(
             schema_overrides=schema_overrides,  # type: ignore[arg-type]
             schema=schema,
             null_values=null_values,
-            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+            empty_string_is_null=empty_string_is_null,
             ignore_errors=ignore_errors,
             try_parse_dates=try_parse_dates,
             infer_schema_length=infer_schema_length,
@@ -590,7 +588,7 @@ def read_csv(
                 schema_overrides=schema_overrides,
                 schema=schema,
                 null_values=null_values,
-                missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+                empty_string_is_null=empty_string_is_null,
                 ignore_errors=ignore_errors,
                 try_parse_dates=try_parse_dates,
                 n_threads=n_threads,
@@ -628,7 +626,7 @@ def _read_csv_impl(
     schema: None | SchemaDict = None,
     schema_overrides: None | (SchemaDict | Sequence[PolarsDataType]) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
     n_threads: int | None = None,
@@ -670,7 +668,7 @@ def _read_csv_impl(
             for k, v in schema_overrides.items():
                 dtype_list.append((k, parse_into_dtype(v)))
         elif isinstance(schema_overrides, Sequence):
-            dtype_slice = schema_overrides
+            dtype_slice = [parse_into_dtype(v) for v in schema_overrides]
         else:
             msg = f"`schema_overrides` should be of type list or dict, got {qualified_type_name(schema_overrides)!r}"
             raise TypeError(msg)
@@ -680,15 +678,9 @@ def _read_csv_impl(
     if isinstance(columns, str):
         columns = [columns]
     if isinstance(source, str) and is_glob_pattern(source):
-        dtypes_dict = None
-        if dtype_list is not None:
-            dtypes_dict = dict(dtype_list)
-        if dtype_slice is not None:
-            msg = (
-                "cannot use glob patterns and unnamed dtypes as `schema_overrides` argument"
-                "\n\nUse `schema_overrides`: Mapping[str, Type[DataType]]"
-            )
-            raise ValueError(msg)
+        scan_schema_overrides = (
+            dict(dtype_list) if dtype_list is not None else dtype_slice
+        )
         from polars import scan_csv
 
         scan = scan_csv(
@@ -700,9 +692,9 @@ def _read_csv_impl(
             skip_rows=skip_rows,
             skip_lines=skip_lines,
             schema=schema,
-            schema_overrides=dtypes_dict,
+            schema_overrides=scan_schema_overrides,
             null_values=null_values,
-            missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+            empty_string_is_null=empty_string_is_null,
             ignore_errors=ignore_errors,
             infer_schema_length=infer_schema_length,
             n_rows=n_rows,
@@ -752,7 +744,7 @@ def _read_csv_impl(
         comment_prefix,
         quote_char,
         processed_null_values,
-        missing_utf8_is_empty_string,
+        empty_string_is_null,
         try_parse_dates,
         skip_rows_after_header,
         parse_row_index_args(row_index_name, row_index_offset),
@@ -771,6 +763,12 @@ def _read_csv_impl(
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@deprecate_renamed_parameter(
+    "missing_utf8_is_empty_string",
+    "empty_string_is_null",
+    version="1.43.0",
+    mapper=lambda x: not x,
+)
 def read_csv_batched(
     source: str | Path,
     *,
@@ -786,7 +784,7 @@ def read_csv_batched(
         Mapping[str, PolarsDataType] | Sequence[PolarsDataType] | None
     ) = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     try_parse_dates: bool = False,
     n_threads: int | None = None,
@@ -866,9 +864,10 @@ def read_csv_batched(
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
 
-    missing_utf8_is_empty_string
-        By default a missing value is considered to be null; if you would prefer missing
-        utf8 values to be treated as the empty string you can set this param True.
+    empty_string_is_null
+        By default a missing string value is considered to be null. If
+        `empty_string_is_null` is set to False, missing string values are considered to
+        decoded as empty strings.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try `infer_schema_length=0` to read all columns as
@@ -1075,7 +1074,7 @@ def read_csv_batched(
         skip_lines=skip_lines,
         schema_overrides=schema_overrides,
         null_values=null_values,
-        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+        empty_string_is_null=empty_string_is_null,
         ignore_errors=ignore_errors,
         try_parse_dates=try_parse_dates,
         n_threads=n_threads,
@@ -1099,6 +1098,12 @@ def read_csv_batched(
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
+@deprecate_renamed_parameter(
+    "missing_utf8_is_empty_string",
+    "empty_string_is_null",
+    version="1.43.0",
+    mapper=lambda x: not x,
+)
 def scan_csv(
     source: (
         str
@@ -1122,7 +1127,7 @@ def scan_csv(
     schema: SchemaDict | None = None,
     schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     cache: bool | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
@@ -1205,9 +1210,10 @@ def scan_csv(
         - `Dict[str, str]`: A dictionary that maps column name to a
           null value string.
 
-    missing_utf8_is_empty_string
-        By default a missing value is considered to be null; if you would prefer missing
-        utf8 values to be treated as the empty string you can set this param True.
+    empty_string_is_null
+        By default a missing string value is considered to be null. If
+        `empty_string_is_null` is set to False, missing string values are considered to
+        decoded as empty strings.
     ignore_errors
         Try to keep reading lines if some lines yield errors.
         First try `infer_schema=False` to read all columns as
@@ -1387,15 +1393,10 @@ def scan_csv(
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
 
-    if not new_columns and isinstance(schema_overrides, Sequence):
-        msg = f"expected 'schema_overrides' dict, found {qualified_type_name(schema_overrides)!r}"
-        raise TypeError(msg)
-    elif new_columns:
+    if new_columns:
         if with_column_names:
             msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
             raise ValueError(msg)
-        if schema_overrides and isinstance(schema_overrides, Sequence):
-            schema_overrides = dict(zip(new_columns, schema_overrides, strict=False))
 
         # wrap new column names as a callable
         def with_column_names(cols: list[str]) -> list[str]:
@@ -1449,7 +1450,7 @@ def scan_csv(
         schema_overrides=schema_overrides,  # type: ignore[arg-type]
         schema=schema,
         null_values=null_values,
-        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+        empty_string_is_null=empty_string_is_null,
         ignore_errors=ignore_errors,
         cache=cache_deprecated,
         with_column_names=with_column_names,
@@ -1492,9 +1493,9 @@ def _scan_csv_impl(
     skip_rows: int = 0,
     skip_lines: int = 0,
     schema: SchemaDict | None = None,
-    schema_overrides: SchemaDict | None = None,
+    schema_overrides: SchemaDict | Sequence[PolarsDataType] | None = None,
     null_values: str | Sequence[str] | dict[str, str] | None = None,
-    missing_utf8_is_empty_string: bool = False,
+    empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     cache: bool = True,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
@@ -1518,13 +1519,17 @@ def _scan_csv_impl(
     missing_columns: Literal["insert", "raise"] | None = None,
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
+    dtype_slice: Sequence[PolarsDataType] | None = None
     if schema_overrides is not None:
-        if not isinstance(schema_overrides, dict):
-            msg = "expected 'schema_overrides' dict, found 'list'"
+        if isinstance(schema_overrides, dict):
+            dtype_list = []
+            for k, v in schema_overrides.items():
+                dtype_list.append((k, parse_into_dtype(v)))
+        elif isinstance(schema_overrides, Sequence):
+            dtype_slice = [parse_into_dtype(v) for v in schema_overrides]
+        else:
+            msg = f"`schema_overrides` should be of type list or dict, got {qualified_type_name(schema_overrides)!r}"
             raise TypeError(msg)
-        dtype_list = []
-        for k, v in schema_overrides.items():
-            dtype_list.append((k, parse_into_dtype(v)))
     processed_null_values = _process_null_values(null_values)
 
     if isinstance(source, list):
@@ -1550,11 +1555,12 @@ def _scan_csv_impl(
         n_rows=n_rows,
         cache=cache,
         overwrite_dtype=dtype_list,
+        overwrite_dtype_slice=dtype_slice,
         low_memory=low_memory,
         comment_prefix=comment_prefix,
         quote_char=quote_char,
         null_values=processed_null_values,
-        missing_utf8_is_empty_string=missing_utf8_is_empty_string,
+        empty_string_is_null=empty_string_is_null,
         infer_schema_length=infer_schema_length,
         with_schema_modify=with_column_names,
         rechunk=rechunk,

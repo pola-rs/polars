@@ -1164,9 +1164,9 @@ dependencies = [
 
 [[package]]
 name = "crossbeam-epoch"
-version = "0.9.18"
+version = "0.9.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
+checksum = "2d6914041f254d6e9176c01941b21115dcfb7089e55135a35411081bd106ef3f"
 dependencies = [
  "crossbeam-utils",
 ]
@@ -2770,7 +2770,7 @@ dependencies = [
 [[package]]
 name = "object_store"
 version = "0.13.2"
-source = "git+https://github.com/kdn36/arrow-rs-object-store?branch=feat_with_dns_resolver#f50a6e5c564b2b5933eca15cd20ff9b5614374a1"
+source = "git+https://github.com/kdn36/arrow-rs-object-store?rev=f50a6e5c564b2b5933eca15cd20ff9b5614374a1#f50a6e5c564b2b5933eca15cd20ff9b5614374a1"
 dependencies = [
  "async-trait",
  "base64",
@@ -3403,6 +3403,7 @@ dependencies = [
  "polars-async",
  "polars-config",
  "polars-core",
+ "polars-error",
  "polars-io",
  "polars-utils",
  "rand 0.10.1",
@@ -3590,6 +3591,7 @@ dependencies = [
  "pyo3",
  "rayon",
  "recursive",
+ "serde",
  "serde_json",
  "uuid",
  "version_check",
@@ -3612,7 +3614,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "1.42.0"
+version = "1.42.1"
 dependencies = [
  "either",
  "libc",
@@ -3623,7 +3625,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "1.42.0"
+version = "1.42.1"
 dependencies = [
  "either",
  "libc",
@@ -3634,7 +3636,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "1.42.0"
+version = "1.42.1"
 dependencies = [
  "either",
  "libc",
@@ -4839,9 +4841,9 @@ dependencies = [
 
 [[package]]
 name = "spin"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+checksum = "023a211cb3138dbc438680b32560ad89f699977624c9f8dbb95a47d5b4c07dd3"
 
 [[package]]
 name = "spki"

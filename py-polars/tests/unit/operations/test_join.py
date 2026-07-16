@@ -2183,6 +2183,251 @@ def _extract_plan_joins_and_filters(plan: str) -> list[str]:
     ]
 
 
+def _assert_matches_without_predicate_pushdown(q: pl.LazyFrame) -> None:
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+        check_row_order=False,
+    )
+
+
+def test_redundant_join_key_filter_inner_join_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4], "value": [10, 20, 40]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER col("a") == col("b")',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_partial_reduction_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3, 4], "b": [9, 9, 8, 8], "c": [1, 0, 4, 4]})
+    right = pl.LazyFrame({"x": [1, 4], "y": [9, 8], "value": [10, 40]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b"), pl.col("c")],
+        right_on=[pl.col("x"), pl.col("y"), pl.col("x")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'FILTER col("a") == col("c")',
+        'RIGHT PLAN ON: [col("x"), col("y")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_restores_schema_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3], "payload": ["aa", "bb", "cc"]})
+    right = pl.LazyFrame({"x": [1, 2, 3], "y": [1, 0, 3], "value": [10, 20, 30]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="inner",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        'FILTER col("x") == col("y")',
+    ]
+    assert q.collect().columns == ["a", "payload", "value"]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_respects_nulls_equal_21710() -> None:
+    left = pl.LazyFrame({"a": [1, None, 2], "b": [1, None, 3]})
+    right = pl.LazyFrame({"x": [1, None, 3], "value": [10, 20, 30]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="inner",
+        nulls_equal=True,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER col("a") ==v col("b")',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize("how", ["left", "right", "full"])
+def test_redundant_join_key_filter_does_not_filter_preserved_side_21710(
+    how: JoinStrategy,
+) -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 0, 3]})
+    right = pl.LazyFrame({"x": [1, 3], "value": [10, 30]})
+
+    if how == "right":
+        q = right.join(
+            left,
+            left_on=[pl.col("x"), pl.col("x")],
+            right_on=[pl.col("a"), pl.col("b")],
+            how=how,
+        )
+        expected_plan = [
+            'LEFT PLAN ON: [col("x"), col("x")]',
+            'RIGHT PLAN ON: [col("a"), col("b")]',
+        ]
+    else:
+        q = left.join(
+            right,
+            left_on=[pl.col("a"), pl.col("b")],
+            right_on=[pl.col("x"), pl.col("x")],
+            how=how,
+        )
+        expected_plan = [
+            'LEFT PLAN ON: [col("a"), col("b")]',
+            'RIGHT PLAN ON: [col("x"), col("x")]',
+        ]
+
+    assert _extract_plan_joins_and_filters(q.explain()) == expected_plan
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_semi_join_duplicate_right_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="semi",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'FILTER col("a") == col("b")',
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_semi_join_duplicate_left_21710() -> None:
+    left = pl.LazyFrame({"a": [1, 2, 3, 4], "payload": ["aa", "bb", "cc", "dd"]})
+    right = pl.LazyFrame({"x": [1, 2, 4], "y": [1, 0, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="semi",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        'FILTER col("x") == col("y")',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize(
+    ("nulls_equal", "expected_filter"),
+    [
+        (False, 'FILTER col("a") == col("b")'),
+        (True, 'FILTER col("a") ==v col("b")'),
+    ],
+)
+def test_redundant_join_key_filter_semi_join_nulls_equal_21710(
+    nulls_equal: bool, expected_filter: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, None, 2], "b": [1, None, 3]})
+    right = pl.LazyFrame({"x": [1, None, 3]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="semi",
+        nulls_equal=nulls_equal,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        expected_filter,
+        'RIGHT PLAN ON: [col("x")]',
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+@pytest.mark.parametrize(
+    ("nulls_equal", "expected_filter"),
+    [
+        (False, 'FILTER col("x") == col("y")'),
+        (True, 'FILTER col("x") ==v col("y")'),
+    ],
+)
+def test_redundant_join_key_filter_semi_join_duplicate_left_nulls_equal_21710(
+    nulls_equal: bool, expected_filter: str
+) -> None:
+    left = pl.LazyFrame({"a": [1, None, 2]})
+    right = pl.LazyFrame({"x": [1, None, 2], "y": [1, None, 3]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("a")],
+        right_on=[pl.col("x"), pl.col("y")],
+        how="semi",
+        nulls_equal=nulls_equal,
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a")]',
+        'RIGHT PLAN ON: [col("x")]',
+        expected_filter,
+    ]
+    _assert_matches_without_predicate_pushdown(q)
+
+
+def test_redundant_join_key_filter_does_not_filter_anti_join_21710() -> None:
+    left = pl.LazyFrame(
+        {"a": [1, 2, 3, 4], "b": [1, 2, 4, 4], "payload": ["aa", "bb", "cc", "dd"]}
+    )
+    right = pl.LazyFrame({"x": [1, 2, 4]})
+
+    q = left.join(
+        right,
+        left_on=[pl.col("a"), pl.col("b")],
+        right_on=[pl.col("x"), pl.col("x")],
+        how="anti",
+    )
+
+    assert _extract_plan_joins_and_filters(q.explain()) == [
+        'LEFT PLAN ON: [col("a"), col("b")]',
+        'RIGHT PLAN ON: [col("x"), col("x")]',
+    ]
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [3],
+        "b": [4],
+        "payload": ["cc"],
+    }
+    _assert_matches_without_predicate_pushdown(q)
+
+
 def test_join_filter_pushdown_inner_join() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
@@ -2204,9 +2449,9 @@ def test_join_filter_pushdown_inner_join() -> None:
 
     assert _extract_plan_joins_and_filters(plan) == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2226,12 +2471,12 @@ def test_join_filter_pushdown_inner_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b")]'
-    assert 'col("c")) == ("a")' in extract[1]
-    assert 'col("b")) <= (2)' in extract[1]
+    assert 'col("c") == "a"' in extract[1]
+    assert 'col("b") <= 2' in extract[1]
 
     assert extract[2] == 'RIGHT PLAN ON: [col("a"), col("b")]'
-    assert 'col("b")) <= (2)' in extract[3]
-    assert 'col("c")) == ("A")' in extract[3]
+    assert 'col("b") <= 2' in extract[3]
+    assert 'col("c") == "A"' in extract[3]
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
@@ -2259,9 +2504,9 @@ def test_join_filter_pushdown_inner_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2287,9 +2532,9 @@ def test_join_filter_pushdown_inner_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2321,9 +2566,9 @@ def test_join_filter_pushdown_inner_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2364,14 +2609,14 @@ def test_join_filter_pushdown_inner_join() -> None:
         extract[0]
         == 'LEFT PLAN ON: [col("a").cast(Int64), col("_POLARS_0").cast(Int64)]'
     )
-    assert '(col("a")) == (1)' in extract[1]
-    assert '(col("b")) >= (1)' in extract[1]
+    assert 'col("a") == 1' in extract[1]
+    assert 'col("b") >= 1' in extract[1]
     assert (
         extract[2]
         == 'RIGHT PLAN ON: [col("_POLARS_1").cast(Int64), col("b").cast(Int64)]'
     )
-    assert '(col("b")) >= (0)' in extract[3]
-    assert 'col("a")) <= (1)' in extract[3]
+    assert 'col("b") >= 0' in extract[3]
+    assert 'col("a") <= 1' in extract[3]
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
@@ -2397,7 +2642,7 @@ def test_join_filter_pushdown_inner_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("b")) == (col("b_right"))]',
+        'FILTER col("b") == col("b_right")',
         'LEFT PLAN ON: [col("a")]',
         'RIGHT PLAN ON: [col("a")]',
     ]
@@ -2428,9 +2673,9 @@ def test_join_filter_pushdown_inner_join() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("x")]',
-        'FILTER [(col("x")) == (2)]',
+        'FILTER col("x") == 2',
         'RIGHT PLAN ON: [col("x")]',
-        'FILTER [(col("x")) == (2)]',
+        'FILTER col("x") == 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2459,9 +2704,9 @@ def test_join_filter_pushdown_left_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2488,9 +2733,9 @@ def test_join_filter_pushdown_left_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2508,7 +2753,7 @@ def test_join_filter_pushdown_left_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("c")) == ("b")]',
+        'FILTER col("c") == "b"',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
 
@@ -2528,7 +2773,7 @@ def test_join_filter_pushdown_left_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("c_right")) ==v ("B")]',
+        'FILTER col("c_right") ==v "B"',
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
@@ -2561,7 +2806,7 @@ def test_join_filter_pushdown_left_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("b_right")) ==v (2)]',
+        'FILTER col("b_right") ==v 2',
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
@@ -2592,9 +2837,9 @@ def test_join_filter_pushdown_right_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2623,9 +2868,9 @@ def test_join_filter_pushdown_right_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (2)]',
+        'FILTER col("a") <= 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) <= (2)]',
+        'FILTER col("b") <= 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2644,7 +2889,7 @@ def test_join_filter_pushdown_right_join() -> None:
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("c")) == ("B")]',
+        'FILTER col("c") == "B"',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2663,7 +2908,7 @@ def test_join_filter_pushdown_right_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("c")) ==v ("b")]',
+        'FILTER col("c") ==v "b"',
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
@@ -2692,7 +2937,7 @@ def test_join_filter_pushdown_right_join() -> None:
 
     extract = _extract_plan_joins_and_filters(plan)
     assert extract == [
-        'FILTER [(col("b")) ==v (2)]',
+        'FILTER col("b") ==v 2',
         'LEFT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("a"), col("b")]',
     ]
@@ -2734,9 +2979,9 @@ def test_join_filter_pushdown_full_join() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) == (2)]',
+        'FILTER col("a") == 2',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) == (2)]',
+        'FILTER col("b") == 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2813,13 +3058,13 @@ def test_join_filter_pushdown_semi_join() -> None:
     #   the right.
 
     assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b").cast(Int64)]'
-    assert 'col("a")) == (2)' in extract[1]
-    assert 'col("b")) == (2)' in extract[1]
-    assert 'col("c")) == ("b")' in extract[1]
+    assert 'col("a") == 2' in extract[1]
+    assert 'col("b") == 2' in extract[1]
+    assert 'col("c") == "b"' in extract[1]
 
     assert extract[2:] == [
         'RIGHT PLAN ON: [col("b"), col("_POLARS_0").cast(Int64)]',
-        'FILTER [(col("b")) == (2)]',
+        'FILTER col("b") == 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2854,13 +3099,13 @@ def test_join_filter_pushdown_anti_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b").cast(Int64)]'
-    assert 'col("a")) == (2)' in extract[1]
-    assert 'col("b")) == (2)' in extract[1]
-    assert 'col("c")) == ("b")' in extract[1]
+    assert 'col("a") == 2' in extract[1]
+    assert 'col("b") == 2' in extract[1]
+    assert 'col("c") == "b"' in extract[1]
 
     assert extract[2:] == [
         'RIGHT PLAN ON: [col("b"), col("_POLARS_0").cast(Int64)]',
-        'FILTER [(col("b")) == (2)]',
+        'FILTER col("b") == 2',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2901,15 +3146,15 @@ def test_join_filter_pushdown_cross_join() -> None:
 
     plan = q.explain()
 
-    assert 'NESTED LOOP JOIN ON [(col("a")) != (col("a_right"))]' in plan
+    assert 'NESTED LOOP JOIN ON col("a") != col("a_right")' in plan
 
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract == [
         "LEFT PLAN:",
-        'FILTER [(col("a")) <= (4)]',
+        'FILTER col("a") <= 4',
         "RIGHT PLAN:",
-        'FILTER [(col("c")) <= ("B")]',
+        'FILTER col("c") <= "B"',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2939,9 +3184,9 @@ def test_join_filter_pushdown_cross_join() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) <= (4)]',
-        'RIGHT PLAN ON: [[(col("a")) + (1)]]',
-        'FILTER [(col("c")) <= ("B")]',
+        'FILTER col("a") <= 4',
+        'RIGHT PLAN ON: [col("a") + 1]',
+        'FILTER col("c") <= "B"',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -2989,7 +3234,7 @@ def test_join_filter_pushdown_cross_join() -> None:
 
     plan = q.explain()
 
-    assert plan.startswith('NESTED LOOP JOIN ON [(col("c")) <= (col("b"))]:')
+    assert plan.startswith('NESTED LOOP JOIN ON col("c") <= col("b"):')
 
     assert_frame_equal(q.collect(), expect)
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
@@ -3033,13 +3278,13 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     assert extract[:3] == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) >= (1)]',
+        'FILTER col("a") >= 1',
         'RIGHT PLAN ON: [col("a")]',
     ]
 
     assert extract[3].startswith("FILTER")
-    assert 'col("c")) <= ("B")' in extract[3]
-    assert '(col("a")) >= (1)' in extract[3]
+    assert 'col("c") <= "B"' in extract[3]
+    assert 'col("a") >= 1' in extract[3]
     assert len(extract) == 4
 
     assert_frame_equal(q.collect(), expect)
@@ -3082,9 +3327,9 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) >= (1)]',
+        'FILTER col("a") >= 1',
         'RIGHT PLAN ON: [col("a")]',
-        'FILTER [(col("c")) <= ("B")]',
+        'FILTER col("c") <= "B"',
     ]
 
     assert_frame_equal(q.collect().sort(pl.all()), expect)
@@ -3114,7 +3359,7 @@ def test_join_filter_pushdown_iejoin() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("x")]',
-        'FILTER [(col("x")) > (1)]',
+        'FILTER col("x") > 1',
         'RIGHT PLAN ON: [col("x")]',
     ]
 
@@ -3154,7 +3399,7 @@ def test_join_filter_pushdown_iejoin() -> None:
         'LEFT PLAN ON: [col("a"), col("b")]',
         'LEFT PLAN ON: [col("b"), col("a")]',
     }
-    assert extract[1] == 'FILTER [(col("a")) > (0)]'
+    assert extract[1] == 'FILTER col("a") > 0'
     assert extract[2] in {
         'RIGHT PLAN ON: [col("a"), col("b")]',
         'RIGHT PLAN ON: [col("b"), col("a")]',
@@ -3169,7 +3414,7 @@ def test_join_filter_pushdown_iejoin() -> None:
             'LEFT PLAN ON: [col("a"), col("b")]',
             'LEFT PLAN ON: [col("b"), col("a")]',
         }
-        assert extract[4] == 'FILTER [(col("a")) > (0)]'
+        assert extract[4] == 'FILTER col("a") > 0'
         assert extract[5] in {
             'RIGHT PLAN ON: [col("a"), col("b")]',
             'RIGHT PLAN ON: [col("b"), col("a")]',
@@ -3222,13 +3467,13 @@ def test_join_filter_pushdown_asof_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[:2] == [
-        'FILTER [(col("c_right")) >= ("B")]',
+        'FILTER col("c_right") >= "B"',
         'LEFT PLAN ON: [col("a").set_sorted()]',
     ]
 
-    assert 'col("b")) >= (3)' in extract[2]
-    assert 'col("c")) >= ("A")' in extract[2]
-    assert 'col("a")) >= (2)' in extract[2]
+    assert 'col("b") >= 3' in extract[2]
+    assert 'col("c") >= "A"' in extract[2]
+    assert 'col("a") >= 2' in extract[2]
 
     assert extract[3:] == ['RIGHT PLAN ON: [col("b").set_sorted()]']
 
@@ -3264,15 +3509,15 @@ def test_join_filter_pushdown_asof_join() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[:2] == [
-        'FILTER [(col("c_right")) >= ("B")]',
+        'FILTER col("c_right") >= "B"',
         'LEFT PLAN ON: [col("a")]',
     ]
-    assert 'col("a")) >= (2)' in extract[2]
-    assert 'col("b")) >= (3)' in extract[2]
+    assert 'col("a") >= 2' in extract[2]
+    assert 'col("b") >= 3' in extract[2]
 
     assert extract[3:] == [
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("a")) >= (3)]',
+        'FILTER col("a") >= 3',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3316,9 +3561,9 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3349,9 +3594,9 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [(col("a")) >= (3)]',
+        'FILTER col("a") >= 3',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3390,15 +3635,15 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert [
-        'FILTER [([(col("b")) >= (2)]) | (col("b").is_null())]',
+        'FILTER ([col("b") >= 2]) | (col("b").is_null())',
         'LEFT PLAN ON: [col("a")]',
-        'FILTER [([(col("a")) >= (1)]) | (col("a").is_null())]',
+        'FILTER ([col("a") >= 1]) | (col("a").is_null())',
         'RIGHT PLAN ON: [col("b")]',
     ]
 
-    assert 'col("a")) >= (3)' in extract[4]
-    assert '(col("b")) >= (1)]) | (col("b").alias("a").is_null())' in extract[4]
-    assert 'col("c")) >= ("C")' in extract[4]
+    assert 'col("a") >= 3' in extract[4]
+    assert 'col("b") >= 1) | col("b").alias("a").is_null()' in extract[4]
+    assert 'col("c") >= "C"' in extract[4]
 
     assert len(extract) == 5
 
@@ -3463,9 +3708,9 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
 
     assert extract == [
         'LEFT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
         'RIGHT PLAN ON: [col("a"), col("b")]',
-        'FILTER [(col("b")) >= (3)]',
+        'FILTER col("b") >= 3',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3512,12 +3757,12 @@ def test_join_filter_pushdown_right_join_rewrite() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("a")]'
-    assert 'col("a")) <= (10)' in extract[1]
-    assert 'col("c")) <= ("b")' in extract[1]
+    assert 'col("a") <= 10' in extract[1]
+    assert 'col("c") <= "b"' in extract[1]
 
     assert extract[2] == 'RIGHT PLAN ON: [col("b")]'
-    assert 'col("a")) <= (7)' in extract[3]
-    assert 'col("b")) <= (10)' in extract[3]
+    assert 'col("a") <= 7' in extract[3]
+    assert 'col("b") <= 10' in extract[3]
 
     assert len(extract) == 4
 
@@ -3595,7 +3840,7 @@ def test_join_filter_pushdown_left_join_rewrite() -> None:
     assert extract == [
         'LEFT PLAN ON: [col("a")]',
         'RIGHT PLAN ON: [col("b")]',
-        'FILTER [(col("c")) <= ("B")]',
+        'FILTER col("c") <= "B"',
     ]
 
     assert_frame_equal(q.collect(), expect)
@@ -3642,12 +3887,12 @@ def test_join_filter_pushdown_left_join_rewrite_23133() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("ham")]'
-    assert '(col("foo")) <= (2)' in extract[1]
-    assert 'col("ham")) == ("a")' in extract[1]
+    assert 'col("foo") <= 2' in extract[1]
+    assert 'col("ham") == "a"' in extract[1]
 
     assert extract[2] == 'RIGHT PLAN ON: [col("ham")]'
-    assert 'col("ham")) == ("a")' in extract[3]
-    assert 'col("apple")) == ("x")' in extract[3]
+    assert 'col("ham") == "a"' in extract[3]
+    assert 'col("apple") == "x"' in extract[3]
 
     assert len(extract) == 4
 

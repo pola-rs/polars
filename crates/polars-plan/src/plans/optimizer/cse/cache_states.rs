@@ -1,8 +1,7 @@
 use std::ops::ControlFlow;
 
-use polars_core::prelude::{PlHashMap, PlHashSet};
 use polars_error::PolarsResult;
-use polars_utils::aliases::{InitHashMaps, PlIndexMap};
+use polars_utils::aliases::{InitHashMaps, PlIndexMap, PlIndexSet};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unique_id::UniqueId;
@@ -11,7 +10,8 @@ use crate::dsl::Expr;
 use crate::plans::deep_copy::deep_copy_ir_delete_caches;
 use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
 use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
-use crate::plans::{AExpr, IR, PredicatePushDown};
+use crate::plans::visitor::AexprNode;
+use crate::plans::{AExpr, ExprIR, IR, PredicatePushDown};
 use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 use crate::utils::aexpr_to_leaf_names;
 
@@ -127,6 +127,7 @@ type TwoParents = [Option<Node>; 2];
 // - Above the filters the caches are the same -> run predicate pd from the filter node -> finish
 // - There is a cache without predicates above the cache node -> run predicate form the cache nodes -> finish
 // - The predicates above the cache nodes are all different -> remove the cache nodes -> finish
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn set_cache_states(
     root: Node,
     lp_arena: &mut Arena<IR>,
@@ -135,6 +136,7 @@ pub(crate) fn set_cache_states(
     verbose: bool,
     pushdown_maintain_errors: bool,
     streaming: bool,
+    partition_hive: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
@@ -150,9 +152,9 @@ pub(crate) fn set_cache_states(
         parents: Vec<TwoParents>,
         cache_nodes: Vec<Node>,
         // Union over projected names.
-        names_union: PlHashSet<PlSmallStr>,
+        names_union: PlIndexSet<PlSmallStr>,
         // Union over predicates.
-        predicate_union: PlHashMap<Expr, u32>,
+        predicate_union: PlIndexMap<Expr, u32>,
     }
     let mut cache_schema_and_children = PlIndexMap::new();
 
@@ -280,23 +282,33 @@ pub(crate) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut pred_pd = PredicatePushDown::new(pushdown_maintain_errors, streaming);
+        let mut pred_pd =
+            PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive);
         // rev() the iter to visit/optimize the caches below the current cache before the current cache,
         // otherwise we get `IR::Invalid` as predicate pd `take()`s from the IR arena.
         for v in cache_schema_and_children.into_values().rev() {
             // # CHECK IF WE NEED TO REMOVE CACHES
-            // If we encounter multiple predicates we remove the cache nodes completely as we don't
-            // want to loose predicate pushdown in favor of scan sharing.
+            // If we encounter multiple distinct predicates, the caches carry different filters
+            // above them (predicate pushdown was blocked by the cache nodes). Removing the caches
+            // lets pushdown resume, but this only pays off if the predicates can actually be pushed
+            // past the cached subplan. If a predicate refers to a column computed within the cached
+            // subplan, it cannot be pushed and removing the caches would lose the subplan sharing
+            // without any benefit. See #19479.
+            //
+            // We therefore only remove the caches if _every_ filter above them is actually pushed
+            // by predicate pushdown. We probe this on cache-free copies of the subplans, buffering
+            // the optimized copies. If any filter was not pushed we bail out, keeping the caches;
+            // otherwise we commit the buffered copies, removing the caches.
             if v.predicate_union.len() > 1 {
-                if verbose {
-                    eprintln!("cache nodes will be removed because predicates don't match")
-                }
-                for ((_, cache), parents) in v.children.iter().zip(v.cache_nodes).zip(v.parents) {
+                let mut replacements = Vec::with_capacity(v.cache_nodes.len());
+                let mut remove_caches = true;
+
+                for (&cache, parents) in v.cache_nodes.iter().zip(v.parents.iter()) {
                     // Restart predicate and projection pushdown from most top parent.
                     // This to ensure we continue the optimization where it was blocked initially.
                     // We pick up the blocked filter and projection.
                     let mut node = cache;
-                    for p_node in parents.into_iter().flatten() {
+                    for p_node in parents.iter().flatten().copied() {
                         match lp_arena.get(p_node) {
                             IR::Filter { .. } | IR::SimpleProjection { .. } => true,
                             _ => break,
@@ -305,13 +317,46 @@ pub(crate) fn set_cache_states(
                         node = p_node
                     }
 
-                    let copied_node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
+                    // The filter (if any) that blocked pushdown sits directly above the cache.
+                    let filter_predicate = get_filter_node(*parents, lp_arena).map(|filter_node| {
+                        let IR::Filter { predicate, .. } = lp_arena.get(filter_node) else {
+                            unreachable!()
+                        };
+                        predicate.clone()
+                    });
 
+                    // Copy the subplan without caches and re-run predicate pushdown on the copy.
+                    let copied_node = deep_copy_ir_delete_caches(node, lp_arena, expr_arena);
                     let lp = lp_arena.take(copied_node);
                     let lp = pred_pd.optimize(lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(node, lp);
+
+                    // If there is no filter or the filter was not pushed past the (former) cached
+                    // subplan, removing the caches provides no benefit and we keep them.
+                    let filter_pushed = filter_predicate
+                        .as_ref()
+                        .is_some_and(|pred| filter_was_pushed(&lp, pred, lp_arena, expr_arena));
+                    if !filter_pushed {
+                        remove_caches = false;
+                        break;
+                    }
+
+                    replacements.push((node, lp));
                 }
-                return Ok(());
+
+                if remove_caches {
+                    if verbose {
+                        eprintln!("cache nodes will be removed because predicates don't match")
+                    }
+                    for (node, lp) in replacements {
+                        lp_arena.replace(node, lp);
+                    }
+                    continue;
+                }
+
+                // Not all filters could be pushed: keep the caches. We fall through to the regular
+                // handling below, which - as `allow_parent_predicate_pushdown` is `false` for
+                // multiple predicates - runs predicate pushdown on the shared subplan while leaving
+                // the filters above the caches in place.
             }
             // Below we restart projection and predicates pushdown
             // on the first cache node. As it are cache nodes, the others are the same
@@ -335,7 +380,8 @@ pub(crate) fn set_cache_states(
                 let start_lp = lp_arena.take(node);
 
                 let mut pred_pd =
-                    PredicatePushDown::new(pushdown_maintain_errors, streaming).block_at_cache(1);
+                    PredicatePushDown::new(pushdown_maintain_errors, streaming, partition_hive)
+                        .block_at_cache(1);
                 let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
                 lp_arena.replace(node, lp.clone());
 
@@ -392,4 +438,39 @@ fn get_filter_node(parents: TwoParents, lp_arena: &Arena<IR>) -> Option<Node> {
         .into_iter()
         .flatten()
         .find(|&parent| matches!(lp_arena.get(parent), IR::Filter { .. }))
+}
+
+/// Determine whether `predicate` was pushed down when running predicate pushdown on a cache-free
+/// copy of a cached subplan (rooted at `optimized_lp`).
+///
+/// If the predicate could not be pushed, it is re-applied as a `Filter` at the top of the subplan
+/// still carrying our original predicate. In that case removing the caches buys us nothing, so we
+/// return `false`. Only `SimpleProjection` nodes may end up above that filter.
+fn filter_was_pushed(
+    optimized_lp: &IR,
+    predicate: &ExprIR,
+    lp_arena: &Arena<IR>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    // Skip any projections that pushdown may have inserted above the filter.
+    let mut current = optimized_lp;
+    while let IR::SimpleProjection { input, .. } = current {
+        current = lp_arena.get(*input);
+    }
+
+    // The predicate was not pushed iff the top-most non-projection node is a filter that still
+    // carries our original predicate.
+    match current {
+        IR::Filter {
+            predicate: top_predicate,
+            ..
+        } => !expr_ir_eq(predicate, top_predicate, expr_arena),
+        _ => true,
+    }
+}
+
+fn expr_ir_eq(l: &ExprIR, r: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+    l.get_alias() == r.get_alias()
+        && AexprNode::new(l.node()).hashable_and_cmp(expr_arena)
+            == AexprNode::new(r.node()).hashable_and_cmp(expr_arena)
 }

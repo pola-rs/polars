@@ -1,18 +1,14 @@
 use std::collections::VecDeque;
-use std::sync::Arc;
 
 use polars_async::primitives::wait_group::WaitGroup;
-use polars_ooc::{MostRecentSpillContext, SpillFrame};
+use polars_ooc::{MostRecentSpillContext, ParameterFreeSpillContext, SpillFrame};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 
 use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;
 
 enum BufferedStream {
-    Open(
-        VecDeque<(SpillFrame, MorselSeq)>,
-        Arc<MostRecentSpillContext>,
-    ),
+    Open(VecDeque<(SpillFrame, MorselSeq)>, MostRecentSpillContext),
     Closed,
 }
 
@@ -116,11 +112,11 @@ impl ComputeNode for MultiplexerNode {
         enum Listener<'a> {
             Active(
                 UnboundedSender<(SpillFrame, MorselSeq, SourceToken)>,
-                Arc<MostRecentSpillContext>,
+                MostRecentSpillContext,
             ),
             Buffering(
                 &'a mut VecDeque<(SpillFrame, MorselSeq)>,
-                Arc<MostRecentSpillContext>,
+                MostRecentSpillContext,
             ),
             Inactive,
         }
@@ -161,8 +157,8 @@ impl ComputeNode for MultiplexerNode {
                         match buf_sender {
                             Listener::Active(s, ctx) => {
                                 let source_token = morsel.source_token().clone();
-                                // TODO: don't clone morsel, share same spillframe?
-                                let sf = SpillFrame::new(morsel.df().clone(), &**ctx).await;
+                                let sf = morsel.sf().clone();
+                                ctx.register(&sf).await;
                                 match s.send((sf, seq, source_token)) {
                                     Ok(_) => {
                                         anyone_interested = true;
@@ -172,10 +168,9 @@ impl ComputeNode for MultiplexerNode {
                                 }
                             },
                             Listener::Buffering(b, ctx) => {
-                                b.push_front((
-                                    SpillFrame::new(morsel.df().clone(), &**ctx).await,
-                                    seq,
-                                ));
+                                let sf = morsel.sf().clone();
+                                ctx.register(&sf).await;
+                                b.push_front((sf, seq));
                                 anyone_interested = true;
                             },
                             Listener::Inactive => {},
@@ -207,8 +202,7 @@ impl ComputeNode for MultiplexerNode {
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // First we try to flush all the old buffered data.
                     while let Some((sf, seq)) = buf.pop_back() {
-                        let df = sf.into_df().await;
-                        let mut morsel = Morsel::new(df, seq, buffered_source_token.clone());
+                        let mut morsel = Morsel::new(sf, seq, buffered_source_token.clone());
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
                             return Ok(());
@@ -229,8 +223,7 @@ impl ComputeNode for MultiplexerNode {
 
                     // Then send along data from the multiplexer.
                     while let Some((sf, seq, source_token)) = rx.recv().await {
-                        let df = sf.into_df().await;
-                        let mut morsel = Morsel::new(df, seq, source_token);
+                        let mut morsel = Morsel::new(sf, seq, source_token);
                         morsel.set_consume_token(wait_group.token());
                         if sender.send(morsel).await.is_err() {
                             return Ok(());

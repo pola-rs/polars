@@ -290,6 +290,7 @@ pub fn lower_ir(
                 maintain_order,
                 chunk_size,
             }) => {
+                disable_morsel_split.get_or_insert(true);
                 let function = function.clone();
                 let maintain_order = *maintain_order;
                 let chunk_size = *chunk_size;
@@ -303,6 +304,10 @@ pub fn lower_ir(
             },
 
             SinkTypeIR::File(options) => {
+                // Defer to the chunk-aware morsel splitting strategy in morsel_resize_pipeline.
+                // This cannot currently be done by the InMemorySource as the morsel splitting
+                // is done against a configured TargetSinkMorselSize.
+                disable_morsel_split.get_or_insert(true);
                 let options = options.clone();
                 let input = lower_ir!(*input)?;
                 PhysNodeKind::FileSink { input, options }
@@ -351,36 +356,43 @@ pub fn lower_ir(
 
             left_schema.ensure_is_exact_match(right_schema).unwrap();
 
-            let key_dtype = left_schema.try_get(key.as_str())?.clone();
+            let key_dtypes = key
+                .iter()
+                .map(|k| left_schema.try_get(k.as_str()).cloned())
+                .try_collect_vec()?;
 
             let key_name = unique_column_name();
             use polars_plan::plans::{AExprBuilder, RowEncodingVariant};
 
+            // The merge order is decided on a single trailing key column. With a
+            // single non-nested key we can use it directly, otherwise we row
+            // encode all key columns into one ordered binary column so the
+            // lexicographic order over all keys is respected.
+            let needs_row_encode = key.len() > 1 || key_dtypes.iter().any(|dt| dt.is_nested());
+
             // Add the key column as the last column for both inputs.
             for s in [&mut phys_left, &mut phys_right] {
-                let key_dtype = key_dtype.clone();
-                let mut expr = AExprBuilder::col(key.clone(), expr_arena);
-                if key_dtype.is_nested() {
-                    expr = AExprBuilder::row_encode(
-                        vec![expr.expr_ir(key_name.clone())],
-                        vec![key_dtype],
+                let key_expr = if needs_row_encode {
+                    let exprs = key
+                        .iter()
+                        .map(|k| AExprBuilder::col(k.clone(), expr_arena).expr_ir(k.clone()))
+                        .collect();
+                    AExprBuilder::row_encode(
+                        exprs,
+                        key_dtypes.clone(),
                         RowEncodingVariant::Ordered {
                             descending: None,
                             nulls_last: None,
                             broadcast_nulls: None,
                         },
                         expr_arena,
-                    );
-                }
+                    )
+                    .expr_ir(key_name.clone())
+                } else {
+                    AExprBuilder::col(key[0].clone(), expr_arena).expr_ir(key_name.clone())
+                };
 
-                *s = build_hstack_stream(
-                    *s,
-                    &[expr.expr_ir(key_name.clone())],
-                    expr_arena,
-                    phys_sm,
-                    expr_cache,
-                    ctx,
-                )?;
+                *s = build_hstack_stream(*s, &[key_expr], expr_arena, phys_sm, expr_cache, ctx)?;
             }
 
             PhysNodeKind::MergeSorted {
@@ -671,7 +683,7 @@ pub fn lower_ir(
                 if config::verbose() {
                     eprintln!(
                         "lower_ir: scan IR lowered as 0-width InMemorySource with height {} ({:?})",
-                        num_rows, &row_counter
+                        num_rows, row_counter
                     )
                 }
 

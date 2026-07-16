@@ -10,7 +10,7 @@ pub fn prepare_projection(
     schema: &Schema,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<(Vec<Expr>, Schema)> {
-    let exprs = rewrite_projections(exprs, &PlHashSet::new(), schema, opt_flags)?;
+    let exprs = rewrite_projections(exprs, &PlIndexSet::new(), schema, opt_flags)?;
     let schema = expressions_to_schema(&exprs, schema, |duplicate_name: &str| {
         format!("projections contained duplicate output name '{duplicate_name}'")
     })?;
@@ -23,7 +23,7 @@ pub fn is_regex_projection(name: &str) -> bool {
 
 pub fn expand_expression(
     expr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -41,7 +41,7 @@ pub fn expand_expression(
 /// In other cases replace the wildcard with an expression with all columns
 pub fn rewrite_projections(
     exprs: Vec<Expr>,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Vec<Expr>> {
@@ -81,6 +81,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
         F::Boolean(BooleanFunction::AnyHorizontal | BooleanFunction::AllHorizontal)
             | F::Coalesce
             | F::ListExpr(ListFunction::Concat)
+            | F::AsList
             | F::ConcatExpr(..)
             | F::MinHorizontal
             | F::MaxHorizontal
@@ -128,7 +129,7 @@ fn function_input_wildcard_expansion(function: &FunctionExpr) -> FunctionExpansi
 
 fn expand_expression_by_combination(
     exprs: &[Expr],
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -199,7 +200,7 @@ fn expand_expression_by_combination(
 
 fn expand_single(
     subexpr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -217,7 +218,7 @@ fn expand_single(
 
 fn try_expand_single(
     subexpr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,
@@ -256,7 +257,7 @@ fn needs_expansion(expr: &Expr) -> bool {
 
 fn expand_expression_rec(
     expr: &Expr,
-    ignored_selector_columns: &PlHashSet<PlSmallStr>,
+    ignored_selector_columns: &PlIndexSet<PlSmallStr>,
     schema: &Schema,
     out: &mut Vec<Expr>,
     opt_flags: &mut OptFlags,

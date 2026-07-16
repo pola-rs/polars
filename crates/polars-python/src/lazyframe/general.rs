@@ -150,8 +150,8 @@ impl PyLazyFrame {
 
     #[staticmethod]
     #[cfg(feature = "csv")]
-    #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype,
-        low_memory, comment_prefix, quote_char, null_values, missing_utf8_is_empty_string,
+    #[pyo3(signature = (source, sources, separator, has_header, ignore_errors, skip_rows, skip_lines, n_rows, cache, overwrite_dtype, overwrite_dtype_slice,
+        low_memory, comment_prefix, quote_char, null_values, empty_string_is_null,
         infer_schema_length, with_schema_modify, rechunk, skip_rows_after_header,
         encoding, row_index, try_parse_dates, eol_char, raise_if_empty, truncate_ragged_lines, decimal_comma, glob, schema,
         cloud_options, credential_provider, include_file_paths, missing_columns
@@ -168,11 +168,12 @@ impl PyLazyFrame {
         n_rows: Option<usize>,
         cache: bool,
         overwrite_dtype: Option<Vec<(PyBackedStr, Wrap<DataType>)>>,
+        overwrite_dtype_slice: Option<Vec<Wrap<DataType>>>,
         low_memory: bool,
         comment_prefix: Option<&str>,
         quote_char: Option<&str>,
         null_values: Option<Wrap<NullValues>>,
-        missing_utf8_is_empty_string: bool,
+        empty_string_is_null: bool,
         infer_schema_length: Option<usize>,
         with_schema_modify: Option<Py<PyAny>>,
         rechunk: bool,
@@ -216,6 +217,12 @@ impl PyLazyFrame {
                 .map(|(name, dtype)| Field::new((&*name).into(), dtype.0))
                 .collect::<Schema>()
         });
+        let overwrite_dtype_slice = overwrite_dtype_slice.map(|overwrite_dtype| {
+            overwrite_dtype
+                .into_iter()
+                .map(|dtype| dtype.0)
+                .collect::<Vec<_>>()
+        });
 
         let sources = sources.0;
         let (first_path, sources) = match source {
@@ -244,6 +251,7 @@ impl PyLazyFrame {
             .with_n_rows(n_rows)
             .with_cache(cache)
             .with_dtype_overwrite(overwrite_dtype.map(Arc::new))
+            .with_dtype_overwrite_by_position(overwrite_dtype_slice.map(Arc::new))
             .with_schema(schema.map(|schema| Arc::new(schema.0)))
             .with_low_memory(low_memory)
             .with_comment_prefix(comment_prefix.map(|x| x.into()))
@@ -255,7 +263,7 @@ impl PyLazyFrame {
             .with_row_index(row_index)
             .with_try_parse_dates(try_parse_dates)
             .with_null_values(null_values)
-            .with_missing_is_null(!missing_utf8_is_empty_string)
+            .with_missing_is_null(empty_string_is_null)
             .with_truncate_ragged_lines(truncate_ragged_lines)
             .with_decimal_comma(decimal_comma)
             .with_glob(glob)
@@ -1054,7 +1062,7 @@ impl PyLazyFrame {
             .into())
     }
 
-    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, nulls_equal, how, suffix, validate, maintain_order, coalesce=None))]
+    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, nulls_equal, how, suffix, validate, maintain_order, build_side, coalesce=None))]
     fn join(
         &self,
         other: Self,
@@ -1067,6 +1075,7 @@ impl PyLazyFrame {
         suffix: String,
         validate: Wrap<JoinValidation>,
         maintain_order: Wrap<MaintainOrderJoin>,
+        build_side: Wrap<Option<JoinBuildSide>>,
         coalesce: Option<bool>,
     ) -> PyResult<Self> {
         let coalesce = match coalesce {
@@ -1098,6 +1107,7 @@ impl PyLazyFrame {
             .validate(validate.0)
             .coalesce(coalesce)
             .maintain_order(maintain_order.0)
+            .build_side(build_side.0)
             .finish()
             .into())
     }
@@ -1521,7 +1531,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "merge_sorted")]
-    fn merge_sorted(&self, other: Self, key: &str, maintain_order: bool) -> PyResult<Self> {
+    fn merge_sorted(&self, other: Self, key: Vec<String>, maintain_order: bool) -> PyResult<Self> {
         let out = self
             .ldf
             .read()

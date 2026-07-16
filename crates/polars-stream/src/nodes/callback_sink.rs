@@ -96,10 +96,10 @@ impl ComputeNode for CallbackSinkNode {
             while !self.is_done
                 && let Ok(m) = recv.recv().await
             {
-                let (df, _, _, consume_token) = m.into_inner();
+                let (sf, _, _, consume_token) = m.into_inner();
 
                 // @NOTE: This also performs schema validation.
-                self.buffer.vstack_mut_owned(df)?;
+                self.buffer.vstack_mut_owned(sf.into_df().await)?;
 
                 while self.buffer.height() > 0
                     && self
