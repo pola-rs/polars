@@ -2,8 +2,8 @@
 
 There are several libraries and tools that share similar functionalities with Polars. This often
 leads to questions from data experts about what the differences are. Below is a short comparison
-between some of the more popular data processing tools and Polars, to help make a
-deliberate decision on which tool to use.
+between some of the more popular data processing tools and Polars, to help make a deliberate
+decision on which tool to use.
 
 You can find performance benchmarks of these tools in this
 [Polars blog post](https://pola.rs/posts/benchmarks/) or in the
