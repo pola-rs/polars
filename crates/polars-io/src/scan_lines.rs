@@ -1,5 +1,5 @@
-use arrow::array::BinaryViewArrayGenericBuilder;
 use arrow::array::builder::StaticArrayBuilder;
+use arrow::array::{BINVIEW_MAX_ROW_BYTE_LEN, BinaryViewArrayGenericBuilder};
 use arrow::datatypes::ArrowDataType;
 use polars_core::prelude::DataType;
 use polars_core::series::Series;
@@ -24,7 +24,7 @@ pub fn count_lines(full_bytes: &[u8]) -> usize {
 }
 
 pub fn split_lines_to_rows(bytes: &[u8]) -> PolarsResult<Series> {
-    split_lines_to_rows_impl(bytes, BinviewArrayBuilder::MAX_ROW_BYTE_LEN)
+    split_lines_to_rows_impl(bytes, BINVIEW_MAX_ROW_BYTE_LEN)
 }
 
 fn split_lines_to_rows_impl(bytes: &[u8], max_buffer_size: usize) -> PolarsResult<Series> {

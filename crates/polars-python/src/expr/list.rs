@@ -140,7 +140,7 @@ impl PyExpr {
         &self,
         n: PyExpr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Self {
         self.inner
@@ -156,7 +156,7 @@ impl PyExpr {
         &self,
         fraction: PyExpr,
         with_replacement: bool,
-        shuffle: bool,
+        shuffle: Option<bool>,
         seed: Option<u64>,
     ) -> Self {
         self.inner
