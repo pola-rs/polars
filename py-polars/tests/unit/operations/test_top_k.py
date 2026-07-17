@@ -664,3 +664,20 @@ def test_top_k_bottom_k_categorical_lexical_28344() -> None:
         pl.Series("c", ["1", "3"], dtype=pl.Categorical),
         check_order=False,
     )
+
+
+@pytest.mark.xfail(reason="Bug: https://github.com/pola-rs/polars/issues/28405")
+def test_top_k_by_streaming_multi_column_row_consistency_28405() -> None:
+    df = pl.DataFrame({"a": list(range(1, 13)), "b": list(range(100, 88, -1))})
+    # `top_k_by` gives no ordering guarantee on its output, so sort before comparing.
+    expected = pl.DataFrame({"a": [9, 10, 11, 12], "b": [92, 91, 90, 89]}).sort("a")
+
+    with pl.Config(streaming_chunk_size=1):
+        for _ in range(50):
+            out = (
+                df.lazy()
+                .select(pl.col("a", "b").top_k_by("a", 4))
+                .collect(engine="streaming")
+                .sort("a")
+            )
+            assert_frame_equal(out, expected)
