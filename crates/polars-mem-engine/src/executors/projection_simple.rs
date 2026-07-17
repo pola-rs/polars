@@ -7,6 +7,7 @@ pub struct ProjectionSimple {
 
 impl Executor for ProjectionSimple {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        state.should_stop()?;
         let df = self.input.execute(state)?;
         let height = df.height();
         let mut df = unsafe { df.select_unchecked(self.columns.iter_names_cloned())? };
