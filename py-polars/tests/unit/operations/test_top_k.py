@@ -666,7 +666,6 @@ def test_top_k_bottom_k_categorical_lexical_28344() -> None:
     )
 
 
-@pytest.mark.xfail(reason="Bug: https://github.com/pola-rs/polars/issues/28405")
 def test_top_k_by_streaming_multi_column_row_consistency_28405() -> None:
     n = 200
     k = 70
