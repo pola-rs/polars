@@ -1595,7 +1595,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 IRFunctionExpr::MinHorizontal => ("min_horizontal",).into_py_any(py),
                 // Tuples consumed by external engines (e.g., cudf-polars):
-                // (EwmFunction, alpha, adjust, bias, min_periods, ignore_nulls)
+                // Mean/Std/Var: (EwmFunction, alpha, adjust, bias, min_periods, ignore_nulls)
+                // Sum: (EwmFunction, alpha, min_periods, ignore_nulls)
                 IRFunctionExpr::EwmMean { options } => (
                     PyEwmFunction::Mean,
                     options.alpha,
@@ -1608,8 +1609,6 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::EwmSum { options } => (
                     PyEwmFunction::Sum,
                     options.alpha,
-                    options.adjust,
-                    options.bias,
                     options.min_periods,
                     options.ignore_nulls,
                 )

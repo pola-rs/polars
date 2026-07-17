@@ -246,7 +246,7 @@ where
         return value;
     }
     let delta_time = time - prev_time;
-    // equivalent to: alpha = 1 - exp(-delta_time*ln(2) / half_life)
+    // 0.5^(delta_time/half_life) == exp(-delta_time*ln(2) / half_life) == (1 - alpha)
     let one_minus_alpha = T::from_f64(0.5)
         .unwrap()
         .powf(T::from_i64(delta_time).unwrap() / T::from_i64(half_life).unwrap());

@@ -9278,7 +9278,7 @@ class Series:
         ]
         """
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @unstable()
     def ewm_sum(
         self,
         *,
@@ -9292,8 +9292,9 @@ class Series:
         r"""
         Compute exponentially-weighted moving sum.
 
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -9419,6 +9420,7 @@ class Series:
         ]
         """
 
+    @unstable()
     def ewm_sum_by(
         self,
         by: IntoExpr,
@@ -9427,6 +9429,10 @@ class Series:
     ) -> Series:
         r"""
         Compute time-based exponentially weighted moving sum.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
         :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMS is calculated as

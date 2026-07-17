@@ -10772,7 +10772,7 @@ Consider using {self}.implode() instead"""
             self._pyexpr.ewm_mean(alpha, adjust, min_samples, ignore_nulls)
         )
 
-    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
+    @unstable()
     def ewm_sum(
         self,
         *,
@@ -10786,8 +10786,9 @@ Consider using {self}.implode() instead"""
         r"""
         Compute exponentially-weighted moving sum.
 
-        .. versionchanged:: 1.21.0
-            The `min_periods` parameter was renamed `min_samples`.
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Parameters
         ----------
@@ -10926,6 +10927,7 @@ Consider using {self}.implode() instead"""
         half_life = parse_as_duration_string(half_life)
         return wrap_expr(self._pyexpr.ewm_mean_by(by_pyexpr, half_life))
 
+    @unstable()
     def ewm_sum_by(
         self,
         by: str_ | IntoExpr,
@@ -10934,6 +10936,10 @@ Consider using {self}.implode() instead"""
     ) -> Expr:
         r"""
         Compute time-based exponentially-weighted moving sum.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
 
         Given observations :math:`x_0, x_1, \ldots, x_{n-1}` at times
         :math:`t_0, t_1, \ldots, t_{n-1}`, the EWMS is calculated as
