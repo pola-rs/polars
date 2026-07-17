@@ -29,9 +29,3 @@ syn = { version = "2", features = ["full", "extra-traits"] }
 polars-python = { workspace = true, features = ["full"] }
 pyo3-polars = { workspace = true, features = ["derive"] }
 trybuild = { version = "1", features = ["diff"] }
-
-[features]
-bigidx = [
-  "polars-core/bigidx",
-  "polars-plan/bigidx",
-]
