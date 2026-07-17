@@ -674,7 +674,7 @@ def test_top_k_by_streaming_multi_column_row_consistency_28405() -> None:
         {"a": list(range(1, n + 1)), "b": list(range(1000, 1000 - n, -1))}
     )
     # `top_k_by` gives no ordering guarantee on its output, so sort before comparing.
-    expected = df.sort("a", descending=True).head(k).sort("a")
+    expected = df.sort("a", descending=True).head(k)
 
     # Matches the `POLARS_IDEAL_MORSEL_SIZE=4` used by CI's small-morsel streaming run.
     with pl.Config(streaming_chunk_size=4):
@@ -683,6 +683,5 @@ def test_top_k_by_streaming_multi_column_row_consistency_28405() -> None:
                 df.lazy()
                 .select(pl.col("a", "b").top_k_by("a", k))
                 .collect(engine="streaming")
-                .sort("a")
             )
-            assert_frame_equal(out, expected)
+            assert_frame_equal(out, expected, check_row_order=False)
