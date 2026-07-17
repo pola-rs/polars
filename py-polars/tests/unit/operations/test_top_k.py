@@ -668,15 +668,16 @@ def test_top_k_bottom_k_categorical_lexical_28344() -> None:
 
 @pytest.mark.xfail(reason="Bug: https://github.com/pola-rs/polars/issues/28405")
 def test_top_k_by_streaming_multi_column_row_consistency_28405() -> None:
-    n = 100
-    k = 40
+    n = 200
+    k = 70
     df = pl.DataFrame(
         {"a": list(range(1, n + 1)), "b": list(range(1000, 1000 - n, -1))}
     )
     # `top_k_by` gives no ordering guarantee on its output, so sort before comparing.
     expected = df.sort("a", descending=True).head(k).sort("a")
 
-    with pl.Config(streaming_chunk_size=1):
+    # Matches the `POLARS_IDEAL_MORSEL_SIZE=4` used by CI's small-morsel streaming run.
+    with pl.Config(streaming_chunk_size=4):
         for _ in range(5):
             out = (
                 df.lazy()
