@@ -124,20 +124,20 @@ fn process_list_numeric_arithmetic(
         return Ok(None);
     }
 
-    let cast_node = |expr_arena: &mut Arena<AExpr>, node: Node, dtype: &DataType| {
-        if dtype.leaf_dtype() == &leaf_st {
-            node
-        } else {
+    let cast_unknown_leaf = |expr_arena: &mut Arena<AExpr>, node: Node, dtype: &DataType| {
+        if dtype.leaf_dtype().is_unknown() {
             expr_arena.add(AExpr::Cast {
                 expr: node,
                 dtype: dtype.cast_leaf(leaf_st.clone()),
                 options: CastOptions::NonStrict,
             })
+        } else {
+            node
         }
     };
 
-    let new_node_left = cast_node(expr_arena, node_left, &type_left);
-    let new_node_right = cast_node(expr_arena, node_right, &type_right);
+    let new_node_left = cast_unknown_leaf(expr_arena, node_left, &type_left);
+    let new_node_right = cast_unknown_leaf(expr_arena, node_right, &type_right);
 
     if new_node_left == node_left && new_node_right == node_right {
         return Ok(None);
