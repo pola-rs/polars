@@ -1343,5 +1343,4 @@ def _read_spreadsheet_xlsx2csv(
     if cast_to_boolean:
         df = df.with_columns(*cast_to_boolean)
 
-    df = df.rename(_standardize_duplicates)
-    return _reorder_columns(df, columns)
+    return df.rename(_standardize_duplicates)
