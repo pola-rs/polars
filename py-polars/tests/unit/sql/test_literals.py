@@ -11,7 +11,7 @@ from tests.unit.sql import assert_sql_matches
 
 
 def test_bit_hex_literals() -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
+    with pl.SQLContext(df=pl.DataFrame(height=1), eager=True) as ctx:
         out = ctx.execute(
             """
             SELECT *,
@@ -123,7 +123,7 @@ def test_dollar_quoted_literals() -> None:
 
 
 def test_fixed_intervals() -> None:
-    with pl.SQLContext(df=None, eager=True) as ctx:
+    with pl.SQLContext(df=pl.DataFrame(height=1), eager=True) as ctx:
         out = ctx.execute(
             """
             SELECT
@@ -234,6 +234,13 @@ def test_interval_comparisons(interval_comparison: str, expected_result: bool) -
 
 def test_select_literals_no_table() -> None:
     res = pl.sql("SELECT 1 AS one, '2' AS two, 3.0 AS three", eager=True)
+    assert res.to_dict(as_series=False) == {
+        "one": [1],
+        "two": ["2"],
+        "three": [3.0],
+    }
+
+    res = pl.sql("SELECT 1 AS one, '2' AS two, 3.0 AS three ORDER BY 1", eager=True)
     assert res.to_dict(as_series=False) == {
         "one": [1],
         "two": ["2"],

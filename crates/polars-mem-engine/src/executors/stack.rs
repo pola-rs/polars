@@ -66,7 +66,7 @@ impl StackExec {
                 // possibly mismatching column lengths.
                 unsafe { df.columns_mut() }.extend(res);
             } else {
-                let (df_height, df_width) = df.shape();
+                let df_height = df.height();
 
                 // When we have CSE we cannot verify scalars yet.
                 let verify_scalar = if !df.columns().is_empty() {
@@ -78,7 +78,7 @@ impl StackExec {
                 };
                 for (i, c) in res.iter().enumerate() {
                     let len = c.len();
-                    if verify_scalar && len != df_height && len == 1 && df_width > 0 {
+                    if verify_scalar && len != df_height && len == 1 {
                         #[allow(clippy::collapsible_if)]
                         if !self.exprs[i].is_scalar()
                             && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")

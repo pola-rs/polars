@@ -655,7 +655,7 @@ def test_scan_csv_progressive_infer_schema_length(
 
     n_rows = 60_000
     df = (
-        pl.DataFrame()
+        pl.DataFrame(height=n_rows)
         .with_columns(pl.int_range(n_rows).alias("a"))
         .with_columns(pl.col.a.cast(pl.Float64).alias("b"))
     )
