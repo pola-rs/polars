@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+import polars.selectors as cs
 from polars.exceptions import (
     SQLInterfaceError,
     SQLSyntaxError,
@@ -177,22 +178,21 @@ def test_struct_field_selection_wildcards(
         if rename
         else ""
     )
-    res = df_struct.sql(
-        f"""
-        SELECT {fields} {exclude_cols} {rename_cols}
-        FROM self ORDER BY json_msg.id
-    """
-    )
+    stmt = f"""
+SELECT {fields} {exclude_cols} {rename_cols}
+FROM self ORDER BY json_msg.id
+"""
+    res = df_struct.sql(stmt)
 
     expected = df_struct.unnest("json_msg")
     if fields.endswith(".other.*"):
         expected = expected["other"].struct.unnest()
     if excluding:
-        expected = expected.drop(excluding.strip(")(").split(","))
+        expected = expected.select(cs.exclude(excluding.strip(")(").split(",")))
     if rename:
         expected = expected.rename(rename)
 
-    assert_frame_equal(expected, res)
+    assert_frame_equal(res, expected)
 
 
 @pytest.mark.parametrize(

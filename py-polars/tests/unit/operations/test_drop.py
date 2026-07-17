@@ -9,12 +9,14 @@ from polars.testing import assert_frame_equal
 
 def test_drop() -> None:
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
-    df = df.drop("a")
-    assert df.shape == (3, 2)
+    assert df.drop("a").shape == (3, 2)
+    assert df.drop("*").shape == (3, 0)
+    assert df.lazy().drop("*").collect().shape == (3, 0)
+
+    assert pl.LazyFrame(height=3).drop("*").collect().shape == (3, 0)
 
     df = pl.DataFrame({"a": [2, 1, 3], "b": ["a", "b", "c"], "c": [1, 2, 3]})
-    s = df.drop_in_place("a")
-    assert s.name == "a"
+    assert df.drop_in_place("a").name == "a"
 
 
 def test_drop_explode_6641() -> None:

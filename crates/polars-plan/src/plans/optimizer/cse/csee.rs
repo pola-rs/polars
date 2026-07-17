@@ -1007,6 +1007,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                                 // default_exprs and the subsequent
                                 // projection.
                                 should_broadcast: false,
+                                maintain_dataframe_height: false,
                             },
                         )
                         .build();
@@ -1053,6 +1054,7 @@ impl RewritingVisitor for CommonSubExprOptimizer {
                                 run_parallel: options.run_parallel,
                                 duplicate_check: options.duplicate_check,
                                 should_broadcast: false,
+                                maintain_dataframe_height: false,
                             },
                         )
                         .with_columns(exprs.default_exprs().to_vec(), options)

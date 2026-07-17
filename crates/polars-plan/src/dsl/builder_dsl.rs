@@ -157,7 +157,13 @@ impl DslBuilder {
     }
 
     pub fn drop(self, columns: Selector) -> Self {
-        self.project(vec![Expr::Selector(!columns)], ProjectionOptions::default())
+        self.project(
+            vec![Expr::Selector(!columns)],
+            ProjectionOptions {
+                maintain_dataframe_height: true,
+                ..Default::default()
+            },
+        )
     }
 
     pub fn project(self, exprs: Vec<Expr>, options: ProjectionOptions) -> Self {
