@@ -323,6 +323,8 @@ def test_list_truediv_schema(
         (pl.List(pl.Int8), 1, operator.add, pl.List(pl.Int8)),
         (pl.List(pl.Int64), 1, operator.mod, pl.List(pl.Int64)),
         (pl.List(pl.Int64), 2, operator.floordiv, pl.List(pl.Int64)),
+        (pl.List(pl.Float32), 1, operator.truediv, pl.List(pl.Float32)),
+        (pl.List(pl.Int64), 2, operator.truediv, pl.List(pl.Float64)),
         # A dynamic float literal should still upcast an integer list, as normal.
         (pl.List(pl.Int32), 1.5, operator.add, pl.List(pl.Float64)),
     ],

@@ -318,6 +318,8 @@ def test_array_truediv_schema(
         (pl.Array(pl.Int8, 1), 1, operator.add, pl.Array(pl.Int8, 1)),
         (pl.Array(pl.Int64, 1), 1, operator.mod, pl.Array(pl.Int64, 1)),
         (pl.Array(pl.Int64, 1), 2, operator.floordiv, pl.Array(pl.Int64, 1)),
+        (pl.Array(pl.Float32, 1), 1, operator.truediv, pl.Array(pl.Float32, 1)),
+        (pl.Array(pl.Int64, 1), 2, operator.truediv, pl.Array(pl.Float64, 1)),
         # A dynamic float literal should still upcast an integer array, as normal.
         (pl.Array(pl.Int32, 1), 1.5, operator.add, pl.Array(pl.Float64, 1)),
     ],
