@@ -29,6 +29,14 @@ thiserror = "2"
 
 [features]
 # Polars python is needed because all variants need to be activated of the DSL.
+bigidx = [
+  "polars/bigidx",
+  "polars-core/bigidx",
+  "polars-lazy?/bigidx",
+  "polars-plan?/bigidx",
+  "polars-utils?/bigidx",
+  "pyo3-polars-derive?/bigidx",
+]
 lazy = ["polars/serde-lazy", "polars/lazy", "polars-plan", "polars-lazy/serde", "polars-utils", "polars-lazy/python"]
 derive = ["pyo3-polars-derive", "polars-plan/python", "serde-pickle", "serde"]
 dtype-full = ["polars/dtype-full", "dtype-decimal", "dtype-array", "dtype-struct", "dtype-categorical"]
