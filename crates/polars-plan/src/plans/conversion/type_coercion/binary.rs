@@ -1,7 +1,6 @@
+use polars_core::series::arithmetic::NumericListOp;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::matches_any_order;
-
-use polars_core::series::arithmetic::NumericListOp;
 
 use super::*;
 
