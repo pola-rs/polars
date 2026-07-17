@@ -1,6 +1,8 @@
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::matches_any_order;
 
+use polars_core::series::arithmetic::NumericListOp;
+
 use super::*;
 
 macro_rules! unpack {
@@ -94,6 +96,59 @@ fn process_struct_numeric_arithmetic(
         },
         _ => unreachable!(),
     }
+}
+
+fn process_list_numeric_arithmetic(
+    type_left: DataType,
+    type_right: DataType,
+    node_left: Node,
+    node_right: Node,
+    op: Operator,
+    expr_arena: &mut Arena<AExpr>,
+) -> PolarsResult<Option<AExpr>> {
+    let list_op = match op {
+        Operator::Plus => NumericListOp::add(),
+        Operator::Minus => NumericListOp::sub(),
+        Operator::Multiply => NumericListOp::mul(),
+        Operator::TrueDivide | Operator::RustDivide => NumericListOp::div(),
+        Operator::FloorDivide => NumericListOp::floor_div(),
+        Operator::Modulus => NumericListOp::rem(),
+        _ => return Ok(None),
+    };
+
+    let Ok(leaf_st) =
+        list_op.try_get_leaf_supertype(type_left.leaf_dtype(), type_right.leaf_dtype())
+    else {
+        return Ok(None);
+    };
+    if leaf_st.is_unknown() {
+        return Ok(None);
+    }
+
+    let cast_node = |expr_arena: &mut Arena<AExpr>, node: Node, dtype: &DataType| {
+        if dtype.leaf_dtype() == &leaf_st {
+            node
+        } else {
+            expr_arena.add(AExpr::Cast {
+                expr: node,
+                dtype: dtype.cast_leaf(leaf_st.clone()),
+                options: CastOptions::NonStrict,
+            })
+        }
+    };
+
+    let new_node_left = cast_node(expr_arena, node_left, &type_left);
+    let new_node_right = cast_node(expr_arena, node_right, &type_right);
+
+    if new_node_left == node_left && new_node_right == node_right {
+        return Ok(None);
+    }
+
+    Ok(Some(AExpr::BinaryExpr {
+        left: new_node_left,
+        op,
+        right: new_node_right,
+    }))
 }
 
 #[cfg(any(
@@ -336,6 +391,17 @@ pub(super) fn process_binary(
         )
     {
         return process_struct_numeric_arithmetic(
+            type_left, type_right, node_left, node_right, op, expr_arena,
+        );
+    }
+
+    if op.is_arithmetic()
+        && (type_left.is_list()
+            || type_right.is_list()
+            || type_left.is_array()
+            || type_right.is_array())
+    {
+        return process_list_numeric_arithmetic(
             type_left, type_right, node_left, node_right, op, expr_arena,
         );
     }
