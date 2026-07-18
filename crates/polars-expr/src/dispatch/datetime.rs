@@ -431,7 +431,7 @@ pub(super) fn round(s: &[Column]) -> PolarsResult<Column> {
     })
 }
 
-pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
+pub(super) fn replace(s: &[Column], strict: bool) -> PolarsResult<Column> {
     let time_series = &s[0];
     let s_year = &s[1].strict_cast(&DataType::Int32)?;
     let s_month = &s[2].strict_cast(&DataType::Int8)?;
@@ -463,11 +463,13 @@ pub(super) fn replace(s: &[Column]) -> PolarsResult<Column> {
                 second,
                 nanosecond,
                 ambiguous,
+                strict,
             );
             out.map(|s| s.into_column())
         },
         DataType::Date => {
-            let out = polars_time::replace_date(time_series.date().unwrap(), year, month, day);
+            let out =
+                polars_time::replace_date(time_series.date().unwrap(), year, month, day, strict);
             out.map(|s| s.into_column())
         },
         dt => polars_bail!(opq = round, got = dt, expected = "date/datetime"),

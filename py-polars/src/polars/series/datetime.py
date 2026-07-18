@@ -2281,6 +2281,7 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
         second: int | Series | None = None,
         microsecond: int | Series | None = None,
         ambiguous: Ambiguous | Series = "raise",
+        strict: bool = True,
     ) -> Series:
         """
         Replace time unit.
@@ -2308,6 +2309,10 @@ class DateTimeNameSpace(_NamespaceSuggestMixin):
             - `'earliest'`: use the earliest datetime
             - `'latest'`: use the latest datetime
             - `'null'`: set to null
+        strict
+            If `True` (default), raise an error on invalid date/time components.
+            If `False`, set the result to null for invalid components instead of
+            raising an error.
 
         Returns
         -------
