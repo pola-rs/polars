@@ -2449,3 +2449,14 @@ def test_rolling_rank_min_samples_28102() -> None:
     assert_series_equal(
         out, pl.Series("a", [None, None, None, 3, 3], dtype=pl.get_index_type())
     )
+
+
+@pytest.mark.parametrize("op", ["rolling_mean_by", "rolling_sum_by"])
+def test_rolling_by_with_nulls_raises_27366(op: str) -> None:
+    s = pl.Series([1.0, 2.0, 3.0])
+    null_by = pl.Series([1, None, 3], dtype=pl.Int64)
+    with pytest.raises(InvalidOperationError, match="must not contain nulls"):
+        getattr(s, op)(null_by, window_size="2i")
+
+    ok_by = pl.Series([1, 2, 3], dtype=pl.Int64)
+    assert getattr(s, op)(ok_by, window_size="2i").len() == 3
