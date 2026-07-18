@@ -50,8 +50,11 @@ pub fn to_sql_interface_err(err: impl Display) -> PolarsError {
 pub enum SubqueryRestriction {
     /// Subquery must return a single column
     SingleColumn,
+    /// Subquery must return a single column, used as a scalar value (only its
+    /// first row is taken; it is not asserted that the subquery yields
+    /// exactly one row)
+    SingleValue,
     // SingleRow,
-    // SingleValue,
     // Any
 }
 
@@ -369,18 +372,36 @@ impl SQLExprVisitor<'_> {
             .ctx
             .execute_isolated(|ctx| ctx.execute_query_no_ctes(subquery))?;
 
-        if restriction == SubqueryRestriction::SingleColumn {
-            let new_name = unique_column_name();
-            return Ok(Expr::SubPlan(
-                SpecialEq::new(Arc::new(lf.logical_plan)),
-                // TODO: pass the implode depending on expr.
-                vec![(
-                    new_name.clone(),
-                    first().as_expr().implode(true).alias(new_name.clone()),
-                )],
-            ));
-        };
-        polars_bail!(SQLInterface: "subquery type not supported");
+        match restriction {
+            SubqueryRestriction::SingleColumn => {
+                let new_name = unique_column_name();
+                Ok(Expr::SubPlan(
+                    SpecialEq::new(Arc::new(lf.logical_plan)),
+                    vec![(
+                        new_name.clone(),
+                        first().as_expr().implode(true).alias(new_name.clone()),
+                    )],
+                ))
+            },
+            SubqueryRestriction::SingleValue => {
+                let new_name = unique_column_name();
+                Ok(Expr::SubPlan(
+                    SpecialEq::new(Arc::new(lf.logical_plan)),
+                    vec![(new_name.clone(), first().as_expr().alias(new_name.clone()))],
+                ))
+            },
+        }
+    }
+
+    /// Resolve an operand of a scalar comparison: a bare subquery is reduced
+    /// to a scalar `Expr::SubPlan`, anything else is visited as usual.
+    fn visit_scalar_subquery_operand(&mut self, expr: &SQLExpr) -> PolarsResult<Expr> {
+        match expr {
+            SQLExpr::Subquery(subquery) => {
+                self.visit_subquery(subquery, SubqueryRestriction::SingleValue)
+            },
+            _ => self.visit_expr(expr),
+        }
     }
 
     /// Visit a single SQL identifier.
@@ -564,16 +585,37 @@ impl SQLExprVisitor<'_> {
         op: &SQLBinaryOperator,
         right: &SQLExpr,
     ) -> PolarsResult<Expr> {
-        // check for (unsupported) scalar subquery comparisons
+        // scalar subquery comparisons: one operand is a subquery, compared
+        // against the other (non-subquery) operand using a plain comparison
+        // operator; the subquery is reduced to its first row as a scalar.
         if matches!(left, SQLExpr::Subquery(_)) || matches!(right, SQLExpr::Subquery(_)) {
-            let (suggestion, str_op) = match op {
-                SQLBinaryOperator::NotEq => ("; use 'NOT IN' instead", "!=".to_string()),
-                SQLBinaryOperator::Eq => ("; use 'IN' instead", format!("{op}")),
-                _ => ("", format!("{op}")),
-            };
-            polars_bail!(
-                SQLSyntax: "subquery comparisons with '{str_op}' are not supported{suggestion}"
+            let supported = matches!(
+                op,
+                SQLBinaryOperator::Eq
+                    | SQLBinaryOperator::NotEq
+                    | SQLBinaryOperator::Gt
+                    | SQLBinaryOperator::GtEq
+                    | SQLBinaryOperator::Lt
+                    | SQLBinaryOperator::LtEq
+                    | SQLBinaryOperator::Spaceship
             );
+            if !supported {
+                polars_bail!(
+                    SQLSyntax: "subquery comparisons with '{op}' are not supported"
+                );
+            }
+            let lhs = self.visit_scalar_subquery_operand(left)?;
+            let rhs = self.visit_scalar_subquery_operand(right)?;
+            return Ok(match op {
+                SQLBinaryOperator::Eq => lhs.eq(rhs),
+                SQLBinaryOperator::Gt => lhs.gt(rhs),
+                SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),
+                SQLBinaryOperator::Lt => lhs.lt(rhs),
+                SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),
+                SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),
+                SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),
+                _ => unreachable!(),
+            });
         }
 
         // need special handling for interval offsets and comparisons
