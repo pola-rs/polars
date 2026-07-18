@@ -48,6 +48,44 @@ fn test_median() {
 }
 
 #[test]
+fn test_range() {
+    let expr = col("Data").max() - col("Data").min();
+
+    let sql_expr = "RANGE(Data)";
+    let (expected, actual) = create_expected(expr, sql_expr);
+
+    assert!(expected.equals(&actual))
+}
+
+#[test]
+fn test_range_group_by() {
+    let df = df! {
+        "grp" => ["a", "a", "a", "b", "b"],
+        "val" => [10, 20, 30, 5, 15],
+    }
+    .unwrap()
+    .lazy();
+
+    let expected = df
+        .clone()
+        .group_by([col("grp")])
+        .agg([(col("val").max() - col("val").min()).alias("TEST")])
+        .sort(["grp"], Default::default())
+        .collect()
+        .unwrap();
+
+    let mut ctx = SQLContext::new();
+    ctx.register("df", df);
+    let actual = ctx
+        .execute("SELECT grp, RANGE(val) as TEST FROM df GROUP BY grp ORDER BY grp")
+        .unwrap()
+        .collect()
+        .unwrap();
+
+    assert!(expected.equals(&actual))
+}
+
+#[test]
 fn test_quantile_cont() {
     for &q in &[0.25, 0.5, 0.75] {
         let expr = col("Data").quantile(lit(q), QuantileMethod::Linear);
