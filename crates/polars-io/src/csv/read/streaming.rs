@@ -781,7 +781,7 @@ fn infer_schema(
             infer_all_as_str,
             &options.parse_options,
             options.schema_overwrite.as_deref(),
-        )
+        )?
     };
 
     if let Some(schema) = &options.schema {
