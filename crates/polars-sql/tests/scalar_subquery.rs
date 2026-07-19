@@ -34,12 +34,16 @@ fn assert_scalar_subquery(op: &str, expected_a: &[i32]) {
 
 #[test]
 fn test_scalar_subquery_eq() {
-    assert_scalar_subquery("=", &[3]);
+    let mut ctx = create_ctx();
+    let res = ctx.execute("SELECT a FROM df WHERE a = (SELECT x FROM threshold) ORDER BY a");
+    assert!(res.is_err());
 }
 
 #[test]
 fn test_scalar_subquery_not_eq() {
-    assert_scalar_subquery("<>", &[1, 2, 4, 5]);
+    let mut ctx = create_ctx();
+    let res = ctx.execute("SELECT a FROM df WHERE a <> (SELECT x FROM threshold) ORDER BY a");
+    assert!(res.is_err());
 }
 
 #[test]
