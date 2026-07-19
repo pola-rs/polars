@@ -348,6 +348,7 @@ bigidx = [
   "polars-core/bigidx",
   "polars-lazy?/bigidx",
   "polars-ops/big_idx",
+  "polars-plan?/bigidx",
   "polars-utils/bigidx",
 ]
 polars_cloud_client = ["polars-lazy?/polars_cloud_client"]
@@ -584,6 +585,8 @@ allow_unused = [
   "polars-core/allow_unused",
   "polars-time?/allow_unused",
 ]
+
+include-polars-plan = ["dep:polars-plan"]
 
 [package.metadata.docs.rs]
 # all-features = true
