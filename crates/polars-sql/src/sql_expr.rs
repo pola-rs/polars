@@ -589,30 +589,35 @@ impl SQLExprVisitor<'_> {
         // against the other (non-subquery) operand using a plain comparison
         // operator; the subquery is reduced to its first row as a scalar.
         if matches!(left, SQLExpr::Subquery(_)) || matches!(right, SQLExpr::Subquery(_)) {
-            let supported = matches!(
-                op,
-                SQLBinaryOperator::Eq
-                    | SQLBinaryOperator::NotEq
-                    | SQLBinaryOperator::Gt
-                    | SQLBinaryOperator::GtEq
-                    | SQLBinaryOperator::Lt
-                    | SQLBinaryOperator::LtEq
-                    | SQLBinaryOperator::Spaceship
-            );
-            if !supported {
-                polars_bail!(
-                    SQLSyntax: "subquery comparisons with '{op}' are not supported"
-                );
+            match op {
+                SQLBinaryOperator::Eq => {
+                    polars_bail!(
+                        SQLSyntax: "subquery comparisons with '{op}' are not supported; use 'IN' instead"
+                    )
+                },
+                SQLBinaryOperator::NotEq => {
+                    polars_bail!(
+                        SQLSyntax: "subquery comparisons with '{op}' are not supported; use 'NOT IN' instead"
+                    )
+                },
+                SQLBinaryOperator::Gt
+                | SQLBinaryOperator::GtEq
+                | SQLBinaryOperator::Lt
+                | SQLBinaryOperator::LtEq
+                | SQLBinaryOperator::Spaceship => {},
+                _ => {
+                    polars_bail!(
+                        SQLSyntax: "subquery comparisons with '{op}' are not supported"
+                    )
+                },
             }
             let lhs = self.visit_scalar_subquery_operand(left)?;
             let rhs = self.visit_scalar_subquery_operand(right)?;
             return Ok(match op {
-                SQLBinaryOperator::Eq => lhs.eq(rhs),
                 SQLBinaryOperator::Gt => lhs.gt(rhs),
                 SQLBinaryOperator::GtEq => lhs.gt_eq(rhs),
                 SQLBinaryOperator::Lt => lhs.lt(rhs),
                 SQLBinaryOperator::LtEq => lhs.lt_eq(rhs),
-                SQLBinaryOperator::NotEq => lhs.eq(rhs).not(),
                 SQLBinaryOperator::Spaceship => lhs.eq_missing(rhs),
                 _ => unreachable!(),
             });
