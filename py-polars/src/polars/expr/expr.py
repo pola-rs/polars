@@ -11938,7 +11938,15 @@ Consider using {self}.implode() instead"""
             old = list(old.keys())
 
         old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new_pyexpr = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
+        new_pyexpr = None
+        if return_dtype is not None:
+            try:
+                new_series = pl.Series(new, dtype=return_dtype)
+                new_pyexpr = parse_into_expression(new_series, str_as_lit=True)
+            except TypeError:
+                pass
+        if new_pyexpr is None:
+            new_pyexpr = parse_into_expression(new, str_as_lit=True)
 
         dtype_pyexpr: plr.PyDataTypeExpr | None = None
         if return_dtype is not None:

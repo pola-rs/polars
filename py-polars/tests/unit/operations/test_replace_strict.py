@@ -434,3 +434,24 @@ def test_replace_strict_str_enum_27060() -> None:
     enum = pl.Enum(["A", "B"])
     out = pl.Series(["A", "B"]).cast(enum).replace_strict({"A": "X", "B": "Y"})
     assert_series_equal(out, pl.Series(["X", "Y"]))
+
+
+def test_replace_strict_dict_order_28422() -> None:
+    df = pl.DataFrame({"color": ["Green", "Red", "Yellow"]})
+
+    result_a = df.select(
+        pl.col("color").replace_strict(
+            {"Red": 0.5, "Green": 1, "Yellow": 0},
+            return_dtype=pl.Float64,
+        )
+    )["color"]
+    result_b = df.select(
+        pl.col("color").replace_strict(
+            {"Green": 1, "Red": 0.5, "Yellow": 0},
+            return_dtype=pl.Float64,
+        )
+    )["color"]
+
+    expected = pl.Series("color", [1.0, 0.5, 0.0], dtype=pl.Float64)
+    assert_series_equal(result_a, expected)
+    assert_series_equal(result_b, expected)
