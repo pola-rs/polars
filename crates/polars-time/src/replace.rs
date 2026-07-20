@@ -104,7 +104,8 @@ pub fn replace_datetime(
     // Ensure nulls are propagated. A component can only end up null when `ca` is null at that
     // position, so `out`'s nulls are always a subset of `ca`'s.
     if ca.has_nulls() {
-        out.physical_mut().set_validity(ca.physical().rechunk_validity());
+        out.physical_mut()
+            .set_validity(ca.physical().rechunk_validity());
     }
 
     Ok(out)
@@ -128,7 +129,8 @@ pub fn replace_date(
     // Ensure nulls are propagated. A component can only end up null when `ca` is null at that
     // position, so `out`'s nulls are always a subset of `ca`'s.
     if ca.has_nulls() {
-        out.physical_mut().set_validity(ca.physical().rechunk_validity());
+        out.physical_mut()
+            .set_validity(ca.physical().rechunk_validity());
     }
 
     Ok(out)
