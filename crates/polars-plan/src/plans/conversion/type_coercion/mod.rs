@@ -645,6 +645,9 @@ impl OptimizationRule for TypeCoercionRule {
                     }
                     | ref ewm_variant @ IRFunctionExpr::EwmStd {
                         options: ewm_options,
+                    }
+                    | ref ewm_variant @ IRFunctionExpr::EwmSum {
+                        options: ewm_options,
                     },
                 ref input,
                 options,
@@ -678,6 +681,9 @@ impl OptimizationRule for TypeCoercionRule {
                         options: ewm_options,
                     },
                     IRFunctionExpr::EwmStd { .. } => IRFunctionExpr::EwmStd {
+                        options: ewm_options,
+                    },
+                    IRFunctionExpr::EwmSum { .. } => IRFunctionExpr::EwmSum {
                         options: ewm_options,
                     },
                     _ => unreachable!(),

@@ -342,9 +342,11 @@ impl PyRollingFunction {
 #[derive(Copy, Clone, PartialEq)]
 pub enum PyEwmFunction {
     Mean,
+    Sum,
     Std,
     Var,
     MeanBy,
+    SumBy,
 }
 
 #[pymethods]
@@ -1593,12 +1595,20 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 },
                 IRFunctionExpr::MinHorizontal => ("min_horizontal",).into_py_any(py),
                 // Tuples consumed by external engines (e.g., cudf-polars):
-                // (EwmFunction, alpha, adjust, bias, min_periods, ignore_nulls)
+                // Mean/Std/Var: (EwmFunction, alpha, adjust, bias, min_periods, ignore_nulls)
+                // Sum: (EwmFunction, alpha, min_periods, ignore_nulls)
                 IRFunctionExpr::EwmMean { options } => (
                     PyEwmFunction::Mean,
                     options.alpha,
                     options.adjust,
                     options.bias,
+                    options.min_periods,
+                    options.ignore_nulls,
+                )
+                    .into_py_any(py),
+                IRFunctionExpr::EwmSum { options } => (
+                    PyEwmFunction::Sum,
+                    options.alpha,
                     options.min_periods,
                     options.ignore_nulls,
                 )
@@ -1664,6 +1674,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<Py<PyAny>> {
                 IRFunctionExpr::TopKBy { descending } => ("top_k_by", descending).into_py_any(py),
                 IRFunctionExpr::EwmMeanBy { half_life } => {
                     (PyEwmFunction::MeanBy, Wrap(*half_life)).into_py_any(py)
+                },
+                IRFunctionExpr::EwmSumBy { half_life } => {
+                    (PyEwmFunction::SumBy, Wrap(*half_life)).into_py_any(py)
                 },
                 IRFunctionExpr::RowEncode(..) => {
                     return Err(PyNotImplementedError::new_err("row_encode"));
