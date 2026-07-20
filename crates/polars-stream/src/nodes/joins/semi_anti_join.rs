@@ -319,7 +319,8 @@ impl ProbeState {
                     if probe_match.is_empty() {
                         continue;
                     }
-                    df.select(params.output_schema.iter_names())?.take_slice_unchecked(&probe_match)
+                    df.select(params.output_schema.iter_names())?
+                        .take_slice_unchecked(&probe_match)
                 };
 
                 let mut morsel = Morsel::new_unregistered(out_df, in_seq, src_token.clone());
