@@ -3121,7 +3121,7 @@ def test_read_csv_mixed_i128_float_infers_float64_27654(chunk_override: None) ->
     ],
 )
 def test_read_csv_default_raise_if_empty(
-    read_csv: Callable[[Any], pl.DataFrame],
+    read_csv: Callable[..., pl.DataFrame],
 ) -> None:
     schema = {"a": pl.Int64}
     assert_frame_equal(
