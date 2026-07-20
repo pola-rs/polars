@@ -110,6 +110,6 @@ impl PhysicalExpr for SortExpr {
     }
 
     fn is_scalar(&self) -> bool {
-        false
+        self.physical_expr.is_scalar()
     }
 }
