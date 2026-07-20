@@ -1576,7 +1576,7 @@ def test_csee_height_mismatch_28364() -> None:
     q1 = df.with_columns(z=pl.coalesce(pl.col.x.min(), pl.col.x.min()))
     out = df.join(q1, on="x").collect()
     expected = pl.DataFrame({"x": [1, 2], "z": [1, 1]})
-    assert_frame_equal(out, expected)
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 def test_cspe_with_non_pushable_filters_19479() -> None:

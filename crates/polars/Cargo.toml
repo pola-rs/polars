@@ -586,6 +586,8 @@ allow_unused = [
   "polars-time?/allow_unused",
 ]
 
+include-polars-plan = ["dep:polars-plan"]
+
 [package.metadata.docs.rs]
 # all-features = true
 features = ["docs-selection"]

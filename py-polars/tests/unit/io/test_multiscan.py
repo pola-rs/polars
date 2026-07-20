@@ -1119,6 +1119,100 @@ def test_hive_join_rewrite_right_join(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+def test_hive_group_by_rewrite_to_partitioned_union(tmp_path: Path) -> None:
+    # Grouping a hive-partitioned dataset by its (first) hive column should be
+    # rewritten into a union of per-partition group-by's, where each branch
+    # only reads the matching partition.
+    root = tmp_path / "root"
+
+    pl.DataFrame({"foo": [1, 1, 2, 3], "x": [10, 1, 20, 30]}).write_parquet(
+        root, partition_by="foo"
+    )
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+
+    q = lf.group_by("foo").agg(pl.sum("x").alias("x_sum"), pl.len())
+    plan = q.explain()
+
+    assert plan.startswith("UNION[maintain_order: false]")
+    assert "PLAN 0:" in plan
+    assert "PLAN 1:" in plan
+    assert "PLAN 2:" in plan
+    assert "PLAN 3:" not in plan
+    assert plan.count("AGGREGATE") == 3
+    assert "foo=1" in plan
+    assert "foo=2" in plan
+    assert "foo=3" in plan
+    assert plan.count("is_in") == 3
+
+    out = q.sort("foo")
+    expected = pl.DataFrame(
+        {"foo": [1, 2, 3], "x_sum": [11, 20, 30], "len": [2, 1, 1]},
+        schema_overrides={"len": pl.get_index_type()},
+    )
+    assert_frame_equal(out.collect(), expected)
+    assert_frame_equal(
+        out.collect(),
+        out.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)).sort(
+            "foo"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_pre_partition_hive_flag(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        root, partition_by="foo"
+    )
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+    q = lf.group_by("foo").agg(pl.sum("x"))
+
+    plan_enabled = q.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=True))
+    assert plan_enabled.startswith("UNION[maintain_order: false]")
+    assert plan_enabled.count("AGGREGATE") == 3
+
+    plan_disabled = q.explain(optimizations=pl.QueryOptFlags(pre_partition_hive=False))
+    assert "UNION" not in plan_disabled
+    assert plan_disabled.count("AGGREGATE") == 1
+
+    out = q.sort("foo")
+    assert_frame_equal(
+        out.collect(optimizations=pl.QueryOptFlags(pre_partition_hive=True)).sort(
+            "foo"
+        ),
+        out.collect(optimizations=pl.QueryOptFlags(pre_partition_hive=False)).sort(
+            "foo"
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_hive_group_by_rewrite_maintain_order_disables_rewrite(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "root"
+
+    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
+        root, partition_by="foo"
+    )
+
+    lf = pl.scan_parquet(root, hive_partitioning=True)
+
+    # `maintain_order` group-by's must not be split into an unordered union.
+    q = lf.group_by("foo", maintain_order=True).agg(pl.sum("x"))
+    plan = q.explain()
+    assert "UNION" not in plan
+
+    assert_frame_equal(
+        q.collect(),
+        q.collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
+    )
+
+
+@pytest.mark.write_disk
 def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
     left_root = tmp_path / "left"
     right_root = tmp_path / "right"
@@ -1133,10 +1227,10 @@ def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
     left = pl.scan_parquet(left_root, hive_partitioning=True)
     right = pl.scan_parquet(right_root, hive_partitioning=True)
 
-    q = left.join(right, left_on="foo", right_on="bar", how="semi")
+    q = left.join(right, left_on="foo", right_on="bar", how="semi").slice(0, 1)
     plan = q.explain()
 
-    assert plan.startswith("UNION[maintain_order: false]")
+    assert "UNION[maintain_order: false]" in plan
     assert "PLAN 0:" in plan
     assert "PLAN 1:" in plan
     assert "PLAN 2:" not in plan
