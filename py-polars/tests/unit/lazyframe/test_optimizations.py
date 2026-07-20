@@ -699,6 +699,13 @@ def test_slice_pushdown_with_cache_arena_take_panic_26905() -> None:
     )
 
 
+def test_slice_pushdown_past_empty_union_28408() -> None:
+    lf = pl.LazyFrame({"x": [1]})
+    q = pl.concat([lf, lf]).filter(pl.col("x") == 0).slice(1, 1)
+
+    assert_frame_equal(q.collect(), pl.DataFrame(schema={"x": pl.Int64}))
+
+
 def test_slice_pushdown_shared_join_input_28127() -> None:
     lf = pl.LazyFrame({"a": ["x"]}).filter(pl.lit(True)).select("a").slice(0, 1)
     q = lf.join(lf, on="a", how="inner")
