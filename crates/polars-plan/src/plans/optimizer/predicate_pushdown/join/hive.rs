@@ -30,6 +30,15 @@ fn hive_rewrite_supports_join_type(how: &JoinType) -> bool {
     }
 }
 
+fn get_partitions(hive_df: &DataFrame) -> Vec<DataFrame> {
+    let n_parts = std::env::var("POLARS_HIVE_PARTITIONS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(64);
+
+    split_df_as_ref(&hive_df, std::cmp::min(n_parts, hive_df.height()), false)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn rewrite_hive(
     ir: IR,
@@ -40,29 +49,113 @@ pub fn rewrite_hive(
     #[cfg(not(feature = "is_in"))]
     return Ok(ir);
 
-    match ir {
-        IR::Join {
-            input_left,
-            input_right,
-            schema,
-            left_on,
-            right_on,
-            options,
-        } => {
-            // This replaces a join on a hive partitioned key
-            // by a union on hive partitioned joins.
-            // We do that by pushing down an is_in predicate
-            // Later in the optimizer we prune the hive paths
-            // based on all the predicates.
-            #[cfg(feature = "is_in")]
-            if !opt.hive_rewrite_active
-                && let (MaintainOrderJoin::None, true, Some(hive_left), Some(hive_right)) = (
-                    &options.args.maintain_order,
-                    hive_rewrite_supports_join_type(&options.args.how),
-                    is_hive_partitioned(input_left, ir_arena),
-                    is_hive_partitioned(input_right, ir_arena),
-                )
+    #[cfg(feature = "is_in")]
+    {
+        if opt.hive_rewrite_active {
+            return Ok(ir);
+        }
+
+        match ir {
+            IR::GroupBy {
+                input,
+                keys,
+                aggs,
+                schema,
+                maintain_order,
+                options,
+                apply,
+            } if opt.partition_hive
+                && !maintain_order
+                && let Some(hive) = is_hive_partitioned(input, ir_arena) =>
             {
+                // This replaces a group-by on a hive partitioned key
+                // by a union on hive partitioned group-by's.
+                // We do that by pushing down an is_in predicate
+                // Later in the optimizer we prune the hive paths
+                // based on all the predicates.
+                let mut hive_col = None;
+                let hive_schema = hive.schema();
+                for e in keys.iter() {
+                    let key = expr_arena.get(e.node());
+                    if let AExpr::Column(name) = key {
+                        if hive_schema.index_of(name) == Some(0) {
+                            hive_col = Some(name.clone());
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(key_name) = hive_col {
+                    let hive_df = hive.df().select_at_idx(0).unwrap().clone().into_frame();
+
+                    let chunks = get_partitions(&hive_df);
+
+                    let mut branches = Vec::with_capacity(chunks.len());
+
+                    for chunk in chunks {
+                        if chunk.height() == 0 {
+                            continue;
+                        }
+
+                        let pred =
+                            make_predicate(&chunk, key_name.clone(), key_name.clone(), expr_arena);
+
+                        // We need to deep clone as each branch hits different predicate pd passes.
+                        let branch = deep_clone_ir(input, ir_arena);
+
+                        let mut acc_new = init_indexmap(Some(1));
+                        insert_predicate_dedup(&mut acc_new, &pred, expr_arena);
+                        opt.pushdown_and_assign(branch, acc_new, ir_arena, expr_arena)?;
+
+                        branches.push(ir_arena.add(IR::GroupBy {
+                            input: branch,
+                            keys: keys.clone(),
+                            aggs: aggs.clone(),
+                            schema: schema.clone(),
+                            maintain_order,
+                            options: options.clone(),
+                            apply: apply.clone(),
+                        }));
+                    }
+
+                    Ok(IR::Union {
+                        inputs: branches,
+                        options: UnionOptions {
+                            maintain_order: false,
+                            ..Default::default()
+                        },
+                    })
+                } else {
+                    Ok(IR::GroupBy {
+                        input,
+                        keys,
+                        aggs,
+                        schema,
+                        maintain_order,
+                        options,
+                        apply,
+                    })
+                }
+            },
+            IR::Join {
+                input_left,
+                input_right,
+                schema,
+                left_on,
+                right_on,
+                options,
+            } if let (MaintainOrderJoin::None, true, Some(hive_left), Some(hive_right)) = (
+                &options.args.maintain_order,
+                hive_rewrite_supports_join_type(&options.args.how),
+                is_hive_partitioned(input_left, ir_arena),
+                is_hive_partitioned(input_right, ir_arena),
+            ) =>
+            {
+                // This replaces a join on a hive partitioned key
+                // by a union on hive partitioned joins.
+                // We do that by pushing down an is_in predicate
+                // Later in the optimizer we prune the hive paths
+                // based on all the predicates.
                 let mut hive_cols = None;
                 let hive_left_schema = hive_left.schema();
                 let hive_right_schema = hive_right.schema();
@@ -136,16 +229,7 @@ pub fn rewrite_hive(
                         insert_predicate_dedup(&mut acc_right, &r_pred, expr_arena);
                         opt.pushdown_and_assign(input_right, acc_right, ir_arena, expr_arena)?;
                     } else {
-                        let n_parts = std::env::var("POLARS_HIVE_PARTITIONS")
-                            .ok()
-                            .and_then(|v| v.parse::<usize>().ok())
-                            .unwrap_or(64);
-
-                        let chunks = split_df_as_ref(
-                            &partitions,
-                            std::cmp::min(n_parts, partitions.height()),
-                            false,
-                        );
+                        let chunks = get_partitions(&partitions);
 
                         let mut branches = Vec::with_capacity(chunks.len());
 
@@ -194,18 +278,18 @@ pub fn rewrite_hive(
                         });
                     }
                 }
-            }
 
-            Ok(IR::Join {
-                input_left,
-                input_right,
-                left_on,
-                right_on,
-                schema,
-                options,
-            })
-        },
-        _ => todo!(),
+                Ok(IR::Join {
+                    input_left,
+                    input_right,
+                    left_on,
+                    right_on,
+                    schema,
+                    options,
+                })
+            },
+            _ => Ok(ir),
+        }
     }
 }
 
@@ -218,35 +302,42 @@ fn make_predicates(
     predicate_name_right: PlSmallStr,
     expr_arena: &mut Arena<AExpr>,
 ) -> (ExprIR, ExprIR) {
-    let l_values = partitions
-        .column(&extract_name_left)
-        .unwrap()
-        .as_materialized_series()
-        .implode()
-        .unwrap()
-        .into_series();
-    let r_values = partitions
-        .column(&extract_name_right)
+    (
+        make_predicate(
+            partitions,
+            extract_name_left,
+            predicate_name_left,
+            expr_arena,
+        ),
+        make_predicate(
+            partitions,
+            extract_name_right,
+            predicate_name_right,
+            expr_arena,
+        ),
+    )
+}
+
+#[cfg(feature = "is_in")]
+fn make_predicate(
+    partitions: &DataFrame,
+    extract_name: PlSmallStr,
+    predicate_name: PlSmallStr,
+    expr_arena: &mut Arena<AExpr>,
+) -> ExprIR {
+    let values = partitions
+        .column(&extract_name)
         .unwrap()
         .as_materialized_series()
         .implode()
         .unwrap()
         .into_series();
 
-    let l_pred = AExprBuilder::col(predicate_name_left, expr_arena)
+    AExprBuilder::col(predicate_name, expr_arena)
         .is_in(
-            AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(l_values)), expr_arena),
+            AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(values)), expr_arena),
             false, // nulls_equal
             expr_arena,
         )
-        .expr_ir_unnamed();
-
-    let r_pred = AExprBuilder::col(predicate_name_right, expr_arena)
-        .is_in(
-            AExprBuilder::lit(LiteralValue::Series(SpecialEq::new(r_values)), expr_arena),
-            false,
-            expr_arena,
-        )
-        .expr_ir_unnamed();
-    (l_pred, r_pred)
+        .expr_ir_unnamed()
 }
