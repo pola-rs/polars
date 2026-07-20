@@ -101,10 +101,10 @@ pub fn replace_datetime(
         ca.name().clone(),
     )?;
 
-    // Ensure nulls are propagated.
+    // Ensure nulls are propagated. A component can only end up null when `ca` is null at that
+    // position, so `out`'s nulls are always a subset of `ca`'s.
     if ca.has_nulls() {
-        out.physical_mut()
-            .merge_validities(ca.physical().rechunk().chunks());
+        out.physical_mut().set_validity(ca.physical().rechunk_validity());
     }
 
     Ok(out)
@@ -125,10 +125,10 @@ pub fn replace_date(
     let day = &resolve_component(day, || ca.day(), n)?;
     let mut out = DateChunked::new_from_parts(year, month, day, ca.name().clone())?;
 
-    // Ensure nulls are propagated.
+    // Ensure nulls are propagated. A component can only end up null when `ca` is null at that
+    // position, so `out`'s nulls are always a subset of `ca`'s.
     if ca.has_nulls() {
-        out.physical_mut()
-            .merge_validities(ca.physical().rechunk().chunks());
+        out.physical_mut().set_validity(ca.physical().rechunk_validity());
     }
 
     Ok(out)
