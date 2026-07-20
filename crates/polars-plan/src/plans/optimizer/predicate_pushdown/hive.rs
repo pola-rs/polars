@@ -11,6 +11,9 @@ fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartition
             IR::Scan { hive_parts, .. } => return hive_parts.clone(),
             // Only partition the first group-by.
             IR::GroupBy { .. } => return None,
+            // They can modify hive names.
+            // Be conservative for now.
+            IR::Select { .. } | IR::HStack { .. } => return None,
             // We only want to return hive partitions for the first joins
             // Any node in between with more than one input (join, union, etc) will not return a
             // match.
@@ -38,7 +41,7 @@ fn get_partitions(hive_df: &DataFrame) -> Vec<DataFrame> {
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(64);
 
-    split_df_as_ref(&hive_df, std::cmp::min(n_parts, hive_df.height()), false)
+    split_df_as_ref(hive_df, std::cmp::min(n_parts, hive_df.height()), false)
 }
 
 #[allow(clippy::too_many_arguments)]
