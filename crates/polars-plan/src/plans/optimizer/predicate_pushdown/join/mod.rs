@@ -26,12 +26,14 @@ pub(super) fn process_join(
 ) -> PolarsResult<IR> {
     if options.args.slice.is_some() {
         let ir = rewrite_hive(
-            input_left,
-            input_right,
-            left_on,
-            right_on,
-            schema,
-            options,
+            IR::Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                schema,
+                options,
+            },
             opt,
             lp_arena,
             expr_arena,
@@ -82,12 +84,14 @@ pub(super) fn process_join(
     } || acc_predicates.is_empty()
     {
         let lp = rewrite_hive(
-            input_left,
-            input_right,
-            left_on,
-            right_on,
-            schema,
-            options,
+            IR::Join {
+                input_left,
+                input_right,
+                left_on,
+                right_on,
+                schema,
+                options,
+            },
             opt,
             lp_arena,
             expr_arena,
@@ -399,12 +403,14 @@ pub(super) fn process_join(
     opt.pushdown_and_assign(input_right, pushdown_right, lp_arena, expr_arena)?;
 
     let lp = rewrite_hive(
-        input_left,
-        input_right,
-        left_on,
-        right_on,
-        schema,
-        options,
+        IR::Join {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            schema,
+            options,
+        },
         opt,
         lp_arena,
         expr_arena,
