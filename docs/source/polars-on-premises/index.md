@@ -26,6 +26,9 @@ Polars On-Prem supports two deployment paths:
 - Amazon Elastic Kubernetes Service (EKS)
 - Any other CNCF-conformant Kubernetes distribution
 
+Deploy either via the Helm chart or the new
+[Kubernetes Operator](./kubernetes/index#installing-via-the-kubernetes-operator).
+
 **Bare metal:** for servers without Kubernetes. Polars On-Prem bootstraps the cluster directly on
 your machines, no Kubernetes installation required.
 
