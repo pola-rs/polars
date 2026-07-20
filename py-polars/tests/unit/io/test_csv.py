@@ -8,7 +8,7 @@ import warnings
 import zlib
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal as D
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import numpy as np
 import pyarrow as pa
@@ -22,6 +22,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from tests.conftest import PlMonkeyPatch
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
     from typing import Any
 
@@ -3110,3 +3111,37 @@ def test_read_csv_mixed_i128_float_infers_float64_27654(chunk_override: None) ->
     csv_data = b"value\n12345678901234567890\n1.5"
     df = pl.read_csv(csv_data)
     assert df.schema["value"] == pl.Float64
+
+
+@pytest.mark.parametrize(
+    "read_csv",
+    [
+        pl.read_csv,
+        lambda *a, **kw: pl.scan_csv(*a, **kw).collect(),
+    ],
+)
+def test_read_csv_default_raise_if_empty(
+    read_csv: Callable[..., pl.DataFrame],
+) -> None:
+    schema = {"a": pl.Int64}
+    assert_frame_equal(
+        read_csv(b"", has_header=False, schema=schema),
+        pl.DataFrame(schema=schema),
+    )
+
+    with pytest.raises(NoDataError):
+        read_csv(b"", has_header=False, schema=schema, raise_if_empty=True)
+
+    with pytest.raises(NoDataError):
+        read_csv(b"", has_header=False)
+
+    for has_header in [True, False]:
+        assert_frame_equal(
+            read_csv(b"", has_header=has_header, raise_if_empty=False),
+            pl.DataFrame(),
+        )
+
+        assert_frame_equal(
+            read_csv(b"", has_header=has_header, schema=schema, raise_if_empty=False),
+            pl.DataFrame(schema=schema),
+        )
