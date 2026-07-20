@@ -3240,6 +3240,37 @@ def test_join_filter_pushdown_cross_join() -> None:
     assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expect)
 
 
+def test_join_filter_pushdown_categorical_28426() -> None:
+    categories = pl.Categories("test_join_filter_pushdown_categorical_28426")
+    dtype = pl.Categorical(categories)
+
+    left = pl.LazyFrame(
+        {
+            "left_id": [1, 2],
+            "left_category": pl.Series(["cc", "aa"], dtype=dtype),
+        }
+    )
+    right = pl.LazyFrame(
+        {
+            "right_id": [101, 102],
+            "right_category": pl.Series(["bb", "cc"], dtype=dtype),
+        }
+    )
+
+    q = (
+        left.join(right, how="cross")
+        .filter(pl.col("left_category") < pl.col("right_category"))
+        .select("left_id", "right_id")
+        .sort("left_id", "right_id")
+    )
+
+    expected = pl.DataFrame({"left_id": [2, 2], "right_id": [101, 102]})
+
+    assert "IEJOIN JOIN" not in q.explain()
+    assert_frame_equal(q.collect(), expected)
+    assert_frame_equal(q.collect(optimizations=pl.QueryOptFlags.none()), expected)
+
+
 def test_join_filter_pushdown_iejoin() -> None:
     lhs = pl.LazyFrame(
         {"a": [1, 2, 3, 4, 5], "b": [1, 2, 3, 4, None], "c": ["a", "b", "c", "d", "e"]}
