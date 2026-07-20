@@ -126,6 +126,7 @@ pub fn rewrite_hive(
                     Ok(IR::Union {
                         inputs: branches,
                         options: UnionOptions {
+                            slice: options.slice,
                             maintain_order: false,
                             ..Default::default()
                         },

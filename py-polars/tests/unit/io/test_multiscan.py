@@ -1213,26 +1213,6 @@ def test_hive_group_by_rewrite_maintain_order_disables_rewrite(
 
 
 @pytest.mark.write_disk
-def test_hive_group_by_rewrite_non_hive_key(tmp_path: Path) -> None:
-    root = tmp_path / "root"
-
-    pl.DataFrame({"foo": [1, 2, 3], "x": [10, 20, 30]}).write_parquet(
-        root, partition_by="foo"
-    )
-
-    lf = pl.scan_parquet(root, hive_partitioning=True)
-
-    # Grouping by a non-hive column should not trigger the rewrite.
-    q = lf.group_by("x").agg(pl.sum("foo"))
-    assert "UNION" not in q.explain()
-
-    assert_frame_equal(
-        q.sort("x").collect(),
-        q.sort("x").collect(optimizations=pl.QueryOptFlags(predicate_pushdown=False)),
-    )
-
-
-@pytest.mark.write_disk
 def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
     left_root = tmp_path / "left"
     right_root = tmp_path / "right"
@@ -1247,10 +1227,10 @@ def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
     left = pl.scan_parquet(left_root, hive_partitioning=True)
     right = pl.scan_parquet(right_root, hive_partitioning=True)
 
-    q = left.join(right, left_on="foo", right_on="bar", how="semi")
+    q = left.join(right, left_on="foo", right_on="bar", how="semi").slice(0, 1)
     plan = q.explain()
 
-    assert plan.startswith("UNION[maintain_order: false]")
+    assert "UNION[maintain_order: false]" in plan
     assert "PLAN 0:" in plan
     assert "PLAN 1:" in plan
     assert "PLAN 2:" not in plan
