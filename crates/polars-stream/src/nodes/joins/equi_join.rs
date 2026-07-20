@@ -77,6 +77,7 @@ fn compute_payload_selector(
     other: &Schema,
     this_key_schema: &Schema,
     other_key_schema: &Schema,
+    output_schema: &Schema,
     is_left: bool,
     args: &JoinArgs,
 ) -> PolarsResult<Vec<Option<PlSmallStr>>> {
@@ -105,10 +106,11 @@ fn compute_payload_selector(
                         Some(c.clone())
                     } else if args.how == JoinType::Full {
                         // We must keep the right-hand side keycols around for
-                        // coalescing.
+                        // coalescing. Note that this bypasses the filter below because of the
+                        // early return.
                         let key_idx = this_key_schema.index_of(c).unwrap();
                         let name = format_pl_smallstr!("__POLARS_COALESCE_KEYCOL_{key_idx}");
-                        Some(name)
+                        return Ok(Some(name));
                     } else {
                         None
                     }
@@ -117,6 +119,8 @@ fn compute_payload_selector(
                 } else {
                     break 'create_and_return_selector;
                 };
+
+                let selector = selector.filter(|name| output_schema.contains(name.as_str()));
 
                 return Ok(selector);
             }
@@ -1211,6 +1215,7 @@ impl EquiJoinNode {
         left_key_schema: Arc<Schema>,
         right_key_schema: Arc<Schema>,
         unique_key_schema: Arc<Schema>,
+        output_schema: Arc<Schema>,
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
@@ -1257,6 +1262,7 @@ impl EquiJoinNode {
             &right_input_schema,
             &left_key_schema,
             &right_key_schema,
+            &output_schema,
             true,
             &args,
         )?;
@@ -1265,6 +1271,7 @@ impl EquiJoinNode {
             &left_input_schema,
             &right_key_schema,
             &left_key_schema,
+            &output_schema,
             false,
             &args,
         )?;
