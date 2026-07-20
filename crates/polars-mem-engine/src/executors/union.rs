@@ -57,7 +57,7 @@ impl Executor for UnionExec {
                 if slice_offset > height {
                     slice_offset -= height;
                     // Keep the union schema when the offset skips every input.
-                    if idx + 1 == n_inputs {
+                    if dfs.is_empty() && idx + 1 == n_inputs {
                         dfs.push(df.clear());
                     }
                 }
