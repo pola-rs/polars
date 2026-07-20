@@ -142,6 +142,9 @@ jobs:
       - name: Run cargo hack
         run: cargo hack check -p polars --each-feature --no-dev-deps && cargo check -p polars-stream
 
+      - name: Test pyo3-polars and bigidx
+        run: cargo check -p pyo3-polars --no-default-features --features pyo3-polars/derive,polars/bigidx
+
   check-dsl-schema:
     runs-on: ubuntu-latest
     steps:

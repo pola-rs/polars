@@ -3087,6 +3087,7 @@ dependencies = [
  "bytemuck",
  "either",
  "polars-utils",
+ "schemars",
  "serde",
  "version_check",
 ]
@@ -3614,7 +3615,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-32"
-version = "1.42.1"
+version = "1.43.0"
 dependencies = [
  "either",
  "libc",
@@ -3625,7 +3626,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-64"
-version = "1.42.1"
+version = "1.43.0"
 dependencies = [
  "either",
  "libc",
@@ -3636,7 +3637,7 @@ dependencies = [
 
 [[package]]
 name = "polars-runtime-compat"
-version = "1.42.1"
+version = "1.43.0"
 dependencies = [
  "either",
  "libc",

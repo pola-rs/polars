@@ -35,16 +35,21 @@ pub fn take_iejoin_compatible_filters(
                     None,
                 )?;
 
-                let is_supported_type = |node: Node| -> PolarsResult<bool> {
-                    let field = expr_arena
-                        .get(node)
-                        .to_field(&ToFieldContext::new(expr_arena, output_schema))?;
-                    let dtype = field.dtype();
-                    let phys = dtype.to_physical();
-                    Ok(!dtype.is_nested() && phys.is_primitive_numeric())
-                };
+                let is_supported_type =
+                    |node: Node| -> PolarsResult<bool> {
+                        let field = expr_arena
+                            .get(node)
+                            .to_field(&ToFieldContext::new(expr_arena, output_schema))?;
+                        let dtype = field.dtype();
+                        let phys = dtype.to_physical();
+                        Ok(!dtype.is_nested()
+                            && phys.is_primitive_numeric()
+                            && !dtype.is_categorical())
+                    };
 
-                // IEJoin only supports numeric.
+                // IEJoin only supports physical representations whose ordering matches the
+                // logical dtype. Categorical codes are in first-appearance order, whereas
+                // Categorical comparisons are lexical.
                 if !is_supported_type(*left)? || !is_supported_type(*right)? {
                     return Ok(None);
                 }

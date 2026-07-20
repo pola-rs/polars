@@ -1393,17 +1393,11 @@ def scan_csv(
         msg = "`schema_overrides` should be of type list or dict"
         raise TypeError(msg)
 
-    if new_columns:
-        if with_column_names:
-            msg = "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
-            raise ValueError(msg)
-
-        # wrap new column names as a callable
-        def with_column_names(cols: list[str]) -> list[str]:
-            if len(cols) > len(new_columns):
-                return new_columns + cols[len(new_columns) :]  # type: ignore[operator]
-            else:
-                return new_columns  # type: ignore[return-value]
+    if new_columns is not None and with_column_names is not None:
+        msg = (
+            "cannot set both `with_column_names` and `new_columns`; mutually exclusive"
+        )
+        raise ValueError(msg)
 
     _check_arg_is_1byte("separator", separator, can_be_empty=False)
     _check_arg_is_1byte("quote_char", quote_char, can_be_empty=True)
@@ -1453,6 +1447,7 @@ def scan_csv(
         empty_string_is_null=empty_string_is_null,
         ignore_errors=ignore_errors,
         cache=cache_deprecated,
+        new_columns=new_columns,
         with_column_names=with_column_names,
         infer_schema_length=infer_schema_length,
         n_rows=n_rows,
@@ -1498,6 +1493,7 @@ def _scan_csv_impl(
     empty_string_is_null: bool = True,
     ignore_errors: bool = False,
     cache: bool = True,
+    new_columns: Sequence[str] | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
     n_rows: int | None = None,
@@ -1562,6 +1558,7 @@ def _scan_csv_impl(
         null_values=processed_null_values,
         empty_string_is_null=empty_string_is_null,
         infer_schema_length=infer_schema_length,
+        new_columns=new_columns,
         with_schema_modify=with_column_names,
         rechunk=rechunk,
         skip_rows_after_header=skip_rows_after_header,
