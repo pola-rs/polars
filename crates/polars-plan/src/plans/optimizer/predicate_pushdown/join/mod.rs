@@ -96,18 +96,13 @@ pub(super) fn process_join(
             expr_arena,
         )?;
 
-        // See the comment on the analogous guard above (including why this must be a
-        // save/restore, not an unconditional reset): `rewrite_hive`'s branch joins may end
-        // up nested a level deeper here (under the optional post-select), but they're still
-        // reachable from `no_pushdown_restart_opt`'s re-descent, so the guard still needs to
-        // span that call.
         let rewrote_to_union = matches!(lp, IR::Union { .. });
-        let lp =
-            apply_join_key_reduction_select(lp, opt_join_key_reduction_select.take(), lp_arena);
-
         if rewrote_to_union {
             opt.hive_rewrite_active = true;
         }
+        let lp =
+            apply_join_key_reduction_select(lp, opt_join_key_reduction_select.take(), lp_arena);
+
         let result = opt.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena);
         return result;
     }
