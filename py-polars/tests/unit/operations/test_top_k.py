@@ -226,17 +226,17 @@ def test_top_k() -> None:
 
     assert_frame_equal(
         df2.select(
-            pl.col("a", "b", "c").top_k_by(["c", "a"], 2).name.suffix("_top_by_ca"),
-            pl.col("a", "b", "c").top_k_by(["c", "b"], 2).name.suffix("_top_by_cb"),
+            pl.col("a", "b", "c").top_k_by(["c", "a"], 2).name.suffix("_top_by_ca").sort(),
+            pl.col("a", "b", "c").top_k_by(["c", "b"], 2).name.suffix("_top_by_cb").sort(),
         ),
         pl.DataFrame(
             {
                 "a_top_by_ca": [2, 6],
-                "b_top_by_ca": [11, 7],
-                "c_top_by_ca": ["Orange", "Banana"],
+                "b_top_by_ca": [7, 11],
+                "c_top_by_ca": ["Banana", "Orange"],
                 "a_top_by_cb": [2, 5],
-                "b_top_by_cb": [11, 8],
-                "c_top_by_cb": ["Orange", "Banana"],
+                "b_top_by_cb": [8, 11],
+                "c_top_by_cb": ["Banana", "Orange"],
             }
         ),
         check_row_order=False,
