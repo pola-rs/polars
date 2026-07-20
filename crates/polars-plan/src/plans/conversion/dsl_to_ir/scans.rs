@@ -626,6 +626,8 @@ pub async fn csv_file_info(
     let run_async =
         sources.is_cloud_url() || (sources.is_paths() && polars_config::config().force_async());
 
+    let infer_schema_files = csv_options.infer_schema_files;
+
     let cache_entries = {
         if run_async {
             let sources = sources.clone();
@@ -634,7 +636,7 @@ pub async fn csv_file_info(
             feature_gated!("cloud", {
                 Some(
                     polars_io::file_cache::init_entries_from_uri_list(
-                        (0..sources.len())
+                        (0..usize::min(sources.len(), infer_schema_files.get()))
                             .map(move |i| sources.as_paths().unwrap().get(i).unwrap().clone()),
                         cloud_options,
                     )
@@ -846,7 +848,7 @@ pub async fn csv_file_info(
     let si_results = RAYON.join(
         || infer_schema_func(0),
         || {
-            (1..sources.len())
+            (1..usize::min(sources.len(), infer_schema_files.get()))
                 .into_par_iter()
                 .map(infer_schema_func)
                 .reduce(|| Ok(Default::default()), merge_func)
