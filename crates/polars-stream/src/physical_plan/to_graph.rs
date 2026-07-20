@@ -1202,6 +1202,7 @@ fn to_graph_rec<'a>(
                 SemiAntiJoin { output_bool, .. } => ctx.graph.add_node(
                     nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
                         unique_key_schema,
+                        output_schema,
                         left_key_selectors,
                         right_key_selectors,
                         args,
