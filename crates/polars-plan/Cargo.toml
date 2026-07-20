@@ -132,6 +132,7 @@ dsl-schema = [
   "serde_json/preserve_order",
   "serde",
   "arrow/dsl-schema",
+  "polars-buffer/schemars",
   "polars-core/dsl-schema",
   "polars-time/dsl-schema",
   "polars-io/dsl-schema",
