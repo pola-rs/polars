@@ -542,6 +542,13 @@ def from_arrow(
     ]
     """  # noqa: W505
     if is_pycapsule(data) and not _check_for_pyarrow(data):
+        # 2.0: Remove
+        issue_deprecation_warning(
+            "from_arrow(<ArrowStreamExportable>) will return a Series instead of "
+            "a DataFrame in 2.0. To avoid this warning, pass the ArrowStreamExportable "
+            "to either `pl.DataFrame` or `pl.Series` instead based on your desired "
+            "output type."
+        )
         return pycapsule_to_frame(
             data,
             schema=schema,
