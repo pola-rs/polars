@@ -1,7 +1,6 @@
 use polars_utils::format_pl_smallstr;
 
 use super::*;
-mod hive;
 mod predicate_pruning;
 use hive::rewrite_hive;
 use predicate_pruning::*;

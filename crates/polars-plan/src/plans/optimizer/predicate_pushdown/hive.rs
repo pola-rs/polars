@@ -9,6 +9,8 @@ fn is_hive_partitioned(node: Node, ir_arena: &Arena<IR>) -> Option<HivePartition
     for (_, ir) in ir_arena.iter(node) {
         match ir {
             IR::Scan { hive_parts, .. } => return hive_parts.clone(),
+            // Only partition the first group-by.
+            IR::GroupBy { .. } => return None,
             // We only want to return hive partitions for the first joins
             // Any node in between with more than one input (join, union, etc) will not return a
             // match.
@@ -273,6 +275,7 @@ pub fn rewrite_hive(
                             inputs: branches,
                             options: UnionOptions {
                                 maintain_order: false,
+                                slice: options.args.slice,
                                 ..Default::default()
                             },
                         });
