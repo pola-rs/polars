@@ -1125,9 +1125,9 @@ def test_hive_group_by_rewrite_to_partitioned_union(tmp_path: Path) -> None:
     # only reads the matching partition.
     root = tmp_path / "root"
 
-    pl.DataFrame(
-        {"foo": [1, 1, 2, 3], "x": [10, 1, 20, 30]}
-    ).write_parquet(root, partition_by="foo")
+    pl.DataFrame({"foo": [1, 1, 2, 3], "x": [10, 1, 20, 30]}).write_parquet(
+        root, partition_by="foo"
+    )
 
     lf = pl.scan_parquet(root, hive_partitioning=True)
 
