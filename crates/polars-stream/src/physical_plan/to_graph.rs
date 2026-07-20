@@ -1149,6 +1149,7 @@ fn to_graph_rec<'a>(
             output_bool: _,
         } => {
             let args = args.clone();
+            let output_schema = node.output_schema(0).clone();
             let left_input_key = to_graph_rec(input_left.node, ctx)?;
             let right_input_key = to_graph_rec(input_right.node, ctx)?;
             let left_input_schema = input_left.output_schema(ctx.phys_sm).clone();
@@ -1201,6 +1202,7 @@ fn to_graph_rec<'a>(
                 SemiAntiJoin { output_bool, .. } => ctx.graph.add_node(
                     nodes::joins::semi_anti_join::SemiAntiJoinNode::new(
                         unique_key_schema,
+                        output_schema,
                         left_key_selectors,
                         right_key_selectors,
                         args,
@@ -1219,6 +1221,7 @@ fn to_graph_rec<'a>(
                         left_key_schema,
                         right_key_schema,
                         unique_key_schema,
+                        output_schema,
                         left_key_selectors,
                         right_key_selectors,
                         args,
