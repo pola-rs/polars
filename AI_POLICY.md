@@ -30,6 +30,13 @@ The Polars project has strict rules for AI usage:
   Code (docstrings included) is the only acceptable AI-generated content, per the other rules in
   this policy.
 
+- **Code comments must be relevant for the current code, and concise.**
+  If you use AI to generate code, any comments added must be correct and relevant for the *current*
+  state of the code. You must manually remove or edit any comments which describe changes to the
+  previous state of the code, or which are overly verbose or trivial. AI tends to leave such
+  comments describing what it did or did not do, even though it is not relevant for future readers
+  whatsoever, or already obvious from the code.
+
 ## Rationale
 
 We have established these rules not because we are against AI usage, but because we have experienced
