@@ -52,6 +52,7 @@ from polars.datatypes import (
 from polars.datatypes import (
     Int64,
     parse_into_datatype_expr,
+    is_polars_dtype,
 )
 from polars.exceptions import (
     CustomUFuncWarning,
@@ -68,6 +69,7 @@ from polars.expr.name import ExprNameNameSpace
 from polars.expr.string import ExprStringNameSpace
 from polars.expr.struct import ExprStructNameSpace
 from polars.meta import thread_pool_size
+
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars._plr import arg_where as py_arg_where
@@ -11797,8 +11799,16 @@ Consider using {self}.implode() instead"""
             old = list(old.keys())
 
         old_pyexpr = parse_into_expression(old, str_as_lit=True)  # type: ignore[arg-type]
-        new_pyexpr = parse_into_expression(new, str_as_lit=True)  # type: ignore[arg-type]
-
+        new_pyexpr = None
+        if return_dtype is not None and is_polars_dtype(return_dtype):
+            try:
+                new_series = pl.Series(new, dtype=return_dtype)
+                new_pyexpr = parse_into_expression(new_series, str_as_lit=True)
+            except TypeError:
+                pass
+        if new_pyexpr is None:
+            new_pyexpr = parse_into_expression(new, str_as_lit=True)
+            
         dtype_pyexpr: plr.PyDataTypeExpr | None = None
         if return_dtype is not None:
             dtype_pyexpr = parse_into_datatype_expr(return_dtype)._pydatatype_expr
