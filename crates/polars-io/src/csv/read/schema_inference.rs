@@ -93,16 +93,17 @@ fn infer_headers(mut header_line: &[u8], parse_options: &CsvParseOptions) -> Vec
         .collect::<Vec<_>>();
 
     let mut deduplicated_headers = Vec::with_capacity(headers.len());
-    let mut header_names = PlHashMap::with_capacity(headers.len());
+    let mut header_names = PlHashSet::with_capacity(headers.len());
 
     for name in &headers {
-        let count = header_names.entry(name.as_ref()).or_insert(0usize);
-        if *count != 0 {
-            deduplicated_headers.push(format_pl_smallstr!("{}_duplicated_{}", name, *count - 1))
-        } else {
-            deduplicated_headers.push(PlSmallStr::from_str(name))
+        let mut new_name = PlSmallStr::from_str(name);
+        let mut count = 0usize;
+        while header_names.contains(&new_name) {
+            new_name = format_pl_smallstr!("{}_duplicated_{}", name, count);
+            count += 1;
         }
-        *count += 1;
+        header_names.insert(new_name.clone());
+        deduplicated_headers.push(new_name);
     }
 
     deduplicated_headers
@@ -387,5 +388,30 @@ mod tests {
         possibilities.insert(DataType::Int64);
         possibilities.insert(DataType::Int128);
         assert_eq!(finish_infer_field_schema(&possibilities), DataType::Int128);
+    }
+
+    #[test]
+    fn test_infer_headers_deduplicates() {
+        let parse_options = CsvParseOptions::default();
+        assert_eq!(
+            infer_headers(b"a,a", &parse_options),
+            vec![
+                PlSmallStr::from_static("a"),
+                PlSmallStr::from_static("a_duplicated_0"),
+            ],
+        );
+    }
+
+    #[test]
+    fn test_infer_headers_deduplicates_without_collision() {
+        let parse_options = CsvParseOptions::default();
+        assert_eq!(
+            infer_headers(b"a,a_duplicated_0,a", &parse_options),
+            vec![
+                PlSmallStr::from_static("a"),
+                PlSmallStr::from_static("a_duplicated_0"),
+                PlSmallStr::from_static("a_duplicated_1"),
+            ],
+        );
     }
 }

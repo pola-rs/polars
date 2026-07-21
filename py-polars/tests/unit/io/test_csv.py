@@ -1541,6 +1541,19 @@ def test_duplicated_columns(chunk_override: None) -> None:
     assert pl.read_csv(csv.encode(), new_columns=new).columns == new
 
 
+def test_duplicated_columns_deduplicate_collision(chunk_override: None) -> None:
+    csv = textwrap.dedent(
+        """a,a_duplicated_0,a
+    1,2,3
+    """
+    )
+    assert pl.read_csv(csv.encode()).columns == [
+        "a",
+        "a_duplicated_0",
+        "a_duplicated_1",
+    ]
+
+
 def test_error_message(chunk_override: None) -> None:
     data = io.StringIO("target,wind,energy,miso\n1,2,3,4\n1,2,1e5,1\n")
     with pytest.raises(
