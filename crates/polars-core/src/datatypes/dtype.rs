@@ -150,7 +150,42 @@ pub trait AsRefDataType {
 
 impl Hash for DataType {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        std::mem::discriminant(self).hash(state)
+        use DataType::*;
+
+        std::mem::discriminant(self).hash(state);
+
+        match self {
+            Boolean | UInt8 | UInt16 | UInt32 | UInt64 | UInt128 | Int8 | Int16 | Int32 | Int64
+            | Int128 | Float16 | Float32 | Float64 | String | Binary | BinaryOffset | Date
+            | Time | Null => {},
+            #[cfg(feature = "dtype-decimal")]
+            Decimal(precision, scale) => (precision, scale).hash(state),
+            Datetime(time_unit, time_zone) => (time_unit, time_zone).hash(state),
+            Duration(time_unit) => {
+                #[cfg(feature = "dtype-duration")]
+                time_unit.hash(state);
+                #[cfg(not(feature = "dtype-duration"))]
+                let _ = time_unit;
+            },
+            #[cfg(feature = "dtype-array")]
+            Array(inner, width) => (inner, width).hash(state),
+            List(inner) => inner.hash(state),
+            #[cfg(feature = "object")]
+            Object(name) => name.hash(state),
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(categories, _) => Arc::as_ptr(categories).hash(state),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(categories, _) => Arc::as_ptr(categories).hash(state),
+            #[cfg(feature = "dtype-struct")]
+            Struct(fields) => fields.hash(state),
+            #[cfg(feature = "dtype-extension")]
+            Extension(extension, storage) => (extension, storage).hash(state),
+            Unknown(kind) => match kind {
+                // All unknown integers compare equal regardless of their value.
+                UnknownKind::Int(_) => std::mem::discriminant(kind).hash(state),
+                _ => kind.hash(state),
+            },
+        }
     }
 }
 
@@ -1609,7 +1644,157 @@ impl From<CategoricalPhysical> for DataType {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::hash_map::DefaultHasher;
+
     use super::*;
+
+    fn dtype_hash(dtype: &DataType) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        dtype.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    fn assert_distinct_hashes(left: DataType, right: DataType) {
+        assert_ne!(left, right);
+        assert_ne!(dtype_hash(&left), dtype_hash(&right));
+    }
+
+    #[test]
+    fn test_parameterized_dtypes_hash_distinctly() {
+        assert_distinct_hashes(
+            DataType::Datetime(TimeUnit::Milliseconds, None),
+            DataType::Datetime(TimeUnit::Microseconds, None),
+        );
+        assert_distinct_hashes(
+            DataType::Datetime(TimeUnit::Microseconds, None),
+            DataType::Datetime(
+                TimeUnit::Microseconds,
+                Some(unsafe { TimeZone::from_static("Asia/Kolkata") }),
+            ),
+        );
+        assert_distinct_hashes(
+            DataType::List(Box::new(DataType::Int64)),
+            DataType::List(Box::new(DataType::String)),
+        );
+        assert_distinct_hashes(
+            DataType::List(Box::new(DataType::Datetime(TimeUnit::Microseconds, None))),
+            DataType::List(Box::new(DataType::Datetime(
+                TimeUnit::Microseconds,
+                Some(unsafe { TimeZone::from_static("Asia/Kolkata") }),
+            ))),
+        );
+        assert_distinct_hashes(
+            DataType::Unknown(UnknownKind::Float),
+            DataType::Unknown(UnknownKind::Str),
+        );
+
+        #[cfg(feature = "dtype-duration")]
+        assert_distinct_hashes(
+            DataType::Duration(TimeUnit::Milliseconds),
+            DataType::Duration(TimeUnit::Microseconds),
+        );
+
+        #[cfg(feature = "dtype-decimal")]
+        {
+            assert_distinct_hashes(DataType::Decimal(4, 1), DataType::Decimal(6, 1));
+            assert_distinct_hashes(DataType::Decimal(6, 1), DataType::Decimal(6, 2));
+        }
+
+        #[cfg(feature = "dtype-array")]
+        {
+            assert_distinct_hashes(
+                DataType::Array(Box::new(DataType::Int64), 1),
+                DataType::Array(Box::new(DataType::String), 1),
+            );
+            assert_distinct_hashes(
+                DataType::Array(Box::new(DataType::Int64), 1),
+                DataType::Array(Box::new(DataType::Int64), 2),
+            );
+        }
+
+        #[cfg(feature = "dtype-struct")]
+        {
+            assert_distinct_hashes(
+                DataType::Struct(vec![Field::new("value".into(), DataType::Int64)]),
+                DataType::Struct(vec![Field::new("value".into(), DataType::String)]),
+            );
+            assert_distinct_hashes(
+                DataType::Struct(vec![Field::new("left".into(), DataType::Int64)]),
+                DataType::Struct(vec![Field::new("right".into(), DataType::Int64)]),
+            );
+            assert_distinct_hashes(
+                DataType::Struct(vec![
+                    Field::new("left".into(), DataType::Int64),
+                    Field::new("right".into(), DataType::String),
+                ]),
+                DataType::Struct(vec![
+                    Field::new("right".into(), DataType::String),
+                    Field::new("left".into(), DataType::Int64),
+                ]),
+            );
+        }
+
+        #[cfg(feature = "dtype-categorical")]
+        {
+            assert_distinct_hashes(
+                DataType::from_frozen_categories(FrozenCategories::new(["a"]).unwrap()),
+                DataType::from_frozen_categories(FrozenCategories::new(["b"]).unwrap()),
+            );
+            assert_distinct_hashes(
+                DataType::from_frozen_categories(FrozenCategories::new(["low", "high"]).unwrap()),
+                DataType::from_frozen_categories(FrozenCategories::new(["high", "low"]).unwrap()),
+            );
+            assert_distinct_hashes(
+                DataType::from_categories(Categories::new(
+                    "left".into(),
+                    "dtype_hash_test".into(),
+                    CategoricalPhysical::U32,
+                )),
+                DataType::from_categories(Categories::new(
+                    "right".into(),
+                    "dtype_hash_test".into(),
+                    CategoricalPhysical::U32,
+                )),
+            );
+        }
+
+        #[cfg(feature = "object")]
+        assert_distinct_hashes(DataType::Object("left"), DataType::Object("right"));
+
+        #[cfg(feature = "dtype-extension")]
+        {
+            use crate::datatypes::extension::get_extension_type_or_generic;
+
+            let extension = |name, metadata, storage| {
+                DataType::Extension(
+                    get_extension_type_or_generic(name, &storage, metadata),
+                    Box::new(storage),
+                )
+            };
+
+            assert_distinct_hashes(
+                extension("left", None, DataType::Int64),
+                extension("right", None, DataType::Int64),
+            );
+            assert_distinct_hashes(
+                extension("example", Some("left"), DataType::Int64),
+                extension("example", Some("right"), DataType::Int64),
+            );
+            assert_distinct_hashes(
+                extension("example", None, DataType::Int64),
+                extension("example", None, DataType::String),
+            );
+        }
+    }
+
+    #[test]
+    fn test_equal_unknown_integer_dtypes_hash_equally() {
+        let left = DataType::Unknown(UnknownKind::Int(1));
+        let right = DataType::Unknown(UnknownKind::Int(1000));
+
+        assert_eq!(left, right);
+        assert_eq!(dtype_hash(&left), dtype_hash(&right));
+    }
 
     #[cfg(feature = "dtype-array")]
     #[test]
