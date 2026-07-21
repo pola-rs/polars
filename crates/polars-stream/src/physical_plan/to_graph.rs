@@ -1160,7 +1160,7 @@ fn to_graph_rec<'a>(
                 compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
             // We want to make sure here that the key types match, otherwise we get garbage out
-            // since the hashes will be calculated differently. 
+            // since the hashes will be calculated differently.
             polars_ensure!(
                 left_on.len() == right_on.len() &&
                 left_on.iter().zip(right_on.iter()).all(|(l, r)| {
