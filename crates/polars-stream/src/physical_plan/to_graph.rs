@@ -1159,13 +1159,13 @@ fn to_graph_rec<'a>(
             let right_key_schema =
                 compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
-            // We want to make sure here that the key types match otherwise we get out garbage out
-            // since the hashes will be calculated differently.
+            // We want to make sure here that the key types match, otherwise we get garbage out
+            // since the hashes will be calculated differently. 
             polars_ensure!(
                 left_on.len() == right_on.len() &&
                 left_on.iter().zip(right_on.iter()).all(|(l, r)| {
-                    let l_dtype = left_key_schema.get(l.output_name()).unwrap();
-                    let r_dtype = right_key_schema.get(r.output_name()).unwrap();
+                    let l_dtype = l.dtype(&left_input_schema, ctx.expr_arena).unwrap();
+                    let r_dtype = r.dtype(&right_input_schema, ctx.expr_arena).unwrap();
                     l_dtype == r_dtype
                 }),
                 SchemaMismatch: "join received different key types on left and right side"
@@ -1194,7 +1194,7 @@ fn to_graph_rec<'a>(
                 .try_collect_vec()?;
 
             let unique_key_schema =
-                compute_output_schema(&right_input_schema, &unique_left_on, ctx.expr_arena)?;
+                compute_output_schema(&left_input_schema, &unique_left_on, ctx.expr_arena)?;
 
             match node.kind {
                 #[cfg(feature = "semi_anti_join")]
