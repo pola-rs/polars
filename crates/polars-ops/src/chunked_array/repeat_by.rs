@@ -255,11 +255,6 @@ fn repeat_by_generic_inner<T: PolarsDataType>(ca: &ChunkedArray<T>, by: &IdxCa) 
 }
 
 pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
-    let total = by
-        .iter()
-        .flatten()
-        .try_fold(IdxSize::MIN, |acc, x| acc.checked_add(x));
-
     let s_phys = s.to_physical_repr();
     use DataType as D;
     let out = match s_phys.dtype() {
