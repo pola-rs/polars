@@ -828,6 +828,74 @@ def test_parquet_string_rle_encoding() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("precision", "physical_type"),
+    [
+        (5, "INT32"),
+        (9, "INT32"),
+        (10, "INT64"),
+        (15, "INT64"),
+        (18, "INT64"),
+        (19, "FIXED_LEN_BYTE_ARRAY"),
+        (28, "FIXED_LEN_BYTE_ARRAY"),
+        (30, "FIXED_LEN_BYTE_ARRAY"),
+        (38, "FIXED_LEN_BYTE_ARRAY"),
+    ],
+)
+def test_parquet_decimal_dictionary_encoding(
+    precision: int, physical_type: str
+) -> None:
+    # Build from strings: Decimal arithmetic (including unary minus) rounds to the
+    # context precision of 28 significant digits, which would corrupt hi/lo.
+    hi = Decimal("9" * (precision - 2) + ".99")
+    lo = Decimal("-" + "9" * (precision - 2) + ".99")
+    values = [hi, lo, None, Decimal("1.50")] * 100
+    df = pl.DataFrame(
+        {"a": values, "all_null": [None] * len(values)},
+        schema={"a": pl.Decimal(precision, 2), "all_null": pl.Decimal(precision, 2)},
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+
+    meta = pq.read_metadata(f)
+    col = meta.row_group(0).column(0)
+    assert col.physical_type == physical_type
+    assert "RLE_DICTIONARY" in col.encodings
+    assert col.statistics.min == lo
+    assert col.statistics.max == hi
+    assert col.statistics.null_count == 100
+
+    null_col = meta.row_group(0).column(1)
+    assert "RLE_DICTIONARY" in null_col.encodings
+    assert null_col.statistics.null_count == len(values)
+
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))
+
+    f.seek(0)
+    assert_frame_equal(df, cast("pl.DataFrame", pl.from_arrow(pq.read_table(f))))
+
+
+def test_parquet_decimal_dictionary_encoding_multiple_pages() -> None:
+    values = [Decimal("1.50"), None, Decimal("-2.50")] * 1000
+    df = pl.DataFrame({"a": values}, schema={"a": pl.Decimal(30, 2)})
+
+    f = io.BytesIO()
+    df.write_parquet(f, data_page_size=1024)
+    f.seek(0)
+
+    col = pq.read_metadata(f).row_group(0).column(0)
+    assert "RLE_DICTIONARY" in col.encodings
+
+    f.seek(0)
+    assert_frame_equal(df, pl.read_parquet(f))
+
+    f.seek(0)
+    assert_frame_equal(df, cast("pl.DataFrame", pl.from_arrow(pq.read_table(f))))
+
+
 @pytest.mark.may_fail_auto_streaming
 def test_sliced_dict_with_nulls_14904() -> None:
     df = (
