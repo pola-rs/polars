@@ -14,7 +14,7 @@ use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::{
-    date32_to_date_opt, date_to_date32_opt, datetime_to_epoch_nanos_opt,
+    date_to_date32_opt, date32_to_date_opt, datetime_to_epoch_nanos_opt,
 };
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
@@ -93,8 +93,8 @@ pub(crate) fn any_value_into_py_object<'py>(
             map.cat_to_str_unchecked(cat).into_bound_py_any(py)
         },
         AnyValue::Date(v) => {
-            let date = date32_to_date_opt(v)
-                .ok_or_else(|| PyValueError::new_err("date out-of-range"))?;
+            let date =
+                date32_to_date_opt(v).ok_or_else(|| PyValueError::new_err("date out-of-range"))?;
             date.into_bound_py_any(py)
         },
         AnyValue::Datetime(v, time_unit, time_zone) => {
@@ -278,8 +278,9 @@ pub(crate) fn py_object_to_any_value(
         let minute: i8 = ob.getattr(intern!(py, "minute"))?.extract()?;
         let second: i8 = ob.getattr(intern!(py, "second"))?.extract()?;
         let microsecond: i32 = ob.getattr(intern!(py, "microsecond"))?.extract()?;
-        let naive = jiff::civil::DateTime::new(year, month, day, hour, minute, second, microsecond * 1_000)
-            .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+        let naive =
+            jiff::civil::DateTime::new(year, month, day, hour, minute, second, microsecond * 1_000)
+                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
 
         let offset_td = ob.call_method0(intern!(py, "utcoffset"))?;
         let offset_days: i64 = offset_td.getattr(intern!(py, "days"))?.extract()?;

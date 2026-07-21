@@ -13,13 +13,13 @@ pub mod string;
 mod time;
 
 use arrow::legacy::utils::CustomIterTools;
-use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 #[cfg(feature = "dtype-date")]
 pub use date::DateMethods;
 #[cfg(feature = "dtype-datetime")]
 pub use datetime::DatetimeMethods;
 #[cfg(feature = "dtype-duration")]
 pub use duration::DurationMethods;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 use kernels::*;
 use polars_core::prelude::*;
 #[cfg(any(feature = "rolling_window", feature = "rolling_window_by"))]

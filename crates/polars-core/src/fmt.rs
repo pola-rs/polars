@@ -12,14 +12,14 @@ use std::{fmt, str};
     feature = "dtype-time"
 ))]
 use arrow::temporal_conversions::*;
-#[cfg(feature = "dtype-datetime")]
-use jiff::civil::DateTime as NaiveDateTime;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::modifiers::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
+#[cfg(feature = "dtype-datetime")]
+use jiff::civil::DateTime as NaiveDateTime;
 use num_traits::{Num, NumCast};
 use polars_error::feature_gated;
 use polars_utils::relaxed_cell::RelaxedCell;

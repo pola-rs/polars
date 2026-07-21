@@ -54,13 +54,11 @@ fn write_dates() {
         "datetime".into(),
         [
             Some(
-                jiff::civil::Date::new(2000, 12, 1)
-                    .unwrap()
-                    .to_datetime(
-                        jiff::civil::Time::midnight()
-                            .checked_add(jiff::Span::new().seconds(99).nanoseconds(49575634))
-                            .unwrap(),
-                    ),
+                jiff::civil::Date::new(2000, 12, 1).unwrap().to_datetime(
+                    jiff::civil::Time::midnight()
+                        .checked_add(jiff::Span::new().seconds(99).nanoseconds(49575634))
+                        .unwrap(),
+                ),
             ),
             None,
         ],

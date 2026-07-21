@@ -291,7 +291,9 @@ class ExprStringNameSpace(_NamespaceSuggestMixin):
         ...         pl.col("date").str.strptime(pl.Date, "%F", strict=False),
         ...         pl.col("date").str.strptime(pl.Date, "%F %T", strict=False),
         ...         pl.col("date").str.strptime(pl.Date, "%D", strict=False),
-        ...         pl.col("date").str.strptime(pl.Date, "%a %b %e %T %Y", strict=False),
+        ...         pl.col("date").str.strptime(
+        ...             pl.Date, "%a %b %e %T %Y", strict=False
+        ...         ),
         ...     )
         ... ).to_series()
         shape: (4,)

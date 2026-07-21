@@ -474,7 +474,8 @@ mod test {
             "optional_time" => [Some(NaiveTime::new(23, 23, 23, 0).unwrap())],
             "duration" => [ChronoDuration::from_secs(10)],
             "optional_duration" => [Some(ChronoDuration::from_secs(10))],
-        ].unwrap();
+        ]
+        .unwrap();
     }
 
     #[test]

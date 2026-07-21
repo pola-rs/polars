@@ -320,8 +320,7 @@ pub trait StringMethods: AsString {
                         let ts = if fmt == "%+" {
                             s.parse::<Timestamp>().ok()?
                         } else {
-                            let tm =
-                                jiff::fmt::strtime::BrokenDownTime::parse(&fmt, s).ok()?;
+                            let tm = jiff::fmt::strtime::BrokenDownTime::parse(&fmt, s).ok()?;
                             match tm.to_timestamp() {
                                 Ok(ts) => ts,
                                 // No offset/zone specifier matched (e.g. a

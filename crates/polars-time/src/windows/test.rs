@@ -47,10 +47,7 @@ fn test_date_range() {
         NaiveDate::new(2022, 4, 1).unwrap(),
     ]
     .iter()
-    .map(|d| {
-        d.at(0, 0, 0, 0)
-            .and_utc_ns()
-    })
+    .map(|d| d.at(0, 0, 0, 0).and_utc_ns())
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
 }
@@ -73,10 +70,7 @@ fn test_feb_date_range() {
         NaiveDate::new(2022, 3, 1).unwrap(),
     ]
     .iter()
-    .map(|d| {
-        d.at(0, 0, 0, 0)
-            .and_utc_ns()
-    })
+    .map(|d| d.at(0, 0, 0, 0).and_utc_ns())
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
 }
@@ -104,10 +98,7 @@ fn test_groups_large_interval() {
     ];
     let ts = dates
         .iter()
-        .map(|d| {
-            d.at(0, 0, 0, 0)
-                .and_utc_ns()
-        })
+        .map(|d| d.at(0, 0, 0, 0).and_utc_ns())
         .collect::<Vec<_>>();
 
     let dur = Duration::parse("2d");
@@ -158,7 +149,9 @@ fn test_groups_large_interval() {
 
 #[test]
 fn test_offset() {
-    let t = NaiveDate::new(2020, 1, 2).unwrap().at(0, 0, 0, 0)
+    let t = NaiveDate::new(2020, 1, 2)
+        .unwrap()
+        .at(0, 0, 0, 0)
         .and_utc_ns();
     let w = Window::new(
         Duration::parse("5m"),
@@ -169,7 +162,9 @@ fn test_offset() {
     let b = w
         .get_earliest_bounds_ns(t, ClosedWindow::Left, None)
         .unwrap();
-    let start = NaiveDate::new(2020, 1, 1).unwrap().at(23, 58, 0, 0)
+    let start = NaiveDate::new(2020, 1, 1)
+        .unwrap()
+        .at(23, 58, 0, 0)
         .and_utc_ns();
     assert_eq!(b.start, start);
 }
@@ -228,22 +223,12 @@ fn test_boundaries() {
     let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
     let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 30, 0, 0);
     let t2 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
-    assert_eq!(
-        g,
-        &[
-            t0.and_utc_ns(),
-            t1.and_utc_ns(),
-            t2.and_utc_ns()
-        ]
-    );
+    assert_eq!(g, &[t0.and_utc_ns(), t1.and_utc_ns(), t2.and_utc_ns()]);
     let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
     let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     assert_eq!(
         &[lower[0], higher[0]],
-        &[
-            b_start.and_utc_ns(),
-            b_end.and_utc_ns()
-        ]
+        &[b_start.and_utc_ns(), b_end.and_utc_ns()]
     );
 
     // 2nd group
@@ -257,22 +242,12 @@ fn test_boundaries() {
     let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 30, 0, 0);
     let t2 = NaiveDate::new(2021, 12, 16).unwrap().at(2, 0, 0, 0);
-    assert_eq!(
-        g,
-        &[
-            t0.and_utc_ns(),
-            t1.and_utc_ns(),
-            t2.and_utc_ns()
-        ]
-    );
+    assert_eq!(g, &[t0.and_utc_ns(), t1.and_utc_ns(), t2.and_utc_ns()]);
     let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(2, 0, 0, 0);
     assert_eq!(
         &[lower[1], higher[1]],
-        &[
-            b_start.and_utc_ns(),
-            b_end.and_utc_ns()
-        ]
+        &[b_start.and_utc_ns(), b_end.and_utc_ns()]
     );
 
     assert_eq!(groups[2], [4, 3]);
@@ -386,21 +361,12 @@ fn test_boundaries_2() {
     let g = take_groups_slice(&groups, 0, &ts);
     let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 30, 0, 0);
     let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
-    assert_eq!(
-        g,
-        &[
-            t0.and_utc_ns(),
-            t1.and_utc_ns()
-        ]
-    );
+    assert_eq!(g, &[t0.and_utc_ns(), t1.and_utc_ns()]);
     let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 30, 0, 0);
     let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(1, 30, 0, 0);
     assert_eq!(
         &[lower[0], higher[0]],
-        &[
-            b_start.and_utc_ns(),
-            b_end.and_utc_ns()
-        ]
+        &[b_start.and_utc_ns(), b_end.and_utc_ns()]
     );
 
     // 2nd group
@@ -413,21 +379,12 @@ fn test_boundaries_2() {
     let g = take_groups_slice(&groups, 1, &ts);
     let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(2, 30, 0, 0);
     let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(3, 0, 0, 0);
-    assert_eq!(
-        g,
-        &[
-            t0.and_utc_ns(),
-            t1.and_utc_ns()
-        ]
-    );
+    assert_eq!(g, &[t0.and_utc_ns(), t1.and_utc_ns()]);
     let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(2, 30, 0, 0);
     let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(3, 30, 0, 0);
     assert_eq!(
         &[lower[1], higher[1]],
-        &[
-            b_start.and_utc_ns(),
-            b_end.and_utc_ns()
-        ]
+        &[b_start.and_utc_ns(), b_end.and_utc_ns()]
     );
 }
 
@@ -485,22 +442,12 @@ fn test_boundaries_ms() {
     let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
     let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 30, 0, 0);
     let t2 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
-    assert_eq!(
-        g,
-        &[
-            t0.and_utc_ms(),
-            t1.and_utc_ms(),
-            t2.and_utc_ms()
-        ]
-    );
+    assert_eq!(g, &[t0.and_utc_ms(), t1.and_utc_ms(), t2.and_utc_ms()]);
     let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
     let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     assert_eq!(
         &[lower[0], higher[0]],
-        &[
-            b_start.and_utc_ms(),
-            b_end.and_utc_ms()
-        ]
+        &[b_start.and_utc_ms(), b_end.and_utc_ms()]
     );
 
     // 2nd group
@@ -514,22 +461,12 @@ fn test_boundaries_ms() {
     let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 30, 0, 0);
     let t2 = NaiveDate::new(2021, 12, 16).unwrap().at(2, 0, 0, 0);
-    assert_eq!(
-        g,
-        &[
-            t0.and_utc_ms(),
-            t1.and_utc_ms(),
-            t2.and_utc_ms()
-        ]
-    );
+    assert_eq!(g, &[t0.and_utc_ms(), t1.and_utc_ms(), t2.and_utc_ms()]);
     let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(2, 0, 0, 0);
     assert_eq!(
         &[lower[1], higher[1]],
-        &[
-            b_start.and_utc_ms(),
-            b_end.and_utc_ms()
-        ]
+        &[b_start.and_utc_ms(), b_end.and_utc_ms()]
     );
 
     assert_eq!(groups[2], [4, 3]);
@@ -701,9 +638,13 @@ fn test_rolling_lookback() {
 #[test]
 fn test_end_membership() {
     let time = [
-        NaiveDate::new(2021, 2, 1).unwrap().at(0, 0, 0, 0)
+        NaiveDate::new(2021, 2, 1)
+            .unwrap()
+            .at(0, 0, 0, 0)
             .and_utc_ms(),
-        NaiveDate::new(2021, 5, 1).unwrap().at(0, 0, 0, 0)
+        NaiveDate::new(2021, 5, 1)
+            .unwrap()
+            .at(0, 0, 0, 0)
             .and_utc_ms(),
     ];
     let window = Window::new(
@@ -790,10 +731,7 @@ fn test_group_by_windows_offsets_3776() {
     ];
     let ts = dates
         .iter()
-        .map(|d| {
-            d.at(0, 0, 0, 0)
-                .and_utc_ns()
-        })
+        .map(|d| d.at(0, 0, 0, 0).and_utc_ns())
         .collect::<Vec<_>>();
 
     let window = Window::new(

@@ -618,7 +618,9 @@ impl Duration {
 
         match tz.to_ambiguous_timestamp(result_dt_local).offset() {
             AmbiguousOffset::Unambiguous { offset } => {
-                let ts = offset.to_timestamp(result_dt_local).map_err(|_| out_of_range())?;
+                let ts = offset
+                    .to_timestamp(result_dt_local)
+                    .map_err(|_| out_of_range())?;
                 Ok(Tz::UTC.to_datetime(ts))
             },
             AmbiguousOffset::Fold { before, after } => {
@@ -627,11 +629,15 @@ impl Duration {
                     .map_err(|_| out_of_range())?;
                 let original_dst = tz.to_offset_info(original_ts).dst();
 
-                let earliest_ts = before.to_timestamp(result_dt_local).map_err(|_| out_of_range())?;
+                let earliest_ts = before
+                    .to_timestamp(result_dt_local)
+                    .map_err(|_| out_of_range())?;
                 if tz.to_offset_info(earliest_ts).dst() == original_dst {
                     return Ok(Tz::UTC.to_datetime(earliest_ts));
                 }
-                let latest_ts = after.to_timestamp(result_dt_local).map_err(|_| out_of_range())?;
+                let latest_ts = after
+                    .to_timestamp(result_dt_local)
+                    .map_err(|_| out_of_range())?;
                 if tz.to_offset_info(latest_ts).dst() == original_dst {
                     return Ok(Tz::UTC.to_datetime(latest_ts));
                 }
@@ -657,9 +663,16 @@ impl Duration {
                 let ts = tz
                     .to_ambiguous_timestamp(shifted)
                     .unambiguous()
-                    .map_err(|_| PolarsError::ComputeError(
-                        format!("Could not localize datetime '{}' to time zone '{}'", fmt_ndt(result_dt_local), tz_name()).into(),
-                    ))?;
+                    .map_err(|_| {
+                        PolarsError::ComputeError(
+                            format!(
+                                "Could not localize datetime '{}' to time zone '{}'",
+                                fmt_ndt(result_dt_local),
+                                tz_name()
+                            )
+                            .into(),
+                        )
+                    })?;
                 Ok(Tz::UTC.to_datetime(ts))
             },
         }
