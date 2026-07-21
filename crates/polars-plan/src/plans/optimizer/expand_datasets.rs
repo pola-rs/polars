@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -18,7 +19,10 @@ use polars_utils::{format_pl_smallstr, unitvec};
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
 use crate::dsl::{DslPlan, FileScanIR, UnifiedScanArgs};
+use crate::plans::optimizer::ir_traversal::ir_graph_traversal;
+use crate::plans::optimizer::ir_traversal::storage::IRTraversalStorage;
 use crate::plans::{AExpr, IR};
+use crate::traversal::visitor::{FnVisitors, SubtreeVisit};
 
 pub(super) fn expand_datasets(
     root: Node,
@@ -30,147 +34,166 @@ pub(super) fn expand_datasets(
         &mut Arena<AExpr>,
     ) -> PolarsResult<()>,
 ) -> PolarsResult<()> {
-    let mut stack = unitvec![root];
-
     #[expect(clippy::type_complexity)]
-    let mut expansion_tasks: FuturesUnordered<
-        Pin<Box<dyn Future<Output = PolarsResult<(Node, IR)>>>>,
-    > = FuturesUnordered::new();
+    let mut expansion_tasks: FuturesUnordered<_> = FuturesUnordered::new();
 
     #[cfg(feature = "python")]
     let mut py_scan_resolve_threadpool: Option<Arc<PyScanResolveThreadPool>> = None;
 
-    while let Some(node) = stack.pop() {
-        ir_arena.get(node).copy_inputs(&mut stack);
+    match ir_graph_traversal(
+        root,
+        &mut FnVisitors::new(
+            || (),
+            |key, storage: &mut IRTraversalStorage, _| {
+                match (|| {
+                    let IR::Scan {
+                        sources: _,
+                        scan_type,
+                        unified_scan_args,
 
-        let IR::Scan {
-            sources: _,
-            scan_type,
-            unified_scan_args,
+                        file_info: _,
+                        hive_parts: _,
+                        predicate,
+                        predicate_file_skip_applied: _,
+                        output_schema: _,
+                    } = storage.get_mut(key)
+                    else {
+                        return Ok(());
+                    };
 
-            file_info: _,
-            hive_parts: _,
-            predicate,
-            predicate_file_skip_applied: _,
-            output_schema: _,
-        } = ir_arena.get_mut(node)
-        else {
-            continue;
-        };
+                    match scan_type.as_mut() {
+                        #[cfg(feature = "python")]
+                        FileScanIR::PythonDataset { .. } => {
+                            use polars_core::runtime::ASYNC;
 
-        match scan_type.as_mut() {
-            #[cfg(feature = "python")]
-            FileScanIR::PythonDataset { .. } => {
-                use polars_core::runtime::ASYNC;
+                            let mut projection = unified_scan_args.projection.clone();
 
-                let mut projection = unified_scan_args.projection.clone();
+                            if let Some(row_index) = &unified_scan_args.row_index
+                                && let Some(projection) = projection.as_mut()
+                            {
+                                *projection = projection
+                                    .iter()
+                                    .filter(|x| *x != &row_index.name)
+                                    .cloned()
+                                    .collect();
+                            }
 
-                if let Some(row_index) = &unified_scan_args.row_index
-                    && let Some(projection) = projection.as_mut()
-                {
-                    *projection = projection
-                        .iter()
-                        .filter(|x| *x != &row_index.name)
-                        .cloned()
-                        .collect();
-                }
+                            let limit = match unified_scan_args.pre_slice.clone() {
+                                Some(v @ Slice::Positive { .. }) => Some(v.end_position()),
+                                _ => None,
+                            };
 
-                let limit = match unified_scan_args.pre_slice.clone() {
-                    Some(v @ Slice::Positive { .. }) => Some(v.end_position()),
-                    _ => None,
-                };
+                            // Note
+                            // row_index is removed from projection/live_columns set, and is therefore not
+                            // considered when comparing cached expansion equality. This is safe as the
+                            // `row_index_in_live_filter` variable does not depend on the cached values.
 
-                // Note
-                // row_index is removed from projection/live_columns set, and is therefore not
-                // considered when comparing cached expansion equality. This is safe as the
-                // `row_index_in_live_filter` variable does not depend on the cached values.
+                            let mut row_index_in_live_filter = false;
 
-                let mut row_index_in_live_filter = false;
+                            let live_filter_columns: Option<Arc<[PlSmallStr]>> =
+                                predicate.as_ref().map(|x| {
+                                    use polars_core::prelude::PlIndexSet;
 
-                let live_filter_columns: Option<Arc<[PlSmallStr]>> = predicate.as_ref().map(|x| {
-                    use polars_core::prelude::PlIndexSet;
+                                    use crate::utils::aexpr_to_leaf_names_iter;
 
-                    use crate::utils::aexpr_to_leaf_names_iter;
+                                    let mut out: Arc<[PlSmallStr]> = PlIndexSet::from_iter(
+                                        aexpr_to_leaf_names_iter(x.node(), expr_arena),
+                                    )
+                                    .into_iter()
+                                    .filter(|&live_col| {
+                                        if unified_scan_args
+                                            .row_index
+                                            .as_ref()
+                                            .is_some_and(|ri| live_col == &ri.name)
+                                        {
+                                            row_index_in_live_filter = true;
+                                            false
+                                        } else {
+                                            true
+                                        }
+                                    })
+                                    .cloned()
+                                    .collect();
 
-                    let mut out: Arc<[PlSmallStr]> =
-                        PlIndexSet::from_iter(aexpr_to_leaf_names_iter(x.node(), expr_arena))
-                            .into_iter()
-                            .filter(|&live_col| {
-                                if unified_scan_args
-                                    .row_index
-                                    .as_ref()
-                                    .is_some_and(|ri| live_col == &ri.name)
-                                {
-                                    row_index_in_live_filter = true;
-                                    false
-                                } else {
-                                    true
+                                    Arc::get_mut(&mut out).unwrap().sort_unstable();
+
+                                    out
+                                });
+
+                            let pyarrow_predicate: Option<String> = if !unified_scan_args
+                                .has_row_index_or_slice()
+                                && let Some(predicate) = &predicate
+                            {
+                                use crate::plans::aexpr::MintermIter;
+                                use crate::plans::python::pyarrow::predicate_to_pa;
+
+                                // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
+                                let parts: Vec<String> =
+                                    MintermIter::new(predicate.node(), expr_arena)
+                                        .filter_map(|node| predicate_to_pa(node, expr_arena))
+                                        .collect();
+                                match parts.len() {
+                                    0 => None,
+                                    1 => Some(parts.into_iter().next().unwrap()),
+                                    _ => Some(format!("({})", parts.join(" & "))),
                                 }
-                            })
-                            .cloned()
-                            .collect();
+                            } else {
+                                None
+                            };
 
-                    Arc::get_mut(&mut out).unwrap().sort_unstable();
+                            let ir = storage.take(key);
 
-                    out
-                });
+                            assert!(matches!(ir, IR::Scan { .. }));
 
-                let pyarrow_predicate: Option<String> = if !unified_scan_args
-                    .has_row_index_or_slice()
-                    && let Some(predicate) = &predicate
-                {
-                    use crate::plans::aexpr::MintermIter;
-                    use crate::plans::python::pyarrow::predicate_to_pa;
+                            let py_scan_resolve_threadpool =
+                                Arc::clone(py_scan_resolve_threadpool.get_or_insert_with(|| {
+                                    Arc::new(PyScanResolveThreadPool::new())
+                                }));
 
-                    // Convert minterms independently, can allow conversion to partially succeed if there are unsupported expressions
-                    let parts: Vec<String> = MintermIter::new(predicate.node(), expr_arena)
-                        .filter_map(|node| predicate_to_pa(node, expr_arena))
-                        .collect();
-                    match parts.len() {
-                        0 => None,
-                        1 => Some(parts.into_iter().next().unwrap()),
-                        _ => Some(format!("({})", parts.join(" & "))),
-                    }
-                } else {
-                    None
-                };
+                            let handle = AbortOnDropHandle(ASYNC.spawn_blocking(move || {
+                                (
+                                    key,
+                                    expand_python_dataset(
+                                        ir,
+                                        projection,
+                                        limit,
+                                        live_filter_columns,
+                                        row_index_in_live_filter,
+                                        pyarrow_predicate,
+                                        py_scan_resolve_threadpool.as_ref(),
+                                    ),
+                                )
+                            }));
 
-                let ir = ir_arena.take(node);
+                            expansion_tasks.push(handle);
+                        },
 
-                assert!(matches!(ir, IR::Scan { .. }));
-
-                let py_scan_resolve_threadpool = Arc::clone(
-                    py_scan_resolve_threadpool
-                        .get_or_insert_with(|| Arc::new(PyScanResolveThreadPool::new())),
-                );
-
-                expansion_tasks.push(Box::pin(async move {
-                    let ir = AbortOnDropHandle(ASYNC.spawn_blocking(move || {
-                        expand_python_dataset(
-                            ir,
-                            projection,
-                            limit,
-                            live_filter_columns,
-                            row_index_in_live_filter,
-                            pyarrow_predicate,
-                            py_scan_resolve_threadpool.as_ref(),
-                        )
-                    }))
-                    .await
-                    .unwrap()?;
-
-                    PolarsResult::Ok((node, ir))
-                }));
+                        _ => apply_scan_predicate_to_scan_ir(key, storage, expr_arena)?,
+                    };
+                    PolarsResult::Ok(())
+                })() {
+                    Ok(()) => ControlFlow::Continue(SubtreeVisit::Visit),
+                    Err(err) => ControlFlow::Break(err),
+                }
             },
-
-            _ => apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?,
-        }
+            |_, _, _| ControlFlow::Continue(()),
+        ),
+        &mut vec![],
+        &mut vec![],
+        IRTraversalStorage {
+            arena: ir_arena,
+            skip_subtree: |_| false,
+        },
+    ) {
+        ControlFlow::Continue(()) => {},
+        ControlFlow::Break(err) => return Err(err),
     }
 
     if !expansion_tasks.is_empty() {
         ASYNC.block_in_place_on(async {
             while let Some(v) = expansion_tasks.next().await {
-                let (node, ir) = v?;
+                let (node, ir) = v.unwrap();
+                let ir = ir?;
                 ir_arena.replace(node, ir);
                 apply_scan_predicate_to_scan_ir(node, ir_arena, expr_arena)?;
             }
