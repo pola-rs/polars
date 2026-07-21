@@ -1,4 +1,5 @@
 mod dot;
+mod equality;
 mod format;
 pub mod inputs;
 mod schema;

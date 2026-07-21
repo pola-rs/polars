@@ -1,7 +1,8 @@
-use std::hash::{Hash, Hasher};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
+use hashbrown::HashTable;
 use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::scratch_vec::ScratchVec;
@@ -24,6 +25,7 @@ pub fn common_subplan_elimination(
     let mut visit_stack = ScratchVec::default();
     let mut edges = vec![usize::MAX]; // Indices into `id_map`
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
+    let mut deduplication_map = HashTable::default();
     let mut id_map = PlIndexMap::new();
     let mut storage = IRTraversalStorage {
         arena: ir_arena,
@@ -48,6 +50,7 @@ pub fn common_subplan_elimination(
         )),
         graph_visit_order_fn: None,
         visitor: &mut IDGeneratorVisitor {
+            deduplication_map: &mut deduplication_map,
             id_map: &mut id_map,
             expr_arena,
         },
@@ -80,32 +83,6 @@ pub fn common_subplan_elimination(
     inserted_cache
 }
 
-struct Blake3Hasher {
-    hasher: blake3::Hasher,
-}
-
-impl Blake3Hasher {
-    fn new() -> Self {
-        Self {
-            hasher: blake3::Hasher::new(),
-        }
-    }
-
-    fn finalize(self) -> [u8; 32] {
-        self.hasher.finalize().into()
-    }
-}
-
-impl Hasher for Blake3Hasher {
-    fn finish(&self) -> u64 {
-        0
-    }
-
-    fn write(&mut self, bytes: &[u8]) {
-        self.hasher.update(bytes);
-    }
-}
-
 #[derive(Debug)]
 struct IDState {
     hits: usize,
@@ -123,15 +100,82 @@ impl Default for IDState {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
+#[repr(transparent)]
+struct DeduplicationId(u32);
+
+struct DeduplicationEntry {
+    representative: Node,
+    child_ids: Vec<DeduplicationId>,
+    id: DeduplicationId,
+}
+
 struct IDGeneratorVisitor<'map, 'arena> {
-    id_map: &'map mut PlIndexMap<[u8; 32], IDState>,
+    deduplication_map: &'map mut HashTable<DeduplicationEntry>,
+    id_map: &'map mut PlIndexMap<DeduplicationId, IDState>,
     expr_arena: &'arena Arena<AExpr>,
+}
+
+fn shallow_hasher<'a>(
+    node: Node,
+    childs_ids: &[DeduplicationId],
+    lp_arena: &'a Arena<IR>,
+    expr_arena: &'a Arena<AExpr>,
+) -> u64 {
+    let mut hasher = DefaultHasher::new();
+
+    IRHashWrap::new(node, lp_arena, expr_arena, true).hash(&mut hasher);
+    for &child_id in childs_ids {
+        hasher.write_u32(child_id.0);
+    }
+
+    hasher.finish()
+}
+
+fn shallow_eq<'a>(
+    lhs: Node,
+    rhs: Node,
+    lp_arena: &'a Arena<IR>,
+    expr_arena: &'a Arena<AExpr>,
+) -> bool {
+    let lhs = lp_arena.get(lhs);
+    let rhs = lp_arena.get(rhs);
+
+    lhs.is_ir_equal_shallow(rhs, expr_arena)
+}
+
+fn get_deduplication_id<'a>(
+    deduplication_map: &'a mut HashTable<DeduplicationEntry>,
+    node: Node,
+    child_ids: Vec<DeduplicationId>,
+    lp_arena: &'a Arena<IR>,
+    expr_arena: &'a Arena<AExpr>,
+) -> DeduplicationId {
+    let shallow_hash = shallow_hasher(node, &child_ids, lp_arena, expr_arena);
+
+    let next_id: DeduplicationId = DeduplicationId(1 + deduplication_map.len() as u32);
+    deduplication_map
+        .entry(
+            shallow_hash,
+            |other| {
+                shallow_eq(node, other.representative, lp_arena, expr_arena)
+                    && child_ids == other.child_ids
+            },
+            |other| shallow_hasher(other.representative, &child_ids, lp_arena, expr_arena),
+        )
+        .or_insert(DeduplicationEntry {
+            representative: node,
+            child_ids,
+            id: next_id,
+        })
+        .get()
+        .id
 }
 
 impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
     type Key = Node;
-    type Edge = usize;
     type Storage = IRTraversalStorage<'arena>;
+    type Edge = usize;
     type BreakValue = ();
 
     fn default_edge(
@@ -157,26 +201,18 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        let ir = storage.get(key);
-
-        let mut hasher = Blake3Hasher::new();
-
-        hasher.write_usize(if storage.skip_subtree(ir) {
-            // Subtree nodes were not pushed for traversal due to e.g. too many
-            // union input nodes. We hash the memory address of this &IR instead.
-            ir as *const IR as usize
-        } else {
-            0
-        });
-
-        IRHashWrap::new(key, storage, self.expr_arena, true).hash(&mut hasher);
-
-        for entry_idx in edges.inputs().iter().copied() {
-            let input_hash: &[u8; 32] = self.id_map.get_index(entry_idx).unwrap().0;
-            hasher.write(input_hash);
-        }
-
-        let id: [u8; 32] = hasher.finalize();
+        let child_ids = edges
+            .inputs()
+            .iter()
+            .map(|&i| *self.id_map.get_index(i).unwrap().0)
+            .collect();
+        let id = get_deduplication_id(
+            self.deduplication_map,
+            key,
+            child_ids,
+            storage.arena,
+            &self.expr_arena,
+        );
 
         use indexmap::map::Entry;
 
@@ -209,7 +245,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
 }
 
 struct InsertCachesVisitor<'a, 'arena> {
-    id_map: &'a mut PlIndexMap<[u8; 32], IDState>,
+    id_map: &'a mut PlIndexMap<DeduplicationId, IDState>,
     inserted_cache: &'a mut bool,
     insert_nested_caches: bool,
     phantom: PhantomData<&'arena ()>,
@@ -217,8 +253,8 @@ struct InsertCachesVisitor<'a, 'arena> {
 
 impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
     type Key = Node;
-    type Edge = usize;
     type Storage = IRTraversalStorage<'arena>;
+    type Edge = usize;
     type BreakValue = ();
 
     fn default_edge(
