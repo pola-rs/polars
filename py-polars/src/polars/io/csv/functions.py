@@ -1505,7 +1505,7 @@ def _scan_csv_impl(
     new_columns: Sequence[str] | None = None,
     with_column_names: Callable[[list[str]], list[str]] | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
-    infer_schema_files: int = (1 << 63) - 1,
+    infer_schema_files: int = (1 << 64) - 1,
     n_rows: int | None = None,
     encoding: CsvEncoding = "utf8",
     low_memory: bool = False,
