@@ -493,7 +493,21 @@ pub fn to_datetime(
             let pattern = subset
                 .iter()
                 .find_map(|opt_val| opt_val.and_then(infer_pattern_datetime_single))
-                .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))?;
+                .ok_or_else(|| {
+                    let sample = ca.get(idx);
+                    if sample.is_some_and(|val| super::TRAILING_OFFSET_RE.is_match(val)) {
+                        polars_err!(
+                            ComputeError:
+                            "could not find an appropriate format to parse datetimes, please define a format\n\n\
+                            hint: this value appears to contain a UTC offset (e.g. '+01:00', '+0100', or 'Z'). \
+                            Polars' format directives (%z, %:z, %::z, %:::z) each require an exact colon style, \
+                            so an explicit format matching your data's offset style may be required, e.g. `%:z` \
+                            for a colon-separated offset like '+01:00'.",
+                        )
+                    } else {
+                        polars_err!(parse_fmt_idk = "date")
+                    }
+                })?;
             let mut infer = DatetimeInfer::<Int64Type>::try_from_with_unit(pattern, Some(tu))?;
             #[cfg(feature = "timezones")]
             if matches!(pattern, Pattern::DatetimeYMDZ) {

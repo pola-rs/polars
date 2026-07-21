@@ -167,12 +167,12 @@ def test_to_datetime_aware_values_aware_dtype() -> None:
     assert_series_equal(result, expected)
 
     # When the format is provided
-    result = s.str.to_datetime(format="%Y-%m-%dT%H:%M:%S%z", time_zone="Asia/Kathmandu")
+    result = s.str.to_datetime(format="%Y-%m-%dT%H:%M:%S%:z", time_zone="Asia/Kathmandu")
     assert_series_equal(result, expected)
 
     # With `exact=False`
     result = s.str.to_datetime(
-        format="%Y-%m-%dT%H:%M:%S%z", time_zone="Asia/Kathmandu", exact=False
+        format="%Y-%m-%dT%H:%M:%S%:z", time_zone="Asia/Kathmandu", exact=False
     )
     assert_series_equal(result, expected)
 

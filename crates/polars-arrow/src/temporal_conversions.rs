@@ -90,6 +90,28 @@ pub fn datetime_to_epoch_nanos_opt(dt: DateTime) -> Option<i128> {
     )
 }
 
+/// The inverse of [`datetime_to_epoch_nanos_opt`]: converts elapsed
+/// nanoseconds since the Unix epoch into a [`DateTime`], via calendar
+/// arithmetic rather than through [`Timestamp`] (same rationale as
+/// [`datetime_to_epoch_nanos_opt`] - `Timestamp`'s range is too narrow to
+/// hold every value `DateTime` can represent). This is on a hot path (it
+/// backs every epoch-tick-to-civil conversion), so the time-of-day
+/// component is computed with plain arithmetic rather than `Span`/
+/// `checked_add`.
+#[inline]
+pub fn epoch_nanos_to_datetime_opt(epoch_nanos: i128) -> Option<DateTime> {
+    const NANOS_PER_DAY: i64 = 86_400_000_000_000;
+    let days = epoch_nanos.div_euclid(i128::from(NANOS_PER_DAY));
+    let nanos_of_day = epoch_nanos.rem_euclid(i128::from(NANOS_PER_DAY)) as i64;
+    let date = date32_to_date_opt(i32::try_from(days).ok()?)?;
+    let hour = (nanos_of_day / 3_600_000_000_000) as i8;
+    let minute = ((nanos_of_day / 60_000_000_000) % 60) as i8;
+    let second = ((nanos_of_day / 1_000_000_000) % 60) as i8;
+    let subsec_nanosecond = (nanos_of_day % 1_000_000_000) as i32;
+    let time = Time::new(hour, minute, second, subsec_nanosecond).ok()?;
+    Some(date.to_datetime(time))
+}
+
 /// converts a `i64` representing a `date64` to [`DateTime`]
 #[inline]
 pub fn date64_to_datetime(v: i64) -> DateTime {
@@ -204,9 +226,7 @@ pub fn timestamp_ms_to_datetime(v: i64) -> DateTime {
 /// converts a `i64` representing a `timestamp(ms)` to [`DateTime`]
 #[inline]
 pub fn timestamp_ms_to_datetime_opt(v: i64) -> Option<DateTime> {
-    Timestamp::from_millisecond(v)
-        .ok()
-        .map(|ts| TimeZone::UTC.to_datetime(ts))
+    epoch_nanos_to_datetime_opt(i128::from(v) * 1_000_000)
 }
 
 /// converts a `i64` representing a `timestamp(us)` to [`DateTime`]
@@ -218,9 +238,7 @@ pub fn timestamp_us_to_datetime(v: i64) -> DateTime {
 /// converts a `i64` representing a `timestamp(us)` to [`DateTime`]
 #[inline]
 pub fn timestamp_us_to_datetime_opt(v: i64) -> Option<DateTime> {
-    Timestamp::from_microsecond(v)
-        .ok()
-        .map(|ts| TimeZone::UTC.to_datetime(ts))
+    epoch_nanos_to_datetime_opt(i128::from(v) * 1_000)
 }
 
 /// converts a `i64` representing a `timestamp(ns)` to [`DateTime`]

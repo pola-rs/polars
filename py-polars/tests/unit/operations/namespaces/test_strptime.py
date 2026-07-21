@@ -111,7 +111,7 @@ def test_timezone_aware_strptime(tz_string: str, timedelta: timedelta) -> None:
         }
     )
     assert times.with_columns(
-        pl.col("delivery_datetime").str.to_datetime(format="%Y-%m-%d %H:%M:%S%z")
+        pl.col("delivery_datetime").str.to_datetime(format="%Y-%m-%d %H:%M:%S%:z")
     ).to_dict(as_series=False) == {
         "delivery_datetime": [
             datetime(2021, 12, 5, 6, 0, tzinfo=timezone(timedelta)),
@@ -193,7 +193,7 @@ def test_non_exact_short_elements_10223(value: str, attr: str) -> None:
 @pytest.mark.parametrize(
     ("offset", "time_zone", "tzinfo", "format"),
     [
-        ("+01:00", "UTC", timezone(timedelta(hours=1)), "%Y-%m-%dT%H:%M%z"),
+        ("+01:00", "UTC", timezone(timedelta(hours=1)), "%Y-%m-%dT%H:%M%:z"),
         ("", None, None, "%Y-%m-%dT%H:%M"),
     ],
 )
@@ -337,18 +337,18 @@ def test_str_to_datetime_infer_tz_aware() -> None:
     "result",
     [
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(
-            pl.Datetime("us", "UTC"), format="%Y-%m-%dT%H:%M:%S%z"
+            pl.Datetime("us", "UTC"), format="%Y-%m-%dT%H:%M:%S%:z"
         ),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(
-            pl.Datetime("us"), format="%Y-%m-%dT%H:%M:%S%z"
+            pl.Datetime("us"), format="%Y-%m-%dT%H:%M:%S%:z"
         ),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(pl.Datetime("us", "UTC")),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.strptime(pl.Datetime("us")),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(
-            time_zone="UTC", format="%Y-%m-%dT%H:%M:%S%z"
+            time_zone="UTC", format="%Y-%m-%dT%H:%M:%S%:z"
         ),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(
-            format="%Y-%m-%dT%H:%M:%S%z"
+            format="%Y-%m-%dT%H:%M:%S%:z"
         ),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(time_zone="UTC"),
         pl.Series(["2020-01-01T00:00:00+00:00"]).str.to_datetime(),
@@ -497,7 +497,7 @@ def test_invalid_date_parsing_4898() -> None:
 
 
 def test_strptime_invalid_timezone() -> None:
-    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%z")
+    ts = pl.Series(["2020-01-01 00:00:00+01:00"]).str.to_datetime("%Y-%m-%d %H:%M:%S%:z")
     with pytest.raises(ComputeError, match=r"unable to parse time zone: 'foo'"):
         ts.dt.replace_time_zone("foo")
 
@@ -564,7 +564,7 @@ def test_to_datetime_tz_aware_strptime(ts: str, fmt: str, expected: datetime) ->
     assert result == expected
 
 
-@pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
+@pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%:z"])
 def test_crossing_dst(format: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     result = pl.Series(ts).str.to_datetime(format)
@@ -572,7 +572,7 @@ def test_crossing_dst(format: str) -> None:
     assert result[1] == datetime(2021, 3, 28, 21, 59, 59, tzinfo=ZoneInfo("UTC"))
 
 
-@pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%z"])
+@pytest.mark.parametrize("format", ["%+", "%Y-%m-%dT%H:%M:%S%:z"])
 def test_crossing_dst_tz_aware(format: str) -> None:
     ts = ["2021-03-27T23:59:59+01:00", "2021-03-28T23:59:59+02:00"]
     result = pl.Series(ts).str.to_datetime(format)
