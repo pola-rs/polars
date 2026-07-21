@@ -1,11 +1,11 @@
-use arrow::temporal_conversions::{EPOCH_DAYS_FROM_CE, MILLISECONDS, SECONDS_IN_DAY};
-use chrono::{Datelike, NaiveDate};
+use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
+use jiff::tz::TimeZone;
 
 use super::*;
 
 pub(crate) fn naive_date_to_date(nd: NaiveDate) -> i32 {
-    let nt = NaiveTime::from_hms_opt(0, 0, 0).unwrap();
-    let ndt = NaiveDateTime::new(nd, nt);
+    let nt = NaiveTime::midnight();
+    let ndt = nd.to_datetime(nt);
     naive_datetime_to_date(ndt)
 }
 
@@ -101,11 +101,16 @@ pub trait DateMethods: AsDate {
             .zip(day.iter())
             .map(|((y, m), d)| {
                 if let (Some(y), Some(m), Some(d)) = (y, m, d) {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
+                    NaiveDate::new(y as i16, m as i8, d as i8).ok().map_or_else(
                         // We have an invalid date.
                         || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
                         // We have a valid date.
-                        |date| Ok(Some(date.num_days_from_ce() - EPOCH_DAYS_FROM_CE)),
+                        |date| {
+                            let ts = TimeZone::UTC
+                                .to_timestamp(date.to_datetime(NaiveTime::midnight()))
+                                .expect("date out-of-range");
+                            Ok(Some((ts.as_second() / SECONDS_IN_DAY) as i32))
+                        },
                     )
                 } else {
                     Ok(None)
@@ -121,7 +126,7 @@ impl DateMethods for DateChunked {
         Int32Chunked::from_iter_options(
             name,
             v.iter().map(|s| {
-                NaiveDate::parse_from_str(s, fmt)
+                NaiveDate::strptime(fmt, s)
                     .ok()
                     .as_ref()
                     .map(|v| naive_date_to_date(*v))

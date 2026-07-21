@@ -552,7 +552,7 @@ where
                         self.builder.append_value(parsed);
                         Ok(())
                     },
-                    // fall back on chrono parser
+                    // fall back on the slower, jiff-based parser
                     // this is a lot slower, we need to do utf8 checking and use
                     // the slower parser
                     None => slow_datetime_parser(self, bytes, time_unit, ignore_errors),

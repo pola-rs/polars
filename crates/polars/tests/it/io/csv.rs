@@ -41,23 +41,27 @@ fn write_csv() {
 #[test]
 #[cfg(feature = "timezones")]
 fn write_dates() {
-    use chrono;
-
-    let s0 = Column::new(
-        "date".into(),
-        [chrono::NaiveDate::from_yo_opt(2024, 33), None],
-    );
+    let date_2024_33 = jiff::civil::Date::new(2024, 1, 1)
+        .unwrap()
+        .checked_add(jiff::Span::new().days(32))
+        .unwrap();
+    let s0 = Column::new("date".into(), [Some(date_2024_33), None]);
     let s1 = Column::new(
         "time".into(),
-        [None, chrono::NaiveTime::from_hms_opt(19, 50, 0)],
+        [None, jiff::civil::Time::new(19, 50, 0, 0).ok()],
     );
     let s2 = Column::new(
         "datetime".into(),
         [
-            Some(chrono::NaiveDateTime::new(
-                chrono::NaiveDate::from_ymd_opt(2000, 12, 1).unwrap(),
-                chrono::NaiveTime::from_num_seconds_from_midnight_opt(99, 49575634).unwrap(),
-            )),
+            Some(
+                jiff::civil::Date::new(2000, 12, 1)
+                    .unwrap()
+                    .to_datetime(
+                        jiff::civil::Time::midnight()
+                            .checked_add(jiff::Span::new().seconds(99).nanoseconds(49575634))
+                            .unwrap(),
+                    ),
+            ),
             None,
         ],
     );

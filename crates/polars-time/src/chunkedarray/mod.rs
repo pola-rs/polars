@@ -13,7 +13,7 @@ pub mod string;
 mod time;
 
 use arrow::legacy::utils::CustomIterTools;
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 #[cfg(feature = "dtype-date")]
 pub use date::DateMethods;
 #[cfg(feature = "dtype-datetime")]

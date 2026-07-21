@@ -17,7 +17,8 @@
 
 //! Defines temporal kernels for time and date related functions.
 
-use chrono::{Datelike, Timelike};
+use jiff::civil::{DateTime, Time};
+use jiff::tz::TimeZone;
 use polars_error::PolarsResult;
 
 use super::arity::unary;
@@ -26,30 +27,8 @@ use crate::datatypes::*;
 use crate::temporal_conversions::*;
 use crate::types::NativeType;
 
-// Create and implement a trait that converts chrono's `Weekday`
-// type into `i8`
-trait Int8Weekday: Datelike {
-    fn i8_weekday(&self) -> i8 {
-        self.weekday().number_from_monday().try_into().unwrap()
-    }
-}
-
-impl Int8Weekday for chrono::NaiveDateTime {}
-impl<T: chrono::TimeZone> Int8Weekday for chrono::DateTime<T> {}
-
-// Create and implement a trait that converts chrono's `IsoWeek`
-// type into `i8`
-trait Int8IsoWeek: Datelike {
-    fn i8_iso_week(&self) -> i8 {
-        self.iso_week().week().try_into().unwrap()
-    }
-}
-
-impl Int8IsoWeek for chrono::NaiveDateTime {}
-impl<T: chrono::TimeZone> Int8IsoWeek for chrono::DateTime<T> {}
-
 // Macro to avoid repetition in functions, that apply
-// `chrono::Datelike` methods on Arrays
+// civil-datetime field extraction on Arrays
 macro_rules! date_like {
     ($extract:ident, $array:ident, $dtype:path) => {
         match $array.dtype().to_storage() {
@@ -58,16 +37,10 @@ macro_rules! date_like {
             },
             ArrowDataType::Timestamp(time_unit, Some(timezone_str)) => {
                 let array = $array.as_any().downcast_ref().unwrap();
-
-                if let Ok(timezone) = parse_offset(timezone_str.as_str()) {
-                    Ok(extract_impl(array, *time_unit, timezone, |x| {
-                        x.$extract().try_into().unwrap()
-                    }))
-                } else {
-                    chrono_tz(array, *time_unit, timezone_str.as_str(), |x| {
-                        x.$extract().try_into().unwrap()
-                    })
-                }
+                let timezone = parse_timezone(timezone_str.as_str())?;
+                Ok(extract_impl(array, *time_unit, &timezone, |x| {
+                    x.$extract().try_into().unwrap()
+                }))
             },
             _ => unimplemented!(),
         }
@@ -93,6 +66,26 @@ pub fn day(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
     date_like!(day, array, ArrowDataType::Int8)
 }
 
+// Extension traits so the `date_like!` macro can call `.i8_weekday()` /
+// `.i8_iso_week()` on a civil `DateTime` the same way it calls `.year()` etc.
+trait Int8Weekday {
+    fn i8_weekday(&self) -> i8;
+}
+impl Int8Weekday for DateTime {
+    fn i8_weekday(&self) -> i8 {
+        self.weekday().to_monday_one_offset()
+    }
+}
+
+trait Int8IsoWeek {
+    fn i8_iso_week(&self) -> i8;
+}
+impl Int8IsoWeek for DateTime {
+    fn i8_iso_week(&self) -> i8 {
+        self.iso_week_date().week()
+    }
+}
+
 /// Extracts weekday of a temporal array as [`PrimitiveArray<i8>`].
 ///
 /// Monday is 1, Tuesday is 2, ..., Sunday is 7.
@@ -108,7 +101,7 @@ pub fn iso_week(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
 }
 
 // Macro to avoid repetition in functions, that apply
-// `chrono::Timelike` methods on Arrays
+// civil-time field extraction on Arrays
 macro_rules! time_like {
     ($extract:ident, $array:ident, $dtype:path) => {
         match $array.dtype().to_storage() {
@@ -122,16 +115,10 @@ macro_rules! time_like {
             },
             ArrowDataType::Timestamp(time_unit, Some(timezone_str)) => {
                 let array = $array.as_any().downcast_ref().unwrap();
-
-                if let Ok(timezone) = parse_offset(timezone_str.as_str()) {
-                    Ok(extract_impl(array, *time_unit, timezone, |x| {
-                        x.$extract().try_into().unwrap()
-                    }))
-                } else {
-                    chrono_tz(array, *time_unit, timezone_str.as_str(), |x| {
-                        x.$extract().try_into().unwrap()
-                    })
-                }
+                let timezone = parse_timezone(timezone_str.as_str())?;
+                Ok(extract_impl(array, *time_unit, &timezone, |x| {
+                    x.$extract().try_into().unwrap()
+                }))
             },
             _ => unimplemented!(),
         }
@@ -165,7 +152,7 @@ pub fn second(array: &dyn Array) -> PolarsResult<PrimitiveArray<i8>> {
 /// The range from 1_000_000_000 to 1_999_999_999 represents the leap second.
 /// Use [`can_nanosecond`] to check if this operation is supported for the target [`ArrowDataType`].
 pub fn nanosecond(array: &dyn Array) -> PolarsResult<PrimitiveArray<i32>> {
-    time_like!(nanosecond, array, ArrowDataType::Int32)
+    time_like!(subsec_nanosecond, array, ArrowDataType::Int32)
 }
 
 fn date_variants<F, O>(
@@ -175,7 +162,7 @@ fn date_variants<F, O>(
 ) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
-    F: Fn(chrono::NaiveDateTime) -> O,
+    F: Fn(DateTime) -> O,
 {
     match array.dtype().to_storage() {
         ArrowDataType::Date32 => {
@@ -197,7 +184,7 @@ where
                 .as_any()
                 .downcast_ref::<PrimitiveArray<i64>>()
                 .unwrap();
-            let func: fn(i64) -> Option<chrono::NaiveDateTime> = match time_unit {
+            let func: fn(i64) -> Option<DateTime> = match time_unit {
                 TimeUnit::Second => timestamp_s_to_datetime_opt,
                 TimeUnit::Millisecond => timestamp_ms_to_datetime_opt,
                 TimeUnit::Microsecond => timestamp_us_to_datetime_opt,
@@ -218,7 +205,7 @@ fn time_variants<F, O>(
 ) -> PolarsResult<PrimitiveArray<O>>
 where
     O: NativeType,
-    F: Fn(chrono::NaiveTime) -> O,
+    F: Fn(Time) -> O,
 {
     match array.dtype().to_storage() {
         ArrowDataType::Time32(TimeUnit::Second) => {
@@ -253,64 +240,42 @@ where
     }
 }
 
+/// Parses a `timezone` string into a [`TimeZone`], accepting either a fixed
+/// offset (e.g. `"+01:00"`, `"UTC"`) or, when the `chrono-tz` feature is
+/// active, an IANA timezone name (e.g. `"Europe/Amsterdam"`).
+fn parse_timezone(timezone_str: &str) -> PolarsResult<TimeZone> {
+    match parse_offset(timezone_str) {
+        Ok(tz) => Ok(tz),
+        Err(_) => parse_offset_tz_checked(timezone_str),
+    }
+}
+
 #[cfg(feature = "chrono-tz")]
-fn chrono_tz<F, O>(
-    array: &PrimitiveArray<i64>,
-    time_unit: TimeUnit,
-    timezone_str: &str,
-    op: F,
-) -> PolarsResult<PrimitiveArray<O>>
-where
-    O: NativeType,
-    F: Fn(chrono::DateTime<chrono_tz::Tz>) -> O,
-{
-    let timezone = parse_offset_tz(timezone_str)?;
-    Ok(extract_impl(array, time_unit, timezone, op))
+fn parse_offset_tz_checked(timezone_str: &str) -> PolarsResult<TimeZone> {
+    parse_offset_tz(timezone_str)
 }
 
 #[cfg(not(feature = "chrono-tz"))]
-fn chrono_tz<F, O>(
-    _: &PrimitiveArray<i64>,
-    _: TimeUnit,
-    timezone_str: &str,
-    _: F,
-) -> PolarsResult<PrimitiveArray<O>>
-where
-    O: NativeType,
-    F: Fn(chrono::DateTime<chrono::FixedOffset>) -> O,
-{
+fn parse_offset_tz_checked(timezone_str: &str) -> PolarsResult<TimeZone> {
     panic!(
         "timezone \"{}\" cannot be parsed (feature chrono-tz is not active)",
         timezone_str
     )
 }
 
-fn extract_impl<T, A, F>(
+fn extract_impl<A, F>(
     array: &PrimitiveArray<i64>,
     time_unit: TimeUnit,
-    timezone: T,
+    timezone: &TimeZone,
     extract: F,
 ) -> PrimitiveArray<A>
 where
-    T: chrono::TimeZone,
     A: NativeType,
-    F: Fn(chrono::DateTime<T>) -> A,
+    F: Fn(DateTime) -> A,
 {
-    let timestamp_to_datetime_opt: fn(i64) -> Option<chrono::NaiveDateTime> = match time_unit {
-        TimeUnit::Second => timestamp_s_to_datetime_opt,
-        TimeUnit::Millisecond => timestamp_ms_to_datetime_opt,
-        TimeUnit::Microsecond => timestamp_us_to_datetime_opt,
-        TimeUnit::Nanosecond => timestamp_ns_to_datetime_opt,
-    };
-
     let iter = array.iter().map(|opt| {
         opt.and_then(|&x| {
-            timestamp_to_datetime_opt(x).map(|datetime| {
-                let offset = timezone.offset_from_utc_datetime(&datetime);
-                extract(chrono::DateTime::<T>::from_naive_utc_and_offset(
-                    datetime, offset,
-                ))
-            })
+            timestamp_to_timestamp_opt(x, time_unit).map(|ts| extract(timezone.to_datetime(ts)))
         })
     });
     PrimitiveArray::from_trusted_len_iter(iter)

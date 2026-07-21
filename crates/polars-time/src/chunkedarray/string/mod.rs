@@ -1,5 +1,6 @@
 pub mod infer;
-use chrono::DateTime;
+use jiff::Timestamp;
+use jiff::fmt::strtime::BrokenDownTime;
 mod patterns;
 mod strptime;
 pub use patterns::Pattern;
@@ -17,7 +18,7 @@ use crate::prelude::string::strptime::StrpTimeState;
 fn time_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> PolarsResult
 where
-    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+    F: Fn(&str, &str) -> Result<K, jiff::Error>,
 {
     patterns::TIME_H_M_S
         .iter()
@@ -29,7 +30,7 @@ where
 fn datetime_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> PolarsResult
 where
-    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+    F: Fn(&str, &str) -> Result<K, jiff::Error>,
 {
     patterns::DATETIME_Y_M_D
         .iter()
@@ -41,7 +42,7 @@ where
 fn date_pattern<F, K>(val: &str, convert: F) -> Option<&'static str>
 // (string, fmt) -> PolarsResult
 where
-    F: Fn(&str, &str) -> chrono::ParseResult<K>,
+    F: Fn(&str, &str) -> Result<K, jiff::Error>,
 {
     patterns::DATE_Y_M_D
         .iter()
@@ -52,19 +53,21 @@ where
 
 #[cfg(feature = "dtype-datetime")]
 fn sniff_fmt_datetime(val: &str) -> PolarsResult<&'static str> {
-    datetime_pattern(val, NaiveDateTime::parse_from_str)
-        .or_else(|| datetime_pattern(val, NaiveDate::parse_from_str))
+    datetime_pattern(val, |val, fmt| NaiveDateTime::strptime(fmt, val))
+        .or_else(|| datetime_pattern(val, |val, fmt| NaiveDate::strptime(fmt, val)))
         .ok_or_else(|| polars_err!(parse_fmt_idk = "datetime"))
 }
 
 #[cfg(feature = "dtype-date")]
 fn sniff_fmt_date(val: &str) -> PolarsResult<&'static str> {
-    date_pattern(val, NaiveDate::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "date"))
+    date_pattern(val, |val, fmt| NaiveDate::strptime(fmt, val))
+        .ok_or_else(|| polars_err!(parse_fmt_idk = "date"))
 }
 
 #[cfg(feature = "dtype-time")]
 fn sniff_fmt_time(val: &str) -> PolarsResult<&'static str> {
-    time_pattern(val, NaiveTime::parse_from_str).ok_or_else(|| polars_err!(parse_fmt_idk = "time"))
+    time_pattern(val, |val, fmt| NaiveTime::strptime(fmt, val))
+        .ok_or_else(|| polars_err!(parse_fmt_idk = "time"))
 }
 
 pub trait StringMethods: AsString {
@@ -89,7 +92,7 @@ pub trait StringMethods: AsString {
 
         let mut convert = LruCachedFunc::new(
             |s| {
-                let naive_time = NaiveTime::parse_from_str(s, fmt).ok()?;
+                let naive_time = NaiveTime::strptime(fmt, s).ok()?;
                 Some(time_to_time64ns(&naive_time))
             },
             (string_ca.len() as f64).sqrt() as usize,
@@ -120,8 +123,8 @@ pub trait StringMethods: AsString {
         let ca = unary_elementwise(string_ca, |opt_s| {
             let mut s = opt_s?;
             while !s.is_empty() {
-                match NaiveDate::parse_and_remainder(s, fmt) {
-                    Ok((nd, _)) => return Some(naive_date_to_date(nd)),
+                match BrokenDownTime::parse_prefix(fmt, s).and_then(|(tm, _)| tm.to_date()) {
+                    Ok(nd) => return Some(naive_date_to_date(nd)),
                     Err(_) => {
                         let mut it = s.chars();
                         it.next();
@@ -175,9 +178,18 @@ pub trait StringMethods: AsString {
             let mut s = opt_s?;
             while !s.is_empty() {
                 let timestamp = if tz_aware {
-                    DateTime::parse_and_remainder(s, fmt)
+                    jiff::fmt::strtime::BrokenDownTime::parse_prefix(fmt, s)
                         .ok()
-                        .map(|(dt, _r)| func(dt.naive_utc()))
+                        .and_then(|(tm, _r)| match tm.to_timestamp() {
+                            Ok(ts) => Some(ts),
+                            // No offset/zone specifier matched (e.g. a
+                            // literal "Z" suffix) - treat as UTC.
+                            Err(_) => tm
+                                .to_datetime()
+                                .ok()
+                                .and_then(|dt| jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()),
+                        })
+                        .map(|ts| func(jiff::tz::TimeZone::UTC.to_datetime(ts)))
                 } else {
                     infer::parse_datetime_and_remainder(s, fmt).map(|(nd, _r)| func(nd))
                 };
@@ -230,8 +242,8 @@ pub trait StringMethods: AsString {
             let mut convert = LruCachedFunc::new(
                 |s: &str| {
                     match strptime_cache.parse(s.as_bytes(), fmt.as_bytes()) {
-                        // Fallback to chrono.
-                        None => NaiveDate::parse_from_str(s, &fmt).ok(),
+                        // Fallback to jiff's strtime engine.
+                        None => NaiveDate::strptime(&fmt, s).ok(),
                         Some(ndt) => Some(ndt.date()),
                     }
                     .map(naive_date_to_date)
@@ -242,7 +254,7 @@ pub trait StringMethods: AsString {
         } else {
             let mut convert = LruCachedFunc::new(
                 |s| {
-                    let naive_date = NaiveDate::parse_from_str(s, &fmt).ok()?;
+                    let naive_date = NaiveDate::strptime(&fmt, s).ok()?;
                     Some(naive_date_to_date(naive_date))
                 },
                 (string_ca.len() as f64).sqrt() as usize,
@@ -283,8 +295,22 @@ pub trait StringMethods: AsString {
             {
                 let mut convert = LruCachedFunc::new(
                     |s: &str| {
-                        let dt = DateTime::parse_from_str(s, &fmt).ok()?;
-                        Some(func(dt.naive_utc()))
+                        let ts = if fmt == "%+" {
+                            s.parse::<Timestamp>().ok()?
+                        } else {
+                            let tm =
+                                jiff::fmt::strtime::BrokenDownTime::parse(&fmt, s).ok()?;
+                            match tm.to_timestamp() {
+                                Ok(ts) => ts,
+                                // No offset/zone specifier matched (e.g. a
+                                // literal "Z" suffix) - treat as UTC.
+                                Err(_) => {
+                                    let dt = tm.to_datetime().ok()?;
+                                    jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()?
+                                },
+                            }
+                        };
+                        Some(func(jiff::tz::TimeZone::UTC.to_datetime(ts)))
                     },
                     (string_ca.len() as f64).sqrt() as usize,
                 );

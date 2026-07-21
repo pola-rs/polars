@@ -16,9 +16,7 @@ description = "Minimal implementation of the Arrow specification forked from arr
 bitflags = { workspace = true }
 bytemuck = { workspace = true, features = ["must_cast"] }
 bytes = { workspace = true }
-chrono = { workspace = true }
-# for timezone support
-chrono-tz = { workspace = true, optional = true }
+jiff = { workspace = true }
 dyn-clone = { version = "1" }
 either = { workspace = true }
 half = { workspace = true, optional = false, features = ["num-traits", "bytemuck"] }
@@ -89,6 +87,9 @@ full = [
   # parses timezones used in timestamp conversions
   "chrono-tz",
 ]
+# kept for backward-compat feature naming; jiff (which provides tz support)
+# is now an unconditional dependency, so these are no-op marker features
+chrono-tz = []
 io_ipc = ["arrow-format", "polars-error/arrow-format"]
 io_ipc_compression = ["lz4", "zstd", "io_ipc"]
 io_flight = ["io_ipc", "arrow-format/flight-data", "async-stream", "futures", "tokio"]

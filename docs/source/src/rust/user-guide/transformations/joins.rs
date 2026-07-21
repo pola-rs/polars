@@ -212,14 +212,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:non-equi]
 
     // --8<-- [start:df_trades]
-    use chrono::prelude::*;
+    use jiff::civil::{Date as NaiveDate, Time as NaiveTime};
 
     let df_trades = df!(
         "time" => [
-            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap().and_hms_opt(9, 1, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap().and_hms_opt(9, 1, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap().and_hms_opt(9, 3, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap().and_hms_opt(9, 6, 0).unwrap(),
+            NaiveDate::new(2020, 1, 1).unwrap().at(9, 1, 0, 0),
+            NaiveDate::new(2020, 1, 1).unwrap().at(9, 1, 0, 0),
+            NaiveDate::new(2020, 1, 1).unwrap().at(9, 3, 0, 0),
+            NaiveDate::new(2020, 1, 1).unwrap().at(9, 6, 0, 0),
         ],
         "stock" => ["A", "B", "B", "C"],
         "trade" => [101, 299, 301, 500],
@@ -230,10 +230,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:df_quotes]
     let df_quotes = df!(
         "time" => [
-            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap().and_hms_opt(9, 1, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap().and_hms_opt(9, 2, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap().and_hms_opt(9, 4, 0).unwrap(),
-            NaiveDate::from_ymd_opt(2020, 1, 1).unwrap().and_hms_opt(9, 6, 0).unwrap(),
+            NaiveDate::new(2020, 1, 1).unwrap().at(9, 1, 0, 0),
+            NaiveDate::new(2020, 1, 1).unwrap().at(9, 2, 0, 0),
+            NaiveDate::new(2020, 1, 1).unwrap().at(9, 4, 0, 0),
+            NaiveDate::new(2020, 1, 1).unwrap().at(9, 6, 0, 0),
         ],
         "stock" => ["A", "B", "C", "A"],
         "quote" => [100, 300, 501, 102],

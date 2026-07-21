@@ -22,8 +22,7 @@ argminmax = { workspace = true }
 arrow = { workspace = true }
 base64 = { workspace = true, optional = true }
 bytemuck = { workspace = true }
-chrono = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
 hex = { workspace = true, optional = true }
@@ -90,6 +89,9 @@ fused = []
 cutqcut = ["dtype-categorical", "dtype-struct"]
 rle = ["dtype-struct"]
 timezones = ["chrono", "chrono-tz", "polars-core/temporal", "polars-core/timezones", "polars-core/dtype-datetime"]
+# kept for backward-compat feature naming; both now enable the jiff dependency
+chrono = ["dep:jiff"]
+chrono-tz = ["dep:jiff"]
 random = ["rand", "rand_distr"]
 rank = ["rand"]
 find_many = ["aho-corasick"]

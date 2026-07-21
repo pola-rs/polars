@@ -15,7 +15,8 @@ use arrow::temporal_conversions::{
     timestamp_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
-use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
+use jiff::SignedDuration as Duration;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 use num_traits::{Float, ToPrimitive};
 use polars_utils::float16::pf16;
 use streaming_iterator::StreamingIterator;
@@ -430,7 +431,9 @@ where
     let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             let ndt = convert(*x);
-            write!(buf, "\"{ndt}\"").unwrap();
+            // jiff's `DateTime` Display uses an ISO 8601 "T" separator; match
+            // chrono's `NaiveDateTime` Display (space-separated) instead.
+            write!(buf, "\"{} {}\"", ndt.date(), ndt.time()).unwrap();
         } else {
             buf.extend_from_slice(b"null")
         }
@@ -449,7 +452,9 @@ fn timestamp_tz_serializer<'a>(
         Ok(parsed_tz) => {
             let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                 if let Some(x) = x {
-                    let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz).to_rfc3339();
+                    let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz)
+                        .strftime("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                        .to_string();
                     write!(buf, "\"{dt_str}\"").unwrap();
                 } else {
                     buf.extend_from_slice(b"null")
@@ -463,7 +468,9 @@ fn timestamp_tz_serializer<'a>(
             Ok(parsed_tz) => {
                 let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
                     if let Some(x) = x {
-                        let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz).to_rfc3339();
+                        let dt_str = timestamp_to_datetime(*x, time_unit, &parsed_tz)
+                            .strftime("%Y-%m-%dT%H:%M:%S%.9f%:z")
+                            .to_string();
                         write!(buf, "\"{dt_str}\"").unwrap();
                     } else {
                         buf.extend_from_slice(b"null")

@@ -23,8 +23,7 @@ arrow = { workspace = true }
 bitflags = { workspace = true }
 boxcar = { workspace = true }
 bytemuck = { workspace = true }
-chrono = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 comfy-table = { version = "7.1.1", default-features = false, optional = true }
 either = { workspace = true }
 getrandom = { workspace = true }
@@ -67,6 +66,9 @@ nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
+# kept for backward-compat feature naming; both now enable the jiff dependency
+chrono = ["dep:jiff"]
+chrono-tz = ["dep:jiff"]
 proptest = ["dep:proptest", "dtype-u8", "dtype-u16", "dtype-i8", "dtype-i16", "dtype-u128", "dtype-i128"]
 random = ["rand", "rand_distr"]
 algorithm_group_by = []
@@ -153,7 +155,7 @@ serde = [
   "arrow/io_ipc_compression",
   "serde_json",
 ]
-serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
+serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "jiff/serde"]
 dsl-schema = [
   "serde",
   "dep:schemars",

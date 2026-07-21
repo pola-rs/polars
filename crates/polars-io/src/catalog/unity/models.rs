@@ -16,13 +16,13 @@ pub struct CatalogInfo {
     #[serde(default, deserialize_with = "null_to_default")]
     pub options: PlHashMap<PlSmallStr, String>,
 
-    #[serde(with = "chrono::serde::ts_milliseconds_option")]
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(with = "jiff::fmt::serde::timestamp::millisecond::optional")]
+    pub created_at: Option<jiff::Timestamp>,
 
     pub created_by: Option<String>,
 
-    #[serde(with = "chrono::serde::ts_milliseconds_option")]
-    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(with = "jiff::fmt::serde::timestamp::millisecond::optional")]
+    pub updated_at: Option<jiff::Timestamp>,
 
     pub updated_by: Option<String>,
 }
@@ -38,13 +38,13 @@ pub struct NamespaceInfo {
     #[serde(default)]
     pub storage_location: Option<String>,
 
-    #[serde(with = "chrono::serde::ts_milliseconds_option")]
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(with = "jiff::fmt::serde::timestamp::millisecond::optional")]
+    pub created_at: Option<jiff::Timestamp>,
 
     pub created_by: Option<String>,
 
-    #[serde(with = "chrono::serde::ts_milliseconds_option")]
-    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(with = "jiff::fmt::serde::timestamp::millisecond::optional")]
+    pub updated_at: Option<jiff::Timestamp>,
 
     pub updated_by: Option<String>,
 }
@@ -70,13 +70,13 @@ pub struct TableInfo {
     #[serde(default, deserialize_with = "null_to_default")]
     pub properties: PlHashMap<PlSmallStr, String>,
 
-    #[serde(with = "chrono::serde::ts_milliseconds_option")]
-    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(with = "jiff::fmt::serde::timestamp::millisecond::optional")]
+    pub created_at: Option<jiff::Timestamp>,
 
     pub created_by: Option<String>,
 
-    #[serde(with = "chrono::serde::ts_milliseconds_option")]
-    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(with = "jiff::fmt::serde::timestamp::millisecond::optional")]
+    pub updated_at: Option<jiff::Timestamp>,
 
     pub updated_by: Option<String>,
 }

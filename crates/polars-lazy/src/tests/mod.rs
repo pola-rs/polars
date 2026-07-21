@@ -30,7 +30,7 @@ fn load_df() -> DataFrame {
 use std::io::Cursor;
 
 #[cfg(feature = "temporal")]
-use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
 use optimization_checks::*;
 #[cfg(feature = "parquet")]
 pub(crate) use polars_core::SINGLE_LOCK;

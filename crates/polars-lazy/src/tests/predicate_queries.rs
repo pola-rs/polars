@@ -130,10 +130,9 @@ fn test_strptime_block_predicate() -> PolarsResult<()> {
             ..Default::default()
         }))
         .filter(
-            col("date").gt(NaiveDate::from_ymd_opt(2021, 1, 1)
+            col("date").gt(NaiveDate::new(2021, 1, 1)
                 .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap()
+                .at(0, 0, 0, 0)
                 .lit()),
         );
 

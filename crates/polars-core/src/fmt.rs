@@ -13,9 +13,7 @@ use std::{fmt, str};
 ))]
 use arrow::temporal_conversions::*;
 #[cfg(feature = "dtype-datetime")]
-use chrono::NaiveDateTime;
-#[cfg(feature = "timezones")]
-use chrono::TimeZone;
+use jiff::civil::DateTime as NaiveDateTime;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::modifiers::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
@@ -996,7 +994,10 @@ fn fmt_datetime(
         TimeUnit::Milliseconds => timestamp_ms_to_datetime(v),
     };
     match tz {
-        None => std::fmt::Display::fmt(&ndt, f),
+        // jiff's `DateTime` Display uses an ISO 8601 "T" separator; match
+        // chrono's `NaiveDateTime` Display (space-separated) instead, since
+        // that's the shape downstream code/tests expect.
+        None => write!(f, "{} {}", ndt.date(), ndt.time()),
         Some(tz) => PlTzAware::new(ndt, tz).fmt(f),
     }
 }
@@ -1198,7 +1199,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Duration(v, tu) => fmt_duration_string(f, *v, *tu),
             #[cfg(feature = "dtype-time")]
             AnyValue::Time(_) => {
-                let nt: chrono::NaiveTime = self.into();
+                let nt: jiff::civil::Time = self.into();
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
@@ -1249,11 +1250,22 @@ impl Display for PlTzAware<'_> {
     #[allow(unused_variables)]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         #[cfg(feature = "timezones")]
-        match self.tz.parse::<chrono_tz::Tz>() {
+        match jiff::tz::TimeZone::get(self.tz) {
             Ok(tz) => {
-                let dt_utc = chrono::Utc.from_local_datetime(&self.ndt).unwrap();
-                let dt_tz_aware = dt_utc.with_timezone(&tz);
-                write!(f, "{dt_tz_aware}")
+                let ts = jiff::tz::TimeZone::UTC
+                    .to_timestamp(self.ndt)
+                    .expect("datetime out-of-range");
+                let abbreviation = tz.to_offset_info(ts).abbreviation().to_string();
+                let dt_tz_aware = ts.to_zoned(tz);
+                // Match chrono's `DateTime<Tz>` Display (space-separated,
+                // trailing tz abbreviation) rather than jiff's ISO 8601
+                // "T"-separated `[offset][iana-name]` style.
+                write!(
+                    f,
+                    "{} {} {abbreviation}",
+                    dt_tz_aware.date(),
+                    dt_tz_aware.time()
+                )
             },
             Err(_) => write!(f, "invalid timezone"),
         }

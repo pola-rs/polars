@@ -1,71 +1,57 @@
 //! Utilities for converting dates, times, datetimes, and so on.
 
-use std::str::FromStr;
-
-use chrono::{DateTime, Datelike, FixedOffset, NaiveDateTime, NaiveTime, TimeDelta, TimeZone as _};
-use chrono_tz::Tz;
+use jiff::civil::{DateTime as NaiveDateTime, Time as NaiveTime};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration as TimeDelta, Timestamp};
 use polars::datatypes::TimeUnit;
-use polars_core::datatypes::TimeZone;
-use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, IntoPyObjectExt, PyAny, PyResult, Python, intern};
+use polars_core::datatypes::TimeZone as PlTimeZone;
+use pyo3::{Bound, IntoPyObjectExt, PyAny, PyResult, Python};
 
 use crate::error::PyPolarsErr;
-use crate::py_modules::pl_utils;
 
 pub fn elapsed_offset_to_timedelta(elapsed: i64, time_unit: TimeUnit) -> TimeDelta {
-    let (in_second, nano_multiplier) = match time_unit {
-        TimeUnit::Nanoseconds => (1_000_000_000, 1),
-        TimeUnit::Microseconds => (1_000_000, 1_000),
-        TimeUnit::Milliseconds => (1_000, 1_000_000),
-    };
-    let mut elapsed_sec = elapsed / in_second;
-    let mut elapsed_nanos = nano_multiplier * (elapsed % in_second);
-    if elapsed_nanos < 0 {
-        // TimeDelta expects nanos to always be positive.
-        elapsed_sec -= 1;
-        elapsed_nanos += 1_000_000_000;
+    match time_unit {
+        TimeUnit::Nanoseconds => TimeDelta::from_nanos(elapsed),
+        TimeUnit::Microseconds => TimeDelta::from_micros(elapsed),
+        TimeUnit::Milliseconds => TimeDelta::from_millis(elapsed),
     }
-    TimeDelta::new(elapsed_sec, elapsed_nanos as u32).unwrap()
+}
+
+fn timestamp_to_timestamp(since_epoch: i64, time_unit: TimeUnit) -> Timestamp {
+    match time_unit {
+        TimeUnit::Nanoseconds => Timestamp::from_nanosecond(i128::from(since_epoch)),
+        TimeUnit::Microseconds => Timestamp::from_microsecond(since_epoch),
+        TimeUnit::Milliseconds => Timestamp::from_millisecond(since_epoch),
+    }
+    .expect("timestamp out-of-range")
 }
 
 /// Convert time-units-since-epoch to a more structured object.
 pub fn timestamp_to_naive_datetime(since_epoch: i64, time_unit: TimeUnit) -> NaiveDateTime {
-    DateTime::UNIX_EPOCH.naive_utc() + elapsed_offset_to_timedelta(since_epoch, time_unit)
+    TimeZone::UTC.to_datetime(timestamp_to_timestamp(since_epoch, time_unit))
 }
 
 /// Convert nanoseconds-since-midnight to a more structured object.
 pub fn nanos_since_midnight_to_naivetime(nanos_since_midnight: i64) -> NaiveTime {
-    NaiveTime::from_hms_opt(0, 0, 0).unwrap()
-        + elapsed_offset_to_timedelta(nanos_since_midnight, TimeUnit::Nanoseconds)
+    NaiveTime::midnight()
+        .checked_add(jiff::Span::new().nanoseconds(nanos_since_midnight))
+        .expect("time out-of-range")
 }
 
 pub fn datetime_to_py_object<'py>(
     py: Python<'py>,
     v: i64,
     tu: TimeUnit,
-    tz: Option<&TimeZone>,
+    tz: Option<&PlTimeZone>,
 ) -> PyResult<Bound<'py, PyAny>> {
     if let Some(time_zone) = tz {
-        if let Ok(tz) = Tz::from_str(time_zone) {
-            let utc_datetime = DateTime::UNIX_EPOCH + elapsed_offset_to_timedelta(v, tu);
-            if utc_datetime.year() >= 2100 {
-                // chrono-tz does not support dates after 2100
-                // https://github.com/chronotope/chrono-tz/issues/135
-                pl_utils(py)
-                    .bind(py)
-                    .getattr(intern!(py, "to_py_datetime"))?
-                    .call1((v, tu.to_ascii(), time_zone.as_str()))
-            } else {
-                let datetime = utc_datetime.with_timezone(&tz);
-                datetime.into_bound_py_any(py)
-            }
-        } else if let Ok(tz) = FixedOffset::from_str(time_zone) {
-            let naive_datetime = timestamp_to_naive_datetime(v, tu);
-            let datetime = tz.from_utc_datetime(&naive_datetime);
-            datetime.into_bound_py_any(py)
-        } else {
-            Err(PyPolarsErr::Other(format!("Could not parse timezone: {time_zone}")).into())
-        }
+        let parsed_tz = match TimeZone::get(time_zone.as_str()) {
+            Ok(tz) => tz,
+            Err(_) => arrow::temporal_conversions::parse_offset(time_zone.as_str())
+                .map_err(|_| PyPolarsErr::Other(format!("Could not parse timezone: {time_zone}")))?,
+        };
+        let ts = timestamp_to_timestamp(v, tu);
+        ts.to_zoned(parsed_tz).into_bound_py_any(py)
     } else {
         timestamp_to_naive_datetime(v, tu).into_bound_py_any(py)
     }

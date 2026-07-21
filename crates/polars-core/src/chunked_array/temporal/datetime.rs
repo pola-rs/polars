@@ -3,8 +3,6 @@ use std::fmt::Write;
 use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
-#[cfg(feature = "timezones")]
-use chrono::TimeZone as TimeZoneTrait;
 
 use super::*;
 use crate::prelude::DataType::Datetime;
@@ -48,7 +46,7 @@ impl DatetimeChunked {
     }
 
     /// Convert from Datetime into String with the given format.
-    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// See [jiff strftime/strptime](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
     pub fn to_string(&self, format: &str) -> PolarsResult<StringChunked> {
         let conversion_f = match self.time_unit() {
             TimeUnit::Nanoseconds => timestamp_ns_to_datetime,
@@ -59,8 +57,11 @@ impl DatetimeChunked {
         let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(time_zone) => {
-                let parsed_time_zone = time_zone.parse::<Tz>().expect("already validated");
-                let datefmt_f = |ndt| parsed_time_zone.from_utc_datetime(&ndt).format(&format);
+                let parsed_time_zone = Tz::get(time_zone).expect("already validated");
+                let datefmt_f = |ndt: NaiveDateTime| {
+                    let ts = Tz::UTC.to_timestamp(ndt).expect("datetime out-of-range");
+                    ts.to_zoned(parsed_time_zone.clone()).strftime(&format)
+                };
                 self.physical().try_apply_into_string_amortized(|val, buf| {
                     let ndt = conversion_f(val);
                     write!(buf, "{}", datefmt_f(ndt))
@@ -70,7 +71,7 @@ impl DatetimeChunked {
                 )?
             },
             _ => {
-                let datefmt_f = |ndt: NaiveDateTime| ndt.format(&format);
+                let datefmt_f = |ndt: NaiveDateTime| ndt.strftime(&format);
                 self.physical().try_apply_into_string_amortized(|val, buf| {
                     let ndt = conversion_f(val);
                     write!(buf, "{}", datefmt_f(ndt))
@@ -85,7 +86,7 @@ impl DatetimeChunked {
     }
 
     /// Convert from Datetime into String with the given format.
-    /// See [chrono strftime/strptime](https://docs.rs/chrono/0.4.19/chrono/format/strftime/index.html).
+    /// See [jiff strftime/strptime](https://docs.rs/jiff/latest/jiff/fmt/strtime/index.html).
     ///
     /// Alias for `to_string`.
     pub fn strftime(&self, format: &str) -> PolarsResult<StringChunked> {
@@ -196,7 +197,7 @@ impl DatetimeChunked {
 
 #[cfg(test)]
 mod test {
-    use chrono::NaiveDateTime;
+    use jiff::civil::DateTime as NaiveDateTime;
 
     use crate::prelude::*;
 
@@ -208,7 +209,7 @@ mod test {
             "2012-12-21 00:00:00",
         ]
         .iter()
-        .map(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap())
+        .map(|s| NaiveDateTime::strptime("%Y-%m-%d %H:%M:%S", s).unwrap())
         .collect();
 
         // NOTE: the values are checked and correct.
