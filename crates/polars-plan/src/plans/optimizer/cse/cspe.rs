@@ -2,8 +2,11 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 
-use polars_core::prelude::{InitHashMaps as _, PlIndexMap};
+use indexmap::map::RawEntryApiV1;
+use indexmap::map::raw_entry_v1::RawEntryMut;
+use polars_core::prelude::PlIndexMap;
 use polars_utils::arena::{Arena, Node};
+use polars_utils::idx_vec::UnitVec;
 use polars_utils::scratch_vec::ScratchVec;
 use polars_utils::unique_id::UniqueId;
 
@@ -24,7 +27,7 @@ pub fn common_subplan_elimination(
     let mut visit_stack = ScratchVec::default();
     let mut edges = vec![usize::MAX]; // Indices into `id_map`
     let mut persisted_input_edge_idxs = vec![usize::MAX]; // For tree traversal
-    let mut id_map = PlIndexMap::new();
+    let mut id_map = IDMap::default();
     let mut storage = IRTraversalStorage {
         arena: ir_arena,
         skip_subtree: |ir| {
@@ -113,6 +116,86 @@ struct IDState {
     output_state_entry_idx: usize,
 }
 
+struct Identifier {
+    hash: [u8; 32],
+    representative: Node,
+    input_ids: UnitVec<usize>,
+}
+
+impl Identifier {
+    fn raw_hash(&self) -> u64 {
+        u64::from_le_bytes(self.hash[..8].try_into().unwrap())
+    }
+
+    fn is_equal(
+        &self,
+        other: &Self,
+        storage: &IRTraversalStorage<'_>,
+        expr_arena: &Arena<AExpr>,
+    ) -> bool {
+        self.hash == other.hash
+            && self.input_ids == other.input_ids
+            && IRHashWrap::new(self.representative, storage, expr_arena, false)
+                == IRHashWrap::new(other.representative, storage, expr_arena, false)
+    }
+}
+
+#[derive(Default)]
+struct IDMap {
+    entries: PlIndexMap<Identifier, IDState>,
+}
+
+impl IDMap {
+    fn entry(
+        &mut self,
+        identifier: Identifier,
+        storage: &IRTraversalStorage<'_>,
+        expr_arena: &Arena<AExpr>,
+    ) -> usize {
+        let hash = identifier.raw_hash();
+        match self
+            .entries
+            .raw_entry_mut_v1()
+            .from_hash(hash, |candidate| {
+                candidate.is_equal(&identifier, storage, expr_arena)
+            }) {
+            RawEntryMut::Occupied(mut entry) => {
+                entry.get_mut().hits += 1;
+                entry.index()
+            },
+            RawEntryMut::Vacant(entry) => {
+                let entry_idx = entry.index();
+                entry.insert_hashed_nocheck(hash, identifier, IDState::default());
+                entry_idx
+            },
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    fn state(&self, entry_idx: usize) -> &IDState {
+        self.entries.get_index(entry_idx).unwrap().1
+    }
+
+    fn state_mut(&mut self, entry_idx: usize) -> &mut IDState {
+        self.entries.get_index_mut(entry_idx).unwrap().1
+    }
+
+    fn get_disjoint_states_mut(
+        &mut self,
+        left_idx: usize,
+        right_idx: usize,
+    ) -> (&mut IDState, &mut IDState) {
+        let [(_, left), (_, right)] = self
+            .entries
+            .get_disjoint_indices_mut([left_idx, right_idx])
+            .unwrap();
+        (left, right)
+    }
+}
+
 impl Default for IDState {
     fn default() -> Self {
         Self {
@@ -124,7 +207,7 @@ impl Default for IDState {
 }
 
 struct IDGeneratorVisitor<'map, 'arena> {
-    id_map: &'map mut PlIndexMap<[u8; 32], IDState>,
+    id_map: &'map mut IDMap,
     expr_arena: &'arena Arena<AExpr>,
 }
 
@@ -171,37 +254,28 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
 
         IRHashWrap::new(key, storage, self.expr_arena, true).hash(&mut hasher);
 
-        for entry_idx in edges.inputs().iter().copied() {
-            let input_hash: &[u8; 32] = self.id_map.get_index(entry_idx).unwrap().0;
-            hasher.write(input_hash);
+        let input_ids: UnitVec<_> = edges.inputs().iter().copied().collect();
+        for input_id in input_ids.iter().copied() {
+            // Hash the already-validated equivalence class rather than the child's digest.
+            // This prevents a deliberate local hash collision from propagating through all
+            // ancestors, while equal child plans still produce the same parent identifier.
+            hasher.write_usize(input_id);
         }
 
-        let id: [u8; 32] = hasher.finalize();
-
-        use indexmap::map::Entry;
-
-        let entry_idx = match self.id_map.entry(id) {
-            Entry::Occupied(mut e) => {
-                e.get_mut().hits += 1;
-                e.index()
+        let entry_idx = self.id_map.entry(
+            Identifier {
+                hash: hasher.finalize(),
+                representative: key,
+                input_ids,
             },
-            Entry::Vacant(e) => {
-                let idx = e.index();
-
-                e.insert(IDState::default());
-
-                idx
-            },
-        };
+            storage,
+            self.expr_arena,
+        );
 
         edges.outputs()[0] = entry_idx;
 
         for i in edges.inputs().iter().copied() {
-            self.id_map
-                .get_index_mut(i)
-                .unwrap()
-                .1
-                .output_state_entry_idx = entry_idx
+            self.id_map.state_mut(i).output_state_entry_idx = entry_idx
         }
 
         ControlFlow::Continue(())
@@ -209,7 +283,7 @@ impl<'map, 'arena> NodeVisitor for IDGeneratorVisitor<'map, 'arena> {
 }
 
 struct InsertCachesVisitor<'a, 'arena> {
-    id_map: &'a mut PlIndexMap<[u8; 32], IDState>,
+    id_map: &'a mut IDMap,
     inserted_cache: &'a mut bool,
     insert_nested_caches: bool,
     phantom: PhantomData<&'arena ()>,
@@ -238,9 +312,7 @@ impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
         let entry_idx_curr_node = edges.outputs()[0];
         let entry_idx_output_node = self
             .id_map
-            .get_index(entry_idx_curr_node)
-            .unwrap()
-            .1
+            .state(entry_idx_curr_node)
             .output_state_entry_idx;
 
         if entry_idx_output_node == usize::MAX {
@@ -249,10 +321,9 @@ impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
             return ControlFlow::Continue(SubtreeVisit::Visit);
         }
 
-        let [(_, output_state), (_, curr_state)] = self
+        let (output_state, curr_state) = self
             .id_map
-            .get_disjoint_indices_mut([entry_idx_output_node, entry_idx_curr_node])
-            .unwrap();
+            .get_disjoint_states_mut(entry_idx_output_node, entry_idx_curr_node);
 
         if curr_state.replacement_ir.is_some() {
             return ControlFlow::Continue(SubtreeVisit::Skip);
@@ -288,7 +359,7 @@ impl<'a, 'arena> NodeVisitor for InsertCachesVisitor<'a, 'arena> {
         storage: &mut Self::Storage,
         edges: &mut dyn NodeEdgesProvider<Self::Edge>,
     ) -> ControlFlow<Self::BreakValue> {
-        let state = self.id_map.get_index(edges.outputs()[0]).unwrap().1;
+        let state = self.id_map.state(edges.outputs()[0]);
 
         if let Some(replacement_ir) = state.replacement_ir.clone() {
             *storage.get_mut(key) = replacement_ir;

@@ -6,7 +6,7 @@ use polars_utils::arena::{Arena, Node};
 use super::*;
 #[cfg(feature = "python")]
 use crate::plans::PythonOptions;
-use crate::plans::{AExpr, IR, UnoptimizedOperation};
+use crate::plans::{AExpr, FunctionIR, IR, UnoptimizedOperation};
 use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::{ExprIR, PlanCallback};
 
@@ -57,6 +57,153 @@ fn hash_option_expr<H: Hasher>(expr: &Option<ExprIR>, expr_arena: &Arena<AExpr>,
 fn hash_exprs<H: Hasher>(exprs: &[ExprIR], expr_arena: &Arena<AExpr>, state: &mut H) {
     for e in exprs {
         e.traverse_and_hash(expr_arena, state);
+    }
+}
+
+fn expr_ir_eq(left: &ExprIR, right: &ExprIR, expr_arena: &Arena<AExpr>) -> bool {
+    left.get_alias() == right.get_alias()
+        && AexprNode::new(left.node()).hashable_and_cmp(expr_arena)
+            == AexprNode::new(right.node()).hashable_and_cmp(expr_arena)
+}
+
+fn expr_irs_eq(left: &[ExprIR], right: &[ExprIR], expr_arena: &Arena<AExpr>) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| expr_ir_eq(left, right, expr_arena))
+}
+
+fn opt_expr_ir_eq(
+    left: &Option<ExprIR>,
+    right: &Option<ExprIR>,
+    expr_arena: &Arena<AExpr>,
+) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => expr_ir_eq(left, right, expr_arena),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn function_ir_eq(left: &FunctionIR, right: &FunctionIR) -> bool {
+    use FunctionIR::*;
+
+    match (left, right) {
+        (
+            RowIndex {
+                name: left_name,
+                offset: left_offset,
+                ..
+            },
+            RowIndex {
+                name: right_name,
+                offset: right_offset,
+                ..
+            },
+        ) => left_name == right_name && left_offset == right_offset,
+        #[cfg(feature = "python")]
+        (OpaquePython(left), OpaquePython(right)) => {
+            left.function.0.as_ptr() == right.function.0.as_ptr()
+                && left.schema == right.schema
+                && left.predicate_pd == right.predicate_pd
+                && left.projection_pd == right.projection_pd
+                && left.streamable == right.streamable
+                && left.validate_output == right.validate_output
+        },
+        (
+            FastCount {
+                sources: left_sources,
+                scan_type: left_scan_type,
+                alias: left_alias,
+                cloud_options: left_cloud_options,
+            },
+            FastCount {
+                sources: right_sources,
+                scan_type: right_scan_type,
+                alias: right_alias,
+                cloud_options: right_cloud_options,
+            },
+        ) => {
+            left_sources == right_sources
+                && left_scan_type == right_scan_type
+                && left_alias == right_alias
+                && left_cloud_options == right_cloud_options
+        },
+        (
+            Unnest {
+                columns: left_columns,
+                separator: left_separator,
+            },
+            Unnest {
+                columns: right_columns,
+                separator: right_separator,
+            },
+        ) => left_columns == right_columns && left_separator == right_separator,
+        (Rechunk, Rechunk) => true,
+        (
+            Explode {
+                columns: left_columns,
+                options: left_options,
+                ..
+            },
+            Explode {
+                columns: right_columns,
+                options: right_options,
+                ..
+            },
+        ) => left_columns == right_columns && left_options == right_options,
+        #[cfg(feature = "pivot")]
+        (Unpivot { args: left, .. }, Unpivot { args: right, .. }) => left == right,
+        (
+            Opaque {
+                function: left_function,
+                schema: left_schema,
+                predicate_pd: left_predicate_pd,
+                projection_pd: left_projection_pd,
+                streamable: left_streamable,
+                fmt_str: left_fmt_str,
+            },
+            Opaque {
+                function: right_function,
+                schema: right_schema,
+                predicate_pd: right_predicate_pd,
+                projection_pd: right_projection_pd,
+                streamable: right_streamable,
+                fmt_str: right_fmt_str,
+            },
+        ) => {
+            Arc::ptr_eq(left_function, right_function)
+                && match (left_schema, right_schema) {
+                    (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+                    (None, None) => true,
+                    _ => false,
+                }
+                && left_predicate_pd == right_predicate_pd
+                && left_projection_pd == right_projection_pd
+                && left_streamable == right_streamable
+                && left_fmt_str == right_fmt_str
+        },
+        (Hint(left), Hint(right)) => match (left, right) {
+            (
+                crate::plans::functions::HintIR::Sorted(left),
+                crate::plans::functions::HintIR::Sorted(right),
+            ) => left == right,
+        },
+        _ => false,
+    }
+}
+
+fn plan_callback_eq<Args, Out>(
+    left: &Option<PlanCallback<Args, Out>>,
+    right: &Option<PlanCallback<Args, Out>>,
+) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (Some(PlanCallback::Rust(left)), Some(PlanCallback::Rust(right))) => left == right,
+        #[cfg(feature = "python")]
+        (Some(PlanCallback::Python(left)), Some(PlanCallback::Python(right))) => left == right,
+        _ => false,
     }
 }
 
@@ -320,3 +467,249 @@ impl Hash for IRHashWrap<'_> {
         }
     }
 }
+
+impl PartialEq for IRHashWrap<'_> {
+    /// Compare one plan node while deliberately ignoring its input node indices.
+    ///
+    /// CSPE compares the inputs by their bottom-up equivalence-class identifiers. This
+    /// comparison validates the remaining semantic attributes after the strong hash has
+    /// selected a small set of candidates.
+    fn eq(&self, other: &Self) -> bool {
+        let left = self.lp_arena.get(self.node);
+        let right = other.lp_arena.get(other.node);
+
+        match (left, right) {
+            #[cfg(feature = "python")]
+            (
+                IR::PythonScan {
+                    options: left_options,
+                },
+                IR::PythonScan {
+                    options: right_options,
+                },
+            ) => {
+                use crate::prelude::PythonPredicate;
+
+                if !left_options.is_pure || !right_options.is_pure {
+                    return false;
+                }
+
+                let predicates_equal = match (&left_options.predicate, &right_options.predicate) {
+                    (PythonPredicate::None, PythonPredicate::None) => true,
+                    (PythonPredicate::PyArrow(left), PythonPredicate::PyArrow(right)) => {
+                        left.has_residual == right.has_residual
+                            && left.pyarrow_predicate.0.as_ptr()
+                                == right.pyarrow_predicate.0.as_ptr()
+                            && expr_ir_eq(&left.predicate, &right.predicate, self.expr_arena)
+                    },
+                    (PythonPredicate::Polars(left), PythonPredicate::Polars(right)) => {
+                        expr_ir_eq(left, right, self.expr_arena)
+                    },
+                    _ => false,
+                };
+
+                (match (&left_options.scan_fn, &right_options.scan_fn) {
+                    (Some(left), Some(right)) => left.0.as_ptr() == right.0.as_ptr(),
+                    _ => false,
+                }) && left_options.schema == right_options.schema
+                    && left_options.output_schema == right_options.output_schema
+                    && left_options.with_columns == right_options.with_columns
+                    && left_options.python_source == right_options.python_source
+                    && left_options.n_rows == right_options.n_rows
+                    && predicates_equal
+                    && left_options.validate_schema == right_options.validate_schema
+            },
+            (
+                IR::Slice {
+                    offset: left_offset,
+                    len: left_len,
+                    ..
+                },
+                IR::Slice {
+                    offset: right_offset,
+                    len: right_len,
+                    ..
+                },
+            ) => left_offset == right_offset && left_len == right_len,
+            (
+                IR::Filter {
+                    predicate: left, ..
+                },
+                IR::Filter {
+                    predicate: right, ..
+                },
+            ) => expr_ir_eq(left, right, self.expr_arena),
+            (
+                IR::Scan {
+                    sources: left_sources,
+                    predicate: left_predicate,
+                    scan_type: left_scan_type,
+                    unified_scan_args: left_args,
+                    ..
+                },
+                IR::Scan {
+                    sources: right_sources,
+                    predicate: right_predicate,
+                    scan_type: right_scan_type,
+                    unified_scan_args: right_args,
+                    ..
+                },
+            ) => {
+                left_sources == right_sources
+                    && left_scan_type == right_scan_type
+                    && left_args == right_args
+                    && opt_expr_ir_eq(left_predicate, right_predicate, self.expr_arena)
+            },
+            (
+                IR::DataFrameScan {
+                    df: left_df,
+                    output_schema: left_schema,
+                    ..
+                },
+                IR::DataFrameScan {
+                    df: right_df,
+                    output_schema: right_schema,
+                    ..
+                },
+            ) => Arc::ptr_eq(left_df, right_df) && left_schema == right_schema,
+            (
+                IR::SimpleProjection { columns: left, .. },
+                IR::SimpleProjection { columns: right, .. },
+            ) => left == right,
+            (
+                IR::Select {
+                    expr: left_expr,
+                    options: left_options,
+                    ..
+                },
+                IR::Select {
+                    expr: right_expr,
+                    options: right_options,
+                    ..
+                },
+            ) => {
+                left_options == right_options && expr_irs_eq(left_expr, right_expr, self.expr_arena)
+            },
+            (
+                IR::Sort {
+                    by_column: left_by,
+                    slice: left_slice,
+                    sort_options: left_options,
+                    ..
+                },
+                IR::Sort {
+                    by_column: right_by,
+                    slice: right_slice,
+                    sort_options: right_options,
+                    ..
+                },
+            ) => {
+                left_slice == right_slice
+                    && left_options == right_options
+                    && expr_irs_eq(left_by, right_by, self.expr_arena)
+            },
+            (IR::Cache { id: left, .. }, IR::Cache { id: right, .. }) => left == right,
+            (
+                IR::GroupBy {
+                    keys: left_keys,
+                    aggs: left_aggs,
+                    apply: left_apply,
+                    maintain_order: left_maintain_order,
+                    options: left_options,
+                    ..
+                },
+                IR::GroupBy {
+                    keys: right_keys,
+                    aggs: right_aggs,
+                    apply: right_apply,
+                    maintain_order: right_maintain_order,
+                    options: right_options,
+                    ..
+                },
+            ) => {
+                plan_callback_eq(left_apply, right_apply)
+                    && left_maintain_order == right_maintain_order
+                    && left_options == right_options
+                    && expr_irs_eq(left_keys, right_keys, self.expr_arena)
+                    && expr_irs_eq(left_aggs, right_aggs, self.expr_arena)
+            },
+            (
+                IR::Join {
+                    left_on: left_left_on,
+                    right_on: left_right_on,
+                    options: left_options,
+                    ..
+                },
+                IR::Join {
+                    left_on: right_left_on,
+                    right_on: right_right_on,
+                    options: right_options,
+                    ..
+                },
+            ) => {
+                left_options == right_options
+                    && expr_irs_eq(left_left_on, right_left_on, self.expr_arena)
+                    && expr_irs_eq(left_right_on, right_right_on, self.expr_arena)
+            },
+            (
+                IR::Gather {
+                    null_on_oob: left, ..
+                },
+                IR::Gather {
+                    null_on_oob: right, ..
+                },
+            ) => left == right,
+            (
+                IR::HStack {
+                    exprs: left_exprs,
+                    options: left_options,
+                    ..
+                },
+                IR::HStack {
+                    exprs: right_exprs,
+                    options: right_options,
+                    ..
+                },
+            ) => {
+                left_options == right_options
+                    && expr_irs_eq(left_exprs, right_exprs, self.expr_arena)
+            },
+            (IR::Distinct { options: left, .. }, IR::Distinct { options: right, .. }) => {
+                left == right
+            },
+            (
+                IR::MapFunction { function: left, .. },
+                IR::MapFunction {
+                    function: right, ..
+                },
+            ) => function_ir_eq(left, right),
+            (IR::Union { options: left, .. }, IR::Union { options: right, .. }) => left == right,
+            (IR::HConcat { options: left, .. }, IR::HConcat { options: right, .. }) => {
+                left == right
+            },
+            (IR::ExtContext { .. }, IR::ExtContext { .. }) => true,
+            // Sink nodes are execution boundaries, and unoptimized dispatch nodes are not meant
+            // to be optimized across. Keeping them unique is both cheap and conservative.
+            (IR::Sink { .. }, IR::Sink { .. })
+            | (IR::UnoptimizedDispatch { .. }, IR::UnoptimizedDispatch { .. }) => false,
+            (IR::SinkMultiple { .. }, IR::SinkMultiple { .. }) => true,
+            #[cfg(feature = "merge_sorted")]
+            (
+                IR::MergeSorted {
+                    key: left_key,
+                    maintain_order: left_maintain_order,
+                    ..
+                },
+                IR::MergeSorted {
+                    key: right_key,
+                    maintain_order: right_maintain_order,
+                    ..
+                },
+            ) => left_key == right_key && left_maintain_order == right_maintain_order,
+            (IR::Invalid, IR::Invalid) => unreachable!(),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for IRHashWrap<'_> {}

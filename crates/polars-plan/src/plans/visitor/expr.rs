@@ -168,9 +168,20 @@ impl Debug for AExprArena<'_> {
 
 impl AExpr {
     fn is_equal_node(&self, other: &Self) -> bool {
+        fn input_names_equal(left: &[ExprIR], right: &[ExprIR]) -> bool {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(left, right)| left.output_name() == right.output_name())
+        }
+
         use AExpr::*;
         match (self, other) {
+            (Element, Element) => true,
             (Column(l), Column(r)) => l == r,
+            #[cfg(feature = "dtype-struct")]
+            (StructField(l), StructField(r)) => l == r,
             (Literal(l), Literal(r)) => l == r,
             #[cfg(feature = "dynamic_group_by")]
             (
@@ -189,7 +200,22 @@ impl AExpr {
                     closed_window: r_closed_window,
                 },
             ) => l_period == r_period && l_offset == r_offset && l_closed_window == r_closed_window,
-            (Over { mapping: l, .. }, Over { mapping: r, .. }) => l == r,
+            (
+                Over {
+                    mapping: l_mapping,
+                    order_by: l_order_by,
+                    ..
+                },
+                Over {
+                    mapping: r_mapping,
+                    order_by: r_order_by,
+                    ..
+                },
+            ) => {
+                l_mapping == r_mapping
+                    && l_order_by.as_ref().map(|(_, options)| options)
+                        == r_order_by.as_ref().map(|(_, options)| options)
+            },
             (
                 Cast {
                     options: strict_l,
@@ -203,8 +229,19 @@ impl AExpr {
                 },
             ) => strict_l == strict_r && dtl == dtr,
             (Sort { options: l, .. }, Sort { options: r, .. }) => l == r,
-            (Gather { .. }, Gather { .. })
-            | (Filter { .. }, Filter { .. })
+            (
+                Gather {
+                    returns_scalar: l_returns_scalar,
+                    null_on_oob: l_null_on_oob,
+                    ..
+                },
+                Gather {
+                    returns_scalar: r_returns_scalar,
+                    null_on_oob: r_null_on_oob,
+                    ..
+                },
+            ) => l_returns_scalar == r_returns_scalar && l_null_on_oob == r_null_on_oob,
+            (Filter { .. }, Filter { .. })
             | (Ternary { .. }, Ternary { .. })
             | (Len, Len)
             | (Slice { .. }, Slice { .. }) => true,
@@ -240,31 +277,22 @@ impl AExpr {
                     function: fr,
                     options: or,
                 },
-            ) => {
-                fl == fr && ol == or && {
-                    let mut all_same_name = true;
-                    for (l, r) in il.iter().zip(ir) {
-                        all_same_name &= l.output_name() == r.output_name()
-                    }
-
-                    all_same_name
-                }
-            },
+            ) => fl == fr && ol == or && input_names_equal(il, ir),
             (
                 AnonymousFunction {
                     function: l1,
                     options: l2,
                     fmt_str: l3,
-                    input: _,
+                    input: li,
                 },
                 AnonymousFunction {
                     function: r1,
                     options: r2,
                     fmt_str: r3,
-                    input: _,
+                    input: ri,
                 },
             ) => {
-                l2 == r2 && l3 == r3 && {
+                l2 == r2 && l3 == r3 && input_names_equal(li, ri) && {
                     use LazySerde as L;
                     match (l1, r1) {
                         // We only check the pointers, so this works for python
@@ -286,6 +314,23 @@ impl AExpr {
                         _ => false,
                     }
                 }
+            },
+            (
+                AnonymousAgg {
+                    input: li,
+                    fmt_str: lf,
+                    function: lfn,
+                },
+                AnonymousAgg {
+                    input: ri,
+                    fmt_str: rf,
+                    function: rfn,
+                },
+            ) => lf == rf && lfn == rfn && input_names_equal(li, ri),
+            (Eval { variant: l, .. }, Eval { variant: r, .. }) => l == r,
+            #[cfg(feature = "dtype-struct")]
+            (StructEval { evaluation: l, .. }, StructEval { evaluation: r, .. }) => {
+                input_names_equal(l, r)
             },
             (BinaryExpr { op: l, .. }, BinaryExpr { op: r, .. }) => l == r,
             _ => false,

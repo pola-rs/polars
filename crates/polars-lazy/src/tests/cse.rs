@@ -367,3 +367,75 @@ fn test_cse_prune_scan_filter_difference() -> PolarsResult<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(feature = "dtype-categorical")]
+fn test_cse_distinguishes_parameterized_dtypes() -> PolarsResult<()> {
+    let enum_a = DataType::from_frozen_categories(FrozenCategories::new(["a"]).unwrap());
+    let enum_b = DataType::from_frozen_categories(FrozenCategories::new(["b"]).unwrap());
+    let base = df!["value" => ["a", "b"]]?.lazy();
+
+    let branch_a = base
+        .clone()
+        .filter(col("value").cast(enum_a).is_not_null())
+        .select([lit("group_a").alias("branch"), col("value")]);
+    let branch_b = base
+        .filter(col("value").cast(enum_b).is_not_null())
+        .select([lit("group_b").alias("branch"), col("value")]);
+
+    let out = concat(
+        &[branch_a, branch_b],
+        UnionArgs {
+            parallel: false,
+            ..Default::default()
+        },
+    )?
+    .sort(["branch"], Default::default())
+    .with_comm_subplan_elim(true)
+    .collect()?;
+
+    assert_eq!(
+        out.column("value")?
+            .str()?
+            .no_null_iter()
+            .collect::<Vec<_>>(),
+        ["a", "b"]
+    );
+
+    Ok(())
+}
+
+#[test]
+#[cfg(feature = "dtype-decimal")]
+fn test_cse_distinguishes_decimal_parameters() -> PolarsResult<()> {
+    let base = df!["value" => ["12.3", "12345.6"]]?.lazy();
+
+    let branch_p4 = base
+        .clone()
+        .filter(col("value").cast(DataType::Decimal(4, 1)).is_not_null())
+        .select([lit("p4").alias("branch"), col("value")]);
+    let branch_p6 = base
+        .filter(col("value").cast(DataType::Decimal(6, 1)).is_not_null())
+        .select([lit("p6").alias("branch"), col("value")]);
+
+    let out = concat(
+        &[branch_p4, branch_p6],
+        UnionArgs {
+            parallel: false,
+            ..Default::default()
+        },
+    )?
+    .sort(["branch", "value"], Default::default())
+    .with_comm_subplan_elim(true)
+    .collect()?;
+
+    assert_eq!(
+        out.column("value")?
+            .str()?
+            .no_null_iter()
+            .collect::<Vec<_>>(),
+        ["12.3", "12.3", "12345.6"]
+    );
+
+    Ok(())
+}
