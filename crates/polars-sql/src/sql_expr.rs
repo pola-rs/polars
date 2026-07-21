@@ -227,7 +227,9 @@ impl SQLExprVisitor<'_> {
                 negated,
             } => {
                 let expr = self.visit_expr(expr)?;
-                let elems = self.visit_array_expr(list, true, Some(&expr))?;
+                let elems = self
+                    .visit_array_expr(list, false, Some(&expr))?
+                    .implode(false);
                 let is_in = expr.is_in(elems, false);
                 Ok(if *negated { is_in.not() } else { is_in })
             },
