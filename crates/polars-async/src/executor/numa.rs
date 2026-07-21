@@ -20,15 +20,21 @@ struct NumaRegion {
     cpu_idxs: Range<usize>,
 }
 
-static TOPOLOGY: LazyLock<Option<Topology>> = LazyLock::new(|| match Topology::new() {
-    Ok(t) => Some(t),
-    Err(e) => {
-        if polars_config::config().verbose() {
-            eprintln!("NUMA support disabled, could not load topology: {e:?}")
-        }
+static TOPOLOGY: LazyLock<Option<Topology>> = LazyLock::new(|| {
+    if !polars_config::config().numa_aware() {
+        return None;
+    }
 
-        None
-    },
+    match Topology::new() {
+        Ok(t) => Some(t),
+        Err(e) => {
+            if polars_config::config().verbose() {
+                eprintln!("NUMA support disabled, could not load topology: {e:?}")
+            }
+
+            None
+        },
+    }
 });
 
 static NUMA_REGIONS: LazyLock<Vec<NumaRegion>> = LazyLock::new(|| {
