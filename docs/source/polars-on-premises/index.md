@@ -27,7 +27,7 @@ Polars On-Prem supports two deployment paths:
 - Any other CNCF-conformant Kubernetes distribution
 
 Deploy either via the Helm chart or the new
-[Kubernetes Operator](./kubernetes/index#installing-via-the-kubernetes-operator).
+[Kubernetes Operator](./kubernetes/index.md#installing-via-the-kubernetes-operator).
 
 **Bare metal:** for servers without Kubernetes. Polars On-Prem bootstraps the cluster directly on
 your machines, no Kubernetes installation required.
