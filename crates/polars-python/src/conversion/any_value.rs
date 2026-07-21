@@ -14,7 +14,7 @@ use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
 use polars_compute::decimal::{DEC128_MAX_PREC, DecimalFmtBuffer, dec128_fits};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::{
-    date32_to_date_opt, date_to_date32_opt,
+    date32_to_date_opt, date_to_date32_opt, datetime_to_epoch_nanos_opt,
 };
 use polars_utils::aliases::PlFixedStateQuality;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
@@ -244,14 +244,12 @@ pub(crate) fn py_object_to_any_value(
 
         if tzinfo.is_none() {
             let datetime = ob.extract::<NaiveDateTime>()?;
-            let ts = jiff::tz::TimeZone::UTC
-                .to_timestamp(datetime)
-                .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
-            return Ok(AnyValue::Datetime(
-                ts.as_microsecond(),
-                TimeUnit::Microseconds,
-                None,
-            ));
+            // Avoid `TimeZone::to_timestamp`, whose `Timestamp` range is
+            // narrower than `DateTime`'s (kept small enough to accommodate
+            // an arbitrary UTC offset), and so rejects legitimate `DateTime`
+            // values near the -9999/9999 year boundary.
+            let us = polars_core::chunked_array::temporal::datetime_to_timestamp_us(datetime);
+            return Ok(AnyValue::Datetime(us, TimeUnit::Microseconds, None));
         }
 
         // Try converting `pytz` timezone to `zoneinfo` timezone
@@ -266,13 +264,43 @@ pub(crate) fn py_object_to_any_value(
             ob.clone()
         };
 
-        // `Zoned` extraction handles both zoneinfo (IANA) and fixed-offset
-        // tzinfo objects, and resolves fold/DST-ambiguity via Python's `fold`
-        // attribute.
-        let zoned = ob.extract::<jiff::Zoned>()?;
-        let timestamp = zoned.timestamp().as_microsecond();
-        let tz = if zoned.time_zone().iana_name().is_some() {
-            TimeZone::from_jiff_tz(zoned.time_zone())
+        // Read the wall-clock fields directly (ignoring tzinfo) and resolve
+        // the UTC offset via Python's own `utcoffset()` (which respects
+        // `fold` for DST-fold ambiguity), then compute the epoch tick via
+        // calendar arithmetic. This avoids `jiff::Zoned`, whose underlying
+        // `Timestamp` range is narrower than `DateTime`'s and would
+        // otherwise reject legitimate values near the -9999/9999 year
+        // boundary.
+        let year: i16 = ob.getattr(intern!(py, "year"))?.extract()?;
+        let month: i8 = ob.getattr(intern!(py, "month"))?.extract()?;
+        let day: i8 = ob.getattr(intern!(py, "day"))?.extract()?;
+        let hour: i8 = ob.getattr(intern!(py, "hour"))?.extract()?;
+        let minute: i8 = ob.getattr(intern!(py, "minute"))?.extract()?;
+        let second: i8 = ob.getattr(intern!(py, "second"))?.extract()?;
+        let microsecond: i32 = ob.getattr(intern!(py, "microsecond"))?.extract()?;
+        let naive = jiff::civil::DateTime::new(year, month, day, hour, minute, second, microsecond * 1_000)
+            .map_err(|e| PyPolarsErr::Other(e.to_string()))?;
+
+        let offset_td = ob.call_method0(intern!(py, "utcoffset"))?;
+        let offset_days: i64 = offset_td.getattr(intern!(py, "days"))?.extract()?;
+        let offset_seconds: i64 = offset_td.getattr(intern!(py, "seconds"))?.extract()?;
+        let offset_micros: i64 = offset_td.getattr(intern!(py, "microseconds"))?.extract()?;
+        let offset_nanos = i128::from(offset_days) * 86_400_000_000_000
+            + i128::from(offset_seconds) * 1_000_000_000
+            + i128::from(offset_micros) * 1_000;
+
+        let epoch_nanos = datetime_to_epoch_nanos_opt(naive)
+            .and_then(|n| n.checked_sub(offset_nanos))
+            .ok_or_else(|| PyPolarsErr::Other("datetime out-of-range".to_string()))?;
+        let timestamp_us = i64::try_from(epoch_nanos.div_euclid(1_000))
+            .map_err(|_| PyPolarsErr::Other("timestamp out-of-range".to_string()))?;
+
+        let new_tzinfo = ob.getattr(intern!(py, "tzinfo"))?;
+        let tz = if new_tzinfo.hasattr(intern!(py, "key"))? {
+            let name: String = new_tzinfo.getattr(intern!(py, "key"))?.extract()?;
+            // SAFETY: `key` is only present on `zoneinfo.ZoneInfo`, which
+            // only ever holds a validated IANA identifier.
+            unsafe { TimeZone::new_unchecked(name) }
         } else {
             // Polars only supports named time zones as a column dtype label;
             // arbitrary fixed-offset tzinfo is normalized to UTC (the instant
@@ -281,7 +309,7 @@ pub(crate) fn py_object_to_any_value(
         };
 
         Ok(AnyValue::DatetimeOwned(
-            timestamp,
+            timestamp_us,
             TimeUnit::Microseconds,
             Some(Arc::new(tz)),
         ))

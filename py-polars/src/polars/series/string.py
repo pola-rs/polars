@@ -294,7 +294,7 @@ class StringNameSpace(_NamespaceSuggestMixin):
         ...         "2021-04-22",
         ...         "2022-01-04 00:00:00",
         ...         "01/31/22",
-        ...         "Sun Jul  8 00:34:60 2001",
+        ...         "20010708",
         ...     ],
         ... )
         >>> s.to_frame().select(
@@ -302,7 +302,7 @@ class StringNameSpace(_NamespaceSuggestMixin):
         ...         pl.col("date").str.strptime(pl.Date, "%F", strict=False),
         ...         pl.col("date").str.strptime(pl.Date, "%F %T", strict=False),
         ...         pl.col("date").str.strptime(pl.Date, "%D", strict=False),
-        ...         pl.col("date").str.strptime(pl.Date, "%c", strict=False),
+        ...         pl.col("date").str.strptime(pl.Date, "%Y%m%d", strict=False),
         ...     )
         ... ).to_series()
         shape: (4,)

@@ -51,11 +51,33 @@ where
         .copied()
 }
 
+polars_utils::regex_cache::cached_regex! {
+    // A trailing numeric UTC offset (any colon style) or a literal "Z".
+    static TRAILING_OFFSET_RE = r#"(?x)
+        (?: [+-]\d{2} (?: :?\d{2} (?: :?\d{2} )? )? | Z )
+        ['"]?
+        $
+        "#;
+}
+
 #[cfg(feature = "dtype-datetime")]
 fn sniff_fmt_datetime(val: &str) -> PolarsResult<&'static str> {
     datetime_pattern(val, |val, fmt| NaiveDateTime::strptime(fmt, val))
         .or_else(|| datetime_pattern(val, |val, fmt| NaiveDate::strptime(fmt, val)))
-        .ok_or_else(|| polars_err!(parse_fmt_idk = "datetime"))
+        .ok_or_else(|| {
+            if TRAILING_OFFSET_RE.is_match(val) {
+                polars_err!(
+                    ComputeError:
+                    "could not find an appropriate format to parse datetimes, please define a format\n\n\
+                    hint: this value appears to contain a UTC offset (e.g. '+01:00', '+0100', or 'Z'). \
+                    Polars' format directives (%z, %:z, %::z, %:::z) each require an exact colon style, \
+                    so an explicit format matching your data's offset style may be required, e.g. `%:z` \
+                    for a colon-separated offset like '+01:00'.",
+                )
+            } else {
+                polars_err!(parse_fmt_idk = "datetime")
+            }
+        })
 }
 
 #[cfg(feature = "dtype-date")]

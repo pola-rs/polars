@@ -103,7 +103,15 @@ pub fn utf8_to_naive_timestamp_scalar(value: &str, fmt: &str, tu: &TimeUnit) -> 
     let dt = if fmt == "%+" {
         value.parse::<NaiveDateTime>().ok()?
     } else {
-        NaiveDateTime::strptime(fmt, value).ok()?
+        NaiveDateTime::strptime(fmt, value).ok().or_else(|| {
+            // This is only ever called with the fixed RFC3339 format (a
+            // trailing `%:z`) for the "naive" cast path - jiff requires an
+            // exact structural match, so a value with no offset at all
+            // (genuinely naive input) needs the offset directive dropped
+            // and the parse retried, matching this cast's contract of
+            // accepting offset-less input.
+            NaiveDateTime::strptime(fmt.strip_suffix("%:z")?, value).ok()
+        })?
     };
     let ts = TimeZone::UTC.to_timestamp(dt).ok()?;
     Some(match tu {

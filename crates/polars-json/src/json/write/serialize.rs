@@ -431,14 +431,34 @@ where
     let f = move |x: Option<&i64>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             let ndt = convert(*x);
-            // jiff's `DateTime` Display uses an ISO 8601 "T" separator; match
-            // chrono's `NaiveDateTime` Display (space-separated) instead.
-            write!(buf, "\"{} {}\"", ndt.date(), ndt.time()).unwrap();
+            // jiff's `DateTime` Display uses an ISO 8601 "T" separator, and
+            // trims all trailing-zero fractional digits by design; match
+            // chrono's `NaiveDateTime` Display instead (space-separated,
+            // fixed 3/6/9 fractional digits).
+            match chrono_compat_subsec_precision(ndt.subsec_nanosecond()) {
+                None => write!(buf, "\"{} {}\"", ndt.date(), ndt.time()).unwrap(),
+                Some(prec) => {
+                    write!(buf, "\"{} {:.prec$}\"", ndt.date(), ndt.time(), prec = prec).unwrap()
+                },
+            }
         } else {
             buf.extend_from_slice(b"null")
         }
     };
     materialize_serializer(f, array.iter(), offset, take)
+}
+
+/// See the equivalent helper in `polars-core`'s `fmt.rs` for the rationale.
+fn chrono_compat_subsec_precision(subsec_nanosecond: i32) -> Option<usize> {
+    if subsec_nanosecond == 0 {
+        None
+    } else if subsec_nanosecond % 1_000_000 == 0 {
+        Some(3)
+    } else if subsec_nanosecond % 1_000 == 0 {
+        Some(6)
+    } else {
+        Some(9)
+    }
 }
 
 fn timestamp_tz_serializer<'a>(
