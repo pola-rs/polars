@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::ops::ControlFlow;
-use std::pin::Pin;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -10,11 +9,11 @@ use polars_core::error::{PolarsResult, polars_bail};
 use polars_core::runtime::ASYNC;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::async_utils::tokio_handle_ext::AbortOnDropHandle;
+use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "python")]
 use polars_utils::python_function::PythonObject;
 use polars_utils::slice_enum::Slice;
-use polars_utils::{format_pl_smallstr, unitvec};
 
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonScanSource;
@@ -34,8 +33,8 @@ pub(super) fn expand_datasets(
         &mut Arena<AExpr>,
     ) -> PolarsResult<()>,
 ) -> PolarsResult<()> {
-    #[expect(clippy::type_complexity)]
-    let mut expansion_tasks: FuturesUnordered<_> = FuturesUnordered::new();
+    let mut expansion_tasks: FuturesUnordered<AbortOnDropHandle<(Node, PolarsResult<IR>)>> =
+        FuturesUnordered::new();
 
     #[cfg(feature = "python")]
     let mut py_scan_resolve_threadpool: Option<Arc<PyScanResolveThreadPool>> = None;
