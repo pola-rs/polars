@@ -2772,7 +2772,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -2798,7 +2797,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -2823,7 +2821,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
@@ -2908,11 +2905,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3027,7 +3019,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             sync_on_close=sync_on_close,
             metadata=metadata,
             arrow_schema=arrow_schema,
@@ -3432,7 +3423,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3455,7 +3445,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3477,7 +3466,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3542,11 +3530,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3645,7 +3628,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
             lazy=lazy,
@@ -3681,7 +3663,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -3716,7 +3697,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -3750,7 +3730,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -3874,11 +3853,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -3980,7 +3954,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
             lazy=lazy,
@@ -4000,7 +3973,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[False] = ...,
@@ -4021,7 +3993,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: Literal[True],
@@ -4041,7 +4012,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         credential_provider: CredentialProviderFunction
         | Literal["auto"]
         | None = "auto",
-        retries: int | None = None,
         sync_on_close: SyncOnCloseMethod | None = None,
         mkdir: bool = False,
         lazy: bool = False,
@@ -4111,11 +4081,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         sync_on_close: { None, 'data', 'all' }
             Sync to disk when before closing a file.
 
@@ -4203,7 +4168,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             maintain_order=maintain_order,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             sync_on_close=sync_on_close,
             mkdir=mkdir,
             lazy=lazy,
