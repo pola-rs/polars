@@ -31,7 +31,7 @@ def test_scan_nonexistent_cloud_path_17444(format: str) -> None:
 
     # Just calling the scan function should not raise any errors
     if format == "ndjson":
-        # NDJSON does not have a `retries` parameter yet - so use the default
+        # Keep the default retry behavior for NDJSON.
         result = scan_function(path_str)
     else:
         result = scan_function(path_str, storage_options={"max_retries": 0})

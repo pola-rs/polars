@@ -220,7 +220,7 @@ def _patched_cloud(
             return _
 
         # fix: these need to become supported somehow
-        BASE_UNSUPPORTED = ["engine", "optimizations", "mkdir", "retries"]
+        BASE_UNSUPPORTED = ["engine", "optimizations", "mkdir"]
         for ext in ["parquet", "csv", "ipc", "ndjson"]:
             plmonkeypatch.setattr(f"polars.scan_{ext}", create_cloud_scan(ext))
             plmonkeypatch.setattr(f"polars.read_{ext}", create_read(ext))
