@@ -26,7 +26,7 @@ macro_rules! format_list_container {
 #[macro_export]
 macro_rules! format_list {
     ($e:expr) => {{
-        use polars_utils::format_list_container;
+        use $crate::format_list_container;
         format_list_container!($e, '[', ']')
     }};
 }
@@ -34,7 +34,7 @@ macro_rules! format_list {
 #[macro_export]
 macro_rules! format_tuple {
     ($e:expr) => {{
-        use polars_utils::format_list_container;
+        use $crate::format_list_container;
         format_list_container!($e, '(', ')')
     }};
 }
@@ -74,11 +74,11 @@ macro_rules! format_list_container_truncated {
 #[macro_export]
 macro_rules! format_list_truncated {
     ($e:expr, $max:expr) => {{
-        use polars_utils::format_list_container_truncated;
+        use $crate::format_list_container_truncated;
         format_list_container_truncated!($e, '[', ']', $max, "")
     }};
     ($e:expr, $max:expr, $quote:expr) => {{
-        use polars_utils::format_list_container_truncated;
+        use $crate::format_list_container_truncated;
         format_list_container_truncated!($e, '[', ']', $max, $quote)
     }};
 }
