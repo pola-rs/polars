@@ -3033,7 +3033,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> str: ...
 
     @overload
@@ -3060,7 +3059,6 @@ class DataFrame:
         quote_style: CsvQuoteStyle | None = ...,
         storage_options: StorageOptionsDict | None = ...,
         credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
-        retries: int | None = ...,
     ) -> None: ...
 
     def write_csv(
@@ -3088,7 +3086,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -3197,11 +3194,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -3259,7 +3251,6 @@ class DataFrame:
             quote_style=quote_style,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             optimizations=QueryOptFlags._eager(),
             engine=engine,
         )
@@ -3925,7 +3916,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO: ...
 
     @overload
@@ -3940,7 +3930,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> None: ...
 
     @deprecate_renamed_parameter("future", "compat_level", version="1.1")
@@ -3955,7 +3944,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -4003,11 +3991,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
 
         Examples
         --------
@@ -4050,7 +4033,6 @@ class DataFrame:
                 record_batch_size=record_batch_size,
                 storage_options=storage_options,
                 credential_provider=credential_provider,
-                retries=retries,
                 optimizations=QueryOptFlags._eager(),
                 engine="streaming",
             )
@@ -4150,7 +4132,6 @@ class DataFrame:
         credential_provider: (
             CredentialProviderFunction | Literal["auto"] | None
         ) = "auto",
-        retries: int | None = None,
         metadata: ParquetMetadata | None = None,
         arrow_schema: ArrowSchemaExportable | None = None,
         mkdir: bool = False,
@@ -4240,11 +4221,6 @@ class DataFrame:
             .. warning::
                 This functionality is considered **unstable**. It may be changed
                 at any point without it being considered a breaking change.
-        retries
-            Number of retries if accessing a cloud instance fails.
-
-            .. deprecated:: 1.37.1
-                Pass {"max_retries": n} via `storage_options` instead.
         metadata
             A dictionary or callback to add key-values to the file-level Parquet
             metadata.
@@ -4380,7 +4356,6 @@ class DataFrame:
             data_page_size=data_page_size,
             storage_options=storage_options,
             credential_provider=credential_provider,
-            retries=retries,
             metadata=metadata,
             arrow_schema=arrow_schema,
             engine=engine,

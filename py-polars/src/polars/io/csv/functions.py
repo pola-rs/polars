@@ -1149,7 +1149,6 @@ def scan_csv(
     glob: bool = True,
     storage_options: StorageOptionsDict | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
-    retries: int | None = None,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
     missing_columns: Literal["insert", "raise"] | None = None,
@@ -1296,11 +1295,6 @@ def scan_csv(
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
-    retries
-        Number of retries if accessing a cloud instance fails.
-
-        .. deprecated:: 1.37.1
-            Pass {"max_retries": n} via `storage_options` instead.
     file_cache_ttl
         Amount of time to keep downloaded cloud files since their last access time,
         in seconds. Uses the `POLARS_FILE_CACHE_TTL` environment variable
@@ -1411,12 +1405,6 @@ def scan_csv(
 
     if not infer_schema:
         infer_schema_length = 0
-
-    if retries is not None:
-        msg = "the `retries` parameter was deprecated in 1.37.1; specify 'max_retries' in `storage_options` instead."
-        issue_deprecation_warning(msg)
-        storage_options = storage_options or {}
-        storage_options["max_retries"] = retries
 
     if file_cache_ttl is not None or cache is not None:
         msg = "file cache is no longer supported as of 1.39.0."
