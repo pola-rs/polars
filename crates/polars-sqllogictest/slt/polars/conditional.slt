@@ -1,0 +1,59 @@
+statement ok
+CREATE TABLE scores (id INTEGER, name TEXT, score INTEGER)
+
+statement ok
+INSERT INTO scores VALUES
+  (1, 'Alice', 92),
+  (2, 'Bob', 78),
+  (3, 'Carol', 65),
+  (4, 'Dave', NULL)
+
+query IT
+SELECT id,
+  CASE
+    WHEN score >= 90 THEN 'A'
+    WHEN score >= 75 THEN 'B'
+    WHEN score >= 60 THEN 'C'
+    ELSE 'F'
+  END AS grade
+FROM scores
+ORDER BY id
+----
+1	A
+2	B
+3	C
+4	F
+
+query IT
+SELECT id, CASE WHEN score IS NULL THEN 'missing' ELSE 'present' END AS status
+FROM scores
+ORDER BY id
+----
+1	present
+2	present
+3	present
+4	missing
+
+query II
+SELECT id, COALESCE(score, 0) AS score
+FROM scores
+ORDER BY id
+----
+1	92
+2	78
+3	65
+4	0
+
+query IT
+SELECT id, name
+FROM scores
+WHERE CASE WHEN score IS NULL THEN 0 ELSE score END > 70
+ORDER BY id
+----
+1	Alice
+2	Bob
+
+query T
+SELECT NULLIF(name, 'Bob') FROM scores WHERE id = 2
+----
+NULL

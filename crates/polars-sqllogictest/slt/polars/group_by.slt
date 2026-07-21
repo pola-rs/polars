@@ -1,0 +1,67 @@
+statement ok
+CREATE TABLE sales (region TEXT, product TEXT, units INTEGER, revenue REAL)
+
+statement ok
+INSERT INTO sales VALUES
+  ('north', 'widget', 10, 100.0),
+  ('north', 'gadget', 5, 75.0),
+  ('south', 'widget', 8, 80.0),
+  ('south', 'gadget', 3, 45.0),
+  ('south', 'widget', 4, 40.0)
+
+query TI
+SELECT region, SUM(units) AS total_units
+FROM sales
+GROUP BY region
+ORDER BY region
+----
+north	15
+south	15
+
+query TIR
+SELECT region, SUM(units) AS units, SUM(revenue) AS revenue
+FROM sales
+GROUP BY region
+ORDER BY region
+----
+north	15	175.000
+south	15	165.000
+
+query TI
+SELECT product, COUNT(*) AS n
+FROM sales
+GROUP BY product
+ORDER BY product
+----
+gadget	2
+widget	3
+
+query TI
+SELECT region, SUM(units) AS total
+FROM sales
+GROUP BY region
+HAVING SUM(units) > 14
+ORDER BY region
+----
+north	15
+south	15
+
+query TTI
+SELECT region, product, SUM(units) AS total
+FROM sales
+GROUP BY region, product
+ORDER BY region, product
+----
+north	gadget	5
+north	widget	10
+south	gadget	3
+south	widget	12
+
+query TR
+SELECT region, AVG(revenue) AS avg_rev
+FROM sales
+GROUP BY region
+ORDER BY region
+----
+north	87.500
+south	55.000

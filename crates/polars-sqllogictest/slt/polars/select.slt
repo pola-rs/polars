@@ -1,0 +1,57 @@
+statement ok
+CREATE TABLE items (id INTEGER, name TEXT, price REAL, in_stock BOOLEAN)
+
+statement ok
+INSERT INTO items VALUES
+  (1, 'apple', 1.50, true),
+  (2, 'banana', 0.75, true),
+  (3, 'cherry', 3.25, false),
+  (4, 'date', NULL, true)
+
+query ITRB
+SELECT * FROM items ORDER BY id
+----
+1	apple	1.500	true
+2	banana	0.750	true
+3	cherry	3.250	false
+4	date	NULL	true
+
+query IT
+SELECT id, name FROM items ORDER BY id
+----
+1	apple
+2	banana
+3	cherry
+4	date
+
+query T
+SELECT name AS label FROM items ORDER BY name
+----
+apple
+banana
+cherry
+date
+
+query IR
+SELECT id, price * 2 AS double_price FROM items WHERE price IS NOT NULL ORDER BY id
+----
+1	3.000
+2	1.500
+3	6.500
+
+query I
+SELECT COUNT(*) FROM items
+----
+4
+
+query T
+SELECT DISTINCT in_stock FROM items ORDER BY in_stock
+----
+false
+true
+
+query IT
+SELECT id, name FROM items WHERE id IN (1, 3) ORDER BY id
+----
+1	apple
+3	cherry

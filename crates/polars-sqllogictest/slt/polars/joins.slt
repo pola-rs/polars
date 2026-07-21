@@ -1,0 +1,65 @@
+statement ok
+CREATE TABLE customers (id INTEGER, name TEXT)
+
+statement ok
+INSERT INTO customers VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Carol')
+
+statement ok
+CREATE TABLE orders (order_id INTEGER, customer_id INTEGER, amount INTEGER)
+
+statement ok
+INSERT INTO orders VALUES
+  (100, 1, 50),
+  (101, 1, 30),
+  (102, 2, 20),
+  (103, 4, 99)
+
+query ITI
+SELECT o.order_id, c.name, o.amount
+FROM orders o
+INNER JOIN customers c ON o.customer_id = c.id
+ORDER BY o.order_id
+----
+100	Alice	50
+101	Alice	30
+102	Bob	20
+
+query TI
+SELECT c.name, o.amount
+FROM customers c
+LEFT JOIN orders o ON c.id = o.customer_id
+ORDER BY c.name, o.amount
+----
+Alice	30
+Alice	50
+Bob	20
+Carol	NULL
+
+query I
+SELECT COUNT(*)
+FROM customers c
+INNER JOIN orders o ON c.id = o.customer_id
+----
+3
+
+query TI
+SELECT c.name, SUM(o.amount) AS total
+FROM customers c
+INNER JOIN orders o ON c.id = o.customer_id
+GROUP BY c.name
+ORDER BY c.name
+----
+Alice	80
+Bob	20
+
+query II
+SELECT c.id, o.order_id
+FROM customers c
+CROSS JOIN orders o
+WHERE c.id = 3
+ORDER BY o.order_id
+----
+3	100
+3	101
+3	102
+3	103

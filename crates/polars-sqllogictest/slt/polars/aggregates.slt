@@ -1,0 +1,55 @@
+statement ok
+CREATE TABLE measurements (id INTEGER, value REAL, category TEXT)
+
+statement ok
+INSERT INTO measurements VALUES
+  (1, 10.0, 'a'),
+  (2, 20.0, 'a'),
+  (3, 30.0, 'b'),
+  (4, 40.0, 'b'),
+  (5, NULL, 'b')
+
+query I
+SELECT COUNT(*) FROM measurements
+----
+5
+
+query I
+SELECT COUNT(value) FROM measurements
+----
+4
+
+query R
+SELECT SUM(value) FROM measurements
+----
+100.000
+
+query R
+SELECT AVG(value) FROM measurements
+----
+25.000
+
+query R
+SELECT MIN(value) FROM measurements
+----
+10.000
+
+query R
+SELECT MAX(value) FROM measurements
+----
+40.000
+
+query RR
+SELECT MIN(value) AS lo, MAX(value) AS hi FROM measurements
+----
+10.000	40.000
+
+query I
+SELECT COUNT(DISTINCT category) FROM measurements
+----
+2
+
+query R
+SELECT ROUND(AVG(value), 1) FROM measurements
+----
+25.000

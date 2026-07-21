@@ -1,0 +1,25 @@
+[package]
+name = "polars-sqllogictest"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+description = "sqllogictest conformance harness for polars-sql"
+publish = false
+
+[dependencies]
+polars-core = { workspace = true, features = ["fmt"] }
+polars-lazy = { workspace = true }
+polars-sql = { workspace = true }
+
+sqllogictest = "0.29"
+sqlparser = { workspace = true }
+
+[[bin]]
+name = "polars-sqllogictest"
+path = "src/main.rs"
+
+[lints]
+workspace = true

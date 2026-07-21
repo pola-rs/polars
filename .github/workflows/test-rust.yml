@@ -168,3 +168,24 @@ jobs:
 
       - name: Run DSL schema check
         run: ./target/debug/dsl-schema check-hashes
+
+  sqllogictest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Free some disk space (remove unused packages)
+        uses: jlumbroso/free-disk-space@v1.3.1
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          env-vars: ImageVersion
+          save-if: ${{ github.event_name == 'push' }}
+          key: ${{ github.ref_name }}
+
+      - name: Run SQL conformance harness
+        run: cargo run -p polars-sqllogictest --release

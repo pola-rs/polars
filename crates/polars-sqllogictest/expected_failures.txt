@@ -1,0 +1,12 @@
+# Baseline of known-failing sqllogictest records (the ratchet).
+#
+# Format: one entry per line, `<slt-file>:<line>` where <slt-file> is the path
+# of the .slt file relative to the `slt/` directory and <line> is the 1-based
+# line number of the `query`/`statement` record within that file.
+# Blank lines and lines starting with `#` are ignored.
+#
+# Semantics enforced by the runner:
+#   - a failing record NOT listed here -> the run fails (add a fix, or add the entry).
+#   - an entry listed here whose record now PASSES -> the run fails; remove the entry.
+#
+# The own-authored `slt/polars/` corpus must stay fully green, so this file is empty.

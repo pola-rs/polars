@@ -1,0 +1,52 @@
+statement ok
+CREATE TABLE books (id INTEGER, title TEXT, year INTEGER, rating REAL)
+
+statement ok
+INSERT INTO books VALUES
+  (1, 'Alpha', 2001, 4.5),
+  (2, 'Beta', 1999, 3.8),
+  (3, 'Gamma', 2010, 4.9),
+  (4, 'Delta', 2005, 4.1),
+  (5, 'Epsilon', 1999, 4.9)
+
+query TI
+SELECT title, year FROM books ORDER BY year ASC, title ASC
+----
+Beta	1999
+Epsilon	1999
+Alpha	2001
+Delta	2005
+Gamma	2010
+
+query TR
+SELECT title, rating FROM books ORDER BY rating DESC, title ASC
+----
+Epsilon	4.900
+Gamma	4.900
+Alpha	4.500
+Delta	4.100
+Beta	3.800
+
+query TI
+SELECT title, year FROM books ORDER BY year DESC LIMIT 2
+----
+Gamma	2010
+Delta	2005
+
+query TI
+SELECT title, year FROM books ORDER BY year ASC, title ASC LIMIT 2 OFFSET 1
+----
+Epsilon	1999
+Alpha	2001
+
+query T
+SELECT title FROM books ORDER BY title DESC LIMIT 3
+----
+Gamma
+Epsilon
+Delta
+
+query TR
+SELECT title, rating FROM books ORDER BY rating DESC, title ASC LIMIT 1
+----
+Epsilon	4.900

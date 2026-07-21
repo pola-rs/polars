@@ -1,0 +1,41 @@
+statement ok
+CREATE TABLE nums (n INTEGER)
+
+statement ok
+INSERT INTO nums VALUES (1), (2), (3), (4), (5), (6)
+
+query I
+WITH evens AS (SELECT n FROM nums WHERE n % 2 = 0)
+SELECT n FROM evens ORDER BY n
+----
+2
+4
+6
+
+query II
+WITH doubled AS (SELECT n, n * 2 AS d FROM nums)
+SELECT n, d FROM doubled WHERE d > 6 ORDER BY n
+----
+4	8
+5	10
+6	12
+
+query IR
+WITH stats AS (
+  SELECT COUNT(*) AS cnt, AVG(n) AS mean FROM nums
+)
+SELECT cnt, mean FROM stats
+----
+6	3.500
+
+query I
+WITH lows AS (SELECT n FROM nums WHERE n < 4),
+     highs AS (SELECT n FROM nums WHERE n > 3)
+SELECT n FROM lows UNION SELECT n FROM highs ORDER BY n
+----
+1
+2
+3
+4
+5
+6

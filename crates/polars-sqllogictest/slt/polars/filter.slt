@@ -1,0 +1,72 @@
+statement ok
+CREATE TABLE employees (id INTEGER, name TEXT, dept TEXT, salary INTEGER, active BOOLEAN)
+
+statement ok
+INSERT INTO employees VALUES
+  (1, 'Alice', 'eng', 120, true),
+  (2, 'Bob', 'eng', 95, true),
+  (3, 'Carol', 'sales', 80, false),
+  (4, 'Dave', 'sales', 90, true),
+  (5, 'Eve', 'ops', 70, false),
+  (6, 'Frank', 'ops', NULL, true)
+
+query IT
+SELECT id, name FROM employees WHERE salary > 90 ORDER BY id
+----
+1	Alice
+2	Bob
+
+query IT
+SELECT id, name FROM employees WHERE dept = 'sales' ORDER BY id
+----
+3	Carol
+4	Dave
+
+query IT
+SELECT id, name FROM employees WHERE salary BETWEEN 80 AND 100 ORDER BY id
+----
+2	Bob
+3	Carol
+4	Dave
+
+query IT
+SELECT id, name FROM employees WHERE dept IN ('eng', 'ops') ORDER BY id
+----
+1	Alice
+2	Bob
+5	Eve
+6	Frank
+
+query IT
+SELECT id, name FROM employees WHERE salary IS NULL ORDER BY id
+----
+6	Frank
+
+query IT
+SELECT id, name FROM employees WHERE active AND salary > 90 ORDER BY id
+----
+1	Alice
+2	Bob
+
+query IT
+SELECT id, name FROM employees WHERE dept = 'eng' OR salary < 75 ORDER BY id
+----
+1	Alice
+2	Bob
+5	Eve
+
+query IT
+SELECT id, name FROM employees WHERE NOT active ORDER BY id
+----
+3	Carol
+5	Eve
+
+query IT
+SELECT id, name FROM employees WHERE name LIKE 'A%' ORDER BY id
+----
+1	Alice
+
+query I
+SELECT COUNT(*) FROM employees WHERE salary IS NOT NULL AND salary >= 90
+----
+3
