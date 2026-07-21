@@ -10,12 +10,28 @@ Through Pod Identity, you can securely access private S3 buckets without needing
 account keys or credentials.
 [See the guide in the official EKS documentation](https://docs.aws.amazon.com/eks/latest/userguide/service-accounts.html).
 
-```bash
-helm upgrade --install polars polars-inc/polars \
-  --set scheduler.serviceAccount.name=<YOUR_SERVICE_ACCOUNT_NAME> \
-  --set worker.serviceAccount.name=<YOUR_SERVICE_ACCOUNT_NAME> \
-# ...
-```
+=== "Helm Chart"
+
+    ```yaml
+    scheduler:
+      serviceAccount:
+        name: <YOUR_SERVICE_ACCOUNT_NAME>
+    worker:
+      serviceAccount:
+        name: <YOUR_SERVICE_ACCOUNT_NAME>
+    # ...
+    ```
+
+=== "Kubernetes Operator"
+
+    ```yaml
+    scheduler:
+      serviceAccount:
+        name: <YOUR_SERVICE_ACCOUNT_NAME>
+    workerPool:
+      serviceAccount:
+        name: <YOUR_SERVICE_ACCOUNT_NAME>
+    ```
 
 Assuming you have an S3 bucket already set up (see quick-start
 [here](https://docs.aws.amazon.com/AmazonS3/latest/userguide/create-bucket-overview.html)), you can
@@ -30,27 +46,59 @@ q = (
 )
 ```
 
-You may also use S3 as
-[an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data)
-by configuring the values as such:
+You may also use S3 as an anonymous results location by configuring the values as such:
 
-```yaml
-anonymousResults:
-  s3:
-    enabled: true
-    endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
-```
+=== "Helm Chart"
 
-To use S3 as
-[a shuffle location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#shuffle-data),
-configure the values as such:
+    ```yaml
+    anonymousResults:
+      s3:
+        enabled: true
+        endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
+        # ...
+    ```
 
-```yaml
-shuffleData:
-  s3:
-    enabled: true
-    endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
-```
+    See the [`anonymousResults` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data)
+    of the Helm chart values.
+
+=== "Kubernetes Operator"
+
+    ```yaml
+    anonymousResults:
+      s3:
+        endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
+        # ...
+    ```
+
+    See [`AnonymousResultsS3Spec`](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md#anonymousresultss3spec)
+    in the operator's CRD reference.
+
+To use S3 as a shuffle location, configure the values as such:
+
+=== "Helm Chart"
+
+    ```yaml
+    shuffleData:
+      s3:
+        enabled: true
+        endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
+        # ...
+    ```
+
+    See the [`shuffleData` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#shuffle-data)
+    of the Helm chart values.
+
+=== "Kubernetes Operator"
+
+    ```yaml
+    shuffleData:
+      s3:
+        endpoint: "s3://YOUR_S3_BUCKET_NAME/PATH/TO/DATA/"
+        # ...
+    ```
+
+    See [`ShuffleDataS3Spec`](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md#shuffledatas3spec)
+    in the operator's CRD reference.
 
 ## Reducing NAT costs for private nodes
 

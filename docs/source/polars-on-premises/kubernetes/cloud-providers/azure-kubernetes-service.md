@@ -11,12 +11,26 @@ to manage service account keys or credentials. You could use Microsoft Entra Wor
 purpose.
 [See the guide in the official AKS documentation](https://learn.microsoft.com/en-us/azure/aks/workload-identity-deploy-cluster).
 
-```bash
-helm upgrade --install polars polars-inc/polars \
-  --set scheduler.serviceAccount.name=<YOUR_SERVICE_ACCOUNT_NAME> \
-  --set worker.serviceAccount.name=<YOUR_SERVICE_ACCOUNT_NAME> \
-# ...
-```
+=== "Helm Chart"
+
+    ```yaml
+    scheduler:
+      serviceAccount:
+        name: <YOUR_SERVICE_ACCOUNT_NAME>
+    worker:
+      serviceAccount:
+        name: <YOUR_SERVICE_ACCOUNT_NAME>
+    # ...
+    ```
+
+=== "Kubernetes Operator"
+
+    ```yaml
+    scheduler:
+      serviceAccount: {}
+    workerPool:
+      serviceAccount: {}
+    ```
 
 Assuming you have a Blob Container already set up (see quick-start
 [here](https://learn.microsoft.com/en-us/azure/storage/blobs/storage-quickstart-blobs-portal#create-a-container)),
@@ -33,16 +47,34 @@ q = (
 )
 ```
 
-You may also use Azure Blob Storage as
-[an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data)
-by configuring the values as such:
+You may also use Azure Blob Storage as an anonymous results location by configuring the values as
+such:
 
-```yaml
-anonymousResults:
-  abs:
-    enabled: true
-    endpoint: "az://YOUR_BLOB_CONTAINER_NAME/PATH/TO/DATA/"
-    options:
-    - name: account_name
-      value: "YOUR_STORAGE_ACCOUNT_NAME"
-```
+=== "Helm Chart"
+
+    ```yaml
+    anonymousResults:
+      abs:
+        enabled: true
+        endpoint: "az://YOUR_BLOB_CONTAINER_NAME/PATH/TO/DATA/"
+        options:
+        - name: account_name
+          value: "YOUR_STORAGE_ACCOUNT_NAME"
+    ```
+
+    See the [`anonymousResults` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data)
+    of the Helm chart values.
+
+=== "Kubernetes Operator"
+
+    ```yaml
+    anonymousResults:
+      abs:
+        endpoint: "az://YOUR_BLOB_CONTAINER_NAME/PATH/TO/DATA/"
+        options:
+        - name: account_name
+          value: "YOUR_STORAGE_ACCOUNT_NAME"
+    ```
+
+    See [`AnonymousResultsABSSpec`](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md#anonymousresultsabsspec)
+    in the operator's CRD reference.

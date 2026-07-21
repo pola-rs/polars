@@ -174,11 +174,102 @@ The data your queries process stays entirely within your environment, and is nev
 Need an air-gapped Enterprise deployment that runs entirely in your infrastructure without outside
 connections? See the [On-Prem Enterprise](#on-prem-enterprise) section to get started.
 
+### Installing via the Kubernetes Operator
+
+!!! info "Early access"
+
+    The [Kubernetes Operator](https://github.com/polars-inc/polars-k8s-operator) is a new, early-access
+    alternative to the Helm chart above. It is **not yet recommended for production** — use the Helm
+    chart for that today. We're working towards feature parity and autoscaling support; try it out and
+    [let us know](https://github.com/polars-inc/polars-k8s-operator/issues) what you run into.
+
+Install the operator with Helm, then create a `PolarsCluster` resource to deploy a cluster:
+
+```sh
+helm repo add polars-inc https://polars-inc.github.io/helm-charts
+helm repo update
+helm install polars-k8s-operator polars-inc/polars-k8s-operator
+```
+
+```sh
+kubectl create secret generic polars-workspace \
+  --from-literal=clientID=<SERVICE ACCOUNT ID> \
+  --from-literal=clientSecret=<SERVICE ACCOUNT SECRET> \
+  --from-literal=workspaceID=<WORKSPACE ID>
+```
+
+```yaml
+apiVersion: compute.pola.rs/v1alpha1
+kind: PolarsCluster
+metadata:
+  name: polars
+spec:
+  license:
+    onPrem:
+      clientID:
+        valueFrom:
+          secretKeyRef:
+            name: polars-workspace
+            key: clientID
+      clientSecret:
+        valueFrom:
+          secretKeyRef:
+            name: polars-workspace
+            key: clientSecret
+      workspaceID:
+        valueFrom:
+          secretKeyRef:
+            name: polars-workspace
+            key: workspaceID
+  runtime:
+    composed: {}
+  scheduler:
+    podTemplate:
+      spec:
+        containers:
+        - name: scheduler
+          resources:
+            requests:
+              memory: 1Gi
+  workerPool:
+    replicas: 2
+    podTemplate:
+      spec:
+        containers:
+        - name: worker
+          resources:
+            requests:
+              memory: 4Gi
+            limits:
+              memory: 4Gi
+```
+
+```sh
+kubectl apply -f polars-cluster.yaml
+```
+
+Verify the deployment the same way as with the Helm chart:
+
+```bash
+kubectl get pods
+kubectl get polarscluster
+```
+
+The full set of `PolarsCluster` fields is documented in the operator's
+[CRD reference](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md), generated
+from its Go API types. Example manifests for common scenarios (checkpointing, lineage, dedicated
+nodes, object-storage shuffle, _etc._) are available in the repo's
+[`config/samples`](https://github.com/polars-inc/polars-k8s-operator/tree/main/config/samples)
+directory.
+
 ### Production configuration
 
-The complete list of configurable options is provided in the documentation of the
-[Helm chart](https://github.com/polars-inc/helm-charts/tree/main/charts/polars). The three topics
-listed below are the main configuration sections to tweak to ready your cluster for production use.
+The complete list of configurable options is provided in the
+[Helm chart](https://github.com/polars-inc/helm-charts/tree/main/charts/polars) documentation, or
+the operator's
+[CRD reference](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md) if you're
+using the Kubernetes Operator. The three topics listed below are the main configuration sections to
+tweak to ready your cluster for production use.
 
 ![Deployed objects](arch-diag-pvc.png)
 
@@ -188,15 +279,21 @@ _In blue the optional PVC and S3-compatible storage._
 
 For remote queries without a specific output sink, Polars automatically adds a persistent sink. We
 call this sink the "anonymous results" sink. Infrastructure-wise, this sink is backed by
-S3-compatible storage, which must be accessible from all worker nodes and the client.
+S3-compatible storage, which must be accessible from all worker nodes and the client. In a
+production environment, any S3-compatible technology can be used (_i.e._, MinIO, DigitalOcean
+Spaces, _etc._).
 
-For a lightweight quickstart we opted for [SeaweedFS](https://github.com/seaweedfs/seaweedfs),
-backed by an `emptyDir`. In a production environment, any S3-compatible technology can be used
-(_i.e._, MinIO, DigitalOcean Spaces, _etc._). Support for Azure Blob Storage (ABS) and Google Cloud
-Storage (GCS) is currently being tested (released as beta).
+=== "Helm Chart"
 
-Anonymous results configuration is under the
-[`anonymousResults` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data).
+    Anonymous results configuration is under the
+    [`anonymousResults` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data)
+    of the Helm chart values.
+
+=== "Kubernetes Operator"
+
+    Anonymous results configuration is documented under
+    [`AnonymousResultsSpec`](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md#anonymousresultsspec)
+    in the operator's CRD reference.
 
 #### Shuffle data
 
@@ -216,8 +313,17 @@ backend relative to local volumes. As an example, on AWS, EBS offers lower laten
 throughput. This makes EBS a better fit for workloads that produce many small shuffle files, while
 S3 will outperform it when shuffle files are large.
 
-Shuffle configuration is under the
-[`shuffleData` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#shuffle-data).
+=== "Helm Chart"
+
+    Shuffle configuration is under the
+    [`shuffleData` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#shuffle-data)
+    of the Helm chart values.
+
+=== "Kubernetes Operator"
+
+    Shuffle configuration is documented under
+    [`ShuffleDataSpec`](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md#shuffledataspec)
+    in the operator's CRD reference.
 
 #### Resource allocation
 
@@ -228,8 +334,17 @@ are deployed), pod requests and limits should be allocated to worker nodes via t
 the same fashion, node selector, taints and tolerations should be used to optimize the topology of
 the cluster.
 
-Resource allocation and cluster topology configuration is under the
-[`worker.deployment` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#resource-allocation-and-node-selectors).
+=== "Helm Chart"
+
+    Resource allocation and cluster topology configuration is under the
+    [`worker.deployment` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#resource-allocation-and-node-selectors)
+    of the Helm chart values.
+
+=== "Kubernetes Operator"
+
+    Resource allocation and cluster topology configuration is documented under
+    [`WorkerPoolDeclaration`](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md#workerpooldeclaration)
+    in the operator's CRD reference.
 
 #### Memory limits and OOM behavior
 

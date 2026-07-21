@@ -12,12 +12,26 @@ enabling Workload Identity Federation, creating a Kubernetes service account, an
 policy binding.
 [See the guide in the official GKE documentation](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/workload-identity).
 
-```bash
-helm upgrade --install polars polars-inc/polars \
-  --set scheduler.serviceAccount.name=<YOUR_SERVICE_ACCOUNT_NAME> \
-  --set worker.serviceAccount.name=<YOUR_SERVICE_ACCOUNT_NAME> \
-# ...
-```
+=== "Helm Chart"
+
+    ```yaml
+    scheduler:
+      serviceAccount:
+        name: <YOUR_SERVICE_ACCOUNT_NAME>
+    worker:
+      serviceAccount:
+        name: <YOUR_SERVICE_ACCOUNT_NAME>
+    # ...
+    ```
+
+=== "Kubernetes Operator"
+
+    ```yaml
+    scheduler:
+      serviceAccount: {}
+    workerPool:
+      serviceAccount: {}
+    ```
 
 Assuming you have a bucket already set up (see quick-start
 [here](https://docs.cloud.google.com/storage/docs/creating-buckets)), you can then scan or sink
@@ -34,19 +48,37 @@ q = (
 )
 ```
 
-You may also use Google Cloud Storage as
-[an anonymous results location](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data)
-by configuring the values as such:
+You may also use Google Cloud Storage as an anonymous results location by configuring the values as
+such:
 
-```yaml
-anonymousResults:
-  gcs:
-    enabled: true
-    endpoint: "gs://YOUR_BUCKET_NAME/PATH/TO/DATA/"
-    options:
-    - name: project
-      value: "YOUR_PROJECT_NAME"
-```
+=== "Helm Chart"
+
+    ```yaml
+    anonymousResults:
+      gcs:
+        enabled: true
+        endpoint: "gs://YOUR_BUCKET_NAME/PATH/TO/DATA/"
+        options:
+        - name: project
+          value: "YOUR_PROJECT_NAME"
+    ```
+
+    See the [`anonymousResults` section](https://github.com/polars-inc/helm-charts/tree/main/charts/polars#anonymous-results-data)
+    of the Helm chart values.
+
+=== "Kubernetes Operator"
+
+    ```yaml
+    anonymousResults:
+      gcs:
+        endpoint: "gs://YOUR_BUCKET_NAME/PATH/TO/DATA/"
+        options:
+        - name: project
+          value: "YOUR_PROJECT_NAME"
+    ```
+
+    See [`AnonymousResultsGCSSpec`](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md#anonymousresultsgcsspec)
+    in the operator's CRD reference.
 
 ## Accessing GCS from private nodes
 

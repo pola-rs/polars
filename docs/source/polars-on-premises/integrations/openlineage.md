@@ -24,6 +24,8 @@ is the only supported transport protocol. See the dedicated cluster type pages f
 
 - [Bare metal](/polars-on-premises/bare-metal/configuration/openlineage)
 - [Kubernetes Helm Chart](https://github.com/polars-inc/helm-charts/blob/main/charts/polars/README.md#lineage)
+- [Kubernetes Operator](https://github.com/polars-inc/polars-k8s-operator/blob/main/docs/api.md#lineagespec)
+  (early access)
 
 ## Query annotation
 

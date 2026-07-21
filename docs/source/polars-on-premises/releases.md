@@ -114,6 +114,17 @@ The container images are hosted on
 [Dockerhub](https://hub.docker.com/r/polarscloud/polars-on-premises) and are tagged after the
 versions listed above.
 
+### Kubernetes operator
+
+The [Kubernetes Operator](https://github.com/polars-inc/polars-k8s-operator) is early access.
+Releases, including the CRD install bundle, are published on its
+[GitHub releases page](https://github.com/polars-inc/polars-k8s-operator/releases). It's also
+distributed as its own `polars-k8s-operator` Helm chart, in the same
+[chart repo](https://github.com/polars-inc/helm-charts/releases) as the main Polars chart.
+
+The controller image is hosted on
+[Dockerhub](https://hub.docker.com/r/polarscloud/polars-k8s-operator).
+
 ### Bare-metal binaries
 
 After obtaining an offline license for Polars On-Prem you will receive a JSON-formatted license for
