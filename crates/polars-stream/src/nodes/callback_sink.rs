@@ -60,7 +60,7 @@ impl ComputeNode for CallbackSinkNode {
 
                 assert!(
                     self.chunk_size
-                        .is_some_and(|chunk_size| self.buffer.height() <= chunk_size.into())
+                        .is_some_and(|chunk_size| self.buffer.height() <= chunk_size.get())
                 );
                 state.spawn_subphase_task(async move {
                     ASYNC
@@ -104,7 +104,7 @@ impl ComputeNode for CallbackSinkNode {
                 while self.buffer.height() > 0
                     && self
                         .chunk_size
-                        .is_none_or(|chunk_size| self.buffer.height() >= chunk_size.into())
+                        .is_none_or(|chunk_size| self.buffer.height() >= chunk_size.get())
                 {
                     let chunk_size = self.chunk_size.map_or(usize::MAX, Into::into);
 

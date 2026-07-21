@@ -1001,7 +1001,7 @@ pub async fn ndjson_file_info(
                     Err(e) => Err(e)?,
                 };
 
-            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.into() && !reached_eof {
+            if polars_io::ndjson::count_rows(&slice) < infer_schema_length.get() && !reached_eof {
                 if compression.is_some() && bytes_read == read_size {
                     // Decompressor had more to give — read_size too small
                     try_read_size *= 2;
