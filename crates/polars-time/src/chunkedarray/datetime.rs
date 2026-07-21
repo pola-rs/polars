@@ -235,12 +235,12 @@ pub trait DatetimeMethods: AsDatetime {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
                     (y, m, d, h, mnt, s, ns)
                 {
-                    NaiveDate::new(y as i16, m as i8, d as i8).ok().map_or_else(
+                    NaiveDate::new(y as i16, m, d).ok().map_or_else(
                         // We have an invalid date.
                         || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
                         // We have a valid date.
                         |date| {
-                            NaiveTime::new(h as i8, mnt as i8, s as i8, ns as i32)
+                            NaiveTime::new(h, mnt, s, ns)
                                 .ok()
                                 .map(|time| date.to_datetime(time))
                                 .map_or_else(

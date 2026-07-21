@@ -375,8 +375,7 @@ pub(super) fn month_end(s: &Column) -> PolarsResult<Column> {
 pub(super) fn base_utc_offset(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         DataType::Datetime(time_unit, Some(tz)) => {
-            let tz = Tz::get(tz.as_str())
-                .expect("Time zone has already been validated");
+            let tz = Tz::get(tz.as_str()).expect("Time zone has already been validated");
             Ok(polars_time::base_utc_offset(s.datetime().unwrap(), time_unit, &tz).into_column())
         },
         dt => polars_bail!(
@@ -390,8 +389,7 @@ pub(super) fn base_utc_offset(s: &Column) -> PolarsResult<Column> {
 pub(super) fn dst_offset(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {
         DataType::Datetime(time_unit, Some(tz)) => {
-            let tz = Tz::get(tz.as_str())
-                .expect("Time zone has already been validated");
+            let tz = Tz::get(tz.as_str()).expect("Time zone has already been validated");
             Ok(polars_time::dst_offset(s.datetime().unwrap(), time_unit, &tz).into_column())
         },
         dt => polars_bail!(

@@ -159,8 +159,12 @@ impl DatetimeArgs {
         };
         let ms: u32 = lv.to_any_value()?.extract()?;
 
-        let date =
-            jiff::civil::Date::new(i16::try_from(year).ok()?, i8::try_from(month).ok()?, i8::try_from(day).ok()?).ok()?;
+        let date = jiff::civil::Date::new(
+            i16::try_from(year).ok()?,
+            i8::try_from(month).ok()?,
+            i8::try_from(day).ok()?,
+        )
+        .ok()?;
         let time = jiff::civil::Time::new(
             i8::try_from(hour).ok()?,
             i8::try_from(minute).ok()?,

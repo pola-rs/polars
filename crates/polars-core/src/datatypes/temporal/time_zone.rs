@@ -166,7 +166,10 @@ pub fn parse_time_zone(tz: &str) -> PolarsResult<jiff::tz::TimeZone> {
     for candidate in jiff::tz::db().available() {
         let candidate = candidate.as_str();
         let score = levenshtein(tz, candidate);
-        if best.as_ref().is_none_or(|(_, best_score)| score < *best_score) {
+        if best
+            .as_ref()
+            .is_none_or(|(_, best_score)| score < *best_score)
+        {
             best = Some((candidate.to_string(), score));
         }
     }

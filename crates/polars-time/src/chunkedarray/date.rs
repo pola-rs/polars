@@ -101,7 +101,7 @@ pub trait DateMethods: AsDate {
             .zip(day.iter())
             .map(|((y, m), d)| {
                 if let (Some(y), Some(m), Some(d)) = (y, m, d) {
-                    NaiveDate::new(y as i16, m as i8, d as i8).ok().map_or_else(
+                    NaiveDate::new(y as i16, m, d).ok().map_or_else(
                         // We have an invalid date.
                         || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
                         // We have a valid date.

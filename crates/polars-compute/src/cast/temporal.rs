@@ -135,8 +135,7 @@ pub fn utf8_to_naive_date_scalar(value: &str) -> Option<i32> {
 #[inline]
 pub fn utf8_to_naive_time_scalar(value: &str, tu: TimeUnit) -> Option<i64> {
     value.parse::<NaiveTime>().ok().map(|t| {
-        let secs =
-            t.hour() as i64 * 3_600 + t.minute() as i64 * 60 + t.second() as i64;
+        let secs = t.hour() as i64 * 3_600 + t.minute() as i64 * 60 + t.second() as i64;
         let nanos = t.subsec_nanosecond() as i64;
         match tu {
             TimeUnit::Second => secs,

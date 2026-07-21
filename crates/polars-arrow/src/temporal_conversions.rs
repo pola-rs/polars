@@ -64,7 +64,7 @@ pub fn date32_to_date_opt(days: i32) -> Option<Date> {
 #[inline]
 pub fn date_to_date32_opt(date: Date) -> Option<i32> {
     let span = date.since(unix_epoch_date()).ok()?;
-    i32::try_from(span.get_days()).ok()
+    Some(span.get_days())
 }
 
 /// Elapsed nanoseconds between the Unix epoch and `dt`, computed via
@@ -78,9 +78,10 @@ pub fn date_to_date32_opt(date: Date) -> Option<i32> {
 /// represent just fine (e.g. `DateTime::MAX`).
 #[inline]
 pub fn datetime_to_epoch_nanos_opt(dt: DateTime) -> Option<i128> {
-    let diff = jiff::civil::DateTimeDifference::new(unix_epoch_date().to_datetime(Time::midnight()))
-        .smallest(jiff::Unit::Nanosecond)
-        .largest(jiff::Unit::Second);
+    let diff =
+        jiff::civil::DateTimeDifference::new(unix_epoch_date().to_datetime(Time::midnight()))
+            .smallest(jiff::Unit::Nanosecond)
+            .largest(jiff::Unit::Second);
     let span = dt.since(diff).ok()?;
     Some(
         i128::from(span.get_seconds()) * 1_000_000_000

@@ -129,12 +129,7 @@ fn test_strptime_block_predicate() -> PolarsResult<()> {
         .with_column(col("date").str().to_date(StrptimeOptions {
             ..Default::default()
         }))
-        .filter(
-            col("date").gt(NaiveDate::new(2021, 1, 1)
-                .unwrap()
-                .at(0, 0, 0, 0)
-                .lit()),
-        );
+        .filter(col("date").gt(NaiveDate::new(2021, 1, 1).unwrap().at(0, 0, 0, 0).lit()));
 
     assert!(!predicate_at_scan(q.clone()));
     let df = q.collect()?;
