@@ -111,91 +111,8 @@ nav:
         - releases/upgrade/0.20.md
         - releases/upgrade/0.19.md
       - releases/changelog.md
-  - Polars Cloud:
-    - polars-cloud/index.md
-    - polars-cloud/quickstart.md
-    - polars-cloud/connect-cloud.md
-    - Queries:
-      - polars-cloud/run/remote-query.md
-      - polars-cloud/run/distributed-engine.md
-      - polars-cloud/run/query-profile.md
-      - polars-cloud/run/glossary.md
-    - Integrations:
-      - Orchestration:
-        - polars-cloud/integrations/index.md
-        - polars-cloud/integrations/airflow.md
-        - polars-cloud/integrations/dagster.md
-        - polars-cloud/integrations/prefect.md
-        - polars-cloud/integrations/lambda.md
-    - Concepts:
-      - Context:
-        - polars-cloud/context/compute-context.md
-        - polars-cloud/context/reconnect.md
-        - polars-cloud/context/plugins.md
-        - polars-cloud/context/proxy-mode.md
-      - Organizations:
-        - polars-cloud/organization/organizations.md
-        - polars-cloud/organization/start-trial.md
-        - polars-cloud/organization/billing.md
-        - polars-cloud/organization/members.md
-      - Workspaces:
-        - polars-cloud/workspace/settings.md
-        - polars-cloud/workspace/team.md
-      - Authentication:
-        - polars-cloud/explain/authentication.md
-        - polars-cloud/explain/service-accounts.md
-      - Providers:
-        - AWS:
-          - polars-cloud/providers/aws/infra.md
-          - polars-cloud/providers/aws/permissions.md
-      - Misc:
-        - polars-cloud/cli.md
-        - polars-cloud/public-datasets.md
-        - polars-cloud/faq.md
-        - API Reference: https://docs.cloud.pola.rs
-    - API:
-      - Reference guide: https://docs.cloud.pola.rs/
-  - Polars On-Prem:
-    - polars-on-premises/index.md
-    - polars-on-premises/getting-started.md
-    - Deployment:
-      - Kubernetes:
-        - Getting started: polars-on-premises/kubernetes/index.md
-        - polars-on-premises/kubernetes/cloud-providers/amazon-elastic-kubernetes-service.md
-        - polars-on-premises/kubernetes/cloud-providers/azure-kubernetes-service.md
-        - polars-on-premises/kubernetes/cloud-providers/google-kubernetes-engine.md
-      - Bare-metal:
-        - polars-on-premises/bare-metal/getting-started.md
-        - Configuration:
-          - polars-on-premises/bare-metal/configuration/reference.md
-          - polars-on-premises/bare-metal/configuration/license.md
-          - polars-on-premises/bare-metal/configuration/monitoring.md
-          - polars-on-premises/bare-metal/configuration/persistence.md
-          - polars-on-premises/bare-metal/configuration/resource-limits.md
-          - polars-on-premises/bare-metal/configuration/shuffle-data.md
-          - polars-on-premises/bare-metal/configuration/checkpointing.md
-          - polars-on-premises/bare-metal/configuration/anonymous-results.md
-          - polars-on-premises/bare-metal/configuration/anonymous-users.md
-          - polars-on-premises/bare-metal/configuration/network-addresses.md
-          - polars-on-premises/bare-metal/configuration/static-leader.md
-          - polars-on-premises/bare-metal/configuration/openlineage.md
-          - polars-on-premises/bare-metal/configuration/hdfs.md
-          - polars-on-premises/bare-metal/configuration/example-configurations.md
-        - polars-on-premises/bare-metal/environment-variables.md
-        - polars-on-premises/bare-metal/python-environment.md
-        - Misc:
-          - polars-on-premises/bare-metal/misc/slurm.md
-    - Queries:
-      - polars-on-premises/run/remote-query.md
-      - polars-on-premises/run/distributed-engine.md
-      - polars-cloud/run/query-profile.md
-      - polars-cloud/run/glossary.md
-    - Integrations:
-      - polars-on-premises/integrations/openlineage.md
-    - Billing:
-      - polars-on-premises/billing/index.md
-    - Distribution:
-      - polars-on-premises/releases.md
+  - Polars Cloud: https://docs.cloud.pola.rs/polars-cloud/
+  - Polars On-Prem: https://docs.cloud.pola.rs/polars-on-premises/
 not_in_nav: |
     /_build/
 validation:
@@ -288,11 +205,70 @@ plugins:
               "user-guide/basics/expressions.md": "user-guide/getting-started.md"
               "user-guide/basics/joins.md": "user-guide/getting-started.md"
               # rename polars-on-premise to polars-on-premises
-              "polars-on-premise/index.md": "polars-on-premises/index.md"
-              "polars-on-premise/bare-metal/getting-started.md": "polars-on-premises/bare-metal/getting-started.md"
-              "polars-on-premise/kubernetes/getting-started.md": "polars-on-premises/kubernetes/index.md"
-              "polars-on-premise/bare-metal/config-reference.md": "polars-on-premises/bare-metal/configuration/reference.md"
-              "polars-on-premise/bare-metal/environment-variables.md": "polars-on-premises/bare-metal/environment-variables.md"
-              "polars-on-premise/bare-metal/python-environment.md": "polars-on-premises/bare-metal/python-environment.md"
-              "polars-on-premises/bare-metal/config-reference.md": "polars-on-premises/bare-metal/configuration/reference.md"
-              "polars-on-premises/bare-metal/integrations/slurm.md": "polars-on-premises/bare-metal/misc/slurm.md"
+              "polars-on-premise/index.md": "https://docs.cloud.pola.rs/polars-on-premises/"
+              "polars-on-premise/bare-metal/getting-started.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/getting-started/"
+              "polars-on-premise/kubernetes/getting-started.md": "https://docs.cloud.pola.rs/polars-on-premises/kubernetes/"
+              "polars-on-premise/bare-metal/config-reference.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/reference/"
+              "polars-on-premise/bare-metal/environment-variables.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/environment-variables/"
+              "polars-on-premise/bare-metal/python-environment.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/python-environment/"
+              "polars-on-premises/bare-metal/config-reference.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/reference/"
+              "polars-on-premises/bare-metal/integrations/slurm.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/misc/slurm/"
+              # relocation to docs.cloud.pola.rs
+              "polars-cloud/index.md": "https://docs.cloud.pola.rs/polars-cloud/"
+              "polars-cloud/quickstart.md": "https://docs.cloud.pola.rs/polars-cloud/quickstart/"
+              "polars-cloud/connect-cloud.md": "https://docs.cloud.pola.rs/polars-cloud/connect-cloud/"
+              "polars-cloud/run/remote-query.md": "https://docs.cloud.pola.rs/polars-cloud/run/remote-query/"
+              "polars-cloud/run/distributed-engine.md": "https://docs.cloud.pola.rs/polars-cloud/run/distributed-engine/"
+              "polars-cloud/run/query-profile.md": "https://docs.cloud.pola.rs/polars-cloud/run/query-profile/"
+              "polars-cloud/run/glossary.md": "https://docs.cloud.pola.rs/polars-cloud/run/glossary/"
+              "polars-cloud/integrations/index.md": "https://docs.cloud.pola.rs/polars-cloud/integrations/"
+              "polars-cloud/integrations/airflow.md": "https://docs.cloud.pola.rs/polars-cloud/integrations/airflow/"
+              "polars-cloud/integrations/dagster.md": "https://docs.cloud.pola.rs/polars-cloud/integrations/dagster/"
+              "polars-cloud/integrations/prefect.md": "https://docs.cloud.pola.rs/polars-cloud/integrations/prefect/"
+              "polars-cloud/integrations/lambda.md": "https://docs.cloud.pola.rs/polars-cloud/integrations/lambda/"
+              "polars-cloud/context/compute-context.md": "https://docs.cloud.pola.rs/polars-cloud/context/compute-context/"
+              "polars-cloud/context/reconnect.md": "https://docs.cloud.pola.rs/polars-cloud/context/reconnect/"
+              "polars-cloud/context/plugins.md": "https://docs.cloud.pola.rs/polars-cloud/context/plugins/"
+              "polars-cloud/context/proxy-mode.md": "https://docs.cloud.pola.rs/polars-cloud/context/proxy-mode/"
+              "polars-cloud/organization/organizations.md": "https://docs.cloud.pola.rs/polars-cloud/organization/organizations/"
+              "polars-cloud/organization/start-trial.md": "https://docs.cloud.pola.rs/polars-cloud/organization/start-trial/"
+              "polars-cloud/organization/billing.md": "https://docs.cloud.pola.rs/polars-cloud/organization/billing/"
+              "polars-cloud/organization/members.md": "https://docs.cloud.pola.rs/polars-cloud/organization/members/"
+              "polars-cloud/workspace/settings.md": "https://docs.cloud.pola.rs/polars-cloud/workspace/settings/"
+              "polars-cloud/workspace/team.md": "https://docs.cloud.pola.rs/polars-cloud/workspace/team/"
+              "polars-cloud/explain/authentication.md": "https://docs.cloud.pola.rs/polars-cloud/explain/authentication/"
+              "polars-cloud/explain/service-accounts.md": "https://docs.cloud.pola.rs/polars-cloud/explain/service-accounts/"
+              "polars-cloud/providers/aws/infra.md": "https://docs.cloud.pola.rs/polars-cloud/providers/aws/infra/"
+              "polars-cloud/providers/aws/permissions.md": "https://docs.cloud.pola.rs/polars-cloud/providers/aws/permissions/"
+              "polars-cloud/cli.md": "https://docs.cloud.pola.rs/polars-cloud/cli/"
+              "polars-cloud/public-datasets.md": "https://docs.cloud.pola.rs/polars-cloud/public-datasets/"
+              "polars-cloud/faq.md": "https://docs.cloud.pola.rs/polars-cloud/faq/"
+              "polars-on-premises/index.md": "https://docs.cloud.pola.rs/polars-on-premises/"
+              "polars-on-premises/getting-started.md": "https://docs.cloud.pola.rs/polars-on-premises/getting-started/"
+              "polars-on-premises/kubernetes/index.md": "https://docs.cloud.pola.rs/polars-on-premises/kubernetes/"
+              "polars-on-premises/kubernetes/cloud-providers/amazon-elastic-kubernetes-service.md": "https://docs.cloud.pola.rs/polars-on-premises/kubernetes/cloud-providers/amazon-elastic-kubernetes-service/"
+              "polars-on-premises/kubernetes/cloud-providers/azure-kubernetes-service.md": "https://docs.cloud.pola.rs/polars-on-premises/kubernetes/cloud-providers/azure-kubernetes-service/"
+              "polars-on-premises/kubernetes/cloud-providers/google-kubernetes-engine.md": "https://docs.cloud.pola.rs/polars-on-premises/kubernetes/cloud-providers/google-kubernetes-engine/"
+              "polars-on-premises/bare-metal/getting-started.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/getting-started/"
+              "polars-on-premises/bare-metal/configuration/reference.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/reference/"
+              "polars-on-premises/bare-metal/configuration/license.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/license/"
+              "polars-on-premises/bare-metal/configuration/monitoring.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/monitoring/"
+              "polars-on-premises/bare-metal/configuration/persistence.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/persistence/"
+              "polars-on-premises/bare-metal/configuration/resource-limits.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/resource-limits/"
+              "polars-on-premises/bare-metal/configuration/shuffle-data.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/shuffle-data/"
+              "polars-on-premises/bare-metal/configuration/checkpointing.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/checkpointing/"
+              "polars-on-premises/bare-metal/configuration/anonymous-results.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/anonymous-results/"
+              "polars-on-premises/bare-metal/configuration/anonymous-users.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/anonymous-users/"
+              "polars-on-premises/bare-metal/configuration/network-addresses.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/network-addresses/"
+              "polars-on-premises/bare-metal/configuration/static-leader.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/static-leader/"
+              "polars-on-premises/bare-metal/configuration/openlineage.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/openlineage/"
+              "polars-on-premises/bare-metal/configuration/hdfs.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/hdfs/"
+              "polars-on-premises/bare-metal/configuration/example-configurations.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/configuration/example-configurations/"
+              "polars-on-premises/bare-metal/environment-variables.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/environment-variables/"
+              "polars-on-premises/bare-metal/python-environment.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/python-environment/"
+              "polars-on-premises/bare-metal/misc/slurm.md": "https://docs.cloud.pola.rs/polars-on-premises/bare-metal/misc/slurm/"
+              "polars-on-premises/run/remote-query.md": "https://docs.cloud.pola.rs/polars-on-premises/run/remote-query/"
+              "polars-on-premises/run/distributed-engine.md": "https://docs.cloud.pola.rs/polars-on-premises/run/distributed-engine/"
+              "polars-on-premises/integrations/openlineage.md": "https://docs.cloud.pola.rs/polars-on-premises/integrations/openlineage/"
+              "polars-on-premises/billing/index.md": "https://docs.cloud.pola.rs/polars-on-premises/billing/"
+              "polars-on-premises/releases.md": "https://docs.cloud.pola.rs/polars-on-premises/releases/"

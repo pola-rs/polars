@@ -56,7 +56,7 @@ including those that fit on a single machine. Polars is a suite of engines behin
 in-memory and streaming engines are built for optimal performance on a single machine, while the
 distributed engine scales the same syntax across a cluster, available as
 [Polars Cloud](https://cloud.pola.rs/) on AWS and as
-[Polars On-Prem](../../polars-on-premises/index.md) on Kubernetes.
+[Polars On-Prem](https://docs.cloud.pola.rs/polars-on-premises/index.md) on Kubernetes.
 
 With Spark, data scientists and engineers typically work with different tools (pandas and PySpark),
 so deploying a pipeline often requires refactoring by engineers. With Polars, the same code runs in

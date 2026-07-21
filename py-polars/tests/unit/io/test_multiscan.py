@@ -1212,7 +1212,10 @@ def test_hive_group_by_rewrite_maintain_order_disables_rewrite(
     )
 
 
+# This may fail streaming as the order is not defined in streaming.
+# We test the plans, not the engine.
 @pytest.mark.write_disk
+@pytest.mark.may_fail_auto_streaming
 def test_hive_join_rewrite_semi_join(tmp_path: Path) -> None:
     left_root = tmp_path / "left"
     right_root = tmp_path / "right"
