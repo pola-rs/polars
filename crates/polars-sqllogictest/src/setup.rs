@@ -13,8 +13,10 @@ pub fn is_setup_statement(stmt: &Statement) -> bool {
         stmt,
         Statement::CreateTable(_)
             | Statement::Insert(_)
+            | Statement::CreateIndex(_)
+            | Statement::CreateView(_)
             | Statement::Drop {
-                object_type: ObjectType::Table,
+                object_type: ObjectType::Table | ObjectType::Index | ObjectType::View,
                 ..
             }
     )
@@ -22,7 +24,8 @@ pub fn is_setup_statement(stmt: &Statement) -> bool {
 
 pub fn run_setup_statement(
     tables: &mut PlHashMap<String, DataFrame>,
-    ctx: &SQLContext,
+    views: &mut PlHashSet<String>,
+    ctx: &mut SQLContext,
     stmt: &Statement,
 ) -> Result<u64, EngineError> {
     match stmt {
@@ -34,6 +37,19 @@ pub fn run_setup_statement(
             Ok(0)
         },
         Statement::Insert(insert) => run_insert(tables, ctx, insert),
+        Statement::CreateIndex(_) => Ok(0),
+        Statement::CreateView(create_view) => {
+            let name = object_name_to_string(&create_view.name);
+            if !create_view.or_replace && (tables.contains_key(&name) || views.contains(&name)) {
+                return Err(EngineError::new(format!("view already exists: {name}")));
+            }
+            let lf = ctx
+                .execute(&create_view.query.to_string())
+                .map_err(EngineError::from)?;
+            ctx.register(&name, lf);
+            views.insert(name);
+            Ok(0)
+        },
         Statement::Drop {
             object_type: ObjectType::Table,
             names,
@@ -43,6 +59,24 @@ pub fn run_setup_statement(
                 let name = object_name_to_string(name);
                 ctx.unregister(&name);
                 tables.remove(&name);
+            }
+            Ok(0)
+        },
+        Statement::Drop {
+            object_type: ObjectType::Index,
+            ..
+        } => Ok(0),
+        Statement::Drop {
+            object_type: ObjectType::View,
+            names,
+            ..
+        } => {
+            for name in names {
+                let name = object_name_to_string(name);
+                if !views.remove(&name) {
+                    return Err(EngineError::new(format!("no such view: {name}")));
+                }
+                ctx.unregister(&name);
             }
             Ok(0)
         },
@@ -75,6 +109,7 @@ fn map_dtype(dtype: &SqlDataType) -> Result<DataType, EngineError> {
         | SqlDataType::Text
         | SqlDataType::String(_) => DataType::String,
         SqlDataType::Bool | SqlDataType::Boolean => DataType::Boolean,
+        SqlDataType::Unspecified => DataType::Int64,
         other => {
             return Err(EngineError::new(format!(
                 "unsupported column type in shim: {other}"

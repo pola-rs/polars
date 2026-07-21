@@ -1,0 +1,1173 @@
+hash-threshold 8
+
+# So far, this only runs well on SQLite and MySQL.
+
+# skip this entire file if ms sql server
+onlyif mssql
+halt
+
+# skip this entire file if oracle
+onlyif oracle
+halt
+
+# EVIDENCE-OF: R-52275-55503 When the right operand is an empty set, the
+# result of IN is false and the result of NOT IN is true, regardless of
+# the left operand and even if the left operand is NULL.
+#
+
+# EVIDENCE-OF: R-64309-54027 Note that SQLite allows the parenthesized
+# list of scalar values on the right-hand side of an IN or NOT IN
+# operator to be an empty list but most other SQL database engines and
+# the SQL92 standard require the list to contain at least one element.
+#
+
+onlyif sqlite
+query I nosort
+SELECT 1 IN ()
+----
+0
+
+skipif polars
+query I nosort
+SELECT 1 IN (2)
+----
+0
+
+skipif polars
+query I nosort
+SELECT 1 IN (2,3,4,5,6,7,8,9)
+----
+0
+
+onlyif sqlite
+query I nosort
+SELECT 1 NOT IN ()
+----
+1
+
+skipif polars
+query I nosort
+SELECT 1 NOT IN (2)
+----
+1
+
+skipif polars
+query I nosort
+SELECT 1 NOT IN (2,3,4,5,6,7,8,9)
+----
+1
+
+onlyif sqlite
+query I nosort
+SELECT null IN ()
+----
+0
+
+onlyif sqlite
+query I nosort
+SELECT null NOT IN ()
+----
+1
+
+statement ok
+CREATE TABLE t1(x INTEGER)
+
+onlyif sqlite
+query I nosort label-1
+SELECT 1 IN t1
+----
+0
+
+query I nosort label-1
+SELECT 1 IN (SELECT * FROM t1)
+----
+0
+
+onlyif sqlite
+query I nosort label-2
+SELECT 1 NOT IN t1
+----
+1
+
+query I nosort label-2
+SELECT 1 NOT IN (SELECT * FROM t1)
+----
+1
+
+onlyif sqlite
+query I nosort label-3
+SELECT null IN t1
+----
+0
+
+query I nosort label-3
+SELECT null IN (SELECT * FROM t1)
+----
+0
+
+onlyif sqlite
+query I nosort label-4
+SELECT null NOT IN t1
+----
+1
+
+query I nosort label-4
+SELECT null NOT IN (SELECT * FROM t1)
+----
+1
+
+statement ok
+CREATE TABLE t2(y INTEGER PRIMARY KEY)
+
+onlyif sqlite
+query I nosort label-5
+SELECT 1 IN t2
+----
+0
+
+query I nosort label-5
+SELECT 1 IN (SELECT * FROM t2)
+----
+0
+
+onlyif sqlite
+query I nosort label-6
+SELECT 1 NOT IN t2
+----
+1
+
+query I nosort label-6
+SELECT 1 NOT IN (SELECT * FROM t2)
+----
+1
+
+onlyif sqlite
+query I nosort label-7
+SELECT null IN t2
+----
+0
+
+query I nosort label-7
+SELECT null IN (SELECT * FROM t2)
+----
+0
+
+onlyif sqlite
+query I nosort label-8
+SELECT null NOT IN t2
+----
+1
+
+query I nosort label-8
+SELECT null NOT IN (SELECT * FROM t2)
+----
+1
+
+statement ok
+CREATE TABLE t3(z INTEGER UNIQUE)
+
+onlyif sqlite
+query I nosort label-9
+SELECT 1 IN t3
+----
+0
+
+query I nosort label-9
+SELECT 1 IN (SELECT * FROM t3)
+----
+0
+
+onlyif sqlite
+query I nosort label-10
+SELECT 1 NOT IN t3
+----
+1
+
+query I nosort label-10
+SELECT 1 NOT IN (SELECT * FROM t3)
+----
+1
+
+onlyif sqlite
+query I nosort label-11
+SELECT null IN t3
+----
+0
+
+query I nosort label-11
+SELECT null IN (SELECT * FROM t3)
+----
+0
+
+onlyif sqlite
+query I nosort label-12
+SELECT null NOT IN t3
+----
+1
+
+query I nosort label-12
+SELECT null NOT IN (SELECT * FROM t3)
+----
+1
+
+query I nosort
+SELECT 1 IN (SELECT x+y FROM t1, t2)
+----
+0
+
+query I nosort
+SELECT 1 NOT IN (SELECT x+y FROM t1,t2)
+----
+1
+
+query I nosort
+SELECT null IN (SELECT x+y FROM t1,t2)
+----
+0
+
+query I nosort
+SELECT null NOT IN (SELECT x+y FROM t1,t2)
+----
+1
+
+onlyif sqlite
+query I nosort
+SELECT 1.23 IN ()
+----
+0
+
+onlyif sqlite
+query I nosort
+SELECT 1.23 NOT IN ()
+----
+1
+
+onlyif sqlite
+query I nosort label-13
+SELECT 1.23 IN t1
+----
+0
+
+query I nosort label-13
+SELECT 1.23 IN (SELECT * FROM t1)
+----
+0
+
+onlyif sqlite
+query I nosort label-14
+SELECT 1.23 NOT IN t1
+----
+1
+
+query I nosort label-14
+SELECT 1.23 NOT IN (SELECT * FROM t1)
+----
+1
+
+onlyif sqlite
+query I nosort
+SELECT 'hello' IN ()
+----
+0
+
+onlyif sqlite
+query I nosort
+SELECT 'hello' NOT IN ()
+----
+1
+
+onlyif sqlite
+query I nosort label-15
+SELECT 'hello' IN t1
+----
+0
+
+query I nosort label-15
+SELECT 'hello' IN (SELECT * FROM t1)
+----
+0
+
+onlyif sqlite
+query I nosort label-16
+SELECT 'hello' NOT IN t1
+----
+1
+
+query I nosort label-16
+SELECT 'hello' NOT IN (SELECT * FROM t1)
+----
+1
+
+onlyif sqlite
+query I nosort
+SELECT x'303132' IN ()
+----
+0
+
+onlyif sqlite
+query I nosort
+SELECT x'303132' NOT IN ()
+----
+1
+
+onlyif sqlite
+query I nosort label-17
+SELECT x'303132' IN t1
+----
+0
+
+query I nosort label-17
+SELECT x'303132' IN (SELECT * FROM t1)
+----
+0
+
+onlyif sqlite
+query I nosort label-18
+SELECT x'303132' NOT IN t1
+----
+1
+
+query I nosort label-18
+SELECT x'303132' NOT IN (SELECT * FROM t1)
+----
+1
+
+# EVIDENCE-OF: R-50221-42915 The result of an IN or NOT IN operator is
+# determined by the following matrix: Left operand is NULL Right operand
+# contains NULL Right operand is an empty set Left operand found within
+# right operand Result of IN operator Result of NOT IN operator no no no
+# no false true does not matter no yes no false true no does not matter
+# no yes true false no yes no no NULL NULL yes does not matter no does
+# not matter NULL NULL
+#
+# Row 1:
+
+skipif polars
+query I nosort
+SELECT 1 IN (2,3,4)
+----
+0
+
+skipif polars
+query I nosort
+SELECT 1 NOT IN (2,3,4)
+----
+1
+
+skipif polars
+query I nosort
+SELECT 'a' IN ('b','c','d')
+----
+0
+
+skipif polars
+query I nosort
+SELECT 'a' NOT IN ('b','c','d')
+----
+1
+
+statement ok
+CREATE TABLE t4(a INTEGER UNIQUE)
+
+statement ok
+CREATE TABLE t5(b INTEGER PRIMARY KEY)
+
+statement ok
+CREATE TABLE t6(c INTEGER)
+
+statement ok
+INSERT INTO t4 VALUES(2)
+
+statement ok
+INSERT INTO t4 VALUES(3)
+
+statement ok
+INSERT INTO t4 VALUES(4)
+
+statement ok
+INSERT INTO t5 SELECT * FROM t4
+
+statement ok
+INSERT INTO t6 SELECT * FROM t4
+
+statement ok
+CREATE TABLE t4n(a INTEGER UNIQUE)
+
+statement ok
+CREATE TABLE t6n(c INTEGER)
+
+statement ok
+INSERT INTO t4n SELECT * FROM t4
+
+statement ok
+INSERT INTO t4n VALUES(null)
+
+statement ok
+INSERT INTO t6n SELECT * FROM t4n
+
+skipif mysql
+statement ok
+CREATE TABLE t7(a TEXT UNIQUE)
+
+onlyif mysql
+statement ok
+CREATE TABLE t7(a TEXT, UNIQUE (a(1)))
+
+statement ok
+CREATE TABLE t8(c TEXT)
+
+statement ok
+INSERT INTO t7 VALUES('b')
+
+statement ok
+INSERT INTO t7 VALUES('c')
+
+statement ok
+INSERT INTO t7 VALUES('d')
+
+statement ok
+INSERT INTO t8 SELECT * FROM t7
+
+skipif mysql
+statement ok
+CREATE TABLE t7n(a TEXT UNIQUE)
+
+onlyif mysql
+statement ok
+CREATE TABLE t7n(a TEXT, UNIQUE (a(1)))
+
+statement ok
+CREATE TABLE t8n(c TEXT)
+
+statement ok
+INSERT INTO t7n SELECT * FROM t7
+
+statement ok
+INSERT INTO t7n VALUES(null)
+
+statement ok
+INSERT INTO t8n SELECT * FROM t7n
+
+onlyif sqlite
+query I nosort label-19
+SELECT 1 IN t4
+----
+0
+
+query I nosort label-19
+SELECT 1 IN (SELECT * FROM t4)
+----
+0
+
+onlyif sqlite
+query I nosort label-20
+SELECT 1 NOT IN t4
+----
+1
+
+query I nosort label-20
+SELECT 1 NOT IN (SELECT * FROM t4)
+----
+1
+
+onlyif sqlite
+query I nosort label-21
+SELECT 1 IN t5
+----
+0
+
+query I nosort label-21
+SELECT 1 IN (SELECT * FROM t5)
+----
+0
+
+onlyif sqlite
+query I nosort label-22
+SELECT 1 NOT IN t5
+----
+1
+
+query I nosort label-22
+SELECT 1 NOT IN (SELECT * FROM t5)
+----
+1
+
+onlyif sqlite
+query I nosort label-23
+SELECT 1 IN t6
+----
+0
+
+query I nosort label-23
+SELECT 1 IN (SELECT * FROM t6)
+----
+0
+
+onlyif sqlite
+query I nosort label-24
+SELECT 1 NOT IN t6
+----
+1
+
+query I nosort label-24
+SELECT 1 NOT IN (SELECT * FROM t6)
+----
+1
+
+onlyif sqlite
+query I nosort label-25
+SELECT 'a' IN t7
+----
+0
+
+query I nosort label-25
+SELECT 'a' IN (SELECT * FROM t7)
+----
+0
+
+onlyif sqlite
+query I nosort label-26
+SELECT 'a' NOT IN t7
+----
+1
+
+query I nosort label-26
+SELECT 'a' NOT IN (SELECT * FROM t7)
+----
+1
+
+onlyif sqlite
+query I nosort label-27
+SELECT 'a' IN t8
+----
+0
+
+query I nosort label-27
+SELECT 'a' IN (SELECT * FROM t8)
+----
+0
+
+onlyif sqlite
+query I nosort label-28
+SELECT 'a' NOT IN t8
+----
+1
+
+query I nosort label-28
+SELECT 'a' NOT IN (SELECT * FROM t8)
+----
+1
+
+#
+# Row 2 is tested by cases 1-32 above.
+# Row 3:
+
+skipif polars
+query I nosort
+SELECT 2 IN (2,3,4,null)
+----
+1
+
+skipif polars
+query I nosort
+SELECT 3 NOT IN (2,3,4,null)
+----
+0
+
+skipif polars
+query I nosort
+SELECT 4 IN (2,3,4)
+----
+1
+
+skipif polars
+query I nosort
+SELECT 2 NOT IN (2,3,4)
+----
+0
+
+skipif polars
+query I nosort
+SELECT 'b' IN ('b','c','d')
+----
+1
+
+skipif polars
+query I nosort
+SELECT 'c' NOT IN ('b','c','d')
+----
+0
+
+skipif polars
+query I nosort
+SELECT 'd' IN ('b','c',null,'d')
+----
+1
+
+skipif polars
+query I nosort
+SELECT 'b' NOT IN (null,'b','c','d')
+----
+0
+
+onlyif sqlite
+query I nosort label-29
+SELECT 2 IN t4
+----
+1
+
+query I nosort label-29
+SELECT 2 IN (SELECT * FROM t4)
+----
+1
+
+onlyif sqlite
+query I nosort label-30
+SELECT 3 NOT IN t4
+----
+0
+
+query I nosort label-30
+SELECT 3 NOT IN (SELECT * FROM t4)
+----
+0
+
+onlyif sqlite
+query I nosort label-31
+SELECT 4 IN t4n
+----
+1
+
+query I nosort label-31
+SELECT 4 IN (SELECT * FROM t4n)
+----
+1
+
+onlyif sqlite
+query I nosort label-32
+SELECT 2 NOT IN t4n
+----
+0
+
+query I nosort label-32
+SELECT 2 NOT IN (SELECT * FROM t4n)
+----
+0
+
+onlyif sqlite
+query I nosort label-33
+SELECT 2 IN t5
+----
+1
+
+query I nosort label-33
+SELECT 2 IN (SELECT * FROM t5)
+----
+1
+
+onlyif sqlite
+query I nosort label-34
+SELECT 3 NOT IN t5
+----
+0
+
+query I nosort label-34
+SELECT 3 NOT IN (SELECT * FROM t5)
+----
+0
+
+onlyif sqlite
+query I nosort label-35
+SELECT 2 IN t6
+----
+1
+
+query I nosort label-35
+SELECT 2 IN (SELECT * FROM t6)
+----
+1
+
+onlyif sqlite
+query I nosort label-36
+SELECT 3 NOT IN t6
+----
+0
+
+query I nosort label-36
+SELECT 3 NOT IN (SELECT * FROM t6)
+----
+0
+
+onlyif sqlite
+query I nosort label-37
+SELECT 4 IN t6n
+----
+1
+
+query I nosort label-37
+SELECT 4 IN (SELECT * FROM t6n)
+----
+1
+
+onlyif sqlite
+query I nosort label-38
+SELECT 2 NOT IN t6n
+----
+0
+
+query I nosort label-38
+SELECT 2 NOT IN (SELECT * FROM t6n)
+----
+0
+
+onlyif sqlite
+query I nosort label-39
+SELECT 'b' IN t7
+----
+1
+
+query I nosort label-39
+SELECT 'b' IN (SELECT * FROM t7)
+----
+1
+
+onlyif sqlite
+query I nosort label-40
+SELECT 'c' NOT IN t7
+----
+0
+
+query I nosort label-40
+SELECT 'c' NOT IN (SELECT * FROM t7)
+----
+0
+
+onlyif sqlite
+query I nosort label-41
+SELECT 'c' IN t7n
+----
+1
+
+query I nosort label-41
+SELECT 'c' IN (SELECT * FROM t7n)
+----
+1
+
+onlyif sqlite
+query I nosort label-42
+SELECT 'd' NOT IN t7n
+----
+0
+
+query I nosort label-42
+SELECT 'd' NOT IN (SELECT * FROM t7n)
+----
+0
+
+onlyif sqlite
+query I nosort label-43
+SELECT 'b' IN t8
+----
+1
+
+query I nosort label-43
+SELECT 'b' IN (SELECT * FROM t8)
+----
+1
+
+onlyif sqlite
+query I nosort label-44
+SELECT 'c' NOT IN t8
+----
+0
+
+query I nosort label-44
+SELECT 'c' NOT IN (SELECT * FROM t8)
+----
+0
+
+onlyif sqlite
+query I nosort label-45
+SELECT 'c' IN t8n
+----
+1
+
+query I nosort label-45
+SELECT 'c' IN (SELECT * FROM t8n)
+----
+1
+
+onlyif sqlite
+query I nosort label-46
+SELECT 'd' NOT IN t8n
+----
+0
+
+query I nosort label-46
+SELECT 'd' NOT IN (SELECT * FROM t8n)
+----
+0
+
+#
+# Row 4:
+query I nosort
+SELECT 1 IN (2,3,4,null)
+----
+NULL
+
+query I nosort
+SELECT 1 NOT IN (2,3,4,null)
+----
+NULL
+
+query I nosort
+SELECT 'a' IN ('b','c',null,'d')
+----
+NULL
+
+query I nosort
+SELECT 'a' NOT IN (null,'b','c','d')
+----
+NULL
+
+onlyif sqlite
+query I nosort label-47
+SELECT 1 IN t4n
+----
+NULL
+
+query I nosort label-47
+SELECT 1 IN (SELECT * FROM t4n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-48
+SELECT 5 NOT IN t4n
+----
+NULL
+
+query I nosort label-48
+SELECT 5 NOT IN (SELECT * FROM t4n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-49
+SELECT 6 IN t6n
+----
+NULL
+
+query I nosort label-49
+SELECT 6 IN (SELECT * FROM t6n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-50
+SELECT 7 NOT IN t6n
+----
+NULL
+
+query I nosort label-50
+SELECT 7 NOT IN (SELECT * FROM t6n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-51
+SELECT 'a' IN t7n
+----
+NULL
+
+query I nosort label-51
+SELECT 'a' IN (SELECT * FROM t7n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-52
+SELECT 'e' NOT IN t7n
+----
+NULL
+
+query I nosort label-52
+SELECT 'e' NOT IN (SELECT * FROM t7n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-53
+SELECT 'f' IN t8n
+----
+NULL
+
+query I nosort label-53
+SELECT 'f' IN (SELECT * FROM t8n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-54
+SELECT 'g' NOT IN t8n
+----
+NULL
+
+query I nosort label-54
+SELECT 'g' NOT IN (SELECT * FROM t8n)
+----
+NULL
+
+#
+# Row 5:
+query I nosort
+SELECT null IN (2,3,4,null)
+----
+NULL
+
+query I nosort
+SELECT null NOT IN (2,3,4,null)
+----
+NULL
+
+query I nosort
+SELECT null IN (2,3,4)
+----
+NULL
+
+query I nosort
+SELECT null NOT IN (2,3,4)
+----
+NULL
+
+query I nosort
+SELECT null IN ('b','c','d')
+----
+NULL
+
+query I nosort
+SELECT null NOT IN ('b','c','d')
+----
+NULL
+
+query I nosort
+SELECT null IN ('b','c',null,'d')
+----
+NULL
+
+query I nosort
+SELECT null NOT IN (null,'b','c','d')
+----
+NULL
+
+onlyif sqlite
+query I nosort label-55
+SELECT null IN t4
+----
+NULL
+
+# mysql is failing this one
+skipif mysql
+query I nosort label-55
+SELECT null IN (SELECT * FROM t4)
+----
+NULL
+
+# t4 should be 2,3,4... so this should be same
+query I nosort label-55
+SELECT null IN (2,3,4)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-56
+SELECT null NOT IN t4
+----
+NULL
+
+# mysql is failing this one
+skipif mysql
+query I nosort label-56
+SELECT null NOT IN (SELECT * FROM t4)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-57
+SELECT null IN t4n
+----
+NULL
+
+query I nosort label-57
+SELECT null IN (SELECT * FROM t4n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-58
+SELECT null NOT IN t4n
+----
+NULL
+
+query I nosort label-58
+SELECT null NOT IN (SELECT * FROM t4n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-59
+SELECT null IN t5
+----
+NULL
+
+# mysql is failing this one
+skipif mysql
+query I nosort label-59
+SELECT null IN (SELECT * FROM t5)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-60
+SELECT null NOT IN t5
+----
+NULL
+
+# mysql is failing this one
+skipif mysql
+query I nosort label-60
+SELECT null NOT IN (SELECT * FROM t5)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-61
+SELECT null IN t6
+----
+NULL
+
+query I nosort label-61
+SELECT null IN (SELECT * FROM t6)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-62
+SELECT null NOT IN t6
+----
+NULL
+
+query I nosort label-62
+SELECT null NOT IN (SELECT * FROM t6)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-63
+SELECT null IN t6n
+----
+NULL
+
+query I nosort label-63
+SELECT null IN (SELECT * FROM t6n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-64
+SELECT null NOT IN t6n
+----
+NULL
+
+query I nosort label-64
+SELECT null NOT IN (SELECT * FROM t6n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-65
+SELECT null IN t7
+----
+NULL
+
+query I nosort label-65
+SELECT null IN (SELECT * FROM t7)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-66
+SELECT null NOT IN t7
+----
+NULL
+
+query I nosort label-66
+SELECT null NOT IN (SELECT * FROM t7)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-67
+SELECT null IN t7n
+----
+NULL
+
+query I nosort label-67
+SELECT null IN (SELECT * FROM t7n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-68
+SELECT null NOT IN t7n
+----
+NULL
+
+query I nosort label-68
+SELECT null NOT IN (SELECT * FROM t7n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-69
+SELECT null IN t8
+----
+NULL
+
+query I nosort label-69
+SELECT null IN (SELECT * FROM t8)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-70
+SELECT null NOT IN t8
+----
+NULL
+
+query I nosort label-70
+SELECT null NOT IN (SELECT * FROM t8)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-71
+SELECT null IN t8n
+----
+NULL
+
+query I nosort label-71
+SELECT null IN (SELECT * FROM t8n)
+----
+NULL
+
+onlyif sqlite
+query I nosort label-72
+SELECT null NOT IN t8n
+----
+NULL
+
+query I nosort label-72
+SELECT null NOT IN (SELECT * FROM t8n)
+----
+NULL

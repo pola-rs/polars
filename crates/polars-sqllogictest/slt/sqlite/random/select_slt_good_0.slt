@@ -1,0 +1,973 @@
+hash-threshold 8
+
+statement ok
+CREATE TABLE tab0(col0 INTEGER, col1 INTEGER, col2 INTEGER)
+
+statement ok
+CREATE TABLE tab1(col0 INTEGER, col1 INTEGER, col2 INTEGER)
+
+statement ok
+CREATE TABLE tab2(col0 INTEGER, col1 INTEGER, col2 INTEGER)
+
+statement ok
+INSERT INTO tab0 VALUES(89,91,82)
+
+statement ok
+INSERT INTO tab0 VALUES(35,97,1)
+
+statement ok
+INSERT INTO tab0 VALUES(24,86,33)
+
+statement ok
+INSERT INTO tab1 VALUES(64,10,57)
+
+statement ok
+INSERT INTO tab1 VALUES(3,26,54)
+
+statement ok
+INSERT INTO tab1 VALUES(80,13,96)
+
+statement ok
+INSERT INTO tab2 VALUES(7,31,27)
+
+statement ok
+INSERT INTO tab2 VALUES(79,17,38)
+
+statement ok
+INSERT INTO tab2 VALUES(78,59,26)
+
+query IIIIII rowsort
+SELECT ALL * FROM tab0 cor0 CROSS JOIN tab2 AS cor1
+----
+54 values hashing to 018801f36b33d2fe82cb95918ba502d6
+
+query IIIIII rowsort
+SELECT DISTINCT * FROM tab2, tab2 cor0
+----
+54 values hashing to fe43263cad63144a098cccb9cd58c32a
+
+query IIIIII rowsort
+SELECT * FROM tab1, tab2 cor0
+----
+54 values hashing to d8165ceb99ded93f34ad83c310a80ea7
+
+query IIIIII rowsort
+SELECT * FROM tab0, tab0 AS cor0
+----
+54 values hashing to b8667d60d280879b35ad1450a82b3a49
+
+query III rowsort
+SELECT DISTINCT * FROM tab1 AS cor0
+----
+9 values hashing to 8d6692e6d41505c3ad42d919bd9ecd0d
+
+query III rowsort
+SELECT * FROM tab0 AS cor0
+----
+9 values hashing to 38a1673e2e09d694c8cec45c797034a7
+
+query III rowsort
+SELECT ALL * FROM tab0 AS cor0
+----
+9 values hashing to 38a1673e2e09d694c8cec45c797034a7
+
+onlyif mysql
+query I rowsort label-7
+SELECT - col2 DIV - col0 - + 69 AS col0 FROM tab1 AS cor0
+----
+-51
+-68
+-69
+
+skipif mysql
+skipif polars
+query I rowsort label-7
+SELECT - col2 / - col0 - + 69 AS col0 FROM tab1 AS cor0
+----
+-51
+-68
+-69
+
+query IIIIII rowsort
+SELECT * FROM tab2 AS cor0 CROSS JOIN tab2 AS cor1
+----
+54 values hashing to fe43263cad63144a098cccb9cd58c32a
+
+query III rowsort
+SELECT DISTINCT * FROM tab2
+----
+9 values hashing to ad05b5942400d5e7a21b323b3da65a45
+
+query I rowsort
+SELECT 67 AS col0 FROM tab2 AS cor0 CROSS JOIN tab2 AS cor1
+----
+9 values hashing to b56f8a4f1fcebc9802481256df61e97c
+
+query III rowsort
+SELECT * FROM tab2
+----
+9 values hashing to ad05b5942400d5e7a21b323b3da65a45
+
+query IIIIII rowsort
+SELECT ALL * FROM tab1, tab0 AS cor0
+----
+54 values hashing to 2a7467bc6f55dbb61fbd4aa2bd0646a9
+
+query III rowsort
+SELECT DISTINCT * FROM tab0
+----
+9 values hashing to 38a1673e2e09d694c8cec45c797034a7
+
+query III rowsort
+SELECT DISTINCT * FROM tab1
+----
+9 values hashing to 8d6692e6d41505c3ad42d919bd9ecd0d
+
+query IIIIIIIII rowsort
+SELECT * FROM tab1, tab2, tab1 cor0
+----
+243 values hashing to 4fe4780e49e612b93957f575d9b3e89f
+
+query III rowsort
+SELECT * FROM tab0 cor0
+----
+9 values hashing to 38a1673e2e09d694c8cec45c797034a7
+
+query III rowsort
+SELECT * FROM tab2 AS cor0
+----
+9 values hashing to ad05b5942400d5e7a21b323b3da65a45
+
+query IIIIIIIII rowsort
+SELECT DISTINCT * FROM tab0, tab0 AS cor0, tab0 AS cor1
+----
+243 values hashing to 3e8bd9634a3f5947d8becd5f5799bb7f
+
+query III rowsort
+SELECT ALL * FROM tab2 AS cor0
+----
+9 values hashing to ad05b5942400d5e7a21b323b3da65a45
+
+query III rowsort
+SELECT ALL * FROM tab1 AS cor0
+----
+9 values hashing to 8d6692e6d41505c3ad42d919bd9ecd0d
+
+query IIIIIIIII rowsort
+SELECT ALL * FROM tab2, tab2 cor0, tab0 AS cor1
+----
+243 values hashing to b3323704f6873113d863f8e27386b356
+
+query IIIIIIIII rowsort
+SELECT * FROM tab0, tab2, tab1 AS cor0
+----
+243 values hashing to 098e223d780e18b6582523fd6f55eec9
+
+query III rowsort
+SELECT * FROM tab0
+----
+9 values hashing to 38a1673e2e09d694c8cec45c797034a7
+
+query III rowsort
+SELECT ALL * FROM tab1
+----
+9 values hashing to 8d6692e6d41505c3ad42d919bd9ecd0d
+
+query IIIIII rowsort
+SELECT DISTINCT * FROM tab2, tab2 AS cor0
+----
+54 values hashing to fe43263cad63144a098cccb9cd58c32a
+
+query I rowsort
+SELECT DISTINCT - + 43 AS col0 FROM tab1 AS cor0
+----
+-43
+
+skipif postgresql
+query I rowsort
+SELECT + ( - 78 ) + col1 col2 FROM tab0 AS cor0
+----
+13
+19
+8
+
+query I rowsort
+SELECT DISTINCT col0 AS col1 FROM tab2 AS cor0
+----
+7
+78
+79
+
+query I rowsort
+SELECT ( - col2 ) FROM tab1 AS cor0
+----
+-54
+-57
+-96
+
+query I rowsort
+SELECT ALL - + col1 * cor0.col1 FROM tab1 cor0
+----
+-100
+-169
+-676
+
+query IIIIIIIII rowsort
+SELECT ALL * FROM tab0, tab0 AS cor0, tab2 cor1
+----
+243 values hashing to ce53c0e8839c969b0513568da6eb2c4b
+
+query IIIIIIIII rowsort
+SELECT DISTINCT * FROM tab2, tab1 AS cor0, tab0 AS cor1
+----
+243 values hashing to 2ba47a833971d4c4b0287e849fb0cfb8
+
+query III rowsort
+SELECT * FROM tab1 AS cor0
+----
+9 values hashing to 8d6692e6d41505c3ad42d919bd9ecd0d
+
+query III rowsort
+SELECT ALL * FROM tab0 cor0
+----
+9 values hashing to 38a1673e2e09d694c8cec45c797034a7
+
+query IIIIIIIII rowsort
+SELECT ALL * FROM tab2, tab0 AS cor0, tab2 AS cor1
+----
+243 values hashing to 2248b8c3b6efacb4e8fc6d9f81b7df8b
+
+onlyif mysql
+query I rowsort label-36
+SELECT + CAST( - 59 AS SIGNED ) FROM tab0 AS cor0
+----
+-59
+-59
+-59
+
+skipif mysql
+query I rowsort label-36
+SELECT + CAST ( - 59 AS INTEGER ) FROM tab0 AS cor0
+----
+-59
+-59
+-59
+
+query III rowsort
+SELECT ALL * FROM tab1 cor0
+----
+9 values hashing to 8d6692e6d41505c3ad42d919bd9ecd0d
+
+query I rowsort
+SELECT DISTINCT cor0.col0 * 59 FROM tab0, tab1 AS cor0
+----
+177
+3776
+4720
+
+query III rowsort
+SELECT DISTINCT * FROM tab2 AS cor0
+----
+9 values hashing to ad05b5942400d5e7a21b323b3da65a45
+
+query IIIIII rowsort
+SELECT DISTINCT * FROM tab0, tab1 cor0
+----
+54 values hashing to b010e320d66ab5b2711fc14e8fb58b01
+
+query I rowsort
+SELECT + col0 * + col0 AS col2 FROM tab1 AS cor0
+----
+4096
+6400
+9
+
+query I rowsort
+SELECT tab1.col1 + 77 AS col0 FROM tab1, tab0 AS cor0
+----
+9 values hashing to e95026a3b232313ec2d8a183f7b1cc4c
+
+query I rowsort
+SELECT DISTINCT col0 * - col2 - - col1 FROM tab2
+----
+-158
+-1969
+-2985
+
+query IIIIIIIII rowsort
+SELECT * FROM tab2, tab1 AS cor0, tab1 AS cor1
+----
+243 values hashing to 89e3b35a4a4f02d7b83645addb9dcdc3
+
+query I rowsort
+SELECT DISTINCT - col1 FROM tab2
+----
+-17
+-31
+-59
+
+query IIIIIIIII rowsort
+SELECT DISTINCT * FROM tab0, tab1, tab1 AS cor0
+----
+243 values hashing to 7e12d99d8ab63d9fd10e95cef9d78998
+
+query I rowsort
+SELECT + col0 + col1 FROM tab0 cor0
+----
+110
+132
+180
+
+query III rowsort
+SELECT DISTINCT * FROM tab2 cor0
+----
+9 values hashing to ad05b5942400d5e7a21b323b3da65a45
+
+query IIIIIIIII rowsort
+SELECT * FROM tab0, tab2, tab2 AS cor0
+----
+243 values hashing to 5d85c5683e3ffd6d68920690d7302f7d
+
+query IIIIII rowsort
+SELECT * FROM tab1, tab0 AS cor0
+----
+54 values hashing to 2a7467bc6f55dbb61fbd4aa2bd0646a9
+
+query IIIIIIIII rowsort
+SELECT DISTINCT * FROM tab2, tab1, tab0 AS cor0
+----
+243 values hashing to 2ba47a833971d4c4b0287e849fb0cfb8
+
+onlyif mysql
+query I rowsort label-52
+SELECT ALL + ( + col1 ) DIV + tab0.col2 FROM tab0
+----
+1
+2
+97
+
+skipif mysql
+skipif polars
+query I rowsort label-52
+SELECT ALL + ( + col1 ) / + tab0.col2 FROM tab0
+----
+1
+2
+97
+
+query I rowsort
+SELECT DISTINCT - col1 * col0 FROM tab1
+----
+-1040
+-640
+-78
+
+query IIIIIIIII rowsort
+SELECT ALL * FROM tab0, tab2 AS cor0, tab2 AS cor1
+----
+243 values hashing to 5d85c5683e3ffd6d68920690d7302f7d
+
+query IIIIIIIII rowsort
+SELECT ALL * FROM tab1, tab0, tab2 AS cor0
+----
+243 values hashing to 60bd71ee2159222231bb3b5819bc5dca
+
+query I rowsort
+SELECT DISTINCT - col1 FROM tab1
+----
+-10
+-13
+-26
+
+skipif postgresql
+query I rowsort
+SELECT DISTINCT + 85 col0 FROM tab2
+----
+85
+
+query IIIIII rowsort
+SELECT * FROM tab2, tab1 AS cor0
+----
+54 values hashing to 69e208df4a305efdfcc036bb4b31e720
+
+query IIIIII rowsort
+SELECT DISTINCT * FROM tab0, tab1 AS cor0
+----
+54 values hashing to b010e320d66ab5b2711fc14e8fb58b01
+
+query I rowsort
+SELECT - + 18 AS col0 FROM tab2 AS cor0
+----
+-18
+-18
+-18
+
+query IIIIII rowsort
+SELECT ALL * FROM tab1, tab2 AS cor0
+----
+54 values hashing to d8165ceb99ded93f34ad83c310a80ea7
+
+query I rowsort
+SELECT col0 * + col2 FROM tab0 AS cor0
+----
+35
+7298
+792
+
+query III rowsort
+SELECT DISTINCT * FROM tab0 AS cor0
+----
+9 values hashing to 38a1673e2e09d694c8cec45c797034a7
+
+query I rowsort
+SELECT cor0.col1 + - 13 FROM tab2 AS cor0
+----
+18
+4
+46
+
+query I rowsort
+SELECT + - col2 + 11 AS col2 FROM tab0 AS cor0
+----
+-22
+-71
+10
+
+query I rowsort
+SELECT - col2 * + col1 + + ( - col0 ) AS col1 FROM tab1 AS cor0
+----
+-1328
+-1407
+-634
+
+skipif postgresql
+query I rowsort
+SELECT + col2 + + col0 + + col0 col0 FROM tab0 AS cor0
+----
+260
+71
+81
+
+skipif postgresql
+query I rowsort
+SELECT + col0 * - ( + 40 * - col1 ) + - col0 + 26 col2 FROM tab2 AS cor0
+----
+184028
+53667
+8699
+
+query III rowsort
+SELECT ALL * FROM tab0
+----
+9 values hashing to 38a1673e2e09d694c8cec45c797034a7
+
+query I rowsort
+SELECT ALL + 78 * col1 AS col2 FROM tab1
+----
+1014
+2028
+780
+
+query IIIIII rowsort
+SELECT * FROM tab0, tab2 AS cor0
+----
+54 values hashing to 018801f36b33d2fe82cb95918ba502d6
+
+query IIIIIIIII rowsort
+SELECT * FROM tab1, tab1 AS cor0, tab1 AS cor1
+----
+243 values hashing to 2464a6f4cfabe66aeca50fcb4cd85bf5
+
+query IIIIIIIII rowsort
+SELECT * FROM tab2, tab1 cor0, tab0 AS cor1
+----
+243 values hashing to 2ba47a833971d4c4b0287e849fb0cfb8
+
+query I rowsort
+SELECT DISTINCT + col2 AS col2 FROM tab1
+----
+54
+57
+96
+
+skipif postgresql
+query I rowsort
+SELECT + 99 * col2 col2 FROM tab0
+----
+3267
+8118
+99
+
+query IIIIII rowsort
+SELECT ALL * FROM tab2, tab0 cor0
+----
+54 values hashing to 3352c458f45211cf9aa3236c2cd6dd38
+
+query III rowsort
+SELECT * FROM tab1
+----
+9 values hashing to 8d6692e6d41505c3ad42d919bd9ecd0d
+
+query IIIIII rowsort
+SELECT DISTINCT * FROM tab0, tab0 AS cor0
+----
+54 values hashing to b8667d60d280879b35ad1450a82b3a49
+
+query IIIIIIIII rowsort
+SELECT * FROM tab2, tab1 AS cor0, tab0 AS cor1
+----
+243 values hashing to 2ba47a833971d4c4b0287e849fb0cfb8
+
+query I rowsort
+SELECT col1 * tab0.col1 FROM tab0
+----
+7396
+8281
+9409
+
+query I rowsort
+SELECT col0 * col2 * col2 FROM tab2
+----
+114076
+5103
+52728
+
+onlyif mysql
+query I rowsort label-82
+SELECT DISTINCT - col1 DIV - col1 AS col2 FROM tab1 AS cor0
+----
+1
+
+skipif mysql
+skipif polars
+query I rowsort label-82
+SELECT DISTINCT - col1 / - col1 AS col2 FROM tab1 AS cor0
+----
+1
+
+query I rowsort
+SELECT ALL - col0 FROM tab1 AS cor0
+----
+-3
+-64
+-80
+
+query I rowsort
+SELECT - col1 + 69 AS col1 FROM tab0 cor0
+----
+-17
+-22
+-28
+
+skipif postgresql
+query I rowsort
+SELECT DISTINCT + - col1 col1 FROM tab0 AS cor0
+----
+-86
+-91
+-97
+
+query I rowsort
+SELECT DISTINCT - col1 + + col0 * col1 FROM tab1 AS cor0
+----
+1027
+52
+630
+
+query I rowsort
+SELECT DISTINCT - - col1 FROM tab0 AS cor0
+----
+86
+91
+97
+
+query IIIIII rowsort
+SELECT DISTINCT * FROM tab2, tab0 cor0
+----
+54 values hashing to 3352c458f45211cf9aa3236c2cd6dd38
+
+query I rowsort
+SELECT ALL + - col2 * - cor0.col1 AS col1 FROM tab1 AS cor0
+----
+1248
+1404
+570
+
+query I rowsort
+SELECT DISTINCT + col1 + + col1 + col1 * + col0 AS col2 FROM tab2 AS cor0
+----
+1377
+279
+4720
+
+query I rowsort
+SELECT ALL col2 AS col1 FROM tab1 AS cor0
+----
+54
+57
+96
+
+query I rowsort
+SELECT - col2 * - col2 * ( + col2 ) - cor0.col1 FROM tab0 cor0
+----
+-96
+35851
+551277
+
+skipif postgresql
+query I rowsort
+SELECT DISTINCT - + col2 * col0 col0 FROM tab2 cor0
+----
+-189
+-2028
+-3002
+
+onlyif mysql
+query I rowsort label-94
+SELECT ALL col0 + + CAST( col1 AS SIGNED ) * col0 FROM tab2
+----
+1422
+224
+4680
+
+skipif mysql
+query I rowsort label-94
+SELECT ALL col0 + + CAST ( col1 AS INTEGER ) * col0 FROM tab2
+----
+1422
+224
+4680
+
+query I rowsort
+SELECT ALL + + col0 * 53 + - cor0.col1 FROM tab2 AS cor0
+----
+340
+4075
+4170
+
+query I rowsort
+SELECT ALL - - cor0.col1 + 25 FROM tab0 AS cor0
+----
+111
+116
+122
+
+query IIIIII rowsort
+SELECT ALL * FROM tab2, tab2 AS cor0
+----
+54 values hashing to fe43263cad63144a098cccb9cd58c32a
+
+query IIIIII rowsort
+SELECT ALL * FROM tab0, tab0 AS cor0
+----
+54 values hashing to b8667d60d280879b35ad1450a82b3a49
+
+query I rowsort
+SELECT DISTINCT + col0 - col0 AS col1 FROM tab2 cor0
+----
+0
+
+query I rowsort
+SELECT + col2 - + col0 * + 61 * col1 FROM tab2 AS cor0
+----
+-13210
+-280696
+-81885
+
+onlyif mysql
+query I rowsort label-101
+SELECT DISTINCT + col1 DIV + 49 AS col0 FROM tab1 AS cor0
+----
+0
+
+skipif mysql
+skipif polars
+query I rowsort label-101
+SELECT DISTINCT + col1 / + 49 AS col0 FROM tab1 AS cor0
+----
+0
+
+query IIIIIIIII rowsort
+SELECT ALL * FROM tab0, tab0 AS cor0, tab2 AS cor1
+----
+243 values hashing to ce53c0e8839c969b0513568da6eb2c4b
+
+query I rowsort
+SELECT + - col1 AS col1 FROM tab0 cor0
+----
+-86
+-91
+-97
+
+query I rowsort
+SELECT DISTINCT + - cor0.col2 AS col0 FROM tab2 cor0
+----
+-26
+-27
+-38
+
+query I rowsort
+SELECT ALL col2 * 47 + + col1 FROM tab1 AS cor0
+----
+2564
+2689
+4525
+
+query I rowsort
+SELECT ALL - col2 FROM tab0 AS cor0
+----
+-1
+-33
+-82
+
+query I rowsort
+SELECT - col1 + cor0.col1 FROM tab2 AS cor0
+----
+0
+0
+0
+
+skipif postgresql
+query I rowsort
+SELECT DISTINCT ( + col2 ) col1 FROM tab0 AS cor0
+----
+1
+33
+82
+
+query I rowsort
+SELECT DISTINCT + + col0 + + ( + col2 * + col2 ) AS col2 FROM tab0 AS cor0
+----
+1113
+36
+6813
+
+query I rowsort
+SELECT col0 * + 80 * col0 + 94 AS col1 FROM tab2 AS cor0
+----
+4014
+486814
+499374
+
+query I rowsort
+SELECT ALL 71 * col2 FROM tab0 cor0
+----
+2343
+5822
+71
+
+query I rowsort
+SELECT + - 98 + col2 AS col2 FROM tab2 AS cor0
+----
+-60
+-71
+-72
+
+onlyif mysql
+query I rowsort label-113
+SELECT DISTINCT - col2 * ( col1 * tab2.col2 ) - CAST( 58 * col0 AS SIGNED ) FROM tab2
+----
+-23005
+-29130
+-44408
+
+skipif mysql
+query I rowsort label-113
+SELECT DISTINCT - col2 * ( col1 * tab2.col2 ) - CAST ( 58 * col0 AS INTEGER ) FROM tab2
+----
+-23005
+-29130
+-44408
+
+query I rowsort
+SELECT DISTINCT - - 57 FROM tab0 AS cor0
+----
+57
+
+query I rowsort
+SELECT col1 * col1 - - col1 * + col0 AS col1 FROM tab2 AS cor0
+----
+1178
+1632
+8083
+
+query IIIIIIIII rowsort
+SELECT * FROM tab0, tab2 AS cor0, tab0 AS cor1
+----
+243 values hashing to 5c33e96b85afe1ea51bb6d4e9fa6f993
+
+query I rowsort
+SELECT DISTINCT - - col0 + 42 * + col0 AS col1 FROM tab2 AS cor0
+----
+301
+3354
+3397
+
+query I rowsort
+SELECT DISTINCT - ( + col2 ) * col0 FROM tab2 AS cor0
+----
+-189
+-2028
+-3002
+
+query I rowsort
+SELECT ALL + col1 AS col0 FROM tab0 AS cor0
+----
+86
+91
+97
+
+skipif postgresql
+query I rowsort
+SELECT - 38 * - 49 + + cor0.col1 col1 FROM tab0 AS cor0
+----
+1948
+1953
+1959
+
+query I rowsort
+SELECT DISTINCT col0 * 9 + - col2 AS col2 FROM tab0 AS cor0
+----
+183
+314
+719
+
+query I rowsort
+SELECT ALL + 41 + - col1 * col0 FROM tab0 AS cor0
+----
+-2023
+-3354
+-8058
+
+query I rowsort
+SELECT ALL + 28 AS col2 FROM tab2 AS cor0
+----
+28
+28
+28
+
+query I rowsort
+SELECT + ( - cor0.col0 ) * col2 + - cor0.col0 * - col0 * + col2 AS col1 FROM tab0 AS cor0
+----
+1190
+18216
+642224
+
+query I rowsort
+SELECT DISTINCT - - col0 + ( + col1 * col2 ) + + cor0.col2 AS col1 FROM tab2 AS cor0
+----
+1638
+763
+871
+
+query III rowsort
+SELECT ALL * FROM tab2
+----
+9 values hashing to ad05b5942400d5e7a21b323b3da65a45
+
+onlyif mysql
+query I rowsort label-127
+SELECT ALL col0 + + col2 DIV + tab1.col0 FROM tab1
+----
+21
+64
+81
+
+skipif mysql
+skipif polars
+query I rowsort label-127
+SELECT ALL col0 + + col2 / + tab1.col0 FROM tab1
+----
+21
+64
+81
+
+query I rowsort
+SELECT + col2 FROM tab0
+----
+1
+33
+82
+
+query IIIIII rowsort
+SELECT * FROM tab0, tab1 AS cor0
+----
+54 values hashing to b010e320d66ab5b2711fc14e8fb58b01
+
+query IIIIIIIIIIII rowsort
+SELECT * FROM tab0, tab2, tab1 AS cor0, tab1 AS cor1
+----
+972 values hashing to fe55095fff3a5ecc2f113d14a8c6f823
+
+query I rowsort
+SELECT DISTINCT col1 * col1 - col1 AS col0 FROM tab1
+----
+156
+650
+90
+
+query IIIIIIIII rowsort
+SELECT * FROM tab1, tab2, tab2 AS cor0
+----
+243 values hashing to 042fa16c43ab365359ee93c064e44127
+
+query IIIIIIIII rowsort
+SELECT * FROM tab2, tab1 AS cor0, tab1 cor1
+----
+243 values hashing to 89e3b35a4a4f02d7b83645addb9dcdc3
+
+query IIIIIIIII rowsort
+SELECT ALL * FROM tab1, tab0 AS cor0, tab0 AS cor1
+----
+243 values hashing to 3581f59ff9574f9d6290fc6bca0b5e4d
+
+onlyif mysql
+query I rowsort label-135
+SELECT ALL + col0 DIV col1 AS col2 FROM tab2 AS cor0
+----
+0
+1
+4
+
+skipif mysql
+skipif polars
+query I rowsort label-135
+SELECT ALL + col0 / col1 AS col2 FROM tab2 AS cor0
+----
+0
+1
+4
+
+query I rowsort
+SELECT DISTINCT - 92 FROM tab0 AS cor0
+----
+-92
+
+query I rowsort
+SELECT ALL + + col2 * col1 AS col1 FROM tab2 AS cor0
+----
+1534
+646
+837
+
+query I rowsort
+SELECT - col2 + col0 * - col0 AS col2 FROM tab1 AS cor0
+----
+-4153
+-63
+-6496
+
+skipif postgresql
+query I rowsort
+SELECT - col0 col2 FROM tab2 AS cor0
+----
+-7
+-78
+-79
+
+query I rowsort
+SELECT ALL - ( + col0 ) FROM tab1 AS cor0
+----
+-3
+-64
+-80

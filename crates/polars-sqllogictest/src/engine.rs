@@ -1,6 +1,6 @@
 use std::fmt;
 
-use polars_core::prelude::{DataFrame, PlHashMap};
+use polars_core::prelude::{DataFrame, PlHashMap, PlHashSet};
 use polars_sql::SQLContext;
 use sqllogictest::{DB, DBOutput, DefaultColumnType};
 use sqlparser::dialect::GenericDialect;
@@ -34,6 +34,7 @@ impl From<polars_core::prelude::PolarsError> for EngineError {
 pub struct PolarsEngine {
     ctx: SQLContext,
     tables: PlHashMap<String, DataFrame>,
+    views: PlHashSet<String>,
 }
 
 impl PolarsEngine {
@@ -41,6 +42,7 @@ impl PolarsEngine {
         PolarsEngine {
             ctx: SQLContext::new(),
             tables: PlHashMap::default(),
+            views: PlHashSet::default(),
         }
     }
 }
@@ -51,9 +53,16 @@ impl DB for PolarsEngine {
 
     fn run(&mut self, sql: &str) -> Result<DBOutput<DefaultColumnType>, EngineError> {
         if let Ok(statements) = Parser::parse_sql(&GenericDialect, sql) {
-            if statements.len() == 1 && setup::is_setup_statement(&statements[0]) {
-                let affected =
-                    setup::run_setup_statement(&mut self.tables, &self.ctx, &statements[0])?;
+            if !statements.is_empty() && statements.iter().all(setup::is_setup_statement) {
+                let mut affected = 0u64;
+                for statement in &statements {
+                    affected += setup::run_setup_statement(
+                        &mut self.tables,
+                        &mut self.views,
+                        &mut self.ctx,
+                        statement,
+                    )?;
+                }
                 return Ok(DBOutput::StatementComplete(affected));
             }
         }

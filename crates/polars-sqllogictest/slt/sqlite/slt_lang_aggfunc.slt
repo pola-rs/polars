@@ -1,0 +1,500 @@
+hash-threshold 8
+
+statement ok
+CREATE TABLE t1( x INTEGER, y VARCHAR(8) )
+
+statement ok
+INSERT INTO t1 VALUES(1,'true')
+
+statement ok
+INSERT INTO t1 VALUES(0,'false')
+
+statement ok
+INSERT INTO t1 VALUES(NULL,'NULL')
+
+statement ok
+CREATE INDEX t1i1 ON t1(x)
+
+skipif sqlite
+halt
+
+# count(x), avg(x), sum(x), total(x), min(x), max(x)
+# group_concat(x), group_concat(x,y)
+
+# EVIDENCE-OF: R-00466-56349 In any aggregate function that takes a
+# single argument, that argument can be preceded by the keyword
+# DISTINCT.
+
+query I nosort
+SELECT count(DISTINCT x) FROM t1
+----
+2
+
+query I nosort
+SELECT avg(DISTINCT x) FROM t1
+----
+0
+
+query I nosort
+SELECT sum(DISTINCT x) FROM t1
+----
+1
+
+query I nosort
+SELECT total(DISTINCT x) FROM t1
+----
+1
+
+query I nosort
+SELECT min(DISTINCT x) FROM t1
+----
+0
+
+query I nosort
+SELECT max(DISTINCT x) FROM t1
+----
+1
+
+query T nosort
+SELECT group_concat(DISTINCT x) FROM t1 NOT INDEXED
+----
+1,0
+
+
+# EVIDENCE-OF: R-00171-59428 In such cases, duplicate elements are
+# filtered before being passed into the aggregate function.
+
+# EVIDENCE-OF: R-31453-41389 For example, the function "count(distinct
+# X)" will return the number of distinct values of column X instead of
+# the total number of non-null values in column X.
+
+statement ok
+INSERT INTO t1 VALUES(2,'true')
+
+statement ok
+INSERT INTO t1 VALUES(2,'true')
+
+query I nosort
+SELECT count(DISTINCT x) FROM t1
+----
+3
+
+
+# EVIDENCE-OF: R-20409-33051 The avg() function returns the average
+# value of all non-NULL X within a group.
+
+query I nosort
+SELECT avg(x) FROM t1
+----
+1
+
+
+# EVIDENCE-OF: R-29052-00975 String and BLOB values that do not look
+# like numbers are interpreted as 0.
+
+query I nosort
+SELECT count(y) FROM t1
+----
+5
+
+query I nosort
+SELECT avg(y) FROM t1
+----
+0
+
+query I nosort
+SELECT sum(y) FROM t1
+----
+0
+
+query I nosort
+SELECT total(y) FROM t1
+----
+0
+
+query I nosort
+SELECT min(y) FROM t1
+----
+0
+
+skipif polars
+query I nosort
+SELECT max(y) FROM t1
+----
+0
+
+query T nosort
+SELECT group_concat(y) FROM t1
+----
+true,false,NULL,true,true
+
+# repeat with DISTINCT
+
+query I nosort
+SELECT count(DISTINCT y) FROM t1
+----
+3
+
+query I nosort
+SELECT avg(DISTINCT y) FROM t1
+----
+0
+
+query I nosort
+SELECT sum(DISTINCT y) FROM t1
+----
+0
+
+query I nosort
+SELECT total(DISTINCT y) FROM t1
+----
+0
+
+query I nosort
+SELECT min(DISTINCT y) FROM t1
+----
+0
+
+query I nosort
+SELECT max(DISTINCT y) FROM t1
+----
+0
+
+query T nosort
+SELECT group_concat(DISTINCT y) FROM t1
+----
+true,false,NULL
+
+
+# EVIDENCE-OF: R-17177-10067 The result of avg() is always a floating
+# point value whenever there is at least one non-NULL input even if all
+# inputs are integers.
+
+
+query R nosort
+SELECT avg(x) FROM t1
+----
+1.250
+
+query R nosort
+SELECT avg(DISTINCT x) FROM t1
+----
+1.000
+
+
+# EVIDENCE-OF: R-40597-22164 The result of avg() is NULL if and only if
+# there are no non-NULL inputs.
+
+query I nosort label-NULL
+SELECT avg(x) FROM t1 WHERE y='null'
+----
+NULL
+
+query I nosort label-NULL
+SELECT avg(DISTINCT x) FROM t1 WHERE y='null'
+----
+NULL
+
+
+# EVIDENCE-OF: R-34280-42283 The count(X) function returns a count of
+# the number of times that X is not NULL in a group.
+
+query I nosort
+SELECT count(x) FROM t1 WHERE y='null'
+----
+0
+
+query I nosort
+SELECT count(DISTINCT x) FROM t1 WHERE y='null'
+----
+0
+
+query I nosort
+SELECT count(x) FROM t1 WHERE y='false'
+----
+1
+
+query I nosort
+SELECT count(DISTINCT x) FROM t1 WHERE y='false'
+----
+1
+
+
+# EVIDENCE-OF: R-13776-21310 The count(*) function (with no arguments)
+# returns the total number of rows in the group.
+
+query I nosort
+SELECT count(*) FROM t1 WHERE y='false'
+----
+1
+
+# TBD: can DISTINCT be used with *?
+
+statement error
+SELECT count(DISTINCT *) FROM t1 WHERE y='false'
+
+
+# EVIDENCE-OF: R-56088-25150 The group_concat() function returns a
+# string which is the concatenation of all non-NULL values of X.
+
+query T nosort
+SELECT group_concat(x) FROM t1 NOT INDEXED
+----
+1,0,2,2
+
+query T nosort
+SELECT group_concat(DISTINCT x) FROM t1 NOT INDEXED
+----
+1,0,2
+
+
+# EVIDENCE-OF: R-08600-21007 If parameter Y is present then it is used
+# as the separator between instances of X.
+
+query T nosort
+SELECT group_concat(x,':') FROM t1 NOT INDEXED
+----
+1:0:2:2
+
+# TBD: DISTINCT can only be used with single parameters
+statement error
+SELECT group_concat(DISTINCT x,':') FROM t1
+
+
+# EVIDENCE-OF: R-39910-14723 A comma (",") is used as the separator if Y
+# is omitted.
+
+query T nosort
+SELECT group_concat(x) FROM t1 NOT INDEXED
+----
+1,0,2,2
+
+query T nosort
+SELECT group_concat(DISTINCT x) FROM t1 NOT INDEXED
+----
+1,0,2
+
+
+# EVIDENCE-OF: R-52585-35928 The max() aggregate function returns the
+# maximum value of all values in the group.
+
+query I nosort
+SELECT max(x) FROM t1
+----
+2
+
+query I nosort
+SELECT max(DISTINCT x) FROM t1
+----
+2
+
+
+# TBD: last non-NULL value
+# EVIDENCE-OF: R-13053-11096 The maximum value is the value that would
+# be returned last in an ORDER BY on the same column.
+
+query I nosort
+SELECT x FROM t1 WHERE x NOT NULL ORDER BY x
+----
+0
+1
+2
+2
+
+query I nosort
+SELECT DISTINCT x FROM t1 WHERE x NOT NULL ORDER BY x
+----
+0
+1
+2
+
+
+# EVIDENCE-OF: R-50775-16353 Aggregate max() returns NULL if and only if
+# there are no non-NULL values in the group.
+
+query I nosort label-NULL
+SELECT max(x) FROM t1 WHERE y='null'
+----
+NULL
+
+query I nosort label-NULL
+SELECT max(DISTINCT x) FROM t1 WHERE y='null'
+----
+NULL
+
+
+# EVIDENCE-OF: R-16028-39081 The min() aggregate function returns the
+# minimum non-NULL value of all values in the group.
+
+query I nosort
+SELECT min(x) FROM t1
+----
+0
+
+query I nosort
+SELECT min(DISTINCT x) FROM t1
+----
+0
+
+
+# EVIDENCE-OF: R-30311-39793 The minimum value is the first non-NULL
+# value that would appear in an ORDER BY of the column.
+
+query I nosort
+SELECT x FROM t1 WHERE x NOT NULL ORDER BY x
+----
+0
+1
+2
+2
+
+query I nosort
+SELECT DISTINCT x FROM t1 WHERE x NOT NULL ORDER BY x
+----
+0
+1
+2
+
+
+# EVIDENCE-OF: R-10396-30188 Aggregate min() returns NULL if and only if
+# there are no non-NULL values in the group.
+
+query I nosort label-NULL
+SELECT min(x) FROM t1 WHERE y='null'
+----
+NULL
+
+query I nosort label-NULL
+SELECT min(DISTINCT x) FROM t1 WHERE y='null'
+----
+NULL
+
+
+# EVIDENCE-OF: R-24943-34514 The sum() and total() aggregate functions
+# return the sum of all non-NULL values in the group.
+
+query I nosort label-sum
+SELECT sum(x) FROM t1
+----
+5
+
+query I nosort label-sum
+SELECT total(x) FROM t1
+----
+5
+
+query I nosort label-sum-distinct
+SELECT sum(DISTINCT x) FROM t1
+----
+3
+
+query I nosort label-sum-distinct
+SELECT total(DISTINCT x) FROM t1
+----
+3
+
+
+# EVIDENCE-OF: R-44223-43966 If there are no non-NULL input rows then
+# sum() returns NULL but total() returns 0.
+
+query I nosort label-NULL
+SELECT sum(x) FROM t1 WHERE y='null'
+----
+NULL
+
+query I nosort label-NULL
+SELECT sum(DISTINCT x) FROM t1 WHERE y='null'
+----
+NULL
+
+query I nosort label-zero
+SELECT total(x) FROM t1 WHERE y='null'
+----
+0
+
+query I nosort label-zero
+SELECT total(DISTINCT x) FROM t1 WHERE y='null'
+----
+0
+
+
+# EVIDENCE-OF: R-07734-01023 The result of total() is always a floating
+# point value.
+
+query R nosort
+SELECT total(x) FROM t1
+----
+5.000
+
+query R nosort
+SELECT total(DISTINCT x) FROM t1
+----
+3.000
+
+
+# EVIDENCE-OF: R-19660-56479 The result of sum() is an integer value if
+# all non-NULL inputs are integers.
+
+query I nosort label-sum
+SELECT sum(x) FROM t1
+----
+5
+
+query I nosort label-sum-distinct
+SELECT sum(DISTINCT x) FROM t1
+----
+3
+
+
+# EVIDENCE-OF: R-33611-59266 If any input to sum() is neither an integer
+# nor a NULL, then sum() returns a floating point value which is an
+# approximation of the mathematical sum.
+
+statement ok
+INSERT INTO t1 VALUES(4.0,'true')
+
+query R nosort
+SELECT sum(x) FROM t1
+----
+9.000
+
+query R nosort
+SELECT sum(DISTINCT x) FROM t1
+----
+7.000
+
+
+# TBD-EVIDENCE-OF: R-08904-24719 Sum() will throw an "integer overflow"
+# exception if all inputs are integers or NULL and an integer overflow
+# occurs at any point during the computation.
+
+statement ok
+INSERT INTO t1 VALUES(1<<63,'true');
+
+statement ok
+INSERT INTO t1 VALUES(1<<63,'true');
+
+statement ok
+INSERT INTO t1 VALUES(-1,'true');
+DROP INDEX t1i1;
+
+query R nosort
+SELECT sum(x) FROM t1
+----
+
+query R nosort
+SELECT sum(DISTINCT x) FROM t1
+----
+-9223372036854776000.000
+
+# TBD-EVIDENCE-OF: R-19553-64528 Total() never throws an integer overflow.
+
+query R nosort
+SELECT total(x) FROM t1
+----
+-18446744073709550000.000
+
+query R nosort
+SELECT total(DISTINCT x) FROM t1
+----
+-9223372036854776000.000

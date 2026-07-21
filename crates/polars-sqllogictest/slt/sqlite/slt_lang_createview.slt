@@ -1,0 +1,128 @@
+hash-threshold 8
+
+statement ok
+CREATE TABLE t1( x INTEGER, y VARCHAR(8) )
+
+statement ok
+INSERT INTO t1 VALUES(1,'true')
+
+statement ok
+INSERT INTO t1 VALUES(0,'false')
+
+statement ok
+INSERT INTO t1 VALUES(NULL,'NULL')
+
+statement ok
+CREATE INDEX t1i1 ON t1(x)
+
+
+# TBD-EVIDENCE-OF: R-13439-14752 The CREATE VIEW command assigns a name to a
+# pre-packaged SELECT statement.
+
+statement ok
+CREATE VIEW view1 AS SELECT x FROM t1 WHERE x>0
+
+# already exists
+statement error
+CREATE VIEW view1 AS SELECT x FROM t1 WHERE x>0
+
+query I rowsort label-0
+SELECT x FROM t1 WHERE x>0
+----
+1
+
+query I rowsort label-0
+SELECT x FROM view1
+----
+1
+
+# TBD-EVIDENCE-OF: R-63075-15970 Once the view is created, it can be used in
+# the FROM clause of another SELECT in place of a table name.
+
+# PARTIAL-EVIDENCE-OF: R-48816-31606 If the "TEMP" or "TEMPORARY" keyword occurs
+# in between "CREATE" and "VIEW" then the view that is created is only
+# visible to the process that opened the database and is automatically
+# deleted when the database is closed.
+
+onlyif sqlite
+statement ok
+CREATE TEMP VIEW view2 AS SELECT x FROM t1 WHERE x>0
+
+onlyif sqlite
+statement ok
+CREATE TEMPORARY VIEW view3 AS SELECT x FROM t1 WHERE x>0
+
+# TBD-EVIDENCE-OF: R-49139-10687 If a &lt;database-name&gt; is specified,
+# then the view is created in the named database.
+
+# TBD-EVIDENCE-OF: R-48195-55336 It is an error to specify both a
+# &lt;database-name&gt; and the TEMP keyword on a VIEW, unless the
+# &lt;database-name&gt; is "temp".
+
+# TBD-EVIDENCE-OF: R-49817-02954 If no database name is specified, and the
+# TEMP keyword is not present, the VIEW is created in the main database.
+
+# EVIDENCE-OF: R-16775-34716 You cannot DELETE, INSERT, or UPDATE a
+# view.
+
+skipif mssql
+statement error
+DELETE FROM view1 WHERE x>0
+
+onlyif mssql
+statement ok
+DELETE FROM view1 WHERE x>0
+
+statement error
+INSERT INTO view1 VALUES(2,'unknown')
+
+skipif mssql
+statement error
+UPDATE view1 SET x=2
+
+onlyif mssql
+statement ok
+UPDATE view1 SET x=2
+
+# PARTIAL-EVIDENCE-OF: R-05363-17893 Views are read-only in SQLite.
+
+onlyif sqlite
+statement error
+DELETE FROM view1 WHERE x>0
+
+onlyif sqlite
+statement error
+INSERT INTO view1 VALUES(2,'unknown')
+
+onlyif sqlite
+statement error
+INSERT OR REPLACE INTO view1 VALUES(2,'unknown')
+
+onlyif sqlite
+statement error
+UPDATE view1 SET x=2
+
+# TBD-EVIDENCE-OF: R-16876-26469 However, in many cases you can use an
+# INSTEAD OF trigger on the view to accomplish the same thing.
+
+# EVIDENCE-OF: R-10484-47921 Views are removed with the DROP VIEW
+# command.
+
+statement ok
+DROP VIEW view1
+
+onlyif sqlite
+statement ok
+DROP VIEW view2
+
+onlyif sqlite
+statement ok
+DROP VIEW view3
+
+# already dropped
+statement error
+DROP VIEW view1
+
+# never existed
+statement error
+DROP VIEW viewX

@@ -1,0 +1,188 @@
+Vendored subset of the SQLite sqllogictest corpus.
+
+Mirror repository: https://github.com/gregrahn/sqllogictest
+Pinned commit:     c67f97bf3ca7e590d12e073408bcacaf2ff0f3a0
+Fetch date:        2026-07-21
+
+Files are fetched via raw.githubusercontent.com at the pinned commit and
+renamed from `.test` to `.slt` (stem preserved) so the runner discovers them.
+
+## Vendored files
+
+| vendored path                                     | upstream path                                       |
+|----------------------------------------------------|------------------------------------------------------|
+| select1.slt                                        | test/select1.test                                     |
+| select2.slt                                        | test/select2.test                                     |
+| select3.slt                                        | test/select3.test                                     |
+| select4.slt                                        | test/select4.test                                     |
+| slt_lang_aggfunc.slt                               | test/evidence/slt_lang_aggfunc.test                   |
+| slt_lang_createview.slt                            | test/evidence/slt_lang_createview.test                |
+| slt_lang_dropview.slt                              | test/evidence/slt_lang_dropview.test                  |
+| in1.slt                                            | test/evidence/in1.test                                |
+| in2.slt                                            | test/evidence/in2.test                                |
+| random/select_slt_good_0.slt                       | test/random/select/slt_good_0.test (truncated)        |
+| random/select_slt_good_50.slt                      | test/random/select/slt_good_50.test (truncated)       |
+| random/aggregates_slt_good_0.slt                   | test/random/aggregates/slt_good_0.test (truncated)    |
+| random/aggregates_slt_good_50.slt                  | test/random/aggregates/slt_good_50.test (truncated)   |
+
+## Modifications
+
+- `random/*.slt`: each upstream `random/select` and `random/aggregates` file
+  is auto-generated and enormous (~11,000-14,000 query records per file,
+  70,000-90,000 lines) - vendoring any one of them whole would dwarf
+  select1-4 combined and make the baseline unreviewable. Kept the full
+  `hash-threshold` + `CREATE TABLE`/`INSERT INTO` setup block (9 rows across
+  3 tables) verbatim, then truncated to the first 150 subsequent records
+  (query/statement blocks). This is a deliberate content truncation, not a
+  content edit: no query text or expected result within a kept record was
+  changed, and original line numbers of kept records are unchanged.
+- All vendored files: reflowed multi-column, non-hashed `query` result
+  blocks from the classic SQLite "one value per line" layout to "one row
+  per line, values space-joined" layout (only for records where
+  `sort_mode != valuesort`, the type string has >1 column, and the result
+  block isn't already a single collapsed hash line). The `sqllogictest`
+  Rust crate (0.29.1)'s default validator joins each *actual* result row
+  with a single space and compares the resulting `Vec<String>` (one entry
+  per row) directly against the raw lines read from the file (one entry
+  per line); it does not group raw lines into rows by column count. The
+  upstream files use the original one-value-per-line SQLite convention, so
+  every multi-column query would otherwise report a spurious mismatch
+  regardless of engine correctness. This is a vendoring-time reflow to
+  match the comparison behavior of the specific runner crate version in
+  use, not a change to any expected value. 736 result blocks were reflowed
+  across select1-4, in1, in2, and the two `random/aggregates_*` files (see
+  the vendoring commit for the exact script).
+- `select1.slt`, `select4.slt`, `in1.slt`, `in2.slt`: prepended a
+  `hash-threshold 8\n\n` header. These four upstream files omit the
+  `hash-threshold` directive but still contain literal `N values hashing
+  to <md5>` result lines (baked in by whatever threshold the original
+  SQLite tooling used when the files were generated, evidently 8, matching
+  the value present in the sibling files that do carry the directive).
+  Without an explicit directive the `sqllogictest` crate defaults
+  `hash_threshold` to 0 (i.e. never hash), so large non-hashed actual
+  results would never match the pre-hashed expected lines. Prepending the
+  directive restores the crate's behavior to match what the file's own
+  expected results assume.
+- All vendored files: stripped trailing inline `# comment` text from
+  `onlyif <label>` / `skipif <label>` condition lines (320 lines across 7
+  files: in1.slt, in2.slt, slt_lang_createview.slt, and the four
+  `random/*.slt` files). The `sqllogictest` crate's line parser matches
+  these directives via `["onlyif"|"skipif", label]` - i.e. it requires
+  exactly two whitespace-separated tokens - and errors on the whole file
+  ("invalid line") if a trailing comment is present. This mechanically
+  strips comment text only; the condition keyword and label are untouched
+  (`onlyif mysql # some comment` -> `onlyif mysql`).
+- `select5.slt` is not vendored - see "Dropped files" below.
+
+## Dropped files (not vendored) and reasons
+
+- `test/select5.test`: every one of its 732 query records is labeled
+  `join-N-M` and exercises multi-way implicit joins ranging from 4 to 64
+  tables in a single `FROM t1,t2,...,tN WHERE <equalities>` clause. Without
+  join-reordering, polars-sql lowers an N-way implicit join into a literal
+  N-way cross product filtered by the WHERE clause; for N beyond roughly
+  20 this is combinatorially intractable (e.g. a 24-way join over tables
+  with a few dozen rows each attempts to materialize far more rows than
+  fits in memory) and the harness process was OOM-killed partway through
+  this file during Phase 2 triage (confirmed by bisection - the process
+  completes select1-4 in seconds each but hangs/is killed inside
+  select5.test specifically, at a `join-24-4` record). A hang has no
+  representation in the `expected_failures.txt` ratchet (it can only mark
+  bounded pass/fail outcomes), so the file cannot be used as conformance
+  signal without risking CI availability. Dropped entirely rather than
+  hand-picking a "safe" low-arity prefix, since the file's entire purpose
+  is the high-arity stress test. This is a real, high-value finding for
+  Phase 3 triage (see the vendoring commit message): naive N-way implicit
+  join translation without reordering/decorrelation is a gap worth its own
+  tracked item, independent of whether this specific corpus file is
+  vendored.
+- `test/evidence/slt_lang_dropindex.test`, `test/evidence/slt_lang_reindex.test`:
+  require stateful index-existence tracking (DROP INDEX on an
+  already-dropped / never-existed index must error, and `REINDEX` itself
+  has no equivalent) to get the expected "statement error" records right.
+  This conflicts with the Step 2 mandate to treat CREATE INDEX/DROP INDEX
+  as unconditional no-ops in the shim. Adding per-index existence tracking
+  just for these two small files was judged not worth the shim complexity;
+  dropped rather than hacked.
+- `test/evidence/slt_lang_droptable.test`: same issue - it requires
+  `DROP TABLE` to error on an already-dropped/never-existed table and
+  `DROP INDEX` to error because the owning table was dropped. Our shim's
+  `DROP TABLE` is an unconditional no-op today; adding existence-checked
+  DROP semantics only to satisfy this one DDL-focused file (it is not
+  SELECT-relevant) wasn't worth it. Dropped.
+- `test/evidence/slt_lang_createtrigger.test`, `slt_lang_droptrigger.test`:
+  triggers are out of the agreed read-query-only scope (no INSERT/UPDATE
+  side effects to fire). Dropped.
+- `test/evidence/slt_lang_replace.test`: exercises `REPLACE INTO`
+  (upsert), out of the read-query-only scope. Dropped.
+- `test/evidence/slt_lang_update.test`: exercises `UPDATE`, out of the
+  read-query-only scope. Dropped.
+- `test/random/expr/*`, `test/random/groupby/*`: directories not sampled;
+  `select` and `aggregates` random directories already give representative
+  generated-query coverage within the record budget.
+- All other `test/random/select/*.test` and `test/random/aggregates/*.test`
+  files beyond the 2+2 sampled (`slt_good_0`, `slt_good_50` from each
+  directory): not vendored, to keep the corpus size manageable.
+  `slt_good_0`/`slt_good_50` were picked as a fixed, deterministic,
+  spread-out sample rather than vendoring the full ~127/~130 file
+  directories - each individual file already contains ~11,000-14,000
+  query records, so even a handful of full files would dwarf the rest of
+  the corpus.
+
+## skipif polars divergences
+
+`skipif polars` was added to 160 individual records (documented per
+cluster below), all discovered during Phase 2 triage of the initial
+baseline run. In every case the record's own SQL is unaffected; the
+comment is placed as its own `skipif polars` line immediately above the
+`query` line, matching the file's existing `skipif <engine>` style.
+
+- **135 records** (select1.slt, select2.slt, select3.slt,
+  random/aggregates_slt_good_{0,50}.slt, random/select_slt_good_{0,50}.slt):
+  integer division. Polars SQL's `/` operator always performs true
+  (floating-point) division regardless of operand types - a deliberate,
+  pre-existing product decision (commit 18e3422118, "feat: Use true
+  division for the `/` operator in Polars SQL (#27391)"), predating this
+  harness. SQLite (and standard/PostgreSQL C-style truncating integer
+  division) instead truncates `int / int` toward zero. This is an
+  intentional, already-decided divergence, not a gap - e.g.
+  `SELECT (a+b+c+d+e)/5 FROM t1` where all columns are INTEGER.
+- **17 records** (in1.slt): boolean representation. SQLite has no
+  distinct boolean type, so `1 IN (2)` evaluates to the SQLite convention
+  of integer `0`/`1`. Polars SQL correctly evaluates this to a native
+  Postgres-aligned boolean (`false`/`true`), which is what the harness
+  formats. Intentional Postgres-alignment divergence.
+- **8 records** (in2.slt): empty `IN ()` / `NOT IN ()` lists. Standard SQL
+  (and PostgreSQL) require the parenthesized list to have at least one
+  element and reject `x IN ()` as a syntax error; SQLite permits it as an
+  extension (always `false`/`true` per the evidence file's own commentary,
+  R-64309-54027). Aligning with PostgreSQL, we reject this syntax too.
+
+## Not-yet-triaged as skipif (left in the baseline as missing features/bugs)
+
+A few small clusters found in "query result mismatch" during triage are
+real correctness gaps (not dialect divergences - SQLite and PostgreSQL
+agree on the expected behavior), so they were left in
+`expected_failures.txt` rather than marked `skipif polars`:
+- IN/NOT IN with NULL in the list and no match should return NULL
+  (three-valued logic), not false/true (in1.slt, in2.slt; ~7 records).
+- Unary negation of `COUNT(*)`/`COUNT(expr)` produces an unsigned-integer
+  wraparound (e.g. `-COUNT(*)` on a 3-row table renders as `4294967293`
+  instead of `-3`), which then cascades through further arithmetic
+  (random/aggregates_slt_good_{0,50}.slt; ~8 records).
+- `SUM(<literal>)` (a constant, not a column expression) returns the
+  literal itself instead of the literal multiplied by the row count
+  (random/aggregates_slt_good_{0,50}.slt; 3 records).
+- `SUM`/`MIN` over an all-NULL or empty (fully-filtered) group returns `0`
+  or a placeholder instead of `NULL` (random/aggregates_slt_good_50.slt;
+  3 records).
+- A handful (~6 records, slt_lang_aggfunc.slt) of SQLite dynamic
+  type-affinity edge cases (aggregating a TEXT-affinity column that holds
+  numeric-looking string literals) that Polars' static per-column typing
+  (like PostgreSQL's) cannot replicate; not considered fixable in this
+  product, left baselined rather than skipif-tagged given the small,
+  idiosyncratic count.
+
+These, along with the missing-feature clusters (subqueries, chained set
+operations, self-join column collisions, etc.), are ranked in the Phase 2
+triage table in the vendoring commit message.

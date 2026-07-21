@@ -1,0 +1,59 @@
+hash-threshold 8
+
+statement ok
+CREATE TABLE t1( x INTEGER, y VARCHAR(8) )
+
+statement ok
+INSERT INTO t1 VALUES(1,'true')
+
+statement ok
+INSERT INTO t1 VALUES(0,'false')
+
+statement ok
+INSERT INTO t1 VALUES(NULL,'NULL')
+
+statement ok
+CREATE INDEX t1i1 ON t1(x)
+
+
+# EVIDENCE-OF: R-27002-52307 The DROP VIEW statement removes a view
+# created by the CREATE VIEW statement.
+
+# EVIDENCE-OF: R-18673-21346 The view to drop is identified by the
+# view-name and optional schema-name specified as part of the DROP VIEW
+# statement. This reference is resolved using the standard procedure for
+# object resolution.
+
+statement ok
+CREATE VIEW view1 AS SELECT x FROM t1 WHERE x>0
+
+statement ok
+DROP VIEW view1
+
+# already dropped
+statement error
+DROP VIEW view1
+
+# never existed
+statement error
+DROP VIEW viewX
+
+statement ok
+CREATE VIEW view2 AS SELECT x FROM t1 WHERE x=0
+
+# EVIDENCE-OF: R-00359-41639 The view definition is removed from the
+# database schema, but no actual data in the underlying base tables is
+# modified.
+
+query I rowsort label-0
+SELECT x FROM view2
+----
+0
+
+statement ok
+DROP VIEW view2
+
+query I rowsort label-0
+SELECT x FROM t1 WHERE x=0
+----
+0

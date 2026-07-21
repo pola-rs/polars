@@ -1,0 +1,970 @@
+hash-threshold 8
+
+statement ok
+CREATE TABLE tab0(col0 INTEGER, col1 INTEGER, col2 INTEGER)
+
+statement ok
+CREATE TABLE tab1(col0 INTEGER, col1 INTEGER, col2 INTEGER)
+
+statement ok
+CREATE TABLE tab2(col0 INTEGER, col1 INTEGER, col2 INTEGER)
+
+statement ok
+INSERT INTO tab0 VALUES(97,1,99)
+
+statement ok
+INSERT INTO tab0 VALUES(15,81,47)
+
+statement ok
+INSERT INTO tab0 VALUES(87,21,10)
+
+statement ok
+INSERT INTO tab1 VALUES(51,14,96)
+
+statement ok
+INSERT INTO tab1 VALUES(85,5,59)
+
+statement ok
+INSERT INTO tab1 VALUES(91,47,68)
+
+statement ok
+INSERT INTO tab2 VALUES(64,77,40)
+
+statement ok
+INSERT INTO tab2 VALUES(75,67,58)
+
+statement ok
+INSERT INTO tab2 VALUES(46,51,23)
+
+query I rowsort
+SELECT DISTINCT 49 * col2 FROM tab2
+----
+1127
+1960
+2842
+
+query I rowsort
+SELECT + 11 * + + col1 + - - 87 FROM tab0 WHERE - + 52 / - 73 IS NULL
+----
+
+query III rowsort
+SELECT DISTINCT * FROM tab2 AS cor0 WHERE NULL < col1
+----
+
+query I rowsort
+SELECT DISTINCT 22 AS col0 FROM tab0 AS cor0 WHERE NOT + 93 * 1 = - col2
+----
+22
+
+query III rowsort
+SELECT ALL * FROM tab0 WHERE + 6 IS NOT NULL
+----
+9 values hashing to c4b42765dff94eaaa46040e537fb43b7
+
+query II rowsort
+SELECT - 93, - col1 AS col0 FROM tab2
+----
+-93 -51
+-93 -67
+-93 -77
+
+onlyif mysql
+query I rowsort label-6
+SELECT ALL - MIN( DISTINCT + + col0 ) FROM tab1 cor0
+----
+-51
+
+skipif mysql
+query I rowsort label-6
+SELECT ALL - MIN ( DISTINCT + + col0 ) FROM tab1 cor0
+----
+-51
+
+query I rowsort
+SELECT DISTINCT - 36 * - - col0 FROM tab0 AS cor0
+----
+-3132
+-3492
+-540
+
+skipif postgresql
+query I rowsort
+SELECT DISTINCT - 14 col2 FROM tab0 cor0
+----
+-14
+
+query I rowsort
+SELECT DISTINCT - col0 * - + col0 + - + col0 * + ( - - col1 ) FROM tab1 AS cor0
+----
+1887
+4004
+6800
+
+query I rowsort
+SELECT ALL - - 56 * - col0 AS col1 FROM tab1 AS cor0
+----
+-2856
+-4760
+-5096
+
+query I rowsort
+SELECT ALL col2 * 89 AS col2 FROM tab0
+----
+4183
+8811
+890
+
+onlyif mysql
+query I rowsort label-12
+SELECT ALL + MAX( col0 ) AS col0 FROM tab0
+----
+97
+
+skipif mysql
+query I rowsort label-12
+SELECT ALL + MAX ( col0 ) AS col0 FROM tab0
+----
+97
+
+onlyif mysql
+query I rowsort label-13
+SELECT - + CAST( + MAX( ALL 60 ) AS SIGNED ) AS col0 FROM tab0 AS cor0
+----
+-60
+
+skipif mysql
+query I rowsort label-13
+SELECT - + CAST ( + MAX ( ALL 60 ) AS INTEGER ) AS col0 FROM tab0 AS cor0
+----
+-60
+
+query I rowsort
+SELECT 36 * - 91 AS col0 FROM tab0 AS cor0 LEFT OUTER JOIN tab1 AS cor1 ON NOT NULL IS NOT NULL
+----
+9 values hashing to cb3523109b2174a71294bf141e0d170d
+
+skipif postgresql
+query II rowsort
+SELECT DISTINCT - 10, col0 col1 FROM tab2
+----
+-10 46
+-10 64
+-10 75
+
+query I rowsort
+SELECT DISTINCT + - col1 FROM tab1 WHERE NOT - col1 IS NOT NULL
+----
+
+onlyif mysql
+query I rowsort label-17
+SELECT ( - - COUNT( * ) ) AS col0 FROM tab1
+----
+3
+
+skipif mysql
+query I rowsort label-17
+SELECT ( - - COUNT ( * ) ) AS col0 FROM tab1
+----
+3
+
+skipif postgresql
+query I rowsort
+SELECT ALL - + 2 * + 9 col2 FROM tab2 AS cor0
+----
+-18
+-18
+-18
+
+onlyif mysql
+query I rowsort label-19
+SELECT DISTINCT - col1 DIV col0 DIV + col0 + - 60 AS col2 FROM tab1 AS cor0
+----
+-60
+
+skipif mysql
+skipif polars
+query I rowsort label-19
+SELECT DISTINCT - col1 / col0 / + col0 + - 60 AS col2 FROM tab1 AS cor0
+----
+-60
+
+query I rowsort
+SELECT DISTINCT col1 + - + col1 AS col1 FROM tab2 AS cor0
+----
+0
+
+query I rowsort
+SELECT - col1 + - - 8 AS col1 FROM tab1 AS cor0
+----
+-39
+-6
+3
+
+query I rowsort
+SELECT + col0 + - - 36 FROM tab2 cor0
+----
+100
+111
+82
+
+query I rowsort
+SELECT - col0 * - 89 + col2 + - + col2 FROM tab1 AS cor0
+----
+4539
+7565
+8099
+
+query I rowsort
+SELECT - ( - + 77 ) + - col1 AS col1 FROM tab0 AS cor0
+----
+-4
+56
+76
+
+onlyif mysql
+query I rowsort label-25
+SELECT COUNT( * ) + - 60 col0 FROM tab0
+----
+-57
+
+skipif mysql
+skipif postgresql
+query I rowsort label-25
+SELECT COUNT ( * ) + - 60 col0 FROM tab0
+----
+-57
+
+query I rowsort
+SELECT + + col1 AS col1 FROM tab1 WHERE NULL IS NULL
+----
+14
+47
+5
+
+onlyif mysql
+query I rowsort label-27
+SELECT ALL + CAST( NULL AS SIGNED ) + - col1 - - - 97 FROM tab2
+----
+NULL
+NULL
+NULL
+
+skipif mysql
+query I rowsort label-27
+SELECT ALL + CAST ( NULL AS INTEGER ) + - col1 - - - 97 FROM tab2
+----
+NULL
+NULL
+NULL
+
+query I rowsort
+SELECT ALL col0 + + 52 FROM tab1
+----
+103
+137
+143
+
+query III rowsort
+SELECT DISTINCT * FROM tab1 WHERE col1 * - col2 IS NOT NULL
+----
+9 values hashing to c6c0a4111b36d04dbc811a11e4d54cad
+
+query I rowsort
+SELECT 7 + 20 * + col1 AS col0 FROM tab0
+----
+1627
+27
+427
+
+query III rowsort
+SELECT ALL * FROM tab1 AS cor0 WHERE NOT col1 * + col1 IS NOT NULL
+----
+
+onlyif mysql
+query I rowsort label-32
+SELECT - - COUNT( * ) FROM tab0 cor0 WHERE - col2 IS NULL
+----
+0
+
+skipif mysql
+query I rowsort label-32
+SELECT - - COUNT ( * ) FROM tab0 cor0 WHERE - col2 IS NULL
+----
+0
+
+onlyif mysql
+query I rowsort label-33
+SELECT - MIN( ALL + - 88 ) AS col2 FROM tab0 AS cor0 WHERE ( NULL IS NOT NULL )
+----
+NULL
+
+skipif mysql
+query I rowsort label-33
+SELECT - MIN ( ALL + - 88 ) AS col2 FROM tab0 AS cor0 WHERE ( NULL IS NOT NULL )
+----
+NULL
+
+onlyif mysql
+query I rowsort label-34
+SELECT + + SUM( - 54 ) AS col0 FROM tab1 AS cor0 CROSS JOIN tab1 AS cor1
+----
+-486
+
+skipif mysql
+query I rowsort label-34
+SELECT + + SUM ( - 54 ) AS col0 FROM tab1 AS cor0 CROSS JOIN tab1 AS cor1
+----
+-486
+
+query I rowsort
+SELECT - - col2 * - ( 88 ) FROM tab0 AS cor0
+----
+-4136
+-8712
+-880
+
+query III rowsort
+SELECT * FROM tab2 AS cor0 WHERE NOT col0 <> 75
+----
+75 67 58
+
+onlyif mysql
+query I rowsort label-37
+SELECT ALL - col1 DIV + - col1 FROM tab0 AS cor0 WHERE NOT NULL IS NOT NULL
+----
+1
+1
+1
+
+skipif mysql
+skipif polars
+query I rowsort label-37
+SELECT ALL - col1 / + - col1 FROM tab0 AS cor0 WHERE NOT NULL IS NOT NULL
+----
+1
+1
+1
+
+query II rowsort
+SELECT DISTINCT col0, - col1 AS col0 FROM tab1
+----
+51 -14
+85 -5
+91 -47
+
+onlyif mysql
+query I rowsort label-39
+SELECT ALL COUNT( * ) DIV + MAX( col0 ) FROM tab2 WHERE NULL IS NULL
+----
+0
+
+skipif mysql
+skipif polars
+query I rowsort label-39
+SELECT ALL COUNT ( * ) / + MAX ( col0 ) FROM tab2 WHERE NULL IS NULL
+----
+0
+
+query I rowsort
+SELECT ( + + 41 ) AS col1 FROM tab2
+----
+41
+41
+41
+
+query II rowsort
+SELECT col0, + 20 * 34 FROM tab0
+----
+15 680
+87 680
+97 680
+
+query III rowsort
+SELECT * FROM tab0 WHERE NOT + ( - 13 ) * 8 BETWEEN ( + + ( - - col1 ) ) AND NULL
+----
+9 values hashing to c4b42765dff94eaaa46040e537fb43b7
+
+query I rowsort
+SELECT DISTINCT + col2 * - - col2 + 38 FROM tab0 AS cor0
+----
+138
+2247
+9839
+
+onlyif mysql
+query II rowsort label-44
+SELECT - CAST( NULL AS SIGNED ) AS col2, + col1 FROM tab1 AS cor0
+----
+NULL 14
+NULL 47
+NULL 5
+
+skipif mysql
+query II rowsort label-44
+SELECT - CAST ( NULL AS INTEGER ) AS col2, + col1 FROM tab1 AS cor0
+----
+NULL 14
+NULL 47
+NULL 5
+
+query I rowsort
+SELECT + ( 97 ) + col1 AS col0 FROM tab0
+----
+118
+178
+98
+
+query III rowsort
+SELECT DISTINCT * FROM tab2 WHERE NULL NOT BETWEEN ( NULL ) AND 24
+----
+
+query I rowsort
+SELECT DISTINCT + 56 + col1 * + col2 FROM tab1
+----
+1400
+3252
+351
+
+query I rowsort
+SELECT ALL col0 AS col2 FROM tab0 WHERE ( col2 ) IN ( - col1 + + 79 )
+----
+
+onlyif mysql
+query I rowsort label-49
+SELECT DISTINCT 53 + + col0 * + CAST( + col0 AS SIGNED ) FROM tab0
+----
+278
+7622
+9462
+
+skipif mysql
+query I rowsort label-49
+SELECT DISTINCT 53 + + col0 * + CAST ( + col0 AS INTEGER ) FROM tab0
+----
+278
+7622
+9462
+
+query III rowsort
+SELECT DISTINCT * FROM tab2 WHERE ( - 60 ) < - col1
+----
+46 51 23
+
+onlyif mysql
+query I rowsort label-51
+SELECT ALL COUNT( * ) AS col0 FROM tab2 WHERE NULL IS NULL
+----
+3
+
+skipif mysql
+query I rowsort label-51
+SELECT ALL COUNT ( * ) AS col0 FROM tab2 WHERE NULL IS NULL
+----
+3
+
+onlyif mysql
+query I rowsort label-52
+SELECT + 49 * + CAST( NULL AS SIGNED ) AS col2 FROM tab0
+----
+NULL
+NULL
+NULL
+
+skipif mysql
+query I rowsort label-52
+SELECT + 49 * + CAST ( NULL AS INTEGER ) AS col2 FROM tab0
+----
+NULL
+NULL
+NULL
+
+query I rowsort
+SELECT 69 FROM tab2 WHERE NULL < - 84
+----
+
+onlyif mysql
+query I rowsort label-54
+SELECT CAST( col2 AS SIGNED ) * 30 AS col2 FROM tab2
+----
+1200
+1740
+690
+
+skipif mysql
+query I rowsort label-54
+SELECT CAST ( col2 AS INTEGER ) * 30 AS col2 FROM tab2
+----
+1200
+1740
+690
+
+query III rowsort
+SELECT * FROM tab0 WHERE col2 * + col2 + - col2 * col2 >= NULL
+----
+
+onlyif mysql
+query III rowsort label-56
+SELECT ALL * FROM tab1 WHERE CAST( NULL AS SIGNED ) NOT BETWEEN col1 AND CAST( NULL AS SIGNED )
+----
+
+skipif mysql
+query III rowsort label-56
+SELECT ALL * FROM tab1 WHERE CAST ( NULL AS INTEGER ) NOT BETWEEN col1 AND CAST ( NULL AS INTEGER )
+----
+
+skipif postgresql
+query I rowsort
+SELECT + AVG ( col1 ) col1 FROM tab2 WHERE NOT ( NULL ) NOT BETWEEN NULL AND ( + 28 )
+----
+NULL
+
+onlyif mysql
+query I rowsort label-58
+SELECT SUM( 90 ) FROM tab0
+----
+270
+
+skipif mysql
+query I rowsort label-58
+SELECT SUM ( 90 ) FROM tab0
+----
+270
+
+query I rowsort
+SELECT DISTINCT 22 * 6 AS col0 FROM tab0
+----
+132
+
+query III rowsort
+SELECT * FROM tab2 WHERE ( NULL ) <> ( + 69 + - col1 )
+----
+
+query I rowsort
+SELECT DISTINCT - 12 * + 27 FROM tab2
+----
+-324
+
+onlyif mysql
+query I rowsort label-62
+SELECT SUM( ALL col1 ) FROM tab2
+----
+195
+
+skipif mysql
+query I rowsort label-62
+SELECT SUM ( ALL col1 ) FROM tab2
+----
+195
+
+onlyif mysql
+query I rowsort label-63
+SELECT MIN( ( CAST( NULL AS SIGNED ) ) ) AS col2 FROM tab0
+----
+NULL
+
+skipif mysql
+query I rowsort label-63
+SELECT MIN ( ( CAST ( NULL AS INTEGER ) ) ) AS col2 FROM tab0
+----
+NULL
+
+query I rowsort
+SELECT ALL col2 * 89 AS col0 FROM tab2
+----
+2047
+3560
+5162
+
+query III rowsort
+SELECT DISTINCT * FROM tab1 WHERE NOT col0 + + col1 * - col0 <= NULL
+----
+
+onlyif mysql
+query I rowsort label-66
+SELECT ALL - COUNT( * ) * ( ( 86 ) ) AS col2 FROM tab1
+----
+-258
+
+skipif mysql
+query I rowsort label-66
+SELECT ALL - COUNT ( * ) * ( ( 86 ) ) AS col2 FROM tab1
+----
+-258
+
+query I rowsort
+SELECT col0 - - col1 * + col1 FROM tab0
+----
+528
+6576
+98
+
+query I rowsort
+SELECT ALL - ( 77 ) + + 63 AS col2 FROM tab1 WHERE NOT col2 IS NOT NULL
+----
+
+query I rowsort
+SELECT - col0 - - ( - 73 ) AS col1 FROM tab1
+----
+-124
+-158
+-164
+
+query III rowsort
+SELECT * FROM tab0 WHERE NOT NULL BETWEEN col1 + col1 AND NULL
+----
+
+query III rowsort
+SELECT * FROM tab2 WHERE NOT ( NULL ) NOT BETWEEN - 5 AND NULL
+----
+
+query III rowsort
+SELECT * FROM tab0 WHERE - col2 IN ( 34 )
+----
+
+query III rowsort
+SELECT ALL * FROM tab0 WHERE NOT NULL NOT BETWEEN - 39 * col1 - col2 * + col0 AND ( - col0 )
+----
+
+onlyif mysql
+query I rowsort label-74
+SELECT DISTINCT col1 DIV 59 FROM tab2
+----
+0
+1
+
+skipif mysql
+skipif polars
+query I rowsort label-74
+SELECT DISTINCT col1 / 59 FROM tab2
+----
+0
+1
+
+query I rowsort
+SELECT ( - col1 ) FROM tab0 WHERE NOT ( NULL ) BETWEEN ( 79 ) AND NULL
+----
+
+onlyif mysql
+query I rowsort label-76
+SELECT + col2 DIV + col0 col1 FROM tab2
+----
+0
+0
+0
+
+skipif mysql
+skipif postgresql
+skipif polars
+query I rowsort label-76
+SELECT + col2 / + col0 col1 FROM tab2
+----
+0
+0
+0
+
+onlyif mysql
+query I rowsort label-77
+SELECT DISTINCT 2 * - COUNT( * ) - 17 FROM tab1
+----
+-23
+
+skipif mysql
+query I rowsort label-77
+SELECT DISTINCT 2 * - COUNT ( * ) - 17 FROM tab1
+----
+-23
+
+onlyif mysql
+query I rowsort label-78
+SELECT ALL + COUNT( * ) DIV - ( - 37 ) FROM tab1
+----
+0
+
+skipif mysql
+skipif polars
+query I rowsort label-78
+SELECT ALL + COUNT ( * ) / - ( - 37 ) FROM tab1
+----
+0
+
+onlyif mysql
+query I rowsort label-79
+SELECT + 84 DIV + COUNT( * ) AS col0 FROM tab0 WHERE NOT - 64 * col1 - + col0 IS NULL
+----
+28
+
+skipif mysql
+skipif polars
+query I rowsort label-79
+SELECT + 84 / + COUNT ( * ) AS col0 FROM tab0 WHERE NOT - 64 * col1 - + col0 IS NULL
+----
+28
+
+query I rowsort
+SELECT ALL + 0 FROM tab2 WHERE ( NULL ) IS NULL
+----
+0
+0
+0
+
+query I rowsort
+SELECT + 70 * col2 AS col1 FROM tab2 WHERE - 35 IS NOT NULL
+----
+1610
+2800
+4060
+
+onlyif mysql
+query I rowsort label-82
+SELECT 76 * 72 + col2 DIV col1 FROM tab0
+----
+5472
+5472
+5571
+
+skipif mysql
+skipif polars
+query I rowsort label-82
+SELECT 76 * 72 + col2 / col1 FROM tab0
+----
+5472
+5472
+5571
+
+query I rowsort
+SELECT col0 FROM tab2 WHERE 75 * + col0 IS NOT NULL
+----
+46
+64
+75
+
+skipif postgresql
+query I rowsort
+SELECT 75 col0 FROM tab2 cor0 WHERE ( - 49 + col2 ) IS NULL
+----
+
+onlyif mysql
+query I rowsort label-85
+SELECT DISTINCT + 7 * + 21 + - col0 DIV col1 AS col1 FROM tab0 AS cor0
+----
+143
+147
+50
+
+skipif mysql
+skipif polars
+query I rowsort label-85
+SELECT DISTINCT + 7 * + 21 + - col0 / col1 AS col1 FROM tab0 AS cor0
+----
+143
+147
+50
+
+query I rowsort
+SELECT + col0 * 37 FROM tab2
+----
+1702
+2368
+2775
+
+query I rowsort
+SELECT 98 FROM tab2 AS cor0 CROSS JOIN tab0
+----
+9 values hashing to f9dee8c21116f1aed64ac5160e190809
+
+query I rowsort
+SELECT col0 FROM tab1 WHERE NOT ( col0 * - 57 + - ( - col1 ) ) < NULL
+----
+
+query I rowsort
+SELECT ALL - 17 * - col2 FROM tab1
+----
+1003
+1156
+1632
+
+query III rowsort
+SELECT DISTINCT * FROM tab1 AS cor0 WHERE + 91 < - 66 - - col0
+----
+
+skipif postgresql
+query I rowsort
+SELECT ALL - 4 col0 FROM tab2 AS cor0
+----
+-4
+-4
+-4
+
+onlyif mysql
+query I rowsort label-92
+SELECT COUNT( * ) * - 83 FROM tab0 cor0 WHERE NOT ( CAST( NULL AS DECIMAL ) + col2 ) NOT IN ( col0 * - col2 )
+----
+0
+
+skipif mysql
+query I rowsort label-92
+SELECT COUNT ( * ) * - 83 FROM tab0 cor0 WHERE NOT ( CAST ( NULL AS REAL ) + col2 ) NOT IN ( col0 * - col2 )
+----
+0
+
+query I rowsort
+SELECT + col0 FROM tab2 AS cor0 WHERE NOT 87 * - col0 NOT IN ( - col2 * - col1 )
+----
+
+onlyif mysql
+query I rowsort label-94
+SELECT + SUM( CAST( NULL AS SIGNED ) ) AS col0 FROM tab2 AS cor0
+----
+NULL
+
+skipif mysql
+query I rowsort label-94
+SELECT + SUM ( CAST ( NULL AS INTEGER ) ) AS col0 FROM tab2 AS cor0
+----
+NULL
+
+query I rowsort
+SELECT DISTINCT 63 * 37 AS col0 FROM tab2 AS cor0 WHERE NOT + 37 + 68 * col2 IS NOT NULL
+----
+
+query III rowsort
+SELECT ALL * FROM tab2 AS cor0 WHERE NOT 64 / col0 BETWEEN NULL AND 34 - + 32
+----
+
+query III rowsort
+SELECT * FROM tab1 AS cor0 WHERE NOT NULL NOT IN ( col1 * - col2 )
+----
+
+onlyif mysql
+query I rowsort label-98
+SELECT - COUNT( * ) DIV COUNT( * ) FROM tab0 AS cor0
+----
+-1
+
+skipif mysql
+query I rowsort label-98
+SELECT - COUNT ( * ) / COUNT ( * ) FROM tab0 AS cor0
+----
+-1
+
+query I rowsort
+SELECT ALL col0 FROM tab0 AS cor0 WHERE NOT ( ( - 60 ) - 73 ) IS NOT NULL
+----
+
+skipif postgresql
+query I rowsort
+SELECT + col2 * - 40 col0 FROM tab2 AS cor0
+----
+-1600
+-2320
+-920
+
+onlyif mysql
+query I rowsort label-101
+SELECT ( - CAST( NULL AS SIGNED ) ) * col2 AS col2 FROM tab2
+----
+NULL
+NULL
+NULL
+
+skipif mysql
+query I rowsort label-101
+SELECT ( - CAST ( NULL AS INTEGER ) ) * col2 AS col2 FROM tab2
+----
+NULL
+NULL
+NULL
+
+onlyif mysql
+query I rowsort label-102
+SELECT - 74 DIV - 14 FROM tab2
+----
+5
+5
+5
+
+skipif mysql
+skipif polars
+query I rowsort label-102
+SELECT - 74 / - 14 FROM tab2
+----
+5
+5
+5
+
+onlyif mysql
+query I rowsort label-103
+SELECT ALL + MIN( ALL - 3 ) FROM tab1
+----
+-3
+
+skipif mysql
+query I rowsort label-103
+SELECT ALL + MIN ( ALL - 3 ) FROM tab1
+----
+-3
+
+onlyif mysql
+query III rowsort label-104
+SELECT * FROM tab0 WHERE NOT col0 * 13 = CAST( NULL AS SIGNED ) - + col1
+----
+
+skipif mysql
+query III rowsort label-104
+SELECT * FROM tab0 WHERE NOT col0 * 13 = CAST ( NULL AS INTEGER ) - + col1
+----
+
+query III rowsort
+SELECT DISTINCT * FROM tab1 WHERE NOT + 51 * + col1 <= NULL
+----
+
+query III rowsort
+SELECT DISTINCT * FROM tab0 WHERE NULL >= + 17
+----
+
+onlyif mysql
+query I rowsort label-107
+SELECT col1 DIV + 63 FROM tab2
+----
+0
+1
+1
+
+skipif mysql
+skipif polars
+query I rowsort label-107
+SELECT col1 / + 63 FROM tab2
+----
+0
+1
+1
+
+onlyif mysql
+query I rowsort label-108
+SELECT CAST( - col1 AS DECIMAL ) col1 FROM tab1 WHERE NOT col0 BETWEEN NULL AND 92
+----
+
+skipif mysql
+skipif postgresql
+query I rowsort label-108
+SELECT CAST ( - col1 AS REAL ) col1 FROM tab1 WHERE NOT col0 BETWEEN NULL AND 92
+----
+
+query III rowsort
+SELECT * FROM tab0 WHERE NOT NULL NOT IN ( 51 + + 82 )
+----
+
+query I rowsort
+SELECT ALL + 99 * - col1 * col1 AS col2 FROM tab2
+----
+-257499
+-444411
+-586971
+
+skipif postgresql
+query I rowsort
+SELECT DISTINCT col1 * - - col2 col1 FROM tab2
+----
+1173
+3080
+3886

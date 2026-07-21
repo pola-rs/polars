@@ -1,0 +1,323 @@
+hash-threshold 8
+
+
+# EVIDENCE-OF: R-52275-55503 When the right operand is an empty set, the
+# result of IN is false and the result of NOT IN is true, regardless of
+# the left operand and even if the left operand is NULL.
+#
+
+# EVIDENCE-OF: R-64309-54027 Note that SQLite allows the parenthesized
+# list of scalar values on the right-hand side of an IN or NOT IN
+# operator to be an empty list but most other SQL database engines and
+# the SQL92 standard require the list to contain at least one element.
+#
+
+
+# EVIDENCE-OF: R-50221-42915 The result of an IN or NOT IN operator is
+# determined by the following matrix: Left operand is NULL Right operand
+# contains NULL Right operand is an empty set Left operand found within
+# right operand Result of IN operator Result of NOT IN operator no no no
+# no false true does not matter no yes no false true no does not matter
+# no yes true false no yes no no NULL NULL yes does not matter no does
+# not matter NULL NULL
+#
+
+skipif oracle
+statement ok
+CREATE TABLE t1( x INTEGER, y TEXT )
+
+onlyif oracle
+statement ok
+CREATE TABLE t1( x INTEGER, y VARCHAR(8) )
+
+statement ok
+INSERT INTO t1 VALUES(1,'true')
+
+statement ok
+INSERT INTO t1 VALUES(0,'false')
+
+statement ok
+INSERT INTO t1 VALUES(NULL,'NULL')
+
+# Row 1: 
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 IN (2)
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 IN (2.0)
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE '1' IN ('2')
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 NOT IN (2)
+----
+1
+1
+1
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 NOT IN (2.0)
+----
+1
+1
+1
+
+query I nosort
+SELECT 1 FROM t1 WHERE '1' NOT IN ('2')
+----
+1
+1
+1
+
+#
+# Row 2: empty RHS
+
+skipif mysql
+skipif mssql
+skipif oracle
+skipif polars
+query I nosort
+SELECT 1 FROM t1 WHERE 1 IN ()
+----
+
+skipif mysql
+skipif mssql
+skipif oracle
+skipif polars
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 IN ()
+----
+
+skipif mysql
+skipif mssql
+skipif oracle
+skipif polars
+query I nosort
+SELECT 1 FROM t1 WHERE '1' IN ()
+----
+
+skipif mysql
+skipif mssql
+skipif oracle
+skipif polars
+query I nosort
+SELECT 1 FROM t1 WHERE NULL IN ()
+----
+
+skipif mysql
+skipif mssql
+skipif oracle
+skipif polars
+query I nosort
+SELECT 1 FROM t1 WHERE 1 NOT IN ()
+----
+1
+1
+1
+
+skipif mysql
+skipif mssql
+skipif oracle
+skipif polars
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 NOT IN ()
+----
+1
+1
+1
+
+skipif mysql
+skipif mssql
+skipif oracle
+skipif polars
+query I nosort
+SELECT 1 FROM t1 WHERE '1' NOT IN ()
+----
+1
+1
+1
+
+skipif mysql
+skipif mssql
+skipif oracle
+skipif polars
+query I nosort
+SELECT 1 FROM t1 WHERE NULL NOT IN ()
+----
+1
+1
+1
+
+# Row 3:
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 IN ( NULL, 1 )
+----
+1
+1
+1
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 IN ( NULL, 1.0 )
+----
+1
+1
+1
+
+query I nosort
+SELECT 1 FROM t1 WHERE '1' IN ( NULL, '1' )
+----
+1
+1
+1
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 NOT IN ( NULL, 1 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 NOT IN ( NULL, 1.0 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE '1' NOT IN ( NULL, '1' )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 IN ( 1 )
+----
+1
+1
+1
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 IN ( 1.0 )
+----
+1
+1
+1
+
+query I nosort
+SELECT 1 FROM t1 WHERE '1' IN ( '1' )
+----
+1
+1
+1
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 NOT IN ( 1 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 NOT IN ( 1.0 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE '1' NOT IN ( '1' )
+----
+
+#
+# Row 4: RHS contains NULL, LHS not in RHS
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 IN ( NULL, 2 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 IN ( NULL, 2.0 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE '1' IN ( NULL, '2' )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 NOT IN ( NULL, 2 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1.0 NOT IN ( NULL, 2.0 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE '1' NOT IN ( NULL, '2' )
+----
+
+#
+# Row 5: LHS is NULL
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL IN ( 1 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL IN ( 1.0 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL IN ( '1' )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL NOT IN ( 1 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL NOT IN ( 1.0 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL NOT IN ( '1' )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL IN ( NULL, 1 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL IN ( NULL, 1.0 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL IN ( NULL, '1' )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL NOT IN ( NULL, 1 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL NOT IN ( NULL, 1.0 )
+----
+
+query I nosort
+SELECT 1 FROM t1 WHERE NULL NOT IN ( NULL, '1' )
+----
+
+# EVIDENCE-OF: R-35033-20570 The subquery on the right of an IN or NOT
+# IN operator must be a scalar subquery if the left expression is not a
+# row value expression.
+
+query I nosort
+SELECT 1 FROM t1 WHERE 1 IN (SELECT 1)
+----
+1
+1
+1
+
+statement error
+SELECT 1 FROM t1 WHERE 1 IN (SELECT 1,2)
+
+statement error
+SELECT 1 FROM t1 WHERE 1 IN (SELECT x,y FROM t1)
+
+statement error
+SELECT 1 FROM t1 WHERE 1 IN (SELECT * FROM t1)
+
+statement error
+SELECT 1 FROM t1 WHERE 1 IN (SELECT min(x),max(x) FROM t1)
