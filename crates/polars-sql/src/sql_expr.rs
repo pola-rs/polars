@@ -592,12 +592,12 @@ impl SQLExprVisitor<'_> {
             match op {
                 SQLBinaryOperator::Eq => {
                     polars_bail!(
-                        SQLSyntax: "subquery comparisons with '{op}' are not supported; use 'IN' instead"
+                        SQLSyntax: "subquery comparisons with '=' are not supported; use 'IN' instead"
                     )
                 },
                 SQLBinaryOperator::NotEq => {
                     polars_bail!(
-                        SQLSyntax: "subquery comparisons with '{op}' are not supported; use 'NOT IN' instead"
+                        SQLSyntax: "subquery comparisons with '!=' are not supported; use 'NOT IN' instead"
                     )
                 },
                 SQLBinaryOperator::Gt
