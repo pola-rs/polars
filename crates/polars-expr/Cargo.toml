@@ -14,7 +14,7 @@ version_check = { workspace = true }
 [dependencies]
 arrow = { workspace = true }
 bitflags = { workspace = true }
-chrono-tz = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 libloading = { workspace = true, optional = true }
 num-traits = { workspace = true }
@@ -156,6 +156,8 @@ offset_by = ["polars-plan/offset_by"]
 bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal", "chrono-tz"]
+# kept for backward-compat feature naming; now enables the jiff dependency
+chrono-tz = ["dep:jiff"]
 propagate_nans = ["polars-plan/propagate_nans", "polars-ops/propagate_nans"]
 allow_unused = []
 

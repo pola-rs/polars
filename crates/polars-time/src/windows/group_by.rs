@@ -5,10 +5,7 @@ use arrow::temporal_conversions::{
     timestamp_ms_to_datetime, timestamp_ns_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::trusted_len::TrustedLen;
-use chrono::NaiveDateTime;
-#[cfg(feature = "timezones")]
-use chrono::TimeZone as _;
-use now::DateTimeNow;
+use jiff::civil::DateTime as NaiveDateTime;
 use polars_core::prelude::*;
 use polars_core::runtime::RAYON;
 use polars_core::utils::_split_offsets;
@@ -208,7 +205,7 @@ pub fn group_by_windows(
                     boundary,
                     closed_window,
                     tu,
-                    tz.parse::<Tz>().ok().as_ref(),
+                    Tz::get(tz).ok().as_ref(),
                     start_by,
                 )?,
                 start_offset,
@@ -676,7 +673,7 @@ pub fn group_by_values(
                             time,
                             closed_window,
                             tu,
-                            tz,
+                            tz.clone(),
                             base_offset,
                             Some(upper_bound),
                         )
@@ -750,7 +747,7 @@ pub fn group_by_values(
                         time,
                         closed_window,
                         tu,
-                        tz,
+                        tz.clone(),
                         lower_bound,
                         Some(upper_bound),
                     )
@@ -790,7 +787,7 @@ pub fn group_by_values(
                         time,
                         closed_window,
                         tu,
-                        tz,
+                        tz.clone(),
                         lower_bound,
                         Some(upper_bound),
                     )
@@ -1132,9 +1129,16 @@ impl GroupByDynamicWindower {
                     match self.tz.as_ref() {
                         #[cfg(feature = "timezones")]
                         Some(tz) => {
-                            let dt = tz.from_utc_datetime(&dt);
-                            let dt = dt.beginning_of_week();
-                            let dt = dt.naive_utc();
+                            let ts = Tz::UTC.to_timestamp(dt).expect("datetime out-of-range");
+                            let local_dt = tz.to_datetime(ts);
+                            let week_start_local = super::calendar::beginning_of_week(local_dt);
+                            let dt = crate::utils::try_localize_datetime(
+                                week_start_local,
+                                tz,
+                                Ambiguous::Raise,
+                                NonExistent::Raise,
+                            )?
+                            .expect("we didn't use Ambiguous::Null or NonExistent::Null");
                             let start = to(dt);
                             // adjust start of the week based on given day of the week
                             let start = (self.add)(
@@ -1159,10 +1163,7 @@ impl GroupByDynamicWindower {
                             .start)
                         },
                         _ => {
-                            let tz = chrono::Utc;
-                            let dt = dt.and_local_timezone(tz).unwrap();
-                            let dt = dt.beginning_of_week();
-                            let dt = dt.naive_utc();
+                            let dt = super::calendar::beginning_of_week(dt);
                             let start = to(dt);
                             // adjust start of the week based on given day of the week
                             let start = (self.add)(

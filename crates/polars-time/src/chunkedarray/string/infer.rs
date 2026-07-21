@@ -1,6 +1,7 @@
 use arrow::array::PrimitiveArray;
-use chrono::format::ParseErrorKind;
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
+use jiff::Timestamp;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time as NaiveTime};
+use jiff::fmt::strtime::BrokenDownTime;
 use polars_core::prelude::*;
 
 use super::patterns::{self, Pattern};
@@ -309,33 +310,31 @@ impl<T: PolarsNumericType> DatetimeInfer<T> {
 
 #[cfg(feature = "dtype-date")]
 fn transform_date(val: &str, fmt: &str) -> Option<i32> {
-    NaiveDate::parse_from_str(val, fmt)
-        .ok()
-        .map(naive_date_to_date)
+    NaiveDate::strptime(fmt, val).ok().map(naive_date_to_date)
 }
 
 pub(crate) fn parse_datetime(val: &str, fmt: &str) -> Option<NaiveDateTime> {
-    NaiveDateTime::parse_from_str(val, fmt)
-        .or_else(|parse_error| match parse_error.kind() {
-            ParseErrorKind::NotEnough => {
-                NaiveDate::parse_from_str(val, fmt).map(|nd| nd.and_hms_opt(0, 0, 0).unwrap())
-            },
-            _ => Err(parse_error),
-        })
-        .ok()
+    NaiveDateTime::strptime(fmt, val).ok().or_else(|| {
+        // Fall back to a date-only parse (e.g. the format has no time component).
+        NaiveDate::strptime(fmt, val)
+            .ok()
+            .map(|nd| nd.at(0, 0, 0, 0))
+    })
 }
 
 pub(crate) fn parse_datetime_and_remainder<'a>(
     val: &'a str,
     fmt: &str,
 ) -> Option<(NaiveDateTime, &'a str)> {
-    NaiveDateTime::parse_and_remainder(val, fmt)
-        .or_else(|parse_error| match parse_error.kind() {
-            ParseErrorKind::NotEnough => NaiveDate::parse_and_remainder(val, fmt)
-                .map(|(nd, r)| (nd.and_hms_opt(0, 0, 0).unwrap(), r)),
-            _ => Err(parse_error),
-        })
+    BrokenDownTime::parse_prefix(fmt, val)
         .ok()
+        .and_then(|(tm, len)| tm.to_datetime().ok().map(|dt| (dt, &val[len..])))
+        .or_else(|| {
+            // Fall back to a date-only parse (e.g. the format has no time component).
+            BrokenDownTime::parse_prefix(fmt, val)
+                .ok()
+                .and_then(|(tm, len)| tm.to_date().ok().map(|nd| (nd.at(0, 0, 0, 0), &val[len..])))
+        })
 }
 
 #[cfg(feature = "dtype-datetime")]
@@ -353,19 +352,47 @@ pub(crate) fn transform_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
     parse_datetime(val, fmt).map(datetime_to_timestamp_ms)
 }
 
+/// Parses a tz-aware datetime string, honoring whatever offset (or "Z") is
+/// embedded in the string. Unlike the naive parsers, every pattern in this
+/// module's tz-aware pattern list is expected to carry offset/zone info; if
+/// none can be extracted, the value is treated as UTC.
+fn parse_tz_aware_timestamp(val: &str, fmt: &str) -> Option<Timestamp> {
+    if fmt == "%+" {
+        // "%+" mirrors chrono's combined ISO 8601 / RFC 3339 format specifier,
+        // which jiff's strtime engine does not implement as a directive; jiff's
+        // native ISO 8601 timestamp parser handles the same cases directly,
+        // including a literal "Z" suffix.
+        return val.parse::<Timestamp>().ok();
+    }
+    let tm = jiff::fmt::strtime::BrokenDownTime::parse(fmt, val).ok()?;
+    if let Ok(ts) = tm.to_timestamp() {
+        return Some(ts);
+    }
+    // No offset/zone specifier matched (e.g. a literal "Z" suffix, which
+    // jiff's `%z` directive does not accept) - treat as UTC.
+    let dt = tm.to_datetime().ok()?;
+    jiff::tz::TimeZone::UTC.to_timestamp(dt).ok()
+}
+
 fn transform_tzaware_datetime_ns(val: &str, fmt: &str) -> Option<i64> {
-    let dt = DateTime::parse_from_str(val, fmt);
-    dt.ok().map(|dt| datetime_to_timestamp_ns(dt.naive_utc()))
+    let ts = parse_tz_aware_timestamp(val, fmt)?;
+    Some(datetime_to_timestamp_ns(
+        jiff::tz::TimeZone::UTC.to_datetime(ts),
+    ))
 }
 
 fn transform_tzaware_datetime_us(val: &str, fmt: &str) -> Option<i64> {
-    let dt = DateTime::parse_from_str(val, fmt);
-    dt.ok().map(|dt| datetime_to_timestamp_us(dt.naive_utc()))
+    let ts = parse_tz_aware_timestamp(val, fmt)?;
+    Some(datetime_to_timestamp_us(
+        jiff::tz::TimeZone::UTC.to_datetime(ts),
+    ))
 }
 
 fn transform_tzaware_datetime_ms(val: &str, fmt: &str) -> Option<i64> {
-    let dt = DateTime::parse_from_str(val, fmt);
-    dt.ok().map(|dt| datetime_to_timestamp_ms(dt.naive_utc()))
+    let ts = parse_tz_aware_timestamp(val, fmt)?;
+    Some(datetime_to_timestamp_ms(
+        jiff::tz::TimeZone::UTC.to_datetime(ts),
+    ))
 }
 
 pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
@@ -377,18 +404,16 @@ pub fn infer_pattern_single(val: &str) -> Option<Pattern> {
 
 pub fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
     if patterns::DATETIME_D_M_Y.iter().any(|fmt| {
-        NaiveDateTime::parse_from_str(val, fmt).is_ok()
-            || NaiveDate::parse_from_str(val, fmt).is_ok()
+        NaiveDateTime::strptime(fmt, val).is_ok() || NaiveDate::strptime(fmt, val).is_ok()
     }) {
         Some(Pattern::DatetimeDMY)
     } else if patterns::DATETIME_Y_M_D.iter().any(|fmt| {
-        NaiveDateTime::parse_from_str(val, fmt).is_ok()
-            || NaiveDate::parse_from_str(val, fmt).is_ok()
+        NaiveDateTime::strptime(fmt, val).is_ok() || NaiveDate::strptime(fmt, val).is_ok()
     }) {
         Some(Pattern::DatetimeYMD)
     } else if patterns::DATETIME_Y_M_D_Z
         .iter()
-        .any(|fmt| NaiveDateTime::parse_from_str(val, fmt).is_ok())
+        .any(|fmt| NaiveDateTime::strptime(fmt, val).is_ok())
     {
         Some(Pattern::DatetimeYMDZ)
     } else {
@@ -399,12 +424,12 @@ pub fn infer_pattern_datetime_single(val: &str) -> Option<Pattern> {
 pub fn infer_pattern_date_single(val: &str) -> Option<Pattern> {
     if patterns::DATE_D_M_Y
         .iter()
-        .any(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
+        .any(|fmt| NaiveDate::strptime(fmt, val).is_ok())
     {
         Some(Pattern::DateDMY)
     } else if patterns::DATE_Y_M_D
         .iter()
-        .any(|fmt| NaiveDate::parse_from_str(val, fmt).is_ok())
+        .any(|fmt| NaiveDate::strptime(fmt, val).is_ok())
     {
         Some(Pattern::DateYMD)
     } else {
@@ -421,7 +446,7 @@ pub fn sniff_time_fmt(val: &str) -> Option<&'static str> {
     patterns::TIME_H_M_S
         .iter()
         .copied()
-        .find(|fmt| NaiveTime::parse_from_str(val, fmt).is_ok())
+        .find(|fmt| NaiveTime::strptime(fmt, val).is_ok())
 }
 
 #[cfg(feature = "dtype-datetime")]

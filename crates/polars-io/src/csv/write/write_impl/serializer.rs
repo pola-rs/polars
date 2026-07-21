@@ -36,8 +36,6 @@ use std::io::Write;
 use arrow::array::{Array, BooleanArray, Float16Array, NullArray, PrimitiveArray, Utf8ViewArray};
 use arrow::legacy::time_zone::Tz;
 use arrow::types::NativeType;
-#[cfg(feature = "timezones")]
-use chrono::TimeZone;
 use memchr::{memchr_iter, memchr3};
 use num_traits::NumCast;
 use polars_core::prelude::*;
@@ -361,39 +359,28 @@ fn callback_serializer<'a, T: NativeType, const QUOTE_NON_NULL: bool>(
 }
 
 #[cfg(any(feature = "dtype-date", feature = "dtype-time"))]
-type ChronoFormatIter<'a, 'b> = std::slice::Iter<'a, chrono::format::Item<'b>>;
-
-#[cfg(any(feature = "dtype-date", feature = "dtype-time"))]
 fn date_and_time_serializer<'a, Underlying: NativeType, T: std::fmt::Display>(
     format_str: Option<&'a str>,
     description: &str,
     array: &'a dyn Array,
     sample_value: T,
     mut convert: impl FnMut(Underlying) -> T + Send + 'a,
-    mut format_fn: impl for<'b> FnMut(
-        &T,
-        ChronoFormatIter<'b, 'a>,
-    ) -> chrono::format::DelayedFormat<ChronoFormatIter<'b, 'a>>
-    + Send
-    + 'a,
+    format_fn: impl Fn(&T, &'a str) -> jiff::fmt::strtime::Display<'a> + Send + 'a,
     options: &SerializeOptions,
 ) -> PolarsResult<Box<dyn Serializer<'a> + Send + 'a>> {
     let array = array.as_any().downcast_ref().unwrap();
     let serializer = match format_str {
         Some(format_str) => {
-            let format = chrono::format::StrftimeItems::new(format_str).parse().map_err(
-                |_| polars_err!(ComputeError: "cannot format {description} with format '{format_str}'"),
-            )?;
             use std::fmt::Write;
             // Fail fast for invalid format. This return error faster to the user, and allows us to not return
             // `Result` from `serialize()`.
-            write!(IgnoreFmt, "{}", format_fn(&sample_value, format.iter())).map_err(
+            write!(IgnoreFmt, "{}", format_fn(&sample_value, format_str)).map_err(
                 |_| polars_err!(ComputeError: "cannot format {description} with format '{format_str}'"),
             )?;
             let callback = move |item, buf: &mut Vec<u8>| {
                 let item = convert(item);
                 // We checked the format is valid above.
-                let _ = write!(buf, "{}", format_fn(&item, format.iter()));
+                let _ = write!(buf, "{}", format_fn(&item, format_str));
             };
             date_and_time_final_serializer(array, callback, options)
         },
@@ -782,9 +769,9 @@ pub(super) fn serializer_for<'a>(
             options.date_format.as_deref(),
             "NaiveDate",
             array,
-            chrono::NaiveDate::MAX,
+            jiff::civil::Date::MAX,
             arrow::temporal_conversions::date32_to_date,
-            |date, items| date.format_with_items(items),
+            |date, fmt| date.strftime(fmt),
             options,
         )?,
         #[cfg(feature = "dtype-time")]
@@ -792,30 +779,29 @@ pub(super) fn serializer_for<'a>(
             Some(options.time_format.as_deref().unwrap_or("%T%.9f")),
             "NaiveTime",
             array,
-            chrono::NaiveTime::MIN,
+            jiff::civil::Time::MIN,
             arrow::temporal_conversions::time64ns_to_time,
-            |time, items| time.format_with_items(items),
+            |time, fmt| time.strftime(fmt),
             options,
         )?,
         #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(time_unit, _) => {
-            let format = chrono::format::StrftimeItems::new(_datetime_format)
-                .parse()
-                .map_err(|_| {
-                    polars_err!(
-                        ComputeError: "cannot format {} with format '{_datetime_format}'",
-                        if _time_zone.is_some() { "DateTime" } else { "NaiveDateTime" },
-                    )
-                })?;
             use std::fmt::Write;
-            let sample_datetime = match _time_zone {
+            let sample_datetime = match &_time_zone {
                 #[cfg(feature = "timezones")]
-                Some(time_zone) => time_zone
-                    .from_utc_datetime(&chrono::NaiveDateTime::MAX)
-                    .format_with_items(format.iter()),
+                Some(time_zone) => {
+                    // `jiff::civil::DateTime::MAX` itself can't be round-tripped through
+                    // `TimeZone::to_timestamp` (a `Timestamp`'s representable range is
+                    // narrower than `DateTime`'s, since it's kept small enough to
+                    // accommodate an arbitrary UTC offset) - use `Timestamp::MAX` directly
+                    // as the sample instant instead.
+                    jiff::Timestamp::MAX
+                        .to_zoned(time_zone.clone())
+                        .strftime(_datetime_format)
+                },
                 #[cfg(not(feature = "timezones"))]
                 Some(_) => panic!("activate 'timezones' feature"),
-                None => chrono::NaiveDateTime::MAX.format_with_items(format.iter()),
+                None => jiff::civil::DateTime::MAX.strftime(_datetime_format),
             };
             // Fail fast for invalid format. This return error faster to the user, and allows us to not return
             // `Result` from `serialize()`.
@@ -835,9 +821,12 @@ pub(super) fn serializer_for<'a>(
                         Some(time_zone) => {
                             let callback = move |item, buf: &mut Vec<u8>| {
                                 let item = arrow::temporal_conversions::$convert(item);
-                                let item = time_zone.from_utc_datetime(&item);
+                                let ts = jiff::tz::TimeZone::UTC
+                                    .to_timestamp(item)
+                                    .expect("datetime out-of-range");
+                                let item = ts.to_zoned(time_zone.clone());
                                 // We checked the format is valid above.
-                                let _ = write!(buf, "{}", item.format_with_items(format.iter()));
+                                let _ = write!(buf, "{}", item.strftime(_datetime_format));
                             };
                             date_and_time_final_serializer(array, callback, options)
                         },
@@ -847,7 +836,7 @@ pub(super) fn serializer_for<'a>(
                             let callback = move |item, buf: &mut Vec<u8>| {
                                 let item = arrow::temporal_conversions::$convert(item);
                                 // We checked the format is valid above.
-                                let _ = write!(buf, "{}", item.format_with_items(format.iter()));
+                                let _ = write!(buf, "{}", item.strftime(_datetime_format));
                             };
                             date_and_time_final_serializer(array, callback, options)
                         },

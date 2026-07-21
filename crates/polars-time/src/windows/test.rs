@@ -1,23 +1,39 @@
 use arrow::temporal_conversions::timestamp_ns_to_datetime;
-use chrono::prelude::*;
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime};
 use polars_core::prelude::*;
 
 use crate::prelude::*;
 
+trait AndUtc {
+    fn and_utc_ns(&self) -> i64;
+    fn and_utc_ms(&self) -> i64;
+}
+impl AndUtc for NaiveDateTime {
+    fn and_utc_ns(&self) -> i64 {
+        i64::try_from(
+            jiff::tz::TimeZone::UTC
+                .to_timestamp(*self)
+                .unwrap()
+                .as_nanosecond(),
+        )
+        .unwrap()
+    }
+    fn and_utc_ms(&self) -> i64 {
+        jiff::tz::TimeZone::UTC
+            .to_timestamp(*self)
+            .unwrap()
+            .as_millisecond()
+    }
+}
+
 #[test]
 fn test_date_range() {
     // Test month as interval in date range
-    let start = NaiveDate::from_ymd_opt(2022, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let end = NaiveDate::from_ymd_opt(2022, 4, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+    let start = NaiveDate::new(2022, 1, 1).unwrap().at(0, 0, 0, 0);
+    let end = NaiveDate::new(2022, 4, 1).unwrap().at(0, 0, 0, 0);
     let dates = datetime_range_i64(
-        start.and_utc().timestamp_nanos_opt().unwrap(),
-        end.and_utc().timestamp_nanos_opt().unwrap(),
+        start.and_utc_ns(),
+        end.and_utc_ns(),
         Duration::parse("1mo"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
@@ -25,18 +41,15 @@ fn test_date_range() {
     )
     .unwrap(); // unwrapping as we pass None as the time zone
     let expected = [
-        NaiveDate::from_ymd_opt(2022, 1, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2022, 4, 1).unwrap(),
+        NaiveDate::new(2022, 1, 1).unwrap(),
+        NaiveDate::new(2022, 2, 1).unwrap(),
+        NaiveDate::new(2022, 3, 1).unwrap(),
+        NaiveDate::new(2022, 4, 1).unwrap(),
     ]
     .iter()
     .map(|d| {
-        d.and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp_nanos_opt()
-            .unwrap()
+        d.at(0, 0, 0, 0)
+            .and_utc_ns()
     })
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
@@ -44,17 +57,11 @@ fn test_date_range() {
 
 #[test]
 fn test_feb_date_range() {
-    let start = NaiveDate::from_ymd_opt(2022, 2, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let end = NaiveDate::from_ymd_opt(2022, 3, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+    let start = NaiveDate::new(2022, 2, 1).unwrap().at(0, 0, 0, 0);
+    let end = NaiveDate::new(2022, 3, 1).unwrap().at(0, 0, 0, 0);
     let dates = datetime_range_i64(
-        start.and_utc().timestamp_nanos_opt().unwrap(),
-        end.and_utc().timestamp_nanos_opt().unwrap(),
+        start.and_utc_ns(),
+        end.and_utc_ns(),
         Duration::parse("1mo"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
@@ -62,16 +69,13 @@ fn test_feb_date_range() {
     )
     .unwrap(); // unwrapping as we pass None as the time zone
     let expected = [
-        NaiveDate::from_ymd_opt(2022, 2, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2022, 3, 1).unwrap(),
+        NaiveDate::new(2022, 2, 1).unwrap(),
+        NaiveDate::new(2022, 3, 1).unwrap(),
     ]
     .iter()
     .map(|d| {
-        d.and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp_nanos_opt()
-            .unwrap()
+        d.at(0, 0, 0, 0)
+            .and_utc_ns()
     })
     .collect::<Vec<_>>();
     assert_eq!(dates, expected);
@@ -93,19 +97,16 @@ fn take_groups_slice<'a>(groups: &'a GroupsSlice, idx: usize, ts: &'a [i64]) -> 
 #[test]
 fn test_groups_large_interval() {
     let dates = &[
-        NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2020, 1, 11).unwrap(),
-        NaiveDate::from_ymd_opt(2020, 1, 12).unwrap(),
-        NaiveDate::from_ymd_opt(2020, 1, 13).unwrap(),
+        NaiveDate::new(2020, 1, 1).unwrap(),
+        NaiveDate::new(2020, 1, 11).unwrap(),
+        NaiveDate::new(2020, 1, 12).unwrap(),
+        NaiveDate::new(2020, 1, 13).unwrap(),
     ];
     let ts = dates
         .iter()
         .map(|d| {
-            d.and_hms_opt(0, 0, 0)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
-                .unwrap()
+            d.at(0, 0, 0, 0)
+                .and_utc_ns()
         })
         .collect::<Vec<_>>();
 
@@ -157,13 +158,8 @@ fn test_groups_large_interval() {
 
 #[test]
 fn test_offset() {
-    let t = NaiveDate::from_ymd_opt(2020, 1, 2)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_nanos_opt()
-        .unwrap();
+    let t = NaiveDate::new(2020, 1, 2).unwrap().at(0, 0, 0, 0)
+        .and_utc_ns();
     let w = Window::new(
         Duration::parse("5m"),
         Duration::parse("5m"),
@@ -173,30 +169,19 @@ fn test_offset() {
     let b = w
         .get_earliest_bounds_ns(t, ClosedWindow::Left, None)
         .unwrap();
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(23, 58, 0)
-        .unwrap()
-        .and_utc()
-        .timestamp_nanos_opt()
-        .unwrap();
+    let start = NaiveDate::new(2020, 1, 1).unwrap().at(23, 58, 0, 0)
+        .and_utc_ns();
     assert_eq!(b.start, start);
 }
 
 #[test]
 fn test_boundaries() {
-    let start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(3, 0, 0)
-        .unwrap();
+    let start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
+    let stop = NaiveDate::new(2021, 12, 16).unwrap().at(3, 0, 0, 0);
 
     let ts = datetime_range_i64(
-        start.and_utc().timestamp_nanos_opt().unwrap(),
-        stop.and_utc().timestamp_nanos_opt().unwrap(),
+        start.and_utc_ns(),
+        stop.and_utc_ns(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
@@ -217,7 +202,7 @@ fn test_boundaries() {
     let b = w
         .get_earliest_bounds_ns(ts[0], ClosedWindow::Both, None)
         .unwrap();
-    assert_eq!(b.start, start.and_utc().timestamp_nanos_opt().unwrap());
+    assert_eq!(b.start, start.and_utc_ns());
 
     // test closed: "both" (includes both ends of the interval)
     let (groups, lower, higher) = group_by_windows(
@@ -240,39 +225,24 @@ fn test_boundaries() {
     // 2021-12-16 00:30:00
     // 2021-12-16 01:00:00
     let g = take_groups_slice(&groups, 0, &ts);
-    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 30, 0)
-        .unwrap();
-    let t2 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
+    let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
+    let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 30, 0, 0);
+    let t2 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     assert_eq!(
         g,
         &[
-            t0.and_utc().timestamp_nanos_opt().unwrap(),
-            t1.and_utc().timestamp_nanos_opt().unwrap(),
-            t2.and_utc().timestamp_nanos_opt().unwrap()
+            t0.and_utc_ns(),
+            t1.and_utc_ns(),
+            t2.and_utc_ns()
         ]
     );
-    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
+    let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
+    let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     assert_eq!(
         &[lower[0], higher[0]],
         &[
-            b_start.and_utc().timestamp_nanos_opt().unwrap(),
-            b_end.and_utc().timestamp_nanos_opt().unwrap()
+            b_start.and_utc_ns(),
+            b_end.and_utc_ns()
         ]
     );
 
@@ -284,39 +254,24 @@ fn test_boundaries() {
     // 2021-12-16 01:30:00
     // 2021-12-16 02:00:00
     let g = take_groups_slice(&groups, 1, &ts);
-    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
-    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 30, 0)
-        .unwrap();
-    let t2 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(2, 0, 0)
-        .unwrap();
+    let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
+    let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 30, 0, 0);
+    let t2 = NaiveDate::new(2021, 12, 16).unwrap().at(2, 0, 0, 0);
     assert_eq!(
         g,
         &[
-            t0.and_utc().timestamp_nanos_opt().unwrap(),
-            t1.and_utc().timestamp_nanos_opt().unwrap(),
-            t2.and_utc().timestamp_nanos_opt().unwrap()
+            t0.and_utc_ns(),
+            t1.and_utc_ns(),
+            t2.and_utc_ns()
         ]
     );
-    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
-    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(2, 0, 0)
-        .unwrap();
+    let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
+    let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(2, 0, 0, 0);
     assert_eq!(
         &[lower[1], higher[1]],
         &[
-            b_start.and_utc().timestamp_nanos_opt().unwrap(),
-            b_end.and_utc().timestamp_nanos_opt().unwrap()
+            b_start.and_utc_ns(),
+            b_end.and_utc_ns()
         ]
     );
 
@@ -374,18 +329,12 @@ fn test_boundaries() {
 
 #[test]
 fn test_boundaries_2() {
-    let start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(4, 0, 0)
-        .unwrap();
+    let start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
+    let stop = NaiveDate::new(2021, 12, 16).unwrap().at(4, 0, 0, 0);
 
     let ts = datetime_range_i64(
-        start.and_utc().timestamp_nanos_opt().unwrap(),
-        stop.and_utc().timestamp_nanos_opt().unwrap(),
+        start.and_utc_ns(),
+        stop.and_utc_ns(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Nanoseconds,
@@ -411,7 +360,7 @@ fn test_boundaries_2() {
 
     assert_eq!(
         b.start,
-        start.and_utc().timestamp_nanos_opt().unwrap() + offset.duration_ns() - every.duration_ns()
+        start.and_utc_ns() + offset.duration_ns() - every.duration_ns()
     );
 
     let (groups, lower, higher) = group_by_windows(
@@ -435,34 +384,22 @@ fn test_boundaries_2() {
     // (note that we don't expect 01:30:00 because we close left (and thus open interval right))
     // see: https://pandas.pydata.org/docs/reference/api/pandas.Interval.html
     let g = take_groups_slice(&groups, 0, &ts);
-    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 30, 0)
-        .unwrap();
-    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
+    let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 30, 0, 0);
+    let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     assert_eq!(
         g,
         &[
-            t0.and_utc().timestamp_nanos_opt().unwrap(),
-            t1.and_utc().timestamp_nanos_opt().unwrap()
+            t0.and_utc_ns(),
+            t1.and_utc_ns()
         ]
     );
-    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 30, 0)
-        .unwrap();
-    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 30, 0)
-        .unwrap();
+    let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 30, 0, 0);
+    let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(1, 30, 0, 0);
     assert_eq!(
         &[lower[0], higher[0]],
         &[
-            b_start.and_utc().timestamp_nanos_opt().unwrap(),
-            b_end.and_utc().timestamp_nanos_opt().unwrap()
+            b_start.and_utc_ns(),
+            b_end.and_utc_ns()
         ]
     );
 
@@ -474,52 +411,34 @@ fn test_boundaries_2() {
     // 2021-12-16 03:00:00
     // (note that we don't expect 03:30:00 because we close left)
     let g = take_groups_slice(&groups, 1, &ts);
-    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(2, 30, 0)
-        .unwrap();
-    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(3, 0, 0)
-        .unwrap();
+    let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(2, 30, 0, 0);
+    let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(3, 0, 0, 0);
     assert_eq!(
         g,
         &[
-            t0.and_utc().timestamp_nanos_opt().unwrap(),
-            t1.and_utc().timestamp_nanos_opt().unwrap()
+            t0.and_utc_ns(),
+            t1.and_utc_ns()
         ]
     );
-    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(2, 30, 0)
-        .unwrap();
-    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(3, 30, 0)
-        .unwrap();
+    let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(2, 30, 0, 0);
+    let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(3, 30, 0, 0);
     assert_eq!(
         &[lower[1], higher[1]],
         &[
-            b_start.and_utc().timestamp_nanos_opt().unwrap(),
-            b_end.and_utc().timestamp_nanos_opt().unwrap()
+            b_start.and_utc_ns(),
+            b_end.and_utc_ns()
         ]
     );
 }
 
 #[test]
 fn test_boundaries_ms() {
-    let start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let stop = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(3, 0, 0)
-        .unwrap();
+    let start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
+    let stop = NaiveDate::new(2021, 12, 16).unwrap().at(3, 0, 0, 0);
 
     let ts = datetime_range_i64(
-        start.and_utc().timestamp_millis(),
-        stop.and_utc().timestamp_millis(),
+        start.and_utc_ms(),
+        stop.and_utc_ms(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
@@ -540,7 +459,7 @@ fn test_boundaries_ms() {
     let b = w
         .get_earliest_bounds_ms(ts[0], ClosedWindow::Both, None)
         .unwrap();
-    assert_eq!(b.start, start.and_utc().timestamp_millis());
+    assert_eq!(b.start, start.and_utc_ms());
 
     // test closed: "both" (includes both ends of the interval)
     let (groups, lower, higher) = group_by_windows(
@@ -563,39 +482,24 @@ fn test_boundaries_ms() {
     // 2021-12-16 00:30:00
     // 2021-12-16 01:00:00
     let g = take_groups_slice(&groups, 0, &ts);
-    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 30, 0)
-        .unwrap();
-    let t2 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
+    let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
+    let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(0, 30, 0, 0);
+    let t2 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     assert_eq!(
         g,
         &[
-            t0.and_utc().timestamp_millis(),
-            t1.and_utc().timestamp_millis(),
-            t2.and_utc().timestamp_millis()
+            t0.and_utc_ms(),
+            t1.and_utc_ms(),
+            t2.and_utc_ms()
         ]
     );
-    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
+    let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(0, 0, 0, 0);
+    let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
     assert_eq!(
         &[lower[0], higher[0]],
         &[
-            b_start.and_utc().timestamp_millis(),
-            b_end.and_utc().timestamp_millis()
+            b_start.and_utc_ms(),
+            b_end.and_utc_ms()
         ]
     );
 
@@ -607,39 +511,24 @@ fn test_boundaries_ms() {
     // 2021-12-16 01:30:00
     // 2021-12-16 02:00:00
     let g = take_groups_slice(&groups, 1, &ts);
-    let t0 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
-    let t1 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 30, 0)
-        .unwrap();
-    let t2 = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(2, 0, 0)
-        .unwrap();
+    let t0 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
+    let t1 = NaiveDate::new(2021, 12, 16).unwrap().at(1, 30, 0, 0);
+    let t2 = NaiveDate::new(2021, 12, 16).unwrap().at(2, 0, 0, 0);
     assert_eq!(
         g,
         &[
-            t0.and_utc().timestamp_millis(),
-            t1.and_utc().timestamp_millis(),
-            t2.and_utc().timestamp_millis()
+            t0.and_utc_ms(),
+            t1.and_utc_ms(),
+            t2.and_utc_ms()
         ]
     );
-    let b_start = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(1, 0, 0)
-        .unwrap();
-    let b_end = NaiveDate::from_ymd_opt(2021, 12, 16)
-        .unwrap()
-        .and_hms_opt(2, 0, 0)
-        .unwrap();
+    let b_start = NaiveDate::new(2021, 12, 16).unwrap().at(1, 0, 0, 0);
+    let b_end = NaiveDate::new(2021, 12, 16).unwrap().at(2, 0, 0, 0);
     assert_eq!(
         &[lower[1], higher[1]],
         &[
-            b_start.and_utc().timestamp_millis(),
-            b_end.and_utc().timestamp_millis()
+            b_start.and_utc_ms(),
+            b_end.and_utc_ms()
         ]
     );
 
@@ -698,17 +587,11 @@ fn test_boundaries_ms() {
 #[test]
 fn test_rolling_lookback() {
     // Test month as interval in date range
-    let start = NaiveDate::from_ymd_opt(1970, 1, 16)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let end = NaiveDate::from_ymd_opt(1970, 1, 16)
-        .unwrap()
-        .and_hms_opt(4, 0, 0)
-        .unwrap();
+    let start = NaiveDate::new(1970, 1, 16).unwrap().at(0, 0, 0, 0);
+    let end = NaiveDate::new(1970, 1, 16).unwrap().at(4, 0, 0, 0);
     let dates = datetime_range_i64(
-        start.and_utc().timestamp_millis(),
-        end.and_utc().timestamp_millis(),
+        start.and_utc_ms(),
+        end.and_utc_ms(),
         Duration::parse("30m"),
         ClosedWindow::Both,
         TimeUnit::Milliseconds,
@@ -818,18 +701,10 @@ fn test_rolling_lookback() {
 #[test]
 fn test_end_membership() {
     let time = [
-        NaiveDate::from_ymd_opt(2021, 2, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp_millis(),
-        NaiveDate::from_ymd_opt(2021, 5, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap()
-            .and_utc()
-            .timestamp_millis(),
+        NaiveDate::new(2021, 2, 1).unwrap().at(0, 0, 0, 0)
+            .and_utc_ms(),
+        NaiveDate::new(2021, 5, 1).unwrap().at(0, 0, 0, 0)
+            .and_utc_ms(),
     ];
     let window = Window::new(
         Duration::parse("1mo"),
@@ -909,18 +784,15 @@ fn test_group_by_windows_duplicates_2931() {
 #[test]
 fn test_group_by_windows_offsets_3776() {
     let dates = &[
-        NaiveDate::from_ymd_opt(2020, 12, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2021, 2, 1).unwrap(),
-        NaiveDate::from_ymd_opt(2021, 5, 1).unwrap(),
+        NaiveDate::new(2020, 12, 1).unwrap(),
+        NaiveDate::new(2021, 2, 1).unwrap(),
+        NaiveDate::new(2021, 5, 1).unwrap(),
     ];
     let ts = dates
         .iter()
         .map(|d| {
-            d.and_hms_opt(0, 0, 0)
-                .unwrap()
-                .and_utc()
-                .timestamp_nanos_opt()
-                .unwrap()
+            d.at(0, 0, 0, 0)
+                .and_utc_ns()
         })
         .collect::<Vec<_>>();
 

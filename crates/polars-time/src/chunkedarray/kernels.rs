@@ -7,8 +7,6 @@ use arrow::temporal_conversions::{
     date32_to_datetime_opt, timestamp_ms_to_datetime_opt, timestamp_ns_to_datetime_opt,
     timestamp_us_to_datetime_opt,
 };
-use chrono::{Datelike, Timelike};
-
 use super::super::windows::calendar::*;
 use super::*;
 
@@ -19,19 +17,19 @@ trait PolarsIso {
 
 impl PolarsIso for NaiveDateTime {
     fn week(&self) -> i8 {
-        self.iso_week().week().try_into().unwrap()
+        self.iso_week_date().week()
     }
     fn iso_year(&self) -> i32 {
-        self.iso_week().year()
+        self.iso_week_date().year() as i32
     }
 }
 
 impl PolarsIso for NaiveDate {
     fn week(&self) -> i8 {
-        self.iso_week().week().try_into().unwrap()
+        self.iso_week_date().week()
     }
     fn iso_year(&self) -> i32 {
-        self.iso_week().year()
+        self.iso_week_date().year() as i32
     }
 }
 
@@ -58,7 +56,7 @@ macro_rules! to_boolean_temporal_unit {
             Box::new(BooleanArray::from_trusted_len_iter(arr.iter().map(
                 |opt_value| {
                     opt_value.and_then(|&value| {
-                        $to_datetime_fn(value).map(|dt| $boolean_method(dt.$chrono_method()))
+                        $to_datetime_fn(value).map(|dt| $boolean_method(dt.$chrono_method() as i32))
                     })
                 },
             )))
@@ -140,7 +138,7 @@ to_temporal_unit!(
 #[cfg(feature = "dtype-date")]
 to_temporal_unit!(
     date_to_ordinal,
-    ordinal,
+    day_of_year,
     date32_to_datetime_opt,
     i32,
     i16,
@@ -150,7 +148,7 @@ to_temporal_unit!(
 to_calendar_value!(
     date_to_days_in_month,
     dt,
-    days_in_month(dt.year(), dt.month() as u8),
+    days_in_month(dt.year() as i32, dt.month() as u8),
     date32_to_datetime_opt,
     i32,
     i8,
@@ -188,7 +186,7 @@ to_temporal_unit!(
 #[cfg(feature = "dtype-time")]
 to_temporal_unit!(
     time_to_nanosecond,
-    nanosecond,
+    subsec_nanosecond,
     time64ns_to_time_opt,
     i64,
     i32,
@@ -198,7 +196,7 @@ to_temporal_unit!(
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
     datetime_to_ordinal_ns,
-    ordinal,
+    day_of_year,
     timestamp_ns_to_datetime_opt,
     i64,
     i16,
@@ -208,7 +206,7 @@ to_temporal_unit!(
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
     datetime_to_ordinal_ms,
-    ordinal,
+    day_of_year,
     timestamp_ms_to_datetime_opt,
     i64,
     i16,
@@ -217,7 +215,7 @@ to_temporal_unit!(
 #[cfg(feature = "dtype-datetime")]
 to_temporal_unit!(
     datetime_to_ordinal_us,
-    ordinal,
+    day_of_year,
     timestamp_us_to_datetime_opt,
     i64,
     i16,
@@ -282,7 +280,7 @@ to_boolean_temporal_unit!(
 to_calendar_value!(
     datetime_to_days_in_month_ns,
     dt,
-    days_in_month(dt.year(), dt.month() as u8),
+    days_in_month(dt.year() as i32, dt.month() as u8),
     timestamp_ns_to_datetime_opt,
     i64,
     i8,
@@ -292,7 +290,7 @@ to_calendar_value!(
 to_calendar_value!(
     datetime_to_days_in_month_us,
     dt,
-    days_in_month(dt.year(), dt.month() as u8),
+    days_in_month(dt.year() as i32, dt.month() as u8),
     timestamp_us_to_datetime_opt,
     i64,
     i8,
@@ -302,7 +300,7 @@ to_calendar_value!(
 to_calendar_value!(
     datetime_to_days_in_month_ms,
     dt,
-    days_in_month(dt.year(), dt.month() as u8),
+    days_in_month(dt.year() as i32, dt.month() as u8),
     timestamp_ms_to_datetime_opt,
     i64,
     i8,

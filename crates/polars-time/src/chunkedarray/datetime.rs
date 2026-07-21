@@ -203,7 +203,7 @@ pub trait DatetimeMethods: AsDatetime {
         Int64Chunked::from_iter_options(
             name,
             v.iter()
-                .map(|s| NaiveDateTime::parse_from_str(s, fmt).ok().map(func)),
+                .map(|s| NaiveDateTime::strptime(fmt, s).ok().map(func)),
         )
         .into_datetime(tu, None)
     }
@@ -235,23 +235,27 @@ pub trait DatetimeMethods: AsDatetime {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
                     (y, m, d, h, mnt, s, ns)
                 {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
+                    NaiveDate::new(y as i16, m as i8, d as i8).ok().map_or_else(
                         // We have an invalid date.
                         || polars_bail!(ComputeError: "Invalid date components ({y}, {m}, {d}) supplied"),
                         // We have a valid date.
                         |date| {
-                            date.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
+                            NaiveTime::new(h as i8, mnt as i8, s as i8, ns as i32)
+                                .ok()
+                                .map(|time| date.to_datetime(time))
                                 .map_or_else(
                                     // We have invalid time components for the specified date.
                                     || polars_bail!(ComputeError: "Invalid time components ({h}, {mnt}, {s}, {ns}) supplied"),
                                     // We have a valid time.
                                     |ndt| {
-                                        let t = ndt.and_utc();
+                                        let ts = jiff::tz::TimeZone::UTC
+                                            .to_timestamp(ndt)
+                                            .expect("datetime out-of-range");
                                         Ok(Some(match time_unit {
-                                            TimeUnit::Milliseconds => t.timestamp_millis(),
-                                            TimeUnit::Microseconds => t.timestamp_micros(),
+                                            TimeUnit::Milliseconds => ts.as_millisecond(),
+                                            TimeUnit::Microseconds => ts.as_microsecond(),
                                             TimeUnit::Nanoseconds => {
-                                                t.timestamp_nanos_opt().unwrap()
+                                                i64::try_from(ts.as_nanosecond()).unwrap()
                                             },
                                         }))
                                     },
@@ -307,7 +311,7 @@ mod test {
             "2012-12-21 00:00:00",
         ]
         .iter()
-        .map(|s| NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S").unwrap())
+        .map(|s| NaiveDateTime::strptime("%Y-%m-%d %H:%M:%S", s).unwrap())
         .collect();
 
         // NOTE: the values are checked and correct.

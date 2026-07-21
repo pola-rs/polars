@@ -1,7 +1,7 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 //! Much more opinionated, but also much faster strptrime than the one given in Chrono.
 
-use chrono::{NaiveDate, NaiveDateTime};
+use jiff::civil::{Date as NaiveDate, DateTime as NaiveDateTime, Time};
 
 use crate::chunkedarray::{PolarsResult, polars_bail};
 
@@ -206,8 +206,13 @@ impl StrpTimeState {
         }
         // all values processed
         if offset == val.len() {
-            NaiveDate::from_ymd_opt(year, month, day)
-                .and_then(|nd| nd.and_hms_nano_opt(hour, min, sec, nano))
+            NaiveDate::new(year as i16, month as i8, day as i8)
+                .ok()
+                .and_then(|nd| {
+                    Time::new(hour as i8, min as i8, sec as i8, nano as i32)
+                        .ok()
+                        .map(|t| nd.to_datetime(t))
+                })
         }
         // remaining values did not match pattern
         else {
@@ -248,61 +253,43 @@ mod test {
             (
                 "2021-01-01",
                 "%Y-%m-%d",
-                Some(
-                    NaiveDate::from_ymd_opt(2021, 1, 1)
-                        .unwrap()
-                        .and_hms_nano_opt(0, 0, 0, 0)
-                        .unwrap(),
-                ),
+                Some(NaiveDate::new(2021, 1, 1).unwrap().at(0, 0, 0, 0)),
             ),
             (
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
-                Some(
-                    NaiveDate::from_ymd_opt(2021, 1, 1)
-                        .unwrap()
-                        .and_hms_nano_opt(7, 45, 12, 0)
-                        .unwrap(),
-                ),
+                Some(NaiveDate::new(2021, 1, 1).unwrap().at(7, 45, 12, 0)),
             ),
             (
                 "2021-01-01 07:45:12",
                 "%Y-%m-%d %H:%M:%S",
-                Some(
-                    NaiveDate::from_ymd_opt(2021, 1, 1)
-                        .unwrap()
-                        .and_hms_nano_opt(7, 45, 12, 0)
-                        .unwrap(),
-                ),
+                Some(NaiveDate::new(2021, 1, 1).unwrap().at(7, 45, 12, 0)),
             ),
             (
                 "2019-04-18T02:45:55.555000000",
                 "%Y-%m-%dT%H:%M:%S.%9f",
                 Some(
-                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                    NaiveDate::new(2019, 4, 18)
                         .unwrap()
-                        .and_hms_nano_opt(2, 45, 55, 555000000)
-                        .unwrap(),
+                        .at(2, 45, 55, 555000000),
                 ),
             ),
             (
                 "2019-04-18T02:45:55.555000",
                 "%Y-%m-%dT%H:%M:%S.%6f",
                 Some(
-                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                    NaiveDate::new(2019, 4, 18)
                         .unwrap()
-                        .and_hms_nano_opt(2, 45, 55, 555000000)
-                        .unwrap(),
+                        .at(2, 45, 55, 555000000),
                 ),
             ),
             (
                 "2019-04-18T02:45:55.555",
                 "%Y-%m-%dT%H:%M:%S.%3f",
                 Some(
-                    NaiveDate::from_ymd_opt(2019, 4, 18)
+                    NaiveDate::new(2019, 4, 18)
                         .unwrap()
-                        .and_hms_nano_opt(2, 45, 55, 555000000)
-                        .unwrap(),
+                        .at(2, 45, 55, 555000000),
                 ),
             ),
         ];

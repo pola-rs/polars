@@ -99,16 +99,16 @@ impl TimeZone {
     }
 
     #[cfg(feature = "timezones")]
-    pub fn from_chrono(tz: &chrono_tz::Tz) -> Self {
+    pub fn from_jiff_tz(tz: &jiff::tz::TimeZone) -> Self {
         use polars_utils::format_pl_smallstr;
 
         Self {
-            inner: format_pl_smallstr!("{}", tz),
+            inner: format_pl_smallstr!("{}", tz.iana_name().unwrap_or("UTC")),
         }
     }
 
     #[cfg(feature = "timezones")]
-    pub fn to_chrono(&self) -> PolarsResult<chrono_tz::Tz> {
+    pub fn to_jiff_tz(&self) -> PolarsResult<jiff::tz::TimeZone> {
         parse_time_zone(self)
     }
 
@@ -153,20 +153,21 @@ polars_utils::regex_cache::cached_regex! {
     static FIXED_OFFSET_RE = FIXED_OFFSET_PATTERN;
 }
 
-/// Parse a time zone string to [`chrono_tz::Tz`]
+/// Parse a time zone string to a [`jiff::tz::TimeZone`]
 #[cfg(feature = "timezones")]
-pub fn parse_time_zone(tz: &str) -> PolarsResult<chrono_tz::Tz> {
+pub fn parse_time_zone(tz: &str) -> PolarsResult<jiff::tz::TimeZone> {
     use polars_utils::levenshtein::levenshtein;
 
-    if let Ok(tz_parsed) = tz.parse::<chrono_tz::Tz>() {
+    if let Ok(tz_parsed) = jiff::tz::TimeZone::get(tz) {
         return Ok(tz_parsed);
     }
 
-    let mut best: Option<(&str, usize)> = None;
-    for &candidate in chrono_tz::TZ_VARIANTS.iter() {
-        let score = levenshtein(tz, candidate.name());
-        if best.is_none() || score < best.unwrap().1 {
-            best = Some((candidate.name(), score));
+    let mut best: Option<(String, usize)> = None;
+    for candidate in jiff::tz::db().available() {
+        let candidate = candidate.as_str();
+        let score = levenshtein(tz, candidate);
+        if best.as_ref().is_none_or(|(_, best_score)| score < *best_score) {
+            best = Some((candidate.to_string(), score));
         }
     }
 
@@ -198,7 +199,7 @@ pub fn parse_fixed_offset(tz: &str) -> PolarsResult<PlSmallStr> {
         };
         let hour = caps.name("hour").unwrap().as_str().parse::<i32>().unwrap();
         let etc_tz = format_pl_smallstr!("Etc/GMT{}{}", sign, hour);
-        if etc_tz.parse::<chrono_tz::Tz>().is_ok() {
+        if jiff::tz::TimeZone::get(&etc_tz).is_ok() {
             return Ok(etc_tz);
         }
     }

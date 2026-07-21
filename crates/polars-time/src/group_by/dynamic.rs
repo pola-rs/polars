@@ -182,7 +182,7 @@ impl Wrap<&DataFrame> {
         match tz {
             #[cfg(feature = "timezones")]
             Some(tz) => {
-                self.impl_rolling(dt, group_by, options, tu, tz.parse::<Tz>().ok(), time_type)
+                self.impl_rolling(dt, group_by, options, tu, Tz::get(tz.as_str()).ok(), time_type)
             },
             _ => self.impl_rolling(dt, group_by, options, tu, None, time_type),
         }
@@ -448,7 +448,7 @@ impl Wrap<&DataFrame> {
                     values,
                     options.closed_window,
                     tu,
-                    tz,
+                    tz.clone(),
                 )?;
 
                 PolarsResult::Ok(

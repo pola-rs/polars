@@ -279,7 +279,7 @@ impl ConcurrencyController {
                         req_budget={}, \
                         req_in_use={}, \
                         req_sat={:.2}",
-                        chrono::Utc::now(),
+                        jiff::Timestamp::now(),
                         state.label(),
                         signal.map(|s| s.bw_hwm_bps).or(bw_hwm_held).unwrap_or(0.0) / 1e6,
                         signal.map_or(0.0, |s| s.bw_avg_bps) / 1e6,

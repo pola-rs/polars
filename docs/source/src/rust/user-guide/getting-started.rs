@@ -1,15 +1,15 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:df]
-    use chrono::prelude::*;
+    use jiff::civil::{Date as NaiveDate, Time as NaiveTime};
     use polars::prelude::*;
 
     let mut df: DataFrame = df!(
         "name" => ["Alice Archer", "Ben Brown", "Chloe Cooper", "Daniel Donovan"],
         "birthdate" => [
-            NaiveDate::from_ymd_opt(1997, 1, 10).unwrap(),
-            NaiveDate::from_ymd_opt(1985, 2, 15).unwrap(),
-            NaiveDate::from_ymd_opt(1983, 3, 22).unwrap(),
-            NaiveDate::from_ymd_opt(1981, 4, 30).unwrap(),
+            NaiveDate::new(1997, 1, 10).unwrap(),
+            NaiveDate::new(1985, 2, 15).unwrap(),
+            NaiveDate::new(1983, 3, 22).unwrap(),
+            NaiveDate::new(1981, 4, 30).unwrap(),
         ],
         "weight" => [57.9, 72.5, 53.6, 83.1],  // (kg)
         "height" => [1.56, 1.77, 1.65, 1.75],  // (m)
@@ -90,8 +90,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter(
             col("birthdate")
                 .is_between(
-                    lit(NaiveDate::from_ymd_opt(1982, 12, 31).unwrap()),
-                    lit(NaiveDate::from_ymd_opt(1996, 1, 1).unwrap()),
+                    lit(NaiveDate::new(1982, 12, 31).unwrap()),
+                    lit(NaiveDate::new(1996, 1, 1).unwrap()),
                     ClosedInterval::Both,
                 )
                 .and(col("height").gt(lit(1.7))),
@@ -177,10 +177,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df3: DataFrame = df!(
         "name" => ["Ethan Edwards", "Fiona Foster", "Grace Gibson", "Henry Harris"],
         "birthdate" => [
-            NaiveDate::from_ymd_opt(1977, 5, 10).unwrap(),
-            NaiveDate::from_ymd_opt(1975, 6, 23).unwrap(),
-            NaiveDate::from_ymd_opt(1973, 7, 22).unwrap(),
-            NaiveDate::from_ymd_opt(1971, 8, 3).unwrap(),
+            NaiveDate::new(1977, 5, 10).unwrap(),
+            NaiveDate::new(1975, 6, 23).unwrap(),
+            NaiveDate::new(1973, 7, 22).unwrap(),
+            NaiveDate::new(1971, 8, 3).unwrap(),
         ],
         "weight" => [67.9, 72.5, 57.6, 93.1],  // (kg)
         "height" => [1.76, 1.6, 1.66, 1.8],  // (m)

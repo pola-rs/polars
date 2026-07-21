@@ -1,4 +1,4 @@
-use chrono::NaiveTime;
+use jiff::civil::Time as NaiveTime;
 use polars_compute::decimal::DecimalFmtBuffer;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::BoundObject;

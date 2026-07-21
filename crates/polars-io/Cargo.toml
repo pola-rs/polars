@@ -25,8 +25,7 @@ async-trait = { workspace = true, optional = true }
 atoi_simd = { workspace = true, optional = true }
 blake3 = { workspace = true, optional = true }
 bytes = { workspace = true }
-chrono = { workspace = true, optional = true }
-chrono-tz = { workspace = true, optional = true }
+jiff = { workspace = true, optional = true }
 # kdn TODO CHECK
 crossbeam-queue = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
@@ -67,6 +66,9 @@ tempfile = "3"
 
 [features]
 catalog = ["cloud", "serde", "reqwest", "futures", "strum", "strum_macros", "chrono"]
+# kept for backward-compat feature naming; both now enable the jiff dependency
+chrono = ["dep:jiff"]
+chrono-tz = ["dep:jiff"]
 default = ["decompress"]
 # support for arrows json parsing
 json = [

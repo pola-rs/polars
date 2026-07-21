@@ -180,7 +180,7 @@
 //! * `sql` - Pass SQL queries to Polars.
 //! * `random` - Generate arrays with randomly sampled values
 //! * `ndarray`- Convert from [`DataFrame`] to [ndarray](https://docs.rs/ndarray/)
-//! * `temporal` - Conversions between [Chrono](https://docs.rs/chrono/) and Polars for temporal data types
+//! * `temporal` - Conversions between [jiff](https://docs.rs/jiff/) and Polars for temporal data types
 //! * `timezones` - Activate timezone support.
 //! * `strings` - Extra string utilities for [`StringChunked`]
 //!     - `string_pad` - `zfill`, `ljust`, `rjust`
