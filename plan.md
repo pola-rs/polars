@@ -37,13 +37,17 @@ crates/polars-sqllogictest/
 - **Ratchet CI policy**: failure not in baseline → red; baseline entry now passing → red ("remove it"); print `passed / expected-fail / total` pass-rate every run. `skipif polars` reserved for *intentional* dialect divergences (e.g. integer division), baseline file for *not-yet-implemented*.
 - CI: add a step/job to `.github/workflows/test-rust.yml` running `cargo run -p polars-sqllogictest --release`. No network needed (vendored corpus). Optional nightly job fetches the full external corpus (pinned URL + sha256) and runs report-only.
 
-## Phase 2 — corpus import & baseline (M)
+## Phase 2 — corpus import & baseline (M) — DONE
 
-Vendor a curated subset of the public-domain SQLite corpus (`select1–5.test`, `evidence/slt_lang_*`, slices of `random/`) at a pinned upstream commit. Run, triage every failure into: missing feature (→ ranked backlog), dialect divergence vs PostgreSQL (→ `skipif` + note), harness bug. Output: initial `expected_failures.txt` + empirically prioritized Phase 3 order.
+Vendored 13 files (`select1–4`, `in1`/`in2`, SELECT-relevant `slt_lang_*`, 4 truncated `random/` samples) from `gregrahn/sqllogictest` @ `c67f97b`; provenance + all vendoring modifications in `slt/sqlite/UPSTREAM`. Baseline: **4829 passed / 5200 expected-fail / 10029 total (48.2%)**; sqlite corpus alone 47.6%. 160 `skipif polars` records documented as intentional PostgreSQL-alignment divergences (integer division #27391, boolean rendering, empty `IN ()`). `select5.test` dropped: N-way implicit joins (4–64 tables) OOM — see 3h.
+
+Empirical ranking (failing records): subqueries ~2900 · self-join duplicate-column collisions 1309 (new, → 3h) · chained set ops 878 · DISTINCT-in-aggregates 25 · small correctness bugs (→ 3h) · window/GROUPING SETS ≈ 0 corpus weight (keep, but urgency drops).
 
 ## Phase 3 — gap closing (parallelizable after Phase 2)
 
 Items are **[transpiler]** (polars-sql only) unless marked **[engine]** (cross-crate, longer lead time — raise early with polars-plan owners).
+
+Empirical priority order (by Phase 2 failure count): 3a subqueries → 3h join-column collisions → 3e chained set ops → everything else.
 
 ### 3a. Subqueries (M staged; general case XL)
 - Scalar-subquery comparisons [S/M]: remove the bail at `sql_expr.rs:567-577`; route subquery operands through the existing `Expr::SubPlan` path; extend `process_subqueries` to SELECT-list/HAVING; add PostgreSQL ">1 row is an error" guard on the `first()` rewrite (context.rs:2037) or document deferral.
@@ -65,14 +69,24 @@ Additive batches in `functions.rs` (enum + aliases + visitor arm), each landing 
 ### 3d. GROUPING SETS / ROLLUP / CUBE (M)
 In `context.rs` group-by path: expand to grouping-set list → one aggregation per set over a shared `lf.cache()` input → diagonal `concat` with null-filled keys; `GROUPING()` as per-set constant bitmask. Make the diagonal-concat feature non-optional for polars-sql.
 
-### 3e. Small semantics items (S each)
-- `EXCEPT ALL`/`INTERSECT ALL`: occurrence-index column (`cum_count().over(all cols)`) added to the anti/semi join keys in `process_except_intersect` (context.rs:533-576).
+### 3e. Small semantics items (S each; set-ops promoted to M by corpus weight)
+- Chained/mixed set operations (3+ `UNION`/`EXCEPT`/`INTERSECT` terms, 878 corpus failures) and `EXCEPT`/`INTERSECT` at all (currently rejected): occurrence-index column (`cum_count().over(all cols)`) added to the anti/semi join keys in `process_except_intersect` (context.rs:533-576).
 - `FETCH … WITH TIES`: rank-based filter after sort; `FETCH … PERCENT`: `row_number <= ceil(len * p / 100)`.
 - Expression gaps in `sql_expr.rs`: LIKE `ESCAPE`, array slicing (`Subscript::Slice` → `list().slice`), TRIM custom charset, CAST FORMAT (common templates → strftime), negative interval strings, chained field access.
+- `IN`/`NOT IN` three-valued logic: NULL in the list with no match must yield NULL, not false/true (~7 corpus records). IN-list elements that are expressions, not literals (~8).
 - `TIME WITH TIME ZONE`: keep rejecting with a clear message; document as intentional (PostgreSQL itself discourages it).
 
 ### 3f. Recursive CTEs (M/L)
 In `register_ctes` (context.rs): split anchor/recursive terms; iterate eagerly (collect anchor → re-register → collect recursive term → append; unique+fixpoint for UNION, iteration cap for safety); register materialized result. Document that this executes at planning time (unavoidable without engine-level iteration).
+
+### 3h. New from Phase 2 triage
+- Self-join / multi-table FROM duplicate-column collisions [M] — **#2 gap overall, 1309 corpus failures**: `SELECT * FROM t1 AS a, t1 AS b` style queries fail on colliding column names; fix in context.rs join/FROM handling (qualified/aliased column resolution). Not in the original plan; needs design before fan-out.
+- Correctness bugs [S each, do early — they're wrong answers, not missing features]:
+  - `-COUNT(*)` unsigned wraparound (renders `4294967293` for `-3`); negation of unsigned agg outputs must cast.
+  - `SUM(<literal>)` returns the literal instead of literal × row count.
+  - `SUM`/`MIN` over empty or all-NULL group must return NULL (currently `0`/placeholder).
+- DISTINCT inside aggregates (`SUM(DISTINCT x)` etc., 25 corpus failures) — fold into 3c batches.
+- N-way implicit join lowering **[engine, L]**: `FROM t1,…,tN WHERE <equalities>` lowers to filtered cross product; ≥~20 tables OOMs (why select5.test is dropped). Needs join-reordering / predicate-pushdown-into-join at planning; raise with polars-plan owners alongside the other engine items.
 
 ### 3g. Deferred / own track (L–XL)
 - LATERAL Stage 1: table functions + `UNNEST … WITH ORDINALITY` (extend existing CROSS JOIN UNNEST path; ordinality = row-index column). Stage 2 (general LATERAL) = same dependent-join engine problem as 3a Stage 2 — defer jointly **[engine, XL]**.
@@ -89,15 +103,16 @@ In `register_ctes` (context.rs): split anchor/recursive terms; iterate eagerly (
 
 | Phase | Size | Notes |
 |---|---|---|
-| 1 Harness + CI | M | First; everything else measured by it |
-| 2 Corpus + triage | M | Produces ranked backlog + baseline |
-| 3a Subqueries (staged) | M | Parallel with 3b–3f |
-| 3b Window frames/fns | L | One engine M item (OVER order-by options) |
+| 1 Harness + CI | M | **DONE** (96-record own corpus, ratchet, CI job) |
+| 2 Corpus + triage | M | **DONE** (48.2% baseline, ranked backlog below) |
+| 3a Subqueries (staged) | M | ~2900 corpus failures — top priority |
+| 3h Join-column collisions + correctness bugs | M | 1309 failures + 3 wrong-answer bugs — second priority |
+| 3e Small semantics (set ops first) | M + ~5×S | Chained set ops = 878 failures |
 | 3c Function batches | L | Many independent S items; fully parallel |
-| 3d GROUPING SETS | M | context.rs |
-| 3e Small semantics | ~6×S | Anywhere |
+| 3b Window frames/fns | L | ~0 corpus weight; keep for SELECT-surface completeness |
+| 3d GROUPING SETS | M | ~0 corpus weight; context.rs |
 | 3f Recursive CTEs | M/L | context.rs |
-| 3g LATERAL/general decorrelation | XL | Engine track; not blocking v1 |
+| 3g LATERAL/general decorrelation + N-way join reordering | XL | Engine track; not blocking v1 |
 
 Only hard ordering: 1 → 2 → 3. Within Phase 3 the work splits cleanly by file (functions.rs vs context.rs vs sql_expr.rs+subquery.rs) with low conflict surface. Start the two engine dependencies (per-key OVER ordering; dependent join) early — their lead time dominates.
 
