@@ -259,10 +259,6 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
         .iter()
         .flatten()
         .try_fold(IdxSize::MIN, |acc, x| acc.checked_add(x));
-    polars_ensure!(
-        total.is_some_and(|t| t < IdxSize::MAX),
-        ComputeError: "{}", LENGTH_LIMIT_MSG
-    );
 
     let s_phys = s.to_physical_repr();
     use DataType as D;
@@ -289,6 +285,7 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
         _ => polars_bail!(opq = repeat_by, s.dtype()),
     };
     out.and_then(|ca| {
+        polars_ensure!(ca.len() < IdxSize::MAX as usize, ComputeError: "{LENGTH_LIMIT_MSG}");
         let logical_type = s.dtype();
         ca.apply_to_inner(&|s| unsafe { s.from_physical_unchecked(logical_type) })
     })
