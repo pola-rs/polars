@@ -11,6 +11,8 @@ mod nested_utils;
 mod null;
 mod primitive;
 mod simple;
+#[cfg(test)]
+mod tests;
 mod utils;
 
 use std::io::Cursor;
@@ -24,7 +26,7 @@ use simple::page_iter_to_array;
 
 pub use self::nested_utils::{InitNested, NestedState, init_nested};
 pub use self::utils::filter::{Filter, PredicateFilter};
-use self::utils::freeze_validity;
+use self::utils::{DecoderFilter, freeze_validity};
 use super::*;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
@@ -205,4 +207,36 @@ pub fn column_iter_to_arrays(
     let (_, array, pred_true_mask) =
         columns_to_iter_recursive(columns, types, field, vec![], filter)?;
     Ok((array, pred_true_mask))
+}
+
+/// Decodes non-nested Parquet column and evaluates `predicate` only for rows
+/// selected by `input_selection`.
+///
+/// Returned predicate mask uses original column coordinates, so it can be
+/// passed as input selection when decoding another predicate column.
+pub fn column_iter_to_arrays_selected(
+    mut columns: Vec<BasicDecompressor>,
+    mut types: Vec<&PrimitiveType>,
+    field: Field,
+    predicate: PredicateFilter,
+    input_selection: Bitmap,
+) -> PolarsResult<(Vec<Box<dyn Array>>, Bitmap)> {
+    if columns.len() != 1 || types.len() != 1 || !is_primitive(&field.dtype) {
+        return Err(ParquetError::InvalidParameter(
+            "selected predicate decoding requires one non-nested Parquet column".into(),
+        )
+        .into());
+    }
+
+    let (_, arrays, pred_true_mask) = page_iter_to_array(
+        columns.pop().unwrap(),
+        types.pop().unwrap(),
+        field,
+        DecoderFilter::SelectedPredicate {
+            predicate,
+            input_selection,
+        },
+        None,
+    )?;
+    Ok((arrays, pred_true_mask))
 }

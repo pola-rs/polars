@@ -10,7 +10,6 @@ use polars_compute::cast::CastOptionsImpl;
 use polars_utils::float16::pf16;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::utils::filter::Filter;
 use super::{
     BasicDecompressor, InitNested, NestedState, boolean, fixed_size_binary, null, primitive,
 };
@@ -21,19 +20,24 @@ use crate::parquet::schema::types::{
 use crate::parquet::types::int96_to_i64_ns;
 use crate::read::ParquetError;
 use crate::read::deserialize::categorical::CategoricalDecoder;
-use crate::read::deserialize::utils::PageDecoder;
+use crate::read::deserialize::utils::{DecoderFilter, PageDecoder};
 use crate::read::deserialize::{binary, binview};
 
 /// An iterator adapter that maps an iterator of Pages a boxed [`Array`] of [`ArrowDataType`]
 /// `dtype` with a maximum of `num_rows` elements.
-pub fn page_iter_to_array(
+pub fn page_iter_to_array<F>(
     pages: BasicDecompressor,
     type_: &PrimitiveType,
     field: Field,
-    filter: Option<Filter>,
+    filter: F,
     init_nested: Option<Vec<InitNested>>,
-) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)> {
+) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)>
+where
+    F: Into<DecoderFilter>,
+{
     use ArrowDataType::*;
+
+    let filter = filter.into();
 
     let physical_type = &type_.physical_type;
     let logical_type = &type_.logical_type;
@@ -718,7 +722,7 @@ fn timestamp(
     physical_type: &PhysicalType,
     logical_type: &Option<PrimitiveLogicalType>,
     dtype: ArrowDataType,
-    filter: Option<Filter>,
+    filter: DecoderFilter,
     time_unit: TimeUnit,
     nested: Option<Vec<InitNested>>,
 ) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)> {

@@ -20,6 +20,20 @@ use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::parquet::schema::Repetition;
 use crate::read::expr::{ParquetScalar, SpecializedParquetColumnExpr};
 
+pub(super) enum DecoderFilter {
+    Filter(Option<Filter>),
+    SelectedPredicate {
+        predicate: PredicateFilter,
+        input_selection: Bitmap,
+    },
+}
+
+impl From<Option<Filter>> for DecoderFilter {
+    fn from(filter: Option<Filter>) -> Self {
+        Self::Filter(filter)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct State<'a, D: Decoder> {
     pub(crate) dict: Option<&'a D::Dict>,
@@ -383,6 +397,78 @@ pub(super) trait Decoder: Sized {
         Ok(())
     }
 
+    /// Decodes incoming selection, evaluates predicate on compact values,
+    /// and expands result back into page coordinate space.
+    fn selected_predicate_decode(
+        &mut self,
+        state: State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        predicate: &PredicateFilter,
+        input_selection: Bitmap,
+        dict: Option<Self::Dict>,
+        dtype: &ArrowDataType,
+    ) -> ParquetResult<Bitmap> {
+        let is_optional = state.is_optional;
+        let selected_rows = input_selection.set_bits();
+
+        let mut intermediate_array =
+            self.with_capacity(if Self::CHUNKED { 0 } else { selected_rows });
+        if let Some(dict) = dict.as_ref() {
+            self.apply_dictionary(&mut intermediate_array, dict)?;
+        }
+
+        let mut chunks = Vec::new();
+        self.extend_filtered_with_state(
+            state,
+            &mut intermediate_array,
+            Some(Filter::Mask(input_selection.clone())),
+            &mut chunks,
+        )?;
+        let intermediate_array = if !chunks.is_empty() {
+            chunks.pop().unwrap()
+        } else {
+            self.finalize(dtype.underlying_physical_type(), dict, intermediate_array)?
+        }
+        .into_boxed();
+
+        debug_assert_eq!(intermediate_array.len(), selected_rows);
+        let selected_predicate_mask = if let Some(validity) = intermediate_array.validity() {
+            let ignore_validity_array = intermediate_array.with_validity(None);
+            let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
+
+            if predicate.predicate.evaluate_null() {
+                arrow::bitmap::or_not(&mask, validity)
+            } else {
+                &mask & validity
+            }
+        } else {
+            predicate.predicate.evaluate(intermediate_array.as_ref())
+        };
+
+        debug_assert_eq!(selected_predicate_mask.len(), selected_rows);
+        let mut selected_predicate_iter = selected_predicate_mask.iter();
+        let mut pred_true_mask = BitmapBuilder::with_capacity(input_selection.len());
+        for is_selected in input_selection.iter() {
+            let is_predicate_true = is_selected
+                && selected_predicate_iter
+                    .next()
+                    .expect("input selection cardinality must match decoded values");
+            // SAFETY: Capacity for the full input selection was reserved above.
+            unsafe { pred_true_mask.push_unchecked(is_predicate_true) };
+        }
+        debug_assert!(selected_predicate_iter.next().is_none());
+
+        if predicate.include_values {
+            let filtered = polars_compute::filter::filter_with_bitmap(
+                intermediate_array.as_ref(),
+                &selected_predicate_mask,
+            );
+            self.extend_decoded(decoded, filtered.as_ref(), is_optional)?;
+        }
+
+        Ok(pred_true_mask.freeze())
+    }
+
     fn extend_filtered_with_state(
         &mut self,
         state: State<'_, Self>,
@@ -509,31 +595,54 @@ impl<D: Decoder> PageDecoder<D> {
         })
     }
 
-    pub fn collect(
+    pub fn collect<F>(
         self,
-        filter: Option<Filter>,
-    ) -> ParquetResult<(Option<NestedState>, Vec<D::Output>, Bitmap)> {
-        if self.init_nested.is_some() {
-            self.collect_nested(filter)
-                .map(|(nested, arr, ptm)| (Some(nested), arr, ptm))
-        } else {
-            match filter {
-                Some(Filter::Predicate(p)) => self
-                    .collect_predicate_flat(&p)
-                    .map(|(arr, ptm)| (None, arr, ptm)),
-                filter => self
-                    .collect_flat(filter)
-                    .map(|arrays| (None, arrays, Bitmap::new())),
-            }
+        filter: F,
+    ) -> ParquetResult<(Option<NestedState>, Vec<D::Output>, Bitmap)>
+    where
+        F: Into<DecoderFilter>,
+    {
+        match filter.into() {
+            DecoderFilter::Filter(filter) if self.init_nested.is_some() => self
+                .collect_nested(filter)
+                .map(|(nested, arr, ptm)| (Some(nested), arr, ptm)),
+            DecoderFilter::Filter(Some(Filter::Predicate(p))) => self
+                .collect_predicate_flat(&p, None)
+                .map(|(arr, ptm)| (None, arr, ptm)),
+            DecoderFilter::Filter(filter) => self
+                .collect_flat(filter)
+                .map(|arrays| (None, arrays, Bitmap::new())),
+            DecoderFilter::SelectedPredicate { .. } if self.init_nested.is_some() => {
+                Err(ParquetError::InvalidParameter(
+                    "selected predicate decoding is only supported for non-nested columns".into(),
+                ))
+            },
+            DecoderFilter::SelectedPredicate {
+                predicate,
+                input_selection,
+            } => self
+                .collect_predicate_flat(&predicate, Some(&input_selection))
+                .map(|(arr, ptm)| (None, arr, ptm)),
         }
     }
 
     pub fn collect_predicate_flat(
         mut self,
         p: &PredicateFilter,
+        input_selection: Option<&Bitmap>,
     ) -> ParquetResult<(Vec<D::Output>, Bitmap)> {
+        if let Some(input_selection) = input_selection {
+            let expected_len = self.iter.total_num_values();
+            if input_selection.len() != expected_len {
+                return Err(ParquetError::InvalidParameter(format!(
+                    "predicate input selection has length {}, expected {expected_len}",
+                    input_selection.len(),
+                )));
+            }
+        }
         let mut target = self.decoder.with_capacity(0);
         let mut pred_true_mask = BitmapBuilder::with_capacity(self.iter.total_num_values());
+        let mut row_offset = 0;
 
         let specialized_pred = p.predicate.as_specialized();
         let pred_is_eq_null = matches!(
@@ -558,6 +667,22 @@ impl<D: Decoder> PageDecoder<D> {
         let mut chunks = Vec::new();
         while let Some(page) = self.iter.next() {
             let page = page?;
+            let page_num_values = page.num_values();
+            let page_selection = input_selection
+                .map(|selection| selection.clone().sliced(row_offset, page_num_values));
+            row_offset += page_num_values;
+
+            let page_selection = match page_selection {
+                Some(selection) => match selection.set_bits() {
+                    0 => {
+                        pred_true_mask.extend_constant(page_num_values, false);
+                        continue;
+                    },
+                    selected if selected == page_num_values => None,
+                    _ => Some(selection),
+                },
+                None => None,
+            };
 
             let mut can_skip_page = false;
 
@@ -577,7 +702,7 @@ impl<D: Decoder> PageDecoder<D> {
                     || page.page().null_count() == Some(0));
 
             if can_skip_page {
-                pred_true_mask.extend_constant(page.num_values(), false);
+                pred_true_mask.extend_constant(page_num_values, false);
                 continue;
             }
 
@@ -599,6 +724,19 @@ impl<D: Decoder> PageDecoder<D> {
             let state = State::new(&self.decoder, &page, self.dict.as_ref())?;
 
             let (result, time) = option_time(self.metrics.is_some(), || {
+                if let Some(input_selection) = page_selection {
+                    let page_pred_true_mask = self.decoder.selected_predicate_decode(
+                        state,
+                        &mut target,
+                        p,
+                        input_selection,
+                        self.dict.clone(),
+                        &self.dtype,
+                    )?;
+                    pred_true_mask.extend_from_bitmap(&page_pred_true_mask);
+                    return Ok(());
+                }
+
                 // Handle the case where column is held equal to Null. This can be the same for all
                 // non-nested columns.
                 if matches!(
@@ -699,6 +837,7 @@ impl<D: Decoder> PageDecoder<D> {
 
             self.iter.reuse_page_buffer(page);
         }
+        debug_assert_eq!(row_offset, self.iter.total_num_values());
 
         if let Some(metrics) = self.metrics.as_ref() {
             eprintln!(
@@ -820,10 +959,13 @@ impl<D: Decoder> PageDecoder<D> {
         Ok(chunks)
     }
 
-    pub fn collect_boxed(
+    pub fn collect_boxed<F>(
         self,
-        filter: Option<Filter>,
-    ) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)> {
+        filter: F,
+    ) -> ParquetResult<(Option<NestedState>, Vec<Box<dyn Array>>, Bitmap)>
+    where
+        F: Into<DecoderFilter>,
+    {
         use arrow::array::IntoBoxedArray;
         let (nested, array, ptm) = self.collect(filter)?;
         let array = array.into_iter().map(|arr| arr.into_boxed()).collect();
