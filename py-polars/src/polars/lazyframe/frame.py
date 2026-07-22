@@ -7558,7 +7558,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         results, as the index may have a non-deterministic relationship with the
         other columns. To avoid this, either ensure the input is deterministic
         or collect immediately after adding the index.
-        
         Notes
         -----
         The resulting column does not have any special properties. It is a regular
