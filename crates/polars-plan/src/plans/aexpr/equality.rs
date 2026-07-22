@@ -55,11 +55,22 @@ impl AExpr {
         }
 
         use crate::plans::ExprIR;
-        fn function_arguments_eq(l_input: &[ExprIR], r_input: &[ExprIR], compare_names: bool) -> bool {
-            if l_input.len() != r_input.len() { return false; }
+        fn function_arguments_eq(
+            l_input: &[ExprIR],
+            r_input: &[ExprIR],
+            compare_names: bool,
+        ) -> bool {
+            if l_input.len() != r_input.len() {
+                return false;
+            }
             if compare_names {
-                l_input.iter().zip(r_input).all(|(l, r)| l.output_name_inner() == r.output_name_inner())
-            } else { true }
+                l_input
+                    .iter()
+                    .zip(r_input)
+                    .all(|(l, r)| l.output_name_inner() == r.output_name_inner())
+            } else {
+                true
+            }
         }
 
         use AExpr as E;

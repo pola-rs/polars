@@ -177,7 +177,8 @@ impl<'a> AExprArena<'a> {
 
 impl PartialEq for AExprArena<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.to_aexpr().is_expr_equal_to(&other.to_aexpr(), self.arena)
+        self.to_aexpr()
+            .is_expr_equal_to(&other.to_aexpr(), self.arena)
     }
 }
 

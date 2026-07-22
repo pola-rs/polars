@@ -3705,10 +3705,14 @@ def test_join_filter_pushdown_full_join_rewrite() -> None:
     extract = _extract_plan_joins_and_filters(plan)
 
     assert extract[0] == 'LEFT PLAN ON: [col("a"), col("b")]'
-    assert ('col("b").is_not_null()' in extract[1]) or ('col("b").alias("b_right").is_not_null()' in extract[1])
+    assert ('col("b").is_not_null()' in extract[1]) or (
+        'col("b").alias("b_right").is_not_null()' in extract[1]
+    )
 
     assert extract[2] == 'RIGHT PLAN ON: [col("a"), col("b")]'
-    assert ('col("b").is_not_null()' in extract[3]) or ('col("b").alias("b_right").is_not_null()' in extract[3])
+    assert ('col("b").is_not_null()' in extract[3]) or (
+        'col("b").alias("b_right").is_not_null()' in extract[3]
+    )
 
     assert len(extract) == 4
 
