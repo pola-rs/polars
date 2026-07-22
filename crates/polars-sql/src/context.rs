@@ -164,6 +164,10 @@ pub struct SQLContext {
     table_aliases: PlHashMap<String, String>,
     joined_aliases: PlHashMap<String, PlHashMap<String, String>>,
     pub(crate) named_windows: PlHashMap<String, WindowSpec>,
+    // Maps a correlated scalar subquery (by its rendered SQL text) to the outer
+    // column that its decorrelated lowering materialised. Populated per-SELECT
+    // and consulted by the expression visitor.
+    pub(crate) correlated_subqueries: PlHashMap<String, PlSmallStr>,
 }
 
 impl Default for SQLContext {
@@ -177,6 +181,7 @@ impl Default for SQLContext {
             named_windows: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
+            correlated_subqueries: Default::default(),
         }
     }
 }
@@ -336,6 +341,14 @@ impl SQLContext {
 
     pub(crate) fn get_frame_schema(&mut self, frame: &mut LazyFrame) -> PolarsResult<SchemaRef> {
         frame.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
+    }
+
+    // Resolve a (previously decorrelated) correlated scalar subquery to the
+    // outer column its lowering produced, keyed by the subquery's SQL text.
+    pub(crate) fn correlated_subquery_expr(&self, subquery: &Query) -> Option<Expr> {
+        self.correlated_subqueries
+            .get(&subquery.to_string())
+            .map(|name| col(name.clone()))
     }
 
     pub(super) fn get_table_from_current_scope(&self, name: &str) -> Option<LazyFrame> {
@@ -1314,6 +1327,9 @@ impl SQLContext {
         // Check that the statement doesn't contain unsupported SELECT clauses
         self.validate_select(select_stmt)?;
 
+        // Correlated-subquery lowerings are scoped to a single SELECT.
+        self.correlated_subqueries.clear();
+
         // Parse named windows first, as they may be referenced in the SELECT clause
         self.register_named_windows(&select_stmt.named_window)?;
 
@@ -1371,12 +1387,38 @@ impl SQLContext {
             &select_stmt.selection
         };
         let mut schema = self.get_frame_schema(&mut lf)?;
+
+        // Lower correlated scalar subqueries in the WHERE clause into
+        // decorrelated joins before the filter is parsed.
+        if let Some(where_expr) = effective_where {
+            lf = self.decorrelate_scalar_subqueries(lf, &schema, &[where_expr])?;
+            schema = self.get_frame_schema(&mut lf)?;
+        }
+
         lf = self.process_where(
             lf,
             effective_where,
             FilterMode::KeepTrue,
             Some(schema.clone()),
         )?;
+
+        // Lower correlated scalar subqueries referenced by the projection list.
+        {
+            let proj_exprs: Vec<&SQLExpr> = select_stmt
+                .projection
+                .iter()
+                .filter_map(|item| match item {
+                    SelectItem::UnnamedExpr(e) | SelectItem::ExprWithAlias { expr: e, .. } => {
+                        Some(e)
+                    },
+                    _ => None,
+                })
+                .collect();
+            if !proj_exprs.is_empty() {
+                lf = self.decorrelate_scalar_subqueries(lf, &schema, &proj_exprs)?;
+                schema = self.get_frame_schema(&mut lf)?;
+            }
+        }
 
         // Determine projections
         let mut select_modifiers = SelectModifiers {
@@ -1709,7 +1751,11 @@ impl SQLContext {
             && select_stmt.flavor == SelectFlavor::FromFirstNoSelect
         {
             // eg: bare "FROM tbl" is equivalent to "SELECT * FROM tbl".
-            return Ok(schema.iter_names().map(|name| col(name.clone())).collect());
+            return Ok(schema
+                .iter_names()
+                .filter(|name| !is_correlated_result_col(name))
+                .map(|name| col(name.clone()))
+                .collect());
         }
         let mut items: Vec<ProjectionItem> = Vec::with_capacity(select_stmt.projection.len());
         let mut has_qualified_wildcard = false;
@@ -1754,7 +1800,11 @@ impl SQLContext {
                     },
                 },
                 SelectItem::Wildcard(wildcard_options) => {
-                    let cols = schema.iter_names().map(|name| col(name.clone())).collect();
+                    let cols = schema
+                        .iter_names()
+                        .filter(|name| !is_correlated_result_col(name))
+                        .map(|name| col(name.clone()))
+                        .collect();
                     items.push(ProjectionItem::Exprs(
                         self.process_wildcard_additional_options(
                             cols,
@@ -2845,6 +2895,14 @@ fn get_using_cols(op: &JoinOperator) -> Option<impl Iterator<Item = String> + '_
         })),
         _ => None,
     }
+}
+
+/// Prefix for the internal outer columns produced by correlated-subquery
+/// decorrelation, so they can be excluded from wildcard expansion.
+pub(crate) const CORRELATED_COL_PREFIX: &str = "__POLARS_CORR_";
+
+pub(crate) fn is_correlated_result_col(name: &str) -> bool {
+    name.starts_with(CORRELATED_COL_PREFIX)
 }
 
 /// Extract the table name (or alias) from a TableFactor.

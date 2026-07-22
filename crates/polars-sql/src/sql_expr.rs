@@ -380,6 +380,11 @@ impl SQLExprVisitor<'_> {
         subquery: &Subquery,
         restriction: SubqueryRestriction,
     ) -> PolarsResult<Expr> {
+        // A correlated scalar subquery is decorrelated up-front into an outer
+        // join that materialises its result column; resolve to that column.
+        if let Some(expr) = self.ctx.correlated_subquery_expr(subquery) {
+            return Ok(expr);
+        }
         // note: we have to execute subqueries in an isolated scope to prevent
         // propagating any context/arena mutation into the rest of the query
         let lf = self
