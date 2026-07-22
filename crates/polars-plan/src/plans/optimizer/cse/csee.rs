@@ -1,11 +1,11 @@
 use std::hash::BuildHasher;
 
-use indexmap::map::RawEntryApiV1;
 use indexmap::map::raw_entry_v1::RawEntryMut;
-use polars_core::CHEAP_SERIES_HASH_LIMIT;
+use indexmap::map::RawEntryApiV1;
 use polars_core::config::verbose;
 use polars_core::prelude::PlIndexMap;
 use polars_core::schema::Schema;
+use polars_core::CHEAP_SERIES_HASH_LIMIT;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlFixedStateQuality;
 use polars_utils::arena::{Arena, Node};
@@ -20,9 +20,9 @@ use crate::plans::visitor::{
     IRNode, IRNodeArena, RewriteRecursion, RewritingVisitor, TreeWalker as _, VisitRecursion,
     Visitor,
 };
-use crate::plans::{AExpr, ExprIR, IR, IRBuilder, IRFunctionExpr, LiteralValue, OutputName};
-use crate::prelude::ProjectionOptions;
+use crate::plans::{AExpr, ExprIR, IRBuilder, IRFunctionExpr, LiteralValue, OutputName, IR};
 use crate::prelude::visitor::AexprNode;
+use crate::prelude::ProjectionOptions;
 
 type Accepted = Option<(VisitRecursion, bool)>;
 // Don't allow this node in a cse.
@@ -286,6 +286,9 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool, element_wise_select_only: bool) 
         #[cfg(feature = "dynamic_group_by")]
         AExpr::Rolling { .. } => true,
         AExpr::Over { .. } => true,
+        #[cfg(feature = "dtype-struct")]
+        AExpr::StructEval { .. } => true,
+        AExpr::Eval { .. } => true,
         #[cfg(feature = "dtype-struct")]
         AExpr::Ternary { .. } => is_groupby,
         ae => {
