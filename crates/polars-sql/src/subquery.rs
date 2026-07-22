@@ -395,47 +395,59 @@ fn refine_not_in_anti_join(
     corr_outer: &[Expr],
     corr_inner: &[Expr],
 ) -> LazyFrame {
-    let flag_name = unique_column_name();
-    let has_null = right_key.clone().is_null().any(true);
-
-    let with_flag = if corr_inner.is_empty() {
-        // Uncorrelated: one flag cross-joined onto every row; empty set -> NULL
-        // flag, keeping it distinct from a NULL-free set.
+    if corr_inner.is_empty() {
+        // Uncorrelated
+        let flag_name = unique_column_name();
         let flag = when(len().eq(lit(0u32)))
             .then(lit(NULL).cast(DataType::Boolean))
-            .otherwise(has_null);
-        let stats = inner_lf.select([flag.alias(flag_name.clone())]);
-        joined
+            .otherwise(right_key.clone().is_null().any(true))
+            .alias(flag_name.clone());
+        let keep = when(col(flag_name.clone()).is_null())
+            .then(lit(true)) // empty set
+            .when(col(flag_name.clone())) // set has a NULL
+            .then(lit(false))
+            .otherwise(left_key.clone().is_not_null());
+
+        return joined
             .join_builder()
-            .with(stats)
+            .with(inner_lf.select([flag]))
             .how(JoinType::Cross)
             .finish()
-    } else {
-        // Correlated: one flag per group; the left join leaves it NULL for
-        // groups with no inner rows (an empty set).
-        let flags = inner_lf
-            .group_by(corr_inner)
-            .agg([has_null.alias(flag_name.clone())]);
-        joined
-            .join_builder()
-            .with(flags)
+            .filter(keep)
+            .drop(Selector::ByName {
+                names: [flag_name].into(),
+                strict: true,
+            });
+    }
+
+    // Correlated
+    let corr_keys = |lf: LazyFrame| lf.select(corr_inner).unique(None, UniqueKeepStrategy::Any);
+    let exclude_groups = |rows: LazyFrame, groups: LazyFrame| {
+        rows.join_builder()
+            .with(groups)
             .left_on(corr_outer)
             .right_on(corr_inner)
-            .how(JoinType::Left)
+            .how(JoinType::Anti)
             .finish()
     };
+    let kept_non_null = exclude_groups(
+        joined.clone().filter(left_key.clone().is_not_null()),
+        corr_keys(inner_lf.clone().filter(right_key.clone().is_null())),
+    );
+    let kept_null = exclude_groups(
+        joined.filter(left_key.clone().is_null()),
+        corr_keys(inner_lf),
+    );
 
-    let flag = col(flag_name.clone());
-    let keep = when(flag.clone().is_null())
-        .then(lit(true)) // empty set
-        .when(flag) // set has a NULL
-        .then(lit(false))
-        .otherwise(left_key.clone().is_not_null());
-
-    with_flag.filter(keep).drop(Selector::ByName {
-        names: [flag_name].into(),
-        strict: true,
-    })
+    concat(
+        [kept_non_null, kept_null],
+        UnionArgs {
+            rechunk: false,
+            parallel: true,
+            ..Default::default()
+        },
+    )
+    .expect("'NOT IN' 3VL union has identical schemas")
 }
 
 /// An iterator over all the minterms in an SQL boolean expression: the terms
