@@ -226,7 +226,7 @@ pub(super) fn optimize_functions(
                             f @ IRBooleanFunction::IsNull
                             | f @ IRBooleanFunction::IsNan
                             | f @ IRBooleanFunction::IsNotNull
-                            | f @ IRBooleanFunction::IsNotNan
+                            | f @ IRBooleanFunction::IsNotNan,
                         ),
                     options,
                 } => Some(AExpr::Function {
