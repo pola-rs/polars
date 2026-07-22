@@ -551,6 +551,13 @@ impl SQLContext {
         column_name.to_string()
     }
 
+    /// Clone `query` with `order_by` cleared, for passing to the operands of a set operation.
+    fn set_op_operand_query(query: &Query) -> Query {
+        let mut query = query.clone();
+        query.order_by = None;
+        query
+    }
+
     fn process_query(&mut self, expr: &SetExpr, query: &Query) -> PolarsResult<LazyFrame> {
         match expr {
             SetExpr::Select(select_stmt) => self.execute_select(select_stmt, query),
@@ -567,11 +574,11 @@ impl SQLContext {
 
             #[cfg(feature = "semi_anti_join")]
             SetExpr::SetOperation {
-                op: SetOperator::Intersect | SetOperator::Except,
+                op: op @ (SetOperator::Intersect | SetOperator::Except),
                 set_quantifier,
                 left,
                 right,
-            } => self.process_except_intersect(left, right, set_quantifier, query),
+            } => self.process_except_intersect(left, right, op, set_quantifier, query),
 
             SetExpr::Values(Values {
                 explicit_row: _,
@@ -603,27 +610,28 @@ impl SQLContext {
         &mut self,
         left: &SetExpr,
         right: &SetExpr,
+        op: &SetOperator,
         quantifier: &SetQuantifier,
         query: &Query,
     ) -> PolarsResult<LazyFrame> {
-        let (join_type, op_name) = match *query.body {
-            SetExpr::SetOperation {
-                op: SetOperator::Except,
-                ..
-            } => (JoinType::Anti, "EXCEPT"),
-            _ => (JoinType::Semi, "INTERSECT"),
+        let (join_type, op_name) = match op {
+            SetOperator::Except => (JoinType::Anti, "EXCEPT"),
+            SetOperator::Intersect => (JoinType::Semi, "INTERSECT"),
+            _ => unreachable!("process_except_intersect is only reached for EXCEPT/INTERSECT"),
         };
 
         // Note: each side of the EXCEPT/INTERSECT operation should execute
         // in isolation to prevent context state leakage between them
-        let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
-        let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
+        let operand_query = Self::set_op_operand_query(query);
+        let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, &operand_query))?;
+        let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, &operand_query))?;
         let lf_schema = self.get_frame_schema(&mut lf)?;
 
         let lf_cols: Vec<_> = lf_schema.iter_names_cloned().map(col).collect();
+        let bag_semantics = matches!(quantifier, SetQuantifier::All);
         let rf_cols = match quantifier {
             SetQuantifier::ByName => None,
-            SetQuantifier::Distinct | SetQuantifier::None => {
+            SetQuantifier::Distinct | SetQuantifier::None | SetQuantifier::All => {
                 let rf_schema = self.get_frame_schema(&mut rf)?;
                 let rf_cols: Vec<_> = rf_schema.iter_names_cloned().map(col).collect();
                 if lf_cols.len() != rf_cols.len() {
@@ -635,12 +643,42 @@ impl SQLContext {
                 polars_bail!(SQLInterface: "'{} {}' is not supported", op_name, quantifier.to_string())
             },
         };
-        let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
-        let joined_tbl = match rf_cols {
-            Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
-            None => join.on(lf_cols).finish(),
+
+        let lf = if bag_semantics {
+            const OCCURRENCE_COL: &str = "__POLARS_SQL_SETOP_OCCURRENCE";
+            let mut lf_on = lf_cols.clone();
+            let mut rf_on = rf_cols.unwrap();
+
+            lf = lf.with_column(
+                int_range(lit(0), len(), 1, DataType::Int64)
+                    .over(lf_cols.clone())?
+                    .alias(OCCURRENCE_COL),
+            );
+            rf = rf.with_column(
+                int_range(lit(0), len(), 1, DataType::Int64)
+                    .over(rf_on.clone())?
+                    .alias(OCCURRENCE_COL),
+            );
+            lf_on.push(col(OCCURRENCE_COL));
+            rf_on.push(col(OCCURRENCE_COL));
+
+            let joined_tbl = lf
+                .join_builder()
+                .with(rf)
+                .how(join_type)
+                .join_nulls(true)
+                .left_on(lf_on)
+                .right_on(rf_on)
+                .finish();
+            joined_tbl.drop(cols([OCCURRENCE_COL]))
+        } else {
+            let join = lf.join_builder().with(rf).how(join_type).join_nulls(true);
+            let joined_tbl = match rf_cols {
+                Some(rf_cols) => join.left_on(lf_cols).right_on(rf_cols).finish(),
+                None => join.on(lf_cols).finish(),
+            };
+            joined_tbl.unique(None, UniqueKeepStrategy::Any)
         };
-        let lf = joined_tbl.unique(None, UniqueKeepStrategy::Any);
         self.process_order_by(lf, &query.order_by, None)
     }
 
@@ -655,8 +693,9 @@ impl SQLContext {
 
         // Note: each side of the UNION operation should execute
         // in isolation to prevent context state leakage between them
-        let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, query))?;
-        let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, query))?;
+        let operand_query = Self::set_op_operand_query(query);
+        let mut lf = self.execute_isolated(|ctx| ctx.process_query(left, &operand_query))?;
+        let mut rf = self.execute_isolated(|ctx| ctx.process_query(right, &operand_query))?;
 
         let opts = UnionArgs {
             parallel: true,

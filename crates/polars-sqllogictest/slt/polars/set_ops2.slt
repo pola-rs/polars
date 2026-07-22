@@ -1,0 +1,170 @@
+# EXCEPT / INTERSECT (DISTINCT and ALL), 3+ term mixed chains, and positional
+# column matching -- complements set_ops.slt (which covers plain UNION).
+
+statement ok
+CREATE TABLE a (x INTEGER)
+
+statement ok
+INSERT INTO a VALUES (1), (1), (1), (2), (2), (2), (3)
+
+statement ok
+CREATE TABLE b (x INTEGER)
+
+statement ok
+INSERT INTO b VALUES (1), (1), (2), (2)
+
+statement ok
+CREATE TABLE c (x INTEGER)
+
+statement ok
+INSERT INTO c VALUES (2), (3), (4)
+
+# EXCEPT DISTINCT: distinct(a) - distinct(b)
+
+query I
+SELECT x FROM a EXCEPT SELECT x FROM b ORDER BY x
+----
+3
+
+# INTERSECT DISTINCT: distinct(a) n distinct(b)
+
+query I
+SELECT x FROM a INTERSECT SELECT x FROM b ORDER BY x
+----
+1
+2
+
+# EXCEPT ALL: bag subtraction: x=1 has 3-2=1 left, x=2 has 3-2=1 left, x=3 has 1-0=1 left
+
+query I
+SELECT x FROM a EXCEPT ALL SELECT x FROM b ORDER BY x
+----
+1
+2
+3
+
+# INTERSECT ALL: bag intersection: x=1 min(3,2)=2, x=2 min(3,2)=2, x=3 min(1,0)=0
+
+query I
+SELECT x FROM a INTERSECT ALL SELECT x FROM b ORDER BY x
+----
+1
+1
+2
+2
+
+statement ok
+CREATE TABLE n1 (x INTEGER)
+
+statement ok
+INSERT INTO n1 VALUES (1), (2), (NULL), (NULL)
+
+statement ok
+CREATE TABLE n2 (x INTEGER)
+
+statement ok
+INSERT INTO n2 VALUES (2), (NULL)
+
+# NULLs compare equal for set-op purposes: DISTINCT EXCEPT removes the whole
+# NULL group and the matching value 2, leaving only 1
+
+query I
+SELECT x FROM n1 EXCEPT SELECT x FROM n2 ORDER BY x
+----
+1
+
+# NULLs compare equal, bag semantics: n1 has two NULLs, n2 has one -> one remains
+
+query I rowsort
+SELECT x FROM n1 EXCEPT ALL SELECT x FROM n2
+----
+1
+NULL
+
+# INTERSECT DISTINCT with NULLs on both sides
+
+query I rowsort
+SELECT x FROM n1 INTERSECT SELECT x FROM n2
+----
+2
+NULL
+
+# INTERSECT ALL with NULLs: min(2 NULLs, 1 NULL) = 1 NULL; min(1 two, 1 two) = 1 two
+
+query I rowsort
+SELECT x FROM n1 INTERSECT ALL SELECT x FROM n2
+----
+2
+NULL
+
+# 3-term mixed chain: (a UNION b) EXCEPT c
+
+query I
+SELECT x FROM a UNION SELECT x FROM b EXCEPT SELECT x FROM c ORDER BY x
+----
+1
+
+# INTERSECT has higher precedence than UNION/EXCEPT: `a UNION b INTERSECT c`
+# parses as `a UNION (b INTERSECT c)`
+
+query I
+SELECT x FROM a UNION SELECT x FROM b INTERSECT SELECT x FROM c ORDER BY x
+----
+1
+2
+3
+
+statement ok
+CREATE TABLE d (x INTEGER)
+
+statement ok
+INSERT INTO d VALUES (1), (2), (3), (4)
+
+# 4-term mixed chain: (a UNION ALL b) EXCEPT (c INTERSECT d)
+# c INTERSECT d = {2, 3, 4}; a UNION ALL b = [1,1,1,1,1,2,2,2,2,2,3];
+# EXCEPT (no ALL) dedups -> {1}
+
+query I
+SELECT x FROM a UNION ALL SELECT x FROM b EXCEPT SELECT x FROM c INTERSECT SELECT x FROM d ORDER BY x
+----
+1
+
+# ORDER BY / LIMIT applied to the whole chain, not to individual operands
+
+query I
+SELECT x FROM a UNION SELECT x FROM b UNION SELECT x FROM c ORDER BY x DESC LIMIT 2
+----
+4
+3
+
+query I
+SELECT x FROM a UNION SELECT x FROM b UNION SELECT x FROM c ORDER BY x LIMIT 2
+----
+1
+2
+
+# Positional column matching: EXCEPT/INTERSECT match columns by position, using
+# the first operand's names, even when the operands' column names differ
+
+statement ok
+CREATE TABLE p1 (a INTEGER, b INTEGER)
+
+statement ok
+INSERT INTO p1 VALUES (1, 10), (2, 20), (3, 30)
+
+statement ok
+CREATE TABLE p2 (m INTEGER, n INTEGER)
+
+statement ok
+INSERT INTO p2 VALUES (2, 20), (3, 30), (4, 40)
+
+query II
+SELECT a, b FROM p1 EXCEPT SELECT m, n FROM p2 ORDER BY a
+----
+1 10
+
+query II
+SELECT a, b FROM p1 INTERSECT SELECT m, n FROM p2 ORDER BY a
+----
+2 20
+3 30

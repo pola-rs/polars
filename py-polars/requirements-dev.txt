@@ -31,6 +31,7 @@ adbc-driver-manager; platform_system != 'Windows'
 adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
 connectorx>=0.4.5
+duckdb
 # Cloud
 azure-identity
 boto3

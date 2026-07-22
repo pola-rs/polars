@@ -12,7 +12,7 @@ publish = false
 [dependencies]
 polars-core = { workspace = true, features = ["fmt"] }
 polars-lazy = { workspace = true }
-polars-sql = { workspace = true }
+polars-sql = { workspace = true, features = ["semi_anti_join"] }
 
 sqllogictest = "0.29"
 sqlparser = { workspace = true }
