@@ -77,10 +77,52 @@ def _deprecate_function(message: str) -> IdentityFunction:
     return decorate
 
 
+def _forward_deprecated_warning(function: Callable[P, T]) -> Callable[P, T]:
+    """
+    Re-emit a ``@deprecated`` warning with correct stack-level attribution.
+
+    When ``typing_extensions.deprecated`` / ``warnings.deprecated`` is stacked
+    below a Polars deprecation decorator, its hard-coded ``stacklevel=2``
+    causes the warning to be attributed to internal library code and silently
+    suppressed by Python's default warning filter.
+
+    This helper detects the ``__deprecated__`` attribute, bypasses the original
+    ``@deprecated`` wrapper (via ``__wrapped__``), and re-emits the warning
+    through ``issue_deprecation_warning`` which uses ``find_stacklevel`` to
+    attribute it to user code.
+    """
+    deprecated_msg: str | None = getattr(function, "__deprecated__", None)
+    if deprecated_msg is None:
+        return function
+
+    # Already forwarded by an inner Polars decorator — skip to avoid duplicates.
+    if getattr(function, "_polars_deprecated_forwarded", False):
+        return function
+
+    # Both typing_extensions.deprecated and warnings.deprecated use
+    # functools.wraps, which sets __wrapped__ to the original function.
+    # Calling __wrapped__ directly bypasses the @deprecated wrapper
+    # (and its broken stacklevel) entirely.
+    unwrapped: Callable[P, T] | None = getattr(function, "__wrapped__", None)
+    if unwrapped is None:
+        return function
+
+    @wraps(function)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        issue_deprecation_warning(deprecated_msg)
+        return unwrapped(*args, **kwargs)
+
+    wrapper.__deprecated__ = deprecated_msg  # type: ignore[attr-defined]
+    wrapper._polars_deprecated_forwarded = True  # type: ignore[attr-defined]
+    return wrapper
+
+
 def deprecate_streaming_parameter() -> IdentityFunction:
     """Decorator to mark `streaming` argument as deprecated due to being renamed."""
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        function = _forward_deprecated_warning(function)
+
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             if "streaming" in kwargs:
@@ -124,6 +166,8 @@ def deprecate_renamed_parameter(
     """
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        function = _forward_deprecated_warning(function)
+
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             _rename_keyword_argument(
@@ -195,6 +239,7 @@ def deprecate_nonkeyword_arguments(
     """
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        function = _forward_deprecated_warning(function)
         old_sig = inspect.signature(function)
 
         if allowed_args is not None:
@@ -272,6 +317,8 @@ def deprecate_parameter_as_multi_positional(old_name: str) -> IdentityFunction:
     """  # noqa: W505
 
     def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        function = _forward_deprecated_warning(function)
+
         @wraps(function)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
             try:
