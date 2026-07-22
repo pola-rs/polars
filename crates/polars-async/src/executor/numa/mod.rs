@@ -2,10 +2,9 @@ use std::cmp::Reverse;
 use std::ops::Range;
 use std::sync::LazyLock;
 
-use hwlocality::Topology;
-use hwlocality::cpu::binding::CpuBindingFlags;
-use hwlocality::cpu::cpuset::CpuSet;
-use hwlocality::object::depth::Depth;
+mod hwloc;
+
+use hwloc::{CpuSet, Topology};
 
 /*
     We use logical CPU indices, the first N map 1:1 to physical CPUs, the
@@ -20,6 +19,7 @@ struct NumaRegion {
     cpu_idxs: Range<usize>,
 }
 
+
 static TOPOLOGY: LazyLock<Option<Topology>> = LazyLock::new(|| {
     if !polars_config::config().numa_aware() {
         return None;
@@ -29,7 +29,7 @@ static TOPOLOGY: LazyLock<Option<Topology>> = LazyLock::new(|| {
         Ok(t) => Some(t),
         Err(e) => {
             if polars_config::config().verbose() {
-                eprintln!("NUMA support disabled, could not load topology: {e:?}")
+                eprintln!("NUMA support disabled, could not load topology: {e}")
             }
 
             None
@@ -43,8 +43,8 @@ static NUMA_REGIONS: LazyLock<Vec<NumaRegion>> = LazyLock::new(|| {
         let topo = TOPOLOGY
             .as_ref()
             .expect("can not mock NUMA regions without topology available");
-        let mut cpu_set = topo.cpuset().clone_target();
-        let mut cpus_left = cpu_set.weight().unwrap();
+        let mut cpu_set = topo.cpuset();
+        let mut cpus_left = cpu_set.weight();
         let max_threads_per_region = cpus_left
             .min(cfg.max_threads())
             .div_ceil(cfg.numa_mock_regions() as usize);
@@ -60,7 +60,7 @@ static NUMA_REGIONS: LazyLock<Vec<NumaRegion>> = LazyLock::new(|| {
             }
 
             regions.push(NumaRegion {
-                num_phys_cpus: region_set.weight().unwrap(),
+                num_phys_cpus: region_set.weight(),
                 cpu_set: Some(region_set),
                 cpu_idxs: 0..0,
             });
@@ -68,14 +68,12 @@ static NUMA_REGIONS: LazyLock<Vec<NumaRegion>> = LazyLock::new(|| {
 
         regions
     } else if let Some(topo) = &*TOPOLOGY {
-        topo.objects_at_depth(Depth::NUMANode)
-            .filter_map(|obj| {
-                let cpu_set = obj.cpuset()?.clone_target();
-                Some(NumaRegion {
-                    num_phys_cpus: cpu_set.weight()?,
-                    cpu_set: Some(cpu_set),
-                    cpu_idxs: 0..0,
-                })
+        topo.numa_node_cpusets()
+            .into_iter()
+            .map(|cpu_set| NumaRegion {
+                num_phys_cpus: cpu_set.weight(),
+                cpu_set: Some(cpu_set),
+                cpu_idxs: 0..0,
             })
             .collect()
     } else {
@@ -125,9 +123,9 @@ pub fn pin_thread_to_numa_region(region: NumaRegionId) {
         return;
     };
 
-    if let Err(e) = topo.bind_cpu(cpu_set, CpuBindingFlags::THREAD) {
+    if let Err(e) = topo.bind_thread(cpu_set) {
         if polars_config::config().verbose() {
-            eprintln!("can't bind thread to NUMA region: {e:?}")
+            eprintln!("can't bind thread to NUMA region: {e}")
         }
     }
 }
