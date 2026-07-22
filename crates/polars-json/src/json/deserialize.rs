@@ -284,7 +284,15 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
         .iter()
         .map(|fld| {
             let (dtype, vals) = out_values.get(fld.name.as_str()).unwrap();
-            _deserialize(vals, (*dtype).clone(), allow_extra_fields_in_struct)
+            _deserialize(vals, (*dtype).clone(), allow_extra_fields_in_struct).map_err(|err| {
+                err.context(
+                    format!(
+                        "error deserializing JSON field `{}` of struct",
+                        fld.name.as_str()
+                    )
+                    .into(),
+                )
+            })
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
