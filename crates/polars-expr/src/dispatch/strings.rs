@@ -2,7 +2,9 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use polars_core::prelude::*;
-use polars_core::utils::{CustomIterTools, handle_casting_failures, handle_casting_failures_with_hint};
+use polars_core::utils::{
+    CustomIterTools, handle_casting_failures, handle_casting_failures_with_hint,
+};
 #[cfg(feature = "regex")]
 use polars_ops::chunked_array::strings::split_regex_helper;
 use polars_ops::prelude::{BinaryNameSpaceImpl, StringNameSpaceImpl};
@@ -500,8 +502,7 @@ polars_utils::regex_cache::cached_regex! {
 #[cfg(all(feature = "regex", feature = "dtype-datetime", feature = "timezones"))]
 fn colon_style_mismatch_hint(fmt: &str, failing_value: &str) -> Option<String> {
     let fmt_wants_no_colon = fmt.contains("%z") || fmt.contains("%#z");
-    let fmt_wants_colon =
-        fmt.contains("%:z") || fmt.contains("%::z") || fmt.contains("%:::z");
+    let fmt_wants_colon = fmt.contains("%:z") || fmt.contains("%::z") || fmt.contains("%:::z");
 
     if fmt_wants_no_colon && !fmt_wants_colon && COLON_OFFSET_RE.is_match(failing_value) {
         Some(format!(
