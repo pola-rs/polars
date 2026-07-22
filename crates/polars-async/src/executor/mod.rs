@@ -195,10 +195,14 @@ struct Executor {
 
 impl Executor {
     fn unpark_one_worker_random_numa_region(&self) {
-        let mut rng = rand::rng();
-        for index in random_permutation(self.park_groups.len() as u32, &mut rng) {
-            if self.park_groups[index as usize].unpark_one() {
-                break;
+        if self.park_groups.len() == 1 {
+            self.park_groups[0].unpark_one();
+        } else {
+            let mut rng = rand::rng();
+            for index in random_permutation(self.park_groups.len() as u32, &mut rng) {
+                if self.park_groups[index as usize].unpark_one() {
+                    break;
+                }
             }
         }
     }
@@ -239,7 +243,7 @@ impl Executor {
                 };
 
                 ttl.high_prio_tasks.push(task);
-                if !self.park_groups[numa.0].unpark_one() {
+                if !self.park_groups[numa.0].unpark_one() && self.park_groups.len() > 1 {
                     self.unpark_one_worker_random_numa_region();
                 }
             } else {
@@ -249,7 +253,7 @@ impl Executor {
                     *slot = Some(task);
                 } else {
                     self.global_low_prio_task_queue.push(task);
-                    if !self.park_groups[numa.0].unpark_one() {
+                    if !self.park_groups[numa.0].unpark_one() && self.park_groups.len() > 1 {
                         self.unpark_one_worker_random_numa_region();
                     }
                 }
@@ -368,7 +372,7 @@ impl Executor {
             if let Some(task) = task {
                 // Try to recruit another worker, and if there's no idle workers
                 // left in this NUMA region, one from another.
-                if worker.recruit_next() == Some(false) {
+                if worker.recruit_next() == Some(false) && self.park_groups.len() > 1 {
                     self.unpark_one_worker_random_numa_region();
                 }
 
