@@ -236,11 +236,14 @@ impl SQLExprVisitor<'_> {
             } => {
                 let expr = self.visit_expr(expr)?;
                 let elems = self.visit_array_expr(list, false, Some(&expr))?;
-                let set_has_null = matches!(
-                    &elems,
-                    Expr::Literal(LiteralValue::Series(s)) if s.null_count() > 0
-                );
-                let membership = expr.is_in(elems.implode(false), false);
+                let Expr::Literal(LiteralValue::Series(elems_series)) = &elems else {
+                    unreachable!(
+                        "visit_array_expr(.., result_as_element=false, ..) always returns a Series literal"
+                    )
+                };
+                let set_has_null = elems_series.null_count() > 0;
+                let imploded = lit(elems_series.implode()?.into_series());
+                let membership = expr.is_in(imploded, false);
                 let is_in = if set_has_null {
                     // Non-match against sets containing NULL is unknown, not FALSE
                     membership.or(sql_unknown())
