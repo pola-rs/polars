@@ -2676,7 +2676,7 @@ impl SQLContext {
         // so any reference to a SELECT alias is resolved to the aggregate it names
         let having = having.map(|having_expr| {
             having_expr.map_expr(|e| match &e {
-                Expr::Column(name) => resolve_select_alias(name, projections, &schema_before)
+                Expr::Column(name) => resolve_select_alias(name, &projections, &schema_before)
                     .map_or(e, |resolved| strip_outer_alias(&resolved)),
                 _ => e,
             })
