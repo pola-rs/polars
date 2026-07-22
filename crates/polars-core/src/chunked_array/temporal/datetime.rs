@@ -54,29 +54,33 @@ impl DatetimeChunked {
             TimeUnit::Milliseconds => timestamp_ms_to_datetime,
         };
         let format = get_strftime_format(format, self.dtype())?;
+        // jiff's `.strftime()` convenience method formats in lenient mode
+        // (directives that can't be satisfied, e.g. `%z` on a value with no
+        // offset, are written out literally instead of erroring) - use the
+        // strict `jiff::fmt::strtime::format` function instead so an
+        // unsatisfiable directive surfaces as an error, as documented.
         let mut ca: StringChunked = match self.time_zone() {
             #[cfg(feature = "timezones")]
             Some(time_zone) => {
                 let parsed_time_zone = Tz::get(time_zone).expect("already validated");
-                let datefmt_f = |ndt: NaiveDateTime| {
-                    let ts = Tz::UTC.to_timestamp(ndt).expect("datetime out-of-range");
-                    ts.to_zoned(parsed_time_zone.clone()).strftime(&format)
-                };
                 self.physical().try_apply_into_string_amortized(|val, buf| {
                     let ndt = conversion_f(val);
-                    write!(buf, "{}", datefmt_f(ndt))
-                    }
-                ).map_err(
+                    let ts = Tz::UTC.to_timestamp(ndt).expect("datetime out-of-range");
+                    let zdt = ts.to_zoned(parsed_time_zone.clone());
+                    let s = jiff::fmt::strtime::format(&format, &zdt).map_err(|_| ())?;
+                    buf.push_str(&s);
+                    Ok::<(), ()>(())
+                }).map_err(
                 |_| polars_err!(ComputeError: "cannot format timezone-aware Datetime with format '{}'", format),
                 )?
             },
             _ => {
-                let datefmt_f = |ndt: NaiveDateTime| ndt.strftime(&format);
                 self.physical().try_apply_into_string_amortized(|val, buf| {
                     let ndt = conversion_f(val);
-                    write!(buf, "{}", datefmt_f(ndt))
-                    }
-                ).map_err(
+                    let s = jiff::fmt::strtime::format(&format, ndt).map_err(|_| ())?;
+                    buf.push_str(&s);
+                    Ok::<(), ()>(())
+                }).map_err(
                 |_| polars_err!(ComputeError: "cannot format timezone-naive Datetime with format '{}'", format),
                 )?
             },
