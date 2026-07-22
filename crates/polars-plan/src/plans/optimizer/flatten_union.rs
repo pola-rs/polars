@@ -1,18 +1,10 @@
 use IR::*;
 use polars_core::error::PolarsResult;
-use polars_utils::arena::{Arena, Node};
 
 use super::OptimizationRule;
 use crate::prelude::IR;
 
 pub struct FlattenUnionRule {}
-
-fn get_union_inputs(node: Node, lp_arena: &Arena<IR>) -> Option<&[Node]> {
-    match lp_arena.get(node) {
-        IR::Union { inputs, .. } => Some(inputs),
-        _ => None,
-    }
-}
 
 impl OptimizationRule for FlattenUnionRule {
     fn optimize_plan(
@@ -34,9 +26,11 @@ impl OptimizationRule for FlattenUnionRule {
                 let mut options = *options;
 
                 for node in inputs {
-                    match get_union_inputs(*node, lp_arena) {
-                        Some(inp) => new_inputs.extend_from_slice(inp),
-                        None => new_inputs.push(*node),
+                    match lp_arena.get(*node) {
+                        IR::Union {
+                            inputs, options, ..
+                        } if options.slice.is_none() => new_inputs.extend_from_slice(inputs),
+                        _ => new_inputs.push(*node),
                     }
                 }
                 options.flattened_by_opt = true;

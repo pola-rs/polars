@@ -4380,3 +4380,23 @@ def test_full_join_coalesce_computed_payload_filter_28264() -> None:
 
     expected = pl.DataFrame({"a": [1, 2, 3], "x": [10, 20, None], "y": [None, 30, 40]})
     assert_frame_equal(result, expected, check_row_order=False)
+
+
+def test_join_slice_maintain_order_28419_28448() -> None:
+    lf1 = pl.LazyFrame({"a": [1, 0], "s": ["k", "k"]})
+    lf2 = pl.LazyFrame({"a": [0, 1]})
+    q = (
+        lf1.join(lf2, on="a", maintain_order="left_right")
+        .filter(pl.col("s") == "k")
+        .slice(1, 1)
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 0, "s": "k"}))
+
+    lf1 = pl.LazyFrame({"a": [1, 0, 2, 0, 1], "v": [10, 20, 30, 40, 50]})
+    lf2 = pl.LazyFrame({"a": [0, 1, 2], "jx": [9, 8, 7]})
+    q = lf1.join(lf2, on="a", maintain_order="right_left").slice(1, 2)
+
+    assert_frame_equal(
+        q.collect(), pl.DataFrame({"a": [0, 1], "v": [40, 10], "jx": [9, 8]})
+    )
