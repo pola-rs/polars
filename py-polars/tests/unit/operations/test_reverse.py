@@ -25,9 +25,7 @@ def test_reverse_series() -> None:
 def test_reverse_all_null_list_keeps_inner_dtype_28409() -> None:
     # An all-null List column must keep its declared inner dtype after reverse,
     # and the executed schema must match the schema the planner reports.
-    lf = pl.LazyFrame(
-        {"L": [None]}, schema={"L": pl.List(pl.Int64)}
-    ).reverse()
+    lf = pl.LazyFrame({"L": [None]}, schema={"L": pl.List(pl.Int64)}).reverse()
 
     planned = lf.collect_schema()["L"]
     assert planned == pl.List(pl.Int64)
